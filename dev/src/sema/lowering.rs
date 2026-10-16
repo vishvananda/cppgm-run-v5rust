@@ -11,6 +11,7 @@ pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::literal_calls::TextCall;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
+pub(crate) use super::virtual_members::{SlotId, SlotKind, VirtualEntry};
 use super::{
     Error,
     graph::{BindingKind, Graph},
@@ -373,6 +374,21 @@ impl Graph {
     }
     pub(crate) fn lower_implicit_copy(&self, entity: EntityId) -> bool {
         self.entity(entity).copy_origin == super::copy_construction::Origin::Implicit
+    }
+    pub(crate) fn lower_user_provided_constructor(&self, id: ConstructorId) -> bool {
+        self.constructors.get(id).binding.is_some_and(|binding| {
+            self.entity(self.binding(binding).entity)
+                .special_definition
+                .is_some_and(|definition| {
+                    matches!(
+                        definition,
+                        super::special_members::SpecialDefinition::Body(_)
+                    )
+                })
+        })
+    }
+    pub(crate) fn lower_virtual_destructor(&self, class: EntityId) -> bool {
+        self.virtuals.destructor(class).is_some()
     }
     pub(crate) fn lower_constructor_trivial(&self, id: ConstructorId) -> bool {
         !self.constructors.get(id).nontrivial()

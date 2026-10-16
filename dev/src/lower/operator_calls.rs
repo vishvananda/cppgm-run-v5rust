@@ -76,8 +76,12 @@ impl Function<'_, '_, '_, '_> {
         if postfix {
             values[base + 1] = self.builder.integer(0)?;
         }
-        self.symbols.demand(entity);
-        let callee = self.symbols.callee(entity, &mut self.builder)?;
+        let (callee, signature) = self.member_callee(
+            entity,
+            first,
+            self.graph.lower_virtual_dispatch(id)?,
+            source,
+        )?;
         let arguments = self
             .builder
             .arguments(&values[..base + count + usize::from(postfix)])?;
@@ -86,7 +90,7 @@ impl Function<'_, '_, '_, '_> {
             callee,
             arguments,
             copy_elision: false,
-            signature: None,
+            signature,
         });
         self.before_lifetime_call(throws)?;
         self.finish_result_call(call, source, destination, throws)

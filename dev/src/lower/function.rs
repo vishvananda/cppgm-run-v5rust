@@ -160,14 +160,7 @@ pub(super) fn lower<'a>(
         }));
     }
     let name = program.names.get(program.symbol(symbol).name).to_owned();
-    let mut metadata = symbols.entry_metadata(program, entry, &name)?;
-    if matches!(
-        facts.name,
-        crate::sema::lowering::FunctionName::Destructor(_)
-    ) && facts.internal
-    {
-        metadata.flags |= 4;
-    }
+    let metadata = symbols.definition_metadata(program, entry, symbol)?;
     let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
     let parameters: Vec<_> = names
         .iter()
@@ -320,6 +313,7 @@ pub(super) fn lower<'a>(
     function.place_function_guard(entry)?;
     function.builder.finish()?;
     symbols.finish_entry(program, entry, symbol)?;
+    symbols.key_function_table(program, entry)?;
     Ok(())
 }
 impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> {

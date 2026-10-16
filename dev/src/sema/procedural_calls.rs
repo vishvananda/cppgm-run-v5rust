@@ -277,8 +277,29 @@ impl Analyzer<'_> {
             self.graph
                 .function_origin(self.graph.binding(binding).entity)?,
         ));
+        if self
+            .graph
+            .virtuals
+            .function(self.graph.binding(binding).entity)
+            .is_virtual
+            && !self.qualified_call_designator(callee)
+        {
+            facts.dispatch = super::expression_facts::Dispatch::Virtual;
+        }
         self.graph.record_call_binding(id, binding);
         Ok(facts)
+    }
+    fn qualified_call_designator(&self, mut expression: ast::ExprId) -> bool {
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(expression).kind {
+            expression = inner;
+        }
+        let (ast::ExprKind::Id(name) | ast::ExprKind::Member { member: name, .. }) =
+            self.tree.expressions.get(expression).kind
+        else {
+            return false;
+        };
+        let node = self.tree.names.get(name);
+        node.global || self.tree.name_lists.get(node.components).len() > 1
     }
     // Member access is checked through its naming declaration; the implicit
     // object conversion retains the physical route without rechecking that access.

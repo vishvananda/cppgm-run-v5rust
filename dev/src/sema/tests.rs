@@ -2093,21 +2093,30 @@ fn explicit_base_cast_route_survives_conversion_of_its_result() {
 }
 
 #[test]
-fn missing_layout_and_constant_call_owners_remain_status_86_boundaries() {
-    for source in [
-        b"struct C{virtual void f();}; int a[sizeof(C)];".as_slice(),
-        b"constexpr int f(){return 1;} void g() noexcept(f());",
-    ] {
-        let source = SourceBuffer::new(source.to_vec()).unwrap();
-        let input = Preprocessor::with_name(&source, b"missing-query-owner").unwrap();
-        let mut unit = SyntaxUnit::new(input);
-        unit.parse().unwrap();
-        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-        let result = Analyzer::new(tree, cursor, StackBudget::default())
-            .unwrap()
-            .analyze(declarations);
-        assert!(matches!(result, Err(Error::Missing(_))));
-    }
+fn polymorphic_size_queries_complete_while_constant_calls_remain_a_boundary() {
+    analyze(
+        b"struct C{virtual void f();}; int a[sizeof(C)];",
+        |graph, cursor| {
+            let name = cursor.intern_name(b"a").unwrap();
+            let entity = graph
+                .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+                .entity;
+            assert!(matches!(
+                graph.types.get(graph.entity(entity).ty.unwrap()).kind,
+                TypeKind::Array { bound: 8, .. }
+            ));
+        },
+    );
+    let source = b"constexpr int f(){return 1;} void g() noexcept(f());";
+    let source = SourceBuffer::new(source.to_vec()).unwrap();
+    let input = Preprocessor::with_name(&source, b"missing-query-owner").unwrap();
+    let mut unit = SyntaxUnit::new(input);
+    unit.parse().unwrap();
+    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+    let result = Analyzer::new(tree, cursor, StackBudget::default())
+        .unwrap()
+        .analyze(declarations);
+    assert!(matches!(result, Err(Error::Missing(_))));
 }
 
 #[test]

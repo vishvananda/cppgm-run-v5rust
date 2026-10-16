@@ -532,4 +532,48 @@ mod tests {
         crate::lower::assert_constructor_parameter_temporaries(&graph, tree, cursor, declarations);
         assert_eq!(tree.expressions.mark(), count);
     }
+    #[test]
+    fn table_demand_reuses_identity_and_leaves_unrelated_classes_untouched() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            sema::{Analyzer, lowering::TypeView},
+            support::source::SourceBuffer,
+            syntax::ast,
+        };
+        let source = SourceBuffer::new(b"struct A{virtual int z(){return 1;}virtual int f(int)=0;};struct B:A{int f(int){return 2;}};struct Unused{virtual int absent();};int main(){B b;return b.f(0);}void anchor(A*,B*,Unused*){}".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"table-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax = (tree.expressions.mark(), tree.declarations.mark());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let ast::DeclKind::Function { declarator, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("anchor function");
+        };
+        let anchor = graph
+            .lower_function(graph.lower_declared(declarator).unwrap())
+            .unwrap();
+        let TypeView::Function { parameters, .. } = graph.lower_type(anchor.ty).unwrap() else {
+            panic!("anchor signature");
+        };
+        let classes: Vec<_> = parameters
+            .iter()
+            .map(|&ty| {
+                let TypeView::Pointer(ty) = graph.lower_type(ty).unwrap() else {
+                    panic!("anchor pointer");
+                };
+                let TypeView::Class(class) = graph.lower_type(ty).unwrap() else {
+                    panic!("anchor class");
+                };
+                class
+            })
+            .collect();
+        crate::lower::assert_table_demand(&graph, tree, cursor, &classes);
+        assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
+    }
 }

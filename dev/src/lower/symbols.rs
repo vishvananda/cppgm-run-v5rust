@@ -1,5 +1,7 @@
 // Translated from lower/symbol_lowering.cpp's procedural symbol and ABI construction. See NOTICE.
 use super::Error;
+#[path = "vtables.rs"]
+mod vtables;
 use crate::{
     abi::{
         self,
@@ -122,6 +124,7 @@ pub(super) struct Symbols<'a, 'source> {
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
     pub data: super::data::Objects,
+    vtables: vtables::Tables,
     temporary_owner: Option<(EntityId, u32)>,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
     local_discriminators: HashMap<EntityId, u32>,
@@ -170,6 +173,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             globals: Vec::new(),
             objects: HashMap::new(),
             data: super::data::Objects::default(),
+            vtables: vtables::Tables::default(),
             temporary_owner: None,
             local_counts: HashMap::new(),
             local_discriminators: HashMap::new(),
@@ -467,7 +471,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let mut properties = super::types::ClassStorage {
             changeable: false,
             destruction: graph.lower_nontrivial_destructor(class)?,
-            value_zero: graph.lower_aggregate_class(class),
+            value_zero: graph.lower_aggregate_class(class) && !graph.lower_polymorphic(class),
         };
         for base in graph.lower_class_bases(class) {
             let child = self.class_storage_properties(base)?;
@@ -1778,6 +1782,25 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.entries.insert(entry, symbol);
         Ok(symbol)
     }
+    pub(super) fn definition_metadata(
+        &mut self,
+        program: &mut Program,
+        entry: super::construction::Entry,
+        symbol: SymbolId,
+    ) -> Result<Metadata, Error> {
+        let name = program.names.get(program.symbol(symbol).name).to_owned();
+        let mut metadata = self.entry_metadata(program, entry, &name)?;
+        let facts = entry.facts(self.graph)?;
+        if facts.internal
+            && (matches!(facts.name, FunctionName::Destructor(_))
+                || entry
+                    .entity(self.graph)
+                    .is_some_and(|entity| self.graph.lower_virtual_slot(entity).is_some()))
+        {
+            metadata.flags |= 4;
+        }
+        Ok(metadata)
+    }
     pub(super) fn entry_metadata(
         &mut self,
         program: &mut Program,
@@ -2136,6 +2159,9 @@ impl Symbols<'_, '_> {
         Ok(boundary)
     }
 }
+
+#[cfg(test)]
+pub(crate) use vtables::assert_table_demand;
 
 #[cfg(test)]
 mod tests {

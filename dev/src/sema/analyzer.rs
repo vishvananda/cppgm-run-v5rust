@@ -312,7 +312,10 @@ impl<'tree> Analyzer<'tree> {
                     .any(|spec| matches!(spec.kind, ast::SpecifierKind::Keyword(Keyword::Virtual)))
             })
         {
-            self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
+            // Types-only queries still need the physical dynamic-class fact;
+            // virtual declaration diagnostics and slot completion are semantic work.
+            self.graph.entity_mut(owner).polymorphism =
+                super::virtual_members::Polymorphism::Dynamic;
             self.graph.entity_mut(owner).aggregation =
                 super::aggregate_initialization::Aggregation::Ineligible;
         }

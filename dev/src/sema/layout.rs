@@ -372,15 +372,36 @@ impl Analyzer<'_> {
                     .bit_field
                     .is_some_and(|id| self.graph.bit_fields.width(id) == 0)
         });
+        let polymorphic = self.graph.entity(entity).polymorphism.is_dynamic();
+        let primary = self
+            .graph
+            .entity(entity)
+            .bases
+            .iter()
+            .position(|edge| self.graph.entity(edge.class).polymorphism.is_dynamic());
+        if polymorphic {
+            empty = false;
+            if primary.is_none() {
+                size = 8;
+                data_size = 8;
+            }
+        }
         let mut contains_empty = false;
-        let mut alignment = 1;
+        let mut alignment = if polymorphic && primary.is_none() {
+            8
+        } else {
+            1
+        };
         let attributes = self.graph.entity(entity).storage_attributes;
         let pack = u64::from(self.graph.entity(entity).class_packing);
-        let mut non_pod = self.graph.entity(entity).layout_category == LayoutCategory::NonPod
+        let mut non_pod = polymorphic
+            || self.graph.entity(entity).layout_category == LayoutCategory::NonPod
             || !self.graph.entity(entity).bases.is_empty();
         let mut packs_all = true;
         let mut placement = super::empty_layout::EmptyPlacement::new(&self.graph, entity)?;
-        for index in 0..self.graph.entity(entity).bases.len() {
+        for index in primary.into_iter().chain(
+            (0..self.graph.entity(entity).bases.len()).filter(|index| Some(*index) != primary),
+        ) {
             let base = self.graph.entity(entity).bases[index].class;
             let LayoutState::Value {
                 size: bytes,

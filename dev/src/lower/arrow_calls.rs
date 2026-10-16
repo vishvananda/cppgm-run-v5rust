@@ -69,8 +69,12 @@ impl Function<'_, '_, '_, '_> {
             ))?;
             values[1] = receiver;
         }
-        self.symbols.demand(step.function);
-        let callee = self.symbols.callee(step.function, &mut self.builder)?;
+        let (callee, signature) = self.member_callee(
+            step.function,
+            receiver,
+            self.graph.lower_virtual_slot(step.function).is_some(),
+            source,
+        )?;
         let arguments = self
             .builder
             .arguments(&values[..=usize::from(boundary.indirect)])?;
@@ -79,7 +83,7 @@ impl Function<'_, '_, '_, '_> {
             callee,
             arguments,
             copy_elision: false,
-            signature: None,
+            signature,
         });
         self.before_lifetime_call(throws)?;
         let mut value = self.finish_result_call(call, source, destination, throws)?;

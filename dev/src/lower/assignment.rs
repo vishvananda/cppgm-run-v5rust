@@ -77,8 +77,19 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 self.graph.lower_member_offset(member)?
             }
+        } else if let Some((class, index)) = action.base {
+            self.graph
+                .lower_base_initialization_span(
+                    class,
+                    usize::try_from(index)
+                        .map_err(|_| crate::sema::Error::Limit("assignment base limit"))?,
+                    false,
+                )?
+                .0
         } else {
-            0
+            return Err(
+                crate::sema::Error::Invariant("assignment without subobject identity").into(),
+            );
         })
     }
     fn assignment_address(
@@ -144,7 +155,10 @@ impl Function<'_, '_, '_, '_> {
             }
             first += 1;
         }
-        let mut field_wise = false;
+        if self.graph.lower_polymorphic(class) {
+            first = 0;
+        }
+        let mut field_wise = self.graph.lower_polymorphic(class);
         for action in actions {
             field_wise |= if let Some(member) = action.member {
                 self.graph.lower_bit_field(member)?.is_some()
@@ -168,6 +182,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             let prefix = actions
                 .get(first)
+                .filter(|_| !self.graph.lower_polymorphic(class))
                 .copied()
                 .map(|a| self.assignment_offset(a))
                 .transpose()?

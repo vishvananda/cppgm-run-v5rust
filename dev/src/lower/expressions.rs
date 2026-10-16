@@ -682,8 +682,16 @@ impl Function<'_, '_, '_, '_> {
         }
         let (callee, signature) = match target {
             CallTarget::Direct(entity) => {
-                self.symbols.demand(entity);
-                (self.symbols.callee(entity, &mut self.builder)?, None)
+                let dispatch = self.graph.lower_virtual_dispatch(id)?;
+                if dispatch {
+                    let receiver = *values.get(usize::from(boundary.indirect)).ok_or(
+                        crate::sema::Error::Invariant("virtual call without receiver"),
+                    )?;
+                    self.member_callee(entity, receiver, true, source)?
+                } else {
+                    self.symbols.demand(entity);
+                    (self.symbols.callee(entity, &mut self.builder)?, None)
+                }
             }
             CallTarget::Indirect(function_type, nothrow) => {
                 let callee = self.operand(callee_expression, Context::Operand)?.value;

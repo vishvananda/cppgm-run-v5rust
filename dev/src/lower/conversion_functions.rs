@@ -393,7 +393,6 @@ impl Function<'_, '_, '_, '_> {
         if let Some(offset) = call.offset {
             receiver = self.base_projection(receiver, call.result, offset)?;
         }
-        self.symbols.demand(call.function);
         let function = self.graph.lower_function(call.function)?;
         let crate::sema::lowering::TypeView::Function { result, .. } =
             self.graph.lower_type(function.ty)?
@@ -401,7 +400,12 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("conversion call signature").into());
         };
         let boundary = self.symbols.result_boundary(result)?;
-        let callee = self.symbols.callee(call.function, &mut self.builder)?;
+        let (callee, signature) = self.member_callee(
+            call.function,
+            receiver,
+            self.graph.lower_virtual_slot(call.function).is_some(),
+            call.result,
+        )?;
         let arguments = if boundary.indirect {
             self.builder.arguments(&[
                 destination.ok_or(crate::sema::Error::Invariant(
@@ -417,7 +421,7 @@ impl Function<'_, '_, '_, '_> {
             callee,
             arguments,
             copy_elision: false,
-            signature: None,
+            signature,
         });
         self.before_lifetime_call(throws)?;
         let value = self.finish_result_call(instruction, call.result, destination, throws)?;

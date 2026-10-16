@@ -184,6 +184,7 @@ pub(crate) struct Properties {
 #[derive(Clone, Copy)]
 pub(crate) struct Action {
     pub member: Option<EntityId>,
+    pub base: Option<(EntityId, u32)>,
     pub ty: TypeId,
     pub function: Option<EntityId>,
     parameter_copy: Option<super::copy_initialization::CopySelection>,
@@ -527,7 +528,7 @@ impl Analyzer<'_> {
     ) -> Result<Properties, Error> {
         let mut properties = Properties {
             deleted: false,
-            trivial: true,
+            trivial: !self.graph.lower_polymorphic(class),
             nothrow: true,
             actions: Vec::new(),
         };
@@ -552,6 +553,14 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("assignment subobject type"))?;
             let mut action = Action {
                 member,
+                base: if member.is_none() {
+                    Some((
+                        class,
+                        u32::try_from(index).map_err(|_| Error::Limit("assignment base limit"))?,
+                    ))
+                } else {
+                    None
+                },
                 ty,
                 function: None,
                 parameter_copy: None,

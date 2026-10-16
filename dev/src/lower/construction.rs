@@ -274,8 +274,14 @@ impl Function<'_, '_, '_, '_> {
                     && self.aggregation.call_scope
                         == super::aggregate_cleanup::CallScope::FullExpression,
         )?;
-        let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
         self.symbols.demand_entry(entry);
+        if let Entry::Constructor(id, _) = entry {
+            self.symbols.construction_table(
+                self.builder.program(),
+                self.graph.lower_constructor(id).class,
+            )?;
+        }
+        let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
         let arguments = self.builder.arguments(values)?;
         self.effect(I::Call(crate::lowir::model::Call {
             result: Type::Void,
@@ -519,6 +525,7 @@ impl Function<'_, '_, '_, '_> {
         for index in 0..plan.bases.len() {
             self.initialize_base(id, variant, index)?;
         }
+        self.store_vptr(plan.class, plan.object_pointer)?;
         self.initialize_member_plan(id, plan.object_pointer, location)
             .map(|_| ())
     }

@@ -394,7 +394,7 @@ impl Analyzer<'_> {
     ) -> Result<CopyProperties, Error> {
         let mut facts = CopyProperties {
             deleted: false,
-            trivial: true,
+            trivial: !self.graph.entity(class).polymorphism.is_dynamic(),
             nothrow: true,
             plan: super::construction::ConstructorState::NotStarted,
             callable: None,

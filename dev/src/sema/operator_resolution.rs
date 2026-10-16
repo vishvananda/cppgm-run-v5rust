@@ -371,6 +371,14 @@ impl Analyzer<'_> {
                 .function_origin(self.graph.binding(binding).entity)?,
         ));
         facts.call_form = super::expression_facts::CallForm::Operator;
+        if self
+            .graph
+            .virtuals
+            .function(self.graph.binding(binding).entity)
+            .is_virtual
+        {
+            facts.dispatch = super::expression_facts::Dispatch::Virtual;
+        }
         self.graph.record_call_binding(id, binding);
         Ok(Some(facts))
     }

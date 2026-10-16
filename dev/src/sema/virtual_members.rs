@@ -27,8 +27,52 @@ pub(super) struct Virtuals {
     signatures: HashSet<(ValueKey, TypeId)>,
     destructors: HashMap<EntityId, EntityId>,
     pure_counts: HashMap<EntityId, u32>,
+    classes: HashMap<EntityId, ClassVirtuals>,
+    slots: HashMap<EntityId, SlotId>,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum Polymorphism {
+    #[default]
+    Static,
+    Dynamic,
+}
+impl Polymorphism {
+    pub(super) fn is_dynamic(self) -> bool {
+        self == Self::Dynamic
+    }
+}
+/// The ABI slot identity survives overrides without copying inherited tables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SlotId(u32);
+impl SlotId {
+    pub(crate) fn byte_offset(self) -> u64 {
+        u64::from(self.0) * 8
+    }
+    pub(crate) fn index(self) -> Result<usize, Error> {
+        usize::try_from(self.0).map_err(|_| Error::Limit("virtual slot limit"))
+    }
+}
+#[derive(Clone, Copy)]
+pub(crate) enum SlotKind {
+    Function,
+    CompleteDestructor,
+    DeletingDestructor,
+}
+#[derive(Clone, Copy)]
+pub(crate) struct VirtualEntry {
+    pub slot: SlotId,
+    pub function: EntityId,
+    pub kind: SlotKind,
+}
+/// Class completion records only its changes. Lowering builds a demanded table
+/// from this primary-chain recipe, never all the tables of an unused hierarchy.
+pub(crate) struct ClassVirtuals {
+    pub primary: Option<EntityId>,
+    pub size: u32,
+    pub key: Option<EntityId>,
+    pub entries: Vec<VirtualEntry>,
+}
 impl Virtuals {
     pub(super) fn function(&self, entity: EntityId) -> VirtualFunction {
         self.functions.get(&entity).copied().unwrap_or_default()
@@ -232,6 +276,7 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "a constexpr virtual function"));
         }
         if facts.is_virtual {
+            self.graph.entity_mut(class).polymorphism = Polymorphism::Dynamic;
             self.graph.virtuals.functions.insert(function, facts);
             if special == Some(MemberKind::Destructor) {
                 self.graph.virtuals.destructors.insert(class, function);
@@ -384,6 +429,108 @@ impl Analyzer<'_> {
         if pure != 0 {
             self.graph.virtuals.pure_counts.insert(class, pure);
         }
+        Ok(())
+    }
+
+    pub(super) fn complete_virtual_layout(&mut self, class: EntityId) -> Result<(), Error> {
+        if !self.graph.entity(class).polymorphism.is_dynamic() {
+            return Ok(());
+        }
+        let primary = self
+            .graph
+            .entity(class)
+            .bases
+            .iter()
+            .find(|edge| self.graph.entity(edge.class).polymorphism.is_dynamic())
+            .map(|edge| edge.class);
+        let mut size = if let Some(base) = primary {
+            self.graph.lower_virtual_class(base)?.size
+        } else {
+            0
+        };
+        let scope = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("virtual class scope"))?;
+        let mut entries = Vec::new();
+        let mut key = None;
+        let mut seen = HashSet::new();
+        for index in 0..self.graph.scope(scope).bindings.len() {
+            let binding = self.graph.scope(scope).bindings[index];
+            let function = self.graph.binding(binding).entity;
+            if self.graph.entity(function).home != Some(scope) || !seen.insert(function) {
+                continue;
+            }
+            let facts = self.graph.virtuals.function(function);
+            if !facts.is_virtual {
+                continue;
+            }
+            let destructor = self
+                .graph
+                .entity(function)
+                .member_function
+                .is_some_and(|member| member.kind == MemberKind::Destructor);
+            let inherited = facts
+                .overridden
+                .map(|base| {
+                    self.graph
+                        .virtuals
+                        .slots
+                        .get(&base)
+                        .copied()
+                        .ok_or(Error::Invariant("override without completed virtual slot"))
+                })
+                .transpose()?;
+            let slot = if let Some(slot) = inherited {
+                slot
+            } else {
+                let slot = SlotId(size);
+                size = size
+                    .checked_add(if destructor { 2 } else { 1 })
+                    .ok_or(Error::Limit("virtual slot limit"))?;
+                slot
+            };
+            self.graph.virtuals.slots.insert(function, slot);
+            entries.push(VirtualEntry {
+                slot,
+                function,
+                kind: if destructor {
+                    SlotKind::CompleteDestructor
+                } else {
+                    SlotKind::Function
+                },
+            });
+            if destructor {
+                entries.push(VirtualEntry {
+                    slot: SlotId(
+                        slot.0
+                            .checked_add(1)
+                            .ok_or(Error::Limit("virtual slot limit"))?,
+                    ),
+                    function,
+                    kind: SlotKind::DeletingDestructor,
+                });
+            }
+            let entity = self.graph.entity(function);
+            if key.is_none()
+                && !facts.pure
+                && entity.inline != super::specifiers::InlinePreference::Inline
+                && entity.special_definition.is_none()
+                && entity.availability != super::graph::FunctionAvailability::Deleted
+            {
+                key = Some(function);
+            }
+        }
+        self.graph.virtuals.classes.insert(
+            class,
+            ClassVirtuals {
+                primary,
+                size,
+                key,
+                entries,
+            },
+        );
         Ok(())
     }
 
@@ -576,6 +723,61 @@ impl Analyzer<'_> {
                 .trivial = false;
         }
         Ok(())
+    }
+}
+
+impl super::graph::Graph {
+    pub(crate) fn lower_polymorphic(&self, class: EntityId) -> bool {
+        self.entity(class).polymorphism.is_dynamic()
+    }
+    pub(crate) fn lower_virtual_class(&self, class: EntityId) -> Result<&ClassVirtuals, Error> {
+        self.virtuals
+            .classes
+            .get(&class)
+            .ok_or(Error::Invariant("missing completed virtual class facts"))
+    }
+    pub(crate) fn lower_virtual_slot(&self, function: EntityId) -> Option<SlotId> {
+        self.virtuals.slots.get(&function).copied()
+    }
+    pub(crate) fn lower_virtual_pure(&self, function: EntityId) -> bool {
+        self.virtuals.function(function).pure
+            || self.entity(function).availability == super::graph::FunctionAvailability::Deleted
+    }
+    pub(crate) fn lower_virtual_dispatch(&self, expression: ast::ExprId) -> Result<bool, Error> {
+        Ok(self.expression_facts.get(expression)?.dispatch.is_virtual())
+    }
+    pub(crate) fn lower_virtual_class_identity(
+        &self,
+        class: EntityId,
+    ) -> Result<(bool, bool, Keyword, ScopeId), Error> {
+        let entity = self.entity(class);
+        let home = entity.home.ok_or(Error::Invariant("class without home"))?;
+        Ok((
+            self.lower_entity_unit_local(class),
+            self.scope(home).kind != ScopeKind::Namespace,
+            entity.key,
+            entity
+                .scope
+                .ok_or(Error::Invariant("class without scope"))?,
+        ))
+    }
+    pub(crate) fn lower_rtti_bases(
+        &self,
+        class: EntityId,
+    ) -> impl Iterator<Item = Result<(EntityId, bool, u64), Error>> + '_ {
+        self.entity(class).bases.iter().map(|base| {
+            Ok((
+                base.class,
+                base.access == super::graph::Access::Public,
+                base.offset
+                    .ok_or(Error::Invariant("RTTI base without layout"))?,
+            ))
+        })
+    }
+    pub(crate) fn lower_virtual_key_owner(&self, function: EntityId) -> Option<EntityId> {
+        let home = self.entity(function).home?;
+        let class = self.scope(home).owner?;
+        (self.virtuals.classes.get(&class)?.key == Some(function)).then_some(class)
     }
 }
 

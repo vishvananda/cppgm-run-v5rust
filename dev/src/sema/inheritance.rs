@@ -276,6 +276,10 @@ impl Analyzer<'_> {
                 None if node.key == Keyword::Class => Access::Private,
                 Some(_) | None => Access::Public,
             };
+            if self.graph.entity(parent).polymorphism.is_dynamic() {
+                self.graph.entity_mut(class).polymorphism =
+                    super::virtual_members::Polymorphism::Dynamic;
+            }
             self.graph.entity_mut(class).bases.push(BaseClass {
                 class: parent,
                 access,

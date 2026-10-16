@@ -97,7 +97,10 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         let mut first = transfers.iter().take_while(|action| action.trivial).count();
-        let mut field_wise = false;
+        if self.graph.lower_polymorphic(class) {
+            first = 0;
+        }
+        let mut field_wise = self.graph.lower_polymorphic(class);
         for action in &transfers {
             field_wise |= if let Some(member) = action.member {
                 self.graph.lower_local_name(member).is_some()
@@ -121,7 +124,7 @@ impl Function<'_, '_, '_, '_> {
             self.copying.active = false;
             return Ok(());
         }
-        let prefix = if first < transfers.len() {
+        let prefix = if first < transfers.len() && !self.graph.lower_polymorphic(class) {
             transfers[first].offset
         } else {
             0
@@ -162,6 +165,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.copying.active = false;
         self.copy_truncate(0);
+        self.store_vptr(class, plan.object_pointer)?;
         Ok(())
     }
     fn note_copied_member(

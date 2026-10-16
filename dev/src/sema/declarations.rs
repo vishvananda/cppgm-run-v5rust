@@ -1556,6 +1556,7 @@ impl Analyzer<'_> {
             self.complete_destructor(entity)?;
             self.complete_virtual_destructor(entity, node.location)?;
             self.complete_virtual_members(entity)?;
+            self.complete_virtual_layout(entity)?;
         }
         if self.template_depth == 0 && self.graph.entity(entity).storage_attributes.alignment != 0 {
             self.class_layout(entity, node.location)?;

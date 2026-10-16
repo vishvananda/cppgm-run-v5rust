@@ -82,7 +82,8 @@ impl Constructor {
         self.triviality == Triviality::Nontrivial
     }
     fn own_action(&self, graph: &super::graph::Graph) -> bool {
-        self.initialized_members() != 0
+        graph.entity(self.class).polymorphism.is_dynamic()
+            || self.initialized_members() != 0
             || self.binding.is_some_and(|binding| {
                 !matches!(
                     graph

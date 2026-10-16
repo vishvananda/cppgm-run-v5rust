@@ -30,6 +30,7 @@ mod copy_construction;
 mod data;
 mod definition_order;
 mod destruction;
+mod dispatch;
 mod element_temporaries;
 mod exception_helpers;
 mod expressions;
@@ -404,3 +405,6 @@ pub(crate) use reference_lifetimes::tests::assert_extended_ownership;
 
 #[cfg(test)]
 pub(crate) use temporary_scan::tests::assert_constructor_parameter_temporaries;
+
+#[cfg(test)]
+pub(crate) use symbols::assert_table_demand;

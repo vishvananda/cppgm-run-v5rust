@@ -93,6 +93,17 @@ pub(super) enum CallForm {
     Ordinary,
     Operator,
 }
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum Dispatch {
+    #[default]
+    Direct,
+    Virtual,
+}
+impl Dispatch {
+    pub(super) fn is_virtual(self) -> bool {
+        matches!(self, Self::Virtual)
+    }
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) enum DestructorTarget {
     Scalar,
@@ -129,6 +140,7 @@ pub(super) struct ExprFacts {
     pub functions: Option<super::function_resolution::OverloadId>,
     pub function: Option<super::graph::BindingId>,
     pub call_form: CallForm,
+    pub dispatch: Dispatch,
     pub call: Option<super::function_resolution::CallTarget>,
     pub literal_call: Option<super::literal_calls::TextCall>,
     pub destructor: Option<DestructorTarget>,
@@ -184,6 +196,7 @@ impl ExprFacts {
             functions: None,
             function: None,
             call_form: CallForm::Ordinary,
+            dispatch: Dispatch::Direct,
             call: None,
             literal_call: None,
             destructor: None,
