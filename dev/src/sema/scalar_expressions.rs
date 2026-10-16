@@ -351,6 +351,12 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("value binding without type"))?;
         if binding.kind == BindingKind::Variable {
+            if self.graph.entity(binding.entity).template_head.is_some() {
+                return Err(Error::at(
+                    self.tree.expressions.get(id).location,
+                    "a variable template named without template arguments",
+                ));
+            }
             self.use_instance_variable(binding.entity)?;
             ty = self
                 .graph

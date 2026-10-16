@@ -846,6 +846,9 @@ impl Analyzer<'_> {
             if found.functions.as_slice().is_empty()
                 && let Some(binding) = found.binding
             {
+                if self.variable_template_primary(binding).is_some() {
+                    return Err(Error::Missing("variable template specialization demand"));
+                }
                 found.binding = Some(self.class_template_id(binding, last, scope)?.ok_or_else(
                     || {
                         Error::at(

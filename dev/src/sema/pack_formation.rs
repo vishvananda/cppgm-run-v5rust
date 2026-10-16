@@ -57,7 +57,11 @@ impl Analyzer<'_> {
     /// specialization arguments; a template's declaration is not an argument.
     /// Function declarations leave expression placeholders out, as C++ does;
     /// expansion formation includes the names in their retained expressions.
-    fn has_unexpanded_type_pack(&self, root: TypeId, placeholders: bool) -> Result<bool, Error> {
+    pub(super) fn has_unexpanded_type_pack(
+        &self,
+        root: TypeId,
+        placeholders: bool,
+    ) -> Result<bool, Error> {
         let mut work = vec![root];
         let mut visited = HashSet::new();
         while let Some(ty) = work.pop() {

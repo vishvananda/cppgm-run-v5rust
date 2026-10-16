@@ -633,6 +633,10 @@ impl Analyzer<'_> {
         deduced: &mut Option<TypeId>,
         mut info: super::declarators::DeclaratorInfo,
     ) -> Result<(), Error> {
+        if self.variable_template_declarator(specs, init, scope, &info)? {
+            self.settle_declaration_access(None)?;
+            return Ok(());
+        }
         let member = self.declared_member(&info, scope)?;
         let home = info.home.unwrap_or(self.declaration_scope(scope));
         self.check_virtual_object_declaration(specs, &info, init)?;
@@ -812,6 +816,7 @@ impl Analyzer<'_> {
         let member =
             self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
+        self.declare_variable_template(binding, init, &info, scope, location)?;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
         if let Some(initializer) = init.initializer {
             if self.semantic() {

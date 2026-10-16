@@ -151,8 +151,19 @@ impl Analyzer<'_> {
             .declared_bindings
             .get(declarator.index())
             .copied()
-            .flatten()
-            .ok_or(Error::Invariant("attributes without declaration"))?;
+            .flatten();
+        let Some(binding) = binding else {
+            // C++ leaves init.declared null for a partial or a deferred
+            // template-id outside its head's scope. There is no object here.
+            if self
+                .graph
+                .variable_instances
+                .nonobject_declaration(declarator)
+            {
+                return Ok(());
+            }
+            return Err(Error::Invariant("attributes without declaration"));
+        };
         let binding = self.graph.binding(binding);
         if binding.kind == BindingKind::Function {
             self.graph

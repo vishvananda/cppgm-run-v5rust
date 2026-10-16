@@ -15,6 +15,28 @@ use crate::{
 };
 
 impl Analyzer<'_> {
+    pub(super) fn type_template_arguments(
+        &mut self,
+        component: ast::NameComponent,
+        scope: ScopeId,
+    ) -> Result<Vec<TypeId>, Error> {
+        let syntax = component
+            .arguments
+            .ok_or(Error::Invariant("template-id without arguments"))?;
+        let mut arguments = Vec::new();
+        for index in 0..self.tree.template_arguments.get(syntax).len() {
+            let argument = self.tree.template_arguments.get(syntax)[index];
+            if argument.pack {
+                return Err(Error::Missing("template argument expansion"));
+            }
+            let ty = self
+                .template_type_argument(argument, scope, component.location)?
+                .ok_or(Error::Missing("non-type template arguments"))?;
+            arguments.push(self.graph.types.canonical_function(ty)?);
+        }
+        Ok(arguments)
+    }
+
     /// C++ `class_templates.cpp::template_argument`: a parsed id-expression
     /// can denote a type even when parser lookup could not classify it.
     /// Keep the dependent-qualifier rule separate from that concrete lookup.

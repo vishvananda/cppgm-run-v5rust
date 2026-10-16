@@ -39,6 +39,10 @@ enum State {
 #[derive(Default)]
 pub(super) struct Variables {
     patterns: HashMap<EntityId, Pattern>,
+    // Declaration order is independent of any specialization's later demand.
+    partials: HashMap<EntityId, Vec<(Vec<TypeId>, EntityId)>>,
+    partial_declarations: Vec<Option<EntityId>>,
+    deferred_declarations: HashSet<ast::DeclaratorId>,
     links: HashMap<EntityId, EntityId>,
     states: HashMap<EntityId, State>,
     demands: Vec<EntityId>,
@@ -46,6 +50,32 @@ pub(super) struct Variables {
     next: usize,
 }
 impl Variables {
+    pub(super) fn defer_declaration(&mut self, declarator: ast::DeclaratorId) {
+        self.deferred_declarations.insert(declarator);
+    }
+    pub(super) fn nonobject_declaration(&self, declarator: ast::DeclaratorId) -> bool {
+        self.partial_declaration(declarator).is_some()
+            || self.deferred_declarations.contains(&declarator)
+    }
+    pub(super) fn record_partial(
+        &mut self,
+        primary: EntityId,
+        arguments: Vec<TypeId>,
+        partial: EntityId,
+        declarator: ast::DeclaratorId,
+    ) {
+        self.partials
+            .entry(primary)
+            .or_default()
+            .push((arguments, partial));
+        super::record(&mut self.partial_declarations, declarator.index(), partial);
+    }
+    pub(super) fn partial_declaration(&self, declarator: ast::DeclaratorId) -> Option<EntityId> {
+        self.partial_declarations
+            .get(declarator.index())
+            .copied()
+            .flatten()
+    }
     pub(super) fn link(&mut self, source: EntityId, target: EntityId) {
         self.links.insert(target, source);
     }
@@ -63,6 +93,34 @@ impl Variables {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn retain_variable_template_pattern(
+        &mut self,
+        entity: EntityId,
+        init: ast::InitDeclarator,
+        info: &DeclaratorInfo,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) {
+        // A later declaration without an initializer keeps the definition's
+        // parameter names, lookup scope and definition point.
+        if init.initializer.is_none()
+            && self.graph.variable_instances.patterns.contains_key(&entity)
+        {
+            return;
+        }
+        self.graph.variable_instances.patterns.insert(
+            entity,
+            Pattern {
+                declarator: init.declarator,
+                initializer: init.initializer,
+                ty: info.ty,
+                head: self.active_template_head(scope),
+                scope: info.lookup,
+                location,
+                limit: self.graph.binding_limit(),
+            },
+        );
+    }
     pub(super) fn explicit_class_variable(&mut self, entity: EntityId) -> Result<(), Error> {
         let variables = &self.graph.variable_instances;
         if !variables
@@ -396,6 +454,117 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn variable_template_partials_preserve_primary_and_definition_ownership() {
+        let source = SourceBuffer::new(
+            b"template<class T,class U,class=void>extern const bool v;\
+            template<class A,class B,class C>const bool v=false;\
+            template<class X,class Y,class Z>extern const bool v;\
+            template<class P>const bool v<P,P> =true;\
+            template<class Q>int v<Q*,Q*> =sizeof(typename Q::missing);\
+            template<class T>void unused(){int ignored<T>;}\
+            template<class T>struct A{int ignored<T>;};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"variable-patterns").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"v").unwrap();
+        let initializer_count = tree.expressions.mark();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let binding = graph
+            .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let primary = graph.binding(binding).entity;
+        let variables = &graph.variable_instances;
+        let partials = &variables.partials[&primary];
+        assert_eq!(partials.len(), 2);
+        assert_ne!(partials[0].1, partials[1].1);
+        assert_ne!(partials[0].1, primary);
+        assert_eq!(variables.patterns.len(), 3);
+        assert!(variables.demands.is_empty());
+        assert!(variables.links.is_empty());
+        assert!(variables.states.is_empty());
+        assert_eq!(variables.deferred_declarations.len(), 2);
+        assert!(graph.entity(primary).defined);
+        let pattern = variables.patterns[&primary];
+        assert_ne!(pattern.head, graph.entity(primary).template_head);
+        assert_ne!(pattern.head, graph.entity(partials[0].1).template_head);
+        // Heads of identical shape have canonical parameter positions, but
+        // each definition retains its actual scope and initializer syntax.
+        assert_ne!(pattern.scope, variables.patterns[&partials[0].1].scope);
+        for &entity in &[primary, partials[0].1, partials[1].1] {
+            let pattern = variables.patterns[&entity];
+            let ast::InitializerKind::Assign(expression) = pattern.initializer.unwrap().kind else {
+                panic!("pattern lost initializer");
+            };
+            assert!(graph.expression_facts.get(expression).is_err());
+        }
+        assert_eq!(tree.expressions.mark(), initializer_count);
+        assert!(partials.iter().all(|(arguments, _)| arguments.len() == 3));
+    }
+
+    #[test]
+    fn invalid_partial_does_not_replace_or_register_the_primary() {
+        for (tail, message) in [
+            (
+                "template<class U>int v<U>;",
+                "a partial specialization whose arguments are its template's own parameters",
+            ),
+            (
+                "template<class U=int>int v<U*>;",
+                "a default template argument in a partial specialization's template parameter list",
+            ),
+            (
+                "template<class U>int v<typename U::missing>;",
+                "a partial specialization's template parameter that its arguments do not deduce",
+            ),
+        ] {
+            let source =
+                SourceBuffer::new(format!("template<class T>extern int v;{tail}").into_bytes())
+                    .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"partial-publication").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let name = cursor.intern_name(b"v").unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let result = analyzer.declarations(declarations, analyzer.graph.global);
+            assert!(
+                matches!(result, Err(Error::Diagnostic{message: actual,..}) if actual==message)
+            );
+            assert_eq!(analyzer.template_depth, 0);
+            assert!(analyzer.template_head.is_none());
+            let binding = analyzer
+                .graph
+                .own(
+                    analyzer.graph.global,
+                    name,
+                    super::super::lookup::Filter::Ordinary,
+                )
+                .unwrap();
+            let entity = analyzer.graph.binding(binding).entity;
+            assert!(analyzer.graph.entity(entity).template_head.is_some());
+            assert!(!analyzer.graph.entity(entity).defined);
+            let variables = &analyzer.graph.variable_instances;
+            assert!(variables.partials.is_empty());
+            assert_eq!(variables.patterns.len(), 1);
+            assert!(variables.demands.is_empty());
+        }
+    }
 
     #[test]
     fn declarations_initializers_and_storage_are_independent_memoized_facts() {

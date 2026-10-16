@@ -279,6 +279,12 @@ impl Analyzer<'_> {
             return Ok(None);
         }
         let kind = self.graph.binding(binding).kind;
+        if self.semantic() && self.variable_template_primary(binding).is_some() {
+            return Err(Error::at(
+                node.location,
+                "a variable template named without template arguments",
+            ));
+        }
         if matches!(kind, BindingKind::Namespace | BindingKind::NamespaceAlias) {
             return Err(Error::at(node.location, "namespace name used as a value"));
         }

@@ -133,8 +133,8 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("class template without head"))?;
-        self.supported_class_head(head)?;
-        let arguments = self.class_template_arguments(component, scope)?;
+        self.supported_type_template_head(head)?;
+        let arguments = self.type_template_arguments(component, scope)?;
         let count = self.graph.templates.parameters(head).len();
         let result = self.class_template_with_defaults(primary, arguments, component.location)?;
         // Only the template's own arguments in its definition denote the
@@ -196,28 +196,6 @@ impl Analyzer<'_> {
         .then_some(primary))
     }
 
-    pub(super) fn class_template_arguments(
-        &mut self,
-        component: ast::NameComponent,
-        scope: ScopeId,
-    ) -> Result<Vec<TypeId>, Error> {
-        let syntax = component
-            .arguments
-            .ok_or(Error::Invariant("template-id without arguments"))?;
-        let mut arguments = Vec::new();
-        for index in 0..self.tree.template_arguments.get(syntax).len() {
-            let argument = self.tree.template_arguments.get(syntax)[index];
-            if argument.pack {
-                return Err(Error::Missing("class template argument expansion"));
-            }
-            let ty = self
-                .template_type_argument(argument, scope, component.location)?
-                .ok_or(Error::Missing("non-type class template arguments"))?;
-            arguments.push(self.graph.types.canonical_function(ty)?);
-        }
-        Ok(arguments)
-    }
-
     pub(super) fn class_template_with_defaults(
         &mut self,
         primary: EntityId,
@@ -229,7 +207,7 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("specialization without template head"))?;
-        self.supported_class_head(head)?;
+        self.supported_type_template_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count {
             return Err(Error::at(location, "too many template arguments"));
@@ -240,7 +218,7 @@ impl Analyzer<'_> {
             return Ok(binding);
         }
         let mut full = key.arguments.clone();
-        self.class_template_defaults(head, &mut full, location)?;
+        self.complete_type_template_arguments(head, &mut full, location)?;
         let entity = self.class_specialization(primary, full)?;
         let binding = self.graph.class_templates.binding(entity)?;
         if omitted {
@@ -249,29 +227,17 @@ impl Analyzer<'_> {
         Ok(binding)
     }
 
-    fn supported_class_head(&self, head: HeadId) -> Result<(), Error> {
-        for &parameter in self.graph.templates.parameters(head) {
-            if !self
-                .graph
-                .entity(parameter)
-                .template_parameter
-                .is_some_and(super::templates::ParameterInfo::ordinary_type)
-            {
-                return Err(Error::Missing(
-                    "class template packs or template parameters",
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    fn class_template_defaults(
+    pub(super) fn complete_type_template_arguments(
         &mut self,
         head: HeadId,
         arguments: &mut Vec<TypeId>,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        self.supported_type_template_head(head)?;
         let count = self.graph.templates.parameters(head).len();
+        if arguments.len() > count {
+            return Err(Error::at(location, "too many template arguments"));
+        }
         for index in arguments.len()..count {
             let default = self
                 .graph
@@ -387,7 +353,7 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("substituted template without head"))?;
-        self.supported_class_head(head)?;
+        self.supported_type_template_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count {
             return Ok(None);

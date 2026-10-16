@@ -121,6 +121,22 @@ impl Templates {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn supported_type_template_head(&self, head: HeadId) -> Result<(), Error> {
+        for &parameter in self.graph.templates.parameters(head) {
+            if !self
+                .graph
+                .entity(parameter)
+                .template_parameter
+                .is_some_and(super::templates::ParameterInfo::ordinary_type)
+            {
+                return Err(Error::Missing(
+                    "template packs or template template-parameters",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn declaration_scope(&self, mut scope: ScopeId) -> ScopeId {
         while self.graph.scope(scope).kind == ScopeKind::TemplateParameters {
             let Some(parent) = self.graph.scope(scope).parent else {
