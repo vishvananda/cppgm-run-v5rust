@@ -124,6 +124,7 @@ impl Analyzer<'_> {
         let saved_head = self.template_head.take();
         let saved_initializing = self.initializing.take();
         let saved_base = self.base_object.take();
+        let saved_uses = self.dependent_uses.replace(0);
         let result = (|| {
             if matches!(
                 self.tree.expressions.get(copy).kind,
@@ -151,6 +152,7 @@ impl Analyzer<'_> {
         self.template_head = saved_head;
         self.initializing = saved_initializing;
         self.base_object = saved_base;
+        self.dependent_uses.set(saved_uses);
         result?;
         let count = self.graph.types.function_parameter_count(ty)?;
         self.graph.entity_mut(entity).defaults.resize(count, None);
@@ -242,12 +244,14 @@ mod tests {
         analyzer.declaration(declaration, global).unwrap();
         let head = analyzer.template_head;
         let saved_limit = analyzer.graph.lookup_limit;
+        analyzer.dependent_uses.set(17);
         let declaration = analyzer.tree.decl_lists.get(declarations)[1];
         assert!(matches!(
             analyzer.declaration(declaration, global),
             Err(Error::InstantiationDiagnostic { .. })
         ));
         assert_eq!(analyzer.graph.lookup_limit, saved_limit);
+        assert_eq!(analyzer.dependent_uses.get(), 17);
         assert_eq!(analyzer.template_head, head);
         assert_eq!(analyzer.unevaluated, 0);
         assert_eq!(analyzer.template_depth, 0);

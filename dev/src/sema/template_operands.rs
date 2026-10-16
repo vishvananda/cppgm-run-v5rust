@@ -339,6 +339,9 @@ impl Analyzer<'_> {
         let saved_initializing = self.initializing.take();
         let saved_base = self.base_object.take();
         let saved_member = self.member_initializer_class.take();
+        // Operand substitution is an independent instantiation query. Its
+        // pattern names must not mark the expression demanding it dependent.
+        let saved_uses = self.dependent_uses.replace(0);
         let result = match query {
             Query::Type => self.decltype_type(copy, scope).map(Evaluation::Type),
             Query::Bound => self.array_bound(copy, scope).map(Evaluation::Bound),
@@ -357,6 +360,7 @@ impl Analyzer<'_> {
         self.initializing = saved_initializing;
         self.base_object = saved_base;
         self.member_initializer_class = saved_member;
+        self.dependent_uses.set(saved_uses);
         result
     }
 
@@ -664,7 +668,7 @@ mod tests {
     #[test]
     fn invalid_operand_removes_in_progress_state_and_restores_caller() {
         let source =
-            SourceBuffer::new(b"template<class T>auto f(T x)->decltype(x.missing());".to_vec())
+            SourceBuffer::new(b"template<class T>auto f(T x)->decltype(T(),x.missing());".to_vec())
                 .unwrap();
         let mut unit =
             SyntaxUnit::new(Preprocessor::with_name(&source, b"operand-failure").unwrap());
@@ -697,6 +701,7 @@ mod tests {
         analyzer.default_argument_scope = Some(scope);
         analyzer.initializing = Some(entity);
         analyzer.base_object = Some(entity);
+        analyzer.dependent_uses.set(17);
         let args = [Some(argument)];
         let mut environment = Substitution::new(0, &args);
         assert_eq!(
@@ -712,6 +717,8 @@ mod tests {
             None
         );
         assert!(analyzer.graph.template_operands.substitutions.is_empty());
+        assert!(analyzer.graph.template_operands.active.is_empty());
+        assert_eq!(analyzer.dependent_uses.get(), 17);
         assert_eq!(analyzer.template_depth, 4);
         assert_eq!(analyzer.class_depth, 2);
         assert_eq!(analyzer.unevaluated, 3);
