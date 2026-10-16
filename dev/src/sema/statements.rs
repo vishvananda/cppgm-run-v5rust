@@ -335,6 +335,8 @@ impl Analyzer<'_> {
                             key: Keyword::Int,
                         },
                     )?;
+                    self.graph
+                        .set_binding_dependence(binding, self.graph.dependent_type(info.ty));
                     if let Some(declarator) = declarator {
                         super::record(
                             &mut self.graph.declared_bindings,
@@ -406,6 +408,8 @@ impl Analyzer<'_> {
                 key: Keyword::Int,
             },
         )?;
+        self.graph
+            .set_binding_dependence(binding, self.graph.dependent_type(info.ty));
         super::record(
             &mut self.graph.declared_bindings,
             declarator.index(),

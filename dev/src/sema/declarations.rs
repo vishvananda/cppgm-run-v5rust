@@ -697,7 +697,16 @@ impl Analyzer<'_> {
         let location = self.declarator_location(init.declarator)?;
         if specs.role == DeclarationRole::Typedef {
             self.settle_declaration_access(None)?;
-            return self.declare_typedef_binding(init.declarator, name, info.ty, home, location);
+            self.declare_typedef_binding(init.declarator, name, info.ty, home, location)?;
+            if self.graph.scope(home).kind == ScopeKind::Block {
+                let binding = self.graph.declared_bindings[init.declarator.index()]
+                    .ok_or(Error::Invariant("typedef without binding"))?;
+                self.graph.set_binding_dependence(
+                    binding,
+                    self.dependent_uses.get() != specs.dependent_uses,
+                );
+            }
+            return Ok(());
         }
         self.deduce_declared_object(&mut info, specs, init, home, location, deduced)?;
         let mut ty = info.ty;
@@ -777,6 +786,10 @@ impl Analyzer<'_> {
             location,
             specs,
         )?;
+        if self.graph.scope(home).kind == ScopeKind::Block {
+            self.graph
+                .set_binding_dependence(binding, self.dependent_uses.get() != specs.dependent_uses);
+        }
         super::record(
             &mut self.graph.declared_bindings,
             init.declarator.index(),

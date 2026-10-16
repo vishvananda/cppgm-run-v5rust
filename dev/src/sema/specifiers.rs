@@ -53,6 +53,7 @@ pub(super) enum Friendship {
 }
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
+    pub dependent_uses: u64,
     pub friendship: Friendship,
     pub auto_cv: Cv,
     pub inline: InlinePreference,
@@ -91,6 +92,7 @@ impl Analyzer<'_> {
         lone: bool,
         special: bool,
     ) -> Result<(Specifiers, Option<TypeId>), Error> {
+        let dependent_uses = self.dependent_uses.get();
         let mut friendship = Friendship::Ordinary;
         let mut cv = Cv::default();
         let mut typedef = false;
@@ -210,6 +212,7 @@ impl Analyzer<'_> {
         };
         Ok((
             Specifiers {
+                dependent_uses,
                 friendship,
                 auto_cv: cv,
                 inline,

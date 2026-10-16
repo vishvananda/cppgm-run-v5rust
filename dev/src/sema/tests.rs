@@ -448,7 +448,7 @@ fn hidden_friend_identity_and_visibility_have_distinct_source_boundaries() {
         .unwrap();
     graph.lookup_limit = Some(first_visible - 1);
     assert!(graph.own(graph.global, f, Filter::Ordinary).is_none());
-    assert!(graph.binding_visible_at_limit(hidden));
+    assert!(graph.binding_visible_before(hidden, graph.lookup_limit));
     assert_eq!(graph.friendships.functions(class, f.into()).len(), 2);
 }
 

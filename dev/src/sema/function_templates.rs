@@ -191,6 +191,14 @@ impl Analyzer<'_> {
                 "class or alias template specialization lookup",
             ));
         }
+        let given = self.explicit_function_arguments(syntax, scope)?;
+        self.specialize_explicit_functions(component, found, &given, call)
+    }
+    pub(super) fn explicit_function_arguments(
+        &mut self,
+        syntax: crate::syntax::storage::List<ast::TemplateArgument>,
+        scope: ScopeId,
+    ) -> Result<Vec<TypeId>, Error> {
         let mut given = Vec::new();
         for syntax_index in 0..self.tree.template_arguments.get(syntax).len() {
             let syntax_item = self.tree.template_arguments.get(syntax)[syntax_index];
@@ -204,6 +212,15 @@ impl Analyzer<'_> {
             let ty = self.type_syntax(ty, scope)?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
+        Ok(given)
+    }
+    pub(super) fn specialize_explicit_functions(
+        &mut self,
+        component: ast::NameComponent,
+        found: &mut LookupResult,
+        given: &[TypeId],
+        call: bool,
+    ) -> Result<(), Error> {
         let mut specializations = FunctionCandidates::default();
         for &primary in found.functions.as_slice() {
             let Some(head) = self.function_template_head(primary)? else {
@@ -214,7 +231,7 @@ impl Analyzer<'_> {
                 continue;
             }
             let mut arguments = vec![None; count];
-            for (slot, &argument) in arguments.iter_mut().zip(&given) {
+            for (slot, &argument) in arguments.iter_mut().zip(given) {
                 *slot = Some(argument);
             }
             let partial = (given.len()..count)

@@ -106,6 +106,7 @@ impl Analyzer<'_> {
             named = inner;
         }
         let facts = if let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind {
+            let callee_uses = self.dependent_uses.get();
             let mut found = self.lookup_call_result(name, scope)?;
             if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
                 return Ok(facts);
@@ -142,6 +143,21 @@ impl Analyzer<'_> {
             } else {
                 None
             };
+            let component = *self
+                .tree
+                .name_lists
+                .get(syntax_name.components)
+                .last()
+                .ok_or(Error::Invariant("empty call name"))?;
+            let explicit = component
+                .arguments
+                .map(|syntax| self.explicit_function_arguments(syntax, scope))
+                .transpose()?;
+            let uses = if component.arguments.is_some() {
+                callee_uses
+            } else {
+                self.dependent_uses.get()
+            };
             for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
                 let argument = self.tree.expr_lists.get(arguments)[syntax_index];
                 self.type_call_argument(argument, scope)?;
@@ -157,9 +173,11 @@ impl Analyzer<'_> {
                         })
                 })
             {
-                let component = self.tree.name_lists.get(syntax_name.components)[0];
                 let key = Self::expression_name(component.kind)?;
-                self.argument_dependent_lookup(key, arguments, &mut found)?;
+                let context = super::call_lookup::AssociationContext::from_dependence(
+                    self.dependent_uses.get() != uses,
+                );
+                self.argument_dependent_lookup(key, arguments, &mut found, context)?;
             }
             if found.binding.is_none() {
                 return Err(Error::at(
@@ -178,10 +196,8 @@ impl Analyzer<'_> {
                     },
                 ));
             }
-            if let Some(component) = self.tree.name_lists.get(syntax_name.components).last()
-                && component.arguments.is_some()
-            {
-                self.explicit_function_specializations(*component, &mut found, scope, true)?;
+            if let Some(given) = explicit {
+                self.specialize_explicit_functions(component, &mut found, &given, true)?;
             }
             let facts = if let Some(facts) = named_value {
                 facts

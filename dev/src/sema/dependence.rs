@@ -18,6 +18,67 @@ use crate::{
 };
 
 impl Analyzer<'_> {
+    pub(super) fn note_dependent_use(&self) {
+        self.dependent_uses
+            .set(self.dependent_uses.get().wrapping_add(1));
+    }
+
+    /// C++ `lookup.cpp::DependentClassScope`, including concrete instances and
+    /// local classes: dependence here describes the pattern, not today's type.
+    pub(super) fn dependent_lookup_class(&self, mut scope: ScopeId) -> bool {
+        loop {
+            let node = self.graph.scope(scope);
+            if node.kind != ScopeKind::Class {
+                return node.kind != ScopeKind::Namespace;
+            }
+            if node.owner.is_none_or(|class| {
+                self.graph.entity(class).template_head.is_some()
+                    || self.graph.class_templates.instance(class).is_some()
+                    || self
+                        .graph
+                        .class_templates
+                        .definitions
+                        .source(class)
+                        .is_some()
+            }) {
+                return true;
+            }
+            let Some(parent) = node.parent else {
+                return false;
+            };
+            scope = parent;
+        }
+    }
+
+    pub(super) fn parameter_dependence(
+        &self,
+        function: super::graph::EntityId,
+        count: usize,
+    ) -> Result<Option<TypeId>, Error> {
+        let mut source = function;
+        for _ in 0..64 {
+            let next = self
+                .graph
+                .function_templates
+                .primary(source)
+                .map(|binding| self.graph.binding(binding).entity)
+                .or_else(|| self.graph.function_templates.bodies.source(source));
+            let Some(next) = next.filter(|&next| next != source) else {
+                break;
+            };
+            source = next;
+        }
+        if source == function {
+            return Ok(None);
+        }
+        let ty = self
+            .graph
+            .entity(source)
+            .ty
+            .ok_or(Error::Invariant("parameter pattern without type"))?;
+        Ok((self.graph.types.function_parameter_count(ty)? == count).then_some(ty))
+    }
+
     pub(super) fn key_call_resolution(
         &mut self,
         callee: ast::ExprId,
@@ -245,6 +306,28 @@ impl Analyzer<'_> {
 use std::collections::HashSet;
 
 impl super::graph::Graph {
+    fn type_has_template_owner(&self, entity: super::graph::EntityId) -> bool {
+        let node = self.entity(entity);
+        let mut scope = node
+            .enumeration
+            .map(|enumeration| enumeration.owner)
+            .or(node.home);
+        while let Some(current) = scope {
+            let node = self.scope(current);
+            if node.kind != ScopeKind::Class {
+                break;
+            }
+            if node
+                .owner
+                .is_some_and(|owner| self.entity(owner).template_head.is_some())
+            {
+                return true;
+            }
+            scope = node.parent;
+        }
+        false
+    }
+
     pub(super) fn dependent_type(&self, root: TypeId) -> bool {
         let mut work = vec![root];
         let mut visited = HashSet::new();
@@ -256,6 +339,7 @@ impl super::graph::Graph {
                 TypeKind::TemplateParameter { .. } => return true,
                 TypeKind::Class(entity)
                     if self.entity(*entity).template_head.is_some()
+                        || self.type_has_template_owner(*entity)
                         || self
                             .class_templates
                             .instance(*entity)
@@ -263,6 +347,7 @@ impl super::graph::Graph {
                 {
                     return true;
                 }
+                TypeKind::Enum(entity) if self.type_has_template_owner(*entity) => return true,
                 TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
                     work.push(*element);
                 }

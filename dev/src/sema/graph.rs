@@ -257,6 +257,7 @@ pub(crate) struct Graph {
     pub(super) declared_bindings: Vec<Option<BindingId>>,
     pub(super) type_facts: Vec<Option<TypeId>>,
     enum_declarations: Vec<Option<BindingId>>,
+    dependent_bindings: Vec<bool>,
     pub(super) binding_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) special_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
@@ -451,6 +452,7 @@ impl Graph {
             type_facts: Vec::new(),
             resolved_names: Vec::new(),
             enum_declarations: Vec::new(),
+            dependent_bindings: Vec::new(),
             binding_labels: HashMap::new(),
             special_labels: HashMap::new(),
             constant_facts: Vec::new(),
@@ -505,6 +507,12 @@ impl Graph {
     }
     pub(super) fn binding(&self, id: BindingId) -> Binding {
         self.bindings[id.0 as usize]
+    }
+    pub(super) fn dependent_binding(&self, id: BindingId) -> bool {
+        self.dependent_bindings[id.0 as usize]
+    }
+    pub(super) fn set_binding_dependence(&mut self, id: BindingId, dependent: bool) {
+        self.dependent_bindings[id.0 as usize] = dependent;
     }
     pub(super) fn complete_variable_type(
         &mut self,
@@ -757,6 +765,10 @@ impl Graph {
             self.friendships.hide(id);
         }
         self.bindings.push(binding);
+        // Analyzer::declare_in conservatively marks block declarations;
+        // variables and typedef declarators refine this after their type forms.
+        self.dependent_bindings
+            .push(visible && self.scope(scope).kind == ScopeKind::Block);
         self.binding_scopes.push(scope);
         self.ordinals.push(ordinal);
         if binding.kind == BindingKind::Function {
@@ -953,18 +965,26 @@ impl Graph {
         scope: ScopeId,
         key: super::function_names::ValueKey,
     ) -> impl Iterator<Item = BindingId> + '_ {
+        self.associated_functions_at(scope, key, self.lookup_limit)
+    }
+    pub(super) fn associated_functions_at(
+        &self,
+        scope: ScopeId,
+        key: super::function_names::ValueKey,
+        limit: Option<usize>,
+    ) -> impl Iterator<Item = BindingId> + '_ {
         self.visible_function_sets
             .get(&(scope, key))
             .into_iter()
             .flatten()
             .copied()
             .filter(move |&id| {
-                self.scope(scope).kind != ScopeKind::Namespace || self.binding_visible_at_limit(id)
+                self.scope(scope).kind != ScopeKind::Namespace
+                    || self.binding_visible_before(id, limit)
             })
     }
-    pub(super) fn binding_visible_at_limit(&self, id: BindingId) -> bool {
-        self.lookup_limit
-            .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+    pub(super) fn binding_visible_before(&self, id: BindingId, limit: Option<usize>) -> bool {
+        limit.is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
     }
     // An ordinal cursor lets declaration matching intern canonical types without
     // borrowing the index or allocating a copy of its candidate set.

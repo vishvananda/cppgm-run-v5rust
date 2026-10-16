@@ -461,6 +461,14 @@ impl Analyzer<'_> {
                 }
             }
             if result.binding.is_some() {
+                if let Some(binding) = result.binding
+                    && ((node.kind == ScopeKind::TemplateParameters
+                        && self.graph.binding(binding).kind != BindingKind::Enumerator)
+                        || self.graph.dependent_binding(binding)
+                        || (node.kind == ScopeKind::Class && self.dependent_lookup_class(scope)))
+                {
+                    self.note_dependent_use();
+                }
                 return Ok(result);
             }
             current = self.graph.scope(scope).parent;
@@ -633,8 +641,11 @@ impl Analyzer<'_> {
                 if matches!(binding.kind, BindingKind::Type | BindingKind::Alias)
                     && let Some(ty) = binding.ty
                     && self.graph.dependent_type(ty)
-                    && !matches!(self.graph.types.get(ty).kind, TypeKind::Class(class)
-                        if self.graph.entity(class).template_head.is_some())
+                    && match self.graph.types.get(ty).kind {
+                        TypeKind::Class(class) => self.graph.entity(class).scope.is_none(),
+                        TypeKind::Enum(_) => false,
+                        _ => true,
+                    }
                 {
                     Prefix::Dependent(ty)
                 } else {

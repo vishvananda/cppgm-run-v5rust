@@ -11,6 +11,22 @@ use super::{
 use crate::syntax::{ast, storage::List};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Clone, Copy)]
+pub(super) enum AssociationContext {
+    Definition,
+    Instantiation,
+}
+
+impl AssociationContext {
+    pub(super) fn from_dependence(dependent: bool) -> Self {
+        if dependent {
+            Self::Instantiation
+        } else {
+            Self::Definition
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct AssociationScratch {
     types: Vec<(TypeId, u32)>,
@@ -54,6 +70,7 @@ impl Analyzer<'_> {
         name: ValueKey,
         arguments: List<ast::ExprId>,
         found: &mut LookupResult,
+        context: AssociationContext,
     ) -> Result<(), Error> {
         if let Some(binding) = found.binding {
             if self.graph.binding(binding).kind != BindingKind::Function {
@@ -68,13 +85,14 @@ impl Analyzer<'_> {
         }
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
-        self.associated_functions(name, argument_buffer.as_slice(), found)
+        self.associated_functions(name, argument_buffer.as_slice(), found, context)
     }
     pub(super) fn associated_functions(
         &mut self,
         name: ValueKey,
         arguments: &[ast::ExprId],
         found: &mut LookupResult,
+        context: AssociationContext,
     ) -> Result<(), Error> {
         let mut scratch = std::mem::take(&mut self.association_scratch);
         let result = (|| {
@@ -92,7 +110,7 @@ impl Analyzer<'_> {
                     scratch.types.push((facts.ty, 0));
                 }
             }
-            self.associated_query(name, found, &mut scratch)
+            self.associated_query(name, found, &mut scratch, context)
         })();
         scratch.clear();
         self.association_scratch = scratch;
@@ -108,7 +126,8 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let mut scratch = std::mem::take(&mut self.association_scratch);
         scratch.types.extend(arguments.iter().map(|&ty| (ty, 0)));
-        let result = self.associated_query(name, found, &mut scratch);
+        let result =
+            self.associated_query(name, found, &mut scratch, AssociationContext::Definition);
         scratch.clear();
         self.association_scratch = scratch;
         result
@@ -118,7 +137,12 @@ impl Analyzer<'_> {
         name: ValueKey,
         found: &mut LookupResult,
         scratch: &mut AssociationScratch,
+        context: AssociationContext,
     ) -> Result<(), Error> {
+        let limit = match context {
+            AssociationContext::Definition => self.graph.lookup_limit,
+            AssociationContext::Instantiation => None,
+        };
         let AssociationScratch {
             types,
             seen_types,
@@ -216,14 +240,16 @@ impl Analyzer<'_> {
             if !seen_namespaces.insert(scope) {
                 continue;
             }
-            namespaces.extend(self.graph.visible_edges(scope, true));
             let node = self.graph.scope(scope);
+            // Association follows all inline members. The selected context
+            // limits the functions found there, not the namespace edges.
+            namespaces.extend(node.inline_members.iter().map(|edge| edge.target));
             if node.is_inline
                 && let Some(parent) = node.parent
             {
                 namespaces.push(parent);
             }
-            for binding in self.graph.visible_functions_at(scope, name) {
+            for binding in self.graph.associated_functions_at(scope, name, limit) {
                 if seen_functions.insert(self.graph.binding(binding).entity) {
                     found.functions.push(binding);
                     if found.binding.is_none() {
@@ -233,8 +259,15 @@ impl Analyzer<'_> {
             }
         }
         for class in classes.drain(..) {
+            let instance = self.graph.class_templates.instance(class).is_some()
+                || self
+                    .graph
+                    .class_templates
+                    .definitions
+                    .source(class)
+                    .is_some();
             for &binding in self.graph.friendships.functions(class, name) {
-                if self.graph.binding_visible_at_limit(binding)
+                if (instance || self.graph.binding_visible_before(binding, limit))
                     && seen_functions.insert(self.graph.binding(binding).entity)
                 {
                     found.functions.push(binding);

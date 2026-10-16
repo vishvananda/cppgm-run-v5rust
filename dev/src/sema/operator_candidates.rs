@@ -121,7 +121,21 @@ impl Analyzer<'_> {
             break;
         }
         let mut adl = LookupResult::default();
-        self.associated_functions(key, operands, &mut adl)?;
+        let mut dependent = false;
+        for &operand in operands {
+            dependent |= self
+                .graph
+                .expression_facts
+                .get(operand)?
+                .dependence
+                .is_dependent();
+        }
+        self.associated_functions(
+            key,
+            operands,
+            &mut adl,
+            super::call_lookup::AssociationContext::from_dependence(dependent),
+        )?;
         for &binding in adl.functions.as_slice() {
             if !self.class_operator(binding) && seen.insert(self.graph.binding(binding).entity) {
                 set.push(binding);

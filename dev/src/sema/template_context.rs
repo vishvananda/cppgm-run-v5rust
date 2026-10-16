@@ -40,6 +40,7 @@ struct Context {
     instantiation_depth: u32,
     class_depth: usize,
     unevaluated: u32,
+    dependent_uses: std::cell::Cell<u64>,
     c_language: bool,
     linkage: Option<super::linkage::Specification>,
     suppress_implicit: bool,
@@ -69,6 +70,7 @@ impl Context {
         );
         swap(&mut self.class_depth, &mut analyzer.class_depth);
         swap(&mut self.unevaluated, &mut analyzer.unevaluated);
+        swap(&mut self.dependent_uses, &mut analyzer.dependent_uses);
         swap(&mut self.c_language, &mut analyzer.c_language);
         swap(&mut self.linkage, &mut analyzer.linkage_specification);
         swap(&mut self.suppress_implicit, &mut analyzer.suppress_implicit);
@@ -134,12 +136,21 @@ mod tests {
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         analyzer.instantiation_depth = 7;
+        analyzer.dependent_uses.set(11);
         let result = analyzer.instantiation_context(1023, SourceOffset(0), 0, |inner| {
             assert_eq!(inner.instantiation_depth, 1024);
+            inner.note_dependent_use();
             Ok(())
         });
         assert!(result.is_ok());
         assert_eq!(analyzer.instantiation_depth, 7);
+        assert_eq!(analyzer.dependent_uses.get(), 11);
+        let result = analyzer.instantiation_context(0, SourceOffset(0), 0, |inner| {
+            inner.note_dependent_use();
+            Err::<(), _>(Error::Missing("test substitution"))
+        });
+        assert!(result.is_err());
+        assert_eq!(analyzer.dependent_uses.get(), 11);
         let result =
             analyzer.instantiation_context(1024, SourceOffset(0), 0, |_| -> Result<(), Error> {
                 panic!("logical limit must precede instantiation");

@@ -131,7 +131,23 @@ impl QueryKind {
     }
 }
 #[derive(Clone, Copy, Debug)]
+pub(super) enum ExpressionDependence {
+    Fixed,
+    Dependent,
+}
+impl ExpressionDependence {
+    pub(super) fn is_dependent(self) -> bool {
+        matches!(self, Self::Dependent)
+    }
+    pub(super) fn note(&mut self, dependent: bool) {
+        if dependent {
+            *self = Self::Dependent;
+        }
+    }
+}
+#[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
+    pub dependence: ExpressionDependence,
     pub ty: TypeId,
     pub category: ValueCategory,
     pub glvalue: GlvalueKind,
@@ -191,6 +207,7 @@ impl ExprFacts {
 
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
         Self {
+            dependence: ExpressionDependence::Fixed,
             ty,
             category,
             glvalue: GlvalueKind::Ordinary,

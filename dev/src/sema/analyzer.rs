@@ -41,6 +41,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) template_depth: usize,
     pub(super) instantiation_depth: u32,
     pub(super) incomplete_class_observations: u64,
+    pub(super) dependent_uses: std::cell::Cell<u64>,
     pub(super) c_language: bool,
     pub(super) linkage_specification: Option<super::linkage::Specification>,
     pub(super) template_head: Option<super::templates::HeadId>,
@@ -184,6 +185,7 @@ impl<'tree> Analyzer<'tree> {
             template_depth: 0,
             instantiation_depth: 0,
             incomplete_class_observations: 0,
+            dependent_uses: std::cell::Cell::new(0),
             c_language: false,
             linkage_specification: None,
             template_head: None,
@@ -418,6 +420,7 @@ impl<'tree> Analyzer<'tree> {
                 let ty = self.specifier_type(specifier, scope, true)?;
                 let storage = self.anonymous_union(
                     super::specifiers::Specifiers {
+                        dependent_uses: self.dependent_uses.get(),
                         friendship: super::specifiers::Friendship::Ordinary,
                         auto_cv: super::types::Cv::default(),
                         inline: super::specifiers::InlinePreference::Unspecified,
@@ -678,6 +681,7 @@ impl<'tree> Analyzer<'tree> {
         self.graph.scope_mut(scope).owner = Some(body.entity);
         self.graph.entity_mut(body.entity).scope = Some(scope);
         let count = self.graph.types.function_parameter_count(body.ty)?;
+        let pattern = self.parameter_dependence(body.entity, count)?;
         for index in 0..self
             .tree
             .parameters
@@ -711,7 +715,7 @@ impl<'tree> Analyzer<'tree> {
                 return Err(Error::at(location, "duplicate parameter name"));
             }
             let entity = self.graph.add_entity(Some(ty), name, Keyword::Int)?;
-            self.graph.add_binding(
+            let binding = self.graph.add_binding(
                 scope,
                 Some(scope),
                 Binding {
@@ -722,6 +726,13 @@ impl<'tree> Analyzer<'tree> {
                     key: Keyword::Int,
                 },
             )?;
+            let dependent = if let Some(pattern) = pattern {
+                self.graph
+                    .dependent_type(self.graph.types.function_parameter(pattern, index)?)
+            } else {
+                self.graph.lookup_limit.is_some()
+            };
+            self.graph.set_binding_dependence(binding, dependent);
             self.note_nothrow_target(entity, ty, parameter.declarator, scope)?;
         }
         let syntax_body = *self.tree.bodies.get(body.body);

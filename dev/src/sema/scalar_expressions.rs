@@ -18,6 +18,28 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        let uses = self.dependent_uses.get();
+        let result = self.typed_expression_form(id, scope);
+        if matches!(
+            self.tree.expressions.get(id).kind,
+            ExprKind::Sizeof { .. }
+                | ExprKind::SizeofPack(_)
+                | ExprKind::TypeTrait { .. }
+                | ExprKind::Delete { .. }
+                | ExprKind::Throw(_)
+        ) {
+            self.dependent_uses.set(uses);
+        }
+        let mut facts = result?;
+        facts.dependence.note(self.dependent_uses.get() != uses);
+        self.graph.expression_facts.set(id, facts);
+        Ok(facts)
+    }
+    fn typed_expression_form(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
         if self.deduced_initializer == Some(id) {
             self.deduced_initializer = None;
             return self.graph.expression_facts.get(id);
@@ -51,6 +73,7 @@ impl Analyzer<'_> {
                 self.new_expression_facts(ty, V::Prvalue)?
             }
             ExprKind::Keyword(Keyword::This) => {
+                self.note_dependent_use();
                 let object = self.current_object_type()?.ok_or_else(|| {
                     Error::at(node.location, "`this` outside a non-static member function")
                 })?;
@@ -441,6 +464,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
         let base = self.binary_spine.len();
+        let uses = self.dependent_uses.get();
         let result = (|| {
             let mut current = id;
             while let ExprKind::Binary {
@@ -466,13 +490,14 @@ impl Analyzer<'_> {
                 let Some(op) = op.token.as_punctuator() else {
                     return Err(Error::Invariant("nonpunctuator binary"));
                 };
-                let facts = if let Some(facts) =
+                let mut facts = if let Some(facts) =
                     self.overloaded_operator(current, op, &[left, right], false, scope)?
                 {
                     facts
                 } else {
                     self.scalar_binary(current, op, left, right, scope)?
                 };
+                facts.dependence.note(self.dependent_uses.get() != uses);
                 self.graph.expression_facts.set(current, facts);
                 super::record(&mut self.graph.expression_types, current.index(), facts.ty);
             }
