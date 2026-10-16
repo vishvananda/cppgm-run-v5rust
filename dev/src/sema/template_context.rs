@@ -2,7 +2,7 @@
 //! Isolate required instantiation from the expression/declaration demanding it.
 use super::{
     Error,
-    analyzer::{Analyzer, DeferredMember},
+    analyzer::{Analyzer, DeferredMember, SpecializationMode},
     declaration_access::DeclarationAccess,
     graph::{EntityId, ScopeId},
     procedural_statements::BodyContext,
@@ -38,6 +38,7 @@ struct Context {
     member: Option<EntityId>,
     template_depth: usize,
     specialization_levels: u32,
+    specialization_mode: SpecializationMode,
     instantiation_depth: u32,
     class_depth: usize,
     unevaluated: u32,
@@ -65,6 +66,10 @@ impl Context {
         swap(&mut self.base, &mut analyzer.base_object);
         swap(&mut self.member, &mut analyzer.member_initializer_class);
         swap(&mut self.template_depth, &mut analyzer.template_depth);
+        swap(
+            &mut self.specialization_mode,
+            &mut analyzer.specialization_mode,
+        );
         swap(
             &mut self.specialization_levels,
             &mut analyzer.specialization_levels,

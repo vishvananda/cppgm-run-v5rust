@@ -90,6 +90,7 @@ mod scalar_expressions;
 mod scalar_operators;
 mod semantics_dump;
 mod special_members;
+mod specialized_classes;
 mod specifiers;
 mod statements;
 mod static_arrays;

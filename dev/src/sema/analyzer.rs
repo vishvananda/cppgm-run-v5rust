@@ -21,6 +21,13 @@ pub(super) enum AnalysisMode {
     Lowering,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum SpecializationMode {
+    #[default]
+    Ordinary,
+    Explicit,
+}
+
 pub(crate) struct Analyzer<'tree> {
     pub(super) decltype_name: crate::lex::identifiers::NameId,
     pub(super) override_name: crate::lex::identifiers::NameId,
@@ -40,6 +47,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) base_object: Option<super::graph::EntityId>,
     pub(super) template_depth: usize,
     pub(super) specialization_levels: u32,
+    pub(super) specialization_mode: SpecializationMode,
     pub(super) instantiation_depth: u32,
     pub(super) incomplete_class_observations: u64,
     pub(super) dependent_uses: std::cell::Cell<u64>,
@@ -102,6 +110,10 @@ pub(super) enum DeferredMember {
     Defaults(super::default_arguments::PendingDefaults),
 }
 impl<'tree> Analyzer<'tree> {
+    pub(super) fn specializing(&self) -> bool {
+        self.specialization_mode == SpecializationMode::Explicit
+    }
+
     pub(crate) fn new(
         tree: &'tree mut Tree,
         cursor: &'tree mut Cursor<'_>,
@@ -187,6 +199,7 @@ impl<'tree> Analyzer<'tree> {
             base_object: None,
             template_depth: 0,
             specialization_levels: 0,
+            specialization_mode: SpecializationMode::Ordinary,
             instantiation_depth: 0,
             incomplete_class_observations: 0,
             dependent_uses: std::cell::Cell::new(0),

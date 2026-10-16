@@ -525,6 +525,10 @@ impl Graph {
                     && self.entity(entity).inline != super::specifiers::InlinePreference::Inline
             } else {
                 self.function_templates.instantiations.defined(entity)
+                    && (self.function_templates.bodies.member(entity)
+                        || self.function_templates.primary(entity).is_some()
+                        || self.entity(entity).inline
+                            != super::specifiers::InlinePreference::Inline)
             }
     }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {

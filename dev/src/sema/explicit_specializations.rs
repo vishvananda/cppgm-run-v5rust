@@ -2,7 +2,7 @@
 //! Explicit function definitions replace implicit body demand for the same key.
 use super::{
     Error,
-    analyzer::Analyzer,
+    analyzer::{Analyzer, SpecializationMode},
     declarators::DeclaratorInfo,
     function_demands::DefinitionEmission,
     function_names::Definition,
@@ -51,11 +51,14 @@ impl Analyzer<'_> {
             ));
         }
         let saved = self.specialization_levels;
+        let mode = self.specialization_mode;
         self.specialization_levels = saved
             .checked_add(1)
             .ok_or(Error::Limit("specialization nesting limit"))?;
+        self.specialization_mode = SpecializationMode::Explicit;
         let result = self.declaration(declaration, scope);
         self.specialization_levels = saved;
+        self.specialization_mode = mode;
         result
     }
 
@@ -67,7 +70,8 @@ impl Analyzer<'_> {
         location: SourceOffset,
         definition: Definition,
     ) -> Result<BindingId, Error> {
-        let levels = std::mem::take(&mut self.specialization_levels);
+        self.specialization_mode = SpecializationMode::Ordinary;
+        let levels = self.specialization_levels;
         if info
             .home
             .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class)

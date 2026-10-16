@@ -84,12 +84,7 @@ impl Analyzer<'_> {
         if self.graph.class_of(source).is_some() || self.graph.class_of(goal).is_some() {
             let second = if source == goal {
                 C::None
-            } else if self
-                .graph
-                .class_of(source)
-                .zip(self.graph.class_of(goal))
-                .is_some_and(|(derived, base)| self.graph.is_base_of(base, derived))
-            {
+            } else if self.derived_class_conversion(goal, source)? {
                 C::DerivedToBase
             } else {
                 return Ok(None);
@@ -117,6 +112,18 @@ impl Analyzer<'_> {
             _ => L::None,
         };
         let mut qualification = source != goal && self.pointer_qualification(source, goal)?;
+        let pointer_pair = match (
+            &self.graph.types.get(source).kind,
+            &self.graph.types.get(goal).kind,
+        ) {
+            (TypeKind::Pointer(a), TypeKind::Pointer(b)) => Some((*a, *b)),
+            _ => None,
+        };
+        let derived_pointer = if let Some((a, b)) = pointer_pair {
+            self.derived_class_conversion(b, a)?
+        } else {
+            false
+        };
         let promotion = self.is_integral_operand(source)
             && self.is_arithmetic_type(goal)
             && source != goal
@@ -159,10 +166,7 @@ impl Analyzer<'_> {
         {
             C::NullPointer
         } else if let (TypeKind::Pointer(a), TypeKind::Pointer(b)) = (sk, gk) {
-            if let (Some(derived), Some(base)) = (self.graph.class_of(*a), self.graph.class_of(*b))
-                && self.graph.is_base_of(base, derived)
-                && self.type_cv(*a).0 & !self.type_cv(*b).0 == 0
-            {
+            if derived_pointer && self.type_cv(*a).0 & !self.type_cv(*b).0 == 0 {
                 qualification = self.type_cv(*a) != self.type_cv(*b);
                 C::DerivedToBase
             } else if matches!(
@@ -267,11 +271,7 @@ impl Analyzer<'_> {
         let conversion = if let TypeKind::Reference { element, kind } =
             self.graph.types.get(target).kind
         {
-            let derived = self
-                .graph
-                .class_of(facts.ty)
-                .zip(self.graph.class_of(element))
-                .is_some_and(|(derived, base)| self.graph.is_base_of(base, derived));
+            let derived = self.derived_class_conversion(element, facts.ty)?;
             let related = derived || self.bare_type(element)? == self.bare_type(facts.ty)?;
             let compatible = related && self.type_cv(facts.ty).0 & !self.type_cv(element).0 == 0;
             let function = matches!(

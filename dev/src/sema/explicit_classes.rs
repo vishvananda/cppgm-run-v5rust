@@ -95,6 +95,15 @@ impl Analyzer<'_> {
                 "explicit instantiation of an undefined class template",
             ));
         }
+        if is_extern && self.graph.class_templates.definitions.explicit(entity) {
+            if self.graph.function_templates.instantiations.defined(entity) {
+                return Err(Error::at(
+                    node.location,
+                    "an explicit instantiation declaration after the definition",
+                ));
+            }
+            return Ok(());
+        }
         self.graph.function_templates.instantiations.record_class(
             entity,
             is_extern,
@@ -112,10 +121,13 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         self.check_stack()?;
-        self.graph
-            .function_templates
-            .instantiations
-            .demand_class(class);
+        let explicit = self.graph.class_templates.definitions.explicit(class);
+        if !explicit {
+            self.graph
+                .function_templates
+                .instantiations
+                .demand_class(class);
+        }
         let scope = self
             .graph
             .entity(class)
@@ -131,6 +143,13 @@ impl Analyzer<'_> {
             }
             match binding.kind {
                 BindingKind::Function => {
+                    if explicit && !self.graph.function_templates.bodies.member(entity) {
+                        self.graph
+                            .function_templates
+                            .instantiations
+                            .note_ordinary_definition(entity);
+                        continue;
+                    }
                     let special = self.graph.entity(entity).special_definition.or_else(|| {
                         self.graph
                             .function_templates

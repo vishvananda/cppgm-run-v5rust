@@ -70,6 +70,11 @@ impl Instantiations {
     pub(super) fn defined(&self, entity: EntityId) -> bool {
         matches!(self.states.get(&entity), Some(State::Definition))
     }
+    pub(super) fn note_ordinary_definition(&mut self, entity: EntityId) {
+        // An explicit class specialization's members are ordinary entities.
+        // Record their root flag without queueing implicit body demand.
+        self.states.insert(entity, State::Definition);
+    }
     pub(super) fn record(
         &mut self,
         binding: BindingId,

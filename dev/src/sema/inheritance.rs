@@ -139,6 +139,24 @@ impl Graph {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn derived_class_conversion(
+        &mut self,
+        base: TypeId,
+        derived: TypeId,
+    ) -> Result<bool, Error> {
+        let Some((base, derived)) = self.graph.class_of(base).zip(self.graph.class_of(derived))
+        else {
+            return Ok(false);
+        };
+        if base == derived {
+            return Ok(false);
+        }
+        // ConversionRules::is_base_of completes only the queried derived
+        // class. Its bases are completed by class_bases; member bodies wait.
+        self.complete_class(derived)?;
+        Ok(self.graph.is_base_of(base, derived))
+    }
+
     pub(super) fn conversion_base_path(
         &mut self,
         facts: super::expression_facts::ExprFacts,

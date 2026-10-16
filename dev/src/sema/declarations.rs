@@ -1520,6 +1520,12 @@ impl Analyzer<'_> {
             .is_some_and(|last| last.arguments.is_some())
         {
             if lone {
+                if self.specializing() {
+                    let entity = self.specialized_class(name, key, scope)?;
+                    return self.graph.entity(entity).ty.ok_or(Error::Invariant(
+                        "explicit class specialization without type",
+                    ));
+                }
                 if self.active_template_head(scope).is_some() {
                     return Err(Error::Missing(
                         "class template partial specialization declaration",
@@ -1608,6 +1614,17 @@ impl Analyzer<'_> {
             return self.define_class(node, entity, scope, scope);
         };
         let qualified_name = *self.tree.names.get(name);
+        if self.specializing()
+            && self.active_template_head(scope).is_none()
+            && self
+                .tree
+                .name_lists
+                .get(qualified_name.components)
+                .last()
+                .is_some_and(|last| last.arguments.is_some())
+        {
+            return self.class_explicit_specialization(node, name, scope);
+        }
         let prefix = self.prefix(name, scope)?;
         let home = prefix.unwrap_or(self.declaration_scope(scope));
         if prefix.is_some() && self.graph.scope(home).kind == ScopeKind::Enum {
@@ -1664,6 +1681,9 @@ impl Analyzer<'_> {
         } else {
             self.new_class(node.key, Some(key_name), home)?
         };
+        if prefix.is_some() && self.specializing() {
+            self.explicit_member_class(entity, home, qualified_name.location)?;
+        }
         if self.graph.entity(entity).defined {
             return Err(Error::at(qualified_name.location, "class redefinition"));
         }

@@ -460,9 +460,7 @@ impl Analyzer<'_> {
         definition: Definition,
     ) -> Result<BindingId, Error> {
         self.function_specifier_type(specs, info, scope)?;
-        if self.specialization_levels != 0
-            && specs.friendship != super::specifiers::Friendship::Friend
-        {
+        if self.specializing() && specs.friendship != super::specifiers::Friendship::Friend {
             return self.explicit_function_specialization(info, specs, scope, location, definition);
         }
         if specs.friendship == super::specifiers::Friendship::Friend

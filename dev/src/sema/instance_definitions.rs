@@ -8,7 +8,7 @@ use super::{
     templates::HeadId,
 };
 use crate::syntax::{ast, cloning::Cloner};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 struct Pattern {
@@ -29,8 +29,22 @@ pub(super) struct Definitions {
     members: HashMap<EntityId, Pattern>,
     sources: HashMap<EntityId, EntityId>,
     active: Vec<EntityId>,
+    explicit: HashSet<EntityId>,
 }
 impl Definitions {
+    pub(super) fn explicit(&self, entity: EntityId) -> bool {
+        self.explicit.contains(&entity)
+    }
+
+    pub(super) fn started(&self, entity: EntityId) -> bool {
+        self.states.contains_key(&entity)
+    }
+
+    pub(super) fn specialize(&mut self, entity: EntityId) {
+        self.explicit.insert(entity);
+        self.states.insert(entity, State::Complete);
+    }
+
     pub(super) fn active_depth(&self) -> usize {
         self.active.len()
     }
@@ -119,6 +133,7 @@ impl Analyzer<'_> {
     ) -> Result<bool, Error> {
         if self.template_depth != 0
             || self.graph.entity(entity).name.is_none()
+            || self.graph.class_templates.definitions.explicit(entity)
             || !self.graph.within_class_instance(parent)
         {
             return Ok(false);
@@ -325,6 +340,9 @@ impl super::graph::Graph {
             let Some(owner) = node.owner else {
                 return false;
             };
+            if self.class_templates.definitions.explicit(owner) {
+                return false;
+            }
             if self.class_templates.instance(owner).is_some() {
                 return true;
             }
