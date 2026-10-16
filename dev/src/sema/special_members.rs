@@ -234,7 +234,12 @@ impl Analyzer<'_> {
                 self.graph.entity_mut(function).special_name = Some(name);
             }
         }
-        self.record_function_exceptions(function, info, info.lookup, location, limit)?;
+        if first
+            || self.graph.entity(function).template_head.is_none()
+                && !self.class_template_member_redeclaration(info)
+        {
+            self.record_function_exceptions(function, info, info.lookup, location, limit)?;
+        }
         if first && self.semantic() && kind == MemberKind::Destructor {
             self.graph.entity_mut(function).destructor_specification =
                 if self.declarator_specifies_exceptions(Some(declarator)) {
@@ -581,6 +586,16 @@ impl Analyzer<'_> {
                 Keyword::Int,
             )?
         };
+        if earlier.is_some() && (head.is_some() || self.class_template_member_redeclaration(info)) {
+            self.record_function_exceptions(
+                function,
+                info,
+                info.lookup,
+                location,
+                self.graph.binding_limit(),
+            )?;
+        }
+        self.check_template_function_defaults(info, head, earlier.is_none(), location)?;
         if let Some(head) = head {
             self.merge_template_head(function, head, location)?;
         }

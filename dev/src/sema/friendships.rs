@@ -59,19 +59,6 @@ impl Analyzer<'_> {
             .filter(|component| component.arguments.is_some())
     }
 
-    pub(super) fn templated_friend_class(&self, scope: ScopeId) -> bool {
-        std::iter::successors(Some(self.declaration_scope(scope)), |&id| {
-            self.graph.scope(id).parent
-        })
-        .take_while(|&id| self.graph.scope(id).kind == ScopeKind::Class)
-        .any(|id| {
-            self.graph
-                .scope(id)
-                .owner
-                .is_some_and(|owner| self.graph.entity(owner).template_head.is_some())
-        })
-    }
-
     // analyzer_declarations.cpp::friend_specialization. A friend reference
     // has no namespace/class lookup or ADL publication and demands no body.
     pub(super) fn declare_friend_specialization(
@@ -99,7 +86,7 @@ impl Analyzer<'_> {
         let class = self.friend_owner(scope, location)?;
         // A class template retains its friend pattern; each instance resolves
         // it in its own frame. Do not grant the primary or select a signature.
-        if self.templated_friend_class(scope) {
+        if self.templated_class_scope(scope) {
             let name = self.tree.names.get(
                 info.syntax_name
                     .ok_or(Error::Invariant("friend pattern without a name"))?,

@@ -13,6 +13,29 @@ use super::{
 use crate::syntax::ast;
 
 impl Analyzer<'_> {
+    pub(super) fn templated_class_scope(&self, scope: ScopeId) -> bool {
+        std::iter::successors(Some(self.declaration_scope(scope)), |&id| {
+            self.graph.scope(id).parent
+        })
+        .take_while(|&id| self.graph.scope(id).kind == ScopeKind::Class)
+        .any(|id| {
+            self.graph
+                .scope(id)
+                .owner
+                .is_some_and(|owner| self.graph.entity(owner).template_head.is_some())
+        })
+    }
+
+    // class_templates.cpp::templated_class: qualified declarations name a
+    // class template or one of its member class patterns, not an instance.
+    pub(super) fn class_template_member_redeclaration(
+        &self,
+        info: &super::declarators::DeclaratorInfo,
+    ) -> bool {
+        info.home
+            .is_some_and(|home| self.templated_class_scope(home))
+    }
+
     fn declared_syntax_name(&self, declaration: ast::DeclId) -> Option<ast::Name> {
         let declarator = match self.tree.declarations.get(declaration).kind {
             ast::DeclKind::Function { declarator, .. }

@@ -596,7 +596,9 @@ impl<'tree> Analyzer<'tree> {
         if self.class_depth != 0 || specs.constexpr {
             self.graph.entity_mut(entity).inline = super::specifiers::InlinePreference::Inline;
         }
-        if self.graph.entity(entity).template_head.is_none() {
+        if self.graph.entity(entity).template_head.is_none()
+            && !self.class_template_member_redeclaration(&info)
+        {
             self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
         }
         self.virtual_declaration(binding, &info, specs, location)?;

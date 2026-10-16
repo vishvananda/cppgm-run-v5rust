@@ -269,7 +269,7 @@ impl Analyzer<'_> {
                 "declarations of a function that disagree on constexpr",
             ));
         }
-        if context.head.is_some() {
+        if context.head.is_some() || context.qualified && self.templated_class_scope(context.home) {
             let (info, limit) = context.function.ok_or(Error::Invariant(
                 "template redeclaration without declarator",
             ))?;
@@ -462,7 +462,7 @@ impl Analyzer<'_> {
         self.function_specifier_type(specs, info, scope)?;
         if specs.friendship == super::specifiers::Friendship::Friend
             && (self.function_template_id(info).is_some()
-                || info.home.is_some() && self.templated_friend_class(scope))
+                || info.home.is_some() && self.templated_class_scope(scope))
         {
             return self.declare_friend_specialization(info, specs, scope, location);
         }
@@ -572,7 +572,7 @@ impl Analyzer<'_> {
             info.ty,
             super::declarations::ValueScope {
                 qualified: info.home.is_some(),
-                pattern_friend: befriending.is_some() && self.templated_friend_class(scope),
+                pattern_friend: befriending.is_some() && self.templated_class_scope(scope),
                 variable_object: None,
                 home,
                 print: if befriending.is_some() {
@@ -603,7 +603,7 @@ impl Analyzer<'_> {
         if let Some(class) = befriending {
             let entity = self.graph.binding(binding).entity;
             self.graph.friendships.record(class, entity);
-            if !self.templated_friend_class(scope) && self.graph.friendships.hidden(binding) {
+            if !self.templated_class_scope(scope) && self.graph.friendships.hidden(binding) {
                 self.graph.friendships.index(class, key, binding);
             }
             if definition == Definition::Body {
@@ -832,7 +832,9 @@ impl Analyzer<'_> {
         let key = self.declaration_key(&info)?;
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
-        if self.graph.entity(entity).template_head.is_none() {
+        if self.graph.entity(entity).template_head.is_none()
+            && !self.class_template_member_redeclaration(&info)
+        {
             self.record_function_exceptions(entity, &info, info.lookup, location, limit)?;
         }
         self.virtual_declaration(binding, &info, specs, location)?;

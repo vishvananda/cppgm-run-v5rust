@@ -1194,26 +1194,13 @@ impl Analyzer<'_> {
                 },
             )?;
         }
-        if kind == BindingKind::Function
-            && let Some(head) = head
-        {
-            if existing.is_some()
-                && function
-                    .and_then(|(info, _)| info.parameters)
-                    .is_some_and(|clause| {
-                        self.tree
-                            .parameters
-                            .get(clause.parameters)
-                            .iter()
-                            .any(|parameter| parameter.default.is_some())
-                    })
-            {
-                return Err(Error::at(
-                    location,
-                    "a default argument added by a later declaration of a function template",
-                ));
+        if kind == BindingKind::Function {
+            if let Some((info, _)) = function {
+                self.check_template_function_defaults(info, head, existing.is_none(), location)?;
             }
-            self.merge_template_head(entity, head, location)?;
+            if let Some(head) = head {
+                self.merge_template_head(entity, head, location)?;
+            }
         }
         let ty = if kind == BindingKind::Variable
             && matches!(
