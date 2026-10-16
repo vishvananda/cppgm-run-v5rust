@@ -72,7 +72,8 @@ impl Analyzer<'_> {
                             self.key_type(ty, key)?;
                         }
                         TemplateArgumentKind::Expression(_) => {
-                            return Err(Error::Missing("non-type template argument key"));
+                            let ty = self.template_argument(argument, scope, component.location)?;
+                            self.key_type(ty, key)?;
                         }
                     }
                 }
@@ -110,7 +111,9 @@ impl Analyzer<'_> {
             .template_parameter
             .is_some()
         {
-            let ty = binding
+            let ty = self
+                .graph
+                .entity(binding.entity)
                 .ty
                 .ok_or(Error::Invariant("template parameter without type"))?;
             self.key_type(ty, key)?;

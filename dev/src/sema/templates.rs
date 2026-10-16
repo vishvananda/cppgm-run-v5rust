@@ -20,6 +20,7 @@ pub(super) struct HeadId(u32);
 pub(super) struct ShapeId(u32);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct ParameterShape {
+    non_type: bool,
     pack: bool,
     inner: Option<ShapeId>,
 }
@@ -33,6 +34,7 @@ struct Position {
 pub(super) struct ParameterInfo {
     position: Position,
     inner: Option<HeadId>,
+    pub(super) value_type: Option<TypeId>,
 }
 impl ParameterInfo {
     pub(super) fn is_pack(self) -> bool {
@@ -47,16 +49,16 @@ impl ParameterInfo {
         (self.position.depth == depth).then_some(usize::from(self.position.index))
     }
     pub(super) fn ordinal(self) -> Option<usize> {
-        self.ordinary_type()
+        self.fixed_parameter()
             .then_some(usize::from(self.position.index))
     }
-    pub(super) fn ordinary_type(self) -> bool {
+    pub(super) fn fixed_parameter(self) -> bool {
         !self.position.shape.pack && self.inner.is_none()
     }
 }
 #[derive(Clone, Copy)]
 pub(super) struct DefaultArgument {
-    pub syntax: ast::TypeId,
+    pub syntax: ast::TemplateArgumentKind,
     pub scope: ScopeId,
     pub limit: usize,
     pub bound: Option<TypeId>,
@@ -73,7 +75,7 @@ struct Head {
 #[derive(Default)]
 pub(super) struct Templates {
     heads: Vec<Head>,
-    shapes: HashMap<Vec<ParameterShape>, ShapeId>,
+    shapes: HashMap<Vec<(ParameterShape, Option<TypeId>)>, ShapeId>,
     positions: HashMap<Position, EntityId>,
 }
 impl Templates {
@@ -102,7 +104,11 @@ impl Templates {
     fn head_mut(&mut self, id: HeadId) -> &mut Head {
         &mut self.heads[id.0 as usize]
     }
-    fn add_head(&mut self, mut head: Head, shape: Vec<ParameterShape>) -> Result<HeadId, Error> {
+    fn add_head(
+        &mut self,
+        mut head: Head,
+        shape: Vec<(ParameterShape, Option<TypeId>)>,
+    ) -> Result<HeadId, Error> {
         head.shape = if let Some(&id) = self.shapes.get(&shape) {
             id
         } else {
@@ -121,13 +127,13 @@ impl Templates {
     }
 }
 impl Analyzer<'_> {
-    pub(super) fn supported_type_template_head(&self, head: HeadId) -> Result<(), Error> {
+    pub(super) fn supported_fixed_template_head(&self, head: HeadId) -> Result<(), Error> {
         for &parameter in self.graph.templates.parameters(head) {
             if !self
                 .graph
                 .entity(parameter)
                 .template_parameter
-                .is_some_and(super::templates::ParameterInfo::ordinary_type)
+                .is_some_and(super::templates::ParameterInfo::fixed_parameter)
             {
                 return Err(Error::Missing(
                     "template packs or template template-parameters",
@@ -165,10 +171,12 @@ impl Analyzer<'_> {
                     .graph
                     .own(scope, name, Filter::Ordinary)
                     .is_some_and(|id| {
-                        self.graph
-                            .entity(self.graph.binding(id).entity)
-                            .template_parameter
-                            .is_some()
+                        self.graph.binding(id).kind == BindingKind::Type
+                            && self
+                                .graph
+                                .entity(self.graph.binding(id).entity)
+                                .template_parameter
+                                .is_some()
                     })
             {
                 return Err(Error::at(
@@ -292,14 +300,40 @@ impl Analyzer<'_> {
         for index in 0..self.tree.template_parameters.get(syntax.parameters).len() {
             let syntax_item = self.tree.template_parameters.get(syntax.parameters)[index];
             let parameter = &syntax_item;
-            let ast::TemplateParameterKind::Type {
-                key,
-                name,
-                parameters: inner_syntax,
-                default,
-            } = parameter.kind
-            else {
-                return Err(Error::Missing("non-type template parameter binding"));
+            let (key, name, inner_syntax, default, value_type) = match parameter.kind {
+                ast::TemplateParameterKind::Type {
+                    key,
+                    name,
+                    parameters,
+                    default,
+                } => (
+                    key,
+                    name,
+                    parameters,
+                    default.map(ast::TemplateArgumentKind::Type),
+                    None,
+                ),
+                ast::TemplateParameterKind::NonType {
+                    specifiers,
+                    declarator,
+                    default,
+                } => {
+                    self.template_depth += 1;
+                    let result = self.non_type_parameter_type(
+                        specifiers,
+                        declarator,
+                        scope,
+                        parameter.location,
+                    );
+                    self.template_depth -= 1;
+                    (
+                        Keyword::Int,
+                        self.declarator_name(declarator)?,
+                        None,
+                        default.map(ast::TemplateArgumentKind::Expression),
+                        Some(result?),
+                    )
+                }
             };
             if inner_syntax.is_some() && key == Keyword::Typename {
                 return Err(Error::at(
@@ -326,38 +360,11 @@ impl Analyzer<'_> {
                     self.check_template_parameter_name(parent, name, parameter.location)?;
                 }
             }
-            let mut bound = None;
-            if declare && let Some(default) = default {
-                if inner.is_some() {
-                    self.template_default_name(default, scope, parameter.location)?;
-                } else {
-                    self.template_depth += 1;
-                    // A copied member template shares its immutable head.
-                    // Default checking must not publish facts on that shared
-                    // syntax in one enclosing specialization's environment.
-                    let result = (|| {
-                        let copy = crate::syntax::cloning::Cloner::new(
-                            self.tree,
-                            self.stack_budget,
-                            self.stack_base,
-                        )
-                        .ty(default)
-                        .map_err(|error| super::template_bodies::copy_error(&error))?;
-                        self.type_syntax(copy, scope)
-                    })();
-                    self.template_depth -= 1;
-                    let ty = result?;
-                    if self
-                        .graph
-                        .scope(scope)
-                        .parent
-                        .is_some_and(|parent| self.graph.scope(parent).kind == ScopeKind::Class)
-                        && !self.graph.dependent_type(ty)
-                    {
-                        bound = Some(ty);
-                    }
-                }
-            }
+            let bound = if declare && let Some(default) = default {
+                self.check_parameter_default(default, inner, scope, parameter.location)?
+            } else {
+                None
+            };
             if parameter.pack && default.is_some() {
                 return Err(Error::at(
                     parameter.location,
@@ -365,6 +372,7 @@ impl Analyzer<'_> {
                 ));
             }
             let shape = ParameterShape {
+                non_type: value_type.is_some(),
                 pack: parameter.pack,
                 inner: inner.map(|id| self.graph.templates.head(id).shape),
             };
@@ -385,10 +393,15 @@ impl Analyzer<'_> {
                 self.graph.templates.positions.insert(position, canonical);
                 canonical
             };
-            self.graph.entity_mut(entity).template_parameter =
-                Some(ParameterInfo { position, inner });
-            self.graph.entity_mut(canonical).template_parameter =
-                self.graph.entity(entity).template_parameter;
+            self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+                position,
+                inner,
+                value_type,
+            });
+            if self.graph.entity(canonical).template_parameter.is_none() {
+                self.graph.entity_mut(canonical).template_parameter =
+                    self.graph.entity(entity).template_parameter;
+            }
             self.graph.types.record_parameter_entity(entity, canonical);
             let ty = self.graph.types.intern(
                 TypeKind::TemplateParameter {
@@ -398,21 +411,40 @@ impl Analyzer<'_> {
                 Cv::default(),
             )?;
             self.graph.entity_mut(entity).ty = Some(ty);
+            if self.graph.entity(canonical).ty.is_none() {
+                let positional = self.graph.types.intern(
+                    TypeKind::TemplateParameter {
+                        entity: canonical,
+                        template: inner.is_some(),
+                    },
+                    Cv::default(),
+                )?;
+                self.graph.entity_mut(canonical).ty = Some(positional);
+            }
             if name.is_some() {
                 self.graph.add_binding(
                     scope,
                     declare.then_some(scope),
                     Binding {
-                        kind: BindingKind::Type,
+                        kind: if value_type.is_some() {
+                            BindingKind::TemplateValue
+                        } else {
+                            BindingKind::Type
+                        },
                         name,
                         entity,
-                        ty: Some(ty),
+                        ty: Some(value_type.unwrap_or(ty)),
                         key,
                     },
                 )?;
             }
             parameters.push(entity);
-            shapes.push(shape);
+            shapes.push((
+                shape,
+                value_type
+                    .map(|ty| self.graph.types.canonical_function(ty))
+                    .transpose()?,
+            ));
             defaults.push(default.map(|syntax| DefaultArgument {
                 syntax,
                 scope,
@@ -432,6 +464,40 @@ impl Analyzer<'_> {
             },
             shapes,
         )
+    }
+    fn check_parameter_default(
+        &mut self,
+        default: ast::TemplateArgumentKind,
+        inner: Option<HeadId>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Option<TypeId>, Error> {
+        if let ast::TemplateArgumentKind::Type(ty) = default
+            && inner.is_some()
+        {
+            self.template_default_name(ty, scope, location)?;
+            return Ok(None);
+        }
+        self.template_depth += 1;
+        // Member-template heads share immutable syntax; formation facts are private.
+        let result = (|| {
+            let copy = self.copy_template_argument(default)?;
+            match copy.kind {
+                ast::TemplateArgumentKind::Expression(expression) => {
+                    self.expression(expression, scope).map(|()| None)
+                }
+                ast::TemplateArgumentKind::Type(ty) => self.type_syntax(ty, scope).map(Some),
+            }
+        })();
+        self.template_depth -= 1;
+        let ty = result?;
+        Ok(ty.filter(|&ty| {
+            self.graph
+                .scope(scope)
+                .parent
+                .is_some_and(|parent| self.graph.scope(parent).kind == ScopeKind::Class)
+                && !self.graph.dependent_type(ty)
+        }))
     }
     fn template_default_name(
         &mut self,
@@ -639,7 +705,10 @@ impl Analyzer<'_> {
                     .entity(again.parameters[index])
                     .template_parameter
                     .ok_or(Error::Invariant("head without parameter"))?;
-                if old.position.shape != new.position.shape {
+                if old.position.shape != new.position.shape
+                    || old.value_type.map(|ty| self.graph.types.canonical_view(ty))
+                        != new.value_type.map(|ty| self.graph.types.canonical_view(ty))
+                {
                     let location =
                         self.tree.template_parameters.get(again.syntax.parameters)[index].location;
                     return Err(Error::at(

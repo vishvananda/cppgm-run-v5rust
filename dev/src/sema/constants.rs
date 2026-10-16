@@ -619,6 +619,15 @@ impl Analyzer<'_> {
         ) {
             return Err(Error::at(location, "name does not denote a value"));
         }
+        if binding.kind == BindingKind::TemplateValue
+            && self
+                .graph
+                .entity(binding.entity)
+                .template_parameter
+                .is_some()
+        {
+            return Err(not_constant(location, "a value-dependent constant"));
+        }
         if let ConstantState::Value(value) = self.graph.entity(binding.entity).constant {
             return Ok(value);
         }

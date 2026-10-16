@@ -15,7 +15,7 @@ use crate::{
 };
 
 impl Analyzer<'_> {
-    pub(super) fn type_template_arguments(
+    pub(super) fn form_template_arguments(
         &mut self,
         component: ast::NameComponent,
         scope: ScopeId,
@@ -29,9 +29,7 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("template argument expansion"));
             }
-            let ty = self
-                .template_type_argument(argument, scope, component.location)?
-                .ok_or(Error::Missing("non-type template arguments"))?;
+            let ty = self.template_argument(argument, scope, component.location)?;
             arguments.push(self.graph.types.canonical_function(ty)?);
         }
         Ok(arguments)
@@ -40,7 +38,7 @@ impl Analyzer<'_> {
     /// C++ `class_templates.cpp::template_argument`: a parsed id-expression
     /// can denote a type even when parser lookup could not classify it.
     /// Keep the dependent-qualifier rule separate from that concrete lookup.
-    pub(super) fn template_type_argument(
+    pub(super) fn template_argument_identity(
         &mut self,
         argument: ast::TemplateArgument,
         scope: ScopeId,
@@ -54,6 +52,20 @@ impl Analyzer<'_> {
                 };
                 let found = self.lookup(name, scope, Filter::Ordinary)?;
                 let binding = self.graph.binding(found);
+                if binding.kind == BindingKind::TemplateValue
+                    && self
+                        .graph
+                        .entity(binding.entity)
+                        .template_parameter
+                        .is_some()
+                {
+                    return self
+                        .graph
+                        .entity(binding.entity)
+                        .ty
+                        .map(Some)
+                        .ok_or(Error::Invariant("value parameter without placeholder"));
+                }
                 let node = self.tree.names.get(name);
                 let components = self.tree.name_lists.get(node.components);
                 let dependent = (node.global || components.len() > 1)
@@ -85,8 +97,7 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("template argument pack names"));
             }
-            self.template_type_argument(*argument, scope, location)?
-                .ok_or(Error::Missing("non-type template argument names"))?;
+            self.template_argument(*argument, scope, location)?;
         }
         Ok(())
     }

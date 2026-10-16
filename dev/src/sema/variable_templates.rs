@@ -82,9 +82,9 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("variable template lost head"))?;
-        self.supported_type_template_head(primary_head)?;
-        let mut arguments = self.type_template_arguments(last, scope)?;
-        self.complete_type_template_arguments(primary_head, &mut arguments, node.location)?;
+        self.supported_fixed_template_head(primary_head)?;
+        let mut arguments = self.form_template_arguments(last, scope)?;
+        self.complete_template_arguments(primary_head, &mut arguments, node.location)?;
         self.check_type_partial_arguments(head, &arguments, node.location)?;
         let ty = if specs.constexpr {
             self.graph.types.qualify(info.ty, Cv::CONST)?

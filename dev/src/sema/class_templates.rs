@@ -9,10 +9,7 @@ use super::{
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
 };
-use crate::{
-    support::source::SourceOffset,
-    syntax::{ast, cloning::Cloner},
-};
+use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Hash)]
@@ -133,8 +130,8 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("class template without head"))?;
-        self.supported_type_template_head(head)?;
-        let arguments = self.type_template_arguments(component, scope)?;
+        self.supported_fixed_template_head(head)?;
+        let arguments = self.form_template_arguments(component, scope)?;
         let count = self.graph.templates.parameters(head).len();
         let result = self.class_template_with_defaults(primary, arguments, component.location)?;
         // Only the template's own arguments in its definition denote the
@@ -207,7 +204,7 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("specialization without template head"))?;
-        self.supported_type_template_head(head)?;
+        self.supported_fixed_template_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count {
             return Err(Error::at(location, "too many template arguments"));
@@ -218,7 +215,7 @@ impl Analyzer<'_> {
             return Ok(binding);
         }
         let mut full = key.arguments.clone();
-        self.complete_type_template_arguments(head, &mut full, location)?;
+        self.complete_template_arguments(head, &mut full, location)?;
         let entity = self.class_specialization(primary, full)?;
         let binding = self.graph.class_templates.binding(entity)?;
         if omitted {
@@ -227,13 +224,13 @@ impl Analyzer<'_> {
         Ok(binding)
     }
 
-    pub(super) fn complete_type_template_arguments(
+    pub(super) fn complete_template_arguments(
         &mut self,
         head: HeadId,
         arguments: &mut Vec<TypeId>,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        self.supported_type_template_head(head)?;
+        self.supported_fixed_template_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count {
             return Err(Error::at(location, "too many template arguments"));
@@ -254,6 +251,15 @@ impl Analyzer<'_> {
                 ty
             };
             arguments.push(ty);
+        }
+        for index in 0..arguments.len() {
+            arguments[index] = self.match_template_argument(
+                head,
+                index,
+                arguments[index],
+                &arguments[..index],
+                location,
+            )?;
         }
         Ok(())
     }
@@ -282,11 +288,10 @@ impl Analyzer<'_> {
         if self.template_depth != 0 && arguments.iter().any(|&ty| self.graph.dependent_type(ty)) {
             // Copied member template heads share syntax, but their enclosing
             // argument frames differ. Pattern facts belong to this formation.
-            let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
-                .ty(default.syntax)
-                .map_err(|error| super::template_bodies::copy_error(&error))?;
+            let copy = self.copy_template_argument(default.syntax)?;
             let saved = self.graph.lookup_limit.replace(default.limit);
-            let result = self.type_syntax(copy, default.scope);
+            let result =
+                self.template_argument(copy, default.scope, self.default_location(default));
             self.graph.lookup_limit = saved;
             let pattern = result?;
             let given: Vec<_> = arguments.iter().copied().map(Some).collect();
@@ -317,25 +322,15 @@ impl Analyzer<'_> {
                 continue;
             };
             if let Some(&ty) = arguments.get(position) {
-                self.graph.add_binding(
-                    frame,
-                    None,
-                    Binding {
-                        kind: BindingKind::Alias,
-                        ty: Some(ty),
-                        ..binding
-                    },
-                )?;
+                self.bind_template_argument(frame, binding, ty)?;
             }
         }
-        let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
-            .ty(default.syntax)
-            .map_err(|error| super::template_bodies::copy_error(&error))?;
+        let copy = self.copy_template_argument(default.syntax)?;
         let result = self.instantiation_context(
             self.instantiation_depth,
-            self.tree.types.get(default.syntax).location,
+            self.default_location(default),
             default.limit,
-            |analyzer| analyzer.type_syntax(copy, frame),
+            |analyzer| analyzer.template_argument(copy, frame, analyzer.default_location(default)),
         );
         match usage {
             DefaultUse::Required => result.map_err(Error::required_instantiation),
@@ -353,7 +348,7 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("substituted template without head"))?;
-        self.supported_type_template_head(head)?;
+        self.supported_fixed_template_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count {
             return Ok(None);
@@ -481,7 +476,16 @@ impl Analyzer<'_> {
             };
             arguments.push(self.graph.types.canonical_function(ty)?);
         }
-        self.class_specialization(primary, arguments).map(Some)
+        let head = self
+            .graph
+            .entity(primary)
+            .template_head
+            .ok_or(Error::Invariant("class substitution without head"))?;
+        match self.complete_template_arguments(head, &mut arguments, SourceOffset(0)) {
+            Ok(()) => self.class_specialization(primary, arguments).map(Some),
+            Err(Error::Diagnostic { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -528,10 +532,13 @@ mod tests {
                 continue;
             }
             let default = graph.templates.default_argument(head, 1).unwrap();
-            assert!(graph.type_fact(default.syntax).is_none());
+            let ast::TemplateArgumentKind::Type(syntax) = default.syntax else {
+                panic!("type default")
+            };
+            assert!(graph.type_fact(syntax).is_none());
             assert!(default.bound.is_none());
             scopes.insert(default.scope);
-            shared.insert(default.syntax);
+            shared.insert(syntax);
         }
         assert!(scopes.len() >= 3);
         assert_eq!(shared.len(), 1);

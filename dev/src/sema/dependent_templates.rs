@@ -81,7 +81,7 @@ impl Analyzer<'_> {
         let ast::NameKind::Identifier(name) = component.kind else {
             return Err(Error::Missing("dependent special member template name"));
         };
-        let arguments = self.type_template_arguments(component, scope)?;
+        let arguments = self.form_template_arguments(component, scope)?;
         let primary = self.dependent_template(qualifier, name)?;
         let entity = self.class_specialization(primary, arguments)?;
         self.graph.class_templates.binding(entity)

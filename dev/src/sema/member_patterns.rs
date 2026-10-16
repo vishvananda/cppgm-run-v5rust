@@ -5,7 +5,7 @@
 use super::{
     Error,
     analyzer::{Analyzer, DeferredBody},
-    graph::{Binding, BindingKind, EntityId, ScopeId, ScopeKind},
+    graph::{BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::Filter,
     templates::HeadId,
     types::TypeId,
@@ -351,7 +351,11 @@ impl Analyzer<'_> {
         for index in 0..self.graph.scope(header).bindings.len() {
             let binding = self.graph.binding(self.graph.scope(header).bindings[index]);
             let Some(name) = binding.name else { continue };
-            if self.graph.own(bridge, name, Filter::Ordinary).is_none() {
+            if self
+                .graph
+                .own(bridge, name, Filter::Ordinary)
+                .is_none_or(|id| self.graph.binding(id).entity != binding.entity)
+            {
                 continue;
             }
             let Some(info) = self.graph.entity(binding.entity).template_parameter else {
@@ -363,15 +367,7 @@ impl Analyzer<'_> {
             let ty = *arguments
                 .get(position)
                 .ok_or(Error::Invariant("outside frame without argument"))?;
-            self.graph.add_binding(
-                frame,
-                None,
-                Binding {
-                    kind: BindingKind::Alias,
-                    ty: Some(ty),
-                    ..binding
-                },
-            )?;
+            self.bind_template_argument(frame, binding, ty)?;
         }
         Ok(frame)
     }

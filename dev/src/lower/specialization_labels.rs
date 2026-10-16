@@ -90,6 +90,21 @@ impl Symbols<'_, '_> {
             }
         }
         match view {
+            TypeView::Value { ty, bits } => {
+                if matches!(self.graph.lower_type(ty)?, TypeView::Enum(_)) {
+                    out.push('(');
+                    self.append_type_label(ty, out, limit)?;
+                    out.push(')');
+                }
+                if matches!(self.graph.lower_type(ty)?, TypeView::Scalar(Scalar::Bool)) {
+                    out.push_str(if bits == 0 { "false" } else { "true" });
+                } else if self.graph.lower_signed_integral(ty) {
+                    write!(out, "{}", bits.cast_signed())
+                        .map_err(|_| Error::Missing("class label formatting"))?;
+                } else {
+                    write!(out, "{bits}").map_err(|_| Error::Missing("class label formatting"))?;
+                }
+            }
             TypeView::Scalar(scalar) => out.push_str(match scalar {
                 Scalar::Basic(kind) => kind.name(),
                 Scalar::Void => "void",

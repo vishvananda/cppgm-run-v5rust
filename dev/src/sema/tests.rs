@@ -1839,7 +1839,8 @@ fn member_bodies_wait_for_class_completion_and_elaborated_names_use_namespace_ho
 }
 #[test]
 fn missing_group_remains_distinct_from_a_language_rejection() {
-    let source = SourceBuffer::new(b"template<int N> struct C {};".to_vec()).unwrap();
+    let source =
+        SourceBuffer::new(b"template<class... Ts> struct C {}; C<int> c;".to_vec()).unwrap();
     let input = Preprocessor::with_name(&source, b"missing-semantic-group").unwrap();
     let mut unit = SyntaxUnit::new(input);
     unit.parse().unwrap();

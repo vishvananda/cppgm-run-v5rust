@@ -40,6 +40,39 @@ fn missing() -> Error {
     Error::Missing("dependent ABI expression form")
 }
 impl Symbols<'_, '_> {
+    pub(super) fn declared_type_dependent(&self, ty: TypeId) -> Result<bool, Error> {
+        let mut work = vec![ty];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(ty) = work.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            if let Some(dependent) = self.graph.lower_operand_key_dependent(ty) {
+                if dependent {
+                    return Ok(true);
+                }
+                continue;
+            }
+            if let Some((owner, element)) = self.graph.lower_member_pointer_type(ty) {
+                work.extend([owner, element]);
+                continue;
+            }
+            match self.graph.lower_type(ty)? {
+                TypeView::Pointer(element) | TypeView::Reference { element, .. } => {
+                    work.push(element);
+                }
+                TypeView::Function {
+                    result, parameters, ..
+                } => {
+                    work.push(result);
+                    work.extend(parameters);
+                }
+                _ if self.graph.lower_dependent_type(ty) => return Ok(true),
+                _ => (),
+            }
+        }
+        Ok(false)
+    }
     pub(super) fn placeholder_node(&mut self, ty: TypeId) -> Result<Option<NodeId>, Error> {
         if let Some(&node) = self.placeholders.get(&ty) {
             return Ok(node);
@@ -438,6 +471,25 @@ impl Symbols<'_, '_> {
                     },
                     None,
                 )
+            }
+            W::Type(ty)
+                if self.graph.lower_value_argument(*ty)
+                    && self.graph.lower_template_parameter(*ty).is_some() =>
+            {
+                let index = self
+                    .graph
+                    .lower_template_parameter(*ty)
+                    .ok_or_else(missing)?;
+                return Ok((
+                    self.abi.intern(
+                        Node::TemplateParam {
+                            index,
+                            substitutable: false,
+                        },
+                        &[],
+                    )?,
+                    None,
+                ));
             }
             W::Type(ty) => {
                 let ty = self.abi_type(*ty)?;

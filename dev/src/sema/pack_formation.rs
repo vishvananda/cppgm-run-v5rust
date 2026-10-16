@@ -118,7 +118,10 @@ impl Analyzer<'_> {
                     work.push(*result);
                     work.extend(parameters.iter().rev().copied());
                 }
-                TypeKind::Auto | TypeKind::Scalar(_) | TypeKind::Enum(_) => (),
+                TypeKind::Auto
+                | TypeKind::Scalar(_)
+                | TypeKind::Enum(_)
+                | TypeKind::Value { .. } => (),
             }
         }
         Ok(false)

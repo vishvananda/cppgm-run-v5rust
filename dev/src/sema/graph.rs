@@ -36,6 +36,7 @@ pub(super) enum BindingKind {
     Function,
     Parameter,
     Enumerator,
+    TemplateValue,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Entry {

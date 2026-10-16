@@ -3,7 +3,7 @@
 use super::{
     Analyzer, Error, Graph,
     analyzer::DeferredBody,
-    graph::{Binding, BindingKind, EntityId, ScopeKind},
+    graph::{EntityId, ScopeKind},
     special_members::SpecialDefinition,
 };
 use crate::{
@@ -676,15 +676,7 @@ impl Analyzer<'_> {
                 .get(&entity)
                 .and_then(|arguments| arguments.get(index))
                 .ok_or(Error::Invariant("template body without argument"))?;
-            self.graph.add_binding(
-                frame,
-                None,
-                Binding {
-                    kind: BindingKind::Alias,
-                    ty: Some(ty),
-                    ..binding
-                },
-            )?;
+            self.bind_template_argument(frame, binding, ty)?;
         }
         Ok(frame)
     }
@@ -938,7 +930,10 @@ mod tests {
                 .templates
                 .default_argument(graph.entity(primary).template_head.unwrap(), 0)
             {
-                assert!(graph.type_fact(default.syntax).is_none());
+                let ast::TemplateArgumentKind::Type(syntax) = default.syntax else {
+                    panic!("type default")
+                };
+                assert!(graph.type_fact(syntax).is_none());
             }
         }
         assert_eq!(owners.len(), 2);

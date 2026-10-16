@@ -20,6 +20,7 @@ use std::{
 
 #[derive(Clone, Copy)]
 pub(super) struct Pattern {
+    pub value: bool,
     pub expression: ast::ExprId,
     pub scope: ScopeId,
     pub key_dependent: bool,
@@ -44,6 +45,7 @@ struct Key {
 enum Query {
     Type,
     Bound,
+    Value,
 }
 #[derive(Clone, Copy)]
 enum Evaluation {
@@ -56,7 +58,7 @@ pub(super) struct Operands {
     words: HashMap<EntityId, Vec<KeyWord>>,
     fingerprints: RandomState,
     patterns: HashMap<EntityId, Pattern>,
-    equivalents: HashMap<(ScopeId, Vec<KeyWord>), EntityId>,
+    equivalents: HashMap<(ScopeId, Vec<KeyWord>, bool), EntityId>,
     substitutions: HashMap<Key, Evaluation>,
     active: HashSet<(Key, usize)>,
 }
@@ -78,15 +80,35 @@ impl Analyzer<'_> {
         scope: ScopeId,
         fixed: bool,
     ) -> Result<TypeId, Error> {
+        self.dependent_operand_in(expression, scope, fixed, false)
+    }
+    pub(super) fn dependent_value_operand(
+        &mut self,
+        expression: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<TypeId, Error> {
+        self.dependent_operand_in(expression, scope, false, true)
+    }
+    fn dependent_operand_in(
+        &mut self,
+        expression: ast::ExprId,
+        scope: ScopeId,
+        fixed: bool,
+        value: bool,
+    ) -> Result<TypeId, Error> {
         self.expression(expression, scope)?;
         let key = self.operand_key(expression, scope)?;
         // Non-dependent operands in semantic mode have their ordinary type.
-        if fixed
+        if (fixed || value)
             && key.as_ref().is_some_and(|key| !key.dependent)
             && !self.type_dependent_expression(expression, scope)?
         {
             let saved = std::mem::replace(&mut self.template_depth, 0);
-            let result = self.decltype_type(expression, scope);
+            let result = if value {
+                self.template_value(expression, scope)
+            } else {
+                self.decltype_type(expression, scope)
+            };
             self.template_depth = saved;
             return result;
         }
@@ -119,7 +141,7 @@ impl Analyzer<'_> {
             self.graph
                 .template_operands
                 .fingerprints
-                .hash_one((home, words))
+                .hash_one((home, words, value))
         });
         let head = fingerprint.and_then(|fingerprint| {
             self.graph
@@ -135,7 +157,8 @@ impl Analyzer<'_> {
                 .template_operands
                 .pattern(entity)
                 .ok_or(Error::Invariant("operand index without pattern"))?;
-            if pattern.home == home
+            if pattern.value == value
+                && pattern.home == home
                 && self.graph.template_operands.words.get(&entity) == words.as_ref()
             {
                 return self
@@ -162,6 +185,7 @@ impl Analyzer<'_> {
         self.graph.template_operands.patterns.insert(
             entity,
             Pattern {
+                value,
                 expression,
                 scope,
                 key_dependent,
@@ -194,7 +218,7 @@ impl Analyzer<'_> {
                     .graph
                     .template_operands
                     .equivalents
-                    .entry((home, equivalent))
+                    .entry((home, equivalent, value))
                     .or_insert(entity);
                 if earlier != entity {
                     self.graph
@@ -227,7 +251,17 @@ impl Analyzer<'_> {
         {
             return Ok(Some(ty));
         }
-        match self.cached_operand(entity, environment, arguments, Query::Type)? {
+        let query = if self
+            .graph
+            .template_operands
+            .pattern(entity)
+            .is_some_and(|pattern| pattern.value)
+        {
+            Query::Value
+        } else {
+            Query::Type
+        };
+        match self.cached_operand(entity, environment, arguments, query)? {
             Some(Evaluation::Type(result)) => self
                 .graph
                 .types
@@ -337,6 +371,7 @@ impl Analyzer<'_> {
         let saved_limit = self.graph.lookup_limit.replace(pattern.limit);
         let saved_depth = std::mem::replace(&mut self.template_depth, 0);
         let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 1);
+        let saved_arguments = std::mem::replace(&mut self.template_arguments, 0);
         let saved_default = self.default_argument_scope.take();
         let saved_head = self.template_head.take();
         let saved_friend = self.namespace_friend_class.take();
@@ -350,6 +385,7 @@ impl Analyzer<'_> {
         let result = match query {
             Query::Type => self.decltype_type(copy, scope).map(Evaluation::Type),
             Query::Bound => self.array_bound(copy, scope).map(Evaluation::Bound),
+            Query::Value => self.template_value(copy, scope).map(Evaluation::Type),
         };
         self.declaration_access.substitution = saved_access;
         self.declaration_access.function = saved_function;
@@ -358,6 +394,7 @@ impl Analyzer<'_> {
         self.graph.lookup_limit = saved_limit;
         self.template_depth = saved_depth;
         self.unevaluated = saved_unevaluated;
+        self.template_arguments = saved_arguments;
         self.default_argument_scope = saved_default;
         self.template_head = saved_head;
         self.namespace_friend_class = saved_friend;
@@ -398,15 +435,7 @@ impl Analyzer<'_> {
                     && let Some(index) = parameter.index(environment.depth)
                     && let Some(Some(ty)) = environment.arguments.get(index)
                 {
-                    self.graph.add_binding(
-                        frame,
-                        None,
-                        Binding {
-                            kind: BindingKind::Alias,
-                            ty: Some(*ty),
-                            ..binding
-                        },
-                    )?;
+                    self.bind_template_argument(frame, binding, *ty)?;
                 }
             } else if binding.kind == BindingKind::Parameter {
                 let skipped = binding.ty.is_some_and(|ty| self.graph.dependent_type(ty))
@@ -772,5 +801,83 @@ mod tests {
             .collect::<Vec<_>>();
         assert_ne!(limits[0], limits[1]);
         assert!(graph.template_operands.substitutions.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod value_tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+        types::FundamentalType,
+    };
+
+    #[test]
+    fn same_operand_has_separate_type_and_value_queries() {
+        let source = SourceBuffer::new(b"template<int N>struct A;template<int N>auto f()->A<N+1>*;template<int N>auto g()->decltype(N+1);".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"operand-modes").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let patterns = analyzer
+            .graph
+            .template_operands
+            .patterns
+            .iter()
+            .map(|(&id, pattern)| (id, pattern.value))
+            .collect::<Vec<_>>();
+        assert_eq!(patterns.len(), 2);
+        assert_ne!(patterns[0].1, patterns[1].1);
+        let int = analyzer
+            .graph
+            .types
+            .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        let value = analyzer
+            .graph
+            .types
+            .intern(TypeKind::Value { ty: int, bits: 3 }, Cv::default())
+            .unwrap();
+        let arguments = [Some(value)];
+        for &(entity, is_value) in &patterns {
+            let ty = analyzer.graph.entity(entity).ty.unwrap();
+            let mut environment = Substitution::new(0, &arguments);
+            let result = analyzer
+                .substitute_operand(ty, entity, &mut environment)
+                .unwrap()
+                .unwrap();
+            if is_value {
+                assert!(
+                    matches!(analyzer.graph.types.get(result).kind, TypeKind::Value { ty, bits: 4 } if ty == int)
+                );
+            } else {
+                assert_eq!(result, int);
+            }
+            let count = analyzer.tree.expressions.mark();
+            let mut environment = Substitution::new(0, &arguments);
+            assert_eq!(
+                analyzer
+                    .substitute_operand(ty, entity, &mut environment)
+                    .unwrap(),
+                Some(result)
+            );
+            assert_eq!(analyzer.tree.expressions.mark(), count);
+            let pattern = analyzer.graph.template_operands.pattern(entity).unwrap();
+            assert!(
+                analyzer
+                    .graph
+                    .expression_facts
+                    .get(pattern.expression)
+                    .is_err()
+            );
+        }
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert!(analyzer.graph.template_operands.active.is_empty());
     }
 }

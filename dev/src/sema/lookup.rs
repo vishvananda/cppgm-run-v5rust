@@ -468,6 +468,9 @@ impl Analyzer<'_> {
                         || (node.kind == ScopeKind::Class && self.dependent_lookup_class(scope)))
                 {
                     self.note_dependent_use();
+                } else if node.kind == ScopeKind::TemplateParameters {
+                    self.value_parameter_uses
+                        .set(self.value_parameter_uses.get().wrapping_add(1));
                 }
                 return Ok(result);
             }

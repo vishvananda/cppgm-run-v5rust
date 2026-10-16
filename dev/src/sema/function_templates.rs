@@ -156,7 +156,7 @@ impl Analyzer<'_> {
                 .graph
                 .entity(parameter)
                 .template_parameter
-                .is_some_and(super::templates::ParameterInfo::ordinary_type)
+                .is_some_and(super::templates::ParameterInfo::fixed_parameter)
             {
                 return Err(Error::Missing(
                     "function template packs or template-template arguments",
@@ -208,9 +208,7 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("function template argument expansion"));
             }
-            let ty = self
-                .template_type_argument(*argument, scope, location)?
-                .ok_or(Error::Missing("non-type function template arguments"))?;
+            let ty = self.template_argument(*argument, scope, location)?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
         Ok(given)
@@ -231,8 +229,13 @@ impl Analyzer<'_> {
             if given.len() > count {
                 continue;
             }
+            let Some(converted) =
+                self.match_explicit_template_arguments(head, given, component.location)?
+            else {
+                continue;
+            };
             let mut arguments = vec![None; count];
-            for (slot, &argument) in arguments.iter_mut().zip(given) {
+            for (slot, &argument) in arguments.iter_mut().zip(&converted) {
                 *slot = Some(argument);
             }
             let partial = (given.len()..count)
@@ -511,48 +514,59 @@ impl Analyzer<'_> {
             return Ok(Some(primary));
         };
         let depth = self.graph.templates.depth(head);
+        let mut earlier = Vec::with_capacity(arguments.len());
         for index in 0..arguments.len() {
-            if arguments[index].is_some() {
-                continue;
-            }
-            let Some(default) = self.graph.templates.default_argument(head, index) else {
-                return Ok(None);
-            };
-            let prefix: Option<Vec<_>> = arguments[..index].iter().copied().collect();
-            let prefix = prefix.ok_or(Error::Invariant("incomplete default argument prefix"))?;
-            let key = (head, index, prefix);
-            let ty = if let Some(&ty) = self.graph.function_templates.defaults.get(&key) {
+            let ty = if let Some(ty) = arguments[index] {
                 ty
             } else {
-                let pattern = if let Some(bound) = default.bound {
-                    bound
-                } else {
-                    let copy = crate::syntax::cloning::Cloner::new(
-                        self.tree,
-                        self.stack_budget,
-                        self.stack_base,
-                    )
-                    .ty(default.syntax)
-                    .map_err(|error| super::template_bodies::copy_error(&error))?;
-                    // Form a dependent default's pattern in its declaration
-                    // context before substituting this candidate's arguments.
-                    self.template_depth += 1;
-                    let saved = self.graph.lookup_limit.replace(default.limit);
-                    let result = self.type_syntax(copy, default.scope);
-                    self.graph.lookup_limit = saved;
-                    self.template_depth -= 1;
-                    result?
-                };
-                let mut environment = Substitution::new(depth, &arguments[..index]);
-                environment.context = check_access.then_some(self.graph.binding(primary).entity);
-                let Some(ty) = self.substitute_signature_type(pattern, &mut environment)? else {
+                let Some(default) = self.graph.templates.default_argument(head, index) else {
                     return Ok(None);
                 };
-                let ty = self.graph.types.canonical_function(ty)?;
-                self.graph.function_templates.defaults.insert(key, ty);
-                ty
+                let key = (head, index, earlier.clone());
+                if let Some(&ty) = self.graph.function_templates.defaults.get(&key) {
+                    ty
+                } else {
+                    let pattern = if let Some(bound) = default.bound {
+                        bound
+                    } else {
+                        let copy = self.copy_template_argument(default.syntax)?;
+                        // Form a dependent default's pattern in its declaration
+                        // context before substituting this candidate's arguments.
+                        self.template_depth += 1;
+                        let saved = self.graph.lookup_limit.replace(default.limit);
+                        let result = self.template_argument(
+                            copy,
+                            default.scope,
+                            self.default_location(default),
+                        );
+                        self.graph.lookup_limit = saved;
+                        self.template_depth -= 1;
+                        result?
+                    };
+                    let mut environment = Substitution::new(depth, &arguments[..index]);
+                    environment.context =
+                        check_access.then_some(self.graph.binding(primary).entity);
+                    let Some(ty) = self.substitute_signature_type(pattern, &mut environment)?
+                    else {
+                        return Ok(None);
+                    };
+                    let ty = self.graph.types.canonical_function(ty)?;
+                    self.graph.function_templates.defaults.insert(key, ty);
+                    ty
+                }
             };
             arguments[index] = Some(ty);
+            earlier.push(ty);
+        }
+        // Frozen complete_deduction keeps newly supplied defaults in source
+        // types while later defaults form; specialization converts them after.
+        let Some(converted) =
+            self.match_explicit_template_arguments(head, &earlier, SourceOffset(0))?
+        else {
+            return Ok(None);
+        };
+        for (slot, &ty) in arguments.iter_mut().zip(&converted) {
+            *slot = Some(ty);
         }
         let canonical: Option<Vec<_>> = arguments.iter().copied().collect();
         let key = SpecializationKey {
@@ -1018,6 +1032,9 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
+        if !self.deduced_values_typed(head, ty, &arguments, &given)? {
+            return Ok(None);
+        }
         self.complete_signature(binding, &mut arguments)
     }
 
@@ -1077,6 +1094,7 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let mut arguments = self.signature_arguments(binding, head);
+        let given = arguments.clone();
         let pattern = self
             .graph
             .binding(binding)
@@ -1090,6 +1108,9 @@ impl Analyzer<'_> {
         };
         let pattern = self.target_deduction_pattern(pattern, target, depth)?;
         if !self.deduce_signature_type(pattern, target, depth, &mut arguments, false)? {
+            return Ok(None);
+        }
+        if !self.deduced_values_typed(head, pattern, &arguments, &given)? {
             return Ok(None);
         }
         self.complete_signature(binding, &mut arguments)
@@ -1162,9 +1183,14 @@ impl Analyzer<'_> {
         if given.len() > count {
             return Ok(None);
         }
+        let Some(converted) =
+            self.match_explicit_template_arguments(head, given, SourceOffset(0))?
+        else {
+            return Ok(None);
+        };
         let initial = || {
             let mut arguments = vec![None; count];
-            for (slot, &argument) in arguments.iter_mut().zip(given) {
+            for (slot, &argument) in arguments.iter_mut().zip(&converted) {
                 *slot = Some(argument);
             }
             arguments
@@ -1191,6 +1217,9 @@ impl Analyzer<'_> {
             if !self.deduce_signature_type(pattern, declared, depth, &mut arguments, false)? {
                 return Ok(None);
             }
+        }
+        if !self.deduced_values_typed(head, source, &arguments, &initial())? {
+            return Ok(None);
         }
         let Some(binding) = self.complete_signature_in(primary, &mut arguments, false)? else {
             return Ok(None);
@@ -1233,9 +1262,7 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("function template argument expansion"));
             }
-            let ty = self
-                .template_type_argument(argument, scope, component.location)?
-                .ok_or(Error::Missing("non-type function template arguments"))?;
+            let ty = self.template_argument(argument, scope, component.location)?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
         let key = if component.arguments.is_none() {

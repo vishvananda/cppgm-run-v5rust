@@ -54,6 +54,10 @@ pub(super) enum TypeKind {
         entity: EntityId,
         template: bool,
     },
+    Value {
+        ty: TypeId,
+        bits: u64,
+    },
     Pointer(TypeId),
     MemberPointer {
         owner: TypeId,
@@ -203,7 +207,10 @@ impl Types {
             bounds.push((bound, operand));
             id = element;
         }
-        if !matches!(self.get(id).kind, TypeKind::Reference { .. }) {
+        if !matches!(
+            self.get(id).kind,
+            TypeKind::Reference { .. } | TypeKind::Value { .. }
+        ) {
             let node = self.get(id);
             let cv = Cv(node.cv.0 | cv.0);
             if cv != node.cv {
@@ -357,7 +364,8 @@ impl Types {
                         work.push((*result, false));
                         work.extend(parameters.iter().map(|&p| (p, false)));
                     }
-                    TypeKind::Auto
+                    TypeKind::Value { .. }
+                    | TypeKind::Auto
                     | TypeKind::Scalar(_)
                     | TypeKind::Class(_)
                     | TypeKind::Enum(_)

@@ -132,6 +132,9 @@ impl Graph {
             for &binding in &scope.bindings {
                 let id = binding;
                 let binding = self.binding(id);
+                if binding.kind == BindingKind::TemplateValue {
+                    continue;
+                }
                 if binding.kind == BindingKind::Type
                     && (self.entity(binding.entity).enumeration.is_some()
                         || self.entity(binding.entity).anonymous_class.is_some())
@@ -145,6 +148,7 @@ impl Graph {
                     BindingKind::Variable => "variable",
                     BindingKind::Function => "function",
                     BindingKind::Enumerator => "enumerator",
+                    BindingKind::TemplateValue => "template-value",
                     BindingKind::Parameter => "parameter",
                     BindingKind::Namespace | BindingKind::NamespaceAlias => continue,
                 };
@@ -349,6 +353,13 @@ impl Graph {
                 output.write_all(b"volatile ")?;
             }
             match &node.kind {
+                TypeKind::Value { ty, bits } => {
+                    if self.integral_kind(*ty).is_some_and(|kind| kind.signed) {
+                        write!(output, "{}", super::integral::signed(*bits))?;
+                    } else {
+                        write!(output, "{bits}")?;
+                    }
+                }
                 TypeKind::Auto => output.write_all(b"auto")?,
                 TypeKind::Scalar(scalar) => output.write_all(scalar.name().as_bytes())?,
                 TypeKind::Class(entity) => {

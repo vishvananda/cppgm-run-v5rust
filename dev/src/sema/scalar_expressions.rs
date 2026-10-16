@@ -376,7 +376,10 @@ impl Analyzer<'_> {
         if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
             self.complete_class(class)?;
         }
-        let category = if binding.kind == BindingKind::Enumerator {
+        let category = if matches!(
+            binding.kind,
+            BindingKind::Enumerator | BindingKind::TemplateValue
+        ) {
             V::Prvalue
         } else {
             V::Lvalue
@@ -455,7 +458,10 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("named expression without binding"))?,
             scope,
         )?;
-        if binding.kind == BindingKind::Enumerator {
+        if matches!(
+            binding.kind,
+            BindingKind::Enumerator | BindingKind::TemplateValue
+        ) {
             let super::constants::ConstantState::Value(value) =
                 self.graph.entity(binding.entity).constant
             else {

@@ -28,7 +28,7 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        self.supported_type_template_head(head)?;
+        self.supported_fixed_template_head(head)?;
         let mut own = arguments.len() == count;
         for (index, &argument) in arguments.iter().enumerate().take(count) {
             let parameter = self.graph.templates.parameters(head)[index];
@@ -112,7 +112,10 @@ impl Analyzer<'_> {
                     work.push(*result);
                     work.extend(parameters.iter().copied());
                 }
-                TypeKind::Auto | TypeKind::Scalar(_) | TypeKind::Enum(_) => (),
+                TypeKind::Auto
+                | TypeKind::Scalar(_)
+                | TypeKind::Enum(_)
+                | TypeKind::Value { .. } => (),
             }
         }
         deduced

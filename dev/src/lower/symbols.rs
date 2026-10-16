@@ -956,9 +956,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(id);
         }
         let node = if let Some(index) = self.graph.lower_template_parameter(ty) {
-            Node::TemplateParam {
-                index,
-                substitutable: true,
+            if self.graph.lower_value_argument(ty) {
+                let parameter = self.abi.intern(
+                    Node::TemplateParam {
+                        index,
+                        substitutable: false,
+                    },
+                    &[],
+                )?;
+                Node::ExpressionArgument(parameter)
+            } else {
+                Node::TemplateParam {
+                    index,
+                    substitutable: true,
+                }
             }
         } else if let Some((qualifier, name)) = self.graph.lower_dependent_member(ty) {
             Node::Name {
@@ -972,12 +983,23 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 .placeholder_node(ty)?
                 .ok_or(Error::Missing("unmangled dependent ABI type"))?;
             let kind = self.tree.expressions.get(operand).kind;
-            Node::Decltype {
-                expression,
-                id_expression: matches!(kind, ast::ExprKind::Id(_) | ast::ExprKind::Member { .. }),
+            if self.graph.lower_value_argument(ty) {
+                Node::ExpressionArgument(expression)
+            } else {
+                Node::Decltype {
+                    expression,
+                    id_expression: matches!(
+                        kind,
+                        ast::ExprKind::Id(_) | ast::ExprKind::Member { .. }
+                    ),
+                }
             }
         } else {
             match self.graph.lower_type(ty)? {
+                TypeView::Value { ty, bits } => Node::Literal {
+                    ty: self.abi_type(ty)?,
+                    bits,
+                },
                 TypeView::Scalar(scalar) => Node::Builtin(match scalar {
                     Scalar::Void => B::Void,
                     Scalar::Bool => B::Bool,
@@ -2305,8 +2327,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let signature = if let Some(instance) = facts.template_instance {
             let (pattern, arguments) = self.graph.lower_template_signature(instance)?;
             let mut nodes = Vec::with_capacity(arguments.len());
-            for &argument in arguments {
-                nodes.push(self.abi_type(argument)?);
+            for (index, &argument) in arguments.iter().enumerate() {
+                let mut node = self.abi_type(argument)?;
+                if let Some(ty) = self.graph.lower_template_value_type(instance, index)
+                    && self.declared_type_dependent(ty)?
+                {
+                    let ty = self.abi_type(ty)?;
+                    let declaration = self.abi.intern(Node::NonTypeParameter(ty), &[])?;
+                    node = self.abi.intern(
+                        Node::TypedArgument {
+                            declaration,
+                            argument: node,
+                        },
+                        &[],
+                    )?;
+                }
+                nodes.push(node);
             }
             name = self.abi.intern(Node::Template(name), &nodes)?;
             pattern

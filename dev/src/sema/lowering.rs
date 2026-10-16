@@ -84,6 +84,10 @@ pub(crate) enum DeclaredLinkage {
 }
 
 pub(crate) enum TypeView<'a> {
+    Value {
+        ty: TypeId,
+        bits: u64,
+    },
     Scalar(Scalar),
     Pointer(TypeId),
     Array {
@@ -620,6 +624,29 @@ impl Graph {
         };
         let info = self.entity(entity).template_parameter?;
         Some(info.abi_index())
+    }
+    pub(crate) fn lower_value_argument(&self, ty: TypeId) -> bool {
+        let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
+            return false;
+        };
+        self.entity(entity)
+            .template_parameter
+            .is_some_and(|info| info.value_type.is_some())
+            || self
+                .template_operands
+                .pattern(entity)
+                .is_some_and(|pattern| pattern.value)
+    }
+    pub(crate) fn lower_template_value_type(
+        &self,
+        entity: EntityId,
+        index: usize,
+    ) -> Option<TypeId> {
+        let primary = self.function_templates.primary(entity)?;
+        let head = self.entity(self.binding(primary).entity).template_head?;
+        self.entity(*self.templates.parameters(head).get(index)?)
+            .template_parameter?
+            .value_type
     }
     pub(crate) fn lower_template_signature(
         &self,
@@ -1368,6 +1395,10 @@ impl Graph {
     }
     pub(crate) fn lower_type(&self, id: TypeId) -> Result<TypeView<'_>, Error> {
         Ok(match &self.types.get(self.types.canonical_view(id)).kind {
+            TypeKind::Value { ty, bits } => TypeView::Value {
+                ty: *ty,
+                bits: *bits,
+            },
             TypeKind::Scalar(scalar) => TypeView::Scalar(*scalar),
             TypeKind::Pointer(element) => TypeView::Pointer(*element),
             TypeKind::Array { element, bound, .. } => TypeView::Array {
@@ -1397,6 +1428,9 @@ impl Graph {
             TypeKind::Class(entity) => TypeView::Class(*entity),
             _ => TypeView::Unsupported,
         })
+    }
+    pub(crate) fn lower_signed_integral(&self, ty: TypeId) -> bool {
+        self.integral_kind(ty).is_some_and(|kind| kind.signed)
     }
     pub(crate) fn lower_cv(&self, id: TypeId) -> u8 {
         let mut id = id;

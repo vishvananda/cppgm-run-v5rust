@@ -253,7 +253,10 @@ impl Analyzer<'_> {
         {
             self.instantiate_variable(entity)?;
         }
-        if self.unevaluated == 0 && self.graph.variable_instances.seen.insert(entity) {
+        if self.unevaluated == 0
+            && self.template_arguments == 0
+            && self.graph.variable_instances.seen.insert(entity)
+        {
             self.graph.variable_instances.demands.push(entity);
         }
         Ok(())

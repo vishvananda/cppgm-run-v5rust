@@ -375,6 +375,9 @@ impl Analyzer<'_> {
                 alignment = Some(align);
                 size
             }
+            TypeKind::Value { .. } => {
+                return Err(Error::Invariant("size query on a template value"));
+            }
             TypeKind::Enum(_) => return Err(Error::Invariant("enum query not unwound")),
             TypeKind::Array { .. } => return Err(Error::Invariant("array query not unwound")),
             TypeKind::TemplateParameter { .. } => {
@@ -572,7 +575,12 @@ impl Analyzer<'_> {
             })?;
             let binding = self.graph.binding(found);
             if self.template_depth != 0
-                && self.graph.dependent_members.get(binding.entity).is_some()
+                && (self.graph.dependent_members.get(binding.entity).is_some()
+                    || self
+                        .graph
+                        .entity(binding.entity)
+                        .template_parameter
+                        .is_some())
             {
                 return self.dependent_operand(operand, scope, false);
             }
@@ -586,7 +594,7 @@ impl Analyzer<'_> {
                     };
                     return Ok(value.ty);
                 }
-                BindingKind::Parameter => binding.ty,
+                BindingKind::Parameter | BindingKind::TemplateValue => binding.ty,
                 BindingKind::Function => {
                     let ty = self
                         .graph

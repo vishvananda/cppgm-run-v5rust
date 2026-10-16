@@ -4,7 +4,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{Binding, BindingKind, EntityId, ScopeId, ScopeKind},
+    graph::{EntityId, ScopeId, ScopeKind},
     templates::HeadId,
 };
 use crate::syntax::{ast, cloning::Cloner};
@@ -316,15 +316,7 @@ impl Analyzer<'_> {
             let ty = *arguments
                 .get(position)
                 .ok_or(Error::Invariant("class argument frame without argument"))?;
-            self.graph.add_binding(
-                frame,
-                None,
-                Binding {
-                    kind: BindingKind::Alias,
-                    ty: Some(ty),
-                    ..binding
-                },
-            )?;
+            self.bind_template_argument(frame, binding, ty)?;
         }
         Ok(frame)
     }
