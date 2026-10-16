@@ -146,7 +146,9 @@ impl Analyzer<'_> {
             .scope(scope)
             .owner
             .ok_or(Error::Invariant("bit-field without class"))?;
-        for field in self.tree.bit_fields.get(fields) {
+        for syntax_index in 0..self.tree.bit_fields.get(fields).len() {
+            let syntax_item = self.tree.bit_fields.get(fields)[syntax_index];
+            let field = &syntax_item;
             self.reject_bit_field_alignment(List::default(), field.declarator)?;
             let info = field
                 .declarator

@@ -34,7 +34,9 @@ impl Analyzer<'_> {
         class_site: bool,
     ) -> Result<LayoutAttributes, Error> {
         let mut result = LayoutAttributes::default();
-        for attribute in self.tree.attributes.get(list) {
+        for syntax_index in 0..self.tree.attributes.get(list).len() {
+            let syntax_item = self.tree.attributes.get(list)[syntax_index];
+            let attribute = &syntax_item;
             if (attribute.site == ast::AttributeSite::Class) != class_site {
                 continue;
             }
@@ -93,7 +95,8 @@ impl Analyzer<'_> {
     ) -> Result<LayoutAttributes, Error> {
         let mut part = Some(declarator);
         while let Some(id) = part {
-            let node = self.tree.declarators.get(id);
+            let syntax_item = *self.tree.declarators.get(id);
+            let node = &syntax_item;
             let own = self.layout_attributes(node.attributes, scope, false)?;
             attributes.alignment = attributes.alignment.max(own.alignment);
             attributes.packed |= own.packed;
@@ -160,7 +163,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
         class_site: bool,
     ) -> Result<(), Error> {
-        for attribute in self.tree.attributes.get(list) {
+        for syntax_index in 0..self.tree.attributes.get(list).len() {
+            let syntax_item = self.tree.attributes.get(list)[syntax_index];
+            let attribute = &syntax_item;
             if (attribute.site == ast::AttributeSite::Class) == class_site
                 && attribute.kind == ast::AttributeKind::NoReturn
                 && attribute.form == ast::AttributeForm::Standard
@@ -189,7 +194,9 @@ impl Analyzer<'_> {
         declarator: Option<ast::DeclaratorId>,
     ) -> Result<(), Error> {
         let check = |list| {
-            for attribute in self.tree.attributes.get(list) {
+            for syntax_index in 0..self.tree.attributes.get(list).len() {
+                let syntax_item = self.tree.attributes.get(list)[syntax_index];
+                let attribute = &syntax_item;
                 if attribute.kind == ast::AttributeKind::Alignas {
                     return Err(Error::at(
                         attribute.location,
@@ -202,7 +209,8 @@ impl Analyzer<'_> {
         check(leading)?;
         let mut part = declarator;
         while let Some(id) = part {
-            let node = self.tree.declarators.get(id);
+            let syntax_item = *self.tree.declarators.get(id);
+            let node = &syntax_item;
             check(node.attributes)?;
             part = node.nested;
         }

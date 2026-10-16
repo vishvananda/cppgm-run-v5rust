@@ -110,7 +110,8 @@ impl Analyzer<'_> {
             if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
                 return Ok(facts);
             }
-            let syntax_name = self.tree.names.get(name);
+            let syntax_item = *self.tree.names.get(name);
+            let syntax_name = &syntax_item;
             let qualified =
                 syntax_name.global || self.tree.name_lists.get(syntax_name.components).len() > 1;
             if found.binding.is_none() && (qualified || callee != named) {
@@ -141,7 +142,8 @@ impl Analyzer<'_> {
             } else {
                 None
             };
-            for &argument in self.tree.expr_lists.get(arguments) {
+            for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+                let argument = self.tree.expr_lists.get(arguments)[syntax_index];
                 self.type_call_argument(argument, scope)?;
             }
             if callee == named
@@ -190,7 +192,8 @@ impl Analyzer<'_> {
             facts
         } else {
             let facts = self.typed_expression(callee, scope)?;
-            for &argument in self.tree.expr_lists.get(arguments) {
+            for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+                let argument = self.tree.expr_lists.get(arguments)[syntax_index];
                 self.type_call_argument(argument, scope)?;
             }
             facts
@@ -228,10 +231,12 @@ impl Analyzer<'_> {
             }
             // Nested argument calls finish before this query borrows the reusable scratch.
             let mut scratch = std::mem::take(&mut self.call_scratch);
+            let argument_buffer =
+                super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
             let chosen = self.resolve_call(
                 self.tree.expressions.get(id).location,
                 Candidates::Functions(set),
-                self.tree.expr_lists.get(arguments),
+                argument_buffer.as_slice(),
                 facts.object,
                 &mut scratch,
             );
@@ -255,17 +260,22 @@ impl Analyzer<'_> {
         let ast::ExprKind::Call { callee, arguments } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("selected call without call syntax"));
         };
-        self.apply_call_arguments(
-            selected,
-            self.tree.expr_lists.get(arguments),
-            scope,
-            scratch,
-        )?;
         let binding = selected.binding;
-        self.record_argument_base_paths(self.tree.expr_lists.get(arguments), scope)?;
-        self.check_class_arguments(binding, arguments, scope)?;
         let location = self.tree.expressions.get(id).location;
+        if self
+            .graph
+            .entity(self.graph.binding(binding).entity)
+            .availability
+            == super::graph::FunctionAvailability::Deleted
+        {
+            return Err(Error::at(location, "use of a deleted function"));
+        }
         self.record_call_receiver(callee, binding, facts, scope, location)?;
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        self.apply_call_arguments(selected, argument_buffer.as_slice(), scope, scratch)?;
+        self.record_argument_base_paths(argument_buffer.as_slice(), scope)?;
+        self.check_class_arguments(binding, arguments, scope)?;
         self.select_function_designation(callee, binding)?;
         self.demand_function(binding, true);
         let ty = self.graph.types.canonical_function(
@@ -448,7 +458,9 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("indirect function type"));
         };
         let count = parameters.len();
-        let args = self.tree.expr_lists.get(arguments);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        let args = argument_buffer.as_slice();
         if args.len() < count || args.len() > count && !variadic {
             return Err(Error::at(
                 self.tree.expressions.get(id).location,
@@ -669,7 +681,9 @@ impl Analyzer<'_> {
         arguments: List<ast::ExprId>,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        self.check_class_argument_slice(binding, self.tree.expr_lists.get(arguments), 0, scope)
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        self.check_class_argument_slice(binding, argument_buffer.as_slice(), 0, scope)
     }
     pub(super) fn check_class_argument_slice(
         &mut self,
@@ -1067,7 +1081,6 @@ impl Analyzer<'_> {
             first,
             object_count,
         } = selected;
-        self.check_template_call_defaults(binding, args.len())?;
         for (index, &arg) in args.iter().enumerate() {
             if let Some(sequence) = scratch.sequences[first + object_count + index] {
                 if matches!(
@@ -1087,7 +1100,7 @@ impl Analyzer<'_> {
                 self.ellipsis_argument(arg)?;
             }
         }
-        Ok(())
+        self.instantiate_call_defaults(binding, args.len())
     }
     pub(super) fn apply_argument_sequence(
         &mut self,

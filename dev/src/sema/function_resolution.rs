@@ -70,7 +70,8 @@ impl Analyzer<'_> {
         let ast::ExprKind::Id(name) = self.tree.expressions.get(operand).kind else {
             return Ok(None);
         };
-        let node = self.tree.names.get(name);
+        let syntax_item = *self.tree.names.get(name);
+        let node = &syntax_item;
         if !node.global && self.tree.name_lists.get(node.components).len() == 1 {
             return Ok(None);
         }
@@ -79,6 +80,7 @@ impl Analyzer<'_> {
             .name_lists
             .get(node.components)
             .last()
+            .copied()
             .ok_or(Error::Invariant("empty address name"))?;
         let location = node.location;
         let prefix = self
@@ -102,7 +104,7 @@ impl Analyzer<'_> {
                 })?
         };
         if last.arguments.is_some() {
-            self.explicit_function_specializations(*last, &mut found, scope, false)?;
+            self.explicit_function_specializations(last, &mut found, scope, false)?;
         }
         let binding = found
             .binding

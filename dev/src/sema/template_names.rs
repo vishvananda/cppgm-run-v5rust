@@ -21,7 +21,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
-        for argument in self.tree.template_arguments.get(arguments) {
+        for syntax_index in 0..self.tree.template_arguments.get(arguments).len() {
+            let syntax_item = self.tree.template_arguments.get(arguments)[syntax_index];
+            let argument = &syntax_item;
             if argument.pack {
                 return Err(Error::Missing("template argument pack names"));
             }
@@ -150,7 +152,8 @@ impl Analyzer<'_> {
                     }
                     _ => return Err(Error::Invariant("non-name argument probe")),
                 };
-                let node = self.tree.names.get(name);
+                let syntax_item = *self.tree.names.get(name);
+                let node = &syntax_item;
                 let components = self.tree.name_lists.get(node.components);
                 if node.global || components.len() != 1 || components[0].arguments.is_some() {
                     return Ok(None);
@@ -207,7 +210,8 @@ impl Analyzer<'_> {
         arguments: &[ast::ExprId],
         scope: ScopeId,
     ) -> Result<(), Error> {
-        let node = self.tree.names.get(name);
+        let syntax_item = *self.tree.names.get(name);
+        let node = &syntax_item;
         let components = self.tree.name_lists.get(node.components);
         if node.global || components.len() != 1 || arguments.len() > 8 {
             return Ok(());

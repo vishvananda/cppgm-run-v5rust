@@ -66,7 +66,9 @@ impl Analyzer<'_> {
                 ]);
             }
             ExprKind::Call { callee, arguments } => {
-                let arguments = self.tree.expr_lists.get(arguments);
+                let argument_buffer =
+                    super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+                let arguments = argument_buffer.as_slice();
                 self.expression_work
                     .extend(arguments.iter().rev().map(|&id| (id, unevaluated)));
                 if let ExprKind::Id(name) = self.tree.expressions.get(callee).kind {
@@ -206,7 +208,8 @@ impl Analyzer<'_> {
         allow_undeclared: bool,
         allow_type: bool,
     ) -> Result<Option<BindingId>, Error> {
-        let node = self.tree.names.get(name);
+        let syntax_item = *self.tree.names.get(name);
+        let node = &syntax_item;
         let last = self
             .tree
             .name_lists
@@ -239,7 +242,9 @@ impl Analyzer<'_> {
             // Definition-time name checking does not select its members;
             // their retained argument syntax still needs its name checks.
             Err(Error::Missing("dependent qualified name lookup")) if self.template_depth != 0 => {
-                for component in self.tree.name_lists.get(node.components) {
+                for syntax_index in 0..self.tree.name_lists.get(node.components).len() {
+                    let syntax_item = self.tree.name_lists.get(node.components)[syntax_index];
+                    let component = &syntax_item;
                     if let Some(arguments) = component.arguments {
                         self.template_argument_names(arguments, scope, component.location)?;
                     }
@@ -323,7 +328,8 @@ impl Analyzer<'_> {
             InitializerKind::Assign(id) | InitializerKind::Braced(id) => self.expression(id, scope),
             InitializerKind::Parenthesized(arguments) => {
                 let mut result = Ok(());
-                for &id in self.tree.expr_lists.get(arguments) {
+                for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+                    let id = self.tree.expr_lists.get(arguments)[syntax_index];
                     result = self.expression(id, scope);
                     if result.is_err() {
                         break;

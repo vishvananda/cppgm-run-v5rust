@@ -247,7 +247,8 @@ impl Analyzer<'_> {
         scope: ScopeId,
         key: &mut ExpressionKey,
     ) -> Result<bool, Error> {
-        for &argument in self.tree.expr_lists.get(arguments) {
+        for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+            let argument = self.tree.expr_lists.get(arguments)[syntax_index];
             if !self.key_expression(argument, scope, key)? {
                 return Ok(false);
             }

@@ -536,14 +536,15 @@ mod tests {
         assert!(analyzer.graph.friendships.edges.is_empty());
         assert!(analyzer.graph.friendships.functions.is_empty());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
-        let ast::DeclKind::Template { declaration, .. } = tree
+        let ast::DeclKind::Template { declaration, .. } = analyzer
+            .tree
             .declarations
-            .get(tree.decl_lists.get(declarations)[1])
+            .get(analyzer.tree.decl_lists.get(declarations)[1])
             .kind
         else {
             panic!("expected template");
         };
-        let binding = friend_bindings(tree, &analyzer.graph, declaration)[0];
+        let binding = friend_bindings(analyzer.tree, &analyzer.graph, declaration)[0];
         let entity = analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity);

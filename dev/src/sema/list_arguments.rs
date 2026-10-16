@@ -25,7 +25,8 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
-            for &element in self.tree.expr_lists.get(elements) {
+            for syntax_index in 0..self.tree.expr_lists.get(elements).len() {
+                let element = self.tree.expr_lists.get(elements)[syntax_index];
                 self.type_call_argument(element, scope)?;
             }
         } else {
@@ -64,7 +65,9 @@ impl Analyzer<'_> {
             reference_source: ReferenceSource::Other,
         };
         let mut constructor = None;
-        let values = self.tree.expr_lists.get(elements);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(elements));
+        let values = argument_buffer.as_slice();
         match self.graph.types.get(target).kind {
             TypeKind::Scalar(Scalar::Void) => return Ok(None),
             TypeKind::Array { element, bound } => {
@@ -221,7 +224,9 @@ impl Analyzer<'_> {
             let Some((element, bound)) = array else {
                 return Ok(self.list_sequence(id, target)?.is_some());
             };
-            let values = self.tree.expr_lists.get(own);
+            let argument_buffer =
+                super::call_arguments::Arguments::new(self.tree.expr_lists.get(own));
+            let values = argument_buffer.as_slice();
             if let [single] = values
                 && self.string_literal(*single)
             {
@@ -262,15 +267,17 @@ impl Analyzer<'_> {
             ));
         }
         let mut scratch = std::mem::take(&mut self.call_scratch);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(elements));
         let result = self
             .rank_call(
                 Candidates::Constructors {
                     class,
                     converting: false,
-                    copies: matches!(self.tree.expr_lists.get(elements), [id]
+                    copies: matches!(argument_buffer.as_slice(), [id]
                         if !matches!(self.tree.expressions.get(*id).kind, ExprKind::Braced { .. })),
                 },
-                self.tree.expr_lists.get(elements),
+                argument_buffer.as_slice(),
                 None,
                 &mut scratch,
             )
@@ -319,17 +326,19 @@ mod tests {
                 .entity
         };
         let [aggregate, constructed, implicit] = names.map(class);
-        let lists: Vec<_> = tree.decl_lists.get(declarations)[3..]
+        let lists: Vec<_> = analyzer.tree.decl_lists.get(declarations)[3..]
             .iter()
             .map(|&id| {
-                let ast::DeclKind::Simple { declarators, .. } = tree.declarations.get(id).kind
+                let ast::DeclKind::Simple { declarators, .. } =
+                    analyzer.tree.declarations.get(id).kind
                 else {
                     panic!("variable");
                 };
-                let ast::InitializerKind::Assign(id) = tree.init_declarators.get(declarators)[0]
-                    .initializer
-                    .unwrap()
-                    .kind
+                let ast::InitializerKind::Assign(id) =
+                    analyzer.tree.init_declarators.get(declarators)[0]
+                        .initializer
+                        .unwrap()
+                        .kind
                 else {
                     panic!("list initializer");
                 };
@@ -337,10 +346,10 @@ mod tests {
             })
             .collect();
         let original = analyzer.graph.expression_facts.get(lists[0]).unwrap();
-        let ExprKind::Braced { elements, .. } = tree.expressions.get(lists[0]).kind else {
+        let ExprKind::Braced { elements, .. } = analyzer.tree.expressions.get(lists[0]).kind else {
             panic!("list");
         };
-        let element = tree.expr_lists.get(elements)[0];
+        let element = analyzer.tree.expr_lists.get(elements)[0];
         let element_facts = analyzer.graph.expression_facts.get(element).unwrap();
         let demands = analyzer.graph.root_demands.as_slice().len();
         let aggregate_ty = analyzer.graph.entity(aggregate).ty.unwrap();
@@ -395,7 +404,7 @@ mod tests {
         assert_eq!(array_step.conversion.target, reference);
         assert!(array_step.conversion.temporary);
         assert_eq!(array_step.user_conversion, declared.user_conversion);
-        assert_eq!(tree.expressions.mark(), expression_count);
+        assert_eq!(analyzer.tree.expressions.mark(), expression_count);
         let after = analyzer.graph.expression_facts.get(lists[0]).unwrap();
         assert_eq!(after.ty, original.ty);
         assert_eq!(after.category, original.category);

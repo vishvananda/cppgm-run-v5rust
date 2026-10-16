@@ -17,13 +17,14 @@ impl Analyzer<'_> {
         key: &mut ExpressionKey,
     ) -> Result<bool, Error> {
         let node = *self.tree.names.get(name);
-        let components = self.tree.name_lists.get(node.components);
+        let component_count = self.tree.name_lists.get(node.components).len();
         key.words.extend([
             KeyWord::Node(KeyNode::Name),
-            KeyWord::Count(components.len()),
+            KeyWord::Count(component_count),
             KeyWord::Flag(node.global),
         ]);
-        for (index, component) in components.iter().enumerate() {
+        for index in 0..component_count {
+            let component = self.tree.name_lists.get(node.components)[index];
             match component.kind {
                 NameKind::Operator { op, array } => key
                     .words
@@ -32,7 +33,7 @@ impl Analyzer<'_> {
                     key.words.push(KeyWord::Identifier(name));
                 }
                 NameKind::Identifier(name) => {
-                    let filter = if components.len() > 1 {
+                    let filter = if component_count > 1 {
                         Filter::Prefix
                     } else {
                         Filter::Ordinary
@@ -55,12 +56,13 @@ impl Analyzer<'_> {
                 _ => return Ok(false),
             }
             if let Some(arguments) = component.arguments {
-                let arguments = self.tree.template_arguments.get(arguments);
+                let argument_count = self.tree.template_arguments.get(arguments).len();
                 key.words.extend([
                     KeyWord::Node(KeyNode::Arguments),
-                    KeyWord::Count(arguments.len()),
+                    KeyWord::Count(argument_count),
                 ]);
-                for argument in arguments {
+                for index in 0..argument_count {
+                    let argument = self.tree.template_arguments.get(arguments)[index];
                     if argument.pack {
                         return Err(Error::Missing("template pack name key"));
                     }
@@ -76,7 +78,7 @@ impl Analyzer<'_> {
                 }
             }
         }
-        if resolve && (components.len() > 1 || node.global) {
+        if resolve && (component_count > 1 || node.global) {
             self.key_resolution(name, scope, key)?;
         }
         Ok(true)
@@ -125,7 +127,7 @@ impl Analyzer<'_> {
         key: &mut ExpressionKey,
     ) -> Result<(), Error> {
         let node = self.tree.names.get(name);
-        let Some(last) = self.tree.name_lists.get(node.components).last() else {
+        let Some(last) = self.tree.name_lists.get(node.components).last().copied() else {
             return Err(Error::Invariant("empty name in structural key"));
         };
         if !matches!(last.kind, NameKind::Identifier(_)) {

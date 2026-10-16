@@ -332,8 +332,11 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        let tree = self.tree;
-        let args = tree.expr_lists.get(placement.unwrap_or_default());
+        let tree = &*self.tree;
+        let argument_buffer = super::call_arguments::Arguments::new(
+            tree.expr_lists.get(placement.unwrap_or_default()),
+        );
+        let args = argument_buffer.as_slice();
         for &arg in args {
             self.type_call_argument(arg, scope)?;
         }

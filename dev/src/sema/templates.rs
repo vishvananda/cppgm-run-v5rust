@@ -53,6 +53,7 @@ pub(super) struct DefaultArgument {
 }
 struct Head {
     depth: u32,
+    limit: usize,
     scope: ScopeId,
     syntax: ast::TemplateParameterClause,
     parameters: Vec<EntityId>,
@@ -71,6 +72,9 @@ impl Templates {
     }
     pub(super) fn default_argument(&self, id: HeadId, index: usize) -> Option<DefaultArgument> {
         self.head(id).defaults[index]
+    }
+    pub(super) fn definition_limit(&self, id: HeadId) -> usize {
+        self.head(id).limit
     }
     pub(super) fn depth(&self, id: HeadId) -> u32 {
         // A head's first parameter has the lexical depth of its scope.
@@ -221,13 +225,9 @@ impl Analyzer<'_> {
         let mut parameters = Vec::new();
         let mut shapes = Vec::new();
         let mut defaults = Vec::new();
-        for (index, parameter) in self
-            .tree
-            .template_parameters
-            .get(syntax.parameters)
-            .iter()
-            .enumerate()
-        {
+        for index in 0..self.tree.template_parameters.get(syntax.parameters).len() {
+            let syntax_item = self.tree.template_parameters.get(syntax.parameters)[index];
+            let parameter = &syntax_item;
             let ast::TemplateParameterKind::Type {
                 key,
                 name,
@@ -335,6 +335,7 @@ impl Analyzer<'_> {
         self.graph.templates.add_head(
             Head {
                 depth,
+                limit: self.graph.binding_limit(),
                 scope,
                 syntax,
                 parameters,

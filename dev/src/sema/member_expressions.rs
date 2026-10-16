@@ -346,12 +346,13 @@ impl Analyzer<'_> {
             .scope
             .ok_or(Error::Invariant("member class without scope"))?;
         let node = *self.tree.names.get(name);
-        let components = self.tree.name_lists.get(node.components);
-        if !node.global && components.len() == 1 {
+        let component_count = self.tree.name_lists.get(node.components).len();
+        if !node.global && component_count == 1 {
             return Ok(class_scope);
         }
         let mut prefix = node.global.then_some(self.graph.global);
-        for component in &components[..components.len() - 1] {
+        for index in 0..component_count - 1 {
+            let component = self.tree.name_lists.get(node.components)[index];
             if component.arguments.is_some() {
                 return Err(Error::Missing(
                     "template specialization in a member qualifier",

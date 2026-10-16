@@ -66,7 +66,9 @@ impl Analyzer<'_> {
                 return Ok(());
             }
         }
-        self.associated_functions(name, self.tree.expr_lists.get(arguments), found)
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        self.associated_functions(name, argument_buffer.as_slice(), found)
     }
     pub(super) fn associated_functions(
         &mut self,
@@ -290,15 +292,20 @@ mod tests {
         analyzer
             .declarations(declarations, analyzer.graph.global)
             .unwrap();
-        for &statement in tree.stmt_lists.get(statements) {
-            let ast::StmtKind::Expression(Some(call)) = tree.statements.get(statement).kind else {
+        for &statement in analyzer.tree.stmt_lists.get(statements) {
+            let ast::StmtKind::Expression(Some(call)) =
+                analyzer.tree.statements.get(statement).kind
+            else {
                 unreachable!()
             };
             assert!(analyzer.graph.expression_facts.get(call).is_err());
-            let ast::ExprKind::Call { callee, arguments } = tree.expressions.get(call).kind else {
+            let ast::ExprKind::Call { callee, arguments } =
+                analyzer.tree.expressions.get(call).kind
+            else {
                 unreachable!()
             };
-            for &expression in tree
+            for &expression in analyzer
+                .tree
                 .expr_lists
                 .get(arguments)
                 .iter()

@@ -280,8 +280,15 @@ impl Analyzer<'_> {
             demands: prefix,
             ..Construction::default()
         };
-        let end =
-            self.static_constructor(constructor, arguments, scope, 0, &mut construction, 0)?;
+        let argument_buffer = super::call_arguments::Arguments::new(arguments);
+        let end = self.static_constructor(
+            constructor,
+            argument_buffer.as_slice(),
+            scope,
+            0,
+            &mut construction,
+            0,
+        )?;
         let size = self.class_layout(class, SourceOffset(0))?.0;
         let image = if end.is_some_and(|end| end <= size) {
             construction.image(size)?
@@ -474,9 +481,10 @@ impl Analyzer<'_> {
             Some(ast::InitializerKind::Parenthesized(values)) => self.tree.expr_lists.get(values),
             _ => return Ok(None),
         };
+        let argument_buffer = super::call_arguments::Arguments::new(arguments);
         self.static_constructor(
             constructor.ok_or(Error::Invariant("static constructor"))?,
-            arguments,
+            argument_buffer.as_slice(),
             scope,
             at,
             out,

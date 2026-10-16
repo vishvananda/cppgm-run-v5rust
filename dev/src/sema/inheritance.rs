@@ -224,7 +224,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<(), Error> {
         let mut seen = HashSet::new();
-        for base in self.tree.bases.get(node.bases) {
+        for syntax_index in 0..self.tree.bases.get(node.bases).len() {
+            let syntax_item = self.tree.bases.get(node.bases)[syntax_index];
+            let base = &syntax_item;
             if base.pack {
                 return Err(if self.template_depth == 0 {
                     Error::at(base.location, "a pack expansion outside a template")
@@ -232,7 +234,7 @@ impl Analyzer<'_> {
                     Error::Missing("dependent base pack expansion")
                 });
             }
-            let name = self.tree.names.get(base.name);
+            let name = *self.tree.names.get(base.name);
             let components = self.tree.name_lists.get(name.components);
             let mut access_binding = None;
             let ty = if !name.global

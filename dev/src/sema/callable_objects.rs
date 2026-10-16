@@ -86,9 +86,11 @@ impl Analyzer<'_> {
                 let set = designation
                     .functions
                     .ok_or(Error::Invariant("call operator candidates"))?;
+                let argument_buffer =
+                    super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
                 self.rank_call(
                     Candidates::Functions(set),
-                    self.tree.expr_lists.get(arguments),
+                    argument_buffer.as_slice(),
                     Some(object),
                     &mut scratch,
                 )?;
@@ -139,7 +141,9 @@ impl Analyzer<'_> {
         let ast::ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("surrogate without call syntax"));
         };
-        let args = self.tree.expr_lists.get(arguments);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        let args = argument_buffer.as_slice();
         let count = self.visible_conversion_functions(class)?.len();
         let mut best = None;
         let mut ambiguous = false;

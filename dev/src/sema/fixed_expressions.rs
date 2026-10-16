@@ -49,7 +49,8 @@ impl Analyzer<'_> {
         let root = id;
         self.fixed_validation_work.push((id, 0));
         while let Some((id, depth)) = self.fixed_validation_work.pop() {
-            let node = self.tree.expressions.get(id);
+            let syntax_item = *self.tree.expressions.get(id);
+            let node = &syntax_item;
             if depth > 200
                 || matches!(
                     node.kind,
@@ -229,13 +230,15 @@ impl Analyzer<'_> {
                 if let Some(braced) = braced {
                     self.fixed_expression(braced, scope, next)?;
                 }
-                for &argument in self.tree.expr_lists.get(arguments) {
+                for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+                    let argument = self.tree.expr_lists.get(arguments)[syntax_index];
                     self.fixed_expression(argument, scope, next)?;
                 }
                 Ok(None)
             }
             ExprKind::Braced { elements, .. } => {
-                for &element in self.tree.expr_lists.get(elements) {
+                for syntax_index in 0..self.tree.expr_lists.get(elements).len() {
+                    let element = self.tree.expr_lists.get(elements)[syntax_index];
                     self.fixed_expression(element, scope, next)?;
                 }
                 Ok(None)
@@ -257,7 +260,8 @@ impl Analyzer<'_> {
         left: Option<FixedOperand>,
         right: Option<FixedOperand>,
     ) -> Result<Option<FixedOperand>, Error> {
-        let node = self.tree.expressions.get(id);
+        let syntax_item = *self.tree.expressions.get(id);
+        let node = &syntax_item;
         let failure = |message| Error::at(node.location, message);
         let kind = node.kind;
         if let ExprKind::Member { op, member, .. } = kind {
@@ -556,7 +560,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
         depth: u16,
     ) -> Result<Option<FixedOperand>, Error> {
-        let syntax = self.tree.expr_lists.get(arguments);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        let syntax = argument_buffer.as_slice();
         let mut arguments = [None; 16];
         let mut known = syntax.len() <= 16;
         let mut constant = false;

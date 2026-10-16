@@ -11,6 +11,7 @@ use crate::syntax::ast;
 pub(super) struct DefaultArgument {
     pub expression: ast::ExprId,
     pub introduced: usize,
+    pub template: Option<super::template_defaults::Pattern>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct PendingDefaults {
@@ -54,6 +55,18 @@ impl Analyzer<'_> {
             }
             self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
                 expression,
+                template: Some(super::template_defaults::Pattern {
+                    head: self
+                        .template_head
+                        .ok_or(Error::Invariant("template default without active head"))?,
+                    scope,
+                    limit: self.graph.templates.definition_limit(
+                        self.graph
+                            .entity(entity)
+                            .template_head
+                            .ok_or(Error::Invariant("template default without primary head"))?,
+                    ),
+                }),
                 introduced: self
                     .graph
                     .binding_limit()
@@ -128,6 +141,7 @@ impl Analyzer<'_> {
             self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
                 expression,
                 introduced,
+                template: None,
             });
         }
         let defaults = PendingDefaults {
@@ -179,7 +193,9 @@ impl Analyzer<'_> {
             let saved_depth = self.template_depth;
             self.template_depth = template_depth;
             let result = (|| {
-                for parameter in self.tree.parameters.get(clause.parameters) {
+                for syntax_index in 0..self.tree.parameters.get(clause.parameters).len() {
+                    let syntax_item = self.tree.parameters.get(clause.parameters)[syntax_index];
+                    let parameter = &syntax_item;
                     if let Some(initializer) = parameter.default {
                         self.initializer_names(initializer, scope, ty)?;
                     }
@@ -194,13 +210,9 @@ impl Analyzer<'_> {
         // an implicit object to a default argument.
         let saved_body = self.body_context.take();
         let result = (|| {
-            for (index, parameter) in self
-                .tree
-                .parameters
-                .get(clause.parameters)
-                .iter()
-                .enumerate()
-            {
+            for index in 0..self.tree.parameters.get(clause.parameters).len() {
+                let syntax_item = self.tree.parameters.get(clause.parameters)[index];
+                let parameter = &syntax_item;
                 let Some(initializer) = parameter.default else {
                     continue;
                 };

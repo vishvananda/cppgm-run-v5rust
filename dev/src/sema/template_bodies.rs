@@ -55,9 +55,9 @@ impl super::function_templates::FunctionTemplates {
     }
 }
 
-/// The driver gives semantic analysis exclusive access to append instantiated
-/// nodes between analysis sessions. Sessions read ordinary slab IDs directly;
-/// no expression read redirects through a template pattern or an overlay map.
+/// Semantic analysis exclusively borrows the unit syntax: defaults append at
+/// selected calls, while this driver drains unit-tail body demands. Both paths
+/// read ordinary slab IDs directly, with no pattern redirection or overlay map.
 pub(crate) fn analyze_unit(
     tree: &mut ast::Tree,
     cursor: &mut Cursor<'_>,
@@ -181,7 +181,7 @@ pub(crate) fn analyze_unit(
     Ok(graph)
 }
 
-fn copy_error(error: &ParseError) -> Error {
+pub(super) fn copy_error(error: &ParseError) -> Error {
     match error {
         ParseError::Limit(message) => Error::Limit(message),
         ParseError::NotImplemented(group) => Error::Missing(group),
@@ -259,7 +259,7 @@ impl Analyzer<'_> {
         result?;
         Ok(())
     }
-    fn template_body_frame(
+    pub(super) fn template_body_frame(
         &mut self,
         entity: EntityId,
         head: super::templates::HeadId,

@@ -91,7 +91,9 @@ impl Analyzer<'_> {
         } else {
             self.layout_attributes(declaration.attributes, scope, false)?
         };
-        for init in self.tree.init_declarators.get(declarators) {
+        for syntax_index in 0..self.tree.init_declarators.get(declarators).len() {
+            let syntax_item = self.tree.init_declarators.get(declarators)[syntax_index];
+            let init = &syntax_item;
             let attributes =
                 self.declarator_layout_attributes(attributes, init.declarator, scope)?;
             self.resume_declaration_access(scope);

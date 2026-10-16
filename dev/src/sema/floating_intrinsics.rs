@@ -83,7 +83,9 @@ impl Analyzer<'_> {
         let ast::ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("constant intrinsic without call"));
         };
-        let arguments = self.tree.expr_lists.get(arguments);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        let arguments = argument_buffer.as_slice();
         let result = if kind.comparison() {
             let left = self.constant_float_operand(arguments[0], scope)?;
             let right = self.constant_float_operand(arguments[1], scope)?;
@@ -199,7 +201,9 @@ impl Analyzer<'_> {
         kind: FloatingIntrinsic,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        let values = self.tree.expr_lists.get(arguments);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        let values = argument_buffer.as_slice();
         let count = if kind.comparison() {
             2
         } else if kind == FloatingIntrinsic::Classify {

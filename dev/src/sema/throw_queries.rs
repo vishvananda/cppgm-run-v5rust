@@ -68,7 +68,8 @@ impl Analyzer<'_> {
                 self.expression_may_throw(id)
             }
             ast::InitializerKind::Parenthesized(arguments) => {
-                for &id in self.tree.expr_lists.get(arguments) {
+                for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+                    let id = self.tree.expr_lists.get(arguments)[syntax_index];
                     if self.expression_may_throw(id)? {
                         return Ok(true);
                     }
@@ -629,11 +630,11 @@ mod tests {
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let id = return_expression(tree, declarations);
+        let id = return_expression(analyzer.tree, declarations);
         let ExprKind::TypeTrait {
             operand: Some(operand),
             ..
-        } = tree.expressions.get(id).kind
+        } = analyzer.tree.expressions.get(id).kind
         else {
             panic!("return is not a noexcept query");
         };

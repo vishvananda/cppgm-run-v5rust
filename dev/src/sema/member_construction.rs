@@ -10,7 +10,7 @@ use super::{
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
 use std::collections::HashMap;
 
-type Written<'a> = HashMap<EntityId, &'a ast::MemInitializer>;
+type Written = HashMap<EntityId, ast::MemInitializer>;
 type Designations<'a> = HashMap<EntityId, Option<&'a ast::MemInitializer>>;
 pub(super) struct MemberActions {
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
@@ -24,7 +24,7 @@ impl Analyzer<'_> {
     fn member_designation<'a>(
         &self,
         member: EntityId,
-        written: &Written<'a>,
+        written: &'a Written,
         known: &mut Designations<'a>,
     ) -> Option<&'a ast::MemInitializer> {
         let mut work = vec![(member, false)];
@@ -32,7 +32,7 @@ impl Analyzer<'_> {
             if known.contains_key(&current) {
                 continue;
             }
-            if let Some(&initializer) = written.get(&current) {
+            if let Some(initializer) = written.get(&current) {
                 known.insert(current, Some(initializer));
                 continue;
             }
@@ -62,7 +62,7 @@ impl Analyzer<'_> {
     pub(super) fn written_member_plans(
         &mut self,
         class: EntityId,
-        written: &Written<'_>,
+        written: &Written,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<MemberActions, Error> {
@@ -71,7 +71,7 @@ impl Analyzer<'_> {
     fn member_actions<'a>(
         &mut self,
         class: EntityId,
-        written: &Written<'a>,
+        written: &'a Written,
         scope: ScopeId,
         location: SourceOffset,
         known: &mut Designations<'a>,
@@ -207,7 +207,7 @@ impl Analyzer<'_> {
     fn anonymous_member_plan<'a>(
         &mut self,
         class: EntityId,
-        written: &Written<'a>,
+        written: &'a Written,
         scope: ScopeId,
         location: SourceOffset,
         known: &mut Designations<'a>,

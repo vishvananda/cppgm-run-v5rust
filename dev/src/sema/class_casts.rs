@@ -94,7 +94,9 @@ impl Analyzer<'_> {
         arguments: crate::syntax::storage::List<ast::ExprId>,
         scope: ScopeId,
     ) -> Result<bool, Error> {
-        let args = self.tree.expr_lists.get(arguments);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        let args = argument_buffer.as_slice();
         if args.len() > 1 {
             return Ok(true);
         }

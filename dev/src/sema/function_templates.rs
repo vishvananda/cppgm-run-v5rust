@@ -32,6 +32,7 @@ pub(super) struct FunctionTemplates {
     signatures: HashMap<SpecializationKey, SignatureState>,
     primaries: HashMap<EntityId, BindingId>,
     pub(super) bodies: super::template_bodies::Bodies,
+    pub(super) argument_defaults: super::template_defaults::Defaults,
     pub(super) instantiations: super::explicit_instantiations::Instantiations,
     pub(super) arguments: HashMap<EntityId, Vec<TypeId>>,
     explicit: HashMap<BindingId, Vec<Option<TypeId>>>,
@@ -171,7 +172,9 @@ impl Analyzer<'_> {
             ));
         }
         let mut given = Vec::new();
-        for argument in self.tree.template_arguments.get(syntax) {
+        for syntax_index in 0..self.tree.template_arguments.get(syntax).len() {
+            let syntax_item = self.tree.template_arguments.get(syntax)[syntax_index];
+            let argument = &syntax_item;
             let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
                 return Err(Error::Missing("non-type function template arguments"));
             };
@@ -919,11 +922,16 @@ impl Analyzer<'_> {
             .copied()
             .ok_or(Error::Invariant("empty specialization name"))?;
         let mut given = Vec::new();
-        for argument in self
+        for index in 0..self
             .tree
             .template_arguments
             .get(component.arguments.unwrap_or_default())
+            .len()
         {
+            let argument = self
+                .tree
+                .template_arguments
+                .get(component.arguments.unwrap_or_default())[index];
             let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
                 return Err(Error::Missing("non-type function template arguments"));
             };
@@ -1002,31 +1010,8 @@ impl Analyzer<'_> {
             .function_templates
             .primary(entity)
             .map_or(entity, |binding| self.graph.binding(binding).entity);
-        let primary = self.graph.entity(primary);
-        primary.template_head.is_some() && primary.defaults.get(index).is_some_and(Option::is_some)
-    }
-
-    pub(super) fn check_template_call_defaults(
-        &self,
-        binding: BindingId,
-        count: usize,
-    ) -> Result<(), Error> {
-        let entity = self.graph.binding(binding).entity;
-        let primary = self
-            .graph
-            .function_templates
-            .primary(entity)
-            .map_or(entity, |binding| self.graph.binding(binding).entity);
-        let primary = self.graph.entity(primary);
-        if primary.template_head.is_none() {
-            return Ok(());
-        }
-        if count < primary.defaults.len() && primary.defaults[count..].iter().all(Option::is_some) {
-            return Err(Error::Missing(
-                "demanded function template default argument instantiation",
-            ));
-        }
-        Ok(())
+        self.graph.entity(primary).template_head.is_some()
+            && self.graph.function_default(primary, index).is_some()
     }
 
     fn template_at_least_as_specialized(

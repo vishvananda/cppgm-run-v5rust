@@ -186,7 +186,15 @@ impl Analyzer<'_> {
                 .map(|id| self.graph.lower_list_constructor(id))
                 .transpose()?
                 .flatten();
-            return self.static_class_list(class, list, &mut 0, scope, out, constructor);
+            let argument_buffer = super::call_arguments::Arguments::new(list);
+            return self.static_class_list(
+                class,
+                argument_buffer.as_slice(),
+                &mut 0,
+                scope,
+                out,
+                constructor,
+            );
         }
         if matches!(
             self.graph.types.get(target).kind,
@@ -245,7 +253,14 @@ impl Analyzer<'_> {
                         return self.static_array_string(target, list[0], out);
                     }
                     let mut next = 0;
-                    return self.static_array_list(target, list, &mut next, scope, out);
+                    let argument_buffer = super::call_arguments::Arguments::new(list);
+                    return self.static_array_list(
+                        target,
+                        argument_buffer.as_slice(),
+                        &mut next,
+                        scope,
+                        out,
+                    );
                 }
                 return self.static_array_string(target, root, out);
             }

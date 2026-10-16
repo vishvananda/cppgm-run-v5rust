@@ -15,10 +15,9 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast, types::FundamentalType as F};
 const VALUE_BUDGET: u64 = 1 << 22;
 
-#[derive(Clone, Copy)]
-struct EvaluatedCall<'a> {
+struct EvaluatedCall {
     constructor: ConstructorId,
-    arguments: &'a [ast::ExprId],
+    arguments: super::call_arguments::Arguments,
     zeroed: bool,
     primary: bool,
 }
@@ -40,7 +39,7 @@ pub(super) struct EvaluatedImage {
     pub demands: Vec<Item>,
 }
 
-impl<'tree> Analyzer<'tree> {
+impl Analyzer<'_> {
     pub(super) fn evaluated_polymorphic_object(
         &mut self,
         entity: EntityId,
@@ -176,7 +175,7 @@ impl<'tree> Analyzer<'tree> {
         if let TypeKind::Array { element, bound } = self.graph.types.get(ty).kind {
             // An absent array initializer is not an evaluated value-initialization.
             let arguments = if initializer.is_none() && value_initialized {
-                &[][..]
+                super::call_arguments::Arguments::Empty
             } else if let Some(arguments) =
                 initializer.and_then(|i| self.evaluated_arguments(Some(i)))
             {
@@ -188,7 +187,7 @@ impl<'tree> Analyzer<'tree> {
             for index in 0..bound {
                 let expr = usize::try_from(index)
                     .ok()
-                    .and_then(|i| arguments.get(i))
+                    .and_then(|i| arguments.as_slice().get(i))
                     .copied();
                 let written = expr.map(|expr| ast::Initializer {
                     kind: ast::InitializerKind::Braced(expr),
@@ -227,25 +226,22 @@ impl<'tree> Analyzer<'tree> {
         if let Some(expr) = initializer.and_then(|i| self.single_initializer(i))
             && let Some(call) = self.evaluated_prvalue(expr)?
         {
-            return self.evaluated_constructor(call, (scope, at), out, 0);
+            return self.evaluated_constructor(&call, (scope, at), out, 0);
         }
         let Some(arguments) = self.evaluated_arguments(initializer) else {
             return Ok(false);
         };
         let call = EvaluatedCall {
             constructor,
-            arguments,
             primary: false,
             zeroed: (initializer.is_some() || value_initialized)
-                && arguments.is_empty()
+                && arguments.as_slice().is_empty()
                 && self.graph.lower_constructor(constructor).zero_before_value,
+            arguments,
         };
-        self.evaluated_constructor(call, (scope, at), out, 0)
+        self.evaluated_constructor(&call, (scope, at), out, 0)
     }
-    fn evaluated_prvalue(
-        &self,
-        mut expr: ast::ExprId,
-    ) -> Result<Option<EvaluatedCall<'tree>>, Error> {
+    fn evaluated_prvalue(&self, mut expr: ast::ExprId) -> Result<Option<EvaluatedCall>, Error> {
         loop {
             let facts = self.graph.expression_facts.get(expr)?;
             match facts.class_initialization {
@@ -259,12 +255,13 @@ impl<'tree> Analyzer<'tree> {
                         ConstructorArguments::Value => &[],
                         ConstructorArguments::Single(_) => return Ok(None),
                     };
+                    let arguments = super::call_arguments::Arguments::new(arguments);
                     return Ok(Some(EvaluatedCall {
                         constructor,
-                        arguments,
                         primary: false,
-                        zeroed: arguments.is_empty()
+                        zeroed: arguments.as_slice().is_empty()
                             && self.graph.lower_constructor(constructor).zero_before_value,
+                        arguments,
                     }));
                 }
                 _ => return Ok(None),
@@ -328,9 +325,9 @@ impl<'tree> Analyzer<'tree> {
     fn evaluated_arguments(
         &self,
         initializer: Option<ast::Initializer>,
-    ) -> Option<&'tree [ast::ExprId]> {
-        match initializer.map(|i| i.kind) {
-            None => Some(&[]),
+    ) -> Option<super::call_arguments::Arguments> {
+        let values = match initializer.map(|i| i.kind) {
+            None => Some(&[][..]),
             Some(ast::InitializerKind::Parenthesized(values)) => {
                 Some(self.tree.expr_lists.get(values))
             }
@@ -342,11 +339,12 @@ impl<'tree> Analyzer<'tree> {
                 }
             }
             _ => None,
-        }
+        };
+        values.map(super::call_arguments::Arguments::new)
     }
     fn evaluated_constructor(
         &mut self,
-        call: EvaluatedCall<'_>,
+        call: &EvaluatedCall,
         (scope, at): (ScopeId, u64),
         out: &mut Placements,
         depth: u32,
@@ -409,17 +407,17 @@ impl<'tree> Analyzer<'tree> {
                 .ok_or(Error::Invariant("evaluated base without layout"))?;
             let child = EvaluatedCall {
                 constructor,
-                arguments,
                 zeroed: call.zeroed
                     || base.initializer.is_some()
-                        && arguments.is_empty()
+                        && arguments.as_slice().is_empty()
                         && self.graph.lower_constructor(constructor).zero_before_value,
                 primary: self.graph.lower_polymorphic(class)
                     && self.graph.lower_polymorphic(base.class)
                     && offset == 0,
+                arguments,
             };
             if !self.evaluated_constructor(
-                child,
+                &child,
                 (scope, at.wrapping_add(offset)),
                 out,
                 depth + 1,
@@ -486,20 +484,20 @@ impl<'tree> Analyzer<'tree> {
                 };
                 let child = EvaluatedCall {
                     constructor: sub.constructor,
-                    arguments,
                     primary: false,
                     zeroed: call.zeroed
                         || initializer.is_some()
-                            && arguments.is_empty()
+                            && arguments.as_slice().is_empty()
                             && self
                                 .graph
                                 .lower_constructor(sub.constructor)
                                 .zero_before_value,
+                    arguments,
                 };
-                if !self.evaluated_constructor(child, (scope, origin), out, depth + 1)? {
+                if !self.evaluated_constructor(&child, (scope, origin), out, depth + 1)? {
                     return Ok(false);
                 }
-            } else if !self.evaluated_scalar_member(&call, ty, initializer, (scope, origin), out)? {
+            } else if !self.evaluated_scalar_member(call, ty, initializer, (scope, origin), out)? {
                 return Ok(false);
             }
         }
@@ -507,7 +505,7 @@ impl<'tree> Analyzer<'tree> {
     }
     fn evaluated_scalar_member(
         &mut self,
-        call: &EvaluatedCall<'_>,
+        call: &EvaluatedCall,
         ty: TypeId,
         initializer: Option<ast::Initializer>,
         (scope, at): (ScopeId, u64),
@@ -545,7 +543,7 @@ impl<'tree> Analyzer<'tree> {
             if let Some(expr) = self.single_initializer(initializer) {
                 match self.static_parameter_value(
                     call.constructor,
-                    call.arguments,
+                    call.arguments.as_slice(),
                     expr,
                     ty,
                     scope,
@@ -555,7 +553,7 @@ impl<'tree> Analyzer<'tree> {
                 }
             } else if self
                 .evaluated_arguments(Some(initializer))
-                .is_some_and(<[ast::ExprId]>::is_empty)
+                .is_some_and(|arguments| arguments.as_slice().is_empty())
             {
                 self.evaluated_zero(ty)
             } else {

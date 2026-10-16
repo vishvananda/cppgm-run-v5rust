@@ -971,7 +971,9 @@ impl Analyzer<'_> {
             .scope
             .ok_or(Error::Invariant("constructor owner without scope"))?;
         let mut written = std::collections::HashMap::new();
-        for initializer in self.tree.mem_initializers.get(body.initializers) {
+        for syntax_index in 0..self.tree.mem_initializers.get(body.initializers).len() {
+            let syntax_item = self.tree.mem_initializers.get(body.initializers)[syntax_index];
+            let initializer = &syntax_item;
             if initializer.pack {
                 return Err(Error::Missing("constructor initializer pack expansion"));
             }
@@ -985,7 +987,7 @@ impl Analyzer<'_> {
                 }
                 return self.delegate_construction(id, initializer, scope);
             }
-            if written.insert(member, initializer).is_some() {
+            if written.insert(member, *initializer).is_some() {
                 return Err(Error::at(
                     initializer.location,
                     "a member or base initialized twice",

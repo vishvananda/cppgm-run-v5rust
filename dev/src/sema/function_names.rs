@@ -121,7 +121,7 @@ mod tests {
             analyzer.set_lowering();
             let marker = 0u8;
             analyzer.stack_base = std::ptr::from_ref(&marker).addr();
-            let declarations = tree.decl_lists.get(declarations);
+            let declarations = analyzer.tree.decl_lists.get(declarations).to_vec();
             let global = analyzer.graph.global;
             analyzer.declaration(declarations[0], global).unwrap();
             let binding = analyzer

@@ -28,7 +28,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) declaration_access: super::declaration_access::DeclarationAccess,
     pub(super) literal_bytes: &'tree crate::syntax::storage::TextStore,
     pub(super) identifiers: &'tree crate::lex::identifiers::Identifiers,
-    pub(super) tree: &'tree Tree,
+    pub(super) tree: &'tree mut Tree,
     pub(super) graph: Graph,
     pub(super) stack_budget: StackBudget,
     pub(super) stack_base: usize,
@@ -94,14 +94,14 @@ pub(super) enum DeferredMember {
 }
 impl<'tree> Analyzer<'tree> {
     pub(crate) fn new(
-        tree: &'tree Tree,
+        tree: &'tree mut Tree,
         cursor: &'tree mut Cursor<'_>,
         stack_budget: StackBudget,
     ) -> Result<Self, Error> {
         Self::with_graph(tree, cursor, stack_budget, None)
     }
     pub(super) fn with_graph(
-        tree: &'tree Tree,
+        tree: &'tree mut Tree,
         cursor: &'tree mut Cursor<'_>,
         stack_budget: StackBudget,
         previous: Option<Graph>,
@@ -268,7 +268,8 @@ impl<'tree> Analyzer<'tree> {
         list: List<ast::DeclId>,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        for &id in self.tree.decl_lists.get(list) {
+        for syntax_index in 0..self.tree.decl_lists.get(list).len() {
+            let id = self.tree.decl_lists.get(list)[syntax_index];
             self.declaration(id, scope)?;
         }
         Ok(())
@@ -652,14 +653,15 @@ impl<'tree> Analyzer<'tree> {
         self.graph.scope_mut(scope).owner = Some(body.entity);
         self.graph.entity_mut(body.entity).scope = Some(scope);
         let count = self.graph.types.function_parameter_count(body.ty)?;
-        for (index, parameter) in self
+        for index in 0..self
             .tree
             .parameters
             .get(body.parameters.parameters)
-            .iter()
-            .take(count)
-            .enumerate()
+            .len()
+            .min(count)
         {
+            let syntax_item = self.tree.parameters.get(body.parameters.parameters)[index];
+            let parameter = &syntax_item;
             let mut ty = self.graph.types.function_parameter(body.ty, index)?;
             if self.graph.function_templates.primary(body.entity).is_some() {
                 // The canonical signature discards top-level cv. Parameter
@@ -697,7 +699,8 @@ impl<'tree> Analyzer<'tree> {
             )?;
             self.note_nothrow_target(entity, ty, parameter.declarator, scope)?;
         }
-        let ast::Body::Parsed(parsed) = self.tree.bodies.get(body.body) else {
+        let syntax_body = *self.tree.bodies.get(body.body);
+        let ast::Body::Parsed(parsed) = &syntax_body else {
             return Err(Error::Invariant("unparsed body at semantic boundary"));
         };
         if self.semantic() && self.template_depth == 0 {
@@ -734,7 +737,9 @@ impl<'tree> Analyzer<'tree> {
         {
             self.written_constructor_plan(body.entity, parsed, scope)?;
         } else {
-            for initializer in self.tree.mem_initializers.get(parsed.initializers) {
+            for syntax_index in 0..self.tree.mem_initializers.get(parsed.initializers).len() {
+                let syntax_item = self.tree.mem_initializers.get(parsed.initializers)[syntax_index];
+                let initializer = &syntax_item;
                 self.initializer_names(initializer.initializer, scope, body.ty)?;
             }
         }

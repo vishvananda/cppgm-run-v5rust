@@ -193,9 +193,11 @@ impl Analyzer<'_> {
         readings: List<ast::StatementReading>,
         scope: ScopeId,
     ) -> Result<ast::StmtId, Error> {
-        let readings = self.tree.statement_readings.get(readings);
+        let reading_list = readings;
+        let readings = self.tree.statement_readings.get(reading_list);
         let first = readings
             .first()
+            .copied()
             .ok_or(Error::Invariant("ambiguous statement without readings"))?;
         let count = usize::try_from(component)
             .map_err(|_| Error::Limit("statement name component limit"))?;
@@ -205,6 +207,7 @@ impl Analyzer<'_> {
             .name_lists
             .get(node.components)
             .get(count)
+            .copied()
             .ok_or(Error::Invariant("statement name component outside name"))?;
         if count == 0 || !matches!(member.kind, ast::NameKind::Identifier(_)) {
             return Ok(first.statement);
@@ -228,10 +231,13 @@ impl Analyzer<'_> {
             Ok(None) => return Ok(first.statement),
             Err(error) => return Err(error),
         };
-        Ok(readings
+        Ok(self
+            .tree
+            .statement_readings
+            .get(reading_list)
             .iter()
             .find(|reading| reading.category == category)
-            .unwrap_or(first)
+            .unwrap_or(&first)
             .statement)
     }
 
@@ -255,7 +261,8 @@ impl Analyzer<'_> {
         self.graph.scope_mut(block).guarded = guarded;
         let initialized = self.switch_initialized();
         let result = (|| {
-            for &item in self.tree.stmt_lists.get(list) {
+            for syntax_index in 0..self.tree.stmt_lists.get(list).len() {
+                let item = self.tree.stmt_lists.get(list)[syntax_index];
                 self.statement(item, block)?;
             }
             Ok(())
@@ -294,7 +301,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<(), Error> {
         let mut catch_all = false;
-        for handler in self.tree.handlers.get(handlers) {
+        for syntax_index in 0..self.tree.handlers.get(handlers).len() {
+            let syntax_item = self.tree.handlers.get(handlers)[syntax_index];
+            let handler = &syntax_item;
             let location = self.tree.statements.get(handler.body).location;
             if catch_all {
                 return Err(Error::at(
@@ -349,7 +358,9 @@ impl Analyzer<'_> {
         body: ast::StmtId,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        for specifier in self.tree.specs.get(specifiers) {
+        for syntax_index in 0..self.tree.specs.get(specifiers).len() {
+            let syntax_item = self.tree.specs.get(specifiers)[syntax_index];
+            let specifier = &syntax_item;
             if matches!(
                 specifier.kind,
                 ast::SpecifierKind::Keyword(

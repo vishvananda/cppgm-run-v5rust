@@ -122,8 +122,8 @@ mod tests {
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         let global = analyzer.graph.global;
         analyzer.declarations(declarations, global).unwrap();
-        assert_eq!(expressions, tree.expressions.mark());
-        assert_eq!(declarations_count, tree.declarations.mark());
+        assert_eq!(expressions, analyzer.tree.expressions.mark());
+        assert_eq!(declarations_count, analyzer.tree.declarations.mark());
         assert!(analyzer.assignment_scratch.candidates.is_empty());
         assert!(analyzer.assignment_scratch.candidates.capacity() >= 2);
         let classes: Vec<_> = names

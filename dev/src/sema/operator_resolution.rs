@@ -51,7 +51,7 @@ mod tests {
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         let scope = analyzer.graph.global;
-        let declarations = tree.decl_lists.get(declarations);
+        let declarations = analyzer.tree.decl_lists.get(declarations).to_vec();
         for &declaration in &declarations[..4] {
             analyzer.declaration(declaration, scope).unwrap();
         }

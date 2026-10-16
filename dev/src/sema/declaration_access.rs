@@ -247,14 +247,14 @@ mod tests {
             analyzer.set_lowering();
             let marker = 0u8;
             analyzer.stack_base = std::ptr::from_ref(&marker).addr();
-            for &declaration in tree.decl_lists.get(declarations) {
+            for declaration in analyzer.tree.decl_lists.get(declarations).to_vec() {
                 analyzer
                     .declaration(declaration, analyzer.graph.global)
                     .unwrap();
                 assert!(analyzer.declaration_access.pending.is_empty());
                 assert!(analyzer.declaration_access.context.scope.is_none());
             }
-            assert_eq!(expressions, tree.expressions.mark());
+            assert_eq!(expressions, analyzer.tree.expressions.mark());
             assert!(analyzer.graph.root_demands.as_slice().is_empty());
             for name in names {
                 let binding = analyzer
@@ -282,7 +282,7 @@ mod tests {
         analyzer.set_lowering();
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
-        let declarations = tree.decl_lists.get(declarations);
+        let declarations = analyzer.tree.decl_lists.get(declarations).to_vec();
         analyzer
             .declaration(declarations[0], analyzer.graph.global)
             .unwrap();

@@ -224,7 +224,9 @@ impl Analyzer<'_> {
                 name = self.declarator_name(Some(current))?;
                 syntax_name = node.name;
             }
-            for pointer in self.tree.pointers.get(node.pointers) {
+            for syntax_index in 0..self.tree.pointers.get(node.pointers).len() {
+                let syntax_item = self.tree.pointers.get(node.pointers)[syntax_index];
+                let pointer = &syntax_item;
                 parameters = None;
                 function_qualifiers = None;
                 if !auto_operators && matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
@@ -307,15 +309,9 @@ impl Analyzer<'_> {
             } else {
                 0
             };
-            for (index, suffix) in self
-                .tree
-                .suffixes
-                .get(node.suffixes)
-                .iter()
-                .enumerate()
-                .skip(skip)
-                .rev()
-            {
+            for index in (skip..self.tree.suffixes.get(node.suffixes).len()).rev() {
+                let syntax_item = self.tree.suffixes.get(node.suffixes)[index];
+                let suffix = &syntax_item;
                 match *suffix {
                     ast::Suffix::Array(bound) => {
                         if self.holds_auto(ty) {
@@ -512,8 +508,10 @@ impl Analyzer<'_> {
         // type may name a value. Ordinary prototypes allocate no semantic scope.
         let mut prototype = None;
         let mut types = Vec::new();
-        let parameters = self.tree.parameters.get(clause.parameters);
-        for (index, parameter) in parameters.iter().enumerate() {
+        let parameter_count = self.tree.parameters.get(clause.parameters).len();
+        for index in 0..parameter_count {
+            let syntax_item = self.tree.parameters.get(clause.parameters)[index];
+            let parameter = &syntax_item;
             if let Some(name) = self.declarator_name(parameter.declarator)? {
                 self.check_template_parameter_name(scope, name, parameter.location)?;
             }
@@ -521,8 +519,9 @@ impl Analyzer<'_> {
                 let created =
                     self.graph
                         .add_scope(super::graph::ScopeKind::Function, scope, None, None)?;
-                for (previous, &ty) in parameters[..index].iter().zip(&types) {
-                    self.declare_parameter_object(*previous, ty, created)?;
+                for (previous_index, &ty) in types.iter().enumerate() {
+                    let previous = self.tree.parameters.get(clause.parameters)[previous_index];
+                    self.declare_parameter_object(previous, ty, created)?;
                 }
                 prototype = Some(created);
             }
@@ -561,7 +560,9 @@ impl Analyzer<'_> {
         let mut cv = Cv::default();
         let mut reference = None;
         let mut trailing_prototype = None;
-        for qualifier in self.tree.qualifiers.get(qualifiers) {
+        for syntax_index in 0..self.tree.qualifiers.get(qualifiers).len() {
+            let syntax_item = self.tree.qualifiers.get(qualifiers)[syntax_index];
+            let qualifier = &syntax_item;
             match qualifier.kind {
                 ast::QualifierKind::Cv(key) => cv.0 |= Self::cv(&[key]).0,
                 ast::QualifierKind::Ref(op) => {
@@ -581,8 +582,10 @@ impl Analyzer<'_> {
                         None,
                         None,
                     )?;
-                    for (parameter, &ty) in parameters.iter().zip(&types) {
-                        self.prototype_parameter(*parameter, ty, prototype, true)?;
+                    for (parameter_index, &ty) in types.iter().enumerate() {
+                        let parameter =
+                            self.tree.parameters.get(clause.parameters)[parameter_index];
+                        self.prototype_parameter(parameter, ty, prototype, true)?;
                     }
                     ty = self.type_syntax_with_auto(result, prototype, placeholder_result)?;
                     trailing_prototype = Some(prototype);

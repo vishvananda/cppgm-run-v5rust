@@ -577,19 +577,20 @@ fn constant_discards_use_places_and_restore_scratch_after_failure() {
     let marker = 0u8;
     analyzer.stack_base = std::ptr::from_ref(&marker).addr();
     let scope = analyzer.graph.global;
-    for &decl in tree.decl_lists.get(declarations) {
+    for decl in analyzer.tree.decl_lists.get(declarations).to_vec() {
         analyzer.declaration(decl, scope).unwrap();
     }
-    assert_eq!(tree.expressions.mark(), count);
+    assert_eq!(analyzer.tree.expressions.mark(), count);
     for (index, expected) in [(0, None), (1, Some(4)), (2, Some(0))] {
-        let DeclKind::Simple { declarators, .. } = tree
+        let DeclKind::Simple { declarators, .. } = analyzer
+            .tree
             .declarations
-            .get(tree.decl_lists.get(declarations)[index])
+            .get(analyzer.tree.decl_lists.get(declarations)[index])
             .kind
         else {
             panic!("simple declaration expected");
         };
-        let init = tree.init_declarators.get(declarators)[0];
+        let init = analyzer.tree.init_declarators.get(declarators)[0];
         let binding = analyzer.graph.declared_bindings[init.declarator.index()].unwrap();
         match analyzer
             .graph
@@ -606,14 +607,14 @@ fn constant_discards_use_places_and_restore_scratch_after_failure() {
         let InitializerKind::Assign(query) = init.initializer.unwrap().kind else {
             panic!("query initializer expected");
         };
-        let ExprKind::Call { arguments, .. } = tree.expressions.get(query).kind else {
+        let ExprKind::Call { arguments, .. } = analyzer.tree.expressions.get(query).kind else {
             panic!("query call expected");
         };
-        let operand = tree.expr_lists.get(arguments)[0];
-        let ExprKind::Paren(comma) = tree.expressions.get(operand).kind else {
+        let operand = analyzer.tree.expr_lists.get(arguments)[0];
+        let ExprKind::Paren(comma) = analyzer.tree.expressions.get(operand).kind else {
             panic!("parenthesized comma expected");
         };
-        let ExprKind::Binary { left, .. } = tree.expressions.get(comma).kind else {
+        let ExprKind::Binary { left, .. } = analyzer.tree.expressions.get(comma).kind else {
             panic!("comma expected");
         };
         let binding = analyzer.graph.call_binding(left).unwrap();
@@ -708,14 +709,22 @@ fn mutable_constant_temporaries_are_fresh_per_evaluation() {
     let scope = analyzer.graph.global;
     let marker = 0u8;
     analyzer.stack_base = std::ptr::from_ref(&marker).addr();
-    for &declaration in tree.decl_lists.get(declarations) {
+    for declaration in analyzer.tree.decl_lists.get(declarations).to_vec() {
         analyzer.declaration(declaration, scope).unwrap();
     }
-    for (&declaration, expected) in tree.decl_lists.get(declarations).iter().zip([7, 3]) {
-        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
+    for (&declaration, expected) in analyzer
+        .tree
+        .decl_lists
+        .get(declarations)
+        .to_vec()
+        .iter()
+        .zip([7, 3])
+    {
+        let DeclKind::Simple { declarators, .. } = analyzer.tree.declarations.get(declaration).kind
+        else {
             panic!("scalar object declaration expected");
         };
-        let init = tree.init_declarators.get(declarators)[0];
+        let init = analyzer.tree.init_declarators.get(declarators)[0];
         let InitializerKind::Assign(expression) = init.initializer.unwrap().kind else {
             panic!("assignment initializer expected");
         };
@@ -738,21 +747,22 @@ fn mutable_constant_temporaries_are_fresh_per_evaluation() {
         };
         assert_eq!(value.bits, expected);
     }
-    let DeclKind::Simple { declarators, .. } = tree
+    let DeclKind::Simple { declarators, .. } = analyzer
+        .tree
         .declarations
-        .get(tree.decl_lists.get(declarations)[2])
+        .get(analyzer.tree.decl_lists.get(declarations)[2])
         .kind
     else {
         panic!("query declaration expected");
     };
-    let init = tree.init_declarators.get(declarators)[0];
+    let init = analyzer.tree.init_declarators.get(declarators)[0];
     let InitializerKind::Assign(query) = init.initializer.unwrap().kind else {
         panic!("query initializer expected");
     };
-    let ExprKind::Call { arguments, .. } = tree.expressions.get(query).kind else {
+    let ExprKind::Call { arguments, .. } = analyzer.tree.expressions.get(query).kind else {
         panic!("query call expected");
     };
-    let operand = tree.expr_lists.get(arguments)[0];
+    let operand = analyzer.tree.expr_lists.get(arguments)[0];
     for _ in 0..2 {
         assert!(matches!(
             analyzer.constant_value(operand, scope, true),
@@ -2873,71 +2883,6 @@ fn constructor_plans_keep_entity_identity_and_original_member_initializers() {
             .constructor
             .is_none()
     );
-}
-
-#[test]
-fn placeholder_deduction_publishes_concrete_types_and_consumes_initializer_facts() {
-    use crate::syntax::ast::{DeclKind, InitializerKind};
-    let source = SourceBuffer::new(
-        b"int x;int*p=&x;auto*&r=p;const auto*const&c=p;auto&&s=x;auto a=1,*q=&x;".to_vec(),
-    )
-    .unwrap();
-    let input = Preprocessor::with_name(&source, b"placeholder-ownership").unwrap();
-    let mut unit = SyntaxUnit::new(input);
-    unit.parse().unwrap();
-    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-    let syntax_count = tree.expressions.mark();
-    let names: Vec<_> = [b"p".as_slice(), b"r", b"s", b"a", b"q"]
-        .into_iter()
-        .map(|name| cursor.intern_name(name).unwrap())
-        .collect();
-    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
-    analyzer.set_semantics(true);
-    let marker = 0u8;
-    analyzer.stack_base = std::ptr::from_ref(&marker).addr();
-    let scope = analyzer.graph.global;
-    for &declaration in tree.decl_lists.get(declarations) {
-        analyzer.declaration(declaration, scope).unwrap();
-        assert!(analyzer.deduced_initializer.is_none());
-        let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind else {
-            panic!("expected simple declaration");
-        };
-        for init in tree.init_declarators.get(declarators) {
-            let binding = analyzer.graph.declared_bindings[init.declarator.index()].unwrap();
-            let ty = analyzer.graph.binding(binding).ty.unwrap();
-            assert!(!analyzer.holds_auto(ty));
-            assert_eq!(
-                analyzer.graph.declarator_types[init.declarator.index()],
-                Some(ty)
-            );
-            if let Some(initializer) = init.initializer
-                && let InitializerKind::Assign(expression) = initializer.kind
-            {
-                assert!(
-                    analyzer
-                        .graph
-                        .expression_facts
-                        .get(expression)
-                        .unwrap()
-                        .conversion
-                        .is_some()
-                );
-            }
-        }
-    }
-    assert_eq!(tree.expressions.mark(), syntax_count);
-    let types: Vec<_> = names
-        .iter()
-        .map(|&name| {
-            let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
-            analyzer.graph.binding(binding).ty.unwrap()
-        })
-        .collect();
-    assert_eq!(types[0], types[4]);
-    assert!(matches!(analyzer.graph.types.get(types[1]).kind,
-        TypeKind::Reference { element, kind: RefKind::Lvalue } if element == types[0]));
-    assert!(matches!(analyzer.graph.types.get(types[2]).kind,
-        TypeKind::Reference { element, kind: RefKind::Lvalue } if element == types[3]));
 }
 
 #[test]

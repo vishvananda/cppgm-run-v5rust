@@ -107,7 +107,9 @@ impl Analyzer<'_> {
                 }
             }
         }
-        for enumerator in self.tree.enumerators.get(enumerators) {
+        for syntax_index in 0..self.tree.enumerators.get(enumerators).len() {
+            let syntax_item = self.tree.enumerators.get(enumerators)[syntax_index];
+            let enumerator = &syntax_item;
             self.check_template_parameter_name(scope, enumerator.name, enumerator.location)?;
         }
         Ok(())
@@ -401,7 +403,9 @@ impl Analyzer<'_> {
         let fixed_kind = info.underlying.and_then(|ty| self.integral_kind(ty));
         let mut previous = None;
         let mut values = Vec::new();
-        for enumerator in self.tree.enumerators.get(enumerators) {
+        for syntax_index in 0..self.tree.enumerators.get(enumerators).len() {
+            let syntax_item = self.tree.enumerators.get(enumerators)[syntax_index];
+            let enumerator = &syntax_item;
             let value = if self.template_depth != 0 {
                 if let Some(expr) = enumerator.value {
                     self.expression(expr, lookup)?;

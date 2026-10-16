@@ -385,14 +385,15 @@ impl Analyzer<'_> {
         count: usize,
         access: bool,
     ) -> Result<Option<ScopeId>, Error> {
-        let name = self.tree.names.get(name);
+        let name = *self.tree.names.get(name);
         self.lookup_location = name.location;
-        let components = self.tree.name_lists.get(name.components);
+        let component_count = self.tree.name_lists.get(name.components).len();
         let mut prefix = name.global.then_some(self.graph.global);
-        for component in components
-            .get(..count)
-            .ok_or(Error::Invariant("name prefix outside components"))?
-        {
+        if count > component_count {
+            return Err(Error::Invariant("name prefix outside components"));
+        }
+        for index in 0..count {
+            let component = self.tree.name_lists.get(name.components)[index];
             if let NameKind::Decltype(operand) = component.kind {
                 let ty = self.decltype_type(operand, scope)?;
                 if !matches!(
@@ -546,6 +547,7 @@ impl Analyzer<'_> {
             .name_lists
             .get(node.components)
             .last()
+            .copied()
             .ok_or(Error::Invariant("empty semantic name"))?;
         if last.arguments.is_some() && !self.semantic() {
             return Err(Error::Missing("template specialization lookup"));
@@ -582,7 +584,7 @@ impl Analyzer<'_> {
             found = builtin;
         }
         if specialize && last.arguments.is_some() {
-            self.explicit_function_specializations(*last, &mut found, scope, false)?;
+            self.explicit_function_specializations(last, &mut found, scope, false)?;
         }
         if let Some(binding) = found.binding {
             if let Some(search) = prefix

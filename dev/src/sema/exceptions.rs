@@ -100,7 +100,9 @@ impl Analyzer<'_> {
     ) -> bool {
         while let Some(current) = id {
             let node = self.tree.declarators.get(current);
-            for suffix in self.tree.suffixes.get(node.suffixes) {
+            for syntax_index in 0..self.tree.suffixes.get(node.suffixes).len() {
+                let syntax_item = self.tree.suffixes.get(node.suffixes)[syntax_index];
+                let suffix = &syntax_item;
                 if let ast::Suffix::Function { qualifiers, .. } = suffix
                     && self.tree.qualifiers.get(*qualifiers).iter().any(|q| {
                         matches!(q.kind, QualifierKind::Throw(_) | QualifierKind::Noexcept(_))
@@ -532,7 +534,8 @@ impl Analyzer<'_> {
             }
             Some(QualifierKind::Throw(types)) => {
                 let mut adjusted = Vec::new();
-                for &syntax in self.tree.type_lists.get(types) {
+                for syntax_index in 0..self.tree.type_lists.get(types).len() {
+                    let syntax = self.tree.type_lists.get(types)[syntax_index];
                     let ty = self.type_syntax(syntax, scope)?;
                     let location = self.tree.types.get(syntax).location;
                     if matches!(
@@ -680,7 +683,8 @@ impl Analyzer<'_> {
         let Some(function) = function.filter(|_| derivations <= 1) else {
             return Ok(());
         };
-        for &qualifier in self.tree.qualifiers.get(function) {
+        for syntax_index in 0..self.tree.qualifiers.get(function).len() {
+            let qualifier = self.tree.qualifiers.get(function)[syntax_index];
             let nothrow = match qualifier.kind {
                 QualifierKind::Throw(types) if types.is_empty() => true,
                 QualifierKind::Noexcept(None) => true,

@@ -219,7 +219,9 @@ impl Analyzer<'_> {
         let ExprKind::Braced { elements, .. } = node.kind else {
             return Err(Error::Invariant("list initialization without list"));
         };
-        let values = self.tree.expr_lists.get(elements);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(elements));
+        let values = argument_buffer.as_slice();
         if let TypeKind::Reference { element, kind } = self.graph.types.get(target).kind {
             let single = values.first().copied().filter(|_| values.len() == 1);
             if let Some(single) = single
@@ -323,7 +325,9 @@ impl Analyzer<'_> {
         let TypeKind::Array { element, bound } = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("array initialization without array"));
         };
-        let values = self.tree.expr_lists.get(elements);
+        let argument_buffer =
+            super::call_arguments::Arguments::new(self.tree.expr_lists.get(elements));
+        let values = argument_buffer.as_slice();
         let mut next = 0;
         let mut count = 0u64;
         // O(explicit initializers), including a huge bound with a zero-filled tail.

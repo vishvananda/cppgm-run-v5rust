@@ -448,8 +448,8 @@ mod tests {
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         let global = analyzer.graph.global;
         analyzer.declarations(declarations, global).unwrap();
-        assert_eq!(expressions, tree.expressions.mark());
-        assert_eq!(syntax_declarations, tree.declarations.mark());
+        assert_eq!(expressions, analyzer.tree.expressions.mark());
+        assert_eq!(syntax_declarations, analyzer.tree.declarations.mark());
         let graph = &analyzer.graph;
         let class = graph
             .binding(

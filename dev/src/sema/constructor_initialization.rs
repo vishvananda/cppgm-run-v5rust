@@ -186,10 +186,13 @@ impl Analyzer<'_> {
                 "initialization of an incomplete class object",
             ));
         }
-        let tree = self.tree;
+
         let list = match initializer.kind {
             ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)
-                if matches!(tree.expressions.get(id).kind, ast::ExprKind::Braced { .. }) =>
+                if matches!(
+                    self.tree.expressions.get(id).kind,
+                    ast::ExprKind::Braced { .. }
+                ) =>
             {
                 Some(id)
             }
@@ -205,7 +208,8 @@ impl Analyzer<'_> {
             ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)
                 if list.is_some() =>
             {
-                let ast::ExprKind::Braced { elements, .. } = tree.expressions.get(id).kind else {
+                let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind
+                else {
                     return Err(Error::Invariant("constructor list shape"));
                 };
                 (
@@ -252,16 +256,18 @@ impl Analyzer<'_> {
             context,
             selected,
         } = input;
-        let tree = self.tree;
+
         let single;
         let args = match arguments {
-            ConstructorArguments::Values(values) => tree.expr_lists.get(values),
+            ConstructorArguments::Values(values) => self.tree.expr_lists.get(values),
             ConstructorArguments::Single(id) => {
                 single = [id];
                 &single
             }
             ConstructorArguments::Value => &[],
         };
+        let argument_buffer = super::call_arguments::Arguments::new(args);
+        let args = argument_buffer.as_slice();
         if args.is_empty() && self.class_has_default_constructor(class)? {
             let constructor = self.default_constructor(class, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
@@ -280,7 +286,10 @@ impl Analyzer<'_> {
         if context != ClassContext::Delegation
             && (list.is_none() || context == ClassContext::Base)
             && let [id] = args
-            && !matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. })
+            && !matches!(
+                self.tree.expressions.get(*id).kind,
+                ast::ExprKind::Braced { .. }
+            )
         {
             let facts = self.graph.expression_facts.get(*id)?;
             if self
@@ -301,7 +310,7 @@ impl Analyzer<'_> {
                     self.check_temporary_destruction(
                         facts,
                         scope,
-                        tree.expressions.get(*id).location,
+                        self.tree.expressions.get(*id).location,
                     )?;
                     if let Some(list) = list {
                         self.publish_list(list, target, ValueCategory::Prvalue)?;
@@ -318,7 +327,7 @@ impl Analyzer<'_> {
             && selected.is_none()
             && let [argument] = args
             && !matches!(
-                tree.expressions.get(*argument).kind,
+                self.tree.expressions.get(*argument).kind,
                 ast::ExprKind::Braced { .. }
             )
             && self
@@ -369,7 +378,7 @@ impl Analyzer<'_> {
             });
         let copies = !converting
             && matches!(args, [id]
-            if !copy_list || !matches!(tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. }));
+            if !copy_list || !matches!(self.tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. }));
         if !offered && !copies {
             return Err(Error::at(
                 location,
@@ -437,7 +446,6 @@ impl Analyzer<'_> {
         scope: ScopeId,
         list: bool,
     ) -> Result<(), Error> {
-        let tree = self.tree;
         let ty = self
             .graph
             .entity(function)
@@ -449,10 +457,10 @@ impl Analyzer<'_> {
             self.class_parameter_destruction(
                 parameter,
                 scope,
-                tree.expressions.get(argument).location,
+                self.tree.expressions.get(argument).location,
             )?;
             if !matches!(
-                tree.expressions.get(argument).kind,
+                self.tree.expressions.get(argument).kind,
                 ast::ExprKind::Braced { .. }
             ) {
                 self.record_class_copy(
@@ -460,7 +468,7 @@ impl Analyzer<'_> {
                     parameter,
                     scope,
                     super::copy_initialization::CopyUse::Value { in_place: false },
-                    tree.expressions.get(argument).location,
+                    self.tree.expressions.get(argument).location,
                 )?;
             }
             let mut facts = self.graph.expression_facts.get(argument)?;
@@ -475,7 +483,7 @@ impl Analyzer<'_> {
                     facts,
                     conversion,
                     scope,
-                    tree.expressions.get(argument).location,
+                    self.tree.expressions.get(argument).location,
                     true,
                 )?;
                 self.graph.expression_facts.set(argument, facts);

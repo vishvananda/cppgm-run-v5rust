@@ -57,7 +57,8 @@ impl Analyzer<'_> {
                 "constructor, destructor or conversion function with a type",
             ));
         }
-        let node = self.tree.names.get(name);
+        let syntax_item = *self.tree.names.get(name);
+        let node = &syntax_item;
         let prefix = self.prefix(name, scope)?;
         let owner = prefix.unwrap_or(self.declaration_scope(scope));
         if self.graph.scope(owner).kind != ScopeKind::Class {

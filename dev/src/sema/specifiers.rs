@@ -104,7 +104,9 @@ impl Analyzer<'_> {
         let mut thread_storage = ThreadStorage::Ordinary;
         let mut fundamental = Vec::new();
         let mut auto_type = false;
-        for specifier in self.tree.specs.get(list) {
+        for syntax_index in 0..self.tree.specs.get(list).len() {
+            let syntax_item = self.tree.specs.get(list)[syntax_index];
+            let specifier = &syntax_item;
             if let SpecifierKind::Keyword(key) = specifier.kind {
                 match key {
                     Keyword::Const | Keyword::Volatile => {
@@ -140,7 +142,8 @@ impl Analyzer<'_> {
         }
         let mut ty = None;
         let mut declared = None;
-        for &specifier in self.tree.specs.get(list) {
+        for syntax_index in 0..self.tree.specs.get(list).len() {
+            let specifier = self.tree.specs.get(list)[syntax_index];
             if matches!(specifier.kind, SpecifierKind::Keyword(_)) {
                 continue;
             }
