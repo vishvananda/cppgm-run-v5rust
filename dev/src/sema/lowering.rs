@@ -595,7 +595,7 @@ impl Graph {
             return None;
         };
         let info = self.entity(entity).template_parameter?;
-        info.abi_index()
+        Some(info.abi_index())
     }
     pub(crate) fn lower_template_signature(
         &self,

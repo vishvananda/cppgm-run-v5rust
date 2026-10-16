@@ -594,8 +594,17 @@ impl<'a> Cloner<'a> {
                 message,
             },
             other @ (DeclKind::Empty | DeclKind::Access(_)) => other,
-            DeclKind::Template { .. }
-            | DeclKind::ExplicitInstantiation { .. }
+            // Template heads are immutable syntax. Each copied declaration
+            // binds its own parameters and copies defaults only on demand;
+            // member bodies remain retained until their specialization uses them.
+            DeclKind::Template {
+                parameters,
+                declaration,
+            } => DeclKind::Template {
+                parameters,
+                declaration: self.declaration(declaration)?,
+            },
+            DeclKind::ExplicitInstantiation { .. }
             | DeclKind::Namespace { .. }
             | DeclKind::NamespaceAlias { .. }
             | DeclKind::Linkage { .. } => {

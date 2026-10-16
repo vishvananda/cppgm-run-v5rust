@@ -309,6 +309,9 @@ impl Analyzer<'_> {
         usage: DefaultUse,
     ) -> Result<TypeId, Error> {
         self.check_stack()?;
+        if let Some(bound) = default.bound {
+            return Ok(bound);
+        }
         let depth = self.graph.templates.depth(head);
         if self.template_depth != 0 && arguments.iter().any(|&ty| self.graph.dependent_type(ty)) {
             let pattern = self.type_syntax(default.syntax, default.scope)?;

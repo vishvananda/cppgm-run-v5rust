@@ -35,8 +35,10 @@ pub(super) struct ParameterInfo {
     inner: Option<HeadId>,
 }
 impl ParameterInfo {
-    pub(super) fn abi_index(self) -> Option<u32> {
-        (self.position.depth == 0).then_some(u32::from(self.position.index))
+    pub(super) fn abi_index(self) -> u32 {
+        // Ordinary signature mangling uses T_, T0_, ... at every lexical
+        // depth. Only bound pack patterns encode a template parameter level.
+        u32::from(self.position.index)
     }
     pub(super) fn index(self, depth: u32) -> Option<usize> {
         (self.position.depth == depth).then_some(usize::from(self.position.index))
@@ -54,6 +56,7 @@ pub(super) struct DefaultArgument {
     pub syntax: ast::TypeId,
     pub scope: ScopeId,
     pub limit: usize,
+    pub bound: Option<TypeId>,
 }
 struct Head {
     depth: u32,
@@ -304,14 +307,36 @@ impl Analyzer<'_> {
                     self.check_template_parameter_name(parent, name, parameter.location)?;
                 }
             }
+            let mut bound = None;
             if declare && let Some(default) = default {
                 if inner.is_some() {
                     self.template_default_name(default, scope, parameter.location)?;
                 } else {
                     self.template_depth += 1;
-                    let result = self.type_syntax(default, scope);
+                    // A copied member template shares its immutable head.
+                    // Default checking must not publish facts on that shared
+                    // syntax in one enclosing specialization's environment.
+                    let result = (|| {
+                        let copy = crate::syntax::cloning::Cloner::new(
+                            self.tree,
+                            self.stack_budget,
+                            self.stack_base,
+                        )
+                        .ty(default)
+                        .map_err(|error| super::template_bodies::copy_error(&error))?;
+                        self.type_syntax(copy, scope)
+                    })();
                     self.template_depth -= 1;
-                    result?;
+                    let ty = result?;
+                    if self
+                        .graph
+                        .scope(scope)
+                        .parent
+                        .is_some_and(|parent| self.graph.scope(parent).kind == ScopeKind::Class)
+                        && !self.graph.dependent_type(ty)
+                    {
+                        bound = Some(ty);
+                    }
                 }
             }
             if parameter.pack && default.is_some() {
@@ -373,6 +398,7 @@ impl Analyzer<'_> {
                 syntax,
                 scope,
                 limit: self.graph.binding_limit(),
+                bound,
             }));
         }
         self.graph.templates.add_head(

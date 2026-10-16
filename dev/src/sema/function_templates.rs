@@ -523,7 +523,25 @@ impl Analyzer<'_> {
             let ty = if let Some(&ty) = self.graph.function_templates.defaults.get(&key) {
                 ty
             } else {
-                let pattern = self.type_syntax(default.syntax, default.scope)?;
+                let pattern = if let Some(bound) = default.bound {
+                    bound
+                } else {
+                    let copy = crate::syntax::cloning::Cloner::new(
+                        self.tree,
+                        self.stack_budget,
+                        self.stack_base,
+                    )
+                    .ty(default.syntax)
+                    .map_err(|error| super::template_bodies::copy_error(&error))?;
+                    // Form a dependent default's pattern in its declaration
+                    // context before substituting this candidate's arguments.
+                    self.template_depth += 1;
+                    let saved = self.graph.lookup_limit.replace(default.limit);
+                    let result = self.type_syntax(copy, default.scope);
+                    self.graph.lookup_limit = saved;
+                    self.template_depth -= 1;
+                    result?
+                };
                 let mut environment = Substitution::new(depth, &arguments[..index]);
                 environment.context = check_access.then_some(self.graph.binding(primary).entity);
                 let Some(ty) = self.substitute_signature_type(pattern, &mut environment)? else {

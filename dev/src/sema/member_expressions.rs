@@ -167,12 +167,9 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "member access on an incomplete class"));
         }
-        if last.arguments.is_some() {
-            return Err(Error::Missing("member template specialization lookup"));
-        }
         let search = self.data_member_qualifier(name, class, scope)?;
         self.lookup_location = node.location;
-        let found = if let NameKind::Conversion(target) = last.kind {
+        let mut found = if let NameKind::Conversion(target) = last.kind {
             let target = self.type_syntax(target, scope)?;
             let naming = self
                 .graph
@@ -192,6 +189,14 @@ impl Analyzer<'_> {
                     other => other,
                 })?
         };
+        if last.arguments.is_some() {
+            self.explicit_function_specializations(
+                ast::NameComponent { location, ..last },
+                &mut found,
+                scope,
+                true,
+            )?;
+        }
         let binding = found
             .binding
             .ok_or_else(|| Error::at(node.location, "no member of that name"))?;

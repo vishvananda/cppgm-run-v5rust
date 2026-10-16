@@ -252,6 +252,38 @@ impl Analyzer<'_> {
         head: Option<HeadId>,
         bridge: ScopeId,
     ) -> Result<ScopeId, Error> {
+        let header = head.map(|head| self.graph.templates.parameter_scope(head));
+        self.outside_frames(owner, lookup, header, bridge)
+    }
+
+    pub(super) fn outside_member_template_frame(
+        &mut self,
+        entity: EntityId,
+        head: HeadId,
+        bridge: ScopeId,
+    ) -> Result<ScopeId, Error> {
+        let owner = self.graph.entity(entity).home.ok_or(Error::Invariant(
+            "member template specialization without owner",
+        ))?;
+        let own = self.graph.templates.parameter_scope(head);
+        let frame = self.outside_frames(owner, owner, self.graph.scope(own).parent, bridge)?;
+        let arguments = self
+            .graph
+            .function_templates
+            .arguments
+            .get(&entity)
+            .ok_or(Error::Invariant("member template body without arguments"))?
+            .clone();
+        self.bound_member_frame(own, &arguments, frame, bridge)
+    }
+
+    fn outside_frames(
+        &mut self,
+        owner: ScopeId,
+        lookup: ScopeId,
+        mut header: Option<ScopeId>,
+        bridge: ScopeId,
+    ) -> Result<ScopeId, Error> {
         let mut enclosing = Vec::new();
         let mut current = Some(owner);
         while let Some(scope) = current {
@@ -266,7 +298,6 @@ impl Analyzer<'_> {
             }
             current = node.parent;
         }
-        let mut header = head.map(|head| self.graph.templates.parameter_scope(head));
         let mut headers = Vec::new();
         while let Some(scope) = header {
             let node = self.graph.scope(scope);
@@ -323,20 +354,49 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn link_member_patterns(&mut self, pattern: ast::ClassId, copy: ast::ClassId) {
-        let a = self.tree.classes.get(pattern).members;
-        let b = self.tree.classes.get(copy).members;
-        for index in 0..self.tree.decl_lists.get(a).len() {
-            self.link_member_declarations(
-                self.tree.decl_lists.get(a)[index],
-                self.tree.decl_lists.get(b)[index],
-            );
+        let mut work = vec![(pattern, copy)];
+        while let Some((pattern, copy)) = work.pop() {
+            let a = self.tree.classes.get(pattern).members;
+            let b = self.tree.classes.get(copy).members;
+            for index in 0..self.tree.decl_lists.get(a).len() {
+                if let Some(classes) = self.link_member_declarations(
+                    self.tree.decl_lists.get(a)[index],
+                    self.tree.decl_lists.get(b)[index],
+                ) {
+                    work.push(classes);
+                }
+            }
         }
     }
-    fn link_member_declarations(&mut self, from: ast::DeclId, to: ast::DeclId) {
+    fn link_member_declarations(
+        &mut self,
+        mut from: ast::DeclId,
+        mut to: ast::DeclId,
+    ) -> Option<(ast::ClassId, ast::ClassId)> {
+        while let (
+            ast::DeclKind::Template { declaration: a, .. },
+            ast::DeclKind::Template { declaration: b, .. },
+        ) = (
+            self.tree.declarations.get(from).kind,
+            self.tree.declarations.get(to).kind,
+        ) {
+            from = a;
+            to = b;
+        }
         match (
             self.tree.declarations.get(from).kind,
             self.tree.declarations.get(to).kind,
         ) {
+            (
+                ast::DeclKind::Class(ast::Specifier {
+                    kind: ast::SpecifierKind::Class(a),
+                    ..
+                }),
+                ast::DeclKind::Class(ast::Specifier {
+                    kind: ast::SpecifierKind::Class(b),
+                    ..
+                }),
+            ) => return Some((a, b)),
             (
                 ast::DeclKind::Function { declarator: a, .. }
                 | ast::DeclKind::SpecialMember { declarator: a, .. },
@@ -356,6 +416,7 @@ impl Analyzer<'_> {
             }
             _ => (),
         }
+        None
     }
     fn link_member_declarators(&mut self, from: ast::DeclaratorId, to: ast::DeclaratorId) {
         let source = self
@@ -373,6 +434,23 @@ impl Analyzer<'_> {
         if let (Some(source), Some(target)) = (source, target) {
             let source = self.graph.binding(source);
             let target = self.graph.binding(target);
+            if source.kind == BindingKind::Function
+                && target.kind == BindingKind::Function
+                && source.entity != target.entity
+                && self.graph.entity(source.entity).template_head.is_some()
+                && self.graph.entity(target.entity).template_head.is_some()
+                && self
+                    .graph
+                    .entity(target.entity)
+                    .home
+                    .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class)
+            {
+                self.graph
+                    .function_templates
+                    .bodies
+                    .link_member(source.entity, target.entity);
+                return;
+            }
             if source.kind == BindingKind::Variable
                 && target.kind == BindingKind::Variable
                 && self.graph.entity(target.entity).data_member

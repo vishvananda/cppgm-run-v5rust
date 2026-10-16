@@ -35,6 +35,14 @@ pub(super) struct Bodies {
     seen: HashSet<EntityId>,
 }
 impl Bodies {
+    fn template_pattern(&self, mut entity: EntityId) -> Option<Pattern> {
+        loop {
+            if let Some(&pattern) = self.patterns.get(&entity) {
+                return Some(pattern);
+            }
+            entity = *self.member_links.get(&entity)?;
+        }
+    }
     pub(super) fn source(&self, entity: EntityId) -> Option<EntityId> {
         self.member_links.get(&entity).copied()
     }
@@ -249,13 +257,7 @@ pub(crate) fn analyze_unit(
             .primary(entity)
             .ok_or(Error::Invariant("body demand without template"))?;
         let primary = graph.binding(primary).entity;
-        let Some(pattern) = graph
-            .function_templates
-            .bodies
-            .patterns
-            .get(&primary)
-            .copied()
-        else {
+        let Some(pattern) = graph.function_templates.bodies.template_pattern(primary) else {
             if let Some(definition) = definition
                 && graph.entity(primary).availability != super::graph::FunctionAvailability::Deleted
             {
@@ -471,14 +473,18 @@ impl Analyzer<'_> {
         exception: Option<(super::template_exceptions::TemplateException, ast::ExprId)>,
     ) -> Result<(), Error> {
         let definition = pattern.body;
-        let frame = self.template_body_frame(entity, pattern.head, definition.parent)?;
+        let frame = if definition.entity == primary {
+            self.template_body_frame(entity, pattern.head, definition.parent)?
+        } else {
+            self.outside_member_template_frame(entity, pattern.head, definition.parent)?
+        };
         let ty = self
             .graph
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("instance without type"))?;
         self.graph.entity_mut(entity).function_definition =
-            self.graph.entity(primary).function_definition;
+            self.graph.entity(definition.entity).function_definition;
         self.graph.entity_mut(entity).defined = true;
         self.graph.entity_mut(entity).function_parameters = Some(parameters);
         self.graph.lookup_limit = Some(pattern.limit);
@@ -594,6 +600,71 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn member_templates_share_heads_and_patterns_but_own_demanded_facts() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{\
+              template<class U=T>int f(){return sizeof(T)+sizeof(U);}\
+              template<class U>int bad(U x){return x.missing;}\
+              template<class U>int outside(U);};\
+              template<class Renamed>template<class Arg>int A<Renamed>::outside(Arg){\
+                return sizeof(Renamed)+sizeof(Arg);}\
+              int main(){A<char>a;A<long>b;return a.f<>()+a.f<>()+b.f<>()+a.outside(1);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-template-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let bodies = &graph.function_templates.bodies;
+        assert_eq!(bodies.states.len(), 3);
+        assert_eq!(bodies.demands.len(), 3);
+        let mut copies = HashSet::new();
+        let mut owners = HashSet::new();
+        for &entity in &bodies.demands {
+            let primary = graph
+                .binding(graph.function_templates.primary(entity).unwrap())
+                .entity;
+            let pattern = bodies.template_pattern(primary).unwrap();
+            let body = bodies.body(entity).unwrap();
+            assert_ne!(body, pattern.body.body);
+            assert!(copies.insert(body));
+            assert!(graph.entity(entity).function_definition.is_some());
+            owners.insert(graph.entity(entity).home.unwrap());
+            if let Some(default) = graph
+                .templates
+                .default_argument(graph.entity(primary).template_head.unwrap(), 0)
+            {
+                assert!(graph.type_fact(default.syntax).is_none());
+            }
+        }
+        assert_eq!(owners.len(), 2);
+        for (&copy, &original) in &bodies.member_links {
+            let own = graph.entity(copy).template_head.unwrap();
+            let source = graph.entity(original).template_head.unwrap();
+            assert_ne!(own, source);
+            assert_ne!(
+                graph.templates.parameter_scope(own),
+                graph.templates.parameter_scope(source)
+            );
+            if let (Some(copy), Some(original)) =
+                (bodies.patterns.get(&copy), bodies.patterns.get(&original))
+            {
+                assert_eq!(copy.body.body, original.body.body);
+            }
+        }
+    }
 
     #[test]
     fn friends_keep_namespace_identity_and_copy_only_demanded_instance_bodies() {

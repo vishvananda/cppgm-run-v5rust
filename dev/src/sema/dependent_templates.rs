@@ -161,11 +161,13 @@ mod tests {
 
     #[test]
     fn renamed_names_share_undefined_shells_and_substitute_only_demanded_arguments() {
+        // A dependent default exercises instantiation limits. A class member
+        // template's fixed default is bound at declaration and needs no demand.
         let source = SourceBuffer::new(
             b"template<class T>typename T::template item<int> f(T);\
               template<class U>typename U::template item<int> f(U);\
               template<class T>typename T::template item<char> g(T);\
-              struct Q { template<class X,class Y=int>struct item {typename X::unused field;}; };"
+              struct Q { template<class X,class Y=X>struct item {typename X::unused field;}; };"
                 .to_vec(),
         )
         .unwrap();
