@@ -18,11 +18,17 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub(super) struct Objects {
     strings: HashMap<(crate::lowir::vocabulary::Type, Vec<u64>), SymbolId>,
+    string_units: Vec<u64>,
     images: HashMap<Vec<DataItem>, SymbolId>,
     reference_temporaries: HashMap<crate::sema::lowering::EntityId, SymbolId>,
     defined_references: std::collections::HashSet<crate::sema::lowering::EntityId>,
 }
 impl Objects {
+    pub(super) fn take_string_units(&mut self) -> Vec<u64> {
+        let mut units = std::mem::take(&mut self.string_units);
+        units.clear();
+        units
+    }
     pub(super) fn reference_defined(&self, entity: crate::sema::lowering::EntityId) -> bool {
         self.defined_references.contains(&entity)
     }
@@ -144,17 +150,28 @@ pub(super) fn string(
         return Err(Error::Missing("non-string literal object"));
     };
     let storage = types::storage(graph, element)?;
-    let units: Vec<_> = symbols
-        .literal_bytes(literal)
-        .chunks_exact(ty.size())
-        .map(|unit| {
-            let mut bytes = [0u8; 8];
-            bytes[..unit.len()].copy_from_slice(unit);
-            u64::from_le_bytes(bytes)
-        })
-        .collect();
+    let mut units = symbols.data.take_string_units();
+    units.extend(
+        symbols
+            .literal_bytes(literal)
+            .chunks_exact(ty.size())
+            .map(|unit| {
+                let mut bytes = [0u8; 8];
+                bytes[..unit.len()].copy_from_slice(unit);
+                u64::from_le_bytes(bytes)
+            }),
+    );
+    string_object(program, symbols, storage, units)
+}
+pub(super) fn string_object(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    storage: crate::lowir::vocabulary::Type,
+    units: Vec<u64>,
+) -> Result<SymbolId, Error> {
     let key = (storage, units);
     if let Some(&symbol) = symbols.data.strings.get(&key) {
+        symbols.data.string_units = key.1;
         return Ok(symbol);
     }
     let items = key

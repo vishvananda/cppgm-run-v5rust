@@ -9,7 +9,7 @@ pub(crate) use super::copy_initialization::CopyAction;
 pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::expression_keys::{KeyNode, KeyWord};
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
-pub(crate) use super::literal_calls::TextCall;
+pub(crate) use super::literal_calls::LiteralCall;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 pub(crate) use super::virtual_members::{SlotId, SlotKind};
@@ -1524,7 +1524,7 @@ impl Graph {
     pub(crate) fn lower_operator_call(&self, id: ast::ExprId) -> Result<bool, Error> {
         Ok(self.expression_facts.get(id)?.call_form == super::expression_facts::CallForm::Operator)
     }
-    pub(crate) fn lower_literal_call(&self, id: ast::ExprId) -> Result<Option<TextCall>, Error> {
+    pub(crate) fn lower_literal_call(&self, id: ast::ExprId) -> Result<Option<LiteralCall>, Error> {
         Ok(self.expression_facts.get(id)?.literal_call)
     }
     pub(crate) fn lower_call(&self, id: ast::ExprId) -> Result<CallTarget, Error> {

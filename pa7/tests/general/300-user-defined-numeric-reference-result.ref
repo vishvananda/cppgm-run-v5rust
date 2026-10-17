@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable value int
+  function-definition operator""_ref function of (unsigned long long int) returning lvalue-reference to int
+    parameter  unsigned long long int
+    compound-statement
+      return-statement
+        id-expression lvalue int value
+  function-definition main function of () returning int
+    compound-statement
+      expression-statement
+        assignment-expression lvalue int OP_ASS:=
+          literal lvalue int 0_ref
+          literal prvalue int 4
+      expression-statement
+        literal lvalue int 3_ref
+      return-statement
+        literal lvalue int 4_ref
+end translation unit

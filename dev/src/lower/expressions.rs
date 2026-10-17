@@ -114,7 +114,7 @@ impl Function<'_, '_, '_, '_> {
             return self.call_conversion(id, call);
         }
         if self.graph.lower_literal_call(id)?.is_some() {
-            let value = self.text_literal_call(id)?;
+            let value = self.literal_call(id)?;
             return if facts.is_place
                 && !matches!(
                     self.graph.lower_type(source)?,

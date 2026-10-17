@@ -1371,6 +1371,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ty = target;
         }
         if facts.call_form == super::expression_facts::CallForm::Ordinary
+            && facts.literal_call.is_none()
             && let Some(call) = facts.call
         {
             let function = match call {

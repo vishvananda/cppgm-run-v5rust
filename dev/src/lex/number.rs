@@ -42,6 +42,23 @@ pub fn classify_number(text: &[u8], dialect: NumberDialect) -> NumberLiteral {
     }
 }
 
+/// Decode an already classified ud-integer's digits. Raw literal operators
+/// need no numeric value; only a selected cooked operator demands this check.
+pub(crate) fn user_integer_value(digits: &[u8]) -> Option<u64> {
+    let (digits, radix) = if digits.starts_with(b"0x") || digits.starts_with(b"0X") {
+        (&digits[2..], 16)
+    } else if digits.starts_with(b"0b") || digits.starts_with(b"0B") {
+        (&digits[2..], 2)
+    } else {
+        (digits, if digits.first() == Some(&b'0') { 8 } else { 10 })
+    };
+    digits.iter().try_fold(0u64, |value, &byte| {
+        value
+            .checked_mul(radix)?
+            .checked_add(u64::from(hex_value(u32::from(byte))?))
+    })
+}
+
 fn classify_cxx11(text: &[u8]) -> NumberLiteral {
     if text.starts_with(b"0x") || text.starts_with(b"0X") {
         let mut end = 2;

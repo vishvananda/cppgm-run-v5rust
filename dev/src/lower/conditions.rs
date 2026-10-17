@@ -116,15 +116,15 @@ impl Function<'_, '_, '_, '_> {
         let facts = self.graph.lower_expression(id)?;
         if let Some(shape) = self.graph.lower_literal_call(id)? {
             // The frozen literal_truth reads the call-form value retained on
-            // the literal: character=3, string=0, even for user literal calls.
+            // the literal: string=0; cooked=1, character=3, raw=4.
             return Ok((types::storage(self.graph, facts.ty)?.float_rank() == 0
                 && !matches!(
                     self.graph.lower_type(facts.ty)?,
                     crate::sema::lowering::TypeView::Array { .. }
                 ))
-            .then_some(matches!(
+            .then_some(!matches!(
                 shape,
-                crate::sema::lowering::TextCall::Character { .. }
+                crate::sema::lowering::LiteralCall::String { .. }
             )));
         }
         match self.tree.expressions.get(id).kind {
@@ -552,7 +552,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         if self.graph.lower_literal_call(id)?.is_some() {
-            self.text_literal_call(id)?;
+            self.literal_call(id)?;
             return Ok(());
         }
         if self.graph.lower_operator_call(id)? {

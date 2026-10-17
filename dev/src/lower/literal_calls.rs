@@ -1,5 +1,5 @@
 // Translated from lower/expression_lowering.cpp::literal. See NOTICE.
-//! Lower selected text literal calls with their original target argument order.
+//! Lower selected literal calls with their original target argument order.
 use super::{
     Error,
     conversions::Context,
@@ -8,18 +8,19 @@ use super::{
 };
 use crate::{
     lowir::{
+        literals::{Constant, FloatKind},
         model::{Call, InstructionKind as I, Value},
         vocabulary::{Convert, Type},
     },
-    sema::lowering::{CallTarget, TextCall, TypeView},
+    sema::lowering::{CallTarget, LiteralCall, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn text_literal_call(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
-        self.text_literal_call_into(id, None)
+    pub(super) fn literal_call(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
+        self.literal_call_into(id, None)
     }
-    pub(super) fn text_literal_call_into(
+    pub(super) fn literal_call_into(
         &mut self,
         id: ast::ExprId,
         destination: Option<Value>,
@@ -46,7 +47,7 @@ impl Function<'_, '_, '_, '_> {
             .lower_literal_call(id)?
             .ok_or(Error::Missing("literal operands"))?;
         let (values, count) = match shape {
-            TextCall::Character { source, bits } => {
+            LiteralCall::Character { source, bits } => {
                 let value = RValue {
                     value: self.builder.integer(u128::from_le_bytes(
                         i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes(),
@@ -67,7 +68,51 @@ impl Function<'_, '_, '_, '_> {
                 }
                 ([value.value; 2], 1)
             }
-            TextCall::String { element, units } => {
+            LiteralCall::Integer { source, bits } => {
+                let value = RValue {
+                    value: self.builder.integer(u128::from_le_bytes(
+                        i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes(),
+                    ))?,
+                    ty: types::storage(self.graph, source)?,
+                    source,
+                    literal: false,
+                    bits: Some(bits),
+                };
+                let value = self.convert(value, parameters[0], Context::Initialization)?;
+                ([value.value; 2], 1)
+            }
+            LiteralCall::Floating { digits } => {
+                let bytes = self.symbols.numeric_literal_value(literal, digits)?.ok_or(
+                    crate::sema::Error::at(
+                        self.tree.expressions.get(id).location,
+                        "a floating literal outside its type's range",
+                    ),
+                )?;
+                let mut bits = [0; 16];
+                bits[..bytes.as_slice().len()].copy_from_slice(bytes.as_slice());
+                let value = self
+                    .builder
+                    .constant(Constant::Float(FloatKind::F80, u128::from_le_bytes(bits)))?;
+                ([value; 2], 1)
+            }
+            LiteralCall::Raw { digits } => {
+                let mut units = self.symbols.data.take_string_units();
+                let spelling = self.symbols.literal_spelling(literal);
+                let digits = spelling.get(..digits).ok_or(crate::sema::Error::Invariant(
+                    "numeric literal digits outside spelling",
+                ))?;
+                units.extend(digits.iter().copied().map(u64::from));
+                units.push(0);
+                let symbol = super::data::string_object(
+                    self.builder.program(),
+                    self.symbols,
+                    Type::I8,
+                    units,
+                )?;
+                let address = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
+                ([address; 2], 1)
+            }
+            LiteralCall::String { element, units } => {
                 let symbol = super::data::string(
                     self.builder.program(),
                     self.symbols,

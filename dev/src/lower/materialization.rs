@@ -573,7 +573,7 @@ impl Function<'_, '_, '_, '_> {
                     Ok(())
                 }
                 ExprKind::Literal(_) if self.graph.lower_literal_call(id)?.is_some() => {
-                    self.text_literal_call_into(id, Some(object))?;
+                    self.literal_call_into(id, Some(object))?;
                     Ok(())
                 }
                 ExprKind::Call { callee, arguments } => {

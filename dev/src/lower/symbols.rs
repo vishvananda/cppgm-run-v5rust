@@ -138,6 +138,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub instance_variables: std::collections::VecDeque<EntityId>,
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
+    numeric_scanner: crate::types::floating::FloatingScanner,
     pub data: super::data::Objects,
     vtables: vtables::Tables,
     temporary_owner: Option<(EntityId, u32)>,
@@ -220,6 +221,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             local_statics: HashMap::new(),
             persistent_finalizers: Vec::new(),
             signatures: HashMap::new(),
+            numeric_scanner: crate::types::floating::FloatingScanner::default(),
         }
     }
     pub(super) fn publish_finalizers(&mut self, output: &mut Vec<super::shutdown::Finalizer>) {
@@ -534,6 +536,37 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
         self.cursor.spellings.get(literal.data)
+    }
+    fn source_function_spelling(&self, name: FunctionName) -> Result<String, Error> {
+        match name {
+            FunctionName::Identifier(name) => Ok(self.identifier(name)?.to_owned()),
+            FunctionName::Literal(suffix) => {
+                Ok(format!("operator\"\" {}", self.identifier(suffix)?))
+            }
+            _ => {
+                Err(crate::sema::Error::Invariant("C linkage function without source name").into())
+            }
+        }
+    }
+    pub(super) fn literal_spelling(&self, literal: ast::Literal) -> &[u8] {
+        self.cursor.spellings.get(literal.spelling)
+    }
+    pub(super) fn numeric_literal_value(
+        &mut self,
+        literal: ast::Literal,
+        digits: usize,
+    ) -> Result<Option<crate::types::floating::ScalarBytes>, Error> {
+        let digits = self
+            .cursor
+            .spellings
+            .get(literal.spelling)
+            .get(..digits)
+            .ok_or(crate::sema::Error::Invariant(
+                "numeric literal digits outside spelling",
+            ))?;
+        self.numeric_scanner
+            .scan(digits, crate::types::FundamentalType::LongDouble)
+            .map_err(|_| crate::lowir::Error::Limit.into())
     }
     fn presentation_scope_label(
         &mut self,
@@ -854,10 +887,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         if let Some(function) = self.graph.lower_local_scope(scope) {
             let facts = self.graph.lower_function(function)?;
-            let node = if let FunctionName::Identifier(name) = facts.name
-                && (facts.c_linkage || self.cursor.name(name) == b"main")
+            let node = if facts.c_linkage
+                || matches!(facts.name,
+                FunctionName::Identifier(name) if self.cursor.name(name) == b"main")
             {
-                let spelling = self.identifier(name)?;
+                let spelling = self.source_function_spelling(facts.name)?;
                 let raw = format!("Z{}{spelling}E", spelling.len());
                 Node::RawFunctionScope(self.abi.string(raw.as_bytes())?)
             } else {
@@ -1270,14 +1304,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let own = match facts.builtin {
             Some(crate::sema::lowering::BuiltinFunction::Memcmp) => "memcmp".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memset) => "memset".to_owned(),
-            _ if facts.c_linkage && !facts.internal => {
-                let FunctionName::Identifier(name) = facts.name else {
-                    return Err(Error::Semantic(crate::sema::Error::Invariant(
-                        "C linkage function without identifier",
-                    )));
-                };
-                self.identifier(name)?.to_owned()
-            }
+            _ if facts.c_linkage && !facts.internal => self.source_function_spelling(facts.name)?,
             _ => self.function_label(facts.name, facts.label)?,
         };
         let mut components = vec![own];
@@ -2323,12 +2350,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         facts: &crate::sema::lowering::FunctionFacts,
         variant: super::construction::Variant,
     ) -> Result<NodeId, Error> {
-        if let FunctionName::Identifier(identifier) = facts.name
-            && (facts.c_linkage
-                || self.cursor.name(identifier) == b"main"
-                    && self.graph.lower_presentation_scope(facts.home).0.is_none())
+        if facts.c_linkage
+            || matches!(facts.name,
+            FunctionName::Identifier(identifier) if self.cursor.name(identifier) == b"main"
+                && self.graph.lower_presentation_scope(facts.home).0.is_none())
         {
-            let terminal = self.abi.string(self.cursor.name(identifier))?;
+            let spelling = self.source_function_spelling(facts.name)?;
+            let terminal = self.abi.string(spelling.as_bytes())?;
             return Ok(self.abi.intern(
                 Node::Name {
                     parent: None,
