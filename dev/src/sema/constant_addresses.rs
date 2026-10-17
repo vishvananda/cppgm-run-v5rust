@@ -1343,6 +1343,16 @@ impl Analyzer<'_> {
                     )?;
                     return Ok(place);
                 }
+                let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind else {
+                    return Err(Error::Invariant("reference temporary type"));
+                };
+                if self.graph.class_of(element).is_some() {
+                    // A converting constructor creates class storage. Its
+                    // scalar source is never the reference's backing value.
+                    return self.in_constant_evaluation(|analyzer| {
+                        analyzer.bind_constant_reference(expr, element, scope)
+                    });
+                }
                 if self.is_address_expression(expr) {
                     let value = self.evaluate_address(expr, scope)?;
                     self.graph
@@ -1351,9 +1361,6 @@ impl Analyzer<'_> {
                         .insert(entity, TemporaryValue::Pointer(value));
                     return Ok(Address::new(Root::Temporary(entity), facts.ty));
                 }
-                let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind else {
-                    return Err(Error::Invariant("reference temporary type"));
-                };
                 let value =
                     if self.float_format(element).is_some() || self.floating_expression(expr) {
                         self.constant_operand_value(expr, element, scope)?

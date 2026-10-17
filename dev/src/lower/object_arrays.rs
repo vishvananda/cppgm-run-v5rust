@@ -12,6 +12,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(super) enum ArrayBase {
     Storage(Value),
+    Address(Value),
     Member { pointer: TypeId, offset: u64 },
 }
 impl Function<'_, '_, '_, '_> {
@@ -27,7 +28,12 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "array without constructor plan",
             )))?;
-        self.construct_class_elements(ty, ArrayBase::Storage(storage), constructor)
+        let base = if matches!(storage, Value::Slot(_) | Value::Symbol(_)) {
+            ArrayBase::Storage(storage)
+        } else {
+            ArrayBase::Address(storage)
+        };
+        self.construct_class_elements(ty, base, constructor)
     }
     pub(super) fn construct_class_elements(
         &mut self,
@@ -59,6 +65,7 @@ impl Function<'_, '_, '_, '_> {
         element: TypeId,
     ) -> Result<Value, Error> {
         match base {
+            ArrayBase::Address(address) => Ok(address),
             ArrayBase::Storage(storage) => Ok(self.emit(I::Addr(storage), element)?.value),
             ArrayBase::Member { pointer, offset } => {
                 let object = self.object_pointer(pointer)?.value;

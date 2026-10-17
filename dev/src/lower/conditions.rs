@@ -253,7 +253,7 @@ impl Function<'_, '_, '_, '_> {
                 initializer,
                 ..
             } => {
-                self.local_variable(declarator, Some(initializer))?;
+                self.local_variable(declarator, Some(initializer), None)?;
                 let entity = self.graph.lower_declared(declarator)?;
                 return self.declared_condition_value(declarator, entity, to_bool);
             }

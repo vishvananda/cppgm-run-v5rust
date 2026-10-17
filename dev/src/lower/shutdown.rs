@@ -58,13 +58,34 @@ pub(super) fn finish(
     symbol: SymbolId,
     finalizers: &[Finalizer],
 ) -> Result<(), Error> {
+    finish_body(program, symbol, finalizers, Some(Role::Fini))
+}
+pub(super) fn local(
+    program: &mut Program,
+    symbol: SymbolId,
+    finalizers: &[Finalizer],
+) -> Result<(), Error> {
+    finish_body(program, symbol, finalizers, None)
+}
+fn finish_body(
+    program: &mut Program,
+    symbol: SymbolId,
+    finalizers: &[Finalizer],
+    role: Option<Role>,
+) -> Result<(), Error> {
     let name = program.names.get(program.symbol(symbol).name).to_owned();
     let mut builder = FunctionBuilder::new(program, &name, &[], Type::Void)?;
     builder.metadata(Metadata {
-        role: Some(Role::Fini),
+        role,
         binding: Some(Binding::Internal),
         ..Metadata::default()
     });
+    if role.is_none() {
+        builder.boundary(crate::lowir::model::Boundary {
+            unwind: crate::lowir::model::Unwind::No,
+            ..crate::lowir::model::Boundary::default()
+        });
+    }
     builder.block("entry")?;
     let mut next_block = 0_u32;
     for finalizer in finalizers.iter().rev() {

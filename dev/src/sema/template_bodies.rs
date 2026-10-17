@@ -111,6 +111,12 @@ impl Bodies {
     }
 }
 impl Graph {
+    pub(crate) fn lower_function_instantiated(&self, entity: EntityId) -> bool {
+        !self.function_templates.specializations.contains(entity)
+            && (self.function_templates.primary(entity).is_some()
+                || self.function_templates.bodies.source(entity).is_some())
+    }
+
     fn defer_emission_synthesis(&mut self, entity: EntityId) -> bool {
         if self.outside_defaulted_member(entity).is_none()
             || self

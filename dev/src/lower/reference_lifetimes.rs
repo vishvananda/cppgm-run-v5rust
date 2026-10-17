@@ -21,10 +21,12 @@ impl Function<'_, '_, '_, '_> {
         let Value::Symbol(global) = storage else {
             return Ok(());
         };
-        if let Some(flag) = self
-            .symbols
-            .persistent_finalizer(self.builder.program(), global, ty)?
-        {
+        if let Some(flag) = self.symbols.persistent_finalizer(
+            self.builder.program(),
+            global,
+            ty,
+            self.static_temporaries.as_mut(),
+        )? {
             let one = self.builder.integer(1)?;
             self.effect(crate::lowir::model::InstructionKind::Store(
                 crate::lowir::model::Facts::default(),

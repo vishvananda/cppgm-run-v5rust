@@ -34,6 +34,7 @@ pub(super) struct SymbolTable {
     exception_helpers: Option<super::exception_helpers::Helpers>,
     terminate_pending: bool,
     bad_array_length: Option<SymbolId>,
+    atexit: Option<SymbolId>,
     runtime_roles: Vec<super::runtime_roles::RoleSymbol>,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
@@ -157,7 +158,9 @@ pub(super) struct Symbols<'a, 'source> {
     anonymous_names: super::anonymous_names::Names,
     // A source declaration is shared by every ABI entry running its body.
     local_statics: HashMap<EntityId, super::local_storage::StorageSymbols>,
+    local_static_names: HashMap<EntityId, NodeId>,
     persistent_finalizers: Vec<super::shutdown::Finalizer>,
+    pub(super) generated_definitions: Vec<u8>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn note_declaration_only_global(&mut self, entity: EntityId) {
@@ -223,7 +226,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             inert_destructors: HashMap::new(),
             anonymous_names: super::anonymous_names::Names::default(),
             local_statics: HashMap::new(),
+            local_static_names: HashMap::new(),
             persistent_finalizers: Vec::new(),
+            generated_definitions: Vec::new(),
             signatures: HashMap::new(),
             numeric_scanner: crate::types::floating::FloatingScanner::default(),
         }
@@ -236,6 +241,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         program: &mut Program,
         global: SymbolId,
         ty: TypeId,
+        local: Option<&mut Vec<super::shutdown::Finalizer>>,
     ) -> Result<Option<SymbolId>, Error> {
         let graph = self.graph;
         let Some(mut finalizer) =
@@ -262,7 +268,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
         )?;
         finalizer.constructed = Some(flag);
         finalizer.reference_temporary = true;
-        self.persistent_finalizers.push(finalizer);
+        if let Some(local) = local {
+            local.push(finalizer);
+        } else {
+            self.persistent_finalizers.push(finalizer);
+        }
         Ok(Some(flag))
     }
     pub(super) fn parameter_classes(
@@ -427,17 +437,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             Ok(true)
         }
-    }
-    pub(super) fn require_trivial_storage(&mut self, mut ty: TypeId) -> Result<(), Error> {
-        while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
-            ty = element;
-        }
-        if let TypeView::Class(class) = self.graph.lower_type(ty)?
-            && self.class_storage_properties(class)?.destruction
-        {
-            return Err(Error::Missing("class storage destruction lowering"));
-        }
-        Ok(())
     }
     pub(super) fn storage_destructor(&mut self, ty: TypeId) -> Result<Option<EntityId>, Error> {
         self.class_destructor(ty)
@@ -851,18 +850,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
             owner,
             sequence.checked_add(1).ok_or(crate::lowir::Error::Limit)?,
         ));
-        let facts = self.graph.lower_variable(owner)?;
-        let parent = self.scope(facts.home)?;
-        let terminal = self.abi.string(self.cursor.name(facts.named()?))?;
-        let owner = self.abi.intern(
-            Node::Name {
-                parent,
-                terminal,
-                internal: facts.internal,
-                occurrence: 0,
-            },
-            &[],
-        )?;
+        let owner = if let Some(&name) = self.local_static_names.get(&owner) {
+            name
+        } else {
+            let facts = self.graph.lower_variable(owner)?;
+            let parent = self.scope(facts.home)?;
+            let terminal = self.abi.string(self.cursor.name(facts.named()?))?;
+            self.abi.intern(
+                Node::Name {
+                    parent,
+                    terminal,
+                    internal: facts.internal,
+                    occurrence: 0,
+                },
+                &[],
+            )?
+        };
         let mut bytes = Vec::new();
         abi::encoder::Encoder::encode(
             &self.abi,
@@ -1844,6 +1847,60 @@ impl<'a, 'source> Symbols<'a, 'source> {
         builder.finish()?;
         Ok(true)
     }
+    pub(super) fn local_destructor_symbol(
+        &mut self,
+        program: &mut Program,
+        global: SymbolId,
+    ) -> Result<SymbolId, Error> {
+        let spelling = format!(
+            "__cppgm_local_static_destructor__{}",
+            program.names.get(program.symbol(global).name)
+        );
+        self.table.allocate(program, &spelling, None, true)
+    }
+    pub(super) fn atexit_function(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
+        use crate::lowir::{
+            model::{Boundary, Linkage, Parameter, Signature},
+            vocabulary::{Binding, Type},
+        };
+        if let Some(symbol) = self.table.atexit {
+            return Ok(symbol);
+        }
+        let object = program.names.intern("atexit")?;
+        let symbol = self
+            .table
+            .allocate(program, "__cppgm_runtime_atexit", None, true)?;
+        let parameter = Parameter {
+            name: program.names.intern("arg0")?,
+            ty: Type::Ptr,
+            pass: None,
+            object_bytes: 0,
+            no_alias: false,
+            classes: None,
+        };
+        let signature = program.add_signature(Signature {
+            parameters: vec![parameter],
+            result: Type::I32,
+            boundary: Boundary::default(),
+        })?;
+        program.add(
+            symbol,
+            crate::lowir::model::Function {
+                name: program.symbol(symbol).name,
+                signature,
+                metadata: Metadata {
+                    linkage: Linkage::C,
+                    binding: Some(Binding::Strong),
+                    object: Some(object),
+                    ..Metadata::default()
+                },
+                body: None,
+                location: None,
+            },
+        )?;
+        self.table.atexit = Some(symbol);
+        Ok(symbol)
+    }
     pub(super) fn existing_local_storage(&self, entity: EntityId) -> Option<Value> {
         self.local_statics
             .get(&entity)
@@ -1856,6 +1913,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         function: EntityId,
         ordinal: u32,
         dynamic: bool,
+        tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<super::local_storage::StorageSymbols, Error> {
         use crate::lowir::vocabulary::{Binding, Storage};
         if let Some(&symbols) = self.local_statics.get(&entity) {
@@ -1865,6 +1923,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let owner = self.function_symbol(program, function)?;
         let owner_name = program.names.get(program.symbol(owner).name).to_owned();
         let weak = self.metadata(program, function, &owner_name)?.binding == Some(Binding::Weak);
+        let instantiated = self.graph.lower_function_instantiated(function);
+        let owner_name = if instantiated || weak && self.graph.lower_function_local_class(function)
+        {
+            let metadata = self.metadata(program, function, &owner_name)?;
+            let object = metadata.object.ok_or(crate::sema::Error::Invariant(
+                "instantiated function without object name",
+            ))?;
+            let mut name = String::from("function_symbol_");
+            for byte in program.names.get(object).bytes() {
+                write!(name, "{byte:02x}")
+                    .map_err(|_| Error::Missing("static owner formatting"))?;
+            }
+            name
+        } else {
+            owner_name
+        };
         if facts.name.is_none() {
             let spelling = format!("__local_static__{owner_name}__decl{ordinal}__object");
             let object = self.table.allocate(program, &spelling, None, !weak)?;
@@ -1895,7 +1969,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(symbols);
         }
         let name = self.identifier(facts.named()?)?;
-        let spelling = format!("__local_static__{owner_name}__decl{ordinal}__{name}");
+        let spelling = if let Some(tokens) =
+            tokens.filter(|span| !weak && !instantiated && span.end > span.begin)
+        {
+            format!(
+                "__local_static__{owner_name}__{name}__tokens{}_{}",
+                tokens.begin, tokens.end
+            )
+        } else {
+            format!("__local_static__{owner_name}__decl{ordinal}__{name}")
+        };
         let encoding = self.function_encoding(function)?;
         let parent = self.abi.intern(
             Node::FunctionScope {
@@ -1920,6 +2003,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             &[],
         )?;
+        self.local_static_names.insert(entity, name);
         let mut bytes = Vec::new();
         abi::encoder::Encoder::encode(
             &self.abi,
@@ -2362,6 +2446,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         output: &mut super::definition_order::Definitions,
         entry: super::construction::Entry,
     ) -> Result<(), Error> {
+        output.generated(&mut self.generated_definitions);
         let destructor = if matches!(entry.facts(self.graph)?.name, FunctionName::Destructor(_)) {
             entry.entity(self.graph)
         } else {

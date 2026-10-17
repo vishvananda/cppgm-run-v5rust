@@ -52,6 +52,7 @@ pub(crate) struct Cursor<'a> {
     pub position: usize,
     retained: usize,
     base: u64,
+    origin: u64,
     end: Option<Token>,
     pub tokens_read: u64,
     pub peak_window: usize,
@@ -71,6 +72,7 @@ impl<'a> Cursor<'a> {
             position: 0,
             retained: 0,
             base: 0,
+            origin: 0,
             end: None,
             tokens_read: 0,
             peak_window: 0,
@@ -78,6 +80,7 @@ impl<'a> Cursor<'a> {
     }
     pub(super) fn set_origin(&mut self, origin: u64) {
         self.base = origin;
+        self.origin = origin;
     }
     pub(super) fn peek(&mut self, ahead: usize) -> Result<Token, ParseError> {
         let index = self
@@ -272,6 +275,11 @@ impl<'a> Cursor<'a> {
             .partition_point(|change| change.ordinal <= ordinal);
         end.checked_sub(1)
             .map_or(0, |index| self.pack_changes[index].alignment)
+    }
+    /// Source ordinals exclude the hosted declaration prefix, including in
+    /// retained runs and after window compaction (`parse_token_stream::unit_position`).
+    pub(super) fn unit_position(&self) -> Result<u64, ParseError> {
+        Ok(self.absolute_position()?.saturating_sub(self.origin))
     }
     pub(super) fn absolute_position(&self) -> Result<u64, ParseError> {
         self.replay

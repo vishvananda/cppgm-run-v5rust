@@ -286,13 +286,6 @@ pub(crate) enum InitializerKind {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct InitDeclarator {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The source token range belongs to this init-declarator for later declaration diagnostics"
-        )
-    )]
     pub tokens: TokenSpan<u32>,
     pub declarator: DeclaratorId,
     pub initializer: Option<Initializer>,

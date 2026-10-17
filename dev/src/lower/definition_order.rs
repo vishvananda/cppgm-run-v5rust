@@ -67,6 +67,19 @@ impl Definitions {
         }
         Ok(id)
     }
+    pub(super) fn generated(&mut self, bytes: &mut Vec<u8>) {
+        if bytes.is_empty() {
+            return;
+        }
+        let start = self.bytes.len();
+        self.bytes.append(bytes);
+        self.spans.push(Definition {
+            bytes: start..self.bytes.len(),
+            header: None,
+            entry: None,
+            form: None,
+        });
+    }
     pub(super) fn stream(
         &mut self,
         program: &mut Program,

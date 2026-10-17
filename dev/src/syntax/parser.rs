@@ -463,7 +463,7 @@ impl<'a> Parser<'a> {
     pub(super) fn token_ordinal(&self) -> Result<u32, ParseError> {
         // Frozen init-declarator and lambda ranges keep the low target
         // 32 bits of the unit ordinal, independently of host usize width.
-        let bytes = self.cursor.absolute_position()?.to_le_bytes();
+        let bytes = self.cursor.unit_position()?.to_le_bytes();
         Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
     pub(super) fn discard_committed_angle_caches(&mut self) {

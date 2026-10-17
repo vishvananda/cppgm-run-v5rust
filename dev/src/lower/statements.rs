@@ -56,7 +56,11 @@ impl Function<'_, '_, '_, '_> {
                     } else {
                         None
                     };
-                    self.local_variable(declarator.declarator, initializer)?;
+                    self.local_variable(
+                        declarator.declarator,
+                        initializer,
+                        Some(declarator.tokens),
+                    )?;
                 }
             }
             return Ok(());

@@ -37,6 +37,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
     pub persistent_references: bool,
+    pub static_temporaries: Option<Vec<super::shutdown::Finalizer>>,
     pub static_initializer: bool,
     pub initialization_output: Option<super::startup::InitializationOutput<'symbols>>,
     // While a converting constructor consumes its source, its first standard
@@ -353,6 +354,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             entity,
             this_slot: None,
             persistent_references: false,
+            static_temporaries: None,
             static_initializer: false,
             initialization_output: None,
             converting_source: None,
@@ -551,7 +553,7 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn declaration(&mut self, id: ast::DeclId) -> Result<(), Error> {
         if let Some(entity) = self.graph.lower_declaration_storage(id) {
-            self.local_entity(entity, None)?;
+            self.local_entity(entity, None, None)?;
         }
         let declarators = match self.tree.declarations.get(id).kind {
             DeclKind::Simple { declarators, .. } => declarators,
@@ -565,7 +567,11 @@ impl Function<'_, '_, '_, '_> {
             _ => return Err(Error::Missing("block declaration lowering")),
         };
         for declarator in self.tree.init_declarators.get(declarators) {
-            self.local_variable(declarator.declarator, declarator.initializer)?;
+            self.local_variable(
+                declarator.declarator,
+                declarator.initializer,
+                Some(declarator.tokens),
+            )?;
         }
         Ok(())
     }
@@ -573,14 +579,16 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         declarator: ast::DeclaratorId,
         initializer: Option<ast::Initializer>,
+        tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
         let entity = self.graph.lower_declared(declarator)?;
-        self.local_entity(entity, initializer)
+        self.local_entity(entity, initializer, tokens)
     }
     fn local_entity(
         &mut self,
         entity: EntityId,
         initializer: Option<ast::Initializer>,
+        tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
         let reachable = !self.terminated;
         let ty = self.graph.lower_entity_type(entity)?;
@@ -655,7 +663,7 @@ impl Function<'_, '_, '_, '_> {
         if object && self.graph.lower_automatic(entity) {
             self.reference_lifetimes.aggregate = Some(entity);
         }
-        let result = self.initialize_local_variable(entity, initializer);
+        let result = self.initialize_local_variable(entity, initializer, tokens);
         self.reference_lifetimes.aggregate = saved_owner;
         result?;
         // A conditional's private result remains alive through the outer copy,
@@ -693,6 +701,7 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         entity: EntityId,
         initializer: Option<ast::Initializer>,
+        tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
         if !self.graph.lower_is_variable(entity) {
             return Ok(());
@@ -701,7 +710,7 @@ impl Function<'_, '_, '_, '_> {
             if self.graph.lower_program_storage(entity) {
                 return Ok(());
             }
-            return self.local_static(entity, initializer);
+            return self.local_static(entity, initializer, tokens);
         }
         let ty = self.graph.lower_entity_type(entity)?;
         let storage = types::local_storage(self.graph, entity, ty)?;

@@ -572,6 +572,7 @@ fn recorded_token_ordinals_keep_the_low_target_bits_after_host_conversion() {
         input,
         NumberDialect::Cxx11,
     )));
+    parser.cursor.set_origin(160);
     for ordinal in [0, u64::from(u32::MAX), u64::from(u32::MAX) + 8] {
         if let Ok(position) = usize::try_from(ordinal) {
             parser.cursor.position = position;
