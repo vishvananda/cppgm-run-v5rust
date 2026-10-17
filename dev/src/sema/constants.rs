@@ -130,7 +130,8 @@ impl Analyzer<'_> {
         }
         let expr = *self.tree.expressions.get(id);
         let location = expr.location;
-        if self.constexpr_frames.active()
+        if self.semantic()
+            && (self.constexpr_frames.active() || matches!(expr.kind, ExprKind::Member { .. }))
             && !skipping
             && self.graph.expression_facts.get(id)?.category
                 != super::expression_facts::ValueCategory::Prvalue
@@ -374,14 +375,46 @@ impl Analyzer<'_> {
             && !skipping
             && let Some(step) = self.graph.expression_facts.function_conversion(id)
         {
-            let function = self.graph.binding(step.binding).entity;
-            if !self.graph.entity(function).constexpr {
-                return Err(not_constant(
-                    self.tree.expressions.get(id).location,
-                    "a call of a function that is not constexpr",
-                ));
-            }
-            return Err(Error::Missing("constexpr function interpretation"));
+            let location = self.tree.expressions.get(id).location;
+            let value = match self.constant_conversion_result(id, scope)? {
+                super::constexpr_calls::Returned::Value(
+                    super::constant_addresses::TemporaryValue::Integer(value),
+                ) => value,
+                super::constexpr_calls::Returned::Place(place) => {
+                    self.read_constant_integer(place, location)?
+                }
+                super::constexpr_calls::Returned::Value(
+                    super::constant_addresses::TemporaryValue::Pointer(pointer),
+                ) if matches!(
+                    self.graph.types.get(step.after.result).kind,
+                    TypeKind::Scalar(Scalar::Bool)
+                ) =>
+                {
+                    Constant {
+                        bits: u64::from(pointer.root != super::constant_addresses::Root::Null),
+                        ty: self.bare_type(step.after.result)?,
+                    }
+                }
+                _ => {
+                    return Err(not_constant(
+                        location,
+                        "not an integral constant expression",
+                    ));
+                }
+            };
+            let target = step.after.result;
+            let ty = if self.integral_kind(target).is_some() {
+                self.bare_type(target)?
+            } else {
+                value.ty
+            };
+            let kind = self
+                .integral_kind(ty)
+                .ok_or(Error::Invariant("nonintegral conversion result"))?;
+            return Ok(Some(Constant {
+                bits: kind.convert(value.bits),
+                ty,
+            }));
         }
         if self.semantic()
             && !skipping
@@ -491,41 +524,27 @@ impl Analyzer<'_> {
         if let Some(kind) = facts.intrinsic {
             return self.constant_floating_intrinsic(id, kind, scope);
         }
-        if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call {
-            if self
+        if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+            && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
                 .builtin
                 .is_some()
-            {
-                return Err(not_constant(
-                    self.tree.expressions.get(id).location,
-                    "a builtin function that is not a constant expression",
-                ));
-            }
-            if !self
+        {
+            return Err(not_constant(
+                self.tree.expressions.get(id).location,
+                "a builtin function that is not a constant expression",
+            ));
+        }
+        if facts.literal_call.is_some()
+            && let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+            && !self
                 .graph
                 .entity(self.graph.binding(binding).entity)
                 .constexpr
-            {
-                return Err(not_constant(
-                    self.tree.expressions.get(id).location,
-                    "a call of a function that is not constexpr",
-                ));
-            }
-            return self.interpret_constant_call(id, scope);
-        }
-        let ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
-            return Err(Error::Invariant("constant call without call syntax"));
-        };
-        let address = self.evaluate_address(callee, scope)?;
-        let super::constant_addresses::Root::Function(entity) = address.root else {
-            return Err(not_constant(
-                self.tree.expressions.get(id).location,
-                "a call through a pointer that designates no function",
-            ));
-        };
-        if !self.graph.entity(entity).constexpr {
+        {
+            // A literal operator has no object operand. Its invocation fails
+            // evaluable() before its literal arguments need interpretation.
             return Err(not_constant(
                 self.tree.expressions.get(id).location,
                 "a call of a function that is not constexpr",
@@ -540,6 +559,15 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         let node = *self.tree.expressions.get(id);
+        if self.semantic()
+            && self.graph.expression_facts.get(id).is_ok_and(|facts| {
+                self.graph.class_of(facts.ty).is_some()
+                    && facts.category == super::expression_facts::ValueCategory::Prvalue
+            })
+        {
+            self.constant_object_place(id, scope)?;
+            return Ok(());
+        }
         match node.kind {
             ExprKind::Id(_) | ExprKind::Literal(_) | ExprKind::Keyword(_) => Ok(()),
             ExprKind::Member { op, .. } if op.token.as_punctuator() == Some(P::Arrow) => {

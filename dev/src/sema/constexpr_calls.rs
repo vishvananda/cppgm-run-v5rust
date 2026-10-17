@@ -25,7 +25,7 @@ pub(super) enum Returned {
 
 impl Analyzer<'_> {
     pub(super) fn check_constexpr_scalar_signature(
-        &self,
+        &mut self,
         entity: EntityId,
         ty: TypeId,
         location: SourceOffset,
@@ -42,16 +42,44 @@ impl Analyzer<'_> {
         {
             return Ok(());
         }
+        let constructor = function
+            .member_function
+            .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor);
         if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind
-            && matches!(
-                self.graph.types.get(result).kind,
-                TypeKind::Scalar(Scalar::Void)
-            )
+            && !constructor
+            && !self.constant_literal_type(result)?
         {
             return Err(Error::at(
                 location,
                 "a constexpr function's return type is not a literal type",
             ));
+        }
+        if !constructor {
+            let entity = self.graph.entity(entity);
+            if entity.function.is_some_and(|function| !function.is_static)
+                && let Some(home) = entity
+                    .home
+                    .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+                    .and_then(|home| self.graph.scope(home).owner)
+                && !self.constant_literal_type(self.graph.lower_entity_type(home)?)?
+            {
+                return Err(Error::at(
+                    location,
+                    "a constexpr member function of a class that is not a literal type",
+                ));
+            }
+        }
+        if let TypeKind::Function { ref parameters, .. } = self.graph.types.get(ty).kind {
+            let count = parameters.len();
+            for index in 0..count {
+                let parameter = self.graph.types.function_parameter(ty, index)?;
+                if !self.constant_literal_type(parameter)? {
+                    return Err(Error::at(
+                        location,
+                        "a constexpr function's parameter type is not a literal type",
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -117,13 +145,23 @@ impl Analyzer<'_> {
     ) -> Result<Address, Error> {
         let root = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(root)?;
+        if self.graph.class_of(element).is_some() {
+            let place = self.constant_object_place(id, scope)?;
+            let mut place = self.constant_project_path(
+                place,
+                facts.base_path,
+                self.tree.expressions.get(id).location,
+            )?;
+            place.designated = element;
+            return Ok(place);
+        }
         if facts.category == ValueCategory::Prvalue
             || facts
                 .conversion
                 .is_some_and(|conversion| conversion.temporary)
         {
             let value = self.constant_operand_value(id, element, scope)?;
-            return self.constexpr_frames.allocate(
+            return self.allocate_constant_object(
                 element,
                 Some(value),
                 self.tree.expressions.get(id).location,
@@ -179,37 +217,46 @@ impl Analyzer<'_> {
             };
             entity
         };
-        // Optional evaluation of an ordinary reference/pointer-returning call
-        // must fail softly before reaching the unported constexpr object path.
-        if !self.graph.entity(function).constexpr {
-            return Err(nonconstant(
-                location,
-                "a call of a function that is not constexpr",
-            ));
-        }
-        if self
+        let receiver = self
             .graph
-            .entity(function)
-            .function
-            .is_some_and(|f| !f.is_static)
-            && self
-                .graph
-                .entity(function)
-                .home
-                .is_some_and(|home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
-        {
-            return Err(Error::Missing("constexpr member object invocation"));
-        }
-        let callee = self.graph.expression_facts.root(callee);
-        if let ExprKind::Member { base, .. } = self.tree.expressions.get(callee).kind {
-            self.constant_member_object(base, scope)?;
-        }
-        self.invoke_constant_function(function, arguments, scope, location)
+            .expression_facts
+            .callable_receiver(id)
+            .or_else(|| {
+                let facts = self.graph.expression_facts.get(callee).ok()?;
+                Some(super::expression_facts::CallReceiver {
+                    object: facts.object?,
+                    path: facts.base_path,
+                    naming_path: facts.member_naming_path,
+                    member_path: facts.member_path,
+                })
+            });
+        let object = if let Some(receiver) = receiver {
+            let place = self.constant_receiver_place(receiver.object.source, scope, location)?;
+            Some(
+                self.constant_project_path(place, receiver.naming_path, location)
+                    .and_then(|place| {
+                        self.constant_project_path(
+                            place,
+                            receiver.member_path.or(receiver.path),
+                            location,
+                        )
+                    })?,
+            )
+        } else {
+            let callee = self.graph.expression_facts.root(callee);
+            if let ExprKind::Member { base, .. } = self.tree.expressions.get(callee).kind {
+                self.constant_member_object(base, scope)?;
+            }
+            None
+        };
+        let arguments = super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        self.invoke_constant_function(function, arguments.as_slice(), object, scope, location)
     }
-    fn invoke_constant_function(
+    pub(super) fn invoke_constant_function(
         &mut self,
         function: EntityId,
-        arguments: crate::syntax::storage::List<ast::ExprId>,
+        arguments: &[ast::ExprId],
+        object: Option<Address>,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Returned, Error> {
@@ -235,26 +282,40 @@ impl Analyzer<'_> {
         }
         let ty = self.graph.lower_entity_type(function)?;
         let TypeKind::Function {
-            result: returns,
-            ref parameters,
-            ..
+            result: returns, ..
         } = self.graph.types.get(ty).kind
         else {
             return Err(Error::Invariant("constant function without function type"));
         };
+        let bound = self.bind_constant_parameters(function, ty, arguments, scope, location)?;
+        let region = self.constexpr_frames.region();
+        let result = self.run_constant_function(function, returns, bound, object, location);
+        self.constexpr_frames.release(region);
+        if let Ok(Returned::Value(Value::Pointer(value))) = result {
+            self.constexpr_frames.valid_pointer(value, location)?;
+        }
+        result
+    }
+    pub(super) fn bind_constant_parameters(
+        &mut self,
+        function: EntityId,
+        ty: TypeId,
+        arguments: &[ast::ExprId],
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Vec<Returned>, Error> {
+        let TypeKind::Function { ref parameters, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("parameter binding without function type"));
+        };
         let count = parameters.len();
-        let written = self.tree.expr_lists.get(arguments).len();
         // Variadic extras are evaluated before the fixed parameters, as in C++.
-        for index in count..written {
-            self.discard_constant(self.tree.expr_lists.get(arguments)[index], scope)?;
+        for &argument in arguments.iter().skip(count) {
+            self.discard_constant(argument, scope)?;
         }
         let mut bound = Vec::with_capacity(count);
         for index in 0..count {
             let parameter = self.graph.types.function_parameter(ty, index)?;
-            let argument = self
-                .tree
-                .expr_lists
-                .get(arguments)
+            let argument = arguments
                 .get(index)
                 .copied()
                 .or_else(|| self.graph.function_default(function, index))
@@ -269,26 +330,16 @@ impl Analyzer<'_> {
             };
             bound.push(value);
         }
-        let region = self.constexpr_frames.region();
-        let result = self.run_constant_function(function, returns, bound, location);
-        self.constexpr_frames.release(region);
-        if let Ok(Returned::Value(Value::Pointer(value))) = result {
-            self.constexpr_frames.valid_pointer(value, location)?;
-        }
-        result
+        Ok(bound)
     }
     fn run_constant_function(
         &mut self,
         function: EntityId,
         returns: TypeId,
         bound: Vec<Returned>,
+        object: Option<Address>,
         location: SourceOffset,
     ) -> Result<Returned, Error> {
-        let scope = self
-            .graph
-            .entity(function)
-            .scope
-            .ok_or(Error::Invariant("constant function without scope"))?;
         let body = self
             .graph
             .lower_function_body(function)
@@ -302,7 +353,41 @@ impl Analyzer<'_> {
                 "a function-try-block in a constant expression",
             ));
         }
+        let frame = self.constant_function_frame(function, returns, bound, object, location)?;
+        self.with_constant_frame(frame, |analyzer| {
+            analyzer
+                .constant_compound(body.compound)
+                .and_then(|flow| match flow {
+                    super::constexpr_statements::Flow::Return(value) => Ok(value),
+                    _ if matches!(
+                        analyzer.graph.types.get(returns).kind,
+                        TypeKind::Scalar(Scalar::Void)
+                    ) =>
+                    {
+                        Ok(Returned::Void)
+                    }
+                    _ => Err(nonconstant(
+                        location,
+                        "a constexpr function flows off its end",
+                    )),
+                })
+        })
+    }
+    pub(super) fn constant_function_frame(
+        &mut self,
+        function: EntityId,
+        returns: TypeId,
+        bound: Vec<Returned>,
+        object: Option<Address>,
+        location: SourceOffset,
+    ) -> Result<Frame, Error> {
+        let scope = self
+            .graph
+            .entity(function)
+            .scope
+            .ok_or(Error::Invariant("constant function without scope"))?;
         let mut frame = Frame::new(returns, scope);
+        frame.object = object;
         for (index, value) in bound.into_iter().enumerate() {
             let entity = self
                 .graph
@@ -321,7 +406,7 @@ impl Analyzer<'_> {
                                 self.graph.lower_entity_type(function)?,
                                 index,
                             )?);
-                    self.constexpr_frames.allocate(ty, Some(value), location)?
+                    self.allocate_constant_object(ty, Some(value), location)?
                 }
                 Returned::Void => {
                     return Err(Error::Invariant("void argument to constant function"));
@@ -331,28 +416,20 @@ impl Analyzer<'_> {
                 frame.bind(entity, place);
             }
         }
+        Ok(frame)
+    }
+    pub(super) fn with_constant_frame<T>(
+        &mut self,
+        frame: Frame,
+        execute: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         let saved = self
             .constant_evaluation
             .as_mut()
             .ok_or(Error::Invariant("call without evaluation"))?
             .suspend_temporaries();
         self.constexpr_frames.push(frame);
-        let result = self
-            .constant_compound(body.compound)
-            .and_then(|flow| match flow {
-                super::constexpr_statements::Flow::Return(value) => Ok(value),
-                _ if matches!(
-                    self.graph.types.get(returns).kind,
-                    TypeKind::Scalar(Scalar::Void)
-                ) =>
-                {
-                    Ok(Returned::Void)
-                }
-                _ => Err(nonconstant(
-                    location,
-                    "a constexpr function flows off its end",
-                )),
-            });
+        let result = execute(self);
         self.constexpr_frames.pop();
         self.constant_evaluation
             .as_mut()

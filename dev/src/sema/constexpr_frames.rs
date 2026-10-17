@@ -1,5 +1,5 @@
 // Translated from sema/constant_frames.h and constant_interpreter.cpp. See NOTICE.
-//! Evaluation-owned scalar objects and call frames. Reused slots carry generations.
+//! Evaluation-owned objects and call frames. Reused slots carry generations.
 use super::{
     Error,
     constant_addresses::{Address, Root, TemporaryValue, nonconstant},
@@ -9,20 +9,33 @@ use super::{
 use crate::support::source::SourceOffset;
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ObjectId {
     slot: u32,
     generation: u64,
 }
 
-struct Object {
-    generation: u64,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct CellId(u32);
+#[derive(Clone, Copy)]
+struct Cell {
     ty: TypeId,
+    offset: i64,
+    field: Option<EntityId>,
     value: Option<TemporaryValue>,
+    end: usize,
 }
+struct Object {
+    id: ObjectId,
+    ty: TypeId,
+    cells: std::ops::Range<usize>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct Key(ObjectId, i64, TypeId, Option<EntityId>);
 pub(super) struct Frame {
     pub result: TypeId,
     pub scope: ScopeId,
+    pub object: Option<Address>,
     seeking: Option<crate::syntax::ast::StmtId>,
     places: HashMap<EntityId, Address>,
     locals: Vec<EntityId>,
@@ -33,6 +46,7 @@ impl Frame {
             result,
             scope,
             seeking: None,
+            object: None,
             places: HashMap::new(),
             locals: Vec::new(),
         }
@@ -45,11 +59,14 @@ impl Frame {
 #[derive(Clone, Copy)]
 pub(super) struct Region {
     objects: usize,
+    cells: usize,
     locals: usize,
 }
 #[derive(Default)]
 pub(super) struct Frames {
     objects: Vec<Object>,
+    cells: Vec<Cell>,
+    index: HashMap<Key, CellId>,
     stack: Vec<Frame>,
     generation: u64,
     steps: u64,
@@ -93,6 +110,7 @@ impl Frames {
     pub(super) fn region(&self) -> Region {
         Region {
             objects: self.objects.len(),
+            cells: self.cells.len(),
             locals: self.stack.last().map_or(0, |f| f.locals.len()),
         }
     }
@@ -102,10 +120,21 @@ impl Frames {
                 frame.places.remove(&entity);
             }
         }
+        for slot in region.objects..self.objects.len() {
+            let object = &self.objects[slot];
+            let id = object.id;
+            for cell in &self.cells[object.cells.clone()] {
+                self.index
+                    .remove(&Key(id, cell.offset, cell.ty, cell.field));
+            }
+        }
         self.objects.truncate(region.objects);
+        self.cells.truncate(region.cells);
     }
     pub(super) fn clear(&mut self) {
         self.objects.clear();
+        self.cells.clear();
+        self.index.clear();
         self.stack.clear();
         self.steps = 0;
     }
@@ -125,15 +154,6 @@ impl Frames {
         value: Option<TemporaryValue>,
         location: SourceOffset,
     ) -> Result<Address, Error> {
-        // A scalar skeleton contributes one value and one step. The C++
-        // leaf budget is per object; arrays/classes have a separate producer.
-        self.steps += 1;
-        if self.steps >= 1 << 24 {
-            return Err(nonconstant(
-                location,
-                "constant evaluation exceeds its storage budget",
-            ));
-        }
         self.generation = self
             .generation
             .checked_add(1)
@@ -144,16 +164,18 @@ impl Frames {
             generation: self.generation,
         };
         self.objects.push(Object {
-            generation: id.generation,
+            id,
             ty,
-            value,
+            cells: self.cells.len()..self.cells.len(),
         });
-        Ok(Address::new(Root::Object(id), ty))
+        let place = Address::new(Root::Object(id), ty);
+        self.add_cell(place, value, location)?;
+        Ok(place)
     }
     fn object(&self, id: ObjectId, location: SourceOffset) -> Result<&Object, Error> {
         self.objects
             .get(id.slot as usize)
-            .filter(|object| object.generation == id.generation)
+            .filter(|object| object.id == id)
             .ok_or_else(|| nonconstant(location, "an access to an object whose lifetime has ended"))
     }
     pub(super) fn ty(&self, id: ObjectId, location: SourceOffset) -> Result<TypeId, Error> {
@@ -171,22 +193,91 @@ impl Frames {
         }
         Ok(())
     }
+    pub(super) fn add_cell(
+        &mut self,
+        place: Address,
+        value: Option<TemporaryValue>,
+        location: SourceOffset,
+    ) -> Result<CellId, Error> {
+        self.steps += 1;
+        if self.steps >= 1 << 24 {
+            return Err(nonconstant(
+                location,
+                "constant evaluation exceeds its storage budget",
+            ));
+        }
+        let Root::Object(object) = place.root else {
+            return Err(Error::Invariant("subobject outside evaluation storage"));
+        };
+        let id = CellId(
+            u32::try_from(self.cells.len()).map_err(|_| Error::Limit("constant cell limit"))?,
+        );
+        self.index
+            .entry(Key(object, place.offset, place.designated, place.bit_field))
+            .or_insert(id);
+        self.cells.push(Cell {
+            ty: place.designated,
+            offset: place.offset,
+            field: place.bit_field,
+            value,
+            end: self.cells.len() + 1,
+        });
+        self.objects[object.slot as usize].cells.end = self.cells.len();
+        Ok(id)
+    }
+    pub(super) fn finish_cell(&mut self, id: CellId) {
+        self.cells[id.0 as usize].end = self.cells.len();
+    }
+    pub(super) fn locate(&self, place: Address, location: SourceOffset) -> Result<CellId, Error> {
+        let Root::Object(object) = place.root else {
+            return Err(Error::Invariant("frame access outside object storage"));
+        };
+        self.object(object, location)?;
+        if place.past_end {
+            return Err(nonconstant(
+                location,
+                "an access one past the end of an array",
+            ));
+        }
+        self.index
+            .get(&Key(
+                object,
+                place.offset,
+                place.designated,
+                place.bit_field,
+            ))
+            .copied()
+            .ok_or_else(|| {
+                nonconstant(
+                    location,
+                    "an access outside the designated object or to an inactive union member",
+                )
+            })
+    }
+    pub(super) fn cells(
+        &self,
+        place: Address,
+        location: SourceOffset,
+    ) -> Result<std::ops::Range<usize>, Error> {
+        let id = self.locate(place, location)?.0 as usize;
+        Ok(id..self.cells[id].end)
+    }
+    pub(super) fn cell_place(&self, root: Address, index: usize) -> Address {
+        let cell = self.cells[index];
+        Address {
+            offset: cell.offset,
+            designated: cell.ty,
+            bit_field: cell.field,
+            ..root
+        }
+    }
     pub(super) fn read(
         &self,
         place: Address,
         location: SourceOffset,
     ) -> Result<TemporaryValue, Error> {
-        let Root::Object(id) = place.root else {
-            return Err(Error::Invariant("frame read outside object storage"));
-        };
-        let object = self.object(id, location)?;
-        if place.offset != 0 || place.past_end {
-            return Err(nonconstant(
-                location,
-                "an access outside the designated object or to an inactive union member",
-            ));
-        }
-        object
+        let id = self.locate(place, location)?;
+        self.cells[id.0 as usize]
             .value
             .ok_or_else(|| nonconstant(location, "a read of an object that is not initialized"))
     }
@@ -196,17 +287,24 @@ impl Frames {
         value: TemporaryValue,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let Root::Object(id) = place.root else {
-            return Err(Error::Invariant("frame write outside object storage"));
-        };
-        self.object(id, location)?;
-        if place.offset != 0 || place.past_end {
-            return Err(nonconstant(
-                location,
-                "an access outside the designated object or to an inactive union member",
-            ));
+        let id = self.locate(place, location)?;
+        self.cells[id.0 as usize].value = Some(value);
+        Ok(())
+    }
+    pub(super) fn copy(
+        &mut self,
+        to: Address,
+        from: Address,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let target = self.cells(to, location)?;
+        let source = self.cells(from, location)?;
+        if target.len() != source.len() {
+            return Err(Error::Invariant("incompatible constant object copy"));
         }
-        self.objects[id.slot as usize].value = Some(value);
+        for (to, from) in target.zip(source) {
+            self.cells[to].value = self.cells[from].value;
+        }
         Ok(())
     }
 }
@@ -270,5 +368,85 @@ mod tests {
         storage.release(empty);
         assert!(storage.objects.is_empty());
         assert!(!storage.active());
+    }
+    #[test]
+    fn subobjects_use_typed_offsets_and_bulk_copy_has_independent_cells() {
+        let mut graph = Graph::new();
+        let integer = graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        let class = graph.add_entity(None, None, Keyword::Struct).unwrap();
+        let ty = graph
+            .types
+            .intern(
+                super::super::types::TypeKind::Class(class),
+                super::super::types::Cv::default(),
+            )
+            .unwrap();
+        let location = SourceOffset(0);
+        let mut storage = Frames::default();
+        let region = storage.region();
+        let mut objects = Vec::new();
+        for _ in 0..2 {
+            let root = storage.allocate(ty, None, location).unwrap();
+            let cell = storage.locate(root, location).unwrap();
+            for (offset, bits) in [(0, 3), (4, 7)] {
+                let place = Address {
+                    designated: integer,
+                    offset,
+                    ..root
+                };
+                storage
+                    .add_cell(
+                        place,
+                        Some(TemporaryValue::Integer(Constant { bits, ty: integer })),
+                        location,
+                    )
+                    .unwrap();
+            }
+            storage.finish_cell(cell);
+            objects.push(root);
+        }
+        storage.copy(objects[1], objects[0], location).unwrap();
+        let source = Address {
+            designated: integer,
+            offset: 4,
+            ..objects[0]
+        };
+        storage
+            .write(
+                source,
+                TemporaryValue::Integer(Constant {
+                    bits: 9,
+                    ty: integer,
+                }),
+                location,
+            )
+            .unwrap();
+        let target = Address {
+            designated: integer,
+            offset: 4,
+            ..objects[1]
+        };
+        assert!(matches!(
+            storage.read(target, location),
+            Ok(TemporaryValue::Integer(Constant { bits: 7, .. }))
+        ));
+        assert!(
+            storage
+                .read(
+                    Address {
+                        offset: 2,
+                        ..target
+                    },
+                    location
+                )
+                .is_err()
+        );
+        storage.release(region);
+        assert!(storage.index.is_empty());
+        assert!(storage.cells.is_empty());
+        assert!(storage.read(target, location).is_err());
     }
 }

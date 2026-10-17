@@ -204,6 +204,11 @@ impl Analyzer<'_> {
                 self.read_constant_address(place, location)?
             }
             ExprKind::Keyword(Keyword::Nullptr) => Address::new(Root::Null, facts.ty),
+            ExprKind::Keyword(Keyword::This) => self.constant_receiver_place(
+                super::expression_facts::ObjectSource::Implicit,
+                scope,
+                location,
+            )?,
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::BitAnd) => {
                 self.constant_place(operand, scope)?
             }
@@ -469,6 +474,9 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         let location = node.location;
         self.constant_step(location)?;
+        if self.graph.class_of(facts.ty).is_some() && facts.category == ValueCategory::Prvalue {
+            return self.constant_object_place(id, scope);
+        }
         match node.kind {
             ExprKind::Id(name) => {
                 let binding = facts
@@ -490,6 +498,39 @@ impl Analyzer<'_> {
                     )),
                     BindingKind::Variable => {
                         let entity = self.graph.entity(binding.entity);
+                        if entity.data_member == Some(super::graph::DataMemberKind::Instance)
+                            && let Some(object) = self
+                                .constexpr_frames
+                                .current()
+                                .ok()
+                                .and_then(|frame| frame.object)
+                        {
+                            let object = self.constant_project_path(
+                                object,
+                                facts.member_naming_path,
+                                location,
+                            )?;
+                            let object = self.constant_project_path(
+                                object,
+                                facts.member_path.or(facts.base_path),
+                                location,
+                            )?;
+                            let object = Address {
+                                offset: object.offset.wrapping_add(super::integral::signed(
+                                    self.graph.lower_anonymous_member_offset(
+                                        binding.entity,
+                                        self.graph.class_of(object.designated),
+                                    )?,
+                                )),
+                                ..object
+                            };
+                            return self.constant_member_designation(
+                                object,
+                                binding.entity,
+                                facts.ty,
+                                location,
+                            );
+                        }
                         if entity.ty.is_some_and(|ty| {
                             matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
                         }) {
@@ -631,65 +672,12 @@ impl Analyzer<'_> {
                 };
                 self.constant_place(*operand, scope)
             }
-            ExprKind::Member { base, op, .. } => {
-                let mut place = if op.token.as_punctuator() == Some(P::Arrow) {
-                    self.address_operand(base, scope)?
-                } else {
-                    self.constant_place(base, scope)?
-                };
-                let binding = facts
-                    .member
-                    .ok_or(Error::Missing("constant member place"))?;
-                let entity = self.graph.binding(binding).entity;
-                if self.graph.entity(entity).data_member
-                    == Some(super::graph::DataMemberKind::Static)
-                {
-                    if self.graph.entity(entity).ty.is_some_and(|ty| {
-                        matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
-                    }) {
-                        self.instantiate_variable_value(entity)?;
-                        let mut value =
-                            self.graph.constant_addresses.value(entity).ok_or_else(|| {
-                                nonconstant(
-                                    location,
-                                    "a reference is not usable in a constant expression",
-                                )
-                            })?;
-                        value.designated = facts.ty;
-                        return Ok(value);
-                    }
-                    return Ok(Address::new(Root::Variable(entity), facts.ty));
-                }
-                if place.root == Root::Null {
-                    return Err(nonconstant(
-                        location,
-                        "a member access through a null pointer",
-                    ));
-                }
-                let owner = facts
-                    .member_naming
-                    .ok_or(Error::Invariant("member place without class owner"))?;
-                self.class_layout(owner, location)?;
-                let offset = if let Some(field) = self.graph.entity(entity).bit_field {
-                    place.bit_field = Some(entity);
-                    self.graph.bit_fields.storage(field)?.bit / 8
-                } else {
-                    self.graph
-                        .entity(entity)
-                        .member_offset
-                        .ok_or(Error::Invariant("member place without layout offset"))?
-                };
-                let offset = self
-                    .graph
-                    .lower_member_base_offsets(id)?
-                    .into_iter()
-                    .flatten()
-                    .fold(offset, u64::wrapping_add)
-                    .wrapping_add(self.graph.lower_anonymous_field_offset(id)?);
-                place.offset = place.offset.wrapping_add(super::integral::signed(offset));
-                place.designated = facts.ty;
-                Ok(place)
-            }
+            ExprKind::Member { base, op, .. } => self.constant_explicit_member_place(
+                id,
+                base,
+                op.token.as_punctuator() == Some(P::Arrow),
+                scope,
+            ),
             ExprKind::Call { .. } => match self.constant_call_result(id, scope)? {
                 super::constexpr_calls::Returned::Place(place) => Ok(place),
                 _ => Err(Error::Missing("constexpr class result storage")),
@@ -700,6 +688,63 @@ impl Analyzer<'_> {
             _ => Err(Error::Missing("extended constant place evaluation")),
         }
     }
+    fn constant_explicit_member_place(
+        &mut self,
+        id: ast::ExprId,
+        base: ast::ExprId,
+        arrow: bool,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        let facts = self.graph.expression_facts.get(id)?;
+        let location = self.tree.expressions.get(id).location;
+        let mut place = if arrow {
+            self.address_operand(base, scope)?
+        } else {
+            self.constant_object_place(base, scope)?
+        };
+        let binding = facts
+            .member
+            .ok_or(Error::Missing("constant member place"))?;
+        let entity = self.graph.binding(binding).entity;
+        if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance) {
+            let owner = facts
+                .member_naming
+                .ok_or(Error::Invariant("member place without class owner"))?;
+            if place.root == Root::Null {
+                return Err(nonconstant(
+                    location,
+                    "a member access through a null pointer",
+                ));
+            }
+            self.class_layout(owner, location)?;
+            place.offset = place.offset.wrapping_add(super::integral::signed(
+                self.graph.lower_anonymous_field_offset(id)?,
+            ));
+            place = self.constant_project_path(place, facts.member_naming_path, location)?;
+            place = self.constant_project_path(place, facts.member_path, location)?;
+            return self.constant_member_designation(place, entity, facts.ty, location);
+        }
+        if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Static) {
+            if self.graph.entity(entity).ty.is_some_and(|ty| {
+                matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+            }) {
+                self.instantiate_variable_value(entity)?;
+                let mut value = self.graph.constant_addresses.value(entity).ok_or_else(|| {
+                    nonconstant(
+                        location,
+                        "a reference is not usable in a constant expression",
+                    )
+                })?;
+                value.designated = facts.ty;
+                return Ok(value);
+            }
+            return Ok(Address::new(Root::Variable(entity), facts.ty));
+        }
+        Err(Error::Invariant(
+            "constant member designation without data member",
+        ))
+    }
+
     fn constant_reference_cast_place(
         &mut self,
         id: ast::ExprId,
@@ -726,9 +771,7 @@ impl Analyzer<'_> {
         {
             if self.constexpr_frames.active() {
                 let value = self.constant_operand_value(operand, facts.ty, scope)?;
-                return self
-                    .constexpr_frames
-                    .allocate(facts.ty, Some(value), location);
+                return self.allocate_constant_object(facts.ty, Some(value), location);
             }
             if self.expression_temporary_value(id).is_none() {
                 let value = if self.is_address_expression(id) {
@@ -757,13 +800,14 @@ impl Analyzer<'_> {
     }
     pub(super) fn read_constant_address(
         &mut self,
-        place: Address,
+        mut place: Address,
         location: SourceOffset,
     ) -> Result<Address, Error> {
         if self.graph.types.get(place.designated).cv.0 & 2 != 0 {
             return Err(nonconstant(location, "a read of a volatile glvalue"));
         }
         if matches!(place.root, Root::Object(_)) {
+            place.designated = self.bare_type(place.designated)?;
             return match self.constexpr_frames.read(place, location)? {
                 TemporaryValue::Pointer(value) => {
                     self.constexpr_frames.valid_pointer(value, location)?;
@@ -842,7 +886,11 @@ impl Analyzer<'_> {
                         "a modification of a const or volatile object",
                     ));
                 }
-                return self.constexpr_frames.write(place, value, location);
+                let place = Address {
+                    designated: self.bare_type(place.designated)?,
+                    ..place
+                };
+                return self.store_constant_value(place, value, location);
             }
             Root::Variable(_) => {
                 "a modification of an object whose lifetime began outside the evaluation"
@@ -883,7 +931,7 @@ impl Analyzer<'_> {
 
     pub(super) fn read_constant_integer(
         &mut self,
-        place: Address,
+        mut place: Address,
         location: SourceOffset,
     ) -> Result<Constant, Error> {
         if self.graph.types.get(place.designated).cv.0 & 2 != 0 {
@@ -896,12 +944,15 @@ impl Analyzer<'_> {
             ));
         }
         match place.root {
-            Root::Object(_) => match self.constexpr_frames.read(place, location)? {
-                TemporaryValue::Integer(value) => Ok(value),
-                TemporaryValue::Pointer(_) => {
-                    Err(Error::Invariant("pointer object read as integer"))
+            Root::Object(_) => {
+                place.designated = self.bare_type(place.designated)?;
+                match self.constexpr_frames.read(place, location)? {
+                    TemporaryValue::Integer(value) => Ok(value),
+                    TemporaryValue::Pointer(_) => {
+                        Err(Error::Invariant("pointer object read as integer"))
+                    }
                 }
-            },
+            }
             Root::Variable(entity) => {
                 self.instantiate_variable_value(entity)?;
                 if !self.graph.entity(entity).constexpr
@@ -1063,6 +1114,9 @@ impl Analyzer<'_> {
                     }
                     _ if facts.category != ValueCategory::Prvalue => {
                         self.constant_place(id, scope)?;
+                    }
+                    _ if self.graph.class_of(facts.ty).is_some() => {
+                        self.constant_object_place(id, scope)?;
                     }
                     _ if self.is_address_expression(id) => {
                         self.evaluate_address(id, scope)?;

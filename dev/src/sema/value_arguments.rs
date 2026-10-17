@@ -105,6 +105,13 @@ impl Analyzer<'_> {
                 .and_then(|_| self.check_resolved_function(expression));
             self.template_arguments -= 1;
             result?;
+            if self
+                .graph
+                .class_of(self.graph.expression_facts.get(expression)?.ty)
+                .is_some()
+            {
+                self.integral_constant_operand(expression, scope, target)?;
+            }
             // A frame-bound value keeps its originating template-id dependent
             // for instantiation-context ADL even when today's value is concrete.
             if self.value_parameter_uses.get() != value_uses {

@@ -873,6 +873,10 @@ impl<'tree> Analyzer<'tree> {
                 .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor)
         {
             self.written_constructor_plan(body.entity, parsed, scope)?;
+            self.check_constant_constructor_plan(
+                body.entity,
+                self.tree.statements.get(parsed.compound).location,
+            )?;
         } else {
             for syntax_index in 0..self.tree.mem_initializers.get(parsed.initializers).len() {
                 let syntax_item = self.tree.mem_initializers.get(parsed.initializers)[syntax_index];

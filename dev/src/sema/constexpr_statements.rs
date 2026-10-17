@@ -306,25 +306,10 @@ impl Analyzer<'_> {
             let place = self.bind_constant_reference(single, element, scope)?;
             return self.constexpr_frames.bind(entity, place);
         }
-        if self.integral_kind(ty).is_none()
-            && !matches!(
-                self.graph.types.get(ty).kind,
-                TypeKind::Pointer(_) | TypeKind::Scalar(super::types::Scalar::Nullptr)
-            )
-        {
-            return Err(Error::Missing("constexpr aggregate local storage"));
-        }
-        let place = self.constexpr_frames.allocate(ty, None, location)?;
+        let place = self.allocate_constant_object(ty, None, location)?;
         self.constexpr_frames.bind(entity, place)?;
-        self.constant_step(location)?;
-        if let Some(initializer) = initializer {
-            let value = if let Some(single) = self.single_initializer(initializer) {
-                self.constant_operand_value(single, ty, scope)?
-            } else {
-                self.zero_constant_scalar(ty)?
-            };
-            self.constexpr_frames.write(place, value, location)?;
-        }
+        let constructor = self.graph.entity(entity).constructor;
+        self.construct_constant_object(place, initializer, constructor, scope, location)?;
         Ok(())
     }
     fn constant_switch(
