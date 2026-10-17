@@ -27,7 +27,10 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("pack function without type"))?;
         let TypeKind::Function {
-            result, parameters, ..
+            result,
+            parameters,
+            variadic,
+            ..
         } = self.graph.types.get(ty).kind.clone()
         else {
             return Err(Error::Invariant("pack function without signature"));
@@ -36,6 +39,23 @@ impl Analyzer<'_> {
         let mut arguments = self.signature_arguments(binding, head);
         let offset = usize::from(prefix.is_some());
         let supplied = args.len() + offset;
+        // analyzer_calls.cpp::resolve filters the declared fixed prefix before
+        // any substitution can demand a return type or a class definition.
+        let trailing = parameters
+            .last()
+            .is_some_and(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)));
+        let fixed = parameters.len() - usize::from(trailing);
+        let inner = parameters[..fixed]
+            .iter()
+            .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)));
+        if !inner
+            && (supplied > fixed && !variadic && !trailing
+                || (supplied..fixed).any(|index| {
+                    !self.function_has_default(self.graph.binding(binding).entity, index)
+                }))
+        {
+            return Ok(None);
+        }
         let explicit = self.graph.function_templates.requires_target(binding);
         let mut prefixes = vec![None; arguments.len()];
         let mut explicit_count = 0;
@@ -77,22 +97,30 @@ impl Analyzer<'_> {
             }
         }
         let parameters = if explicit {
-            let mut environment = Substitution::new(depth, &arguments);
-            environment.context = Some(self.graph.binding(binding).entity);
-            if !self
-                .graph
-                .function_templates
-                .trailing_result(self.graph.binding(binding).entity)
-                && self
-                    .substitute_signature_type(result, &mut environment)?
-                    .is_none()
-            {
-                return Ok(None);
+            // C++ SoftSubstitution covers the leading result and the entire
+            // parameter list, including expansion length checks.
+            let substituted = (|| {
+                let mut environment = Substitution::new(depth, &arguments);
+                environment.context = Some(self.graph.binding(binding).entity);
+                if !self
+                    .graph
+                    .function_templates
+                    .trailing_result(self.graph.binding(binding).entity)
+                    && self
+                        .substitute_signature_type(result, &mut environment)?
+                        .is_none()
+                {
+                    return Ok(None);
+                }
+                self.substitute_pack_list(&parameters, &mut environment)
+            })();
+            match substituted {
+                Ok(Some(parameters)) => parameters,
+                Ok(None) | Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
             }
-            let Some(parameters) = self.substitute_pack_list(&parameters, &mut environment)? else {
-                return Ok(None);
-            };
-            parameters
         } else {
             parameters
         };
@@ -266,6 +294,24 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn identity_nontemplate_match_does_not_form_a_template_signature() {
+        let source = SourceBuffer::new(b"template<class T>struct Trap{static_assert(sizeof(T)==0,\"unused\");using type=int;};int f(int n){return n;}template<class T>typename Trap<T>::type f(T);int main(){return f(1);}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"perfect-call-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        assert!(graph.function_templates.arguments.is_empty());
+    }
     #[test]
     fn expression_expansion_selects_elements_but_keeps_the_whole_pack_for_sizeof() {
         let source = SourceBuffer::new(b"template<int...N>struct S{};template<int...N>S<(int(sizeof...(N))-N)...>f(S<N...>); S<0,1> a;".to_vec()).unwrap();

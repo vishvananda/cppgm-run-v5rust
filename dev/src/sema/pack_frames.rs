@@ -60,15 +60,94 @@ impl PackExpander for FramePacks<'_> {
         self.lengths.get(&name).copied()
     }
     fn element_name(&mut self, name: NameId, index: usize) -> Result<NameId, ParseError> {
-        let mut spelling = self.identifiers.bytes(name).to_vec();
-        spelling.extend_from_slice(format!("__pack{index}").as_bytes());
-        self.identifiers
-            .intern(&spelling)
-            .map_err(ParseError::Limit)
+        element_name(self.identifiers, name, index).map_err(ParseError::Limit)
     }
 }
 
+fn element_name(
+    identifiers: &mut Identifiers,
+    name: NameId,
+    index: usize,
+) -> Result<NameId, &'static str> {
+    let mut spelling = identifiers.bytes(name).to_vec();
+    spelling.extend_from_slice(format!("__pack{index}").as_bytes());
+    identifiers.intern(&spelling)
+}
+
 impl Analyzer<'_> {
+    // class_templates.cpp::substituted_scope: a known prototype pack owns
+    // ordinary element parameters and a hidden alias for sizeof...(name).
+    pub(super) fn substitute_prototype_pack(
+        &mut self,
+        frame: ScopeId,
+        packs: &mut Option<ScopeId>,
+        binding: super::graph::Binding,
+        environment: &mut super::function_templates::Substitution<'_>,
+    ) -> Result<bool, Error> {
+        let Some(ty) = binding.ty.filter(|&ty| {
+            binding.name.is_some()
+                && matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_))
+        }) else {
+            return Ok(false);
+        };
+        let elements = match self.substitute_pack_list(&[ty], environment) {
+            Ok(Some(elements)) => elements,
+            Ok(None) | Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
+        if elements
+            .iter()
+            .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+        {
+            return Ok(false);
+        }
+        let name = binding
+            .name
+            .ok_or(Error::Invariant("prototype pack without name"))?;
+        for (index, &ty) in elements.iter().enumerate() {
+            let name = element_name(self.identifiers, name, index).map_err(Error::Limit)?;
+            let entity = self.graph.add_entity(Some(ty), Some(name), binding.key)?;
+            let id = self.graph.add_binding(
+                frame,
+                Some(frame),
+                super::graph::Binding {
+                    entity,
+                    name: Some(name),
+                    ty: Some(ty),
+                    ..binding
+                },
+            )?;
+            self.graph.set_binding_dependence(id, true);
+        }
+        let scope = if let Some(scope) = *packs {
+            scope
+        } else {
+            let scope = self
+                .graph
+                .add_scope(ScopeKind::TemplateParameters, frame, None, None)?;
+            *packs = Some(scope);
+            scope
+        };
+        let ty = self
+            .graph
+            .types
+            .intern(TypeKind::Pack(elements), super::types::Cv::default())?;
+        let entity = self.graph.add_entity(Some(ty), Some(name), binding.key)?;
+        self.graph.add_binding(
+            scope,
+            None,
+            super::graph::Binding {
+                kind: BindingKind::Alias,
+                entity,
+                ty: Some(ty),
+                ..binding
+            },
+        )?;
+        Ok(true)
+    }
+
     #[inline(never)]
     pub(super) fn copy_selected_operand(
         &mut self,

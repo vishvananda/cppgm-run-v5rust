@@ -125,23 +125,52 @@ impl Analyzer<'_> {
             } else {
                 first.binding = Some(second_id);
             }
-            for &binding in second.functions.as_slice() {
-                let entity = self.graph.binding(binding).entity;
-                if !first
-                    .functions
-                    .iter()
-                    .any(|&id| self.graph.binding(id).entity == entity)
-                {
-                    first.functions.push(binding);
-                }
+            if !second.functions.as_slice().is_empty()
+                && first.functions.as_slice() != second.functions.as_slice()
+            {
+                first.functions = self.function_union(&first.functions, &second.functions);
             }
         }
+    }
+    // NameLookup::function_union: prepend the smaller list's missing
+    // entities in reverse visitation order; an equal length favors second.
+    #[inline(never)]
+    fn function_union(
+        &self,
+        first: &FunctionCandidates,
+        second: &FunctionCandidates,
+    ) -> FunctionCandidates {
+        let a = first.as_slice();
+        let b = second.as_slice();
+        if a.is_empty() {
+            return b.iter().copied().collect();
+        }
+        let (larger, smaller) = if a.len() > b.len() { (a, b) } else { (b, a) };
+        let mut pending: HashSet<_> = smaller
+            .iter()
+            .map(|&id| self.graph.binding(id).entity)
+            .collect();
+        for &id in larger {
+            pending.remove(&self.graph.binding(id).entity);
+        }
+        let mut prefix = Vec::with_capacity(pending.len());
+        for &id in smaller {
+            if pending.remove(&self.graph.binding(id).entity) {
+                prefix.push(id);
+            }
+        }
+        prefix
+            .into_iter()
+            .rev()
+            .chain(larger.iter().copied())
+            .collect()
     }
     fn own_lookup(&self, scope: ScopeId, key: ValueKey, filter: Filter) -> LookupResult {
         let binding = self.graph.own_key(scope, key, filter);
         let functions =
             if binding.is_some_and(|id| self.graph.binding(id).kind == BindingKind::Function) {
-                self.graph.visible_functions_at(scope, key).collect()
+                // NameLookup stores newest overloads at the list head.
+                self.graph.visible_functions_at(scope, key).rev().collect()
             } else {
                 FunctionCandidates::default()
             };

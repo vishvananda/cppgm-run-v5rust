@@ -753,7 +753,15 @@ impl Graph {
                             .copied()
                     })
             });
-        let earlier = earlier.filter(|&id| !self.friendships.hidden(id));
+        // Imported templates join the overload list anew on each using,
+        // unlike redeclarations indexed in their own namespace.
+        let imported_template = binding.kind == BindingKind::Function
+            && self.entity(binding.entity).template_head.is_some()
+            && self
+                .entity(binding.entity)
+                .home
+                .is_some_and(|home| home != scope);
+        let earlier = earlier.filter(|&id| !imported_template && !self.friendships.hidden(id));
         // A compatible redeclaration is visible since the entity's first
         // visible binding, just as C++ NameLookup::KeepOrdinal specifies.
         let ordinal = earlier.map_or(self.bindings.len(), |id| self.ordinals[id.0 as usize]);
@@ -810,7 +818,13 @@ impl Graph {
     ) -> Result<(), Error> {
         let entity = self.binding(binding).entity;
         let position_key = (scope, key, entity);
-        let previous = self.function_positions.get(&position_key).copied();
+        let imported_template =
+            self.entity(entity).template_head.is_some() && self.entity(entity).home != Some(scope);
+        let previous = self
+            .function_positions
+            .get(&position_key)
+            .copied()
+            .filter(|_| !imported_template);
         let set = self.function_sets.entry((scope, key)).or_default();
         let declared = if let Some(position) = previous {
             set[position.declared] = binding;
@@ -967,7 +981,7 @@ impl Graph {
         &self,
         scope: ScopeId,
         key: super::function_names::ValueKey,
-    ) -> impl Iterator<Item = BindingId> + '_ {
+    ) -> impl DoubleEndedIterator<Item = BindingId> + '_ {
         self.associated_functions_at(scope, key, self.lookup_limit)
     }
     pub(super) fn associated_functions_at(
@@ -975,7 +989,7 @@ impl Graph {
         scope: ScopeId,
         key: super::function_names::ValueKey,
         limit: Option<usize>,
-    ) -> impl Iterator<Item = BindingId> + '_ {
+    ) -> impl DoubleEndedIterator<Item = BindingId> + '_ {
         self.visible_function_sets
             .get(&(scope, key))
             .into_iter()

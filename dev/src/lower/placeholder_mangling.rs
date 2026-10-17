@@ -306,6 +306,7 @@ impl Symbols<'_, '_> {
                 }
                 return self.operand_operation(words, O::SizeofExpression, 1, depth);
             }
+            W::Node(N::SizeofPack) => return self.operand_pack_size(words),
             W::Node(N::Trait) => {
                 let W::Keyword(Some(keyword)) = words.next()? else {
                     return Err(missing());
@@ -327,6 +328,42 @@ impl Symbols<'_, '_> {
             _ => return Err(missing()),
         };
         self.abi.intern(node, &[]).map_err(Error::from)
+    }
+
+    fn operand_pack_size(&mut self, words: &mut Words<'_>) -> Result<NodeId, Error> {
+        let node = if matches!(words.words.get(words.at), Some(W::Flag(true))) {
+            words.flag()?;
+            let W::Parameter { index, level } = words.next()? else {
+                return Err(missing());
+            };
+            words.ty()?;
+            Node::FunctionParam {
+                index: u32::try_from(*index).map_err(|_| missing())?,
+                level: *level,
+            }
+        } else {
+            let (index, level, _, pack) = self
+                .graph
+                .lower_parameter_level(words.ty()?)
+                .ok_or_else(missing)?;
+            if level == 0 {
+                Node::TemplateParam {
+                    index,
+                    substitutable: false,
+                }
+            } else {
+                Node::LeveledTemplateParam {
+                    index,
+                    level,
+                    pack,
+                    substitutable: false,
+                }
+            }
+        };
+        let pack = self.abi.intern(node, &[])?;
+        self.abi
+            .intern(Node::Operation(O::SizeofPack), &[pack])
+            .map_err(Error::from)
     }
 
     fn operand_type_query(&mut self, mut ty: TypeId, alignment: bool) -> Result<NodeId, Error> {

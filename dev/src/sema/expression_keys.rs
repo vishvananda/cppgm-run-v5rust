@@ -258,7 +258,18 @@ impl Analyzer<'_> {
                 else {
                     return Ok(false);
                 };
-                let binding = self.graph.binding(binding);
+                let id = binding;
+                let binding = self.graph.binding(id);
+                if binding.kind == super::graph::BindingKind::Parameter
+                    && binding.ty.is_some()
+                    && self.graph.prototype_parameter(binding.entity).is_some()
+                {
+                    key.words.push(KeyWord::Node(KeyNode::SizeofPack));
+                    key.words.push(KeyWord::Flag(true));
+                    self.key_binding(id, scope, key)?;
+                    key.dependent = true;
+                    return Ok(true);
+                }
                 if self
                     .graph
                     .entity(binding.entity)

@@ -26,8 +26,69 @@ enum State {
 pub(super) struct Defaults {
     states: HashMap<(EntityId, usize), State>,
     members: HashMap<EntityId, (ScopeId, usize)>,
+    patterns: HashMap<EntityId, Vec<Option<DefaultArgument>>>,
+}
+impl Defaults {
+    pub(super) fn pattern(&self, entity: EntityId, index: usize) -> Option<DefaultArgument> {
+        self.patterns.get(&entity)?.get(index).copied().flatten()
+    }
 }
 impl Analyzer<'_> {
+    // function_templates.cpp::specialize: only parameters outside the first
+    // and last expansion retain defaults. Pack elements never inherit one.
+    pub(super) fn specialization_defaults(
+        &mut self,
+        entity: EntityId,
+        primary: BindingId,
+        pattern: super::types::TypeId,
+        ty: super::types::TypeId,
+    ) -> Result<(), Error> {
+        let primary = self.graph.binding(primary).entity;
+        if self.graph.entity(primary).defaults.is_empty() {
+            return Ok(());
+        }
+        let count = self.graph.types.function_parameter_count(ty)?;
+        let patterns = self.graph.types.function_parameter_count(pattern)?;
+        let mut defaults = vec![None; count];
+        let mut front = 0;
+        while front < patterns.min(count)
+            && !matches!(
+                self.graph
+                    .types
+                    .get(self.graph.types.function_parameter(pattern, front)?)
+                    .kind,
+                super::types::TypeKind::Expansion(_)
+            )
+        {
+            defaults[front] = self.graph.entity(primary).defaults[front];
+            front += 1;
+        }
+        let mut back = 1;
+        while back <= patterns - front
+            && back <= count - front
+            && !matches!(
+                self.graph
+                    .types
+                    .get(
+                        self.graph
+                            .types
+                            .function_parameter(pattern, patterns - back)?
+                    )
+                    .kind,
+                super::types::TypeKind::Expansion(_)
+            )
+        {
+            defaults[count - back] = self.graph.entity(primary).defaults[patterns - back];
+            back += 1;
+        }
+        self.graph
+            .function_templates
+            .argument_defaults
+            .patterns
+            .insert(entity, defaults);
+        Ok(())
+    }
+
     pub(super) fn defer_instance_defaults(&mut self, entity: EntityId) -> bool {
         let Some(home) = self.graph.entity(entity).home else {
             return false;
@@ -54,10 +115,9 @@ impl Analyzer<'_> {
         supplied: usize,
     ) -> Result<(), Error> {
         let entity = self.graph.binding(binding).entity;
-        let Some(primary) = self.graph.function_templates.primary(entity) else {
+        let Some(_) = self.graph.function_templates.primary(entity) else {
             return self.instantiate_member_defaults(entity, supplied);
         };
-        let primary = self.graph.binding(primary).entity;
         let ty = self
             .graph
             .entity(entity)
@@ -75,7 +135,11 @@ impl Analyzer<'_> {
             {
                 Some(State::Complete) => continue,
                 Some(State::InProgress) => {
-                    let default = self.graph.entity(primary).defaults[index]
+                    let default = self
+                        .graph
+                        .function_templates
+                        .argument_defaults
+                        .pattern(entity, index)
                         .ok_or(Error::Invariant("recursive default without pattern"))?;
                     return Err(Error::at(
                         self.tree.expressions.get(default.expression).location,
@@ -86,11 +150,9 @@ impl Analyzer<'_> {
             }
             let Some(default) = self
                 .graph
-                .entity(primary)
-                .defaults
-                .get(index)
-                .copied()
-                .flatten()
+                .function_templates
+                .argument_defaults
+                .pattern(entity, index)
             else {
                 continue;
             };
@@ -272,6 +334,50 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn expanded_defaults_keep_partition_positions_and_only_demanded_copies() {
+        let source = SourceBuffer::new(
+            b"template<class...T>int f(T...t,int n=sizeof...(T)){return n;}\
+              int main(){return f<>()+f<int>(1)+f<int,long>(1,2)+f<int>(2);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"pack-defaults").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let original = tree.expressions.mark();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let defaults = &graph.function_templates.argument_defaults;
+        assert_eq!(defaults.patterns.len(), 3);
+        assert_eq!(defaults.states.len(), 3);
+        let mut positions = Vec::new();
+        let mut copies = std::collections::HashSet::new();
+        for (&entity, patterns) in &defaults.patterns {
+            let count = patterns.len() - 1;
+            positions.push(count);
+            assert!(patterns[..count].iter().all(Option::is_none));
+            let pattern = patterns[count].unwrap();
+            assert!(pattern.template.is_some());
+            assert!(graph.expression_facts.get(pattern.expression).is_err());
+            assert!(matches!(defaults.states[&(entity, count)], State::Complete));
+            let copy = graph.entity(entity).defaults[count].unwrap();
+            assert!(copy.template.is_none());
+            assert!(copy.expression.index() >= original);
+            assert!(copies.insert(copy.expression));
+            assert!(graph.expression_facts.get(copy.expression).is_ok());
+        }
+        positions.sort_unstable();
+        assert_eq!(positions, [0, 1, 2]);
+    }
 
     #[test]
     fn member_defaults_keep_class_copies_and_only_selected_defaults_get_facts() {

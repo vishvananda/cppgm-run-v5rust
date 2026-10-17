@@ -816,7 +816,24 @@ impl Analyzer<'_> {
             [None; 2]
         };
         let declared = set.bindings(&self.graph).len();
-        for index in 0..declared + copies.len() {
+        let has_templates = set.bindings(&self.graph).iter().any(|&id| {
+            self.graph
+                .entity(self.graph.binding(id).entity)
+                .template_head
+                .is_some()
+        });
+        let total = declared
+            .checked_add(copies.len())
+            .ok_or(Error::Limit("call candidates"))?;
+        let scans = total
+            .checked_mul(if has_templates { 2 } else { 1 })
+            .ok_or(Error::Limit("call candidates"))?;
+        let mut perfect = false;
+        for visit in 0..scans {
+            if visit == total && perfect {
+                break;
+            }
+            let index = visit % total;
             let primary = if index < declared {
                 set.bindings(&self.graph)[index]
             } else if let Some(binding) = copies[index - declared] {
@@ -825,6 +842,14 @@ impl Analyzer<'_> {
                 continue;
             };
             if !set.includes(&self.graph, primary) {
+                continue;
+            }
+            let templated = self
+                .graph
+                .entity(self.graph.binding(primary).entity)
+                .template_head
+                .is_some();
+            if has_templates && templated != (visit >= total) {
                 continue;
             }
             let Some(binding) = self.deduce_function_call(primary, args, false, prefix)? else {
@@ -928,11 +953,96 @@ impl Analyzer<'_> {
             }
             if viable {
                 scratch.candidates.push((binding, first));
+                if has_templates && !templated {
+                    perfect =
+                        self.perfect_call(args, object, prefix, &scratch.sequences[first..])?;
+                }
             } else {
                 scratch.sequences.truncate(first);
             }
         }
         Ok(())
+    }
+
+    // analyzer_calls.cpp::resolve/PerfectSequence: non-template candidates
+    // precede deductions, and an identity match makes template work moot.
+    #[inline(never)]
+    fn perfect_call(
+        &self,
+        args: &[ast::ExprId],
+        object: Option<super::expression_facts::ObjectArgument>,
+        prefix: Option<ExprFacts>,
+        sequences: &[Option<ArgumentSequence>],
+    ) -> Result<bool, Error> {
+        let mut position = 0;
+        if let Some(object) = object {
+            if sequences[position].is_some()
+                && !self.perfect_sequence(sequences[position], object.ty, object.category, false)
+            {
+                return Ok(false);
+            }
+            position += 1;
+        }
+        if let Some(facts) = prefix {
+            if !self.perfect_sequence(
+                sequences[position],
+                facts.ty,
+                facts.category,
+                facts.functions.is_some(),
+            ) {
+                return Ok(false);
+            }
+            position += 1;
+        }
+        for &id in args {
+            if matches!(
+                self.tree.expressions.get(id).kind,
+                ast::ExprKind::Braced { .. }
+            ) {
+                return Ok(false);
+            }
+            let facts = self.graph.expression_facts.get(id)?;
+            if !self.perfect_sequence(
+                sequences[position],
+                facts.ty,
+                facts.category,
+                facts.functions.is_some(),
+            ) {
+                return Ok(false);
+            }
+            position += 1;
+        }
+        Ok(true)
+    }
+
+    fn perfect_sequence(
+        &self,
+        sequence: Option<ArgumentSequence>,
+        ty: TypeId,
+        category: V,
+        overloaded: bool,
+    ) -> bool {
+        let Some(sequence) = sequence.filter(|sequence| sequence.user_conversion.is_none()) else {
+            return false;
+        };
+        let conversion = sequence.conversion;
+        if overloaded
+            || conversion.rank != R::Exact
+            || conversion.second != C::None
+            || conversion.qualification
+        {
+            return false;
+        }
+        if let TypeKind::Reference { kind, .. } = self.graph.types.get(conversion.target).kind {
+            !conversion.temporary
+                && !conversion.reference_source.is_function_lvalue()
+                && conversion.first == L::None
+                && self.graph.types.canonical_view(conversion.result)
+                    == self.graph.types.canonical_view(ty)
+                && (kind == RefKind::Rvalue) == (category != V::Lvalue)
+        } else {
+            matches!(conversion.first, L::None | L::Read)
+        }
     }
     pub(super) fn select_call(
         &mut self,

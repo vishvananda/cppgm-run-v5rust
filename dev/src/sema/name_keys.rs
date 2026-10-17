@@ -85,7 +85,7 @@ impl Analyzer<'_> {
         Ok(true)
     }
 
-    fn key_binding(
+    pub(super) fn key_binding(
         &mut self,
         id: BindingId,
         scope: ScopeId,

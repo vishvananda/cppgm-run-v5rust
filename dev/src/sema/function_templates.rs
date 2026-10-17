@@ -713,7 +713,12 @@ impl Analyzer<'_> {
             .active_signatures
             .remove(&active);
         let key = active.0;
-        let Some(ty) = result? else {
+        let ty = match result {
+            Ok(ty) => ty,
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => None,
+            Err(error) => return Err(error),
+        };
+        let Some(ty) = ty else {
             return Ok(None);
         };
         let ty = self.graph.types.canonical_function(ty)?;
@@ -753,6 +758,7 @@ impl Analyzer<'_> {
         specialized.function_parameters = parameters;
         specialized.exceptions = exceptions;
         specialized.definition_emission = DefinitionEmission::Demanded;
+        self.specialization_defaults(entity, primary, pattern, ty)?;
         let binding = self.graph.add_hidden_function(
             primary,
             Binding {
@@ -1171,6 +1177,16 @@ impl Analyzer<'_> {
             if !self.needs_deduction(pattern, depth) {
                 continue;
             }
+            // A braced argument has no ordinary expression facts. It is a
+            // non-deduced context for this scalar/type parameter path.
+            if index >= offset
+                && matches!(
+                    self.tree.expressions.get(args[index - offset]).kind,
+                    ast::ExprKind::Braced { .. }
+                )
+            {
+                continue;
+            }
             let facts = if index < offset {
                 prefix.ok_or(Error::Invariant("missing implicit call argument"))?
             } else {
@@ -1487,16 +1503,17 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn function_has_default(&self, entity: EntityId, index: usize) -> bool {
-        if self.graph.function_default(entity, index).is_some() {
-            return true;
-        }
-        let primary = self
-            .graph
-            .function_templates
-            .primary(entity)
-            .map_or(entity, |binding| self.graph.binding(binding).entity);
-        self.graph.entity(primary).template_head.is_some()
-            && self.graph.function_default(primary, index).is_some()
+        self.graph.function_default(entity, index).is_some()
+            || self
+                .graph
+                .function_templates
+                .argument_defaults
+                .pattern(entity, index)
+                .is_some_and(|default| {
+                    self.graph
+                        .lookup_limit
+                        .is_none_or(|limit| default.introduced < limit)
+                })
     }
 
     fn template_at_least_as_specialized(

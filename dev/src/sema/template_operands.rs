@@ -440,6 +440,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("operand frame without parent"))?;
         let parent = self.operand_scope(parent, environment, parameters)?;
         let frame = self.graph.add_scope(kind, parent, None, None)?;
+        let mut packs = None;
         for index in 0..self.graph.scope(scope).bindings.len() {
             let source = self.graph.scope(scope).bindings[index];
             let binding = self.graph.binding(source);
@@ -457,6 +458,11 @@ impl Analyzer<'_> {
                             .prototype_parameter(binding.entity)
                             .is_some_and(|index| index < 63 && mask & (1u64 << index) == 0)
                     });
+                if !skipped
+                    && self.substitute_prototype_pack(frame, &mut packs, binding, environment)?
+                {
+                    continue;
+                }
                 let ty = binding
                     .ty
                     .filter(|_| !skipped)
@@ -475,7 +481,7 @@ impl Analyzer<'_> {
                 )?;
             }
         }
-        Ok(frame)
+        Ok(packs.unwrap_or(frame))
     }
 
     fn operand_parameters(&self, words: &[KeyWord]) -> Option<u64> {
