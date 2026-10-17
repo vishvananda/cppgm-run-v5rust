@@ -64,6 +64,8 @@ pub(super) struct Substitution<'a> {
     memo: HashMap<TypeId, Option<TypeId>>,
     pub(super) context: Option<EntityId>,
     pub(super) selection: Option<&'a PackSelection<'a>>,
+    pub(super) failure: Option<&'static str>,
+    pub(super) failure_location: SourceOffset,
 }
 impl<'a> Substitution<'a> {
     pub(super) fn new(depth: u32, arguments: &'a [Option<TypeId>]) -> Self {
@@ -73,7 +75,23 @@ impl<'a> Substitution<'a> {
             memo: HashMap::new(),
             context: None,
             selection: None,
+            failure: None,
+            failure_location: SourceOffset(0),
         }
+    }
+    pub(super) fn reject<T>(&mut self, message: &'static str) -> Option<T> {
+        self.reject_at(SourceOffset(0), message)
+    }
+    pub(super) fn reject_at<T>(
+        &mut self,
+        location: SourceOffset,
+        message: &'static str,
+    ) -> Option<T> {
+        if self.failure.is_none() {
+            self.failure = Some(message);
+            self.failure_location = location;
+        }
+        None
     }
 }
 impl Analyzer<'_> {
@@ -422,9 +440,26 @@ impl Analyzer<'_> {
             {
                 self.substitute_operand(ty, entity, environment)?
             }
+            TypeKind::Class(entity)
+                if self
+                    .graph
+                    .class_templates
+                    .instance(entity)
+                    .is_some_and(|instance| {
+                        self.graph
+                            .class_templates
+                            .aliases
+                            .owner(instance.primary)
+                            .is_some()
+                    }) =>
+            {
+                self.substitute_alias_type(entity, environment)?
+                    .map(|ty| self.graph.types.qualify(ty, cv))
+                    .transpose()?
+            }
             TypeKind::Class(entity) if self.graph.class_templates.instance(entity).is_some() => {
                 self.substitute_class_type(entity, environment)?
-                    .map(|entity| self.graph.types.intern(TypeKind::Class(entity), cv))
+                    .map(|ty| self.graph.types.qualify(ty, cv))
                     .transpose()?
             }
             TypeKind::Pointer(element) => {
@@ -435,7 +470,7 @@ impl Analyzer<'_> {
                     self.graph.types.get(element).kind,
                     TypeKind::Reference { .. }
                 ) {
-                    None
+                    environment.reject("pointer to reference")
                 } else {
                     Some(self.graph.types.intern(TypeKind::Pointer(element), cv)?)
                 }
@@ -448,7 +483,7 @@ impl Analyzer<'_> {
                     self.graph.types.get(element).kind,
                     TypeKind::Scalar(Scalar::Void)
                 ) {
-                    None
+                    environment.reject("reference to void")
                 } else {
                     Some(self.graph.types.reference(element, kind)?)
                 }
@@ -467,7 +502,7 @@ impl Analyzer<'_> {
                     self.graph.types.get(element).kind,
                     TypeKind::Reference { .. } | TypeKind::Scalar(Scalar::Void)
                 ) {
-                    None
+                    environment.reject("an invalid pointer to member type")
                 } else {
                     Some(
                         self.graph
@@ -495,22 +530,26 @@ impl Analyzer<'_> {
                     bound = count;
                     operand = None;
                 }
-                if matches!(
-                    self.graph.types.get(element).kind,
-                    TypeKind::Reference { .. }
-                        | TypeKind::Function { .. }
-                        | TypeKind::Scalar(Scalar::Void)
-                        | TypeKind::Array {
-                            bound: 0,
-                            operand: None,
-                            ..
-                        }
-                ) || !self.exception_dependent_type(element)
-                    && matches!(self.graph.types.get(element).kind, TypeKind::Class(class)
-                        if self.graph.entity(class).complete
-                            && self.graph.virtuals.abstract_class(class))
-                {
-                    None
+                let failure = match self.graph.types.get(element).kind {
+                    TypeKind::Reference { .. } => Some("array of references"),
+                    TypeKind::Function { .. } => Some("array of functions"),
+                    TypeKind::Scalar(Scalar::Void) => Some("array of void"),
+                    TypeKind::Array {
+                        bound: 0,
+                        operand: None,
+                        ..
+                    } => Some("array of arrays of unknown bound"),
+                    TypeKind::Class(class)
+                        if !self.exception_dependent_type(element)
+                            && self.graph.entity(class).complete
+                            && self.graph.virtuals.abstract_class(class) =>
+                    {
+                        Some("an object of an abstract class type")
+                    }
+                    _ => None,
+                };
+                if let Some(message) = failure {
+                    environment.reject(message)
                 } else {
                     Some(self.graph.types.intern(
                         TypeKind::Array {
@@ -581,7 +620,7 @@ impl Analyzer<'_> {
                 TypeKind::Scalar(Scalar::Void)
             )
         }) {
-            return Ok(None);
+            return Ok(environment.reject("a function type returning an array or a function, or with a parameter of type void"));
         }
         self.graph
             .types
@@ -843,6 +882,17 @@ impl Analyzer<'_> {
             }
             *slot = Some(deduced);
             return Ok(true);
+        }
+        let aliased_pattern = self.aliased_type(pattern)?;
+        let aliased_actual = self.aliased_type(actual)?;
+        if aliased_pattern != pattern || aliased_actual != actual {
+            return self.deduce_signature_type(
+                aliased_pattern,
+                aliased_actual,
+                depth,
+                arguments,
+                extra_cv,
+            );
         }
         if pcv != acv && !(extra_cv && acv & !pcv == 0) {
             return Ok(false);

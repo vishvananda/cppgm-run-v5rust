@@ -115,13 +115,23 @@ pub(super) struct Types {
     collisions: Vec<Option<TypeId>>,
     canonical: Vec<Option<TypeId>>,
     declarations: Vec<Option<TypeId>>,
-    operand_representatives: HashMap<EntityId, EntityId>,
+    declaration_facts: Box<DeclarationFacts>,
     signatures: Vec<Option<TypeId>>,
     parameter_entities: HashMap<EntityId, EntityId>,
 }
+#[derive(Default)]
+struct DeclarationFacts {
+    operands: HashMap<EntityId, EntityId>,
+    classes: HashMap<EntityId, TypeId>,
+}
 impl Types {
+    /// Published before the class type escapes formation, so declaration
+    /// memos never need invalidation. Substitution keeps the original identity.
+    pub(super) fn record_declared_class(&mut self, entity: EntityId, ty: TypeId) {
+        self.declaration_facts.classes.insert(entity, ty);
+    }
     pub(super) fn record_operand_representative(&mut self, entity: EntityId, earlier: EntityId) {
-        self.operand_representatives.insert(entity, earlier);
+        self.declaration_facts.operands.insert(entity, earlier);
     }
     pub(super) fn record_parameter_entity(&mut self, named: EntityId, canonical: EntityId) {
         self.parameter_entities.insert(named, canonical);
@@ -328,7 +338,7 @@ impl Types {
         self.canonical_type(id, false)
     }
     pub(super) fn declared_type(&mut self, id: TypeId) -> Result<TypeId, Error> {
-        if self.operand_representatives.is_empty() {
+        if self.declaration_facts.operands.is_empty() && self.declaration_facts.classes.is_empty() {
             return self.canonical_function(id);
         }
         self.canonical_type(id, true)
@@ -356,6 +366,20 @@ impl Types {
         let mut work = vec![(root, false)];
         while let Some((id, finish)) = work.pop() {
             if self.completed_type(id, declaration).is_some() {
+                continue;
+            }
+            if declaration
+                && let TypeKind::Class(entity) = self.get(id).kind
+                && let Some(&aliased) = self.declaration_facts.classes.get(&entity)
+            {
+                if finish {
+                    let canonical = self.canonical_child(aliased, true)?;
+                    let canonical = self.qualify(canonical, self.get(id).cv)?;
+                    self.complete_type(id, canonical, true);
+                } else {
+                    work.push((id, true));
+                    work.push((aliased, false));
+                }
                 continue;
             }
             if !finish {
@@ -466,7 +490,8 @@ impl Types {
                         .copied()
                         .unwrap_or(entity);
                     let entity = if declaration {
-                        self.operand_representatives
+                        self.declaration_facts
+                            .operands
                             .get(&entity)
                             .copied()
                             .unwrap_or(entity)

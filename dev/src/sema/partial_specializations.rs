@@ -102,6 +102,7 @@ impl Analyzer<'_> {
             }
         }
         for (position, &argument) in (0u8..64).zip(arguments) {
+            let argument = self.graph.unqualified_aliased_type(argument);
             if self.graph.types.get(argument).cv.0 != 0 {
                 continue;
             }
@@ -493,6 +494,10 @@ impl Analyzer<'_> {
                     }
                 }
                 TypeKind::Class(entity) => {
+                    if let Some(aliased) = self.graph.class_templates.aliases.aliased(*entity) {
+                        work.push(aliased);
+                        continue;
+                    }
                     if let Some(instance) = self.graph.class_templates.instance(*entity)
                         && instance.dependent
                         && self

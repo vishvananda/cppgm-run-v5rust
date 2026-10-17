@@ -1054,6 +1054,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(&id) = self.types.get(&(ty, self.bound_pattern, self.own_level)) {
             return Ok(id);
         }
+        if let Some(aliased) = self.graph.lower_aliased_type(ty) {
+            let node = self.abi_type(aliased)?;
+            return self.finish_abi_type(ty, node);
+        }
         let node = if let Some(elements) = self.graph.lower_argument_pack(ty) {
             let elements = elements.to_vec();
             let mut nodes = Vec::with_capacity(elements.len());

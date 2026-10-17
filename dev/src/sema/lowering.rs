@@ -624,6 +624,12 @@ impl Graph {
     pub(crate) fn lower_dependent_type(&self, ty: TypeId) -> bool {
         self.dependent_type(ty)
     }
+    pub(crate) fn lower_aliased_type(&self, ty: TypeId) -> Option<TypeId> {
+        let TypeKind::Class(entity) = self.types.get(ty).kind else {
+            return None;
+        };
+        self.class_templates.aliases.aliased(entity)
+    }
     pub(crate) fn lower_templated_class(&self, class: EntityId) -> bool {
         self.entity(class).template_head.is_some()
     }

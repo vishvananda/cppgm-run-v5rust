@@ -133,6 +133,10 @@ impl Analyzer<'_> {
                 if let Some(ty) = self.substitute_signature_type(element, &mut inner)? {
                     result.push(ty);
                 } else {
+                    if environment.failure.is_none() {
+                        environment.failure = inner.failure;
+                        environment.failure_location = inner.failure_location;
+                    }
                     valid = false;
                 }
             }

@@ -326,9 +326,15 @@ impl Analyzer<'_> {
                 }
                 Ok(Some(result))
             }
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+            Err(
+                Error::Diagnostic { location, message } | Error::NonConstant { location, message },
+            ) => {
                 // Failed lookups may name a class completed later. Keep only
                 // successful facts; a failed trial cannot poison later demand.
+                if environment.failure.is_none() {
+                    environment.failure = Some(message);
+                    environment.failure_location = location;
+                }
                 Ok(None)
             }
             Err(error) => Err(error),

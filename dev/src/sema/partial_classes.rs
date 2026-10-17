@@ -62,7 +62,7 @@ impl Analyzer<'_> {
             .lookup_result_in(name, scope, Filter::Elaborated, false)?
             .binding
             .ok_or_else(|| Error::at(node.location, "undeclared name"))?;
-        let primary = self.class_template_primary(found)?.ok_or_else(|| {
+        let primary = self.class_template_primary(found).ok_or_else(|| {
             Error::at(
                 node.location,
                 "a partial specialization of no class template",
