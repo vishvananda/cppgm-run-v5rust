@@ -245,6 +245,13 @@ impl Function<'_, '_, '_, '_> {
         action: AssignmentAction,
     ) -> Result<(), Error> {
         let Some(selected) = action.function else {
+            if let TypeView::Class(class) = self.graph.lower_type(action.ty)?
+                && self.graph.lower_class_empty(class)?
+            {
+                // A rejected class selection has no callable. Its empty
+                // subobject has no storage to transfer either (copy_subobject).
+                return Ok(());
+            }
             let source = self.assignment_source(function)?;
             let source = self.assignment_address(source, action)?;
             if matches!(self.graph.lower_type(action.ty)?, TypeView::Array { .. }) {

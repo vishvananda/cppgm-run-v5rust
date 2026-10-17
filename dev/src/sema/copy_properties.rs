@@ -359,6 +359,9 @@ impl Analyzer<'_> {
         } else {
             facts.nothrow = !self.function_may_throw(function)?;
         }
+        if facts.deleted {
+            self.graph.entity_mut(function).availability = FunctionAvailability::Deleted;
+        }
         let id = self.graph.copy_properties.add(facts)?;
         self.graph.entity_mut(function).copy_properties = Some(id);
         Ok(())

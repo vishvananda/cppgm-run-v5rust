@@ -31,6 +31,55 @@ mod tests {
     };
 
     #[test]
+    fn deleted_roots_skip_semantic_synthesis_but_retain_emission_identity() {
+        let source = SourceBuffer::new(
+            b"struct X{X(const X&)=delete;~X()=delete;};\
+              template<class T>struct A{T t;A(const A&)=default;A(A&&)=default;~A()=default;};\
+              template A<X>::A(const A<X>&);template A<X>::A(A<X>&&);template A<X>::~A();\
+              template<class T>struct B{T t;B&operator=(const B&)=default;};\
+              template B<int>& B<int>::operator=(const B<int>&);\
+              struct Y{Y(Y&&)=delete;};\
+              template B<Y>& B<Y>::operator=(const B<Y>&);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"defaulted-roots").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            false,
+        )
+        .unwrap();
+        let definitions = graph.function_templates.instantiations.definitions();
+        assert_eq!(definitions.len(), 5);
+        for definition in &definitions[..3] {
+            let entity = graph.binding(definition.binding).entity;
+            assert_eq!(
+                graph.entity(entity).availability,
+                super::super::graph::FunctionAvailability::Deleted
+            );
+            assert!(!graph.function_templates.bodies.started(entity));
+            assert!(graph.entity(entity).constructor.is_none());
+        }
+        let assignment = graph.binding(definitions[3].binding).entity;
+        assert_eq!(graph.lower_explicit_functions().count(), 5);
+        assert!(graph.entity(assignment).assignment.is_some());
+        assert!(graph.lower_has_synthesized_body(assignment));
+        let deleted = graph.binding(definitions[4].binding).entity;
+        let facts = graph.entity(deleted).assignment.as_ref().unwrap();
+        assert!(facts.deleted && facts.nothrow);
+        assert!(facts.actions[0].function.is_none());
+        assert!(!graph.function_templates.bodies.started(deleted));
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
     fn extern_special_members_share_identity_without_body_or_default_demand() {
         let source = SourceBuffer::new(
             b"template<class T>struct A{A(int=T::missing);~A();operator T();};\

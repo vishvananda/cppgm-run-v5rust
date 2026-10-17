@@ -253,6 +253,20 @@ pub(crate) fn analyze_unit(
         if graph.function_instantiation_suppressed(entity) {
             continue;
         }
+        // Deleted definitions satisfy the semantic requirement. First-defaulted
+        // members can still be synthesized for an explicit emission root, as
+        // C++ demand_entry does independently of instantiate_definition.
+        let deleted =
+            graph.entity(entity).availability == super::graph::FunctionAvailability::Deleted;
+        if deleted
+            && (!lowering
+                || !matches!(
+                    graph.entity(entity).special_definition,
+                    Some(SpecialDefinition::Defaulted { first: true, .. })
+                ))
+        {
+            continue;
+        }
         if definition.is_some_and(|item| matches!(item.demand, DefinitionDemand::Named)) {
             // Named definitions are required by semantic analysis at unit end,
             // before lowering can query an outside destructor's inertness.
@@ -284,7 +298,11 @@ pub(crate) fn analyze_unit(
                 |analyzer| {
                     analyzer.prepare_explicit_defaulted(
                         entity,
-                        definition.map_or(DefinitionDemand::ClassMember, |item| item.demand),
+                        if deleted {
+                            DefinitionDemand::ClassMember
+                        } else {
+                            definition.map_or(DefinitionDemand::ClassMember, |item| item.demand)
+                        },
                     )
                 },
             )?;
@@ -690,6 +708,15 @@ impl Analyzer<'_> {
         demand: DefinitionDemand,
     ) -> Result<(), Error> {
         let Some(member) = self.graph.entity(entity).member_function else {
+            let binding = self.graph.function_origin(entity)?;
+            self.prepare_default_assignment(binding)?;
+            if self.graph.entity(entity).assignment.is_some() {
+                self.graph
+                    .function_templates
+                    .bodies
+                    .states
+                    .insert(entity, State::Synthesized);
+            }
             return Ok(());
         };
         if matches!(demand, DefinitionDemand::Named) {
@@ -712,10 +739,18 @@ impl Analyzer<'_> {
             self.graph.entity(entity).special_definition,
             Some(SpecialDefinition::Defaulted { first: true, .. })
         );
-        if first && member.kind == super::graph::MemberKind::Destructor && !self.lowering() {
-            // The semantic view only records this root. Emission preparation
-            // checks its defaulted definition even if class completion has
-            // already marked the destructor unavailable.
+        if first
+            && member.kind == super::graph::MemberKind::Destructor
+            && (!self.lowering()
+                || self
+                    .graph
+                    .entity(member.class)
+                    .destruction
+                    .is_some_and(|facts| !facts.trivial))
+        {
+            // The semantic view records this root; a nontrivial destructor's
+            // emission uses its synthesized subobject plan, even when deleted.
+            // A trivial destructor instead needs instantiate_definition below.
             return self.prepare_destruction(member.class);
         }
         if first

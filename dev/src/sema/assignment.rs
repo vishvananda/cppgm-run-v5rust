@@ -870,6 +870,16 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
+        // subobject_copy retains no callable for a deleted selection. This is
+        // decided after ranking, so a worse overload cannot replace it.
+        if self
+            .graph
+            .entity(self.graph.binding(selected.binding).entity)
+            .availability
+            == FunctionAvailability::Deleted
+        {
+            return Ok(None);
+        }
         Ok(Some(selected.binding))
     }
     fn assignment_candidates(

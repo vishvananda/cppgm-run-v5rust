@@ -522,6 +522,13 @@ impl Graph {
             .map(|definition| self.binding(definition.binding).entity)
             .filter(|&entity| {
                 self.entity(entity).availability != super::graph::FunctionAvailability::Deleted
+                    || matches!(
+                        self.entity(entity).special_definition,
+                        Some(super::special_members::SpecialDefinition::Defaulted {
+                            first: true,
+                            ..
+                        })
+                    )
             })
     }
     pub(crate) fn lower_explicit_classes(&self) -> &[EntityId] {
@@ -1755,11 +1762,21 @@ impl Graph {
         entity: EntityId,
         tree: &ast::Tree,
     ) -> Result<bool, Error> {
-        if !self
+        let Some(member) = self
             .entity(entity)
             .member_function
-            .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
-        {
+            .filter(|key| key.kind == super::graph::MemberKind::Destructor)
+        else {
+            return Ok(false);
+        };
+        // An implicit union destructor destroys no variant member. C++ tests
+        // this before deletedness, including anonymous union storage.
+        if self.lower_union_class(member.class) && self.lower_implicit_destructor(entity) {
+            return Ok(true);
+        }
+        // A deleted destructor's synthesized body is not inert: an explicit
+        // emission root still retains its subobject destruction sequence.
+        if self.entity(entity).availability == super::graph::FunctionAvailability::Deleted {
             return Ok(false);
         }
         let Some(body) = self.lower_function_body(entity) else {
