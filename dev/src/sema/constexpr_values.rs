@@ -95,7 +95,8 @@ impl Analyzer<'_> {
             ));
         }
         let ty = self.graph.lower_entity_type(entity)?;
-        let place = self.allocate_constant_object(ty, None, location)?;
+        let place = self.allocate_constant_storage(ty, None, location)?;
+        self.constexpr_frames.initialize_declaration(place)?;
         self.graph
             .aggregate_constants
             .constructing
@@ -192,6 +193,55 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn failed_static_probe_releases_partial_arguments_without_publishing_them() {
+        let source = SourceBuffer::new(
+            br"
+            struct S {int n; constexpr S(int n):n(n){}};
+            int runtime();
+            constexpr S make(S s, int n) {return S(s.n+n);}
+            constexpr S before(3);
+            S dynamic=make(before,runtime());
+            constexpr S after(7);
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"probe-rollback").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"before".as_slice(), b"dynamic", b"after"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let syntax = analyzer.tree.expressions.mark();
+        analyzer.finish_static_initializers().unwrap();
+        for (name, bits) in names.into_iter().zip([Some(3), None, Some(7)]) {
+            let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+            let entity = analyzer.graph.binding(binding).entity;
+            let value = analyzer.graph.aggregate_constants.get(entity);
+            if let Some(bits) = bits {
+                assert!(value.unwrap().values().any(|(_, _, _, value)|
+                    matches!(value, Some(Value::Integer(value)) if value.bits == bits)));
+            } else {
+                assert!(value.is_none());
+                assert!(analyzer.graph.lower_array_image(entity).is_none());
+            }
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), syntax);
+        assert_eq!(analyzer.graph.aggregate_constants.complete.len(), 2);
+        assert!(analyzer.graph.aggregate_constants.constructing.is_empty());
+        assert!(analyzer.constant_evaluation.is_none());
+        assert!(!analyzer.constexpr_frames.active());
+    }
 
     #[test]
     fn completed_objects_survive_calls_and_copies_without_replaying_syntax() {

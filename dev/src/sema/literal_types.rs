@@ -407,25 +407,37 @@ impl Analyzer<'_> {
         }
         for index in 0..self.graph.constructors.get(id).bases.len() {
             let base = self.graph.constructors.get(id).bases[index];
-            if let Some(child) = base.constructor {
-                let value_initialized = base.initializer.is_some_and(|initializer| match initializer.kind {
-                    ast::InitializerKind::Parenthesized(values) => self.tree.expr_lists.get(values).is_empty(),
-                    ast::InitializerKind::Braced(expr) => matches!(self.tree.expressions.get(expr).kind, ExprKind::Braced { elements, .. } if self.tree.expr_lists.get(elements).is_empty()),
-                    _ => false,
-                });
-                if (!value_initialized || self.graph.constructors.get(child).nontrivial())
-                    && !self.constant_constructor_eligible(child, &mut HashMap::new())?
-                {
-                    return Err(Error::at(
-                        location,
-                        "a constexpr constructor initializes a subobject by a constructor that is not constexpr",
-                    ));
-                }
+            if let Some(child) = base.constructor
+                && !self.graph.constructors.get(child).deleted
+                && !self.constant_trivial_value_initialization(child, base.initializer)
+                && !self.constant_constructor_eligible(child, &mut HashMap::new())?
+            {
+                return Err(Error::at(
+                    location,
+                    "a constexpr constructor initializes a subobject by a constructor that is not constexpr",
+                ));
             }
         }
-        for index in 0..self.graph.constructors.get(id).subobjects.len() {
-            let plan = self.graph.constructors.get(id).subobjects[index];
-            if !self.constant_constructor_eligible(plan.constructor, &mut HashMap::new())? {
+        let mut next_subobject = 0;
+        for index in 0..self.graph.constructors.get(id).members.len() {
+            let owner = self.graph.constructors.get(id);
+            let (member, initializer) = owner.members[index];
+            let Some(&plan) = owner
+                .subobjects
+                .get(next_subobject)
+                .filter(|plan| plan.member == member)
+            else {
+                continue;
+            };
+            next_subobject += 1;
+            let written_initializer = owner.written_members[index]
+                .then_some(initializer)
+                .flatten();
+            if !self.graph.constructors.get(plan.constructor).deleted
+                && !self
+                    .constant_trivial_value_initialization(plan.constructor, written_initializer)
+                && !self.constant_constructor_eligible(plan.constructor, &mut HashMap::new())?
+            {
                 return Err(Error::at(
                     location,
                     "a constexpr constructor initializes a subobject by a constructor that is not constexpr",
@@ -449,5 +461,18 @@ impl Analyzer<'_> {
             }
         }
         Ok(())
+    }
+    fn constant_trivial_value_initialization(
+        &self,
+        constructor: ConstructorId,
+        initializer: Option<ast::Initializer>,
+    ) -> bool {
+        !self.graph.constructors.get(constructor).nontrivial()
+            && initializer.is_some_and(|initializer| match initializer.kind {
+                ast::InitializerKind::Parenthesized(values) => self.tree.expr_lists.get(values).is_empty(),
+                ast::InitializerKind::Braced(expr) => matches!(self.tree.expressions.get(expr).kind,
+                    ExprKind::Braced { elements, .. } if self.tree.expr_lists.get(elements).is_empty()),
+                _ => false,
+            })
     }
 }

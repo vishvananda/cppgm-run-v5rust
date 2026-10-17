@@ -68,6 +68,7 @@ impl Frozen {
 struct Object {
     id: ObjectId,
     alive: bool,
+    initializing_declaration: bool,
     ty: TypeId,
     cells: std::ops::Range<usize>,
 }
@@ -145,9 +146,9 @@ impl Frames {
         value: &Frozen,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let target = self.cells(to, location)?;
         let first = value.locate(from, location)?;
         let source = first..value.cells[first].end;
+        let target = self.copy_destination(to, location)?;
         if target.len() != source.len() {
             return Err(Error::Invariant(
                 "incompatible published constant object copy",
@@ -252,12 +253,32 @@ impl Frames {
         self.objects.push(Object {
             id,
             alive: true,
+            initializing_declaration: false,
             ty,
             cells: self.cells.len()..self.cells.len(),
         });
         let place = Address::new(Root::Object(id), ty);
         self.add_cell(place, value, location)?;
         Ok(place)
+    }
+    pub(super) fn initialize_declaration(&mut self, place: Address) -> Result<(), Error> {
+        let Root::Object(id) = place.root else {
+            return Err(Error::Invariant(
+                "declaration initialization outside storage",
+            ));
+        };
+        self.objects[id.slot as usize].initializing_declaration = true;
+        Ok(())
+    }
+    pub(super) fn initializing_declaration(
+        &self,
+        place: Address,
+        location: SourceOffset,
+    ) -> Result<bool, Error> {
+        let Root::Object(id) = place.root else {
+            return Ok(false);
+        };
+        Ok(place.offset == 0 && self.object(id, location)?.initializing_declaration)
     }
     fn object(&self, id: ObjectId, location: SourceOffset) -> Result<&Object, Error> {
         self.objects
@@ -392,8 +413,8 @@ impl Frames {
         from: Address,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let target = self.cells(to, location)?;
         let source = self.cells(from, location)?;
+        let target = self.copy_destination(to, location)?;
         if target.len() != source.len() {
             return Err(Error::Invariant("incompatible constant object copy"));
         }
@@ -401,6 +422,19 @@ impl Frames {
             self.cells[to].value = self.cells[from].value;
         }
         Ok(())
+    }
+    fn copy_destination(
+        &self,
+        place: Address,
+        location: SourceOffset,
+    ) -> Result<std::ops::Range<usize>, Error> {
+        if matches!(place.root, Root::Variable(_)) {
+            return Err(nonconstant(
+                location,
+                "a modification of an object whose lifetime began outside the evaluation",
+            ));
+        }
+        self.cells(place, location)
     }
 }
 

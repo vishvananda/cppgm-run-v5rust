@@ -73,6 +73,29 @@ impl Analyzer<'_> {
         value: Option<Value>,
         location: SourceOffset,
     ) -> Result<Address, Error> {
+        let mut element = ty;
+        while let TypeKind::Array { element: child, .. } = self.graph.types.get(element).kind {
+            element = child;
+        }
+        if let Some(class) = self.graph.class_of(element) {
+            self.complete_class(class)?;
+            if self.graph.lower_nontrivial_destructor(class)? {
+                return Err(nonconstant(
+                    location,
+                    "an object with a non-trivial destructor in a constant expression",
+                ));
+            }
+        }
+        self.allocate_constant_storage(ty, value, location)
+    }
+    // Declaration storage outlives initialization: its destructor does not run
+    // in this evaluation. Temporaries and parameters use the checked entry above.
+    pub(super) fn allocate_constant_storage(
+        &mut self,
+        ty: TypeId,
+        value: Option<Value>,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
         let ty = self.bare_type(ty)?;
         self.constant_object_leaves(ty, 0, location)?;
         let place = self.constexpr_frames.allocate(ty, value, location)?;
@@ -93,12 +116,6 @@ impl Analyzer<'_> {
                 .saturating_mul(self.constant_object_leaves(element, depth, location)?),
             TypeKind::Class(class) if depth <= 64 => {
                 self.complete_class(class)?;
-                if self.graph.lower_nontrivial_destructor(class)? {
-                    return Err(nonconstant(
-                        location,
-                        "an object with a non-trivial destructor in a constant expression",
-                    ));
-                }
                 let mut count = 1u64;
                 for index in 0..self.graph.entity(class).bases.len() {
                     let child = self.graph.entity(class).bases[index].class;
@@ -199,12 +216,13 @@ impl Analyzer<'_> {
                 "a member of an object one past the end of an array",
             ));
         }
-        if self.graph.class_of(place.designated).is_none() {
+        let Some(class) = self.graph.class_of(place.designated) else {
             return Err(nonconstant(
                 location,
                 "a conversion to a base class outside constant evaluation",
             ));
-        }
+        };
+        self.class_layout(class, location)?;
         let entity = self.graph.entity(member);
         let offset = if let Some(field) = entity.bit_field {
             self.graph.bit_fields.storage(field)?.bit / 8

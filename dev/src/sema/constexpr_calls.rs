@@ -337,7 +337,7 @@ impl Analyzer<'_> {
         let arguments = super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
         self.invoke_constant_function_into(
             function,
-            (arguments.as_slice(), false),
+            (ConstantArguments::Written(arguments.as_slice()), false),
             (object, destination),
             scope,
             location,
@@ -373,7 +373,10 @@ impl Analyzer<'_> {
         };
         self.invoke_constant_function_into(
             function,
-            (&operands[usize::from(member)..count], postfix),
+            (
+                ConstantArguments::Written(&operands[usize::from(member)..count]),
+                postfix,
+            ),
             (object, destination),
             scope,
             location,
@@ -389,7 +392,7 @@ impl Analyzer<'_> {
     ) -> Result<Returned, Error> {
         self.invoke_constant_function_into(
             function,
-            (arguments, false),
+            (ConstantArguments::Written(arguments), false),
             (object, None),
             scope,
             location,
@@ -398,7 +401,7 @@ impl Analyzer<'_> {
     fn invoke_constant_function_into(
         &mut self,
         function: EntityId,
-        (arguments, postfix): (&[ast::ExprId], bool),
+        (arguments, postfix): (ConstantArguments<'_>, bool),
         (object, destination): (Option<Address>, Option<Address>),
         scope: ScopeId,
         location: SourceOffset,
@@ -407,6 +410,15 @@ impl Analyzer<'_> {
         let entity = self.graph.entity(function);
         if entity.availability == FunctionAvailability::Deleted {
             return Err(nonconstant(location, "a call of a deleted function"));
+        }
+        if entity.assignment.is_some()
+            && let Some(object) = object
+        {
+            let ty = self.graph.lower_entity_type(function)?;
+            let parameter = self.graph.types.function_parameter(ty, 0)?;
+            let source = arguments.first_place(self, parameter, scope)?;
+            self.constant_assign_subobjects(function, object, source, scope, location)?;
+            return Ok(Returned::Place(object));
         }
         if !entity.constexpr {
             return Err(nonconstant(
@@ -440,7 +452,7 @@ impl Analyzer<'_> {
             None
         };
         let bound =
-            self.bind_constant_arguments(function, ty, (arguments, postfix), scope, location)?;
+            self.bind_constant_inputs(function, ty, (arguments, postfix), scope, location)?;
         let mut parameters = Vec::new();
         for (index, &value) in bound.iter().enumerate() {
             if self
@@ -464,21 +476,77 @@ impl Analyzer<'_> {
         }
         result
     }
-    fn bind_constant_arguments(
+    fn constant_assign_subobjects(
         &mut self,
         function: EntityId,
-        ty: TypeId,
-        (arguments, postfix): (&[ast::ExprId], bool),
+        target: Address,
+        source: Address,
         scope: ScopeId,
         location: SourceOffset,
-    ) -> Result<Vec<Returned>, Error> {
-        self.bind_constant_inputs(
-            function,
-            ty,
-            (ConstantArguments::Written(arguments), postfix),
-            scope,
-            location,
-        )
+    ) -> Result<(), Error> {
+        self.check_stack()?;
+        let plan = self
+            .graph
+            .lower_assignment(function)
+            .ok_or(Error::Invariant("constant assignment without plan"))?;
+        if plan.deleted {
+            return Err(nonconstant(location, "a call of a deleted function"));
+        }
+        let count = plan.actions.len();
+        for index in 0..count {
+            let action = self
+                .graph
+                .lower_assignment(function)
+                .ok_or(Error::Invariant("lost constant assignment plan"))?
+                .actions[index];
+            if action
+                .member
+                .is_some_and(|member| self.graph.unnamed_bit_field(member))
+            {
+                continue;
+            }
+            let to = self.constant_assigned_subobject(target, action, location)?;
+            let from = self.constant_assigned_subobject(source, action, location)?;
+            if let Some(child) = action.function.filter(|&child| {
+                !self
+                    .graph
+                    .lower_assignment(child)
+                    .is_some_and(|plan| plan.trivial)
+            }) {
+                self.invoke_constant_function_into(
+                    child,
+                    (ConstantArguments::Bound(&[from]), false),
+                    (Some(to), None),
+                    scope,
+                    location,
+                )?;
+            } else {
+                self.copy_constant_object(to, from, location)?;
+            }
+        }
+        Ok(())
+    }
+    fn constant_assigned_subobject(
+        &mut self,
+        place: Address,
+        action: super::assignment::Action,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
+        if let Some(member) = action.member {
+            return self.constant_member_slot(place, member, location);
+        }
+        let (class, index) = action
+            .base
+            .ok_or(Error::Invariant("assignment action without subobject"))?;
+        self.class_layout(class, location)?;
+        let offset = self.graph.entity(class).bases[index as usize]
+            .offset
+            .ok_or(Error::Invariant("constant assignment base without offset"))?;
+        Ok(Address {
+            offset: place.offset.wrapping_add(super::integral::signed(offset)),
+            designated: self.bare_type(action.ty)?,
+            ..place
+        })
     }
     pub(super) fn bind_constant_inputs(
         &mut self,

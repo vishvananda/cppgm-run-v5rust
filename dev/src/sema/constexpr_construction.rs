@@ -100,7 +100,7 @@ impl Analyzer<'_> {
                     } else {
                         else_expr
                     };
-                    return self.materialize_constant_object(selected, target, scope);
+                    return self.initialize_constant_class_from(selected, target, scope);
                 }
                 ExprKind::Binary {
                     op, left, right, ..
@@ -434,18 +434,30 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         let Some(&expr) = values.get(*next) else {
-            if let Some(class) = self.graph.class_of(target.designated)
-                && !self.graph.aggregate_class(class)
-            {
-                let constructor = self.default_constructor(class, location)?;
-                return self.constant_class_initialize(
-                    target,
-                    Some(constructor),
-                    &[],
-                    true,
-                    scope,
+            if matches!(
+                self.graph.types.get(target.designated).kind,
+                TypeKind::Reference { .. }
+            ) {
+                return Err(nonconstant(
                     location,
-                );
+                    "a reference member without an initializer",
+                ));
+            }
+            let mut element = target.designated;
+            while let TypeKind::Array { element: child, .. } = self.graph.types.get(element).kind {
+                element = child;
+            }
+            if let Some(class) = self.graph.class_of(element) {
+                if self.graph.aggregate_class(class) {
+                    // The frozen interpreter zeroes an omitted array of
+                    // aggregates, but visits an omitted class's members.
+                    if element == target.designated {
+                        return self.constant_aggregate(target, &[], &mut 0, scope, location);
+                    }
+                } else {
+                    let constructor = self.default_constructor(class, location)?;
+                    return self.constant_value_initialize(target, constructor, scope, location);
+                }
             }
             return self.constant_zero_object(target, location);
         };
@@ -482,6 +494,32 @@ impl Analyzer<'_> {
             scope,
             location,
         )
+    }
+    fn constant_value_initialize(
+        &mut self,
+        target: Address,
+        constructor: ConstructorId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.check_stack()?;
+        if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target.designated).kind
+        {
+            let size = self.type_size(element, location)?.0;
+            let element = self.bare_type(element)?;
+            for index in 0..bound {
+                let place = Address {
+                    designated: element,
+                    offset: target
+                        .offset
+                        .wrapping_add(super::integral::signed(index.wrapping_mul(size))),
+                    ..target
+                };
+                self.constant_value_initialize(place, constructor, scope, location)?;
+            }
+            return Ok(());
+        }
+        self.constant_class_initialize(target, Some(constructor), &[], true, scope, location)
     }
     pub(super) fn run_constant_constructor(
         &mut self,
@@ -589,6 +627,7 @@ impl Analyzer<'_> {
                     "a constexpr function called before its definition",
                 ));
             }
+            self.check_constant_constructor_object(target, class, location)?;
             let ty = self.graph.lower_entity_type(function)?;
             let parameters =
                 self.bind_constant_inputs(function, ty, (values, false), scope, location)?;
@@ -597,6 +636,7 @@ impl Analyzer<'_> {
             region = self.constexpr_frames.region();
             self.constant_function_frame(function, returns, parameters, Some(target), location)?
         } else {
+            self.check_constant_constructor_object(target, class, location)?;
             region = self.constexpr_frames.region();
             let mut frame = Frame::new(
                 returns,
@@ -643,6 +683,24 @@ impl Analyzer<'_> {
         }
         self.constexpr_frames.release(region);
         result
+    }
+    fn check_constant_constructor_object(
+        &mut self,
+        target: Address,
+        class: super::graph::EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if !self
+            .constexpr_frames
+            .initializing_declaration(target, location)?
+            && !self.constant_literal_type(self.graph.lower_entity_type(class)?)?
+        {
+            return Err(nonconstant(
+                location,
+                "a constructor of a class that is not a literal type in a constant expression",
+            ));
+        }
+        Ok(())
     }
     fn constant_constructor_subobjects(
         &mut self,
