@@ -556,6 +556,7 @@ impl Analyzer<'_> {
             self.graph.initializer_constructors.note(entity, id);
         }
         if let Some(binding) = self.graph.constructors.get(id).binding {
+            self.demand_specialization_body(binding);
             self.demand_function(binding, true);
         } else {
             self.record_demand(super::function_demands::Demand::Constructor(id));

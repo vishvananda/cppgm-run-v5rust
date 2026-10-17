@@ -389,6 +389,9 @@ fn define_storage<'a>(
                 super::construction::Variant::Complete,
             ));
         }
+        if graph.lower_evaluated_construction(entity) {
+            symbols.demand_constant_constructions(graph, tree, initializer);
+        }
         if initializer.is_none()
             && let Some(constructor) = graph.lower_absent_initializer_constructor()
         {

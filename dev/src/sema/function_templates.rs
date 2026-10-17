@@ -744,6 +744,13 @@ impl Analyzer<'_> {
         let old_inline = old.inline;
         let special_name = old.special_name;
         let parameters = old.function_parameters;
+        let member = old.member_function.map(|key| super::graph::MemberKey {
+            signature: ty,
+            shape: None,
+            ..key
+        });
+        let special_definition = old.special_definition;
+        let explicitness = old.explicitness;
         let exceptions = old.exceptions.clone();
         let specialized = self.graph.entity_mut(entity);
         specialized.function = properties.0;
@@ -753,6 +760,9 @@ impl Analyzer<'_> {
         specialized.scope = properties.4;
         specialized.inline = old_inline;
         specialized.special_name = special_name;
+        specialized.member_function = member;
+        specialized.special_definition = special_definition;
+        specialized.explicitness = explicitness;
         // Declaration facts belong to the specialization's formation point.
         // A later primary redeclaration must not rename its prototype; a
         // demanded body installs its own copied parameters separately.

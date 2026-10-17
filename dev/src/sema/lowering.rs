@@ -1111,6 +1111,16 @@ impl Graph {
     ) -> Result<Option<ConstructorId>, Error> {
         Ok(self.expression_facts.get(id)?.constructor)
     }
+    pub(crate) fn lower_constant_constructors(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<[Option<ConstructorId>; 2]> {
+        let facts = self.expression_facts.get(id).ok()?;
+        Some([
+            facts.constructor,
+            self.expression_facts.class_conversion(id).map(|(id, _)| id),
+        ])
+    }
     pub(crate) fn lower_class_conversion(
         &self,
         id: ast::ExprId,

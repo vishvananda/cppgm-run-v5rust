@@ -1034,9 +1034,6 @@ impl Analyzer<'_> {
         for syntax_index in 0..self.tree.mem_initializers.get(body.initializers).len() {
             let syntax_item = self.tree.mem_initializers.get(body.initializers)[syntax_index];
             let initializer = &syntax_item;
-            if initializer.pack {
-                return Err(Error::Missing("constructor initializer pack expansion"));
-            }
             let member = self.constructor_member_target(initializer, owner, scope, class)?;
             if member == class {
                 if self.tree.mem_initializers.get(body.initializers).len() != 1 {

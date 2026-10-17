@@ -503,6 +503,7 @@ impl Analyzer<'_> {
                 pattern.ty,
             )?;
             let target = self.graph.entity_mut(entity);
+            target.function_parameters = Some(parameters);
             target.special_definition = match target.special_definition {
                 Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
                 Some(SpecialDefinition::Defaulted {
@@ -797,6 +798,12 @@ impl Analyzer<'_> {
             self.graph.entity(definition.entity).function_definition;
         self.graph.entity_mut(entity).defined = true;
         self.graph.entity_mut(entity).function_parameters = Some(parameters);
+        if matches!(
+            self.graph.entity(entity).special_definition,
+            Some(SpecialDefinition::Body(_))
+        ) {
+            self.graph.entity_mut(entity).special_definition = Some(SpecialDefinition::Body(body));
+        }
         self.graph.lookup_limit = Some(pattern.limit);
         self.resolve_specialization_exception(entity)?;
         let result = self.function_body(DeferredBody {
@@ -1523,6 +1530,112 @@ mod tests {
                 ));
             }
         }
+    }
+
+    #[test]
+    fn constructor_pack_bodies_keep_pattern_parameters_and_memoized_copies() {
+        let source = SourceBuffer::new(
+            br#"
+            struct A { int n; constexpr A(int x):n(x){} };
+            struct B { int m; constexpr B(int x):m(x){} };
+            template<class... T> struct D:T... {
+                constexpr D(T... value):T(value)...{}
+                template<class U> void unused(){ typename U::missing x; }
+            };
+            constexpr D<A,B> first(A(3),B(5));
+            constexpr D<A,B> again(A(7),B(9));
+            constexpr D<A> single(A(11));
+            constexpr D<> empty;
+            template<class... T> struct E:T... {
+                template<class... U> E(U... value):T(value)...{}
+            };
+            static_assert(first.n==3 && first.m==5, "");
+            static_assert(again.n==7 && again.m==9 && single.n==11, "");
+            int main(){E<A,B> object(A(13),B(17));return object.n+again.m;}
+            "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"constructor-pack-ownership").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let bodies = &graph.function_templates.bodies;
+        let mut functions = Vec::new();
+        let mut arities = Vec::new();
+        for (&entity, &(pattern, _)) in &bodies.members {
+            let Some(copy) = bodies.body(entity) else {
+                continue;
+            };
+            let Some(constructor) = graph.entity(entity).constructor else {
+                continue;
+            };
+            let count = graph.constructors.get(constructor).bases.len();
+            let ast::Body::Parsed(original) = *tree.bodies.get(pattern.body) else {
+                panic!("parsed constructor pattern");
+            };
+            let original_initializers = tree.mem_initializers.get(original.initializers);
+            if original_initializers.len() != 1 || !original_initializers[0].pack {
+                continue;
+            }
+            let ast::Body::Parsed(copied) = *tree.bodies.get(copy) else {
+                panic!("parsed constructor copy");
+            };
+            assert_ne!(pattern.body, copy);
+            let initializers = tree.mem_initializers.get(copied.initializers);
+            assert_eq!(initializers.len(), count);
+            assert!(initializers.iter().all(|initializer| !initializer.pack));
+            let source =
+                body_parameter_source(&graph, tree, entity, pattern.body, pattern.parameters);
+            let parameters = tree.parameters.get(source.parameters);
+            assert_eq!(parameters.len(), 1);
+            assert!(tree.declarators.get(parameters[0].declarator.unwrap()).pack);
+            let function = graph.entity(entity);
+            assert_eq!(function.parameter_entities.len(), count);
+            assert_eq!(
+                tree.parameters
+                    .get(function.function_parameters.unwrap().parameters)
+                    .len(),
+                count
+            );
+            functions.push(entity);
+            arities.push(count);
+        }
+        arities.sort_unstable();
+        assert_eq!(arities, [0, 1, 2]);
+        let specialized: Vec<_> = bodies
+            .states
+            .keys()
+            .copied()
+            .filter(|&entity| {
+                graph.function_templates.primary(entity).is_some()
+                    && graph.entity(entity).member_function.is_some()
+            })
+            .collect();
+        assert_eq!(specialized.len(), 1);
+        assert!(bodies.body(specialized[0]).is_some());
+        functions.extend(specialized);
+        let body_count = tree.bodies.mark();
+        let expression_count = tree.expressions.mark();
+        let mut analyzer =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+        for _ in 0..3 {
+            for &entity in &functions {
+                assert!(analyzer.constant_function_definition(entity).unwrap());
+            }
+        }
+        assert_eq!(analyzer.tree.bodies.mark(), body_count);
+        assert_eq!(analyzer.tree.expressions.mark(), expression_count);
     }
 
     #[test]

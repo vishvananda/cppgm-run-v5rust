@@ -186,6 +186,12 @@ impl Analyzer<'_> {
             binding,
         );
         let function = self.graph.binding(binding).entity;
+        if !self.graph.entity(function).defined || body.is_some() {
+            // The definition's parameter clause owns the names used by its
+            // retained body. Instance signatures may already expand class
+            // packs while that body still names the original parameter pack.
+            self.graph.entity_mut(function).function_parameters = info.parameters;
+        }
         if specs.inline == super::specifiers::InlinePreference::Inline
             || specs.constexpr
             || body.is_some() && self.class_depth != 0

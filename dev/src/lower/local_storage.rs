@@ -103,6 +103,10 @@ impl Function<'_, '_, '_, '_> {
                         super::construction::Variant::Complete,
                     ));
             }
+            if self.graph.lower_evaluated_construction(entity) {
+                self.symbols
+                    .demand_constant_constructions(self.graph, self.tree, initializer);
+            }
             for &constructor in self
                 .graph
                 .lower_initializer_constructors(entity)

@@ -20,6 +20,7 @@ mod class_conditionals;
 mod class_parameters;
 mod class_results;
 mod conditions;
+mod constant_demands;
 mod construction;
 mod constructor_cleanup;
 mod conversion_functions;

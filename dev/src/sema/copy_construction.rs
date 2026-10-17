@@ -404,15 +404,10 @@ impl Analyzer<'_> {
         let count = self.graph.types.function_parameter_count(signature)?;
         for index in 0..count {
             let parameter = self.graph.types.function_parameter(signature, index)?;
-            let syntax = self
-                .graph
-                .entity(function)
-                .function_parameters
-                .and_then(|p| self.tree.parameters.get(p.parameters).get(index));
-            let name = syntax
-                .map(|p| self.declarator_name(p.declarator))
-                .transpose()?
-                .flatten();
+            // Implicit and explicitly defaulted copy bodies are synthesized.
+            // Their parameter objects are unnamed even when the declaration
+            // retained a written parameter name for its source-facing clause.
+            let name = None;
             let other = self.graph.add_entity(Some(parameter), name, Keyword::Int)?;
             self.graph.add_binding(
                 scope,
@@ -442,6 +437,44 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn defaulted_copy_keeps_written_clause_but_synthesizes_unnamed_parameters() {
+        let source = SourceBuffer::new(
+            b"struct M{M();M(M&&);};struct X{M member;X();X(X&& other)=default;};void f(){X a;X b(static_cast<X&&>(a));}".to_vec(),
+        ).unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"synthesized-copy-parameters").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"X").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let class = graph
+            .binding(
+                graph
+                    .own(graph.global, name, super::super::lookup::Filter::Elaborated)
+                    .unwrap(),
+            )
+            .entity;
+        let function = graph.entity(
+            graph
+                .binding(graph.entity(class).declared_constructors[1])
+                .entity,
+        );
+        let parameters = function.function_parameters.unwrap();
+        let written = tree.parameters.get(parameters.parameters)[0];
+        assert!(
+            tree.declarators
+                .get(written.declarator.unwrap())
+                .name
+                .is_some()
+        );
+        assert_eq!(function.parameter_entities.len(), 1);
+        assert!(graph.entity(function.parameter_entities[0]).name.is_none());
+    }
 
     #[test]
     fn ranking_copy_declarations_reuses_identity_without_building_bodies() {
