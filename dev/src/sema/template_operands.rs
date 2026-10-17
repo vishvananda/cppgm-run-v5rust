@@ -752,19 +752,25 @@ impl Analyzer<'_> {
                 .template_operands
                 .pending
                 .get(&id)
-                .cloned()
                 .ok_or(Error::Invariant("missing pending level"))?;
-            let mut arguments = Vec::with_capacity(level.arguments.len());
-            for &argument in &level.arguments {
-                let Some(result) = self.substitute_signature_type(argument, environment)? else {
+            let (depth, earlier, placeholder, mut arguments) = (
+                level.depth,
+                level.earlier,
+                level.placeholder,
+                level.arguments.clone(),
+            );
+            // This copy is the result buffer, rewritten in place. The
+            // immutable recorded level remains shared by other queries.
+            for argument in &mut arguments {
+                let Some(result) = self.substitute_signature_type(*argument, environment)? else {
                     return Ok(None);
                 };
-                changed |= result != argument;
-                arguments.push(result);
+                changed |= result != *argument;
+                *argument = result;
             }
-            covered |= level.depth == environment.depth;
-            next = level.earlier;
-            levels.push((level.depth, arguments, level.placeholder));
+            covered |= depth == environment.depth;
+            next = earlier;
+            levels.push((depth, arguments, placeholder));
         }
         let placeholder = levels
             .last()
@@ -965,24 +971,20 @@ impl Analyzer<'_> {
             .pattern(entity)
             .ok_or(Error::Invariant("missing operand"))?;
         let mut scope = pattern.scope;
-        let mut earlier = self.graph.template_operands.pending.get(&entity).cloned();
+        let mut earlier = self.graph.template_operands.pending.get(&entity);
         let mut parameters = pattern.parameters;
         while let Some(level) = earlier {
+            let (depth, next) = (level.depth, level.earlier);
             let arguments = level
                 .arguments
                 .iter()
                 .copied()
                 .map(Some)
                 .collect::<Vec<_>>();
-            scope = self.operand_scope(
-                scope,
-                &mut Substitution::new(level.depth, &arguments),
-                parameters,
-            )?;
+            scope =
+                self.operand_scope(scope, &mut Substitution::new(depth, &arguments), parameters)?;
             parameters = None;
-            earlier = level
-                .earlier
-                .and_then(|id| self.graph.template_operands.pending.get(&id).cloned());
+            earlier = next.and_then(|id| self.graph.template_operands.pending.get(&id));
         }
         let scope = self.operand_scope(scope, environment, parameters)?;
         let open = self.operand_open_depth(entity, environment.depth);

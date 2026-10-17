@@ -142,6 +142,18 @@ impl Analyzer<'_> {
             .saturating_sub(1);
         let mut prefix = node.global.then_some(self.graph.global);
         let mut owner = None;
+        // An outer head is visited before the remaining heads declare their
+        // parameters. Only inspect as many template qualifiers as heads are
+        // already in scope (class_templates.cpp::qualifying_template).
+        let mut heads = matches!(
+            self.tree.declarations.get(declaration).kind,
+            ast::DeclKind::Template { .. }
+        )
+        .then(|| {
+            std::iter::successors(Some(scope), |&scope| self.graph.scope(scope).parent)
+                .take_while(|&scope| self.graph.scope(scope).kind == ScopeKind::TemplateParameters)
+                .count()
+        });
         // Like the oracle's preliminary probe, this discovers the template
         // owner without instantiating its definition or checking its arguments.
         for index in 0..count {
@@ -189,6 +201,12 @@ impl Analyzer<'_> {
                 && binding.kind == BindingKind::Type
                 && self.graph.entity(binding.entity).template_head.is_some()
             {
+                if let Some(remaining) = &mut heads {
+                    if *remaining == 0 {
+                        return Ok(owner);
+                    }
+                    *remaining -= 1;
+                }
                 owner = Some(binding.entity);
             }
             let entity = if component.arguments.is_some() && owner == Some(binding.entity) {
