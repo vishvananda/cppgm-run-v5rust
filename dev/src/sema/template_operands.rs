@@ -128,7 +128,7 @@ impl Analyzer<'_> {
         self.expression(expression, scope)?;
         let key = self.operand_key(expression, scope)?;
         // Non-dependent operands in semantic mode have their ordinary type.
-        if (fixed || value)
+        if (fixed || value && self.semantic())
             && key.as_ref().is_some_and(|key| !key.dependent)
             && !self.type_dependent_expression(expression, scope)?
         {

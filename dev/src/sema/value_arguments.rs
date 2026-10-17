@@ -236,19 +236,30 @@ impl Analyzer<'_> {
         let TypeKind::Value { ty: source, bits } = self.graph.types.get(argument).kind else {
             return Ok(argument);
         };
-        let target = match element.map_or_else(
-            || self.argument_target(head, index, earlier),
-            |ty| Ok(super::address_arguments::ArgumentTarget::Type(ty)),
-        )? {
-            super::address_arguments::ArgumentTarget::Type(ty) => ty,
-            super::address_arguments::ArgumentTarget::Unknown => return Ok(argument),
-            super::address_arguments::ArgumentTarget::Invalid => {
-                return Err(Error::at(
-                    location,
-                    "a non-type template parameter of a type 14.1p4 does not allow",
-                ));
-            }
-        };
+        // Value conversion substitutes its declared target even if unrelated
+        // earlier arguments remain dependent. argument_target's conservative
+        // probe is only for typing the expression before its value is formed.
+        let mut target = element
+            .or(info.value_type)
+            .ok_or(Error::Invariant("value argument without target"))?;
+        if self.graph.dependent_type(target) {
+            let given = earlier.iter().copied().map(Some).collect::<Vec<_>>();
+            let mut environment = super::function_templates::Substitution::new(
+                self.graph.templates.depth(head),
+                &given,
+            );
+            target = self
+                .substitute_signature_type(target, &mut environment)?
+                .ok_or_else(|| {
+                    environment.failure.map_or(
+                        Error::at(
+                            location,
+                            "a non-type template parameter of a type 14.1p4 does not allow",
+                        ),
+                        |message| Error::at(environment.failure_location, message),
+                    )
+                })?;
+        }
         let target = self.bare_type(target)?;
         if self.graph.dependent_type(target) {
             // A bound expansion can retain a dependent pattern at positions
@@ -277,10 +288,12 @@ impl Analyzer<'_> {
                     );
                 }
                 Some("a narrowing conversion of a template argument")
-            } else if matches!(self.graph.types.get(target).kind, TypeKind::Enum(_)) {
-                Some("a non-type template parameter of incomplete enumeration type")
             } else {
-                return Err(Error::Missing("address non-type template arguments"));
+                // Partial ordering substitutes unique class types for type
+                // parameters. A value whose target becomes one of those
+                // classes fails conversion, just like an incomplete enum;
+                // it is a rejected substitution, not an unimplemented address.
+                Some("a non-type template parameter of incomplete enumeration type")
             };
         Err(Error::at(
             location,
@@ -563,6 +576,49 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn invented_nonintegral_targets_fail_substitution_without_completing_classes() {
+        let source = SourceBuffer::new(
+            b"template<class T,T V>struct A;template<class T>using Pattern=A<T,0>;".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"value-ordering").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"Pattern").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+        let alias = analyzer.graph.binding(binding).entity;
+        let head = analyzer.graph.entity(alias).template_head.unwrap();
+        let pattern = analyzer.graph.entity(alias).ty.unwrap();
+        let unique = analyzer.unique_partial_arguments(head).unwrap();
+        let mut substitution = super::super::function_templates::Substitution::new(
+            analyzer.graph.templates.depth(head),
+            &unique,
+        );
+        assert!(
+            analyzer
+                .substitute_signature_type(pattern, &mut substitution)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            substitution.failure,
+            Some("a non-type template parameter of incomplete enumeration type")
+        );
+        let TypeKind::Class(invented) = analyzer.graph.types.get(unique[0].unwrap()).kind else {
+            panic!("unique class argument")
+        };
+        assert!(analyzer.graph.entity(invented).scope.is_none());
+        assert_eq!(analyzer.graph.entity(alias).ty, Some(pattern));
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn converted_arguments_share_shells_but_values_and_types_stay_distinct() {

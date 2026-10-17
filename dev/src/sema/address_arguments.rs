@@ -61,7 +61,9 @@ impl Analyzer<'_> {
             return Ok(ArgumentTarget::Unknown);
         };
         if self.graph.dependent_type(target) {
-            if earlier.iter().any(|&ty| self.graph.dependent_type(ty)) {
+            if earlier.iter().enumerate().any(|(index, &ty)| {
+                self.argument_parameter_pack(head, index) || self.graph.dependent_type(ty)
+            }) {
                 return Ok(ArgumentTarget::Unknown);
             }
             let given = earlier.iter().copied().map(Some).collect::<Vec<_>>();
@@ -77,6 +79,12 @@ impl Analyzer<'_> {
             }
             let Some(substituted) = self.substitute_signature_type(target, &mut environment)?
             else {
+                // This probe precedes argument value formation, outside the
+                // candidate's soft conversion. Preserve a dependent member's
+                // diagnostic; an unreported substitution miss stays unknown.
+                if let Some(message) = environment.failure {
+                    return Err(Error::at(environment.failure_location, message));
+                }
                 return Ok(ArgumentTarget::Invalid);
             };
             target = substituted;
@@ -220,6 +228,42 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn target_probe_stops_before_substitution_past_a_parameter_pack() {
+        let source = SourceBuffer::new(
+            b"struct X{};template<class... Ts,class T,typename T::missing V>void f();".to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"target-pack").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"f").unwrap();
+        let class_name = cursor.intern_name(b"X").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let function = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+        let entity = analyzer.graph.binding(function).entity;
+        let head = analyzer.graph.entity(entity).template_head.unwrap();
+        let class = analyzer
+            .graph
+            .own(global, class_name, Filter::Ordinary)
+            .unwrap();
+        let class = analyzer.graph.binding(class).ty.unwrap();
+        let empty = analyzer
+            .graph
+            .types
+            .intern(TypeKind::Pack(Vec::new()), Cv::default())
+            .unwrap();
+        assert!(matches!(
+            analyzer.argument_target(head, 2, &[empty, class]).unwrap(),
+            ArgumentTarget::Unknown
+        ));
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn converted_null_arguments_reuse_shells_without_initializer_or_body_demand() {
