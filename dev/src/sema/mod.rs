@@ -82,6 +82,7 @@ mod operator_candidates;
 mod operator_resolution;
 mod pack_arguments;
 mod pack_formation;
+mod pack_frames;
 mod pack_names;
 mod pack_substitution;
 mod placeholders;

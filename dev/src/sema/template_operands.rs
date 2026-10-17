@@ -9,10 +9,7 @@ use super::{
     graph::{Binding, BindingKind, EntityId, ScopeId, ScopeKind},
     types::{Cv, TypeId, TypeKind},
 };
-use crate::{
-    lex::vocabulary::Keyword,
-    syntax::{ast, cloning::Cloner},
-};
+use crate::{lex::vocabulary::Keyword, syntax::ast};
 use std::{
     collections::{HashMap, HashSet, hash_map::RandomState},
     hash::BuildHasher,
@@ -354,9 +351,7 @@ impl Analyzer<'_> {
             .pattern(entity)
             .ok_or(Error::Invariant("missing operand"))?;
         let scope = self.operand_scope(pattern.scope, environment, pattern.parameters)?;
-        let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
-            .expression(pattern.expression)
-            .map_err(|e| super::template_bodies::copy_error(&e))?;
+        let copy = self.copy_expression_in_frame(pattern.expression, scope)?;
         let access = environment
             .context
             .map(|entity| self.substitution_scope(entity))

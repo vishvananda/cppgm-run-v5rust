@@ -267,6 +267,13 @@ impl Analyzer<'_> {
             }
             ExprKind::New { .. } => self.allocation_expression(id, scope)?,
             ExprKind::Delete { .. } => self.deletion_expression(id, scope)?,
+            // A concrete list copy expands every bound pattern. An ellipsis
+            // still present here (for example, `(sizeof...(N))...`, which
+            // names no unexpanded pack) reaches the frozen expression
+            // dispatcher's ordinary unsupported-expression diagnostic.
+            ExprKind::PackExpansion(_) => {
+                return Err(Error::at(node.location, "unsupported expression"));
+            }
             _ => return Err(Error::Missing("extended semantic expressions")),
         };
         // A constexpr initializer's printed cv type is applied by its declaration view,

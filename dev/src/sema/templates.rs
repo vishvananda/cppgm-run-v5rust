@@ -57,11 +57,10 @@ impl ParameterInfo {
         u32::from(self.position.index)
     }
     pub(super) fn index(self, depth: u32) -> Option<usize> {
-        (self.position.depth == depth).then_some(usize::from(self.position.index))
+        (self.position.depth == depth).then_some(self.argument_index())
     }
-    pub(super) fn ordinal(self) -> Option<usize> {
-        self.fixed_parameter()
-            .then_some(usize::from(self.position.index))
+    pub(super) fn argument_index(self) -> usize {
+        usize::from(self.position.index)
     }
     pub(super) fn fixed_parameter(self) -> bool {
         !self.position.shape.pack && self.inner.is_none()
@@ -568,7 +567,7 @@ impl Analyzer<'_> {
         self.template_depth += 1;
         // Member-template heads share immutable syntax; formation facts are private.
         let result = (|| {
-            let copy = self.copy_template_argument(default)?;
+            let copy = self.copy_template_argument(default, scope)?;
             match copy.kind {
                 ast::TemplateArgumentKind::Expression(expression) => {
                     self.expression(expression, scope).map(|()| None)

@@ -246,33 +246,44 @@ impl Analyzer<'_> {
         for syntax_index in 0..self.tree.bases.get(node.bases).len() {
             let syntax_item = self.tree.bases.get(node.bases)[syntax_index];
             let base = &syntax_item;
-            if base.pack {
-                return Err(if self.template_depth == 0 {
-                    Error::at(base.location, "a pack expansion outside a template")
-                } else {
-                    Error::Missing("dependent base pack expansion")
-                });
+            if base.pack && self.template_depth == 0 {
+                return Err(Error::at(
+                    base.location,
+                    "a pack expansion outside a template",
+                ));
             }
             let name = *self.tree.names.get(base.name);
             let components = self.tree.name_lists.get(name.components);
             let mut access_binding = None;
-            let ty = if !name.global
+            let decltype_base = !name.global
                 && components.len() == 1
-                && let ast::NameKind::Decltype(operand) = components[0].kind
+                && matches!(components[0].kind, ast::NameKind::Decltype(_));
+            let ty =
+                if decltype_base {
+                    if base.pack {
+                        None
+                    } else if let ast::NameKind::Decltype(operand) = components[0].kind {
+                        Some(self.decltype_type(operand, scope)?)
+                    } else {
+                        return Err(Error::Invariant("decltype base without operand"));
+                    }
+                } else {
+                    let found = self.lookup_result(base.name, scope, Filter::Elaborated)?;
+                    let binding = found
+                        .binding
+                        .ok_or_else(|| Error::at(name.location, "undeclared name"))?;
+                    access_binding = found.qualifier.map(|qualifier| (binding, qualifier));
+                    if base.pack {
+                        None
+                    } else {
+                        Some(self.graph.binding(binding).ty.ok_or_else(|| {
+                            Error::at(base.location, "name does not denote a type")
+                        })?)
+                    }
+                };
+            if base.pack
+                || ty.is_some_and(|ty| self.template_depth != 0 && self.graph.dependent_type(ty))
             {
-                self.decltype_type(operand, scope)?
-            } else {
-                let found = self.lookup_result(base.name, scope, Filter::Elaborated)?;
-                let binding = found
-                    .binding
-                    .ok_or_else(|| Error::at(name.location, "undeclared name"))?;
-                access_binding = found.qualifier.map(|qualifier| (binding, qualifier));
-                self.graph
-                    .binding(binding)
-                    .ty
-                    .ok_or_else(|| Error::at(base.location, "name does not denote a type"))?
-            };
-            if self.template_depth != 0 && self.graph.dependent_type(ty) {
                 self.graph.entity_mut(class).base_dependency = ast::BaseDependency::Dependent;
                 self.tree.bases.replace(
                     node.bases,
@@ -284,6 +295,7 @@ impl Analyzer<'_> {
                 );
                 continue;
             }
+            let ty = ty.ok_or(Error::Invariant("base without type"))?;
             let Some(parent) = self.graph.class_of(ty) else {
                 if matches!(
                     self.graph.types.get(ty).kind,
@@ -424,6 +436,95 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn bound_base_packs_copy_once_and_keep_pattern_and_body_demand_separate() {
+        let source = SourceBuffer::new(
+            b"struct Fixed{};struct A{};struct B{};\
+              template<class... Ts>struct All:Fixed,Ts...{void idle(){}};\
+              using X=All<A,B>;using Again=All<A,B>;using Empty=All<>;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"base-packs").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"X".as_slice(), b"Again", b"Empty", b"idle"]
+            .map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let classes = names[..3]
+            .iter()
+            .map(|&name| {
+                let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+                analyzer
+                    .graph
+                    .class_of(analyzer.graph.binding(binding).ty.unwrap())
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(classes[0], classes[1]);
+        assert!(
+            classes
+                .iter()
+                .all(|&class| analyzer.graph.entity(class).scope.is_none())
+        );
+        assert!(analyzer.complete_class(classes[0]).unwrap());
+        let mark = analyzer.tree.classes.mark();
+        assert!(analyzer.complete_class(classes[1]).unwrap());
+        assert_eq!(analyzer.tree.classes.mark(), mark);
+        let entity = analyzer.graph.entity(classes[0]);
+        assert_eq!(entity.bases.len(), 3);
+        assert_eq!(entity.bases[0].dependency, ast::BaseDependency::Fixed);
+        assert!(
+            entity.bases[1..]
+                .iter()
+                .all(|edge| edge.dependency == ast::BaseDependency::Dependent)
+        );
+        let home = entity.scope.unwrap();
+        let idle = analyzer
+            .graph
+            .own(home, names[3], Filter::Ordinary)
+            .unwrap();
+        assert!(
+            analyzer
+                .graph
+                .function_templates
+                .bodies
+                .body(analyzer.graph.binding(idle).entity)
+                .is_none()
+        );
+        assert!(analyzer.graph.entity(classes[2]).scope.is_none());
+        assert!(analyzer.complete_class(classes[2]).unwrap());
+        assert_eq!(analyzer.graph.entity(classes[2]).bases.len(), 1);
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        let ast::DeclKind::Template { declaration, .. } = analyzer
+            .tree
+            .declarations
+            .get(analyzer.tree.decl_lists.get(declarations)[3])
+            .kind
+        else {
+            panic!("template");
+        };
+        let ast::DeclKind::Class(specifier) = analyzer.tree.declarations.get(declaration).kind
+        else {
+            panic!("class declaration");
+        };
+        let ast::SpecifierKind::Class(pattern) = specifier.kind else {
+            panic!("class specifier");
+        };
+        let bases = analyzer
+            .tree
+            .bases
+            .get(analyzer.tree.classes.get(pattern).bases);
+        assert_eq!(bases.len(), 2);
+        assert!(bases[1].pack);
+        assert_eq!(bases[1].dependency, ast::BaseDependency::Dependent);
+    }
 
     #[test]
     fn copied_bases_keep_provenance_and_imports_keep_canonical_entities() {

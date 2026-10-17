@@ -219,7 +219,9 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("member enum pattern syntax"));
         };
+        let mut packs = super::pack_frames::FramePacks::new(&self.graph, values, self.identifiers);
         let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
+            .with_expander(&mut packs)
             .enum_values(enumerators)
             .map_err(|error| super::template_bodies::copy_error(&error))?;
         let location = self.tree.declarations.get(pattern.syntax).location;

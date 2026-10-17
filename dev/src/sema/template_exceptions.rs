@@ -13,7 +13,6 @@ use crate::{
     lex::{identifiers::NameId, vocabulary::Keyword},
     syntax::{
         ast::{self, ExprKind, NameKind, SpecifierKind},
-        cloning::Cloner,
         storage::List,
     },
 };
@@ -51,10 +50,6 @@ impl Analyzer<'_> {
             self.tree.expressions.get(specification.operand).location,
             specification.limit,
             |analyzer| {
-                let operand =
-                    Cloner::new(analyzer.tree, analyzer.stack_budget, analyzer.stack_base)
-                        .expression(specification.operand)
-                        .map_err(|error| super::template_bodies::copy_error(&error))?;
                 let prototype_type =
                     analyzer.specialization_object_signature(entity, specification.ty)?;
                 let primary = analyzer
@@ -68,6 +63,7 @@ impl Analyzer<'_> {
                     .template_head
                     .ok_or(Error::Invariant("exception pattern without head"))?;
                 let parent = analyzer.template_body_frame(entity, head, specification.scope)?;
+                let operand = analyzer.copy_expression_in_frame(specification.operand, parent)?;
                 let prototype = analyzer.exception_prototype(TemplateException {
                     operand,
                     scope: parent,

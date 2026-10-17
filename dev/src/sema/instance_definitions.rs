@@ -250,7 +250,13 @@ impl Analyzer<'_> {
                 } else {
                     analyzer.class_definition_frame(pattern, &arguments)?
                 };
+                let mut packs = super::pack_frames::FramePacks::new(
+                    &analyzer.graph,
+                    frame,
+                    analyzer.identifiers,
+                );
                 let copy = Cloner::new(analyzer.tree, analyzer.stack_budget, analyzer.stack_base)
+                    .with_expander(&mut packs)
                     .class_definition(pattern.syntax)
                     .map_err(|error| super::template_bodies::copy_error(&error))?;
                 let node = *analyzer.tree.classes.get(copy);

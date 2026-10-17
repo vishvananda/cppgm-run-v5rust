@@ -8,7 +8,7 @@ use super::{
     graph::{BindingId, EntityId, ScopeId},
     templates::HeadId,
 };
-use crate::syntax::{ast, cloning::Cloner};
+use crate::syntax::ast;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
@@ -199,10 +199,8 @@ impl Analyzer<'_> {
         pattern: Pattern,
     ) -> Result<(), Error> {
         self.check_stack()?;
-        let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
-            .expression(default.expression)
-            .map_err(|error| super::template_bodies::copy_error(&error))?;
         let frame = self.template_body_frame(entity, pattern.head, pattern.scope)?;
+        let copy = self.copy_expression_in_frame(default.expression, frame)?;
         let target = self.graph.types.function_parameter(ty, index)?;
         self.form_default(copy, target, frame, pattern.limit)?;
         let count = self.graph.types.function_parameter_count(ty)?;

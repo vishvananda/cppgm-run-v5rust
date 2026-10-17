@@ -620,7 +620,7 @@ impl Analyzer<'_> {
                     let pattern = if let Some(bound) = default.bound {
                         bound
                     } else {
-                        let copy = self.copy_template_argument(default.syntax)?;
+                        let copy = self.copy_template_argument(default.syntax, default.scope)?;
                         // Form a dependent default's pattern in its declaration
                         // context before substituting this candidate's arguments.
                         self.template_depth += 1;

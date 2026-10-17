@@ -9,10 +9,7 @@ use super::{
     types::TypeId,
     variable_instances::Definition,
 };
-use crate::{
-    support::source::SourceOffset,
-    syntax::{ast, cloning::Cloner},
-};
+use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Hash)]
@@ -333,11 +330,7 @@ impl Analyzer<'_> {
             |analyzer| {
                 let initializer = pattern
                     .initializer
-                    .map(|init| {
-                        Cloner::new(analyzer.tree, analyzer.stack_budget, analyzer.stack_base)
-                            .initializer(init)
-                            .map_err(|e| super::template_bodies::copy_error(&e))
-                    })
+                    .map(|init| analyzer.copy_initializer_in_frame(init, frame))
                     .transpose()?;
                 analyzer.initialize_variable_specialization(
                     binding,

@@ -54,11 +54,19 @@ impl Bodies {
         self.member_links.get(&entity).copied()
     }
     pub(super) fn defined_member(&self, entity: EntityId) -> bool {
-        self.members.contains_key(&entity)
-            || self
-                .member_links
-                .get(&entity)
-                .is_some_and(|source| self.member_definitions.contains_key(source))
+        self.members.contains_key(&entity) || self.outside_definition(entity).is_some()
+    }
+    fn outside_definition(&self, entity: EntityId) -> Option<(EntityId, DeferredBody, usize)> {
+        let mut source = *self.member_links.get(&entity)?;
+        loop {
+            if let Some(&(body, limit)) = self.member_definitions.get(&source) {
+                return Some((source, body, limit));
+            }
+            // Each link points from a copied declaration to its earlier
+            // pattern. Nested member-template instances may need several
+            // links to reach the definition; no unrelated member is visited.
+            source = *self.member_links.get(&source)?;
+        }
     }
     pub(super) fn pending_member(&self, entity: EntityId) -> bool {
         self.member(entity) && !self.states.contains_key(&entity)
@@ -267,7 +275,12 @@ pub(crate) fn analyze_unit(
                 .bodies
                 .states
                 .insert(entity, State::InProgress);
-            let mut cloner = Cloner::new(tree, budget, base);
+            let mut packs = super::pack_frames::FramePacks::new(
+                &graph,
+                pattern.parent,
+                cursor.post.input_mut().identifiers_mut(),
+            );
+            let mut cloner = Cloner::new(tree, budget, base).with_expander(&mut packs);
             let parameters = cloner
                 .parameters(pattern.parameters)
                 .map_err(|error| copy_error(&error))?;
@@ -348,28 +361,21 @@ pub(crate) fn analyze_unit(
             .bodies
             .states
             .insert(entity, State::InProgress);
-        let mut cloner = Cloner::new(tree, budget, base);
-        let parameters = cloner
-            .parameters(pattern.body.parameters)
-            .map_err(|error| copy_error(&error))?;
-        let body = cloner
-            .body(pattern.body.body)
-            .map_err(|error| copy_error(&error))?;
         let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
         analyzer.set_semantics(true);
         if lowering {
             analyzer.set_lowering();
         }
         analyzer.stack_base = base;
-        let location = match analyzer.tree.bodies.get(body) {
+        let location = match analyzer.tree.bodies.get(pattern.body.body) {
             ast::Body::Parsed(body) => analyzer.tree.statements.get(body.compound).location,
             ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
         };
-        analyzer.instantiation_context(
+        let body = analyzer.instantiation_context(
             analyzer.graph.instantiation_levels.get(entity)?,
             location,
             pattern.limit,
-            |analyzer| analyzer.instantiate_body(entity, primary, pattern, parameters, body),
+            |analyzer| analyzer.instantiate_body(entity, primary, pattern),
         )?;
         graph = analyzer.finish_analysis(false)?;
         graph
@@ -383,12 +389,24 @@ pub(crate) fn analyze_unit(
 
 pub(super) fn copy_error(error: &ParseError) -> Error {
     match error {
+        ParseError::Syntax { location, message } => Error::at(*location, message),
         ParseError::Limit(message) => Error::Limit(message),
         ParseError::NotImplemented(group) => Error::Missing(group),
         _ => Error::Invariant("invalid parsed template body copy"),
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn shared_instance_body(&self, body: DeferredBody) -> bool {
+        let function = self.graph.entity(body.entity);
+        let home = function
+            .home
+            .filter(|&scope| self.graph.scope(scope).kind == ScopeKind::Class)
+            .unwrap_or(body.print);
+        body.template_depth != 0
+            && (function.template_head.is_some() || self.templated_class_scope(home))
+            && self.graph.within_class_instance(home)
+    }
+
     fn instantiate_defaulted_member(&mut self, entity: EntityId) -> Result<bool, Error> {
         if self.graph.function_templates.bodies.synthesized(entity) {
             return Ok(true);
@@ -497,19 +515,11 @@ impl Analyzer<'_> {
         )
     }
     fn prepare_member_definition(&mut self, entity: EntityId) -> Result<(), Error> {
-        let source = *self
+        let Some((source, pattern, limit)) = self
             .graph
             .function_templates
             .bodies
-            .member_links
-            .get(&entity)
-            .ok_or(Error::Invariant("member demand without pattern link"))?;
-        let Some(&(pattern, limit)) = self
-            .graph
-            .function_templates
-            .bodies
-            .member_definitions
-            .get(&source)
+            .outside_definition(entity)
         else {
             self.graph
                 .function_templates
@@ -599,15 +609,22 @@ impl Analyzer<'_> {
         entity: EntityId,
         primary: EntityId,
         pattern: Pattern,
-        parameters: ast::ParameterClause,
-        body: ast::BodyId,
-    ) -> Result<(), Error> {
+    ) -> Result<ast::BodyId, Error> {
         let definition = pattern.body;
         let frame = if definition.entity == primary {
             self.template_body_frame(entity, pattern.head, definition.parent)?
         } else {
             self.outside_member_template_frame(entity, pattern.head, definition.parent)?
         };
+        let mut packs = super::pack_frames::FramePacks::new(&self.graph, frame, self.identifiers);
+        let mut cloner =
+            Cloner::new(self.tree, self.stack_budget, self.stack_base).with_expander(&mut packs);
+        let parameters = cloner
+            .parameters(definition.parameters)
+            .map_err(|error| copy_error(&error))?;
+        let body = cloner
+            .body(definition.body)
+            .map_err(|error| copy_error(&error))?;
         let ty = self
             .graph
             .entity(entity)
@@ -631,7 +648,7 @@ impl Analyzer<'_> {
         });
         self.graph.lookup_limit = None;
         result?;
-        Ok(())
+        Ok(body)
     }
     pub(super) fn template_body_frame(
         &mut self,

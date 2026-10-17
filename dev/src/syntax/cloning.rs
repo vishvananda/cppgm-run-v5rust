@@ -14,12 +14,16 @@ use super::{
     storage::{List, Lists},
 };
 use crate::support::stack::StackBudget;
+mod expansions;
+use expansions::Expansion;
+pub(crate) use expansions::PackExpander;
 
 pub(crate) struct Cloner<'a> {
     tree: &'a mut Tree,
     budget: StackBudget,
     base: usize,
     retain_bodies: bool,
+    expansion: Option<Box<Expansion<'a>>>,
 }
 impl<'a> Cloner<'a> {
     pub(crate) fn new(tree: &'a mut Tree, budget: StackBudget, base: usize) -> Self {
@@ -28,7 +32,12 @@ impl<'a> Cloner<'a> {
             budget,
             base,
             retain_bodies: false,
+            expansion: None,
         }
+    }
+    pub(crate) fn with_expander(mut self, expander: &'a mut dyn PackExpander) -> Self {
+        self.expansion = Some(Box::new(Expansion::new(expander)));
+        self
     }
     pub(crate) fn class_definition(&mut self, id: ClassId) -> Result<ClassId, ParseError> {
         self.retain_bodies = true;
@@ -67,16 +76,31 @@ impl<'a> Cloner<'a> {
         value.map(|value| each(self, value)).transpose()
     }
     fn expressions(&mut self, list: List<ExprId>) -> Result<List<ExprId>, ParseError> {
+        if self.expanding() {
+            return self.expanded_expressions(list);
+        }
         self.list(list, |tree| &mut tree.expr_lists, Self::expression)
     }
     fn name(&mut self, id: Name) -> Result<Name, ParseError> {
+        self.name_with_leading(id, true)
+    }
+    fn name_with_leading(&mut self, id: Name, leading: bool) -> Result<Name, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.names.get(id);
-        node.components = self.list(
-            node.components,
-            |tree| &mut tree.name_lists,
-            Self::component,
-        )?;
+        let start = self.tree.name_lists.begin();
+        for index in 0..self.tree.name_lists.get(node.components).len() {
+            let mut component = self.tree.name_lists.get(node.components)[index];
+            if leading
+                && index == 0
+                && !node.global
+                && let NameKind::Identifier(name) = component.kind
+            {
+                component.kind = NameKind::Identifier(self.pack_name(name));
+            }
+            let component = self.component(component)?;
+            self.tree.name_lists.push(component);
+        }
+        node.components = self.tree.name_lists.finish(start)?;
         self.tree.names.add(node)
     }
     fn component(&mut self, mut node: NameComponent) -> Result<NameComponent, ParseError> {
@@ -87,11 +111,7 @@ impl<'a> Cloner<'a> {
             other => other,
         };
         if let Some(arguments) = node.arguments {
-            node.arguments = Some(self.list(
-                arguments,
-                |tree| &mut tree.template_arguments,
-                Self::argument,
-            )?);
+            node.arguments = Some(self.copied_arguments(arguments)?);
         }
         Ok(node)
     }
@@ -171,9 +191,7 @@ impl<'a> Cloner<'a> {
             QualifierKind::Noexcept(id) => {
                 QualifierKind::Noexcept(self.optional(id, Self::expression)?)
             }
-            QualifierKind::Throw(ids) => {
-                QualifierKind::Throw(self.list(ids, |tree| &mut tree.type_lists, Self::ty)?)
-            }
+            QualifierKind::Throw(ids) => QualifierKind::Throw(self.expanded_types(ids)?),
             QualifierKind::Trailing(id) => QualifierKind::Trailing(self.ty(id)?),
             other => other,
         };
@@ -215,11 +233,7 @@ impl<'a> Cloner<'a> {
             return Err(ParseError::Invariant("unparsed instantiation body"));
         };
         node.compound = self.statement(node.compound)?;
-        node.initializers = self.list(
-            node.initializers,
-            |tree| &mut tree.mem_initializers,
-            Self::mem_initializer,
-        )?;
+        node.initializers = self.expanded_initializers(node.initializers)?;
         if let Some(handlers) = node.handlers {
             node.handlers = Some(self.list(handlers, |tree| &mut tree.handlers, Self::handler)?);
         }
@@ -247,6 +261,9 @@ impl<'a> Cloner<'a> {
     pub(crate) fn expression(&mut self, id: ExprId) -> Result<ExprId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.expressions.get(id);
+        if matches!(node.kind, ExprKind::PackExpansion(_)) && self.collecting() {
+            return Ok(id);
+        }
         node.kind = match node.kind {
             ExprKind::Paren(id) => ExprKind::Paren(self.expression(id)?),
             ExprKind::PackExpansion(id) => ExprKind::PackExpansion(self.expression(id)?),
@@ -290,7 +307,7 @@ impl<'a> Cloner<'a> {
             ExprKind::Member { base, op, member } => ExprKind::Member {
                 base: self.expression(base)?,
                 op,
-                member: self.name(member)?,
+                member: self.name_with_leading(member, false)?,
             },
             ExprKind::Braced {
                 elements,
@@ -501,7 +518,7 @@ impl<'a> Cloner<'a> {
         let mut node = *self.tree.classes.get(id);
         node.name = self.optional(node.name, Self::name)?;
         node.attributes = self.attributes(node.attributes)?;
-        node.bases = self.list(node.bases, |tree| &mut tree.bases, Self::base)?;
+        node.bases = self.expanded_bases(node.bases)?;
         node.members = self.list(node.members, |tree| &mut tree.decl_lists, Self::declaration)?;
         self.tree.classes.add(node)
     }
@@ -600,10 +617,15 @@ impl<'a> Cloner<'a> {
             DeclKind::Template {
                 parameters,
                 declaration,
-            } => DeclKind::Template {
-                parameters,
-                declaration: self.declaration(declaration)?,
-            },
+            } => {
+                let mark = self.shadow_template_packs(parameters);
+                let copy = self.declaration(declaration);
+                self.restore_shadows(mark);
+                DeclKind::Template {
+                    parameters,
+                    declaration: copy?,
+                }
+            }
             DeclKind::ExplicitInstantiation { .. }
             | DeclKind::Namespace { .. }
             | DeclKind::NamespaceAlias { .. }

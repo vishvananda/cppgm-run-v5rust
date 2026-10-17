@@ -445,8 +445,11 @@ impl Analyzer<'_> {
     pub(super) fn copy_template_argument(
         &mut self,
         syntax: ast::TemplateArgumentKind,
+        scope: ScopeId,
     ) -> Result<ast::TemplateArgument, Error> {
-        let mut cloner = Cloner::new(self.tree, self.stack_budget, self.stack_base);
+        let mut packs = super::pack_frames::FramePacks::new(&self.graph, scope, self.identifiers);
+        let mut cloner =
+            Cloner::new(self.tree, self.stack_budget, self.stack_base).with_expander(&mut packs);
         let kind = match syntax {
             ast::TemplateArgumentKind::Type(ty) => {
                 cloner.ty(ty).map(ast::TemplateArgumentKind::Type)

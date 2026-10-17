@@ -818,6 +818,13 @@ impl<'tree> Analyzer<'tree> {
                 "a constexpr function with a function-try-block",
             ));
         }
+        // An instance's member template still shares its definition's body.
+        // Its bound class packs are expanded only in the demanded body's
+        // private copy; walking the shared syntax here would read pack aliases
+        // as values. Match analyzer_bodies.cpp::function_body's shared boundary.
+        if self.shared_instance_body(body) {
+            return Ok(());
+        }
         if self.semantic()
             && self.template_depth == 0
             && let Some(key) = self.graph.entity(body.entity).member_function

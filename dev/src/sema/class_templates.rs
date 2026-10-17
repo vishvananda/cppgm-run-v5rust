@@ -314,7 +314,7 @@ impl Analyzer<'_> {
         if self.template_depth != 0 && arguments.iter().any(|&ty| self.graph.dependent_type(ty)) {
             // Copied member template heads share syntax, but their enclosing
             // argument frames differ. Pattern facts belong to this formation.
-            let copy = self.copy_template_argument(default.syntax)?;
+            let copy = self.copy_template_argument(default.syntax, default.scope)?;
             let saved = self.graph.lookup_limit.replace(default.limit);
             let result = self.template_argument_for(
                 copy,
@@ -355,7 +355,7 @@ impl Analyzer<'_> {
                 self.bind_template_argument(frame, binding, ty)?;
             }
         }
-        let copy = self.copy_template_argument(default.syntax)?;
+        let copy = self.copy_template_argument(default.syntax, frame)?;
         let result = self.instantiation_context(
             self.instantiation_depth,
             self.default_location(default),

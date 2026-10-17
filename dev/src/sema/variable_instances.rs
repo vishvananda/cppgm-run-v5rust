@@ -11,10 +11,7 @@ use super::{
     templates::HeadId,
     types::{TypeId, TypeKind},
 };
-use crate::{
-    support::source::SourceOffset,
-    syntax::{ast, cloning::Cloner},
-};
+use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
@@ -60,6 +57,17 @@ pub(super) struct Variables {
     next: usize,
 }
 impl Variables {
+    fn outside_definition(&self, entity: EntityId) -> Option<Pattern> {
+        let mut source = *self.links.get(&entity)?;
+        loop {
+            if let Some(&pattern) = self.patterns.get(&source) {
+                return Some(pattern);
+            }
+            // Copies of nested member class templates retain one source edge
+            // per instantiation, independently of initializer demand.
+            source = *self.links.get(&source)?;
+        }
+    }
     pub(super) fn pattern(&self, entity: EntityId) -> Option<Pattern> {
         self.patterns.get(&entity).copied()
     }
@@ -503,9 +511,7 @@ impl Analyzer<'_> {
                 .template_operands
                 .pattern(entity)
                 .ok_or(Error::Invariant("array bound without syntax"))?;
-            let expression = Cloner::new(self.tree, self.stack_budget, self.stack_base)
-                .expression(pattern.expression)
-                .map_err(|error| super::template_bodies::copy_error(&error))?;
+            let expression = self.copy_expression_in_frame(pattern.expression, scope)?;
             self.array_bound(expression, scope)?
         } else {
             bound
@@ -604,10 +610,7 @@ impl Analyzer<'_> {
         if self.graph.variable_instances.templates.contains(entity) {
             return self.instantiate_variable_specialization(entity);
         }
-        let Some(source) = self.graph.variable_instances.links.get(&entity).copied() else {
-            return Ok(());
-        };
-        let Some(pattern) = self.graph.variable_instances.patterns.get(&source).copied() else {
+        let Some(pattern) = self.graph.variable_instances.outside_definition(entity) else {
             return Ok(());
         };
         let owner = self
@@ -627,11 +630,7 @@ impl Analyzer<'_> {
             |analyzer| {
                 let initializer = pattern
                     .initializer
-                    .map(|init| {
-                        Cloner::new(analyzer.tree, analyzer.stack_budget, analyzer.stack_base)
-                            .initializer(init)
-                            .map_err(|e| super::template_bodies::copy_error(&e))
-                    })
+                    .map(|init| analyzer.copy_initializer_in_frame(init, frame))
                     .transpose()?;
                 let binding = analyzer
                     .graph
@@ -699,12 +698,95 @@ impl Analyzer<'_> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::lookup::Filter;
     use super::*;
     use crate::{
         preprocess::unit::Preprocessor,
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn outside_pack_initializer_owns_element_facts_in_its_bound_frame() {
+        let source = SourceBuffer::new(
+            b"template<int...N>struct S{static int a[sizeof...(N)];};\
+              template<int...N>int S<N...>::a[]={N...};using X=S<1,2,3>;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"pack-initializer").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names =
+            [b"X".as_slice(), b"a", b"N__pack0"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let alias = analyzer
+            .graph
+            .own(global, names[0], Filter::Ordinary)
+            .unwrap();
+        let class = analyzer
+            .graph
+            .class_of(analyzer.graph.binding(alias).ty.unwrap())
+            .unwrap();
+        assert!(analyzer.complete_class(class).unwrap());
+        let home = analyzer.graph.entity(class).scope.unwrap();
+        let binding = analyzer
+            .graph
+            .own(home, names[1], Filter::Ordinary)
+            .unwrap();
+        let entity = analyzer.graph.binding(binding).entity;
+        let source = analyzer.graph.variable_instances.links[&entity];
+        let pattern = analyzer.graph.variable_instances.patterns[&source];
+        let frame = analyzer
+            .outside_class_frame(home, pattern.head, pattern.scope)
+            .unwrap();
+        let element = analyzer
+            .unqualified(frame, names[2], Filter::Ordinary)
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(analyzer.graph.entity(analyzer.graph.binding(element).entity).constant,
+            ConstantState::Value(value) if value.bits == 1)
+        );
+        let original = pattern.initializer.unwrap();
+        let copy = analyzer.copy_initializer_in_frame(original, frame).unwrap();
+        let ast::InitializerKind::Assign(original) = original.kind else {
+            panic!("assigned initializer");
+        };
+        let ast::InitializerKind::Assign(copy) = copy.kind else {
+            panic!("copied initializer");
+        };
+        let ast::ExprKind::Braced {
+            elements: original, ..
+        } = analyzer.tree.expressions.get(original).kind
+        else {
+            panic!("original list");
+        };
+        let ast::ExprKind::Braced {
+            elements: copied, ..
+        } = analyzer.tree.expressions.get(copy).kind
+        else {
+            panic!("copied list");
+        };
+        assert_eq!(analyzer.tree.expr_lists.get(original).len(), 1);
+        assert_eq!(analyzer.tree.expr_lists.get(copied).len(), 3);
+        for index in 0..analyzer.tree.expr_lists.get(copied).len() {
+            let id = analyzer.tree.expr_lists.get(copied)[index];
+            let ast::ExprKind::Id(name) = analyzer.tree.expressions.get(id).kind else {
+                panic!("element name");
+            };
+            assert!(analyzer.lookup(name, frame, Filter::Ordinary).is_ok());
+        }
+        analyzer.instantiate_variable(entity).unwrap();
+        analyzer.finish_static_initializers().unwrap();
+        assert!(analyzer.graph.array_images.get(entity).is_some());
+    }
 
     #[test]
     fn explicit_member_declaration_blocks_only_its_own_primary_initializer() {

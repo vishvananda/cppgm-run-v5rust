@@ -370,9 +370,10 @@ impl Analyzer<'_> {
             let Some(info) = self.graph.entity(binding.entity).template_parameter else {
                 continue;
             };
-            let Some(position) = info.ordinal() else {
-                continue;
-            };
+            // A pack occupies one canonical argument slot just like a fixed
+            // parameter. Keep its aliases in this definition-owned outside
+            // frame even though fixed-only function deduction cannot use it.
+            let position = info.argument_index();
             let ty = *arguments
                 .get(position)
                 .ok_or(Error::Invariant("outside frame without argument"))?;
