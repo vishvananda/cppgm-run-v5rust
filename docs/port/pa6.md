@@ -2231,3 +2231,32 @@ this is deliberate and is not a claim that the full compiler is finished.
 The committed audit and `handoff.json` record a clean checkout. Ralph's existing
 phase goal may now be completed; no goal was created/replaced and no Ralph state
 or stage-advancement policy was edited.
+
+
+## Qualified declarator ownership correction from the PA17 checkpoint audit (2026-10-17)
+
+Reviewed implementation: `0c08c8a9be6695ed4509a18f521b2455fe894fb9`.
+The PA17 audit's malformed outside-member owner probes exposed the missing
+namespace/class-only qualifier check shared by ordinary declarators. Frozen
+C++ `analyzer_types.cpp::declarator` rejects an enum scope before creating the
+member lookup bridge or analyzing suffixes. Rust
+`declarators.rs::declarator_environment` now does the same, preserving exact
+rejection text, name location and output state. No enum member-declaration
+behavior is newly accepted. Source responsibilities are updated in the map.
+
+The earliest owning regression is
+`tests/spec/300-enum-alias-declarator-owner-bad.t`, with its new
+`EXIT_FAILURE` expectation sidecar; no existing reference was changed. The
+protected exact `--emit-types` comparison passes, and the full PA6 course
+executes the new input and passes **741/741**, with no failure marker. The
+unchanged PA6 fixed manifest passes **121/121**, as part of all 2,825 earlier
+fixed cases and all 16 earlier courses. The production build, strict Clippy,
+432 library tests in both profiles and 320-file companion audit pass.
+
+Primary audit and resource/ownership evidence are in the latest section of
+`docs/port/pa17.md`. Artifact root:
+`/home/vishvananda/work/private/v5rust/artifacts/pa17-checkpoint-audit-j`;
+`regressions.jsonl`, `prior-pa6-results.json`, `prior-pa6-course/`,
+`evidence-audit.json` and `handoff-commit.json` retain the results. This is an
+earlier-stage shared-declarator correction within the PA17 partial audit;
+PA6's historical stage base/audit records above are unchanged.
