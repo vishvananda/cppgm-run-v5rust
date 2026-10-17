@@ -42,6 +42,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) stack_base: usize,
     pub(super) lookup_location: SourceOffset,
     pub(super) deferred: Vec<DeferredMember>,
+    pub(super) deferred_constexpr: std::collections::HashMap<super::graph::EntityId, DeferredBody>,
     pub(super) class_depth: usize,
     pub(super) member_initializer_class: Option<super::graph::EntityId>,
     pub(super) base_object: Option<super::graph::EntityId>,
@@ -61,6 +62,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) constant_discard_work: Vec<ast::ExprId>,
     pub(super) constant_evaluation: Option<super::constant_addresses::Evaluation>,
+    pub(super) constexpr_frames: super::constexpr_frames::Frames,
     pub(super) constant_scratch: super::constant_addresses::Evaluation,
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
     pub(super) fixed_validation_work: Vec<(ast::ExprId, u16)>,
@@ -198,6 +200,7 @@ impl<'tree> Analyzer<'tree> {
             stack_base: 0,
             lookup_location: SourceOffset(0),
             deferred: Vec::new(),
+            deferred_constexpr: std::collections::HashMap::new(),
             class_depth: 0,
             member_initializer_class: None,
             base_object: None,
@@ -216,6 +219,7 @@ impl<'tree> Analyzer<'tree> {
             constant_spine: Vec::new(),
             constant_discard_work: Vec::new(),
             constant_evaluation: None,
+            constexpr_frames: super::constexpr_frames::Frames::default(),
             constant_scratch: super::constant_addresses::Evaluation::default(),
             expression_work: Vec::new(),
             fixed_validation_work: Vec::new(),
@@ -688,11 +692,18 @@ impl<'tree> Analyzer<'tree> {
         if self.class_depth == 0 {
             self.function_body(deferred)
         } else {
-            self.deferred.push(DeferredMember::Body(deferred));
+            self.defer_function_body(deferred);
             Ok(())
         }
     }
+    pub(super) fn defer_function_body(&mut self, body: DeferredBody) {
+        if self.graph.entity(body.entity).constexpr && body.template_depth == 0 {
+            self.deferred_constexpr.insert(body.entity, body);
+        }
+        self.deferred.push(DeferredMember::Body(body));
+    }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
+        self.deferred_constexpr.remove(&body.entity);
         if body.template_depth != 0 && self.graph.entity(body.entity).template_head.is_none() {
             self.graph
                 .function_templates
@@ -749,6 +760,11 @@ impl<'tree> Analyzer<'tree> {
         )?;
         self.graph.scope_mut(scope).owner = Some(body.entity);
         self.graph.entity_mut(body.entity).scope = Some(scope);
+        self.graph.entity_mut(body.entity).analyzed_body = Some(body.body);
+        self.graph
+            .entity_mut(body.entity)
+            .parameter_entities
+            .clear();
         let count = self.graph.types.function_parameter_count(body.ty)?;
         let pattern = self.parameter_dependence(body.entity, count)?;
         for index in 0..self
@@ -784,6 +800,10 @@ impl<'tree> Analyzer<'tree> {
                 return Err(Error::at(location, "duplicate parameter name"));
             }
             let entity = self.graph.add_entity(Some(ty), name, Keyword::Int)?;
+            self.graph
+                .entity_mut(body.entity)
+                .parameter_entities
+                .push(entity);
             let binding = self.graph.add_binding(
                 scope,
                 Some(scope),
@@ -809,6 +829,11 @@ impl<'tree> Analyzer<'tree> {
             return Err(Error::Invariant("unparsed body at semantic boundary"));
         };
         if self.semantic() && self.template_depth == 0 {
+            self.check_constexpr_scalar_signature(
+                body.entity,
+                body.ty,
+                self.tree.statements.get(parsed.compound).location,
+            )?;
             self.require_function_definition_types(
                 body.ty,
                 self.tree.statements.get(parsed.compound).location,

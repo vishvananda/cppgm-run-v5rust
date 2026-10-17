@@ -23,6 +23,7 @@ pub(super) enum Root {
     Literal(ast::ExprId),
     Temporary(EntityId),
     Ephemeral(ast::ExprId),
+    Object(super::constexpr_frames::ObjectId),
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Address {
@@ -58,6 +59,15 @@ pub(super) enum TemporaryValue {
 #[derive(Default)]
 pub(super) struct Evaluation {
     values: HashMap<ast::ExprId, TemporaryValue>,
+}
+pub(super) struct Temporaries(HashMap<ast::ExprId, TemporaryValue>);
+impl Evaluation {
+    pub(super) fn suspend_temporaries(&mut self) -> Temporaries {
+        Temporaries(std::mem::take(&mut self.values))
+    }
+    pub(super) fn resume_temporaries(&mut self, saved: Temporaries) {
+        self.values = saved.0;
+    }
 }
 #[derive(Default)]
 pub(super) struct Addresses {
@@ -114,6 +124,7 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("constant evaluation lost its storage"));
         };
         evaluation.values.clear();
+        self.constexpr_frames.clear();
         self.constant_scratch = evaluation;
         result
     }
@@ -160,6 +171,7 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         let facts = self.graph.expression_facts.get(id)?;
         let location = node.location;
+        self.constant_step(location)?;
         if facts.category == ValueCategory::Prvalue
             && facts.folded == Some(0)
             && self.graph.address_parameter_type(facts.ty)
@@ -297,10 +309,13 @@ impl Analyzer<'_> {
             ExprKind::Call { arguments, .. } if facts.functional_call => {
                 self.functional_address(id, arguments, None, scope)?
             }
-            ExprKind::Call { .. } => {
-                self.evaluate_constant(id, scope, false)?;
-                return Err(Error::Missing("constant address function result"));
-            }
+            ExprKind::Call { .. } => match self.constant_call_result(id, scope)? {
+                super::constexpr_calls::Returned::Value(TemporaryValue::Pointer(value)) => value,
+                super::constexpr_calls::Returned::Place(place) => {
+                    self.read_constant_address(place, location)?
+                }
+                _ => return Err(Error::Invariant("pointer call returned no address")),
+            },
             _ => {
                 return Err(nonconstant(
                     location,
@@ -311,6 +326,7 @@ impl Analyzer<'_> {
         if let TypeKind::Pointer(element) = self.graph.types.get(facts.ty).kind {
             value.designated = element;
         }
+        self.constexpr_frames.valid_pointer(value, location)?;
         Ok(value)
     }
     pub(super) fn address_operand(
@@ -452,6 +468,7 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         let facts = self.graph.expression_facts.get(id)?;
         let location = node.location;
+        self.constant_step(location)?;
         match node.kind {
             ExprKind::Id(name) => {
                 let binding = facts
@@ -459,6 +476,10 @@ impl Analyzer<'_> {
                     .or_else(|| self.graph.resolved_name(name))
                     .ok_or(Error::Invariant("constant place without selected binding"))?;
                 let binding = self.graph.binding(binding);
+                if let Some(mut place) = self.constexpr_frames.local(binding.entity) {
+                    place.designated = facts.ty;
+                    return Ok(place);
+                }
                 match binding.kind {
                     BindingKind::Function => {
                         Ok(Address::new(Root::Function(binding.entity), facts.ty))
@@ -610,10 +631,6 @@ impl Analyzer<'_> {
                 };
                 self.constant_place(*operand, scope)
             }
-            ExprKind::Call { .. } => {
-                self.evaluate_constant(id, scope, false)?;
-                Err(Error::Missing("constant function reference result"))
-            }
             ExprKind::Member { base, op, .. } => {
                 let mut place = if op.token.as_punctuator() == Some(P::Arrow) {
                     self.address_operand(base, scope)?
@@ -673,6 +690,10 @@ impl Analyzer<'_> {
                 place.designated = facts.ty;
                 Ok(place)
             }
+            ExprKind::Call { .. } => match self.constant_call_result(id, scope)? {
+                super::constexpr_calls::Returned::Place(place) => Ok(place),
+                _ => Err(Error::Missing("constexpr class result storage")),
+            },
             ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::Unary { .. } => Err(
                 nonconstant(location, "a glvalue outside constant evaluation"),
             ),
@@ -703,6 +724,12 @@ impl Analyzer<'_> {
                 .conversion
                 .is_some_and(|conversion| conversion.temporary)
         {
+            if self.constexpr_frames.active() {
+                let value = self.constant_operand_value(operand, facts.ty, scope)?;
+                return self
+                    .constexpr_frames
+                    .allocate(facts.ty, Some(value), location);
+            }
             if self.expression_temporary_value(id).is_none() {
                 let value = if self.is_address_expression(id) {
                     TemporaryValue::Pointer(self.address_operand(operand, scope)?)
@@ -735,6 +762,17 @@ impl Analyzer<'_> {
     ) -> Result<Address, Error> {
         if self.graph.types.get(place.designated).cv.0 & 2 != 0 {
             return Err(nonconstant(location, "a read of a volatile glvalue"));
+        }
+        if matches!(place.root, Root::Object(_)) {
+            return match self.constexpr_frames.read(place, location)? {
+                TemporaryValue::Pointer(value) => {
+                    self.constexpr_frames.valid_pointer(value, location)?;
+                    Ok(value)
+                }
+                TemporaryValue::Integer(_) => {
+                    Err(Error::Invariant("integer object read as pointer"))
+                }
+            };
         }
         if let Root::Variable(entity) = place.root {
             self.instantiate_variable_value(entity)?;
@@ -797,6 +835,15 @@ impl Analyzer<'_> {
             ));
         }
         let message = match place.root {
+            Root::Object(_) => {
+                if self.type_cv(place.designated).0 != 0 {
+                    return Err(nonconstant(
+                        location,
+                        "a modification of a const or volatile object",
+                    ));
+                }
+                return self.constexpr_frames.write(place, value, location);
+            }
             Root::Variable(_) => {
                 "a modification of an object whose lifetime began outside the evaluation"
             }
@@ -849,6 +896,12 @@ impl Analyzer<'_> {
             ));
         }
         match place.root {
+            Root::Object(_) => match self.constexpr_frames.read(place, location)? {
+                TemporaryValue::Integer(value) => Ok(value),
+                TemporaryValue::Pointer(_) => {
+                    Err(Error::Invariant("pointer object read as integer"))
+                }
+            },
             Root::Variable(entity) => {
                 self.instantiate_variable_value(entity)?;
                 if !self.graph.entity(entity).constexpr
@@ -1120,7 +1173,7 @@ impl Analyzer<'_> {
     }
     fn address_publishable(&self, address: Address) -> bool {
         match address.root {
-            Root::Ephemeral(_) => false,
+            Root::Ephemeral(_) | Root::Object(_) => false,
             Root::Variable(entity) => {
                 self.graph
                     .entity(entity)

@@ -248,6 +248,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
         match address.root {
+            Root::Object(id) => self.constexpr_frames.ty(id, location),
             Root::Variable(entity) => self
                 .graph
                 .entity(entity)

@@ -766,7 +766,7 @@ impl Graph {
         }
         match self.entity(id).special_definition {
             Some(super::special_members::SpecialDefinition::Body(body)) => Some(body),
-            _ => None,
+            _ => self.entity(id).analyzed_body,
         }
     }
 

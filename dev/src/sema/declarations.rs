@@ -1822,7 +1822,11 @@ impl Analyzer<'_> {
             for body in bodies {
                 match body {
                     super::analyzer::DeferredMember::Initializer(_) => (),
-                    super::analyzer::DeferredMember::Body(body) => self.function_body(body)?,
+                    super::analyzer::DeferredMember::Body(body) => {
+                        if self.graph.entity(body.entity).scope.is_none() {
+                            self.function_body(body)?;
+                        }
+                    }
                     super::analyzer::DeferredMember::Defaults(defaults) => {
                         self.type_function_defaults(defaults)?;
                     }

@@ -122,11 +122,23 @@ impl Analyzer<'_> {
         } else {
             id
         };
+        if self.semantic() && !skipping {
+            self.constant_step(self.tree.expressions.get(id).location)?;
+        }
         if let Some(value) = self.recorded_constant(id, scope, skipping)? {
             return Ok(value);
         }
         let expr = *self.tree.expressions.get(id);
         let location = expr.location;
+        if self.constexpr_frames.active()
+            && !skipping
+            && self.graph.expression_facts.get(id)?.category
+                != super::expression_facts::ValueCategory::Prvalue
+            && !matches!(expr.kind, ExprKind::Conditional { .. })
+        {
+            let place = self.constant_place(id, scope)?;
+            return self.read_constant_integer(place, location);
+        }
         if self.semantic()
             && self
                 .graph
@@ -288,34 +300,7 @@ impl Analyzer<'_> {
                 operand,
             } => self.constant_query(ty, operand, scope, true, location)?,
             ExprKind::Call { .. } if self.evaluating_noexcept && !self.semantic() => {
-                let ty = self.query_call_type(id, scope)?;
-                if skipping {
-                    Constant { bits: 0, ty }
-                } else {
-                    if self.graph.entity(self.graph.call_entity(id)?).constexpr {
-                        return Err(Error::Missing("constexpr function interpretation"));
-                    }
-                    if self.graph.binding(self.graph.call_binding(id)?).kind
-                        == BindingKind::Parameter
-                    {
-                        return Err(not_constant(
-                            location,
-                            "a parameter is not usable in a constant expression",
-                        ));
-                    }
-                    if self.graph.binding(self.graph.call_binding(id)?).kind
-                        == BindingKind::Variable
-                    {
-                        return Err(not_constant(
-                            location,
-                            "a variable is not usable in a constant expression",
-                        ));
-                    }
-                    return Err(not_constant(
-                        location,
-                        "a call of a function that is not constexpr",
-                    ));
-                }
+                return self.constant_exception_call(id, scope, skipping);
             }
             ExprKind::Call { .. } if self.semantic() => {
                 if self.graph.expression_facts.get(id)?.functional_call {
@@ -349,10 +334,35 @@ impl Analyzer<'_> {
                 ));
             }
         };
-        if !skipping {
+        if !skipping && !self.constexpr_frames.active() {
             super::record(&mut self.graph.constant_facts, id.index(), value);
         }
         Ok(value)
+    }
+    // Types-mode noexcept queries retain their historical type-only boundary.
+    // They have no analyzed body facts to hand to the semantic interpreter.
+    fn constant_exception_call(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        skipping: bool,
+    ) -> Result<Constant, Error> {
+        let ty = self.query_call_type(id, scope)?;
+        if skipping {
+            return Ok(Constant { bits: 0, ty });
+        }
+        if self.graph.entity(self.graph.call_entity(id)?).constexpr {
+            return Err(Error::Missing("constexpr function interpretation"));
+        }
+        let message = match self.graph.binding(self.graph.call_binding(id)?).kind {
+            BindingKind::Parameter => "a parameter is not usable in a constant expression",
+            BindingKind::Variable => "a variable is not usable in a constant expression",
+            _ => "a call of a function that is not constexpr",
+        };
+        Err(not_constant(
+            self.tree.expressions.get(id).location,
+            message,
+        ))
     }
     fn recorded_constant(
         &mut self,
@@ -396,7 +406,7 @@ impl Analyzer<'_> {
         if self.semantic()
             && let Some(value) = self.address_integral_value(id, scope, skipping)?
         {
-            if !skipping {
+            if !skipping && !self.constexpr_frames.active() {
                 super::record(&mut self.graph.constant_facts, id.index(), value);
             }
             return Ok(Some(value));
@@ -503,7 +513,7 @@ impl Analyzer<'_> {
                     "a call of a function that is not constexpr",
                 ));
             }
-            return Err(Error::Missing("constexpr function interpretation"));
+            return self.interpret_constant_call(id, scope);
         }
         let ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("constant call without call syntax"));
@@ -521,9 +531,13 @@ impl Analyzer<'_> {
                 "a call of a function that is not constexpr",
             ));
         }
-        Err(Error::Missing("constexpr function interpretation"))
+        self.interpret_constant_call(id, scope)
     }
-    fn constant_member_object(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
+    pub(super) fn constant_member_object(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
         self.check_stack()?;
         let node = *self.tree.expressions.get(id);
         match node.kind {
@@ -610,6 +624,9 @@ impl Analyzer<'_> {
             self.lookup(name, scope, Filter::Ordinary)?
         };
         let binding = self.graph.binding(found);
+        if !skipping && let Some(place) = self.constexpr_frames.local(binding.entity) {
+            return self.read_constant_integer(place, location);
+        }
         if self.template_depth != 0 && self.graph.dependent_members.get(binding.entity).is_some() {
             return Err(not_constant(location, "a value-dependent constant"));
         }
@@ -751,6 +768,9 @@ impl Analyzer<'_> {
             {
                 break;
             }
+            if id != root && self.semantic() && !skipping {
+                self.constant_step(self.tree.expressions.get(id).location)?;
+            }
             self.constant_spine.push(id);
             id = left;
         }
@@ -802,7 +822,7 @@ impl Analyzer<'_> {
                         self.constant_arithmetic(op, value, right_value, skipping, id)?
                     };
                 }
-                if !skipping {
+                if !skipping && !self.constexpr_frames.active() {
                     super::record(&mut self.graph.constant_facts, id.index(), value);
                 }
             }

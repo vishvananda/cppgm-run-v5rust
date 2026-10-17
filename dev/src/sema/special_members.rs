@@ -351,8 +351,7 @@ impl Analyzer<'_> {
                 }
                 self.function_body(deferred)?;
             } else {
-                self.deferred
-                    .push(super::analyzer::DeferredMember::Body(deferred));
+                self.defer_function_body(deferred);
             }
         }
         Ok(())

@@ -298,74 +298,14 @@ pub(crate) fn analyze_unit(
             if graph.function_templates.bodies.states.contains_key(&entity) {
                 continue;
             }
-            graph
-                .function_templates
-                .bodies
-                .states
-                .insert(entity, State::InProgress);
-            let source_parameters =
-                body_parameter_source(&graph, tree, entity, pattern.body, pattern.parameters);
-            let mut packs = super::pack_frames::FramePacks::new(
-                &graph,
-                pattern.parent,
-                cursor.post.input_mut().identifiers_mut(),
-            );
-            let mut cloner = Cloner::new(tree, budget, base).with_expander(&mut packs);
-            let parameters = cloner
-                .parameters(source_parameters)
-                .map_err(|error| copy_error(&error))?;
-            let body = cloner
-                .body(pattern.body)
-                .map_err(|error| copy_error(&error))?;
-            let parameter_packs = cloner.parameter_packs().to_vec();
             let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
             analyzer.set_semantics(true);
-            let parent = analyzer.function_pack_scope(
-                pattern.parent,
-                source_parameters,
-                &parameter_packs,
-                pattern.ty,
-            )?;
             if lowering {
                 analyzer.set_lowering();
             }
             analyzer.stack_base = base;
-            let special = analyzer.graph.entity(entity).special_definition;
-            analyzer.graph.entity_mut(entity).special_definition = match special {
-                Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
-                Some(SpecialDefinition::Defaulted {
-                    first,
-                    body: Some(_),
-                }) => Some(SpecialDefinition::Defaulted {
-                    first,
-                    body: Some(body),
-                }),
-                other => other,
-            };
-            let location = match analyzer.tree.bodies.get(body) {
-                ast::Body::Parsed(body) => analyzer.tree.statements.get(body.compound).location,
-                ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
-            };
-            analyzer.required_instantiation(
-                analyzer.graph.instantiation_levels.get(entity)?,
-                location,
-                limit,
-                |analyzer| {
-                    analyzer.function_body(DeferredBody {
-                        parameters,
-                        body,
-                        parent,
-                        print: parent,
-                        ..pattern
-                    })
-                },
-            )?;
+            analyzer.instantiate_member_body(entity, pattern, limit)?;
             graph = analyzer.finish_analysis(false)?;
-            graph
-                .function_templates
-                .bodies
-                .states
-                .insert(entity, State::Complete(body));
             continue;
         }
         if matches!(
@@ -435,6 +375,170 @@ pub(super) fn copy_error(error: &ParseError) -> Error {
     }
 }
 impl Analyzer<'_> {
+    // A constant call demands only its selected definition. The unit-tail
+    // worklist observes the same states, so it cannot copy/analyze it again.
+    pub(super) fn constant_function_definition(&mut self, entity: EntityId) -> Result<bool, Error> {
+        let bodies = &self.graph.function_templates.bodies;
+        if let Some(state) = bodies.states.get(&entity) {
+            return Ok(matches!(state, State::Complete(_) | State::Synthesized));
+        }
+        if bodies.member_links.contains_key(&entity) && !bodies.members.contains_key(&entity) {
+            if bodies.outside_definition(entity).is_none() {
+                return Ok(false);
+            }
+            self.prepare_member_definition(entity)?;
+        }
+        if let Some(&(pattern, limit)) = self.graph.function_templates.bodies.members.get(&entity) {
+            self.instantiate_member_body(entity, pattern, limit)?;
+            return Ok(true);
+        }
+        if let Some(primary) = self.graph.function_templates.primary(entity)
+            && !self
+                .graph
+                .function_templates
+                .specializations
+                .contains(entity)
+        {
+            let primary = self.graph.binding(primary).entity;
+            let Some(pattern) = self
+                .graph
+                .function_templates
+                .bodies
+                .template_pattern(primary)
+            else {
+                return Ok(false);
+            };
+            self.graph
+                .function_templates
+                .bodies
+                .states
+                .insert(entity, State::InProgress);
+            let location = match self.tree.bodies.get(pattern.body.body) {
+                ast::Body::Parsed(body) => self.tree.statements.get(body.compound).location,
+                ast::Body::Deferred => {
+                    return Err(Error::Invariant("unparsed constant template body"));
+                }
+            };
+            let result = self.instantiation_context(
+                self.graph.instantiation_levels.get(entity)?,
+                location,
+                pattern.limit,
+                |analyzer| analyzer.instantiate_body(entity, primary, pattern),
+            );
+            match result {
+                Ok(body) => {
+                    self.graph
+                        .function_templates
+                        .bodies
+                        .states
+                        .insert(entity, State::Complete(body));
+                }
+                Err(error) => {
+                    self.graph.function_templates.bodies.states.remove(&entity);
+                    return Err(error);
+                }
+            }
+            return Ok(true);
+        }
+        if self.graph.entity(entity).scope.is_some()
+            && self.graph.lower_function_body(entity).is_some()
+        {
+            return Ok(true);
+        }
+        if let Some(body) = self.deferred_constexpr.remove(&entity) {
+            self.function_body(body)?;
+            if self.graph.function_templates.bodies.pending_member(entity) {
+                return self.constant_function_definition(entity);
+            }
+            return Ok(self.graph.entity(entity).scope.is_some());
+        }
+        Ok(false)
+    }
+
+    fn instantiate_member_body(
+        &mut self,
+        entity: EntityId,
+        pattern: DeferredBody,
+        limit: usize,
+    ) -> Result<(), Error> {
+        self.graph
+            .function_templates
+            .bodies
+            .states
+            .insert(entity, State::InProgress);
+        let result = (|| {
+            let source_parameters = body_parameter_source(
+                &self.graph,
+                self.tree,
+                entity,
+                pattern.body,
+                pattern.parameters,
+            );
+            let mut packs =
+                super::pack_frames::FramePacks::new(&self.graph, pattern.parent, self.identifiers);
+            let mut cloner = Cloner::new(self.tree, self.stack_budget, self.stack_base)
+                .with_expander(&mut packs);
+            let parameters = cloner
+                .parameters(source_parameters)
+                .map_err(|error| copy_error(&error))?;
+            let body = cloner
+                .body(pattern.body)
+                .map_err(|error| copy_error(&error))?;
+            let parameter_packs = cloner.parameter_packs().to_vec();
+            let parent = self.function_pack_scope(
+                pattern.parent,
+                source_parameters,
+                &parameter_packs,
+                pattern.ty,
+            )?;
+            let target = self.graph.entity_mut(entity);
+            target.special_definition = match target.special_definition {
+                Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
+                Some(SpecialDefinition::Defaulted {
+                    first,
+                    body: Some(_),
+                }) => Some(SpecialDefinition::Defaulted {
+                    first,
+                    body: Some(body),
+                }),
+                other => other,
+            };
+            let location = match self.tree.bodies.get(body) {
+                ast::Body::Parsed(body) => self.tree.statements.get(body.compound).location,
+                ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
+            };
+            self.required_instantiation(
+                self.graph.instantiation_levels.get(entity)?,
+                location,
+                limit,
+                |analyzer| {
+                    analyzer.function_body(DeferredBody {
+                        parameters,
+                        body,
+                        parent,
+                        print: parent,
+                        ..pattern
+                    })
+                },
+            )?;
+            Ok(body)
+        })();
+        match result {
+            Ok(body) => {
+                self.graph
+                    .function_templates
+                    .bodies
+                    .states
+                    .insert(entity, State::Complete(body));
+                Ok(())
+            }
+            Err(error) => {
+                self.graph.function_templates.bodies.states.remove(&entity);
+                Err(error)
+            }
+        }
+    }
+
     pub(super) fn shared_instance_body(&self, body: DeferredBody) -> bool {
         let function = self.graph.entity(body.entity);
         let home = function
