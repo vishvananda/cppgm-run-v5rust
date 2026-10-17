@@ -8,7 +8,7 @@ use super::{
     graph::EntityId,
     static_arrays::{Item, append_zero},
     static_initialization::Value,
-    types::{Scalar, TypeKind},
+    types::{Scalar, TypeId, TypeKind},
 };
 use crate::support::source::SourceOffset;
 
@@ -18,6 +18,25 @@ impl Analyzer<'_> {
             return Ok(false);
         };
         let values: Vec<_> = value.values().collect();
+        let ty = self.graph.lower_entity_type(entity)?;
+        let Some(image) = self.completed_cells(ty, values)? else {
+            return Ok(false);
+        };
+        self.graph.array_images.set_constant(entity, image);
+        Ok(true)
+    }
+    pub(super) fn completed_image(
+        &mut self,
+        ty: TypeId,
+        value: &super::constexpr_frames::Frozen,
+    ) -> Result<Option<Vec<Item>>, Error> {
+        self.completed_cells(ty, value.values().collect())
+    }
+    fn completed_cells(
+        &mut self,
+        ty: TypeId,
+        values: Vec<(TypeId, i64, Option<EntityId>, Option<TemporaryValue>)>,
+    ) -> Result<Option<Vec<Item>>, Error> {
         let mut placements = Vec::new();
         let mut tables = std::collections::HashSet::new();
         let mut units = std::collections::HashMap::<u64, (u8, u64)>::new();
@@ -46,10 +65,10 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("constant field without layout"))?;
                 let storage = self.graph.bit_fields.storage(field)?;
                 if storage.shared || storage.split != 0 || storage.bytes > 8 {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let Some(TemporaryValue::Integer(value)) = value else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let origin = offset
                     .wrapping_sub(storage.bit / 8)
@@ -90,8 +109,11 @@ impl Analyzer<'_> {
                     Root::Variable(root) | Root::Temporary(root) | Root::Function(root) => {
                         Item::Scalar(ty, Value::Address(root, pointer.offset))
                     }
+                    Root::Published(root) => {
+                        Item::Scalar(ty, Value::Temporary(root, pointer.offset))
+                    }
                     Root::Literal(root) => Item::Scalar(ty, Value::Literal(root, pointer.offset)),
-                    _ => return Ok(false),
+                    _ => return Ok(None),
                 },
                 None => Item::Zero(size),
             };
@@ -101,14 +123,12 @@ impl Analyzer<'_> {
             placements.push((offset, u64::from(size), Item::BitUnit(size, bits)));
         }
         placements.sort_by_key(|&(offset, _, _)| offset);
-        let size = self
-            .type_size(self.graph.lower_entity_type(entity)?, SourceOffset(0))?
-            .0;
+        let size = self.type_size(ty, SourceOffset(0))?.0;
         let mut cursor = 0;
         let mut image = Vec::new();
         for (offset, size, item) in placements {
             if offset < cursor {
-                return Ok(false);
+                return Ok(None);
             }
             append_zero(&mut image, offset - cursor)?;
             if let Item::Zero(size) = item {
@@ -121,10 +141,9 @@ impl Analyzer<'_> {
                 .ok_or(Error::Limit("constant placement size"))?;
         }
         let Some(tail) = size.checked_sub(cursor) else {
-            return Ok(false);
+            return Ok(None);
         };
         append_zero(&mut image, tail)?;
-        self.graph.array_images.set_constant(entity, image);
-        Ok(true)
+        Ok(Some(image))
     }
 }

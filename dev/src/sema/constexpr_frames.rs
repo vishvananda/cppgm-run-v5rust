@@ -318,7 +318,7 @@ impl Frames {
     }
     pub(super) fn allocate(
         &mut self,
-        ty: TypeId,
+        (ty, cell_type): (TypeId, TypeId),
         value: Option<TemporaryValue>,
         location: SourceOffset,
     ) -> Result<Address, Error> {
@@ -338,7 +338,7 @@ impl Frames {
             ty,
             cells: self.cells.len()..self.cells.len(),
         });
-        let place = Address::new(Root::Object(id), ty);
+        let place = Address::new(Root::Object(id), cell_type);
         self.add_cell(place, value, location)?;
         Ok(place)
     }
@@ -851,8 +851,10 @@ mod tests {
         let empty = frames.region();
         // Nonzero source indices prove published parent/active/duplicate links
         // are rebased, rather than relying on the first object in a query.
-        frames.allocate(ty, None, location).unwrap();
-        let source = frames.allocate(union_ty, None, location).unwrap();
+        frames.allocate((ty, ty), None, location).unwrap();
+        let source = frames
+            .allocate((union_ty, union_ty), None, location)
+            .unwrap();
         let root = frames.locate(source, location).unwrap();
         frames.mark_union(root);
         for member in [a, b] {
@@ -906,7 +908,9 @@ mod tests {
         assert!(frames.read(a_place, location).is_err());
         let frozen = frames.freeze(source, location, Ok).unwrap();
         assert!(frozen.complete(|t| t == union_ty));
-        let target = frames.allocate(union_ty, None, location).unwrap();
+        let target = frames
+            .allocate((union_ty, union_ty), None, location)
+            .unwrap();
         let root = frames.locate(target, location).unwrap();
         frames.mark_union(root);
         for member in [a, b] {
@@ -964,7 +968,7 @@ mod tests {
         let empty = storage.region();
         let first = storage
             .allocate(
-                ty,
+                (ty, ty),
                 Some(TemporaryValue::Integer(Constant { bits: 1, ty })),
                 location,
             )
@@ -973,7 +977,7 @@ mod tests {
         outer.bind(entity, first);
         storage.push(outer);
         let region = storage.region();
-        let second = storage.allocate(ty, None, location).unwrap();
+        let second = storage.allocate((ty, ty), None, location).unwrap();
         let mut inner = Frame::new(ty, graph.global);
         inner.bind(entity, second);
         storage.push(inner);
@@ -988,7 +992,7 @@ mod tests {
         storage.pop();
         storage.release(region);
         assert_eq!(storage.local(entity).unwrap().root, first.root);
-        let reused = storage.allocate(ty, None, location).unwrap();
+        let reused = storage.allocate((ty, ty), None, location).unwrap();
         assert_ne!(second.root, reused.root);
         assert!(matches!(
             storage.read(second, location),
@@ -1026,7 +1030,7 @@ mod tests {
         let region = storage.region();
         let mut objects = Vec::new();
         for _ in 0..2 {
-            let root = storage.allocate(ty, None, location).unwrap();
+            let root = storage.allocate((ty, ty), None, location).unwrap();
             let cell = storage.locate(root, location).unwrap();
             for (offset, bits) in [(0, 3), (4, 7)] {
                 let place = Address {

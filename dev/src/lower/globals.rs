@@ -337,7 +337,11 @@ fn define_storage<'a>(
                 },
                 bits,
             )),
-            Some(value @ (StaticValue::Literal(..) | StaticValue::Address(..))) => {
+            Some(
+                value @ (StaticValue::Literal(..)
+                | StaticValue::Address(..)
+                | StaticValue::Temporary(..)),
+            ) => {
                 let (symbol, offset) = data::address(output.program, symbols, graph, tree, value)?;
                 GlobalInit::Address(symbol, offset)
             }

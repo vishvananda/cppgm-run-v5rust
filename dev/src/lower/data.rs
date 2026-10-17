@@ -21,6 +21,7 @@ pub(super) struct Objects {
     string_units: Vec<u64>,
     images: HashMap<Vec<DataItem>, SymbolId>,
     reference_temporaries: HashMap<crate::sema::lowering::EntityId, SymbolId>,
+    constant_temporaries: HashMap<crate::sema::lowering::TemporaryId, SymbolId>,
     defined_references: std::collections::HashSet<crate::sema::lowering::EntityId>,
 }
 impl Objects {
@@ -68,6 +69,10 @@ pub(super) fn address(
 ) -> Result<(SymbolId, i64), Error> {
     symbols.check_stack()?;
     match value {
+        StaticValue::Temporary(id, offset) => Ok((
+            constant_temporary(program, symbols, graph, tree, id)?,
+            offset,
+        )),
         StaticValue::Address(entity, offset) => {
             let symbol = if graph.lower_is_variable(entity)
                 && graph.lower_variable(entity)?.reference_temporary.is_some()
@@ -101,6 +106,59 @@ pub(super) fn address(
         ))),
     }
 }
+fn constant_temporary(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    tree: &ast::Tree,
+    id: crate::sema::lowering::TemporaryId,
+) -> Result<SymbolId, Error> {
+    if let Some(&symbol) = symbols.data.constant_temporaries.get(&id) {
+        return Ok(symbol);
+    }
+    let (ty, image) = graph.lower_constant_temporary(id)?;
+    let aggregate = matches!(
+        graph.lower_type(ty)?,
+        crate::sema::lowering::TypeView::Class(_) | crate::sema::lowering::TypeView::Array { .. }
+    );
+    let data = items(program, symbols, graph, tree, image)?;
+    let init = if aggregate {
+        GlobalInit::Data(data)
+    } else {
+        match data.as_slice() {
+            [DataItem::Constant(_, value)] => GlobalInit::Constant(*value),
+            [DataItem::Address(_, symbol, offset)] => GlobalInit::Address(*symbol, *offset),
+            [DataItem::Zero(_)] => GlobalInit::Constant(Constant::Integer(0)),
+            _ => {
+                return Err(Error::Semantic(crate::sema::Error::Invariant(
+                    "scalar temporary image shape",
+                )));
+            }
+        }
+    };
+    let (symbol, object) = symbols.constant_temporary_symbol(program)?;
+    let name = program.symbol(symbol).name;
+    program.add_global(
+        symbol,
+        Global {
+            name,
+            ty: if aggregate {
+                None
+            } else {
+                Some(types::storage(graph, ty)?)
+            },
+            metadata: Metadata {
+                binding: Some(Binding::Internal),
+                storage: symbols.readonly_object(ty)?.then_some(Storage::ReadOnly),
+                object,
+                ..Metadata::default()
+            },
+            init,
+        },
+    )?;
+    symbols.data.constant_temporaries.insert(id, symbol);
+    Ok(symbol)
+}
 pub(super) fn items(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
@@ -129,7 +187,9 @@ pub(super) fn items(
                 DataItem::Zero(i64::try_from(bytes).map_err(|_| crate::lowir::Error::Limit)?)
             }
             StaticItem::Scalar(ty, value) => match value {
-                StaticValue::Address(..) | StaticValue::Literal(..) => {
+                StaticValue::Address(..)
+                | StaticValue::Literal(..)
+                | StaticValue::Temporary(..) => {
                     let (symbol, offset) = address(program, symbols, graph, tree, value)?;
                     DataItem::Address(types::storage(graph, ty)?, symbol, offset)
                 }
@@ -253,7 +313,7 @@ pub(super) fn reference_temporary(
     };
     // Resolve nested backing objects before allocating/naming their owner.
     let target = match value {
-        StaticValue::Address(..) | StaticValue::Literal(..) => {
+        StaticValue::Address(..) | StaticValue::Literal(..) | StaticValue::Temporary(..) => {
             Some(address(program, symbols, graph, tree, value)?)
         }
         _ => None,
@@ -272,13 +332,17 @@ pub(super) fn reference_temporary(
         {
             GlobalInit::Zero
         }
-        StaticValue::Address(..) | StaticValue::Literal(..) if evaluated => {
+        StaticValue::Address(..) | StaticValue::Literal(..) | StaticValue::Temporary(..)
+            if evaluated =>
+        {
             let (target, offset) = target.ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "temporary address missing",
             )))?;
             GlobalInit::Address(target, offset)
         }
-        StaticValue::Address(..) | StaticValue::Literal(..) => GlobalInit::Zero,
+        StaticValue::Address(..) | StaticValue::Literal(..) | StaticValue::Temporary(..) => {
+            GlobalInit::Zero
+        }
         _ => GlobalInit::Constant(constant(value)?),
     };
     let name = program.symbol(symbol).name;

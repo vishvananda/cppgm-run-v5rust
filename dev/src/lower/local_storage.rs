@@ -239,7 +239,9 @@ impl Function<'_, '_, '_, '_> {
             )
         } else if let Some(value) = facts.initializer.filter(|_| initializer.is_some()) {
             match value {
-                StaticValue::Address(..) | StaticValue::Literal(..) => {
+                StaticValue::Address(..)
+                | StaticValue::Literal(..)
+                | StaticValue::Temporary(..) => {
                     let (target, offset) = data::address(
                         self.builder.program(),
                         self.symbols,

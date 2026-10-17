@@ -102,9 +102,11 @@ impl Analyzer<'_> {
         value: Option<Value>,
         location: SourceOffset,
     ) -> Result<Address, Error> {
-        let ty = self.bare_type(ty)?;
-        self.constant_object_leaves(ty, 0, location)?;
-        let place = self.constexpr_frames.allocate(ty, value, location)?;
+        let cell_type = self.bare_type(ty)?;
+        self.constant_object_leaves(cell_type, 0, location)?;
+        let place = self
+            .constexpr_frames
+            .allocate((ty, cell_type), value, location)?;
         let root = self.constexpr_frames.locate(place, location)?;
         self.constant_skeleton(place, root, location)?;
         Ok(place)

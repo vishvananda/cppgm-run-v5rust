@@ -3,6 +3,7 @@
 pub(crate) use super::anonymous_types::{ClassSpelling, UnnamedNumbering};
 pub(crate) use super::assignment::Action as AssignmentAction;
 pub(crate) use super::builtin_calls::BuiltinFunction;
+pub(crate) use super::constexpr_values::TemporaryId;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::copy_construction::{CopyTarget, SubobjectCopy};
 pub(crate) use super::copy_initialization::CopyAction;

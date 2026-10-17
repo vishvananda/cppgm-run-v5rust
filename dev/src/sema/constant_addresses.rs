@@ -15,13 +15,14 @@ use crate::{
 };
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Root {
     Null,
     Variable(EntityId),
     Function(EntityId),
     Literal(ast::ExprId),
     Temporary(EntityId),
+    Published(super::constexpr_values::TemporaryId),
     Ephemeral(ast::ExprId),
     Object(super::constexpr_frames::ObjectId),
 }
@@ -1026,7 +1027,7 @@ impl Analyzer<'_> {
                 "a modification of an object whose lifetime began outside the evaluation"
             }
             Root::Literal(_) => "a modification of a string literal",
-            Root::Temporary(_) => {
+            Root::Temporary(_) | Root::Published(_) => {
                 "an access to a temporary that is not const, bound outside the evaluation"
             }
             Root::Function(_) => "a function is not an object",
@@ -1140,6 +1141,7 @@ impl Analyzer<'_> {
                     )),
                 }
             }
+            Root::Published(_) => Err(Error::Invariant("published integer read bypassed storage")),
             Root::Temporary(entity) => {
                 if self.type_cv(place.designated) != super::types::Cv::CONST {
                     return Err(nonconstant(
@@ -1315,22 +1317,22 @@ impl Analyzer<'_> {
             }
         }
         self.graph.constant_addresses.begin(entity);
-        let result = (|| {
-            let expr = self.single_initializer(initializer);
+        let result = self.in_constant_evaluation(|analyzer| {
+            let expr = analyzer.single_initializer(initializer);
             if reference {
                 let expr = expr.ok_or_else(|| {
                     nonconstant(initializer.location, "a reference without an initializer")
                 })?;
-                let facts = self.graph.expression_facts.get(expr)?;
+                let facts = analyzer.graph.expression_facts.get(expr)?;
                 if facts.category != ValueCategory::Prvalue
                     && !facts.conversion.is_some_and(|c| c.temporary)
                     || matches!(
-                        self.graph.types.get(facts.ty).kind,
+                        analyzer.graph.types.get(facts.ty).kind,
                         TypeKind::Function { .. }
                     )
                 {
-                    let place = self.constant_place(expr, scope)?;
-                    let place = self.constant_project_path(
+                    let place = analyzer.constant_place(expr, scope)?;
+                    let place = analyzer.constant_project_path(
                         place,
                         facts
                             .conversion
@@ -1339,50 +1341,60 @@ impl Analyzer<'_> {
                                     == super::expression_facts::ValueConversion::DerivedToBase
                             })
                             .and(facts.base_path),
-                        self.tree.expressions.get(expr).location,
+                        analyzer.tree.expressions.get(expr).location,
                     )?;
-                    return Ok(place);
+                    return if analyzer.constant_binds_temporary(expr)? {
+                        analyzer.extend_constant_temporary(place, initializer.location)
+                    } else {
+                        Ok(place)
+                    };
                 }
-                let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind else {
+                let TypeKind::Reference { element, .. } = analyzer.graph.types.get(ty).kind else {
                     return Err(Error::Invariant("reference temporary type"));
                 };
-                if self.graph.class_of(element).is_some() {
+                if analyzer.graph.class_of(element).is_some() {
                     // A converting constructor creates class storage. Its
                     // scalar source is never the reference's backing value.
-                    return self.in_constant_evaluation(|analyzer| {
-                        analyzer.bind_constant_reference(expr, element, scope)
-                    });
+                    let place = analyzer.bind_constant_reference(expr, element, scope)?;
+                    return if analyzer.constant_binds_temporary(expr)? {
+                        analyzer.extend_constant_temporary(place, initializer.location)
+                    } else {
+                        Ok(place)
+                    };
                 }
-                if self.is_address_expression(expr) {
-                    let value = self.evaluate_address(expr, scope)?;
-                    self.graph
+                if analyzer.is_address_expression(expr) {
+                    let value = analyzer.evaluate_address(expr, scope)?;
+                    analyzer
+                        .graph
                         .constant_addresses
                         .temporaries
                         .insert(entity, TemporaryValue::Pointer(value));
                     return Ok(Address::new(Root::Temporary(entity), facts.ty));
                 }
-                let value =
-                    if self.float_format(element).is_some() || self.floating_expression(expr) {
-                        self.constant_operand_value(expr, element, scope)?
-                    } else {
-                        TemporaryValue::Integer(self.evaluate_constant(expr, scope, false)?)
-                    };
-                self.graph
+                let value = if analyzer.float_format(element).is_some()
+                    || analyzer.floating_expression(expr)
+                {
+                    analyzer.constant_operand_value(expr, element, scope)?
+                } else {
+                    TemporaryValue::Integer(analyzer.evaluate_constant(expr, scope, false)?)
+                };
+                analyzer
+                    .graph
                     .constant_addresses
                     .temporaries
                     .insert(entity, value);
                 return Ok(Address::new(Root::Temporary(entity), facts.ty));
             }
             let mut value = if let Some(expr) = expr {
-                self.address_operand(expr, scope)?
+                analyzer.address_operand(expr, scope)?
             } else {
                 Address::new(Root::Null, ty)
             };
-            if let TypeKind::Pointer(element) = self.graph.types.get(ty).kind {
+            if let TypeKind::Pointer(element) = analyzer.graph.types.get(ty).kind {
                 value.designated = element;
             }
             Ok(value)
-        })();
+        });
         match result {
             Ok(value) if self.address_publishable(value) => {
                 self.graph
@@ -1415,7 +1427,7 @@ impl Analyzer<'_> {
             }
         }
     }
-    fn address_publishable(&self, address: Address) -> bool {
+    pub(super) fn address_publishable(&self, address: Address) -> bool {
         match address.root {
             Root::Ephemeral(_) | Root::Object(_) => false,
             Root::Variable(entity) => {

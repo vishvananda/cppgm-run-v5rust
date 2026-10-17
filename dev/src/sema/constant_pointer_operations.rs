@@ -280,6 +280,7 @@ impl Analyzer<'_> {
                     _ => Err(Error::Invariant("temporary owner is not a reference")),
                 }
             }
+            Root::Published(id) => Ok(self.graph.aggregate_constants.temporary(id).ty),
             Root::Ephemeral(expr) => Ok(self.graph.expression_facts.get(expr)?.ty),
             Root::Literal(id) => Ok(self.graph.expression_facts.get(id)?.ty),
             Root::Function(_) => Err(nonconstant(location, "a function is not an object")),

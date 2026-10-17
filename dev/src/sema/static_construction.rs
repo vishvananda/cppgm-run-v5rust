@@ -180,7 +180,11 @@ impl Construction {
                 p.offset == origin
                     && matches!(
                         p.item,
-                        Item::Table(_) | Item::Scalar(_, Value::Address(..) | Value::Literal(..))
+                        Item::Table(_)
+                            | Item::Scalar(
+                                _,
+                                Value::Address(..) | Value::Literal(..) | Value::Temporary(..)
+                            )
                     )
             }) else {
                 return false;

@@ -18,6 +18,7 @@ pub(crate) enum Value {
     Floating(F, u128),
     Address(EntityId, i64),
     Literal(ast::ExprId, i64),
+    Temporary(super::constexpr_values::TemporaryId, i64),
 }
 #[derive(Clone, Copy)]
 pub(crate) struct ReferenceTemporary {
@@ -123,6 +124,13 @@ impl Analyzer<'_> {
             };
             let facts = self.graph.expression_facts.get(expr)?;
             if facts.conversion.is_some_and(|c| c.temporary) {
+                if let Some(address) = self.graph.constant_addresses.value(entity)
+                    && let Root::Published(id) = address.root
+                {
+                    self.graph.entity_mut(entity).static_initializer =
+                        Some(Value::Temporary(id, address.offset));
+                    return Ok(());
+                }
                 let object = facts.conversion.map_or(element, |c| c.result);
                 let value = self.static_scalar(expr, object, scope)?;
                 let value_type = self.bare_type(object)?;
@@ -152,6 +160,7 @@ impl Analyzer<'_> {
                         Root::Temporary(root) | Root::Function(root) => {
                             Some(Value::Address(root, address.offset))
                         }
+                        Root::Published(root) => Some(Value::Temporary(root, address.offset)),
                         Root::Literal(root) => Some(Value::Literal(root, address.offset)),
                         _ => None,
                     },
@@ -259,6 +268,7 @@ impl Analyzer<'_> {
                 Root::Temporary(entity) | Root::Function(entity) => {
                     Some(Value::Address(entity, value.offset))
                 }
+                Root::Published(id) => Some(Value::Temporary(id, value.offset)),
                 Root::Literal(expr) => Some(Value::Literal(expr, value.offset)),
                 _ => None,
             },
@@ -322,6 +332,7 @@ impl Analyzer<'_> {
                     Root::Temporary(entity) | Root::Function(entity) => {
                         Some(Value::Address(entity, address.offset))
                     }
+                    Root::Published(id) => Some(Value::Temporary(id, address.offset)),
                     Root::Literal(expr) => Some(Value::Literal(expr, address.offset)),
                     _ => None,
                 },
@@ -419,11 +430,19 @@ impl Analyzer<'_> {
         if let Some(kind) = self.integral_kind(target) {
             let bits = match value {
                 Value::Integer(bits) => bits,
-                Value::Address(_, _) | Value::Literal(_, _) if kind.bits == 1 => 1,
-                Value::Address(_, _) | Value::Literal(_, _) if kind.bits >= 64 => {
+                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _)
+                    if kind.bits == 1 =>
+                {
+                    1
+                }
+                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _)
+                    if kind.bits >= 64 =>
+                {
                     return Ok(Some(value));
                 }
-                Value::Address(_, _) | Value::Literal(_, _) => return Ok(None),
+                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _) => {
+                    return Ok(None);
+                }
                 Value::Floating(ty, bits) => {
                     let Some((significand, exponent, negative)) = float_parts(ty, bits) else {
                         return Ok(None);
@@ -484,7 +503,9 @@ impl Analyzer<'_> {
                         negative,
                     )
                 }
-                Value::Address(_, _) | Value::Literal(_, _) => return Ok(None),
+                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _) => {
+                    return Ok(None);
+                }
             };
             let bits = FloatingScanner::default()
                 .binary(significand, exponent, target)

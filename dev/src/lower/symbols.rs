@@ -801,6 +801,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         self.named_reference_temporary(program, &spelling)
     }
+    pub(super) fn constant_temporary_symbol(
+        &mut self,
+        program: &mut Program,
+    ) -> Result<(SymbolId, Option<NameId>), Error> {
+        self.table.reference_temporaries = self
+            .table
+            .reference_temporaries
+            .checked_add(1)
+            .ok_or(crate::lowir::Error::Limit)?;
+        self.named_reference_temporary(
+            program,
+            &format!("__ref_tmp__{}", self.table.reference_temporaries),
+        )
+    }
     pub(super) fn dynamic_temporary_symbol(
         &mut self,
         program: &mut Program,

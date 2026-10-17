@@ -596,6 +596,9 @@ impl Analyzer<'_> {
                         "floating reference temporary without value",
                     ))?
             }
+            Root::Published(_) => {
+                return Err(Error::Invariant("published float read bypassed storage"));
+            }
             Root::Null => {
                 return Err(nonconstant(
                     location,

@@ -81,7 +81,10 @@ impl Analyzer<'_> {
                         matches!(
                             item,
                             Item::Table(_)
-                                | Item::Scalar(_, Value::Address(..) | Value::Literal(..))
+                                | Item::Scalar(
+                                    _,
+                                    Value::Address(..) | Value::Literal(..) | Value::Temporary(..)
+                                )
                         )
                         .then_some(item)
                     })

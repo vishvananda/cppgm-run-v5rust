@@ -503,7 +503,26 @@ impl Analyzer<'_> {
             constructor,
             scope,
             location,
-        )
+        )?;
+        if matches!(
+            self.graph.types.get(target.designated).kind,
+            TypeKind::Reference { .. }
+        ) && self.graph.aggregate_constants.static_target(target)
+            && self.constant_binds_temporary(expr)?
+        {
+            let super::constant_addresses::TemporaryValue::Pointer(place) =
+                self.constexpr_frames.read(target, location)?
+            else {
+                return Err(Error::Invariant("reference member without address"));
+            };
+            let place = self.extend_constant_temporary(place, location)?;
+            self.constexpr_frames.write(
+                target,
+                super::constant_addresses::TemporaryValue::Pointer(place.pointer()),
+                location,
+            )?;
+        }
+        Ok(())
     }
     fn constant_value_initialize(
         &mut self,
