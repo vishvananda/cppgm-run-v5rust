@@ -693,19 +693,39 @@ fn accessible(cells: &[Cell], mut child: CellId, first: usize) -> bool {
     }
     true
 }
-fn preference(cells: &[Cell], mut child: CellId, first: usize) -> Vec<(bool, u32)> {
-    let mut path = Vec::new();
-    while let Some(parent) = cells[child.0 as usize].parent {
-        if (parent.0 as usize) < first {
-            break;
+fn preference(
+    cells: &[Cell],
+    mut child: CellId,
+    first: usize,
+) -> impl Iterator<Item = (bool, u32)> + '_ {
+    std::iter::from_fn(move || {
+        while let Some(parent) = cells[child.0 as usize].parent {
+            if (parent.0 as usize) < first {
+                return None;
+            }
+            let prior = child;
+            child = parent;
+            if cells[parent.0 as usize].union {
+                return Some((cells[parent.0 as usize].active != Some(prior), prior.0));
+            }
         }
-        if cells[parent.0 as usize].union {
-            path.push((cells[parent.0 as usize].active != Some(child), child.0));
-        }
-        child = parent;
-    }
-    path.reverse();
-    path
+        None
+    })
+}
+fn compare_preference(cells: &[Cell], a: CellId, b: CellId, first: usize) -> std::cmp::Ordering {
+    let a_len = preference(cells, a, first).count();
+    let b_len = preference(cells, b, first).count();
+    // Parent links yield the innermost union first. Align the outer paths,
+    // then let each outer difference supersede an inner difference. Equal
+    // prefixes prefer the shorter path, just as an outer-first lexical walk.
+    // No candidate allocates a temporary path, even with nested overlaps.
+    preference(cells, a, first)
+        .skip(a_len.saturating_sub(b_len))
+        .zip(preference(cells, b, first).skip(b_len.saturating_sub(a_len)))
+        .fold(a_len.cmp(&b_len), |order, (a, b)| match a.cmp(&b) {
+            std::cmp::Ordering::Equal => order,
+            other => other,
+        })
 }
 fn find(
     cells: &[Cell],
@@ -728,8 +748,9 @@ fn find(
         if range.contains(&index)
             && (write || accessible(cells, owner(id), range.start))
             && best.is_none_or(|prior: CellId| {
-                (preference(cells, owner(id), range.start), id.0)
-                    < (preference(cells, owner(prior), range.start), prior.0)
+                compare_preference(cells, owner(id), owner(prior), range.start)
+                    .then_with(|| id.0.cmp(&prior.0))
+                    .is_lt()
             })
         {
             best = Some(id);
