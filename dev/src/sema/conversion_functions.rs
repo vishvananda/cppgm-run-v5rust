@@ -4,6 +4,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    conversion_templates::ConversionDeduction,
     expression_facts::{
         Conversion, ConversionRank, ExprFacts, ObjectArgument, ObjectSource, ValueCategory,
         ValueConversion,
@@ -143,12 +144,10 @@ impl Analyzer<'_> {
         let count = self.visible_conversion_functions(class)?.len();
         let mut found = super::lookup::LookupResult::default();
         let mut declared = None;
-        let mut templates = false;
         for index in 0..count {
             let binding = self.graph.conversion_sets[&class][index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.template_head.is_some() {
-                templates = true;
                 continue;
             }
             let ty = entity
@@ -172,11 +171,40 @@ impl Analyzer<'_> {
             found.functions.push(binding);
         }
         if found.binding.is_none() {
-            if templates {
-                return Err(Error::Missing(
-                    "named conversion function template deduction",
-                ));
+            let mut specializations = Vec::new();
+            for index in 0..count {
+                let binding = self.graph.conversion_sets[&class][index];
+                if self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .template_head
+                    .is_none()
+                {
+                    continue;
+                }
+                if let Some(binding) =
+                    self.deduce_conversion_template(binding, target, ConversionDeduction::Named)?
+                {
+                    let ty = self
+                        .graph
+                        .binding(binding)
+                        .ty
+                        .ok_or(Error::Invariant("conversion specialization without type"))?;
+                    if matches!(self.graph.types.get(ty).kind, TypeKind::Function { result, .. } if result == target)
+                    {
+                        specializations.push(binding);
+                    }
+                }
             }
+            for index in 0..specializations.len() {
+                if !self.named_conversion_dominated(&specializations, index)? {
+                    let binding = specializations[index];
+                    found.binding.get_or_insert(binding);
+                    found.functions.push(binding);
+                }
+            }
+        }
+        if found.binding.is_none() {
             return Err(Error::at(
                 location,
                 "no conversion function to the named type",
@@ -328,17 +356,10 @@ impl Analyzer<'_> {
                     }
                     *visits += 1;
                 }
-                for &binding in self.graph.entity(current).declared_conversions.iter().rev() {
-                    let entity = self.graph.entity(self.graph.binding(binding).entity);
-                    let ty = entity
-                        .ty
-                        .ok_or(Error::Invariant("conversion without signature"))?;
-                    let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
-                        return Err(Error::Invariant("conversion signature"));
-                    };
-                    let count = hiding
-                        .entry((result, entity.template_head.is_some()))
-                        .or_default();
+                for index in (0..self.graph.entity(current).declared_conversions.len()).rev() {
+                    let binding = self.graph.entity(current).declared_conversions[index];
+                    let key = self.conversion_hiding_key(binding)?;
+                    let count = hiding.entry(key).or_default();
                     if leaving {
                         *count -= 1;
                     } else if *count == 0 && functions.insert(self.graph.binding(binding).entity) {
@@ -350,16 +371,11 @@ impl Analyzer<'_> {
                 }
                 // Own declarations hide all corresponding base declarations, even
                 // when they were themselves hidden by a more derived declaration.
-                for &binding in self.graph.entity(current).declared_conversions.iter().rev() {
-                    let entity = self.graph.entity(self.graph.binding(binding).entity);
-                    let ty = entity
-                        .ty
-                        .ok_or(Error::Invariant("conversion without signature"))?;
-                    if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind {
-                        *hiding
-                            .entry((result, entity.template_head.is_some()))
-                            .or_default() += 1;
-                    }
+                for index in (0..self.graph.entity(current).declared_conversions.len()).rev() {
+                    let binding = self.graph.entity(current).declared_conversions[index];
+                    *hiding
+                        .entry(self.conversion_hiding_key(binding)?)
+                        .or_default() += 1;
                 }
                 work.push((current, true));
                 for base in self.graph.entity(current).bases.iter().rev() {
@@ -371,6 +387,19 @@ impl Analyzer<'_> {
             self.graph.conversion_sets.insert(class, out);
         }
         Ok(&self.graph.conversion_sets[&class])
+    }
+
+    fn conversion_hiding_key(&mut self, binding: BindingId) -> Result<(TypeId, bool), Error> {
+        let entity = self.graph.entity(self.graph.binding(binding).entity);
+        let template = entity.template_head.is_some();
+        let ty = entity
+            .ty
+            .ok_or(Error::Invariant("conversion without signature"))?;
+        let ty = self.graph.types.canonical_function(ty)?;
+        let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("conversion signature"));
+        };
+        Ok((result, template))
     }
 
     pub(super) fn conversion_function_sequence(
@@ -436,6 +465,11 @@ impl Analyzer<'_> {
             _ => target,
         };
         let destination = self.graph.class_of(object);
+        let required = if destination.is_some() && object == target {
+            self.bare_type(object)?
+        } else {
+            target
+        };
         let receiver = ObjectArgument {
             source: ObjectSource::Implicit,
             ty: source.ty,
@@ -445,8 +479,17 @@ impl Analyzer<'_> {
         for index in 0..count {
             let binding = self.graph.conversion_sets[&class][index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.explicitness == Explicitness::Explicit && !direct {
+                continue;
+            }
+            let Some(binding) =
+                self.deduce_conversion_template(binding, required, ConversionDeduction::Implicit)?
+            else {
+                continue;
+            };
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
             let explicit = entity.explicitness == Explicitness::Explicit;
-            if entity.template_head.is_some() || explicit && !direct {
+            if explicit && !direct {
                 continue;
             }
             let ty = entity

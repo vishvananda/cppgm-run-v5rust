@@ -205,6 +205,7 @@ impl Analyzer<'_> {
                     name,
                     super::function_names::SpecialName::Operator { .. }
                         | super::function_names::SpecialName::Literal(_)
+                        | super::function_names::SpecialName::Conversion
                 )
             })
         {
@@ -1674,7 +1675,7 @@ impl Analyzer<'_> {
                 })
     }
 
-    fn template_at_least_as_specialized(
+    pub(super) fn template_at_least_as_specialized(
         &mut self,
         first: BindingId,
         second: BindingId,

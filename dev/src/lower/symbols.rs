@@ -2664,7 +2664,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 &[],
             )?
         } else {
-            self.function_terminal(facts.name, signature, facts.object.is_some())?
+            let name = if matches!(facts.name, FunctionName::Conversion(_)) {
+                let TypeView::Function { result, .. } = self.graph.lower_type(signature)? else {
+                    return Err(Error::Semantic(crate::sema::Error::Invariant(
+                        "conversion without function type",
+                    )));
+                };
+                FunctionName::Conversion(result)
+            } else {
+                facts.name
+            };
+            self.function_terminal(name, signature, facts.object.is_some())?
         };
         let name = self
             .abi
@@ -2714,7 +2724,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
             };
             args.push(self.abi_type(parameter)?);
         }
-        let result = if facts.template_instance.is_some() {
+        let result = if facts.template_instance.is_some()
+            && !matches!(
+                facts.name,
+                FunctionName::Constructor(_)
+                    | FunctionName::Destructor(_)
+                    | FunctionName::Conversion(_)
+            ) {
             let result = if self.unmangled_placeholder(result)? {
                 let TypeView::Function { result, .. } = self.graph.lower_type(facts.ty)? else {
                     return Err(Error::Missing("specialization without function type"));

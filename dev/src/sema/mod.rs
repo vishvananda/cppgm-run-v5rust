@@ -33,6 +33,7 @@ mod constexpr_values;
 mod construction;
 mod constructor_initialization;
 mod conversion_functions;
+mod conversion_templates;
 mod copy_construction;
 mod copy_initialization;
 mod copy_properties;

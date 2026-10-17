@@ -257,11 +257,38 @@ impl Analyzer<'_> {
         a: UserCandidate,
         b: UserCandidate,
     ) -> Result<Ordering, Error> {
-        let order = self.compare_sequences(a.first, b.first)?;
+        let mut order = self.compare_sequences(a.first, b.first)?;
         if order == Ordering::Equal
             && let Some((a, b)) = a.after.zip(b.after)
         {
-            return self.compare_sequences(a, b);
+            order = self.compare_sequences(a, b)?;
+        }
+        if order != Ordering::Equal {
+            return Ok(order);
+        }
+        let ap = self
+            .graph
+            .function_templates
+            .primary(self.graph.binding(a.binding).entity);
+        let bp = self
+            .graph
+            .function_templates
+            .primary(self.graph.binding(b.binding).entity);
+        if ap.is_some() != bp.is_some() {
+            return Ok(bp.is_some().cmp(&ap.is_some()));
+        }
+        if let Some((ap, bp)) = ap.zip(bp)
+            && self.graph.binding(ap).entity != self.graph.binding(bp).entity
+            && a.after.is_some() == b.after.is_some()
+        {
+            return if a.after.is_some() {
+                self.conversion_template_order(ap, bp)
+            } else {
+                let form = super::function_templates::TemplateOrdering::Call(1);
+                let forward = self.template_at_least_as_specialized(ap, bp, form)?;
+                let backward = self.template_at_least_as_specialized(bp, ap, form)?;
+                Ok(forward.cmp(&backward))
+            };
         }
         Ok(order)
     }
