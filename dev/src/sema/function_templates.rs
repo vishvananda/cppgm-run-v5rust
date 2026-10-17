@@ -1591,19 +1591,42 @@ impl Analyzer<'_> {
             let ty = self.template_argument(argument, scope, component.location)?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
-        let key = if component.arguments.is_none() {
-            self.declaration_key(info)?
-        } else {
-            Self::expression_name(component.kind)?
-        };
         self.lookup_location = location;
-        let found = if let Some(home) = info.home {
-            self.qualified_result(home, key, super::lookup::Filter::Ordinary)?
+        let functions = if let Some((class, super::graph::MemberKind::Constructor)) = info
+            .home
+            .map(|home| self.declared_member(info, home))
+            .transpose()?
+            .flatten()
+        {
+            // C++ uses its constructor lookup category. Rust keeps this indexed
+            // sequence on the owning class, separate from the injected name.
+            self.graph
+                .entity(class)
+                .declared_constructors
+                .iter()
+                .rev()
+                .copied()
+                .collect()
         } else {
-            self.unqualified_result(scope, key, super::lookup::Filter::Ordinary)?
+            let key = if self.conversion_declarator(info) {
+                super::function_names::ValueKey::Special(
+                    super::function_names::SpecialName::Conversion,
+                )
+            } else if component.arguments.is_none() {
+                self.declaration_key(info)?
+            } else {
+                Self::expression_name(component.kind)?
+            };
+            if let Some(home) = info.home {
+                self.qualified_result(home, key, super::lookup::Filter::Ordinary)?
+                    .functions
+            } else {
+                self.unqualified_result(scope, key, super::lookup::Filter::Ordinary)?
+                    .functions
+            }
         };
         let mut selected = None;
-        for &primary in found.functions.as_slice() {
+        for &primary in functions.as_slice() {
             let Some(candidate) = self.deduce_function_declaration(primary, &given, info.ty)?
             else {
                 continue;

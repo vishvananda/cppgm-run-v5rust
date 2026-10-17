@@ -179,10 +179,13 @@ impl Analyzer<'_> {
                     {
                         continue;
                     }
-                    self.graph
-                        .function_templates
-                        .instantiations
-                        .record(id, entity, false, location)?;
+                    self.graph.function_templates.instantiations.record(
+                        id,
+                        entity,
+                        false,
+                        location,
+                        super::explicit_instantiations::DefinitionDemand::ClassMember,
+                    )?;
                 }
                 BindingKind::Variable => self.explicit_class_variable(entity)?,
                 BindingKind::Type

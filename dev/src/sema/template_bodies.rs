@@ -3,6 +3,7 @@
 use super::{
     Analyzer, Error, Graph,
     analyzer::DeferredBody,
+    explicit_instantiations::DefinitionDemand,
     graph::{EntityId, ScopeKind},
     special_members::SpecialDefinition,
 };
@@ -252,6 +253,12 @@ pub(crate) fn analyze_unit(
         if graph.function_instantiation_suppressed(entity) {
             continue;
         }
+        if definition.is_some_and(|item| matches!(item.demand, DefinitionDemand::Named)) {
+            // Named definitions are required by semantic analysis at unit end,
+            // before lowering can query an outside destructor's inertness.
+            // Their existing named worklist entry owns this demand.
+            graph.function_templates.bodies.semantic_uses.insert(entity);
+        }
         if !lowering && graph.defer_emission_synthesis(entity) {
             // Explicit class member roots and implicit lifetimes are emission
             // demands. Only a semantic odr-use needs this definition now.
@@ -274,7 +281,12 @@ pub(crate) fn analyze_unit(
                 analyzer.graph.instantiation_levels.get(entity)?,
                 crate::support::source::SourceOffset(0),
                 analyzer.graph.binding_limit(),
-                |analyzer| analyzer.prepare_explicit_defaulted(entity),
+                |analyzer| {
+                    analyzer.prepare_explicit_defaulted(
+                        entity,
+                        definition.map_or(DefinitionDemand::ClassMember, |item| item.demand),
+                    )
+                },
             )?;
             graph = analyzer.finish_analysis(false)?;
         }
@@ -323,6 +335,19 @@ pub(crate) fn analyze_unit(
             graph.function_templates.bodies.states.get(&entity),
             Some(State::Unavailable | State::Synthesized)
         ) {
+            if let Some(definition) = definition
+                && matches!(definition.demand, DefinitionDemand::Named)
+                && matches!(
+                    graph.function_templates.bodies.states.get(&entity),
+                    Some(State::Unavailable)
+                )
+                && graph.entity(entity).availability != super::graph::FunctionAvailability::Deleted
+            {
+                return Err(Error::at(
+                    definition.location,
+                    "an explicit instantiation definition of a function whose definition is not available",
+                ));
+            }
             continue;
         }
         let primary = graph
@@ -659,10 +684,28 @@ impl Analyzer<'_> {
         Ok(true)
     }
 
-    fn prepare_explicit_defaulted(&mut self, entity: EntityId) -> Result<(), Error> {
+    fn prepare_explicit_defaulted(
+        &mut self,
+        entity: EntityId,
+        demand: DefinitionDemand,
+    ) -> Result<(), Error> {
         let Some(member) = self.graph.entity(entity).member_function else {
             return Ok(());
         };
+        if matches!(demand, DefinitionDemand::Named) {
+            self.defaulted_constructor_definition(
+                entity,
+                member.class,
+                member.kind,
+                crate::support::source::SourceOffset(0),
+            )?;
+            self.graph
+                .function_templates
+                .bodies
+                .states
+                .insert(entity, State::Synthesized);
+            return Ok(());
+        }
         let binding = self.graph.function_origin(entity)?;
         let ty = self.graph.lower_entity_type(entity)?;
         let first = matches!(
@@ -1055,14 +1098,16 @@ mod tests {
 
     #[test]
     fn outside_body_availability_is_separate_from_prepared_syntax() {
-        for (declaration, use_code, at_emission) in [
-            ("~A(){}", "A<int>a;", false),
-            ("~A();", "A<int>a;", true),
-            ("~A();", "A<int>a;a.~A();", false),
+        for (declaration, use_code, instantiation, at_emission) in [
+            ("~A(){}", "A<int>a;", "", false),
+            ("~A();", "A<int>a;", "", true),
+            ("~A();", "A<int>a;a.~A();", "", false),
+            ("~A();", "A<int>a;", "template A<int>::~A();", false),
+            ("~A();", "", "template A<int>::~A();", false),
         ] {
             let text = format!(
                 "template<class T>struct A{{{declaration}}};\
-                 int main(){{{use_code}return 0;}}{}",
+                 int main(){{{use_code}return 0;}}{}{instantiation}",
                 if declaration == "~A();" {
                     "template<class T>A<T>::~A(){}"
                 } else {

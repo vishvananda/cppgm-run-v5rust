@@ -6,16 +6,87 @@ use super::{
     Error,
     analyzer::Analyzer,
     graph::{BindingId, EntityId, ScopeId, ScopeKind},
-    specifiers::InlinePreference,
-    types::TypeKind,
+    specifiers::{InlinePreference, Specifiers},
+    types::{Scalar, TypeKind},
 };
-use crate::{support::source::SourceOffset, syntax::ast};
+use crate::{
+    support::source::SourceOffset,
+    syntax::{ast, storage::List},
+};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct MemberPolicy {
     pub excluded: bool,
     pub always_inline: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{lookup::Filter, types::TypeKind},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn extern_special_members_share_identity_without_body_or_default_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{A(int=T::missing);~A();operator T();};\
+              template<class T>A<T>::A(int){T::missing;}\
+              template<class T>A<T>::~A(){T::missing;}\
+              template<class T>A<T>::operator T(){return T::missing;}\
+              using I=A<int>;extern template A<int>::A(int);\
+              extern template A<int>::~A();extern template A<int>::operator int();\
+              extern template A<int>::A(int);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"extern-special-members").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let alias = cursor.intern_name(b"I").unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let binding = graph.binding(graph.own(graph.global, alias, Filter::Ordinary).unwrap());
+        let TypeKind::Class(class) = graph.types.get(binding.ty.unwrap()).kind else {
+            panic!("class alias");
+        };
+        let scope = graph.entity(class).scope.unwrap();
+        let functions: Vec<_> = graph
+            .scope(scope)
+            .bindings
+            .iter()
+            .map(|&id| graph.binding(id).entity)
+            .filter(|&entity| graph.entity(entity).member_function.is_some())
+            .collect();
+        assert_eq!(functions.len(), 3);
+        assert_eq!(graph.entity(class).declared_constructors.len(), 1);
+        assert!(
+            graph
+                .function_templates
+                .instantiations
+                .definitions()
+                .is_empty()
+        );
+        assert_eq!(graph.lower_explicit_functions().count(), 0);
+        for entity in functions {
+            assert!(graph.function_instantiation_suppressed(entity));
+            assert!(!graph.function_templates.bodies.started(entity));
+            for default in graph.entity(entity).defaults.iter().flatten() {
+                assert!(graph.expression_facts.get(default.expression).is_err());
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -25,9 +96,16 @@ enum State {
 }
 
 #[derive(Clone, Copy)]
+pub(super) enum DefinitionDemand {
+    Named,
+    ClassMember,
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct Definition {
     pub binding: BindingId,
     pub location: SourceOffset,
+    pub demand: DefinitionDemand,
 }
 #[derive(Default)]
 pub(super) struct Instantiations {
@@ -81,10 +159,15 @@ impl Instantiations {
         entity: EntityId,
         is_extern: bool,
         location: SourceOffset,
+        demand: DefinitionDemand,
     ) -> Result<(), Error> {
         self.record_state(entity, is_extern, location)?;
         if !is_extern {
-            self.definitions.push(Definition { binding, location });
+            self.definitions.push(Definition {
+                binding,
+                location,
+                demand,
+            });
         }
         Ok(())
     }
@@ -135,35 +218,11 @@ impl Analyzer<'_> {
         if let ast::DeclKind::Class(specifier) = inner.kind {
             return self.explicit_class_instantiation(specifier, is_extern, scope, inner.location);
         }
-        if matches!(inner.kind, ast::DeclKind::SpecialMember { .. }) {
-            return Err(Error::Missing("explicit member function instantiation"));
-        }
-        let ast::DeclKind::Simple {
-            specifiers,
-            declarators,
-        } = inner.kind
-        else {
-            return Err(Error::at(
-                inner.location,
-                "an explicit instantiation of no class, function or variable",
-            ));
-        };
-        let declarators = self.tree.init_declarators.get(declarators);
-        if declarators.len() != 1 || declarators[0].initializer.is_some() {
-            return Err(Error::at(
-                inner.location,
-                "an explicit instantiation declares one function or variable",
-            ));
-        }
-        let declarator = declarators[0].declarator;
         // 14.7.2p12: names in the declaration, including explicit arguments,
         // do not impose access checks. Drop the deferred checks on every path.
         let access = self.begin_declaration_access(scope, true);
         let result = (|| {
-            let specs = self.specifiers(specifiers, scope, false)?;
-            let mut environment = self.declarator_environment(Some(declarator), scope)?;
-            environment.placement = super::declarators::Placement::ExplicitInstantiation;
-            let info = self.declarator_in(Some(declarator), specs.ty, environment)?;
+            let (specs, info) = self.explicit_instantiation_declarator(inner, scope)?;
             if info.syntax_name.is_none() {
                 return Err(Error::at(
                     inner.location,
@@ -274,6 +333,73 @@ impl Analyzer<'_> {
             entity,
             is_extern,
             inner.location,
+            DefinitionDemand::Named,
         )
+    }
+
+    fn explicit_instantiation_declarator(
+        &mut self,
+        declaration: ast::Declaration,
+        scope: ScopeId,
+    ) -> Result<(Specifiers, super::declarators::DeclaratorInfo), Error> {
+        let location = declaration.location;
+        let (specs, declarator, result) = match declaration.kind {
+            ast::DeclKind::Simple {
+                specifiers,
+                declarators,
+            } => {
+                let declarators = self.tree.init_declarators.get(declarators);
+                if declarators.len() != 1 || declarators[0].initializer.is_some() {
+                    return Err(Error::at(
+                        location,
+                        "an explicit instantiation declares one function or variable",
+                    ));
+                }
+                let declarator = declarators[0].declarator;
+                let specs = self.specifiers(specifiers, scope, false)?;
+                (specs, declarator, specs.ty)
+            }
+            ast::DeclKind::SpecialMember {
+                name,
+                declarator,
+                initializer,
+                body,
+                ..
+            } => {
+                if body.is_some() || initializer.is_some() {
+                    return Err(Error::at(
+                        location,
+                        "an explicit instantiation with a definition",
+                    ));
+                }
+                let name_node = self.tree.names.get(name);
+                let last = self
+                    .tree
+                    .name_lists
+                    .get(name_node.components)
+                    .last()
+                    .ok_or(Error::Invariant("explicit special member without name"))?;
+                let result = if let ast::NameKind::Conversion(ty) = last.kind {
+                    let owner = self.prefix(name, scope)?.unwrap_or(scope);
+                    self.type_syntax(ty, owner)?
+                } else {
+                    self.graph.types.scalar(Scalar::Void)?
+                };
+                // The frozen explicit-instantiation owner uses empty specifiers
+                // for special members; it does not redeclare the member.
+                let specs = self.special_specifiers(List::default(), scope)?.0;
+                (specs, declarator, result)
+            }
+            _ => {
+                return Err(Error::at(
+                    location,
+                    "an explicit instantiation of no class, function or variable",
+                ));
+            }
+        };
+        let mut environment = self.declarator_environment(Some(declarator), scope)?;
+        environment.placement = super::declarators::Placement::ExplicitInstantiation;
+        let info = self.declarator_in(Some(declarator), result, environment)?;
+        Ok((specs, info))
     }
 }
