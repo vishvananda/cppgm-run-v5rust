@@ -383,11 +383,18 @@ impl Analyzer<'_> {
 
     fn simple_declarator_name_opt(
         &self,
-        id: Option<ast::DeclaratorId>,
+        mut id: Option<ast::DeclaratorId>,
     ) -> Result<Option<NameId>, Error> {
-        id.map(|id| self.simple_declarator_name(id))
-            .transpose()
-            .map(Option::flatten)
+        // OwnNames walks through abstract declarators too: an unnamed
+        // dependent parameter contributes no name to the fixed-operand probe.
+        while let Some(current) = id {
+            let node = self.tree.declarators.get(current);
+            if node.name.is_some() {
+                return self.simple_declarator_name(current);
+            }
+            id = node.nested;
+        }
+        Ok(None)
     }
 
     pub(super) fn exception_dependent_type(&self, ty: TypeId) -> bool {

@@ -7,11 +7,12 @@ use super::{
     expression_facts::{Conversion, ExprFacts, ObjectArgument, ObjectSource, ValueCategory},
     function_names::ValueKey,
     graph::{BindingId, EntityId, FunctionAvailability, Graph, Mutability, ScopeId, ScopeKind},
+    procedural_calls::ArgumentSequence,
     special_members::SpecialDefinition,
     types::{Cv, RefKind, TypeId, TypeKind},
 };
 use crate::{lex::pp_lexer::Punctuator, support::source::SourceOffset};
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::HashSet};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Origin {
@@ -161,6 +162,100 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn template_assignment_signature_is_cached_separately_from_body_demand() {
+        let source = SourceBuffer::new(
+            b"struct M{template<class T>void operator=(T const&)volatile noexcept(sizeof(T)>0){}};\
+              struct X{volatile M m;};struct Unused{volatile M m;};\
+              void f(X&a,const X&b){a=b;a=b;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"template-assignment-demand").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [
+            cursor.intern_name(b"M").unwrap(),
+            cursor.intern_name(b"X").unwrap(),
+            cursor.intern_name(b"Unused").unwrap(),
+        ];
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let classes: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let binding = analyzer
+                    .graph
+                    .own(global, name, super::super::lookup::Filter::Elaborated)
+                    .unwrap();
+                analyzer.graph.binding(binding).entity
+            })
+            .collect();
+        let home = analyzer.graph.entity(classes[1]).scope.unwrap();
+        let assignment = analyzer
+            .graph
+            .functions_at(home, key().unwrap())
+            .map(|b| analyzer.graph.binding(b).entity)
+            .find(|&f| analyzer.graph.entity(f).assignment_kind == Some(RefKind::Lvalue))
+            .unwrap();
+        let properties = analyzer.graph.lower_assignment(assignment).unwrap();
+        assert!(!properties.trivial && !properties.deleted && properties.nothrow);
+        let selected = properties.actions[0].function.unwrap();
+        assert!(
+            analyzer
+                .graph
+                .function_templates
+                .primary(selected)
+                .is_some()
+        );
+        assert!(
+            !analyzer
+                .graph
+                .function_templates
+                .specializations
+                .contains(selected)
+        );
+        let ty = analyzer.graph.entity(classes[0]).ty.unwrap();
+        let ty = analyzer
+            .graph
+            .types
+            .qualify(ty, Cv(Cv::CONST.0 | 2))
+            .unwrap();
+        let source = ExprFacts::new(ty, ValueCategory::Lvalue);
+        let expressions = analyzer.tree.expressions.mark();
+        let declarations = analyzer.tree.declarations.mark();
+        for _ in 0..2 {
+            let binding = analyzer
+                .subobject_assignment(classes[0], source, Cv(2))
+                .unwrap()
+                .unwrap();
+            assert_eq!(analyzer.graph.binding(binding).entity, selected);
+            assert!(analyzer.assignment_scratch.candidates.is_empty());
+            assert!(analyzer.assignment_scratch.seen.is_empty());
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.tree.declarations.mark(), declarations);
+        let primary = analyzer.graph.function_templates.primary(selected).unwrap();
+        let primary = analyzer.graph.binding(primary).entity;
+        assert!(!analyzer.graph.function_templates.body_demanded(primary));
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert!(analyzer.graph.function_templates.body_demanded(primary));
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert!(!analyzer.graph.function_templates.bodies.started(selected));
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.tree.declarations.mark(), declarations);
+        assert!(
+            analyzer.graph.entity(classes[2]).copy_preparation
+                == super::super::copy_properties::Preparation::Pending
+        );
+    }
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum ExceptionSource {
@@ -173,7 +268,14 @@ pub(super) fn key() -> Result<ValueKey, Error> {
 }
 #[derive(Default)]
 pub(super) struct Scratch {
-    candidates: Vec<(BindingId, Conversion, Conversion)>,
+    candidates: Vec<Candidate>,
+    seen: HashSet<EntityId>,
+}
+#[derive(Clone, Copy)]
+struct Candidate {
+    binding: BindingId,
+    object: Conversion,
+    source: ArgumentSequence,
 }
 pub(crate) struct Properties {
     pub deleted: bool,
@@ -229,6 +331,8 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("assignment boundary plan"))?
                 .actions[index];
             if let Some(selected) = action.function {
+                let binding = self.graph.function_origin(selected)?;
+                self.demand_specialization_body(binding);
                 work.push(selected);
                 if let Some(copy) = action.parameter_copy {
                     let signature = self.graph.lower_entity_type(selected)?;
@@ -605,7 +709,8 @@ impl Analyzer<'_> {
                     if !matches!(
                         self.graph.types.get(parameter).kind,
                         TypeKind::Reference { .. }
-                    ) {
+                    ) && self.graph.class_of(parameter) == Some(child)
+                    {
                         action.parameter_copy = self.assignment_parameter_copy(
                             child,
                             source,
@@ -614,9 +719,8 @@ impl Analyzer<'_> {
                             &mut properties,
                         )?;
                     }
-                    properties.deleted |= self
-                        .check_special_member_access(binding, acted, scope, SourceOffset(0))
-                        .is_err();
+                    properties.deleted |=
+                        !self.subobject_assignment_accessible(child, function, acted, scope)?;
                     properties.deleted |= self.graph.entity(class).key
                         == crate::lex::vocabulary::Keyword::Union
                         && !self
@@ -632,6 +736,31 @@ impl Analyzer<'_> {
             properties.actions.push(action);
         }
         Ok(properties)
+    }
+    fn subobject_assignment_accessible(
+        &self,
+        class: EntityId,
+        selected: EntityId,
+        acted: EntityId,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        // subobject_copy checks access only through a matching named
+        // declaration. Hidden deductions do not inherit it from their primary.
+        let home = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("assignment child scope"))?;
+        for declared in self.graph.functions_at(home, key()?) {
+            if self.graph.binding(declared).entity == selected
+                && self
+                    .check_special_member_access(declared, acted, scope, SourceOffset(0))
+                    .is_err()
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
     fn assignment_parameter_copy(
         &mut self,
@@ -693,9 +822,9 @@ impl Analyzer<'_> {
             source: ObjectSource::Implicit,
         };
         let mut scratch = std::mem::take(&mut self.assignment_scratch);
-        let result =
-            self.resolve_subobject_assignment(home, object, source, &mut scratch.candidates);
+        let result = self.resolve_subobject_assignment(home, object, source, &mut scratch);
         scratch.candidates.clear();
+        scratch.seen.clear();
         self.assignment_scratch = scratch;
         result
     }
@@ -704,21 +833,72 @@ impl Analyzer<'_> {
         home: ScopeId,
         object: ObjectArgument,
         source: ExprFacts,
-        candidates: &mut Vec<(BindingId, Conversion, Conversion)>,
+        scratch: &mut Scratch,
     ) -> Result<Option<BindingId>, Error> {
+        // analyzer_calls.cpp::resolve tries ordinary declarations first. Only
+        // its last viable ordinary candidate decides whether deduction is moot.
+        self.assignment_candidates(home, object, source, false, scratch)?;
+        if !scratch.candidates.last().is_some_and(|candidate| {
+            let sequence = ArgumentSequence {
+                conversion: candidate.object,
+                application: Some(candidate.object),
+                function: None,
+                user_conversion: None,
+            };
+            self.perfect_sequence(Some(sequence), object.ty, object.category, false)
+                && self.perfect_sequence(Some(candidate.source), source.ty, source.category, false)
+        }) {
+            self.assignment_candidates(home, object, source, true, scratch)?;
+        }
+        let candidates = &scratch.candidates;
+        let mut best = 0;
+        for index in 1..candidates.len() {
+            if self.compare_assignment_candidates(candidates[index], candidates[best])?
+                == Ordering::Greater
+            {
+                best = index;
+            }
+        }
+        let Some(&selected) = candidates.get(best) else {
+            return Ok(None);
+        };
+        for (index, &other) in candidates.iter().enumerate() {
+            if index != best
+                && self.compare_assignment_candidates(selected, other)? != Ordering::Greater
+            {
+                return Ok(None);
+            }
+        }
+        Ok(Some(selected.binding))
+    }
+    fn assignment_candidates(
+        &mut self,
+        home: ScopeId,
+        object: ObjectArgument,
+        source: ExprFacts,
+        templated: bool,
+        scratch: &mut Scratch,
+    ) -> Result<(), Error> {
         let mut next = 0;
         while let Some(binding) = self.graph.next_function(home, key()?, &mut next) {
             let function = self.graph.binding(binding).entity;
             let entity = self.graph.entity(function);
             if entity.function.is_some_and(|p| p.is_static)
                 || self.graph.ignored_assignment(function)
+                || entity.template_head.is_some() != templated
+                || !scratch.seen.insert(function)
             {
                 continue;
             }
-            if entity.template_head.is_some() {
-                return Err(Error::Missing("template subobject assignment selection"));
-            }
-            let ty = entity.ty.ok_or(Error::Invariant("assignment signature"))?;
+            let Some(binding) = self.deduce_function_call(binding, &[], false, Some(source))?
+            else {
+                continue;
+            };
+            let ty = self
+                .graph
+                .binding(binding)
+                .ty
+                .ok_or(Error::Invariant("assignment signature"))?;
             if self.graph.types.function_parameter_count(ty)? != 1 {
                 continue;
             }
@@ -726,42 +906,44 @@ impl Analyzer<'_> {
             let Some(object) = self.object_sequence(object, binding, true)? else {
                 continue;
             };
-            let Some(source) = self.scalar_sequence(source, parameter, false)? else {
+            let sequence =
+                if let Some(conversion) = self.scalar_sequence(source, parameter, false)? {
+                    Some(ArgumentSequence {
+                        conversion,
+                        application: Some(conversion),
+                        function: None,
+                        user_conversion: None,
+                    })
+                } else {
+                    self.user_conversion_sequence(source, parameter, false)?
+                };
+            let Some(source) = sequence else {
                 continue;
             };
-            candidates.push((binding, object, source));
+            scratch.candidates.push(Candidate {
+                binding,
+                object,
+                source,
+            });
         }
-        let Some(&(_, mut object, mut source)) = candidates.first() else {
-            return Ok(None);
-        };
-        let mut best = 0;
-        for (index, &(_, candidate_object, candidate_source)) in
-            candidates.iter().enumerate().skip(1)
-        {
-            let a = self.compare_sequences(candidate_object, object)?;
-            let b = self.compare_sequences(candidate_source, source)?;
-            if a != Ordering::Less
-                && b != Ordering::Less
-                && (a == Ordering::Greater || b == Ordering::Greater)
-            {
-                best = index;
-                object = candidate_object;
-                source = candidate_source;
+        Ok(())
+    }
+    fn compare_assignment_candidates(
+        &mut self,
+        a: Candidate,
+        b: Candidate,
+    ) -> Result<Ordering, Error> {
+        let object = self.compare_sequences(a.object, b.object)?;
+        let source = self.compare_argument_sequences(a.source, b.source)?;
+        Ok(match (object, source) {
+            (Ordering::Equal, Ordering::Equal) => {
+                self.compare_function_templates(a.binding, b.binding, Some(1))?
             }
-        }
-        for (index, &(_, other_object, other_source)) in candidates.iter().enumerate() {
-            if index == best {
-                continue;
+            (Ordering::Greater, Ordering::Less) | (Ordering::Less, Ordering::Greater) => {
+                Ordering::Equal
             }
-            let a = self.compare_sequences(object, other_object)?;
-            let b = self.compare_sequences(source, other_source)?;
-            if a == Ordering::Less
-                || b == Ordering::Less
-                || a == Ordering::Equal && b == Ordering::Equal
-            {
-                return Ok(None);
-            }
-        }
-        Ok(Some(candidates[best].0))
+            (Ordering::Greater, _) | (_, Ordering::Greater) => Ordering::Greater,
+            _ => Ordering::Less,
+        })
     }
 }
