@@ -341,6 +341,21 @@ impl Function<'_, '_, '_, '_> {
             self.tree.expressions.get(root).kind,
             ExprKind::Conditional { .. }
         );
+        // temporary_region opens a pending nonthrowing segment before the
+        // object's address (and before a conditional's condition). Guarded
+        // branch calls do not reopen that segment after its terminator.
+        if !persistent
+            && self.lifetime.full_expression
+            && self.lifetime.region_start.is_pending()
+            && self.lifetime.temporary_segment.is_nothrow()
+            && !self.lifetime.region
+            && self.lifetime.guarded_operands == 0
+            && self.lifetime.choice_region != super::lifetime::ChoiceRegion::Reopened
+            && (destructor.is_some() || !branched)
+            && (owner.is_none() || !self.lifetime.cleanups.is_empty())
+        {
+            self.open_temporary_region_at(self.lifetime.expression_start)?;
+        }
         // An inert call result extended by a local reference opens at the
         // segment's start, before taking the temporary's address.
         if owner.is_some()

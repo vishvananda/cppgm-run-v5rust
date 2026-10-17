@@ -607,40 +607,46 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.initializer_temporaries(initializer)?
         };
-        let began =
-            if !expression && self.constructor_expression(entity, initializer, temporaries)? {
-                self.lifetime.full_expression = true;
-                self.lifetime.region_start = super::lifetime::RegionStart::Pending;
-                self.lifetime.temporary_segment =
-                    super::lifetime::TemporarySegment::new(temporaries, false);
-                self.ensure_insertion()?;
-                self.lifetime.expression_start = Some(self.builder.position()?);
-                true
-            } else if object && !temporaries {
-                false
-            } else if let Some(ast::Initializer {
-                kind: ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id),
-                ..
-            }) = initializer
-            {
-                self.begin_full_expression(
-                    Some(id),
-                    super::temporary_scan::ExpressionUse::Initialization,
-                )?
-            } else if temporaries
-                && self.initializer_throws(initializer)?
-                && !self.lifetime.full_expression
-            {
-                self.lifetime.full_expression = true;
-                self.lifetime.region_start = super::lifetime::RegionStart::Pending;
-                self.lifetime.temporary_segment =
-                    super::lifetime::TemporarySegment::new(temporaries, false);
-                self.ensure_insertion()?;
-                self.lifetime.expression_start = Some(self.builder.position()?);
-                true
-            } else {
-                self.begin_lifetime_expression()
-            };
+        let began = if !expression
+            && self.constructor_expression(entity, initializer, temporaries)?
+        {
+            self.lifetime.full_expression = true;
+            self.lifetime.region_start = super::lifetime::RegionStart::Pending;
+            self.lifetime.temporary_segment =
+                super::lifetime::TemporarySegment::new(temporaries, false);
+            self.ensure_insertion()?;
+            self.lifetime.expression_start = Some(self.builder.position()?);
+            true
+        } else if object && !temporaries {
+            false
+        } else if let Some(ast::Initializer {
+            kind: ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id),
+            ..
+        }) = initializer
+        {
+            self.begin_full_expression(
+                Some(id),
+                super::temporary_scan::ExpressionUse::Initialization,
+            )?
+        } else if temporaries
+            && self.initializer_throws(initializer)?
+            && !self.lifetime.full_expression
+        {
+            self.lifetime.full_expression = true;
+            self.lifetime.region_start = super::lifetime::RegionStart::Pending;
+            self.lifetime.temporary_segment =
+                super::lifetime::TemporarySegment::new(temporaries, false);
+            self.ensure_insertion()?;
+            self.lifetime.expression_start = Some(self.builder.position()?);
+            true
+        } else if temporaries && let Some(initializer) = initializer {
+            // Parenthesized initializer arguments form one query. A
+            // nonthrowing root result initializes the destination rather
+            // than opening a segment; nested call results still do.
+            self.begin_subobject_initializer(initializer, self.graph.lower_construction(entity))?
+        } else {
+            self.begin_lifetime_expression()
+        };
         if began && let Some(initializer) = initializer {
             match initializer.kind {
                 ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {

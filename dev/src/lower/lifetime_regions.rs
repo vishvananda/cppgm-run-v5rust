@@ -350,16 +350,26 @@ impl Function<'_, '_, '_, '_> {
         }
         if !throws
             && self.lifetime.full_expression
+            && self.lifetime.guarded_operands == 0
+            && self.lifetime.choice_region != super::lifetime::ChoiceRegion::Reopened
             && (self.lifetime.temporary_segment.is_nothrow()
                 || self
                     .lifetime
                     .temporary_split
-                    .is_some_and(|position| self.builder.same_block(position)))
+                    .is_some_and(|position| self.builder.same_block(position))
+                    && !self.lifetime.cleanups.is_empty())
             && !self.lifetime.region
-            && !self.lifetime.cleanups.is_empty()
         {
-            let position = self.builder.position()?;
-            return self.open_temporary_region_at(Some(position));
+            // region_event opens a nonthrowing segment at its start the
+            // first time, then at the current call after a completion split.
+            let position = if self.lifetime.temporary_segment.is_nothrow()
+                && self.lifetime.region_start.is_pending()
+            {
+                self.lifetime.expression_start
+            } else {
+                Some(self.builder.position()?)
+            };
+            return self.open_temporary_region_at(position);
         }
         if self.static_initializer
             || !throws

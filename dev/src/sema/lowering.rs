@@ -1580,6 +1580,12 @@ impl Graph {
     pub(crate) fn lower_class_specialization(&self, class: EntityId) -> bool {
         self.class_templates.instance(class).is_some()
     }
+    pub(crate) fn lower_member_class_specialization(&self, class: EntityId) -> bool {
+        self.class_templates
+            .instance(class)
+            .and_then(|instance| self.entity(instance.primary).home)
+            .is_some_and(|home| self.scope(home).kind == super::graph::ScopeKind::Class)
+    }
     pub(crate) fn lower_dependent_template(&self, class: EntityId) -> Option<(TypeId, NameId)> {
         let primary = self.class_templates.instance(class)?.primary;
         let name = self.class_templates.dependent_names.get(primary)?;

@@ -10,15 +10,23 @@ use crate::{
 pub(super) enum CallTemporaries {
     #[default]
     Absent,
-    Nothrow,
+    Nothrow {
+        member_template: bool,
+    },
     ThrowingDestructor,
 }
 impl CallTemporaries {
-    fn include(&mut self, throws: bool) {
+    fn include(&mut self, throws: bool, member_template: bool) {
         if throws {
             *self = Self::ThrowingDestructor;
-        } else if matches!(self, Self::Absent) {
-            *self = Self::Nothrow;
+        } else {
+            match self {
+                Self::Absent => *self = Self::Nothrow { member_template },
+                Self::Nothrow {
+                    member_template: saved,
+                } => *saved |= member_template,
+                Self::ThrowingDestructor => (),
+            }
         }
     }
     fn present(self) -> bool {
@@ -27,11 +35,23 @@ impl CallTemporaries {
     fn destructor_throws(self) -> bool {
         matches!(self, Self::ThrowingDestructor)
     }
+    fn member_template(self) -> bool {
+        matches!(
+            self,
+            Self::Nothrow {
+                member_template: true
+            }
+        )
+    }
+    fn floor(self, depth: usize) -> usize {
+        if self.member_template() { 0 } else { depth }
+    }
 }
 #[derive(Clone, Copy, Default)]
 pub(super) struct TemporarySummary {
     pub made: bool,
     pub call_result: CallTemporaries,
+    pub operand_call_result: CallTemporaries,
     pub caller_destroyed: bool,
 }
 #[derive(Clone, Copy)]
@@ -148,6 +168,7 @@ impl Function<'_, '_, '_, '_> {
         let mut made = caller;
         let mut calls = false;
         let mut throwing_destructor = false;
+        let mut member_template_result = false;
         if let Some(root) = root {
             // A class prvalue with no outer transfer constructs the member
             // itself. Only its operands can create expression temporaries.
@@ -161,8 +182,9 @@ impl Function<'_, '_, '_, '_> {
                 self.expression_temporaries(root)?
             };
             made |= summary.made;
-            calls |= summary.call_result.present() || summary.caller_destroyed;
-            throwing_destructor |= summary.call_result.destructor_throws();
+            calls |= summary.operand_call_result.present() || summary.caller_destroyed;
+            throwing_destructor |= summary.operand_call_result.destructor_throws();
+            member_template_result |= summary.operand_call_result.member_template();
         }
         for &argument in self.tree.expr_lists.get(arguments) {
             let summary = if constructor.is_some_and(|constructor| {
@@ -179,8 +201,9 @@ impl Function<'_, '_, '_, '_> {
                 self.expression_temporaries(argument)?
             };
             made |= summary.made;
-            calls |= summary.call_result.present() || summary.caller_destroyed;
-            throwing_destructor |= summary.call_result.destructor_throws();
+            calls |= summary.operand_call_result.present() || summary.caller_destroyed;
+            throwing_destructor |= summary.operand_call_result.destructor_throws();
+            member_template_result |= summary.operand_call_result.member_template();
         }
         if !made && self.lifetime.cleanups.is_empty() {
             return Ok(false);
@@ -204,7 +227,11 @@ impl Function<'_, '_, '_, '_> {
             super::lifetime::TemporarySegment::Eager
         } else if made {
             super::lifetime::TemporarySegment::Nothrow {
-                floor: self.lifetime.cleanups.len(),
+                floor: if member_template_result {
+                    0
+                } else {
+                    self.lifetime.cleanups.len()
+                },
             }
         } else {
             super::lifetime::TemporarySegment::Empty
@@ -251,8 +278,17 @@ impl Function<'_, '_, '_, '_> {
             && (matches!(usage, ExpressionUse::Value | ExpressionUse::ClassResult)
                 || self.branch_temporaries(root)?);
         let throwing = hidden_copy || self.expression_throws_in_context(root, hidden)?;
+        // Only a discarded expression counts its root call result. In an
+        // initializer or value context that result can be the destination;
+        // the query still counts its operand temporaries and owned parameters.
+        let calls = if matches!(usage, ExpressionUse::Ordinary) {
+            summary.call_result
+        } else {
+            summary.operand_call_result
+        };
         if (summary.made || !self.lifetime.cleanups.is_empty())
-            && (throwing || summary.call_result.present() || summary.caller_destroyed)
+            && (throwing
+                || (calls.present() || summary.caller_destroyed) && !calls.destructor_throws())
         {
             self.lifetime.full_expression = true;
             self.lifetime.region_start = super::lifetime::RegionStart::Pending;
@@ -260,7 +296,9 @@ impl Function<'_, '_, '_, '_> {
                 super::lifetime::TemporarySegment::new(summary.made, hidden)
             } else {
                 super::lifetime::TemporarySegment::Nothrow {
-                    floor: self.lifetime.cleanups.len(),
+                    // The frozen member-class-template result keeps the
+                    // surrounding automatic objects in the call's chain.
+                    floor: calls.floor(self.lifetime.cleanups.len()),
                 }
             };
             self.ensure_insertion()?;
@@ -329,7 +367,12 @@ impl Function<'_, '_, '_, '_> {
                     summary.made = true;
                     summary
                         .call_result
-                        .include(self.temporary_destructor_throws(call.result)?);
+                        .include(self.temporary_destructor_throws(call.result)?, false);
+                    if id != root {
+                        summary
+                            .operand_call_result
+                            .include(self.temporary_destructor_throws(call.result)?, false);
+                    }
                 }
                 step += 1;
             }
@@ -382,9 +425,13 @@ impl Function<'_, '_, '_, '_> {
             {
                 summary.made = true;
                 if call || operator || self.graph.lower_literal_call(id)?.is_some() {
-                    summary
-                        .call_result
-                        .include(self.temporary_destructor_throws(facts.ty)?);
+                    let member_template = matches!(self.graph.lower_type(facts.ty)?,
+                        TypeView::Class(class) if self.graph.lower_member_class_specialization(class));
+                    let throws = self.temporary_destructor_throws(facts.ty)?;
+                    summary.call_result.include(throws, member_template);
+                    if id != root {
+                        summary.operand_call_result.include(throws, member_template);
+                    }
                 }
             }
             if (include_root || id != root)
