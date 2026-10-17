@@ -47,6 +47,7 @@ impl Function<'_, '_, '_, '_> {
             .lower_literal_call(id)?
             .ok_or(Error::Missing("literal operands"))?;
         let (values, count) = match shape {
+            LiteralCall::Template => (None, 0),
             LiteralCall::Character { source, bits } => {
                 let value = RValue {
                     value: self.builder.integer(u128::from_le_bytes(
@@ -66,7 +67,7 @@ impl Function<'_, '_, '_, '_> {
                         i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes(),
                     ))?;
                 }
-                ([value.value; 2], 1)
+                (Some([value.value; 2]), 1)
             }
             LiteralCall::Integer { source, bits } => {
                 let value = RValue {
@@ -79,7 +80,7 @@ impl Function<'_, '_, '_, '_> {
                     bits: Some(bits),
                 };
                 let value = self.convert(value, parameters[0], Context::Initialization)?;
-                ([value.value; 2], 1)
+                (Some([value.value; 2]), 1)
             }
             LiteralCall::Floating { digits } => {
                 let bytes = self.symbols.numeric_literal_value(literal, digits)?.ok_or(
@@ -93,7 +94,7 @@ impl Function<'_, '_, '_, '_> {
                 let value = self
                     .builder
                     .constant(Constant::Float(FloatKind::F80, u128::from_le_bytes(bits)))?;
-                ([value; 2], 1)
+                (Some([value; 2]), 1)
             }
             LiteralCall::Raw { digits } => {
                 let mut units = self.symbols.data.take_string_units();
@@ -110,7 +111,7 @@ impl Function<'_, '_, '_, '_> {
                     units,
                 )?;
                 let address = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
-                ([address; 2], 1)
+                (Some([address; 2]), 1)
             }
             LiteralCall::String { element, units } => {
                 let symbol = super::data::string(
@@ -128,25 +129,23 @@ impl Function<'_, '_, '_, '_> {
                         source,
                     )?
                     .value;
-                ([address, length], 2)
+                (Some([address, length]), 2)
             }
         };
         self.symbols.demand(entity);
         let callee = self.symbols.callee(entity, &mut self.builder)?;
         let boundary = self.symbols.result_boundary(result)?;
-        let mut arguments = [values[0], values[1], values[1]];
-        if boundary.indirect {
-            arguments = [
-                destination.ok_or(crate::sema::Error::Invariant(
-                    "literal result without destination",
-                ))?,
-                values[0],
-                values[1],
-            ];
+        let mut arguments = [callee; 3];
+        let prefix = usize::from(boundary.indirect);
+        if let Some(values) = values {
+            arguments[prefix..prefix + count].copy_from_slice(&values[..count]);
         }
-        let arguments = self
-            .builder
-            .arguments(&arguments[..count + usize::from(boundary.indirect)])?;
+        if boundary.indirect {
+            arguments[0] = destination.ok_or(crate::sema::Error::Invariant(
+                "literal result without destination",
+            ))?;
+        }
+        let arguments = self.builder.arguments(&arguments[..count + prefix])?;
         let call = I::Call(Call {
             result: boundary.ty,
             callee,

@@ -179,7 +179,11 @@ impl Analyzer<'_> {
             .function
             .and_then(|properties| properties.special)
             .is_some_and(|name| {
-                !matches!(name, super::function_names::SpecialName::Operator { .. })
+                !matches!(
+                    name,
+                    super::function_names::SpecialName::Operator { .. }
+                        | super::function_names::SpecialName::Literal(_)
+                )
             })
         {
             return Err(Error::Missing(
@@ -732,6 +736,7 @@ impl Analyzer<'_> {
             old.scope,
         );
         let old_inline = old.inline;
+        let special_name = old.special_name;
         let parameters = old.function_parameters;
         let exceptions = old.exceptions.clone();
         let specialized = self.graph.entity_mut(entity);
@@ -741,6 +746,7 @@ impl Analyzer<'_> {
         specialized.home = properties.3;
         specialized.scope = properties.4;
         specialized.inline = old_inline;
+        specialized.special_name = special_name;
         // Declaration facts belong to the specialization's formation point.
         // A later primary redeclaration must not rename its prototype; a
         // demanded body installs its own copied parameters separately.
@@ -1329,9 +1335,6 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let count = self.graph.templates.parameters(head).len();
-        if given.len() > count {
-            return Ok(None);
-        }
         let Some(converted) =
             self.match_explicit_template_arguments(head, given, SourceOffset(0))?
         else {

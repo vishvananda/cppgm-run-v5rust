@@ -116,7 +116,7 @@ impl Function<'_, '_, '_, '_> {
         let facts = self.graph.lower_expression(id)?;
         if let Some(shape) = self.graph.lower_literal_call(id)? {
             // The frozen literal_truth reads the call-form value retained on
-            // the literal: string=0; cooked=1, character=3, raw=4.
+            // the literal: string=0; cooked=1, template=2, character=3, raw=4.
             return Ok((types::storage(self.graph, facts.ty)?.float_rank() == 0
                 && !matches!(
                     self.graph.lower_type(facts.ty)?,

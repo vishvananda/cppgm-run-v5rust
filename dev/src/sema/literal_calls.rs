@@ -26,6 +26,7 @@ pub(crate) enum LiteralCall {
     Integer { source: TypeId, bits: u64 },
     Floating { digits: usize },
     Raw { digits: usize },
+    Template,
 }
 
 impl Analyzer<'_> {
@@ -220,35 +221,10 @@ impl Analyzer<'_> {
             }
         }
         let Some((binding, is_raw)) = selected else {
-            // Character-pack specializations need the shared pack argument
-            // representation, not a literal-specific specialization key.
-            if found.functions.iter().any(|&binding| {
-                let Some(head) = self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .template_head
-                else {
-                    return false;
-                };
-                let parameters = self.graph.templates.parameters(head);
-                parameters.len() == 1
-                    && self
-                        .graph
-                        .entity(parameters[0])
-                        .template_parameter
-                        .is_some_and(|info| {
-                            info.is_pack()
-                                && info.value_type.is_some_and(|ty| {
-                                    matches!(
-                                        self.graph.types.get(ty).kind,
-                                        TypeKind::Scalar(Scalar::Basic(FundamentalType::Char))
-                                    )
-                                })
-                        })
-            }) {
-                return Err(Error::Missing(
-                    "numeric literal operator template specialization",
-                ));
+            if let Some(binding) =
+                self.numeric_literal_template(found.functions.as_slice(), literal, digits)?
+            {
+                return self.finish_literal_call(id, binding, LiteralCall::Template);
             }
             return Err(Error::at(
                 location,
@@ -281,6 +257,83 @@ impl Analyzer<'_> {
             }
         };
         self.finish_literal_call(id, binding, shape)
+    }
+
+    fn numeric_literal_template(
+        &mut self,
+        candidates: &[BindingId],
+        literal: ast::Literal,
+        digits: usize,
+    ) -> Result<Option<BindingId>, Error> {
+        let character = self
+            .graph
+            .types
+            .scalar(Scalar::Basic(FundamentalType::Char))?;
+        let mut pack = None;
+        for &primary in candidates {
+            let Some(head) = self
+                .graph
+                .entity(self.graph.binding(primary).entity)
+                .template_head
+            else {
+                continue;
+            };
+            let parameters = self.graph.templates.parameters(head);
+            if parameters.len() != 1
+                || !self
+                    .graph
+                    .entity(parameters[0])
+                    .template_parameter
+                    .is_some_and(|info| {
+                        info.is_pack()
+                            && info.value_type.is_some_and(|ty| {
+                                matches!(
+                                    self.graph
+                                        .types
+                                        .get(self.graph.types.canonical_view(ty))
+                                        .kind,
+                                    TypeKind::Scalar(Scalar::Basic(FundamentalType::Char))
+                                )
+                            })
+                    })
+            {
+                continue;
+            }
+            // Retain the original spelling, including base prefixes, zeroes,
+            // exponent signs and separators. No numeric value is demanded.
+            let argument = if let Some(pack) = pack {
+                pack
+            } else {
+                let spelling = self.literal_bytes.get(literal.spelling);
+                let spelling = spelling
+                    .get(..digits)
+                    .ok_or(Error::Invariant("numeric literal digits outside spelling"))?;
+                let mut characters = Vec::with_capacity(spelling.len());
+                let kind = super::integral::IntegralKind {
+                    bits: 8,
+                    signed: true,
+                };
+                for &byte in spelling {
+                    characters.push(self.graph.types.intern(
+                        TypeKind::Value {
+                            ty: character,
+                            bits: kind.convert(u64::from(byte)),
+                        },
+                        Cv::default(),
+                    )?);
+                }
+                let argument = self
+                    .graph
+                    .types
+                    .intern(TypeKind::Pack(characters), Cv::default())?;
+                pack = Some(argument);
+                argument
+            };
+            if let Some(binding) = self.complete_signature(primary, &mut [Some(argument)])? {
+                return Ok(Some(binding));
+            }
+        }
+        Ok(None)
     }
 
     fn finish_literal_call(
@@ -444,6 +497,91 @@ mod tests {
             }
         }
         assert_eq!(lengths, [20, 11]);
+    }
+
+    #[test]
+    fn numeric_templates_share_canonical_character_packs_without_argument_syntax() {
+        let source = SourceBuffer::new(
+            b"template<char...C>int operator\"\"_x();\
+              template<>int operator\"\"_x<'0','x','0','0'>();\
+              int main(){return 0x00_x+0x00_x+0000_x+1.5e+02_x;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"literal-packs").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let literals = return_literals(tree, declarations);
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        let mut entities = Vec::new();
+        let mut spellings = Vec::new();
+        for id in literals {
+            let facts = analyzer.graph.expression_facts.get(id).unwrap();
+            assert!(matches!(facts.literal_call, Some(LiteralCall::Template)));
+            assert!(!facts.null_literal);
+            let CallTarget::Direct(binding) = facts.call.unwrap() else {
+                panic!("direct template literal call");
+            };
+            let entity = analyzer.graph.binding(binding).entity;
+            entities.push(entity);
+            let arguments = &analyzer.graph.function_templates.arguments[&entity];
+            assert_eq!(arguments.len(), 1);
+            let mut spelling = Vec::new();
+            for &argument in analyzer.graph.types.pack_elements(arguments[0]).unwrap() {
+                let TypeKind::Value { ty, bits } = analyzer.graph.types.get(argument).kind else {
+                    panic!("canonical character argument");
+                };
+                assert_eq!(
+                    analyzer.graph.types.get(ty).kind,
+                    TypeKind::Scalar(Scalar::Basic(FundamentalType::Char))
+                );
+                spelling.push(u8::try_from(bits).unwrap());
+            }
+            spellings.push(spelling);
+        }
+        assert_eq!(entities[0], entities[1]);
+        assert_ne!(entities[0], entities[2]);
+        assert!(
+            analyzer
+                .graph
+                .function_templates
+                .specializations
+                .contains(entities[0])
+        );
+        assert!(
+            !analyzer
+                .graph
+                .function_templates
+                .specializations
+                .contains(entities[2])
+        );
+        assert_eq!(
+            spellings,
+            [
+                b"0x00".to_vec(),
+                b"0x00".to_vec(),
+                b"0000".to_vec(),
+                b"1.5e+02".to_vec()
+            ]
+        );
+        let mut output = Vec::new();
+        let graph = analyzer.graph;
+        graph
+            .print_semantics(tree, cursor, declarations, &mut output)
+            .unwrap();
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("function-declaration operator\"\"_x function of () returning int")
+        );
     }
 
     #[test]
