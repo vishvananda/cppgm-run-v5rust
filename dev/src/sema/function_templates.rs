@@ -818,14 +818,18 @@ impl Analyzer<'_> {
         {
             return Ok(true); // Dependent operands and qualified members are non-deduced.
         }
-        let pcv = self.type_cv(pattern).0;
-        let acv = self.type_cv(actual).0;
+        // Array qualifiers live on their elements. Structural matching reaches
+        // those elements below; a parameter deducing an entire array instead
+        // observes the element qualifiers, as C++ without_cv does.
+        let pcv = self.graph.types.get(pattern).cv.0;
+        let acv = self.graph.types.get(actual).cv.0;
         let parameter = if matches!(self.graph.types.get(pattern).kind, TypeKind::Auto) {
             Some(0)
         } else {
             self.template_parameter_index(pattern, depth)
         };
         if let Some(index) = parameter {
+            let acv = self.type_cv(actual).0;
             if pcv & !acv != 0 && !extra_cv {
                 return Ok(false);
             }

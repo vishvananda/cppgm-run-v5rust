@@ -7,7 +7,7 @@ use super::{
     function_templates::Substitution,
     graph::EntityId,
     templates::HeadId,
-    types::{TypeId, TypeKind},
+    types::{Cv, TypeId, TypeKind},
 };
 use crate::support::source::SourceOffset;
 use std::collections::{HashMap, HashSet};
@@ -241,21 +241,22 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
+        for (index, argument) in deduced.iter_mut().enumerate() {
+            if argument.is_none() && self.argument_parameter_pack(head, index) {
+                *argument = Some(
+                    self.graph
+                        .types
+                        .intern(TypeKind::Pack(Vec::new()), Cv::default())?,
+                );
+            }
+        }
         let Some(mut arguments) = deduced.into_iter().collect::<Option<Vec<_>>>() else {
             return Ok(None);
         };
-        for index in 0..arguments.len() {
-            arguments[index] = match self.match_template_argument(
-                head,
-                index,
-                arguments[index],
-                &arguments[..index],
-                SourceOffset(0),
-            ) {
-                Ok(ty) => ty,
-                Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => return Ok(None),
-                Err(error) => return Err(error),
-            };
+        match self.match_argument_list(head, &mut arguments, SourceOffset(0)) {
+            Ok(()) => (),
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => return Ok(None),
+            Err(error) => return Err(error),
         }
         let given: Vec<_> = arguments.iter().copied().map(Some).collect();
         let mut substitution = Substitution::new(depth, &given);
@@ -304,7 +305,21 @@ impl Analyzer<'_> {
         if pattern.len() != other.0.len() {
             return Ok(false);
         }
-        let unique = self.unique_partial_arguments(head)?;
+        let mut unique = self.unique_partial_arguments(head)?;
+        for (index, argument) in unique.iter_mut().enumerate() {
+            if self.argument_parameter_pack(head, index) {
+                let ty = argument.ok_or(Error::Invariant("ordering without unique argument"))?;
+                let expansion = self
+                    .graph
+                    .types
+                    .intern(TypeKind::Expansion(ty), Cv::default())?;
+                *argument = Some(
+                    self.graph
+                        .types
+                        .intern(TypeKind::Pack(vec![expansion]), Cv::default())?,
+                );
+            }
+        }
         let mut substitution = Substitution::new(self.graph.templates.depth(head), &unique);
         let mut deduced = vec![None; self.graph.templates.parameters(second).len()];
         for (&pattern, &other) in pattern.iter().zip(&other.0) {
@@ -340,15 +355,25 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        self.supported_fixed_template_head(head)?;
+        self.supported_argument_head(head)?;
         let mut own = arguments.len() == count;
         for (index, &argument) in arguments.iter().enumerate().take(count) {
             let parameter = self.graph.templates.parameters(head)[index];
-            let ty = self
+            let mut ty = self
                 .graph
                 .entity(parameter)
                 .ty
                 .ok_or(Error::Invariant("partial parameter without type"))?;
+            if self.argument_parameter_pack(head, index) {
+                let expansion = self
+                    .graph
+                    .types
+                    .intern(TypeKind::Expansion(ty), Cv::default())?;
+                ty = self
+                    .graph
+                    .types
+                    .intern(TypeKind::Pack(vec![expansion]), Cv::default())?;
+            }
             own &= argument == self.graph.types.canonical_function(ty)?;
         }
         if own {
@@ -357,17 +382,29 @@ impl Analyzer<'_> {
                 "a partial specialization whose arguments are its template's own parameters",
             ));
         }
-        // Even ordinary heads can name an enclosing head's unexpanded pack.
-        for &argument in arguments {
-            if self.has_unexpanded_type_pack(argument, true)? {
-                return Err(Error::at(
-                    location,
-                    "a partial specialization's argument names an unexpanded parameter pack",
-                ));
+        // A primary's pack is one canonical argument partition, but each of
+        // its elements is an argument for the formation rules of 14.5.5p8.
+        for (index, &argument) in arguments.iter().enumerate() {
+            let elements = match &self.graph.types.get(argument).kind {
+                TypeKind::Pack(elements) => elements.as_slice(),
+                _ => std::slice::from_ref(&argument),
+            };
+            for (position, &element) in elements.iter().enumerate() {
+                if matches!(self.graph.types.get(element).kind, TypeKind::Expansion(_)) {
+                    if index + 1 != arguments.len() || position + 1 != elements.len() {
+                        return Err(Error::at(
+                            location,
+                            "a pack expansion other than a partial specialization's last argument",
+                        ));
+                    }
+                } else if self.has_unexpanded_type_pack(element, true)? {
+                    return Err(Error::at(
+                        location,
+                        "a partial specialization's argument names an unexpanded parameter pack",
+                    ));
+                }
             }
         }
-        // Ordinary fixed parameters contribute through deducible type/value
-        // positions; pack expansion formation remains a separate boundary.
         let depth = self.graph.templates.depth(head);
         let deduced = self.type_pattern_parameters(arguments, depth);
         if (0..count).any(|index| !deduced.contains(&index)) {
@@ -433,7 +470,8 @@ impl Analyzer<'_> {
     /// non-deduced contexts; their leading parameter's mere presence does not
     /// make it deducible. Function/array/member-pointer components do.
     fn type_pattern_parameters(&self, arguments: &[TypeId], depth: u32) -> HashSet<usize> {
-        let mut work = arguments.to_vec();
+        let mut work = Vec::new();
+        self.deducible_pattern_list(arguments, true, &mut work);
         let mut visited = HashSet::new();
         let mut deduced = HashSet::new();
         while let Some(ty) = work.pop() {
@@ -450,6 +488,9 @@ impl Analyzer<'_> {
                     {
                         deduced.insert(index);
                     }
+                    if let Some(index) = self.named_bound_parameter(ty, depth) {
+                        deduced.insert(index);
+                    }
                 }
                 TypeKind::Class(entity) => {
                     if let Some(instance) = self.graph.class_templates.instance(*entity)
@@ -461,7 +502,7 @@ impl Analyzer<'_> {
                             .get(instance.primary)
                             .is_none()
                     {
-                        work.extend(instance.arguments.iter().copied());
+                        self.deducible_pattern_list(&instance.arguments, true, &mut work);
                     }
                 }
                 TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
@@ -482,9 +523,9 @@ impl Analyzer<'_> {
                     result, parameters, ..
                 } => {
                     work.push(*result);
-                    work.extend(parameters.iter().copied());
+                    self.deducible_pattern_list(parameters, false, &mut work);
                 }
-                TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
+                TypeKind::Pack(elements) => self.deducible_pattern_list(elements, true, &mut work),
                 TypeKind::Expansion(pattern) => work.push(*pattern),
                 TypeKind::BoundPack { .. }
                 | TypeKind::Auto
@@ -494,6 +535,36 @@ impl Analyzer<'_> {
             }
         }
         deduced
+    }
+
+    /// A non-trailing expansion makes a template argument list wholly
+    /// non-deduced; in a function parameter list only that expansion is skipped.
+    fn deducible_pattern_list(
+        &self,
+        types: &[TypeId],
+        template_arguments: bool,
+        work: &mut Vec<TypeId>,
+    ) {
+        let start = work.len();
+        let mut elements = types
+            .iter()
+            .flat_map(|ty| match &self.graph.types.get(*ty).kind {
+                TypeKind::Pack(pack) => pack.as_slice(),
+                _ => std::slice::from_ref(ty),
+            })
+            .peekable();
+        while let Some(&ty) = elements.next() {
+            if elements.peek().is_some()
+                && matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_))
+            {
+                if template_arguments {
+                    work.truncate(start);
+                    return;
+                }
+            } else {
+                work.push(ty);
+            }
+        }
     }
 }
 
@@ -549,6 +620,66 @@ mod tests {
         }
         assert_eq!(
             analyzer.type_pattern_parameters(&[ty, ty], analyzer.graph.templates.depth(head)),
+            HashSet::from([0])
+        );
+    }
+
+    #[test]
+    fn non_trailing_expansions_obey_their_list_context() {
+        let source = SourceBuffer::new(b"template<class T,class... Ts>struct P;".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"deducible-lists").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"P").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let binding = analyzer
+            .graph
+            .own(global, name, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let head = analyzer
+            .graph
+            .entity(analyzer.graph.binding(binding).entity)
+            .template_head
+            .unwrap();
+        let parameters = analyzer.graph.templates.parameters(head);
+        let first = analyzer.graph.entity(parameters[0]).ty.unwrap();
+        let pack = analyzer.graph.entity(parameters[1]).ty.unwrap();
+        let expansion = analyzer
+            .graph
+            .types
+            .intern(TypeKind::Expansion(pack), Cv::default())
+            .unwrap();
+        let depth = analyzer.graph.templates.depth(head);
+        assert!(
+            analyzer
+                .type_pattern_parameters(&[expansion, first], depth)
+                .is_empty()
+        );
+        assert_eq!(
+            analyzer.type_pattern_parameters(&[first, expansion], depth),
+            HashSet::from([0, 1])
+        );
+        let function = analyzer
+            .graph
+            .types
+            .intern(
+                TypeKind::Function {
+                    result: first,
+                    parameters: vec![expansion, first],
+                    variadic: false,
+                    cv: Cv::default(),
+                    reference: None,
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            analyzer.type_pattern_parameters(&[function], depth),
             HashSet::from([0])
         );
     }

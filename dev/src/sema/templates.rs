@@ -62,9 +62,6 @@ impl ParameterInfo {
     pub(super) fn argument_index(self) -> usize {
         usize::from(self.position.index)
     }
-    pub(super) fn fixed_parameter(self) -> bool {
-        !self.position.shape.pack && self.inner.is_none()
-    }
 }
 #[derive(Clone, Copy)]
 pub(super) struct DefaultArgument {
@@ -204,22 +201,6 @@ impl Analyzer<'_> {
         }
         Ok(arguments)
     }
-    pub(super) fn supported_fixed_template_head(&self, head: HeadId) -> Result<(), Error> {
-        for &parameter in self.graph.templates.parameters(head) {
-            if !self
-                .graph
-                .entity(parameter)
-                .template_parameter
-                .is_some_and(super::templates::ParameterInfo::fixed_parameter)
-            {
-                return Err(Error::Missing(
-                    "template packs or template template-parameters",
-                ));
-            }
-        }
-        Ok(())
-    }
-
     pub(super) fn supported_argument_head(&self, head: HeadId) -> Result<(), Error> {
         if self
             .graph

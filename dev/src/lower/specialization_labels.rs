@@ -98,7 +98,7 @@ impl Symbols<'_, '_> {
         }
         let view = self.graph.lower_type(ty)?;
         let cv = self.graph.lower_cv(ty);
-        if !matches!(view, TypeView::Pointer(_)) {
+        if !matches!(view, TypeView::Pointer(_) | TypeView::Array { .. }) {
             if cv & 1 != 0 {
                 out.push_str("const ");
             }

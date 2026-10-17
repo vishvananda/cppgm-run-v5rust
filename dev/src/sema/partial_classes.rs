@@ -273,6 +273,85 @@ mod tests {
     };
 
     #[test]
+    fn selected_function_packs_keep_partition_identity_and_cached_demand() {
+        let source = SourceBuffer::new(
+            b"template<class>struct P;\
+              template<class R,class... A>struct P<R(A...)>{static const int n=sizeof...(A);};\
+              using Empty=P<void()>;using Two=P<int(char,long)>;\
+              int e=sizeof(Empty);int t=sizeof(Two);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"partial-packs").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"Empty".as_slice(), b"Two"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let mut selected = Vec::new();
+        for (name, count) in names.into_iter().zip([0, 2]) {
+            let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+            let TypeKind::Class(entity) = analyzer
+                .graph
+                .types
+                .get(analyzer.graph.binding(binding).ty.unwrap())
+                .kind
+            else {
+                panic!("alias lost class identity");
+            };
+            let (partial, arguments) = analyzer
+                .graph
+                .class_templates
+                .partials
+                .selected(entity)
+                .unwrap();
+            assert_eq!(arguments.len(), 2);
+            assert_eq!(
+                analyzer
+                    .graph
+                    .types
+                    .pack_elements(arguments[1])
+                    .unwrap()
+                    .len(),
+                count
+            );
+            assert!(analyzer.graph.entity(entity).complete);
+            selected.push((entity, partial, arguments.to_vec()));
+        }
+        assert_eq!(selected[0].1, selected[1].1);
+        assert_ne!(selected[0].2[1], selected[1].2[1]);
+        let syntax = (
+            analyzer.tree.expressions.mark(),
+            analyzer.tree.declarations.mark(),
+            analyzer.tree.bodies.mark(),
+        );
+        for _ in 0..8 {
+            for (entity, partial, arguments) in &selected {
+                assert!(analyzer.complete_class(*entity).unwrap());
+                assert_eq!(
+                    analyzer.graph.class_templates.partials.selected(*entity),
+                    Some((*partial, arguments.as_slice()))
+                );
+            }
+        }
+        assert_eq!(
+            syntax,
+            (
+                analyzer.tree.expressions.mark(),
+                analyzer.tree.declarations.mark(),
+                analyzer.tree.bodies.mark()
+            )
+        );
+    }
+
+    #[test]
     fn partial_patterns_keep_shell_identity_and_independent_definition_demand() {
         let source = SourceBuffer::new(
             b"template<class T>struct Box{typename T::missing bad;};\
