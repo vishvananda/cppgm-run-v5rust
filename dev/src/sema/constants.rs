@@ -316,7 +316,11 @@ impl Analyzer<'_> {
             ExprKind::Call { .. } if self.evaluating_noexcept && !self.semantic() => {
                 return self.constant_exception_call(id, scope, skipping);
             }
-            ExprKind::Call { .. } if self.semantic() => {
+            // A template pattern has no typed call facts. Like the frozen
+            // ConstantEvaluator, leave that call unevaluated until substitution.
+            ExprKind::Call { .. }
+                if self.semantic() && self.graph.expression_facts.get(id).is_ok() =>
+            {
                 if self.graph.expression_facts.get(id)?.functional_call {
                     let ExprKind::Call { arguments, .. } = expr.kind else {
                         return Err(Error::Invariant("functional call without arguments"));
@@ -415,9 +419,13 @@ impl Analyzer<'_> {
             && let Ok(facts) = self.graph.expression_facts.get(id)
             && let Some(bits) = facts.folded.or(facts.query_value)
         {
-            return Ok(Some(Constant { bits, ty: facts.ty }));
+            return Ok(Some(Constant {
+                bits,
+                ty: self.bare_type(facts.ty)?,
+            }));
         }
         if self.semantic()
+            && self.graph.expression_facts.get(id).is_ok()
             && let Some(value) = self.address_integral_value(id, scope, skipping)?
         {
             if !skipping && !self.constexpr_frames.active() {
@@ -429,6 +437,20 @@ impl Analyzer<'_> {
             && let Some(value) = self.graph.constant_fact(id)
         {
             return Ok(Some(value));
+        }
+        if self.semantic()
+            && !skipping
+            && self
+                .graph
+                .expression_facts
+                .get(id)
+                .is_ok_and(|facts| self.graph.class_of(facts.ty).is_some())
+        {
+            self.constant_object_place(id, scope)?;
+            return Err(not_constant(
+                self.tree.expressions.get(id).location,
+                "not a constant scalar value",
+            ));
         }
         Ok(None)
     }
@@ -1276,7 +1298,26 @@ impl Analyzer<'_> {
         self.check_resolved_function(expr)?;
         if self.graph.class_of(facts.ty).is_some() {
             if let Some(target) = target {
-                self.convert_scalar(expr, target, false)?;
+                // convert_to_scalar selects by the target, but the expression
+                // stands for the converter's result before the target's final
+                // standard conversion (including the case-label range check).
+                if let Some(sequence) = self.user_conversion_sequence(facts, target, false)?
+                    && let Some(super::procedural_calls::UserConversion::Function(binding)) =
+                        sequence.user_conversion
+                {
+                    if self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .availability
+                        == super::graph::FunctionAvailability::Deleted
+                    {
+                        return Err(Error::at(
+                            self.tree.expressions.get(expr).location,
+                            "use of a deleted function",
+                        ));
+                    }
+                    self.convert_class_operand(expr, binding, scope)?;
+                }
             } else {
                 self.convert_unique_class_operand(
                     expr,
@@ -1289,7 +1330,10 @@ impl Analyzer<'_> {
     }
     pub(super) fn array_bound(&mut self, expr: ast::ExprId, scope: ScopeId) -> Result<u64, Error> {
         if self.semantic() && self.template_depth == 0 {
-            self.expression(expr, scope)?;
+            let target = self.graph.types.scalar(Scalar::Basic(
+                crate::types::FundamentalType::UnsignedLongInt,
+            ))?;
+            self.integral_constant_operand(expr, scope, Some(target))?;
         } else if self.semantic() {
             self.validate_fixed_expression(expr, scope)?;
         }

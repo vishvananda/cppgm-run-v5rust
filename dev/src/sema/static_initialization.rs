@@ -185,9 +185,78 @@ impl Analyzer<'_> {
     ) -> Result<Option<Value>, Error> {
         self.check_stack()?;
         let source = self.graph.expression_facts.get(id)?.ty;
+        // constant_lowering.cpp::initialization_value: initialization includes
+        // the selected conversion even though the operand retains its class type.
+        if self.graph.class_of(source).is_some()
+            && self
+                .graph
+                .expression_facts
+                .function_conversion(id)
+                .is_some()
+        {
+            return self.static_converted_class(id, target, scope);
+        }
         let value = self.static_scalar_value(id, scope)?;
         value.map_or(Ok(None), |value| {
             self.static_conversion(value, source, target)
+        })
+    }
+    fn static_converted_class(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        scope: ScopeId,
+    ) -> Result<Option<Value>, Error> {
+        let result = self.in_constant_evaluation(|analyzer| {
+            let value = analyzer.scalar_value(id, scope)?;
+            analyzer.convert_constant_scalar(
+                value,
+                target,
+                analyzer.tree.expressions.get(id).location,
+            )
+        });
+        let value = match result {
+            Ok(value) => value,
+            Err(Error::NonConstant { .. } | Error::Missing(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        Ok(match value {
+            super::constant_addresses::TemporaryValue::Integer(value) => {
+                Some(Value::Integer(value.bits))
+            }
+            super::constant_addresses::TemporaryValue::Floating(value) => {
+                let TypeKind::Scalar(Scalar::Basic(kind)) = self.graph.types.get(value.ty).kind
+                else {
+                    return Err(Error::Invariant("static converted floating type"));
+                };
+                let format = self
+                    .float_format(value.ty)
+                    .ok_or(Error::Invariant("static converted floating format"))?;
+                Some(Value::Floating(
+                    kind,
+                    value
+                        .value
+                        .bits(format)
+                        .ok_or(Error::Invariant("static converted floating encoding"))?,
+                ))
+            }
+            super::constant_addresses::TemporaryValue::Pointer(value) => match value.root {
+                Root::Null => Some(Value::Integer(0)),
+                Root::Variable(entity)
+                    if self
+                        .graph
+                        .entity(entity)
+                        .variable
+                        .is_some_and(|variable| !variable.automatic) =>
+                {
+                    Some(Value::Address(entity, value.offset))
+                }
+                Root::Temporary(entity) | Root::Function(entity) => {
+                    Some(Value::Address(entity, value.offset))
+                }
+                Root::Literal(expr) => Some(Value::Literal(expr, value.offset)),
+                _ => None,
+            },
         })
     }
     fn static_scalar_value(

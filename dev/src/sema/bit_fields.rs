@@ -168,7 +168,7 @@ impl Analyzer<'_> {
             }
             let width = if self.template_depth == 0 {
                 if self.semantic() {
-                    self.expression(field.width, scope)?;
+                    self.integral_constant_operand(field.width, scope, None)?;
                 }
                 let value = self
                     .constant_value(field.width, scope, true)?

@@ -249,8 +249,7 @@ impl Analyzer<'_> {
         let Some(ty) = ty else {
             return self.expression(value, scope);
         };
-        self.typed_expression(value, scope)?;
-        self.check_resolved_function(value)?;
+        self.integral_constant_operand(value, scope, Some(ty))?;
         let constant = self
             .constant_value(value, scope, true)?
             .ok_or(Error::Invariant("case without constant"))?;

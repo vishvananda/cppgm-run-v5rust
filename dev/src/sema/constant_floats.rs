@@ -72,6 +72,9 @@ impl Analyzer<'_> {
                     || self.graph.expression_facts.get(left).is_ok_and(|facts|facts.conversion.is_some_and(|step|self.float_format(step.result).is_some())))
     }
     pub(super) fn scalar_value(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Value, Error> {
+        self.in_constant_evaluation(|analyzer| analyzer.scalar_value_inner(id, scope))
+    }
+    fn scalar_value_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Value, Error> {
         if let Some(step) = self.graph.expression_facts.function_conversion(id) {
             let returned = self.constant_conversion_result(id, scope)?;
             let location = self.tree.expressions.get(id).location;
@@ -692,6 +695,60 @@ mod tests {
             assert!(analyzer.constant_evaluation.is_none());
             assert_eq!(analyzer.graph.floating_constants.0.len(), 2);
             assert_eq!(analyzer.tree.expressions.mark(), expression_count);
+        }
+    }
+
+    #[test]
+    fn selected_scalar_conversions_own_and_release_their_evaluation() {
+        let source = SourceBuffer::new(
+            b"int object;struct F{constexpr operator double()const{return 3.5;}};\
+              struct P{constexpr operator int*()const{return &object;}};\
+              constexpr double x=F{};constexpr int*p=P{};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"scalar-conversions").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let expressions = analyzer.tree.expressions.mark();
+        let floats = analyzer.graph.floating_constants.0.len();
+        for index in [3, 4] {
+            let ast::DeclKind::Simple { declarators, .. } = analyzer
+                .tree
+                .declarations
+                .get(analyzer.tree.decl_lists.get(declarations)[index])
+                .kind
+            else {
+                panic!("scalar declaration");
+            };
+            let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+                .initializer
+                .unwrap();
+            let expr = analyzer.single_initializer(initializer).unwrap();
+            for _ in 0..32 {
+                match analyzer.scalar_value(expr, scope).unwrap() {
+                    Value::Floating(value) => {
+                        assert_eq!(
+                            value.value.bits(Format::Double),
+                            Some(0x400c_0000_0000_0000)
+                        );
+                    }
+                    Value::Pointer(value) => assert!(matches!(value.root, Root::Variable(_))),
+                    Value::Integer(_) => panic!("conversion result"),
+                }
+                assert!(!analyzer.constexpr_frames.active());
+                assert_eq!(analyzer.constexpr_frames.depth(), 0);
+                assert!(analyzer.constant_evaluation.is_none());
+                assert_eq!(analyzer.tree.expressions.mark(), expressions);
+                assert_eq!(analyzer.graph.floating_constants.0.len(), floats);
+            }
         }
     }
 }
