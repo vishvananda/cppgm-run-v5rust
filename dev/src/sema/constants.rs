@@ -223,7 +223,13 @@ impl Analyzer<'_> {
                 left,
                 right,
                 assignment: false,
-            } if self.semantic() && op.token.as_punctuator() == Some(P::Comma) => {
+            } if self.semantic()
+                && self.graph.expression_facts.get(id).is_ok()
+                && op.token.as_punctuator() == Some(P::Comma) =>
+            {
+                // constant_value selects the interpreter only for typed syntax.
+                // An untyped template pattern stays on the integral spine;
+                // in particular, a void cast must remain nonconstant there.
                 if !skipping {
                     self.discard_constant(left, scope)?;
                 }
@@ -813,7 +819,10 @@ impl Analyzer<'_> {
             ..
         } = self.tree.expressions.get(id).kind
         {
+            // Template definitions can be untyped even in semantic mode.
+            // Only recorded facts permit the interpreter's effectful paths.
             if self.semantic()
+                && self.graph.expression_facts.get(id).is_ok()
                 && (assignment
                     || self.graph.expression_facts.get(id).is_ok_and(|facts| {
                         facts.call_form == super::expression_facts::CallForm::Operator
@@ -1364,5 +1373,66 @@ impl Analyzer<'_> {
             return Err(Error::at(location, message));
         }
         Ok(value.bits)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn comma_pattern_acquires_discard_semantics_only_after_typing() {
+        let source =
+            SourceBuffer::new(b"constexpr bool value = ((void)true, true);".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constant-boundary").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declaration = tree.decl_lists.get(declarations)[0];
+        let ast::DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind
+        else {
+            panic!("simple declaration");
+        };
+        let initializer = tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let mark = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        let expression = analyzer.single_initializer(initializer).unwrap();
+        assert!(
+            analyzer
+                .constant_value(expression, scope, false)
+                .unwrap()
+                .is_none()
+        );
+        assert!(analyzer.graph.expression_facts.get(expression).is_err());
+        assert_eq!(analyzer.tree.expressions.mark(), mark);
+        assert!(analyzer.constant_spine.is_empty());
+        assert!(analyzer.constant_discard_work.is_empty());
+        assert!(analyzer.constant_evaluation.is_none());
+        analyzer.declarations(declarations, scope).unwrap();
+        let value = analyzer
+            .constant_value(expression, scope, true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(value.bits, 1);
+        assert!(matches!(
+            analyzer.graph.types.get(value.ty).kind,
+            TypeKind::Scalar(Scalar::Bool)
+        ));
+        assert!(analyzer.graph.expression_facts.get(expression).is_ok());
+        assert_eq!(analyzer.tree.expressions.mark(), mark);
+        assert!(analyzer.constant_spine.is_empty());
+        assert!(analyzer.constant_discard_work.is_empty());
+        assert!(analyzer.constant_evaluation.is_none());
     }
 }

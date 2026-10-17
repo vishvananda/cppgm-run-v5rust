@@ -16,6 +16,36 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    // discard_lowering.cpp::imaged_discard_slots: copying a constant image
+    // skips element evaluation, but retains discarded class-prvalue storage.
+    fn imaged_discard_slots(&mut self, id: ast::ExprId, depth: u32) -> Result<(), Error> {
+        if depth > 64 {
+            return Ok(());
+        }
+        let id = self.without_parentheses(id);
+        match self.tree.expressions.get(id).kind {
+            ExprKind::Braced { elements, .. } => {
+                for &element in self.tree.expr_lists.get(elements) {
+                    self.imaged_discard_slots(element, depth + 1)?;
+                }
+            }
+            ExprKind::Binary {
+                op, left, right, ..
+            } if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma) => {
+                let left = self.without_parentheses(left);
+                let facts = self.graph.lower_expression(left)?;
+                if !facts.is_place && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_))
+                {
+                    self.generated_slot("discard", types::storage(self.graph, facts.ty)?)?;
+                } else {
+                    self.imaged_discard_slots(left, depth + 1)?;
+                }
+                self.imaged_discard_slots(right, depth + 1)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
     pub(super) fn aggregate_array_argument(
         &mut self,
         ty: TypeId,
@@ -154,6 +184,19 @@ impl Function<'_, '_, '_, '_> {
             && self.graph.lower_cv(element) & 2 == 0
             && let Some(image) = self.graph.lower_array_image(entity)
         {
+            let expr = match initializer.kind {
+                ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) => {
+                    Some(expr)
+                }
+                ast::InitializerKind::Parenthesized(arguments) => {
+                    let arguments = self.tree.expr_lists.get(arguments);
+                    (arguments.len() == 1).then(|| arguments[0])
+                }
+                ast::InitializerKind::Default | ast::InitializerKind::Delete => None,
+            };
+            if let Some(expr) = expr {
+                self.imaged_discard_slots(expr, 0)?;
+            }
             let image = self.static_data_image(image)?;
             let (bytes, align) = types::layout(self.graph, ty)?;
             let destination = self.emit(I::Addr(slot), ty)?;
