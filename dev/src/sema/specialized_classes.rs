@@ -102,9 +102,21 @@ impl Analyzer<'_> {
         &mut self,
         entity: EntityId,
         owner: ScopeId,
+        scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
         self.specialization_mode = SpecializationMode::Ordinary;
+        if self.graph.within_class_instance(owner)
+            && self.active_template_head(scope).is_some()
+            && self.graph.entity(entity).template_head.is_some()
+        {
+            self.graph.class_templates.definitions.specialize(entity);
+            self.graph.class_templates.partials.replace_primary(entity);
+            let class = self.graph.entity_mut(entity);
+            class.scope = None;
+            class.defined = false;
+            return Ok(());
+        }
         if !self.graph.within_class_instance(owner)
             || self
                 .graph

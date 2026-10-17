@@ -109,6 +109,27 @@ impl Analyzer<'_> {
             };
             let Some(found) = found else { break };
             let binding = self.graph.binding(found);
+            if self.specializing()
+                && component.arguments.is_some()
+                && binding.kind == BindingKind::Type
+                && self.graph.entity(binding.entity).template_head.is_some()
+                && let Some(specialization) = self.class_template_id(found, component, scope)?
+            {
+                let entity = self.graph.binding(specialization).entity;
+                if self
+                    .graph
+                    .class_templates
+                    .instance(entity)
+                    .is_some_and(|instance| !instance.dependent)
+                    && self.complete_class(entity)?
+                    && let Some(next) = self.graph.entity(entity).scope
+                {
+                    // Under template<>, concrete qualifiers name instances;
+                    // later dependent qualifiers belong to their own primaries.
+                    prefix = Some(next);
+                    continue;
+                }
+            }
             if component.arguments.is_some()
                 && binding.kind == BindingKind::Type
                 && self.graph.entity(binding.entity).template_head.is_some()

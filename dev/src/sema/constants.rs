@@ -239,10 +239,20 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => {
-                if keyword.is_some_and(|key| key != Keyword::StaticCast) {
+                if keyword.is_some_and(|key| {
+                    if self.semantic() {
+                        matches!(key, Keyword::ReinterpretCast | Keyword::DynamicCast)
+                    } else {
+                        key != Keyword::StaticCast
+                    }
+                }) {
                     return Err(not_constant(
                         location,
-                        "cast is not allowed in a constant expression",
+                        if self.semantic() {
+                            "a reinterpret_cast or dynamic_cast in a constant expression"
+                        } else {
+                            "cast is not allowed in a constant expression"
+                        },
                     ));
                 }
                 let ty = self.type_syntax(ty, scope)?;

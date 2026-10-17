@@ -195,6 +195,7 @@ pub enum Node {
     NonTypeParameter(NodeId),
     ParameterPack(NodeId),
     TypedArgument {
+        // Further parameter declarations live in this node's item slice.
         declaration: NodeId,
         argument: NodeId,
     },

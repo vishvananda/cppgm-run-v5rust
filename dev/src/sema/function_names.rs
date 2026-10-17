@@ -461,7 +461,16 @@ impl Analyzer<'_> {
     ) -> Result<BindingId, Error> {
         self.function_specifier_type(specs, info, scope)?;
         if self.specializing() && specs.friendship != super::specifiers::Friendship::Friend {
-            return self.explicit_function_specialization(info, specs, scope, location, definition);
+            if self.active_template_head(scope).is_some() {
+                if self.class_template_member_redeclaration(info) {
+                    self.specialization_mode = super::analyzer::SpecializationMode::Ordinary;
+                } else {
+                    return self.member_template_specialization(info, scope, location, definition);
+                }
+            } else {
+                return self
+                    .explicit_function_specialization(info, specs, scope, location, definition);
+            }
         }
         if specs.friendship == super::specifiers::Friendship::Friend
             && (self.function_template_id(info).is_some()

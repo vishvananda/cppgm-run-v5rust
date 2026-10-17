@@ -22,6 +22,11 @@ pub(super) struct ClassPartials {
     selections: HashMap<EntityId, (EntityId, Vec<TypeId>)>,
 }
 impl ClassPartials {
+    pub(super) fn replace_primary(&mut self, entity: EntityId) {
+        self.patterns.remove(&entity);
+        self.identities.remove(&entity);
+        self.lists.clear(entity);
+    }
     pub(super) fn primary(&self, entity: EntityId) -> Option<EntityId> {
         self.primaries.get(&entity).copied()
     }

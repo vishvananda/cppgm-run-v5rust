@@ -12,6 +12,94 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::HashSet;
 
+#[cfg(test)]
+mod pattern_tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{lookup::Filter, types::TypeKind},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn replacement_patterns_keep_instance_identity_and_independent_body_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct S{template<class U>int f(U){return sizeof(T);}\
+                template<class U>int unused(U){U::bad;return 0;}};\
+              template<>template<class V>int S<int>::f(V v){return v+7;}\
+              using I=S<int>;using C=S<char>;\
+              int main(){I i;C c;return i.f(1)+i.f(2)+c.f(3);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-pattern").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let name = cursor.intern_name(b"f").unwrap();
+        let unused = cursor.intern_name(b"unused").unwrap();
+        let mut primaries = Vec::new();
+        for spelling in [b"I", b"C"] {
+            let alias = cursor.intern_name(spelling).unwrap();
+            let binding = graph.binding(graph.own(graph.global, alias, Filter::Ordinary).unwrap());
+            let TypeKind::Class(class) = graph.types.get(binding.ty.unwrap()).kind else {
+                panic!("class alias");
+            };
+            let scope = graph.entity(class).scope.unwrap();
+            let primary = graph
+                .binding(graph.functions_at(scope, name.into()).next().unwrap())
+                .entity;
+            let head = graph.entity(primary).template_head.unwrap();
+            assert_eq!(graph.templates.depth(head), 0);
+            let unused = graph
+                .binding(graph.functions_at(scope, unused.into()).next().unwrap())
+                .entity;
+            assert!(!graph.function_templates.body_demanded(unused));
+            primaries.push(primary);
+        }
+        assert_ne!(primaries[0], primaries[1]);
+        assert!(
+            graph
+                .function_templates
+                .bodies
+                .source(primaries[0])
+                .is_none()
+        );
+        assert!(
+            graph
+                .function_templates
+                .bodies
+                .source(primaries[1])
+                .is_some()
+        );
+        for primary in primaries {
+            let instances: Vec<_> = graph
+                .function_templates
+                .arguments
+                .keys()
+                .filter(|&&entity| {
+                    graph
+                        .function_templates
+                        .primary(entity)
+                        .is_some_and(|binding| graph.binding(binding).entity == primary)
+                })
+                .copied()
+                .collect();
+            assert_eq!(instances.len(), 1);
+            assert!(graph.function_templates.bodies.body(instances[0]).is_some());
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Specializations {
     entities: HashSet<EntityId>,
@@ -32,6 +120,74 @@ impl Specializations {
 }
 
 impl Analyzer<'_> {
+    // 14.7.3p16-p18: replace a concrete class instance's member-template
+    // pattern, keeping the primary's canonical identity and signature cache.
+    pub(super) fn member_template_specialization(
+        &mut self,
+        info: &DeclaratorInfo,
+        scope: ScopeId,
+        location: SourceOffset,
+        definition: Definition,
+    ) -> Result<BindingId, Error> {
+        self.specialization_mode = SpecializationMode::Ordinary;
+        let home = info.home.filter(|&home| {
+                self.graph.scope(home).owner.is_some_and(|owner| {
+                    !self.graph.class_templates.definitions.explicit(owner)
+                        && (self.graph.class_templates.instance(owner).is_some()
+                            || self.graph.class_templates.definitions.source(owner).is_some())
+                })
+        }).ok_or_else(|| Error::at(location,
+            "an explicit specialization of a member template outside a class template specialization"))?;
+        let head = self.active_template_head(scope);
+        let key = self.declaration_key(info)?;
+        let mut next = 0;
+        let mut selected = None;
+        while let Some(candidate) = self.graph.next_function(home, key, &mut next) {
+            if self.graph.entity(self.graph.binding(candidate).entity).home == Some(home)
+                && self.same_declared_function(candidate, info.ty, head)?
+            {
+                selected = Some(candidate);
+                break;
+            }
+        }
+        let binding = selected.ok_or_else(|| Error::at(location,
+            "an explicit specialization matches no member template of the class template specialization"))?;
+        let entity = self.graph.binding(binding).entity;
+        let explicit = self
+            .graph
+            .function_templates
+            .specializations
+            .contains(entity);
+        let defines = matches!(definition, Definition::Body | Definition::Defaulted);
+        if explicit && self.graph.entity(entity).defined {
+            if defines {
+                return Err(Error::at(location, "redefinition of a function"));
+            }
+            return Ok(binding);
+        }
+        self.graph
+            .function_templates
+            .specializations
+            .entities
+            .insert(entity);
+        if defines {
+            // The ordinary body owner publishes the replacement once. Sever
+            // only this member's source edge; other class instances retain it.
+            let function = self.graph.entity_mut(entity);
+            function.defined = false;
+            function.function_definition = None;
+            function.scope = None;
+            function.function_parameters = info.parameters;
+            self.graph
+                .function_templates
+                .bodies
+                .replace_member_pattern(entity);
+        }
+        let mut own = self.graph.binding(binding);
+        own.ty = Some(info.ty);
+        self.graph.add_hidden_function(binding, own)
+    }
+
     pub(super) fn explicit_specialization(
         &mut self,
         declaration: ast::DeclId,

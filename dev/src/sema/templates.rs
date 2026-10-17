@@ -379,15 +379,16 @@ impl Analyzer<'_> {
         declare: bool,
     ) -> Result<HeadId, Error> {
         self.check_stack()?;
+        // Bound argument frames share the lookup scope kind, but introduce
+        // no template parameter list (Scope::lists in the frozen compiler).
+        self.graph.scope_mut(scope).template_lists = 1;
         let mut depth = 0u32;
         let mut enclosing = self.graph.scope(scope).parent;
         while let Some(id) = enclosing {
             let current = self.graph.scope(id);
-            if current.kind == ScopeKind::TemplateParameters {
-                depth = depth
-                    .checked_add(1)
-                    .ok_or(Error::Limit("template parameter depth limit"))?;
-            }
+            depth = depth
+                .checked_add(current.template_lists)
+                .ok_or(Error::Limit("template parameter depth limit"))?;
             enclosing = current.parent;
         }
         let mut parameters = Vec::new();

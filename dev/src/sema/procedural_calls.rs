@@ -200,6 +200,10 @@ impl Analyzer<'_> {
                 ));
             }
             if let Some(given) = explicit {
+                let component = ast::NameComponent {
+                    location: self.tree.expressions.get(callee).location,
+                    ..component
+                };
                 self.specialize_explicit_functions(component, &mut found, &given, true)?;
             }
             let facts = if let Some(facts) = named_value {

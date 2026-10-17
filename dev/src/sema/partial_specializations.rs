@@ -24,26 +24,39 @@ pub(super) struct PartialIndex(pub u8, pub IndexArgument);
 /// limit probes to lists selected by these arguments, never unrelated templates.
 #[derive(Default)]
 pub(super) struct PartialLists {
-    unindexed: HashMap<EntityId, Vec<usize>>,
-    indexed: HashMap<(EntityId, PartialIndex), Vec<usize>>,
-    positions: HashMap<EntityId, u64>,
+    primaries: HashMap<EntityId, PrimaryLists>,
+}
+#[derive(Default)]
+struct PrimaryLists {
+    unindexed: Vec<usize>,
+    indexed: HashMap<PartialIndex, Vec<usize>>,
+    positions: u64,
 }
 impl PartialLists {
+    pub(super) fn clear(&mut self, primary: EntityId) {
+        self.primaries.remove(&primary);
+    }
     pub(super) fn add(&mut self, primary: EntityId, key: Option<PartialIndex>, index: usize) {
+        let lists = self.primaries.entry(primary).or_default();
         if let Some(key) = key {
-            *self.positions.entry(primary).or_default() |= 1u64 << key.0;
-            self.indexed.entry((primary, key)).or_default().push(index);
+            lists.positions |= 1u64 << key.0;
+            lists.indexed.entry(key).or_default().push(index);
         } else {
-            self.unindexed.entry(primary).or_default().push(index);
+            lists.unindexed.push(index);
         }
     }
     pub(super) fn positions(&self, primary: EntityId) -> u64 {
-        self.positions.get(&primary).copied().unwrap_or_default()
+        self.primaries
+            .get(&primary)
+            .map_or(0, |lists| lists.positions)
     }
     pub(super) fn candidates(&self, primary: EntityId, keys: &[PartialIndex]) -> Vec<usize> {
-        let mut result = self.unindexed.get(&primary).cloned().unwrap_or_default();
+        let Some(lists) = self.primaries.get(&primary) else {
+            return Vec::new();
+        };
+        let mut result = lists.unindexed.clone();
         for &key in keys {
-            if let Some(indices) = self.indexed.get(&(primary, key)) {
+            if let Some(indices) = lists.indexed.get(&key) {
                 result.extend(indices.iter().rev().copied());
             }
         }

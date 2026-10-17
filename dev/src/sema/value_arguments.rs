@@ -160,6 +160,18 @@ impl Analyzer<'_> {
         earlier: &[TypeId],
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
+        self.match_template_argument_to(head, index, argument, earlier, location, None)
+    }
+
+    pub(super) fn match_template_argument_to(
+        &mut self,
+        head: HeadId,
+        index: usize,
+        argument: TypeId,
+        earlier: &[TypeId],
+        location: SourceOffset,
+        element: Option<TypeId>,
+    ) -> Result<TypeId, Error> {
         let parameter = self.graph.templates.parameters(head)[index];
         let info = self
             .graph
@@ -181,7 +193,10 @@ impl Analyzer<'_> {
         let TypeKind::Value { ty: source, bits } = self.graph.types.get(argument).kind else {
             return Ok(argument);
         };
-        let target = match self.argument_target(head, index, earlier)? {
+        let target = match element.map_or_else(
+            || self.argument_target(head, index, earlier),
+            |ty| Ok(super::address_arguments::ArgumentTarget::Type(ty)),
+        )? {
             super::address_arguments::ArgumentTarget::Type(ty) => ty,
             super::address_arguments::ArgumentTarget::Unknown => return Ok(argument),
             super::address_arguments::ArgumentTarget::Invalid => {
@@ -192,6 +207,11 @@ impl Analyzer<'_> {
             }
         };
         let target = self.bare_type(target)?;
+        if self.graph.dependent_type(target) {
+            // A bound expansion can retain a dependent pattern at positions
+            // beyond its bound elements. C++ leaves that value unconverted.
+            return Ok(argument);
+        }
         if self.graph.address_parameter_type(target) || self.graph.address_parameter_type(source) {
             return self.converted_null_argument(target, argument, location);
         }

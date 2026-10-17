@@ -652,6 +652,9 @@ impl<'a> Encoder<'a> {
                 argument,
             } => {
                 self.parameter_declaration(declaration)?;
+                for &declaration in self.graph.items(id) {
+                    self.parameter_declaration(declaration)?;
+                }
                 self.argument(argument)?;
             }
             Node::ArgumentPack => {

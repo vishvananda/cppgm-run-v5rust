@@ -4,12 +4,34 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{Binding, BindingKind, ScopeId},
+    graph::{Binding, BindingKind, Graph, ScopeId},
     lookup::Filter,
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
 };
 use crate::{lex::identifiers::NameId, support::source::SourceOffset};
+
+impl Graph {
+    pub(super) fn instance_levels(&self, mut scope: Option<ScopeId>) -> Result<u32, Error> {
+        let mut levels = 0u32;
+        while let Some(current) = scope {
+            let node = self.scope(current);
+            if node.owner.is_some_and(|owner| {
+                !self.class_templates.definitions.explicit(owner)
+                    && self
+                        .class_templates
+                        .instance(owner)
+                        .is_some_and(|instance| !instance.dependent)
+            }) {
+                levels = levels
+                    .checked_add(1)
+                    .ok_or(Error::Limit("instance levels"))?;
+            }
+            scope = node.parent;
+        }
+        Ok(levels)
+    }
+}
 
 impl Analyzer<'_> {
     pub(super) fn argument_parameter_pack(&self, head: HeadId, index: usize) -> bool {
@@ -111,15 +133,44 @@ impl Analyzer<'_> {
                 };
                 let size = formed.map_or(given.len() - next, |(_, size)| size);
                 let mut converted = Vec::with_capacity(size);
+                let pattern = info
+                    .value_type
+                    .filter(|&ty| self.graph.dependent_type(ty))
+                    .map(|ty| match self.graph.types.get(ty).kind {
+                        TypeKind::Expansion(pattern) => pattern,
+                        _ => ty,
+                    });
+                let earlier = pattern.map(|_| result.iter().copied().map(Some).collect::<Vec<_>>());
                 for position in 0..size {
                     let element = if let Some((pack, _)) = formed {
                         self.graph.types.pack_elements(pack)?[position]
                     } else {
                         given[next + position]
                     };
-                    converted.push(
-                        self.match_template_argument(head, index, element, &result, location)?,
-                    );
+                    let target = if let Some((pattern, arguments)) = pattern.zip(earlier.as_deref())
+                    {
+                        let selection = super::function_templates::PackSelection {
+                            elements: &[],
+                            bound_element: Some(position),
+                        };
+                        let mut environment = super::function_templates::Substitution::new(
+                            self.graph.templates.depth(head),
+                            arguments,
+                        );
+                        environment.selection = Some(&selection);
+                        Some(
+                            self.substitute_signature_type(pattern, &mut environment)?
+                                .ok_or(Error::at(
+                                    location,
+                                    "a template argument does not match its template parameter",
+                                ))?,
+                        )
+                    } else {
+                        None
+                    };
+                    converted.push(self.match_template_argument_to(
+                        head, index, element, &result, location, target,
+                    )?);
                 }
                 if formed.is_none() {
                     next = given.len();
@@ -192,23 +243,7 @@ impl Analyzer<'_> {
             .entity(binding.entity)
             .template_parameter
             .ok_or(Error::Invariant("pack binding without parameter"))?;
-        let mut levels = 0u32;
-        let mut parent = self.graph.scope(scope).parent;
-        while let Some(current) = parent {
-            let node = self.graph.scope(current);
-            if node.owner.is_some_and(|owner| {
-                self.graph
-                    .class_templates
-                    .instance(owner)
-                    .is_some_and(|instance| !instance.dependent)
-                    && !self.graph.class_templates.definitions.explicit(owner)
-            }) {
-                levels = levels
-                    .checked_add(1)
-                    .ok_or(Error::Limit("bound pack depth"))?;
-            }
-            parent = node.parent;
-        }
+        let levels = self.graph.instance_levels(self.graph.scope(scope).parent)?;
         let parameter_type = self
             .graph
             .entity(binding.entity)

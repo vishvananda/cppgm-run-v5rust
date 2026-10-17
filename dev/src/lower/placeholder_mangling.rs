@@ -74,14 +74,15 @@ impl Symbols<'_, '_> {
         Ok(false)
     }
     pub(super) fn placeholder_node(&mut self, ty: TypeId) -> Result<Option<NodeId>, Error> {
-        if let Some(&node) = self.placeholders.get(&ty) {
+        let key = (ty, self.bound_pattern, self.own_level);
+        if let Some(&node) = self.placeholders.get(&key) {
             return Ok(node);
         }
         if self.graph.lower_operand_key_dependent(ty) != Some(true) {
-            self.placeholders.insert(ty, None);
+            self.placeholders.insert(key, None);
             return Ok(None);
         }
-        self.placeholders.insert(ty, None);
+        self.placeholders.insert(key, None);
         let (_, words) = self.graph.lower_template_operand(ty).ok_or_else(missing)?;
         let node = match self.placeholder_expression(words) {
             Ok(node) => Some(node),
@@ -89,11 +90,11 @@ impl Symbols<'_, '_> {
             // that result selects its concrete-specialization ABI fallback.
             Err(Error::Missing("dependent ABI expression form")) => None,
             Err(error) => {
-                self.placeholders.remove(&ty);
+                self.placeholders.remove(&key);
                 return Err(error);
             }
         };
-        self.placeholders.insert(ty, node);
+        self.placeholders.insert(key, node);
         Ok(node)
     }
 
@@ -342,10 +343,7 @@ impl Symbols<'_, '_> {
                 level: *level,
             }
         } else {
-            let (index, level, _, pack) = self
-                .graph
-                .lower_parameter_level(words.ty()?)
-                .ok_or_else(missing)?;
+            let (index, level, _, pack) = self.abi_parameter_level(words.ty()?)?;
             if level == 0 {
                 Node::TemplateParam {
                     index,

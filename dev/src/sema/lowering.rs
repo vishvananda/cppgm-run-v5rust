@@ -727,6 +727,9 @@ impl Graph {
             .template_parameter?
             .value_type
     }
+    pub(crate) fn lower_instance_levels(&self, scope: ScopeId) -> Result<u32, Error> {
+        self.instance_levels(Some(scope))
+    }
     pub(crate) fn lower_template_signature(
         &self,
         entity: EntityId,

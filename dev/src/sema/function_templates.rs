@@ -398,10 +398,11 @@ impl Analyzer<'_> {
                     let TypeKind::Pack(elements) = &self.graph.types.get(arguments).kind else {
                         return Err(Error::Invariant("bound pack without arguments"));
                     };
-                    let element = *elements
-                        .get(position)
-                        .ok_or(Error::Invariant("bound pack element outside argument"))?;
-                    Some(self.graph.types.qualify(element, cv)?)
+                    if let Some(&element) = elements.get(position) {
+                        Some(self.graph.types.qualify(element, cv)?)
+                    } else {
+                        Some(ty)
+                    }
                 } else {
                     Some(ty)
                 }
@@ -1364,6 +1365,15 @@ impl Analyzer<'_> {
             arguments
         };
         let mut arguments = initial();
+        // A declaration deduces the whole pack, including any explicitly
+        // supplied prefix (14.8.1p9). Verify that prefix after deduction.
+        for (index, slot) in arguments.iter_mut().enumerate().take(converted.len()) {
+            if self.argument_parameter_pack(head, index)
+                && slot.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Pack(_)))
+            {
+                *slot = None;
+            }
+        }
         let depth = self.graph.templates.depth(head);
         let declared = self.graph.types.canonical_function(declared)?;
         let source = self
@@ -1372,7 +1382,23 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("template declaration without type"))?;
         let pattern = self.target_deduction_pattern(source, declared, depth)?;
-        if !self.deduce_signature_type(pattern, declared, depth, &mut arguments, false)? {
+        let mut deduced =
+            self.deduce_signature_type(pattern, declared, depth, &mut arguments, false)?;
+        for (index, &given) in converted.iter().enumerate() {
+            if !deduced || !self.argument_parameter_pack(head, index) {
+                continue;
+            }
+            let TypeKind::Pack(prefix) = &self.graph.types.get(given).kind else {
+                continue;
+            };
+            deduced = arguments[index].is_some_and(|found| {
+                self.graph
+                    .types
+                    .pack_elements(found)
+                    .is_ok_and(|elements| elements.starts_with(prefix))
+            });
+        }
+        if !deduced {
             if given.is_empty() {
                 return Ok(None);
             }

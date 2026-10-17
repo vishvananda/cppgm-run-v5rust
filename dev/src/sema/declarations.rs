@@ -1695,7 +1695,7 @@ impl Analyzer<'_> {
             self.new_class(node.key, Some(key_name), home)?
         };
         if prefix.is_some() && self.specializing() {
-            self.explicit_member_class(entity, home, qualified_name.location)?;
+            self.explicit_member_class(entity, home, scope, qualified_name.location)?;
         }
         if self.graph.entity(entity).defined {
             return Err(Error::at(qualified_name.location, "class redefinition"));

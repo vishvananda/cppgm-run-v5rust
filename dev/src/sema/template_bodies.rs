@@ -39,6 +39,11 @@ pub(super) struct Bodies {
     emission_definitions: HashSet<EntityId>,
 }
 impl Bodies {
+    pub(super) fn replace_member_pattern(&mut self, entity: EntityId) {
+        self.member_links.remove(&entity);
+        self.patterns.remove(&entity);
+    }
+
     pub(super) fn started(&self, entity: EntityId) -> bool {
         self.states.contains_key(&entity)
     }
