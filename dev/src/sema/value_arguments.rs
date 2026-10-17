@@ -22,6 +22,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
+        let (specifiers, declarator) = Cloner::new(self.tree, self.stack_budget, self.stack_base)
+            .parameter_type(specifiers, declarator)
+            .map_err(|error| super::template_bodies::copy_error(&error))?;
         let specs = self.specifiers(specifiers, scope, false)?;
         if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto) {
             return Err(Error::at(

@@ -159,9 +159,21 @@ impl<'a> Cloner<'a> {
     pub(crate) fn ty(&mut self, id: TypeId) -> Result<TypeId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.types.get(id);
-        node.specifiers = self.specifiers(node.specifiers)?;
-        node.declarator = self.optional(node.declarator, Self::declarator)?;
+        (node.specifiers, node.declarator) =
+            self.parameter_type(node.specifiers, node.declarator)?;
         self.tree.types.add(node)
+    }
+    // Retained template heads share syntax; each parameter formation owns
+    // the type expressions whose semantic facts depend on its scope.
+    pub(crate) fn parameter_type(
+        &mut self,
+        specifiers: List<Specifier>,
+        declarator: Option<DeclaratorId>,
+    ) -> Result<(List<Specifier>, Option<DeclaratorId>), ParseError> {
+        Ok((
+            self.specifiers(specifiers)?,
+            self.optional(declarator, Self::declarator)?,
+        ))
     }
     fn declarator(&mut self, id: DeclaratorId) -> Result<DeclaratorId, ParseError> {
         self.check_stack()?;

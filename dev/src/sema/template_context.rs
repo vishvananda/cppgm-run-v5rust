@@ -31,6 +31,7 @@ struct Context {
     body: Option<BodyContext>,
     head: Option<HeadId>,
     owner: Option<EntityId>,
+    operand_home: Option<ScopeId>,
     default_scope: Option<ScopeId>,
     friend: Option<ScopeId>,
     initializing: Option<EntityId>,
@@ -59,6 +60,7 @@ impl Context {
         swap(&mut self.body, &mut analyzer.body_context);
         swap(&mut self.head, &mut analyzer.template_head);
         swap(&mut self.owner, &mut analyzer.template_owner);
+        swap(&mut self.operand_home, &mut analyzer.operand_home);
         swap(
             &mut self.default_scope,
             &mut analyzer.default_argument_scope,
@@ -157,14 +159,17 @@ mod tests {
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         analyzer.instantiation_depth = 7;
         analyzer.dependent_uses.set(11);
+        analyzer.operand_home = Some(analyzer.graph.global);
         let result = analyzer.instantiation_context(1023, SourceOffset(0), 0, |inner| {
             assert_eq!(inner.instantiation_depth, 1024);
+            assert!(inner.operand_home.is_none());
             inner.note_dependent_use();
             Ok(())
         });
         assert!(result.is_ok());
         assert_eq!(analyzer.instantiation_depth, 7);
         assert_eq!(analyzer.dependent_uses.get(), 11);
+        assert_eq!(analyzer.operand_home, Some(analyzer.graph.global));
         let result = analyzer.instantiation_context(0, SourceOffset(0), 0, |inner| {
             inner.note_dependent_use();
             Err::<(), _>(Error::Missing("test substitution"))

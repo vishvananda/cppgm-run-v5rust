@@ -40,7 +40,19 @@ impl Analyzer<'_> {
         lone: bool,
     ) -> Result<super::specifiers::Specifiers, Error> {
         let saved = self.declaration_access.class;
+        let saved_home = self.operand_home.take();
         let result = (|| {
+            if self.active_template_head(scope).is_some() {
+                let mut current = declarator;
+                while let Some(id) = current {
+                    let node = self.tree.declarators.get(id);
+                    if let Some(name) = node.name {
+                        self.operand_home = self.qualifying_name(name, scope, false)?.1;
+                        break;
+                    }
+                    current = node.nested;
+                }
+            }
             if self.semantic()
                 && self.template_depth == 0
                 && self.graph.scope(scope).kind == ScopeKind::Namespace
@@ -53,6 +65,7 @@ impl Analyzer<'_> {
             self.specifiers(specifiers, scope, lone)
         })();
         self.declaration_access.class = saved;
+        self.operand_home = saved_home;
         result
     }
     pub(super) fn begin_declaration_access(&mut self, scope: ScopeId, enabled: bool) -> Mark {

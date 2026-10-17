@@ -346,12 +346,19 @@ impl Analyzer<'_> {
             self.namespace_friend_class = Some(home);
         }
         let result = (|| {
-            let head = self.template_parameters(parameters, parameter_scope, true)?;
+            let saved_home = self.operand_home;
+            self.operand_home = self.member_operand_home(declaration, scope)?;
+            let head = self.template_parameters(parameters, parameter_scope, true);
+            self.operand_home = saved_home;
+            let head = head?;
             let saved = self.template_head.replace(head);
             self.template_depth += 1;
             let saved_owner = self.template_owner;
             let result = (|| {
                 self.template_owner = self.qualifying_template(declaration, parameter_scope)?;
+                if self.template_owner.is_some() {
+                    self.check_outside_template_defaults(parameters)?;
+                }
                 self.declaration(declaration, parameter_scope)
             })();
             self.template_owner = saved_owner;
@@ -361,6 +368,25 @@ impl Analyzer<'_> {
         })();
         self.namespace_friend_class = saved_friend;
         result
+    }
+
+    fn check_outside_template_defaults(
+        &self,
+        parameters: ast::TemplateParameterClause,
+    ) -> Result<(), Error> {
+        for parameter in self.tree.template_parameters.get(parameters.parameters) {
+            let defaulted = match parameter.kind {
+                ast::TemplateParameterKind::Type { default, .. } => default.is_some(),
+                ast::TemplateParameterKind::NonType { default, .. } => default.is_some(),
+            };
+            if defaulted {
+                return Err(Error::at(
+                    parameter.location,
+                    "a default template argument on a member defined outside its class template",
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn template_parameters(

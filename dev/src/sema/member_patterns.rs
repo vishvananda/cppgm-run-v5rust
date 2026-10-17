@@ -133,6 +133,23 @@ impl Analyzer<'_> {
         let Some(name) = self.declared_syntax_name(declaration) else {
             return Ok(None);
         };
+        self.qualifying_name(
+            name,
+            scope,
+            matches!(
+                self.tree.declarations.get(declaration).kind,
+                ast::DeclKind::Template { .. }
+            ),
+        )
+        .map(|(owner, _)| owner)
+    }
+
+    pub(super) fn qualifying_name(
+        &mut self,
+        name: ast::Name,
+        scope: ScopeId,
+        nested_head: bool,
+    ) -> Result<(Option<EntityId>, Option<ScopeId>), Error> {
         let node = *self.tree.names.get(name);
         let count = self
             .tree
@@ -140,16 +157,15 @@ impl Analyzer<'_> {
             .get(node.components)
             .len()
             .saturating_sub(1);
+        if count == 0 && !node.global {
+            return Ok((None, None));
+        }
         let mut prefix = node.global.then_some(self.graph.global);
         let mut owner = None;
         // An outer head is visited before the remaining heads declare their
         // parameters. Only inspect as many template qualifiers as heads are
         // already in scope (class_templates.cpp::qualifying_template).
-        let mut heads = matches!(
-            self.tree.declarations.get(declaration).kind,
-            ast::DeclKind::Template { .. }
-        )
-        .then(|| {
+        let mut heads = nested_head.then(|| {
             std::iter::successors(Some(scope), |&scope| self.graph.scope(scope).parent)
                 .take_while(|&scope| self.graph.scope(scope).kind == ScopeKind::TemplateParameters)
                 .count()
@@ -159,7 +175,7 @@ impl Analyzer<'_> {
         for index in 0..count {
             let component = self.tree.name_lists.get(node.components)[index];
             let ast::NameKind::Identifier(key) = component.kind else {
-                break;
+                return Ok((owner, None));
             };
             let found = if let Some(prefix) = prefix {
                 self.qualified(prefix, key, Filter::Prefix)
@@ -171,10 +187,12 @@ impl Analyzer<'_> {
                 Err(Error::Diagnostic {
                     message: "ambiguous name",
                     ..
-                }) => break,
+                }) => return Ok((owner, None)),
                 Err(error) => return Err(error),
             };
-            let Some(found) = found else { break };
+            let Some(found) = found else {
+                return Ok((owner, None));
+            };
             let binding = self.graph.binding(found);
             if self.specializing()
                 && component.arguments.is_some()
@@ -203,7 +221,7 @@ impl Analyzer<'_> {
             {
                 if let Some(remaining) = &mut heads {
                     if *remaining == 0 {
-                        return Ok(owner);
+                        return Ok((owner, None));
                     }
                     *remaining -= 1;
                 }
@@ -219,11 +237,50 @@ impl Analyzer<'_> {
                 binding.entity
             };
             let Some(next) = self.graph.entity(entity).scope else {
-                break;
+                return Ok((owner, None));
             };
             prefix = Some(next);
         }
-        Ok(owner)
+        Ok((owner, prefix))
+    }
+
+    // class_templates.cpp::member_template_home: only the member's own
+    // innermost head keys operands in the qualified declaration's home.
+    pub(super) fn member_operand_home(
+        &mut self,
+        declaration: ast::DeclId,
+        scope: ScopeId,
+    ) -> Result<Option<ScopeId>, Error> {
+        if matches!(
+            self.tree.declarations.get(declaration).kind,
+            ast::DeclKind::Template { .. }
+        ) {
+            return Ok(None);
+        }
+        let Some(name) = self.declared_syntax_name(declaration) else {
+            return Ok(None);
+        };
+        let node = self.tree.names.get(name);
+        let components = self.tree.name_lists.get(node.components);
+        let ids = components
+            .iter()
+            .take(components.len().saturating_sub(1))
+            .filter(|component| component.arguments.is_some())
+            .count();
+        let heads = 1 + std::iter::successors(Some(scope), |&id| self.graph.scope(id).parent)
+            .take_while(|&id| self.graph.scope(id).kind == ScopeKind::TemplateParameters)
+            .count();
+        let specialized = if self.specializing() {
+            usize::try_from(self.specialization_levels)
+                .map_err(|_| Error::Limit("template specialization depth limit"))?
+        } else {
+            0
+        };
+        if heads + specialized <= ids {
+            return Ok(None);
+        }
+        self.qualifying_name(name, scope, false)
+            .map(|(_, home)| home)
     }
 
     fn enclosing_template_lists(&self, mut scope: ScopeId) -> usize {

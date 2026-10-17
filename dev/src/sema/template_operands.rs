@@ -146,7 +146,7 @@ impl Analyzer<'_> {
         let parameters = words
             .as_deref()
             .and_then(|words| self.operand_parameters(words));
-        let mut home = scope;
+        let mut home = self.operand_home.unwrap_or(scope);
         while matches!(
             self.graph.scope(home).kind,
             ScopeKind::Function | ScopeKind::Block | ScopeKind::TemplateParameters
@@ -1240,6 +1240,130 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn specialized_member_head_forms_types_at_its_own_parameter_depth() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{template<class U,decltype(sizeof(U)) I>int f();};\
+              template<>template<class V,decltype(sizeof(V)) J>int A<int>::f(){return J;}\
+              int main(){return A<int>().f<char,3>()-3;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"specialized-home").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        // Original depth-one U and the instance's depth-zero U have distinct
+        // operand identities. The replacement V shares only the latter.
+        assert_eq!(graph.template_operands.patterns.len(), 2);
+        assert!(graph.template_operands.active.is_empty());
+    }
+
+    #[test]
+    fn outside_member_heads_share_operands_only_in_their_declaration_home() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{\
+                template<class U,decltype(sizeof(U)) I>int f();\
+                template<class U,U I>int f();};\
+              template<class X>template<class V,decltype(sizeof(V)) J>\
+                int A<X>::f(){return J;}\
+              template<class X>template<class V,V J>int A<X>::f(){return J;}\
+              template<class T>struct B{\
+                template<class U,decltype(sizeof(U)) I>int f();};\
+              template<class X>template<class V,decltype(sizeof(V)) J>\
+                int B<X>::f(){return J;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-head-home").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let a = cursor.intern_name(b"A").unwrap();
+        let b = cursor.intern_name(b"B").unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let syntax_declarations = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut homes = Vec::new();
+        for (name, count) in [(a, 2), (b, 1)] {
+            let binding = graph
+                .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            let home = graph.entity(graph.binding(binding).entity).scope.unwrap();
+            homes.push(home);
+            let functions: Vec<_> = graph.functions_at(home, f.into()).collect();
+            assert_eq!(functions.len(), count);
+            for binding in functions {
+                let entity = graph.binding(binding).entity;
+                assert!(graph.entity(entity).defined);
+                assert!(!graph.function_templates.body_demanded(entity));
+            }
+        }
+        assert_eq!(graph.template_operands.patterns.len(), 2);
+        for pattern in graph.template_operands.patterns.values() {
+            assert!(homes.contains(&pattern.home));
+            assert_ne!(pattern.scope, pattern.home);
+            assert!(graph.expression_facts.get(pattern.expression).is_err());
+        }
+        assert_eq!(tree.declarations.mark(), syntax_declarations);
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
+    fn outside_default_rejection_restores_context_and_keeps_the_first_head() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{template<class U>int f();};\
+              template<class T>template<class U=int>int A<T>::f(){return 1;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"member-default-state").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let a = cursor.intern_name(b"A").unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let declarations = tree.decl_lists.get(declarations).to_vec();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declaration(declarations[0], global).unwrap();
+        let binding = analyzer
+            .graph
+            .own(global, a, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let home = analyzer
+            .graph
+            .entity(analyzer.graph.binding(binding).entity)
+            .scope
+            .unwrap();
+        let binding = analyzer.graph.functions_at(home, f.into()).next().unwrap();
+        let entity = analyzer.graph.binding(binding).entity;
+        let head = analyzer.graph.entity(entity).template_head.unwrap();
+        assert!(matches!(
+            analyzer.declaration(declarations[1], global),
+            Err(Error::Diagnostic {
+                message: "a default template argument on a member defined outside its class template",
+                ..
+            })
+        ));
+        assert_eq!(analyzer.graph.entity(entity).template_head, Some(head));
+        assert!(analyzer.graph.templates.default_argument(head, 0).is_none());
+        assert!(!analyzer.graph.entity(entity).defined);
+        assert_eq!(analyzer.graph.functions_at(home, f.into()).count(), 1);
+        assert!(analyzer.template_head.is_none());
+        assert!(analyzer.template_owner.is_none());
+        assert!(analyzer.operand_home.is_none());
+        assert_eq!(analyzer.template_depth, 0);
+    }
 
     #[test]
     fn array_bounds_keep_identity_through_canonicalization_and_cv() {
