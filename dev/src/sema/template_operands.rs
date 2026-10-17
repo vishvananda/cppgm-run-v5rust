@@ -37,6 +37,12 @@ struct Key {
     query: Query,
     depth: u32,
     arguments: Vec<TypeId>,
+    selection: Option<Box<ElementSelection>>,
+}
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ElementSelection {
+    elements: Vec<Option<usize>>,
+    bound_element: Option<usize>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Query {
@@ -284,6 +290,18 @@ impl Analyzer<'_> {
             query,
             depth: environment.depth,
             arguments,
+            selection: environment
+                .selection
+                .filter(|selection| {
+                    selection.bound_element.is_some()
+                        || selection.elements.iter().any(Option::is_some)
+                })
+                .map(|selection| {
+                    Box::new(ElementSelection {
+                        elements: selection.elements.to_vec(),
+                        bound_element: selection.bound_element,
+                    })
+                }),
         };
         if let Some(&result) = self.graph.template_operands.substitutions.get(&key) {
             return Ok(Some(result));
@@ -351,7 +369,7 @@ impl Analyzer<'_> {
             .pattern(entity)
             .ok_or(Error::Invariant("missing operand"))?;
         let scope = self.operand_scope(pattern.scope, environment, pattern.parameters)?;
-        let copy = self.copy_expression_in_frame(pattern.expression, scope)?;
+        let copy = self.copy_selected_operand(pattern.expression, scope, environment)?;
         let access = environment
             .context
             .map(|entity| self.substitution_scope(entity))

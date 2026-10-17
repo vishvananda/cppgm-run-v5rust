@@ -465,6 +465,7 @@ impl Function<'_, '_, '_, '_> {
             && matches!(
                 self.tree.expressions.get(id).kind,
                 ExprKind::Sizeof { .. }
+                    | ExprKind::SizeofPack(_)
                     | ExprKind::TypeTrait {
                         keyword: Keyword::Alignof,
                         ..

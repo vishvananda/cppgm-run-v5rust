@@ -10,13 +10,13 @@ use std::collections::HashSet;
 
 #[derive(Clone, Copy)]
 pub(super) enum PackNames {
-    Known(bool),
+    Known(Option<super::types::TypeId>),
     Unsupported(&'static str),
 }
 impl PackNames {
-    pub(super) fn contains_pack(self) -> Result<bool, Error> {
+    pub(super) fn types(self) -> Result<Option<super::types::TypeId>, Error> {
         match self {
-            Self::Known(found) => Ok(found),
+            Self::Known(types) => Ok(types),
             Self::Unsupported(feature) => Err(Error::Missing(feature)),
         }
     }
@@ -32,22 +32,39 @@ enum Probe {
 }
 impl Analyzer<'_> {
     pub(super) fn expression_pack_names(
-        &self,
+        &mut self,
         expression: ast::ExprId,
         scope: ScopeId,
     ) -> Result<PackNames, Error> {
-        match self.expression_names_pack(expression, scope) {
-            Ok(found) => Ok(PackNames::Known(found)),
+        match self.expression_pack_types(expression, scope) {
+            Ok(types) => Ok(PackNames::Known(if types.is_empty() {
+                None
+            } else {
+                Some(self.graph.types.intern(
+                    super::types::TypeKind::Pack(types),
+                    super::types::Cv::default(),
+                )?)
+            })),
             Err(Error::Missing(feature)) => Ok(PackNames::Unsupported(feature)),
             Err(error) => Err(error),
         }
     }
 
+    #[cfg(test)]
     pub(super) fn expression_names_pack(
         &self,
         root: ast::ExprId,
         scope: ScopeId,
     ) -> Result<bool, Error> {
+        Ok(!self.expression_pack_types(root, scope)?.is_empty())
+    }
+
+    fn expression_pack_types(
+        &self,
+        root: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Vec<super::types::TypeId>, Error> {
+        let mut packs = Vec::new();
         let mut work = vec![Probe::Expression(root)];
         let mut expressions = HashSet::new();
         let mut types = HashSet::new();
@@ -68,8 +85,10 @@ impl Analyzer<'_> {
                     work.extend(ty.declarator.map(Probe::Declarator));
                 }
                 Probe::Name(id, leading) => {
-                    if self.pack_name_probes(id, leading, scope, &mut work)? {
-                        return Ok(true);
+                    if let Some(ty) = self.pack_name_probes(id, leading, scope, &mut work)?
+                        && !packs.contains(&ty)
+                    {
+                        packs.push(ty);
                     }
                 }
                 Probe::Specifiers(specifiers) => {
@@ -92,7 +111,7 @@ impl Analyzer<'_> {
                 Probe::Declarator(id) => self.pack_declarator_probes(id, &mut work),
             }
         }
-        Ok(false)
+        Ok(packs)
     }
     fn pack_name_probes(
         &self,
@@ -100,7 +119,7 @@ impl Analyzer<'_> {
         leading: bool,
         scope: ScopeId,
         work: &mut Vec<Probe>,
-    ) -> Result<bool, Error> {
+    ) -> Result<Option<super::types::TypeId>, Error> {
         let name = self.tree.names.get(id);
         for (index, component) in self.tree.name_lists.get(name.components).iter().enumerate() {
             match component.kind {
@@ -110,14 +129,23 @@ impl Analyzer<'_> {
                     let found =
                         self.unqualified_declaration_result(scope, name.into(), Filter::Ordinary)?;
                     if !found.ambiguous
-                        && found.binding.is_some_and(|binding| {
-                            self.graph
-                                .entity(self.graph.binding(binding).entity)
-                                .template_parameter
-                                .is_some_and(super::templates::ParameterInfo::is_pack)
-                        })
+                        && let Some(binding) = found.binding
                     {
-                        return Ok(true);
+                        let binding = self.graph.binding(binding);
+                        if self
+                            .graph
+                            .entity(binding.entity)
+                            .template_parameter
+                            .is_some_and(super::templates::ParameterInfo::is_pack)
+                            && let Some(ty) =
+                                if binding.kind == super::graph::BindingKind::TemplateValue {
+                                    self.graph.entity(binding.entity).ty
+                                } else {
+                                    binding.ty
+                                }
+                        {
+                            return Ok(Some(ty));
+                        }
                     }
                 }
                 NameKind::Decltype(expression) | NameKind::DestructorDecltype(expression) => {
@@ -141,7 +169,7 @@ impl Analyzer<'_> {
                 }
             }
         }
-        Ok(false)
+        Ok(None)
     }
     fn pack_expression_probes(&self, id: ast::ExprId, work: &mut Vec<Probe>) -> Result<(), Error> {
         match self.tree.expressions.get(id).kind {

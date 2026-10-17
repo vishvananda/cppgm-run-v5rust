@@ -46,6 +46,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) member_initializer_class: Option<super::graph::EntityId>,
     pub(super) base_object: Option<super::graph::EntityId>,
     pub(super) template_depth: usize,
+    pub(super) deduced_pack_element: Option<usize>,
     pub(super) specialization_levels: u32,
     pub(super) specialization_mode: SpecializationMode,
     pub(super) instantiation_depth: u32,
@@ -177,6 +178,7 @@ impl<'tree> Analyzer<'tree> {
             floating: super::floating_intrinsics::names(cursor)?,
         };
         let mut analyzer = Self {
+            deduced_pack_element: None,
             decltype_name: cursor
                 .intern_name(b"decltype(...)")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,

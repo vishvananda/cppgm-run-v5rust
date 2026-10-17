@@ -201,6 +201,10 @@ impl<'a> Cloner<'a> {
         &mut self,
         mut node: ParameterClause,
     ) -> Result<ParameterClause, ParseError> {
+        if self.expanding() {
+            node.parameters = self.expanded_parameters(node.parameters)?;
+            return Ok(node);
+        }
         node.parameters = self.list(
             node.parameters,
             |tree| &mut tree.parameters,
@@ -245,6 +249,7 @@ impl<'a> Cloner<'a> {
         Ok(node)
     }
     fn handler(&mut self, mut node: Handler) -> Result<Handler, ParseError> {
+        let mark = self.shadow_mark();
         if let ExceptionDeclaration::Typed {
             specifiers,
             declarator,
@@ -254,8 +259,10 @@ impl<'a> Cloner<'a> {
                 specifiers: self.specifiers(specifiers)?,
                 declarator: self.optional(declarator, Self::declarator)?,
             };
+            self.shadow_declarator(declarator);
         }
         node.body = self.statement(node.body)?;
+        self.restore_shadows(mark);
         Ok(node)
     }
     pub(crate) fn expression(&mut self, id: ExprId) -> Result<ExprId, ParseError> {
@@ -385,7 +392,7 @@ impl<'a> Cloner<'a> {
         self.tree.expressions.add(node)
     }
     fn condition(&mut self, node: Condition) -> Result<Condition, ParseError> {
-        Ok(match node {
+        let node = match node {
             Condition::Expression(id) => Condition::Expression(self.expression(id)?),
             Condition::Declaration {
                 specifiers,
@@ -396,32 +403,48 @@ impl<'a> Cloner<'a> {
                 declarator: self.declarator(declarator)?,
                 initializer: self.initializer(initializer)?,
             },
-        })
+        };
+        if let Condition::Declaration { declarator, .. } = node {
+            self.shadow_declarator(Some(declarator));
+        }
+        Ok(node)
     }
     fn statement(&mut self, id: StmtId) -> Result<StmtId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.statements.get(id);
+        let mark = self.shadow_mark();
+        let scoped = matches!(
+            node.kind,
+            StmtKind::Compound(_)
+                | StmtKind::If { .. }
+                | StmtKind::ConditionalLoop { .. }
+                | StmtKind::For { .. }
+                | StmtKind::RangeFor { .. }
+        );
         node.kind = match node.kind {
             StmtKind::Ambiguous {
                 name,
                 component,
                 readings,
-            } => StmtKind::Ambiguous {
-                name: self.name(name)?,
-                component,
-                readings: self.list(
+            } => {
+                let readings = self.copied_readings(readings)?;
+                StmtKind::Ambiguous {
+                    name: self.name(name)?,
+                    component,
                     readings,
-                    |tree| &mut tree.statement_readings,
-                    Self::reading,
-                )?,
-            },
+                }
+            }
             StmtKind::Compound(ids) => {
                 StmtKind::Compound(self.list(ids, |tree| &mut tree.stmt_lists, Self::statement)?)
             }
             StmtKind::Expression(id) => StmtKind::Expression(self.optional(id, Self::expression)?),
             StmtKind::Return(id) => StmtKind::Return(self.optional(id, Self::expression)?),
             StmtKind::Throw(id) => StmtKind::Throw(self.optional(id, Self::expression)?),
-            StmtKind::Declaration(id) => StmtKind::Declaration(self.declaration(id)?),
+            StmtKind::Declaration(id) => {
+                let copy = self.declaration(id)?;
+                self.shadow_declared(copy);
+                StmtKind::Declaration(copy)
+            }
             StmtKind::If {
                 condition,
                 then_branch,
@@ -451,7 +474,7 @@ impl<'a> Cloner<'a> {
                 iteration,
                 body,
             } => StmtKind::For {
-                declaration: self.optional(declaration, Self::declaration)?,
+                declaration: self.for_declaration(declaration)?,
                 init: self.optional(init, Self::expression)?,
                 condition: self.optional(condition, Self::condition)?,
                 iteration: self.optional(iteration, Self::expression)?,
@@ -462,12 +485,18 @@ impl<'a> Cloner<'a> {
                 declarator,
                 range,
                 body,
-            } => StmtKind::RangeFor {
-                specifiers: self.specifiers(specifiers)?,
-                declarator: self.declarator(declarator)?,
-                range: self.expression(range)?,
-                body: self.statement(body)?,
-            },
+            } => {
+                let specifiers = self.specifiers(specifiers)?;
+                let declarator = self.declarator(declarator)?;
+                let range = self.expression(range)?;
+                self.shadow_declarator(Some(declarator));
+                StmtKind::RangeFor {
+                    specifiers,
+                    declarator,
+                    range,
+                    body: self.statement(body)?,
+                }
+            }
             StmtKind::Label { name, body } => StmtKind::Label {
                 name,
                 body: self.statement(body)?,
@@ -483,11 +512,24 @@ impl<'a> Cloner<'a> {
             },
             other @ (StmtKind::Break | StmtKind::Continue | StmtKind::Goto(_)) => other,
         };
+        if scoped {
+            self.restore_shadows(mark);
+        }
         self.tree.statements.add(node)
     }
-    fn reading(&mut self, mut node: StatementReading) -> Result<StatementReading, ParseError> {
-        node.statement = self.statement(node.statement)?;
-        Ok(node)
+    fn copied_readings(
+        &mut self,
+        list: List<StatementReading>,
+    ) -> Result<List<StatementReading>, ParseError> {
+        let mut readings = self.tree.statement_readings.get(list).to_vec();
+        for node in readings.iter_mut().rev() {
+            node.statement = self.statement(node.statement)?;
+        }
+        let start = self.tree.statement_readings.begin();
+        for node in readings {
+            self.tree.statement_readings.push(node);
+        }
+        self.tree.statement_readings.finish(start)
     }
     fn init_declarator(&mut self, mut node: InitDeclarator) -> Result<InitDeclarator, ParseError> {
         node.declarator = self.declarator(node.declarator)?;
@@ -525,6 +567,11 @@ impl<'a> Cloner<'a> {
     fn declaration(&mut self, id: DeclId) -> Result<DeclId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.declarations.get(id);
+        let pack_mark = self.parameter_packs().len();
+        let scoped_packs = matches!(
+            node.kind,
+            DeclKind::Simple { .. } | DeclKind::Function { .. } | DeclKind::SpecialMember { .. }
+        );
         node.attributes = self.attributes(node.attributes)?;
         node.kind = match node.kind {
             DeclKind::Simple {
@@ -635,6 +682,9 @@ impl<'a> Cloner<'a> {
                 ));
             }
         };
+        if scoped_packs {
+            self.restore_parameter_packs(pack_mark);
+        }
         self.tree.declarations.add(node)
     }
 }

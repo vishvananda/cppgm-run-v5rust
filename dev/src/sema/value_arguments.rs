@@ -224,15 +224,27 @@ impl Analyzer<'_> {
         given: &[TypeId],
         location: SourceOffset,
     ) -> Result<Option<Vec<TypeId>>, Error> {
-        let mut converted = Vec::with_capacity(given.len());
-        for (index, &argument) in given.iter().enumerate() {
-            match self.match_template_argument(head, index, argument, &converted, location) {
-                Ok(argument) => converted.push(argument),
-                Err(Error::Diagnostic { .. }) => return Ok(None),
-                Err(error) => return Err(error),
+        if !(0..self.graph.templates.parameters(head).len())
+            .any(|index| self.argument_parameter_pack(head, index))
+        {
+            if given.len() > self.graph.templates.parameters(head).len() {
+                return Ok(None);
             }
+            let mut converted = Vec::with_capacity(given.len());
+            for (index, &argument) in given.iter().enumerate() {
+                match self.match_template_argument(head, index, argument, &converted, location) {
+                    Ok(argument) => converted.push(argument),
+                    Err(Error::Diagnostic { .. }) => return Ok(None),
+                    Err(error) => return Err(error),
+                }
+            }
+            return Ok(Some(converted));
         }
-        Ok(Some(converted))
+        match self.match_pack_arguments(head, given, location, true) {
+            Ok(converted) => Ok(Some(converted)),
+            Err(Error::Diagnostic { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Bind one argument in a fresh frame. A value never overwrites the pattern entity.
@@ -301,12 +313,8 @@ impl Analyzer<'_> {
         head: HeadId,
         signature: TypeId,
         arguments: &[Option<TypeId>],
-        given: &[Option<TypeId>],
     ) -> Result<bool, Error> {
         for (index, argument) in arguments.iter().enumerate() {
-            if given.get(index).is_some_and(Option::is_some) {
-                continue;
-            }
             let Some(argument) = argument else {
                 continue;
             };
@@ -320,11 +328,14 @@ impl Analyzer<'_> {
             let Some(declared) = declared.filter(|&ty| !self.graph.dependent_type(ty)) else {
                 continue;
             };
-            let TypeKind::Value { ty, .. } = self.graph.types.get(*argument).kind else {
-                continue;
+            let values = match &self.graph.types.get(*argument).kind {
+                TypeKind::Pack(elements) => elements.as_slice(),
+                _ => std::slice::from_ref(argument),
             };
-            if self.graph.types.canonical_view(ty) != self.graph.types.canonical_view(declared)
-                && !self.bound_names_value(signature, self.graph.templates.depth(head), index)
+            if values.iter().any(|&value| {
+                matches!(self.graph.types.get(value).kind, TypeKind::Value { ty, .. }
+                if self.graph.types.canonical_view(ty) != self.graph.types.canonical_view(declared))
+            }) && !self.bound_names_value(signature, self.graph.templates.depth(head), index)
             {
                 return Ok(false);
             }
@@ -410,7 +421,9 @@ impl Analyzer<'_> {
             }
             let next = level + 1;
             match &self.graph.types.get(ty).kind {
-                TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
+                TypeKind::Pointer(element)
+                | TypeKind::Reference { element, .. }
+                | TypeKind::Expansion(element) => {
                     work.push((*element, next));
                 }
                 TypeKind::MemberPointer { owner, element } => {

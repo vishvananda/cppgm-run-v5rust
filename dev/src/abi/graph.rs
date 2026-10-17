@@ -141,6 +141,12 @@ pub enum Node {
         index: u32,
         substitutable: bool,
     },
+    LeveledTemplateParam {
+        index: u32,
+        level: u32,
+        substitutable: bool,
+        pack: bool,
+    },
     Decltype {
         expression: NodeId,
         id_expression: bool,
@@ -187,6 +193,7 @@ pub enum Node {
         bits: u64,
     },
     NonTypeParameter(NodeId),
+    ParameterPack(NodeId),
     TypedArgument {
         declaration: NodeId,
         argument: NodeId,

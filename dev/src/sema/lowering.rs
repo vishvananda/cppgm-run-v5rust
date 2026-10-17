@@ -660,6 +660,62 @@ impl Graph {
                 .pattern(entity)
                 .is_some_and(|pattern| pattern.value)
     }
+    pub(crate) fn lower_parameter_level(&self, ty: TypeId) -> Option<(u32, u32, bool, bool)> {
+        let (entity, level) = match self.types.get(ty).kind {
+            TypeKind::TemplateParameter { entity, .. } => (entity, None),
+            TypeKind::BoundPack {
+                parameter, depth, ..
+            } => (parameter, Some(depth)),
+            _ => return None,
+        };
+        let info = self.entity(entity).template_parameter?;
+        Some((
+            info.abi_index(),
+            level.unwrap_or_else(|| info.depth()),
+            info.value_type.is_some(),
+            info.is_pack(),
+        ))
+    }
+    pub(crate) fn lower_bound_parameter(&self, ty: TypeId) -> bool {
+        matches!(self.types.get(ty).kind, TypeKind::BoundPack { .. })
+    }
+    pub(crate) fn lower_names_bound_pack(&self, root: TypeId) -> bool {
+        let mut work = vec![root];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(ty) = work.pop() {
+            if !seen.insert(ty) {
+                continue;
+            }
+            match &self.types.get(ty).kind {
+                TypeKind::BoundPack { .. } => return true,
+                TypeKind::TemplateParameter { entity, .. } => {
+                    if let Some(member) = self.dependent_members.get(*entity) {
+                        work.push(member.qualifier);
+                    }
+                }
+                TypeKind::Class(entity) => {
+                    if let Some(instance) = self.class_templates.instance(*entity)
+                        && instance.dependent
+                    {
+                        work.extend(&instance.arguments);
+                    }
+                }
+                TypeKind::Pointer(element)
+                | TypeKind::Reference { element, .. }
+                | TypeKind::Array { element, .. } => work.push(*element),
+                TypeKind::MemberPointer { owner, element } => work.extend([*owner, *element]),
+                TypeKind::Pack(elements) => work.extend(elements),
+                TypeKind::Function {
+                    result, parameters, ..
+                } => {
+                    work.push(*result);
+                    work.extend(parameters);
+                }
+                _ => (),
+            }
+        }
+        false
+    }
     pub(crate) fn lower_template_value_type(
         &self,
         entity: EntityId,

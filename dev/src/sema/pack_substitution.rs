@@ -51,11 +51,6 @@ impl Analyzer<'_> {
                 continue;
             };
             let packs = self.type_pack_pattern(element, true)?;
-            if packs.expression {
-                // Definition-time expression pack identities and syntax renames
-                // are the next owner; never silently reuse an unsubstituted value.
-                return Err(Error::Missing("expression parameter pack substitution"));
-            }
             let has_parameters = !packs.parameters.is_empty();
             let mut indices = Vec::new();
             let mut unknown = false;

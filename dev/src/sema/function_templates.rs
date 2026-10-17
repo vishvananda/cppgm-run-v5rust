@@ -40,6 +40,9 @@ pub(super) struct FunctionTemplates {
     trailing_results: HashSet<EntityId>,
 }
 impl FunctionTemplates {
+    pub(super) fn trailing_result(&self, entity: EntityId) -> bool {
+        self.trailing_results.contains(&entity)
+    }
     pub(super) fn requires_target(&self, binding: BindingId) -> bool {
         self.explicit.contains_key(&binding)
     }
@@ -131,11 +134,11 @@ impl Analyzer<'_> {
         let result = self
             .substitute_signature_type(result, &mut environment)?
             .ok_or(Error::Missing("dependent exception prototype result"))?;
+        let parameters = self
+            .substitute_pack_list(&parameters, &mut environment)?
+            .ok_or(Error::Missing("dependent exception prototype parameter"))?;
         let mut objects = Vec::with_capacity(parameters.len());
         for parameter in parameters {
-            let parameter = self
-                .substitute_signature_type(parameter, &mut environment)?
-                .ok_or(Error::Missing("dependent exception prototype parameter"))?;
             // Prototype objects keep declared cv; canonical call signatures
             // erase it. Arrays and functions still adjust to pointer objects.
             objects.push(self.graph.types.parameter_object(parameter)?);
@@ -152,7 +155,10 @@ impl Analyzer<'_> {
         )
     }
 
-    fn function_template_head(&self, binding: BindingId) -> Result<Option<HeadId>, Error> {
+    pub(super) fn function_template_head(
+        &self,
+        binding: BindingId,
+    ) -> Result<Option<HeadId>, Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
         let Some(head) = entity.template_head else {
             return Ok(None);
@@ -162,7 +168,7 @@ impl Analyzer<'_> {
                 .graph
                 .entity(parameter)
                 .template_parameter
-                .is_some_and(super::templates::ParameterInfo::fixed_parameter)
+                .is_some_and(super::templates::ParameterInfo::argument_parameter)
             {
                 return Err(Error::Missing(
                     "function template packs or template-template arguments",
@@ -283,7 +289,9 @@ impl Analyzer<'_> {
                 continue;
             };
             let count = self.graph.templates.parameters(head).len();
-            if given.len() > count {
+            if given.len() > count
+                && !(0..count).any(|index| self.argument_parameter_pack(head, index))
+            {
                 continue;
             }
             let Some(converted) =
@@ -295,7 +303,7 @@ impl Analyzer<'_> {
             for (slot, &argument) in arguments.iter_mut().zip(&converted) {
                 *slot = Some(argument);
             }
-            let partial = (given.len()..count)
+            let partial = (converted.len()..count)
                 .any(|index| self.graph.templates.default_argument(head, index).is_none());
             let binding = if call || partial {
                 let binding = self.graph.binding(primary);
@@ -585,7 +593,7 @@ impl Analyzer<'_> {
             .map(Some)
     }
 
-    fn complete_signature(
+    pub(super) fn complete_signature(
         &mut self,
         primary: BindingId,
         arguments: &mut [Option<TypeId>],
@@ -609,6 +617,10 @@ impl Analyzer<'_> {
         for index in 0..arguments.len() {
             let ty = if let Some(ty) = arguments[index] {
                 ty
+            } else if self.argument_parameter_pack(head, index) {
+                self.graph
+                    .types
+                    .intern(TypeKind::Pack(Vec::new()), Cv::default())?
             } else {
                 let Some(default) = self.graph.templates.default_argument(head, index) else {
                     return Ok(None);
@@ -771,6 +783,12 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let pattern = self.graph.types.canonical_function(pattern)?;
         let actual = self.graph.types.canonical_function(actual)?;
+        if matches!(
+            self.graph.types.get(pattern).kind,
+            TypeKind::BoundPack { .. }
+        ) {
+            return self.deduce_bound_pack(pattern, actual, depth, arguments, extra_cv);
+        }
         if let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(pattern).kind
             && (self.graph.template_operands.pattern(entity).is_some()
                 || self.graph.dependent_members.get(entity).is_some())
@@ -807,42 +825,17 @@ impl Analyzer<'_> {
             self.graph.types.get(actual).kind.clone(),
         ) {
             (TypeKind::Pack(pattern), TypeKind::Pack(actual)) => {
-                if pattern
-                    .iter()
-                    .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
-                {
-                    return Err(Error::Missing("template argument pack deduction"));
-                }
-                if pattern.len() != actual.len() {
-                    return Ok(false);
-                }
-                for (pattern, actual) in pattern.into_iter().zip(actual) {
-                    if !self.deduce_signature_type(pattern, actual, depth, arguments, false)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
+                self.deduce_type_list(&pattern, &actual, depth, arguments)
             }
             (TypeKind::Class(p), TypeKind::Class(a)) => {
                 match (
                     self.graph.class_templates.instance(p),
                     self.graph.class_templates.instance(a),
                 ) {
-                    (Some(p), Some(a))
-                        if p.primary == a.primary && p.arguments.len() == a.arguments.len() =>
-                    {
-                        let pairs: Vec<_> = p
-                            .arguments
-                            .iter()
-                            .copied()
-                            .zip(a.arguments.iter().copied())
-                            .collect();
-                        for (p, a) in pairs {
-                            if !self.deduce_signature_type(p, a, depth, arguments, false)? {
-                                return Ok(false);
-                            }
-                        }
-                        Ok(true)
+                    (Some(p), Some(a)) if p.primary == a.primary => {
+                        let patterns = p.arguments.clone();
+                        let actual = a.arguments.clone();
+                        self.deduce_type_list(&patterns, &actual, depth, arguments)
                     }
                     _ => Ok(pattern == actual),
                 }
@@ -922,13 +915,11 @@ impl Analyzer<'_> {
                     reference: ar,
                 },
             ) => {
-                if pp.len() != ap.len() || pv != av || pc != ac || pr != ar {
+                if pv != av || pc != ac || pr != ar {
                     return Ok(false);
                 }
-                for (p, a) in pp.into_iter().zip(ap) {
-                    if !self.deduce_signature_type(p, a, depth, arguments, false)? {
-                        return Ok(false);
-                    }
+                if !self.deduce_function_parameters(&pp, &ap, depth, arguments)? {
+                    return Ok(false);
                 }
                 self.deduce_signature_type(p, a, depth, arguments, false)
             }
@@ -1038,7 +1029,11 @@ impl Analyzer<'_> {
         Ok(false)
     }
 
-    fn signature_arguments(&self, binding: BindingId, head: HeadId) -> Vec<Option<TypeId>> {
+    pub(super) fn signature_arguments(
+        &self,
+        binding: BindingId,
+        head: HeadId,
+    ) -> Vec<Option<TypeId>> {
         self.graph
             .function_templates
             .explicit
@@ -1046,7 +1041,7 @@ impl Analyzer<'_> {
             .cloned()
             .unwrap_or_else(|| vec![None; self.graph.templates.parameters(head).len()])
     }
-    fn needs_deduction(&self, ty: TypeId, depth: u32) -> bool {
+    pub(super) fn needs_deduction(&self, ty: TypeId, depth: u32) -> bool {
         let mut work = vec![ty];
         let mut seen = HashSet::new();
         while let Some(ty) = work.pop() {
@@ -1063,6 +1058,7 @@ impl Analyzer<'_> {
                     }
                 }
                 TypeKind::Pointer(element)
+                | TypeKind::Expansion(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => work.push(*element),
                 TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
@@ -1105,6 +1101,26 @@ impl Analyzer<'_> {
         let TypeKind::Function { variadic, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("template is no function"));
         };
+        if self
+            .graph
+            .templates
+            .parameters(head)
+            .iter()
+            .any(|&parameter| {
+                self.graph
+                    .entity(parameter)
+                    .template_parameter
+                    .is_some_and(super::templates::ParameterInfo::is_pack)
+            })
+            || (0..count).any(|index| {
+                self.graph
+                    .types
+                    .function_parameter(ty, index)
+                    .is_ok_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+            })
+        {
+            return self.deduce_pack_function_call(binding, head, args, prefix);
+        }
         // Postfix operator syntax supplies its final int argument implicitly.
         // Deduce only from the written operand; the operator owner validates
         // that final parameter after forming the specialization.
@@ -1166,7 +1182,7 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
-        if !self.deduced_values_typed(head, ty, &arguments, &given)? {
+        if !self.deduced_values_typed(head, ty, &arguments)? {
             return Ok(None);
         }
         self.complete_signature(binding, &mut arguments)
@@ -1228,7 +1244,6 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let mut arguments = self.signature_arguments(binding, head);
-        let given = arguments.clone();
         let pattern = self
             .graph
             .binding(binding)
@@ -1244,7 +1259,7 @@ impl Analyzer<'_> {
         if !self.deduce_signature_type(pattern, target, depth, &mut arguments, false)? {
             return Ok(None);
         }
-        if !self.deduced_values_typed(head, pattern, &arguments, &given)? {
+        if !self.deduced_values_typed(head, pattern, &arguments)? {
             return Ok(None);
         }
         self.complete_signature(binding, &mut arguments)
@@ -1352,7 +1367,7 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
-        if !self.deduced_values_typed(head, source, &arguments, &initial())? {
+        if !self.deduced_values_typed(head, source, &arguments)? {
             return Ok(None);
         }
         let Some(binding) = self.complete_signature_in(primary, &mut arguments, false)? else {
@@ -1508,32 +1523,89 @@ impl Analyzer<'_> {
         let depth = self.graph.templates.depth(to_head);
         let mut arguments = vec![None; self.graph.templates.parameters(to_head).len()];
         if let Some(count) = call_count {
-            let a_count = self.graph.types.function_parameter_count(from)?;
-            let b_count = self.graph.types.function_parameter_count(to)?;
-            for index in 0..count.min(a_count).min(b_count) {
-                let a = self.graph.types.function_parameter(from, index)?;
-                let Some(a) = self.substitute_signature_type(a, &mut environment)? else {
-                    return Ok(false);
-                };
-                let p = self.graph.types.function_parameter(to, index)?;
-                let a = match self.graph.types.get(a).kind {
-                    TypeKind::Reference { element, .. } => element,
-                    _ => a,
-                };
-                let p = match self.graph.types.get(p).kind {
-                    TypeKind::Reference { element, .. } => element,
-                    _ => p,
-                };
-                let a = self.bare_type(a)?;
-                let p = self.bare_type(p)?;
-                if !self.deduce_signature_type(p, a, depth, &mut arguments, false)? {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
+            self.order_call_parameters(from, to, count, depth, &mut arguments, &mut environment)
         } else {
             self.order_function_types(from, to, depth, &mut arguments, &mut environment)
         }
+    }
+
+    fn order_call_parameters(
+        &mut self,
+        from: TypeId,
+        to: TypeId,
+        count: usize,
+        depth: u32,
+        arguments: &mut [Option<TypeId>],
+        environment: &mut Substitution<'_>,
+    ) -> Result<bool, Error> {
+        let from_count = self.graph.types.function_parameter_count(from)?;
+        let to_count = self.graph.types.function_parameter_count(to)?;
+        let from_pack = from_count != 0
+            && matches!(
+                self.graph
+                    .types
+                    .get(self.graph.types.function_parameter(from, from_count - 1)?)
+                    .kind,
+                TypeKind::Expansion(_)
+            );
+        let to_pack = to_count != 0
+            && matches!(
+                self.graph
+                    .types
+                    .get(self.graph.types.function_parameter(to, to_count - 1)?)
+                    .kind,
+                TypeKind::Expansion(_)
+            );
+        let from_fixed = from_count - usize::from(from_pack);
+        let to_fixed = to_count - usize::from(to_pack);
+        let mut packed = Vec::new();
+        for index in 0..count {
+            if index >= from_fixed && !from_pack || index >= to_fixed && !to_pack {
+                break;
+            }
+            let from_expansion = index >= from_fixed;
+            let mut parameter = self
+                .graph
+                .types
+                .function_parameter(from, if from_expansion { from_fixed } else { index })?;
+            if let TypeKind::Expansion(pattern) = self.graph.types.get(parameter).kind {
+                parameter = pattern;
+            }
+            let Some(mut actual) = self.substitute_signature_type(parameter, environment)? else {
+                return Ok(false);
+            };
+            if let TypeKind::Reference { element, .. } = self.graph.types.get(actual).kind {
+                actual = element;
+            }
+            let actual = self.bare_type(actual)?;
+            if index >= to_fixed {
+                packed.push(actual);
+                continue;
+            }
+            if from_expansion {
+                return Ok(false);
+            }
+            let mut pattern = self.graph.types.function_parameter(to, index)?;
+            if let TypeKind::Reference { element, .. } = self.graph.types.get(pattern).kind {
+                pattern = element;
+            }
+            let pattern = self.bare_type(pattern)?;
+            if !self.deduce_signature_type(pattern, actual, depth, arguments, false)? {
+                return Ok(false);
+            }
+        }
+        if packed.is_empty() {
+            return Ok(true);
+        }
+        let mut pattern = self.graph.types.function_parameter(to, to_count - 1)?;
+        if let TypeKind::Expansion(element) = self.graph.types.get(pattern).kind {
+            pattern = element;
+        }
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(pattern).kind {
+            pattern = element;
+        }
+        let pattern = self.bare_type(pattern)?;
+        self.deduce_pack_types(pattern, &packed, depth, arguments)
     }
 
     pub(super) fn unique_template_types(
@@ -1585,20 +1657,38 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("ordering nonfunction"));
         };
-        if from_parameters.len() != to_parameters.len()
-            || variadic != to_variadic
-            || cv != to_cv
-            || reference != to_reference
-        {
+        if variadic != to_variadic || cv != to_cv || reference != to_reference {
             return Ok(false);
         }
-        for (from, to) in from_parameters.into_iter().zip(to_parameters) {
-            let Some(from) = self.substitute_signature_type(from, environment)? else {
+        let to_pack = to_parameters
+            .last()
+            .is_some_and(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)));
+        let mut given = Vec::with_capacity(from_parameters.len());
+        let count = from_parameters.len();
+        for (index, parameter) in from_parameters.into_iter().enumerate() {
+            let expansion = matches!(self.graph.types.get(parameter).kind, TypeKind::Expansion(_));
+            if expansion && index + 1 == count && index >= to_parameters.len() && !to_pack {
+                break;
+            }
+            let pattern = if let TypeKind::Expansion(pattern) = self.graph.types.get(parameter).kind
+            {
+                pattern
+            } else {
+                parameter
+            };
+            let Some(actual) = self.substitute_signature_type(pattern, environment)? else {
                 return Ok(false);
             };
-            if !self.deduce_signature_type(to, from, depth, arguments, false)? {
-                return Ok(false);
-            }
+            given.push(if expansion {
+                self.graph
+                    .types
+                    .intern(TypeKind::Expansion(actual), Cv::default())?
+            } else {
+                actual
+            });
+        }
+        if !self.deduce_function_parameters(&to_parameters, &given, depth, arguments)? {
+            return Ok(false);
         }
         if self.names_operand(from_result) || self.names_operand(to_result) {
             return Ok(true);
@@ -1712,6 +1802,47 @@ impl Analyzer<'_> {
         Ok(order)
     }
 
+    fn trailing_pack_unused(
+        &self,
+        primary: BindingId,
+        other: BindingId,
+        arguments: usize,
+    ) -> Result<bool, Error> {
+        let ty = self
+            .graph
+            .binding(primary)
+            .ty
+            .ok_or(Error::Invariant("pack ordering without type"))?;
+        let other = self
+            .graph
+            .binding(other)
+            .ty
+            .ok_or(Error::Invariant("pack ordering without type"))?;
+        let count = self.graph.types.function_parameter_count(ty)?;
+        let other_count = self.graph.types.function_parameter_count(other)?;
+        Ok(count != 0
+            && arguments < count
+            && other_count < count
+            && matches!(
+                self.graph
+                    .types
+                    .get(self.graph.types.function_parameter(ty, count - 1)?)
+                    .kind,
+                TypeKind::Expansion(_)
+            )
+            && (other_count == 0
+                || !matches!(
+                    self.graph
+                        .types
+                        .get(
+                            self.graph
+                                .types
+                                .function_parameter(other, other_count - 1)?
+                        )
+                        .kind,
+                    TypeKind::Expansion(_)
+                )))
+    }
     pub(super) fn compare_function_templates(
         &mut self,
         first: BindingId,
@@ -1741,7 +1872,18 @@ impl Analyzer<'_> {
         if forward != backward || !forward || call_count.is_none() {
             return Ok(forward.cmp(&backward));
         }
-        self.template_reference_order(a, b, call_count.unwrap_or(0))
+        let count = call_count.unwrap_or(0);
+        let references = self.template_reference_order(a, b, count)?;
+        if references != Ordering::Equal {
+            return Ok(references);
+        }
+        if self.trailing_pack_unused(b, a, count)? {
+            return Ok(Ordering::Greater);
+        }
+        if self.trailing_pack_unused(a, b, count)? {
+            return Ok(Ordering::Less);
+        }
+        Ok(Ordering::Equal)
     }
 }
 

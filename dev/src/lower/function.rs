@@ -119,7 +119,7 @@ pub(super) fn lower<'a>(
     let mut reserved = std::collections::HashSet::new();
     for &(_, name, _) in &parameter_bindings {
         if let Some(name) = name {
-            reserved.insert(symbols.identifier(name)?.to_owned());
+            reserved.insert(symbols.parameter_name(name)?);
         }
     }
     let object_count = usize::from(facts.object.is_some());
@@ -139,7 +139,7 @@ pub(super) fn lower<'a>(
             }) {
                 "other".to_owned()
             } else if let Some(name) = name {
-                symbols.identifier(name)?.to_owned()
+                symbols.parameter_name(name)?
             } else {
                 let mut name = format!("__param{}", names.len());
                 while reserved.contains(&name) {

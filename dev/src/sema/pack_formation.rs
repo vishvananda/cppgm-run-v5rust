@@ -95,8 +95,9 @@ impl Analyzer<'_> {
                     if let Some(member) = self.graph.dependent_members.get(*entity) {
                         work.push(member.qualifier);
                     } else if let Some(pattern) = self.graph.template_operands.pattern(*entity) {
-                        if placeholders && pattern.pack_names.contains_pack()? {
+                        if placeholders && let Some(ty) = pattern.pack_names.types()? {
                             packs.expression = true;
+                            work.push(ty);
                         }
                     } else if self
                         .graph

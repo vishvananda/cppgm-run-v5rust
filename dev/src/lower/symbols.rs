@@ -107,7 +107,8 @@ pub(super) struct Symbols<'a, 'source> {
     tree: &'a ast::Tree,
     cursor: &'a Cursor<'source>,
     abi: abi::graph::Graph,
-    types: HashMap<TypeId, NodeId>,
+    types: HashMap<(TypeId, bool), NodeId>,
+    bound_pattern: bool,
     placeholders: HashMap<TypeId, Option<NodeId>>,
     unmangled: HashMap<TypeId, bool>,
     scopes: HashMap<ScopeId, Option<NodeId>>,
@@ -179,6 +180,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             cursor,
             abi: abi::graph::Graph::default(),
             types: HashMap::new(),
+            bound_pattern: false,
             placeholders: HashMap::new(),
             unmangled: HashMap::new(),
             scopes: HashMap::new(),
@@ -274,6 +276,37 @@ impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn class_result_memory(&mut self, class: EntityId) -> Result<bool, Error> {
         self.class_parameters
             .result_memory(self.graph, class, self.budget)
+    }
+    // program_lowering.cpp::parameter_name: syntax element identities remain
+    // zero based; the emitted first parameter retains the original pack name.
+    pub(super) fn parameter_name(
+        &self,
+        name: crate::lex::identifiers::NameId,
+    ) -> Result<String, Error> {
+        let spelling = self.identifier(name)?;
+        let digits = spelling.trim_end_matches(|c: char| c.is_ascii_digit());
+        if digits.len() == spelling.len() {
+            return Ok(spelling.to_owned());
+        }
+        let Some(base) = digits
+            .strip_suffix("__pack")
+            .filter(|base| !base.is_empty())
+        else {
+            return Ok(spelling.to_owned());
+        };
+        let index = spelling.as_bytes()[digits.len()..]
+            .iter()
+            .fold(0u64, |index, digit| {
+                index
+                    .saturating_mul(10)
+                    .saturating_add(u64::from(*digit - b'0'))
+            });
+        if index == 0 {
+            Ok(base.to_owned())
+        } else {
+            let next = index.wrapping_add(1);
+            Ok(format!("{base}__pack{next}"))
+        }
     }
     pub(super) fn identifier(&self, name: crate::lex::identifiers::NameId) -> Result<&str, Error> {
         std::str::from_utf8(self.cursor.name(name))
@@ -992,7 +1025,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     fn abi_type(&mut self, ty: TypeId) -> Result<NodeId, Error> {
         self.check_stack()?;
-        if let Some(&id) = self.types.get(&ty) {
+        if let Some(&id) = self.types.get(&(ty, self.bound_pattern)) {
             return Ok(id);
         }
         let node = if let Some(elements) = self.graph.lower_argument_pack(ty) {
@@ -1004,29 +1037,31 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let id = self.abi.intern(Node::ArgumentPack, &nodes)?;
             return self.finish_abi_type(ty, id);
         } else if let Some(pattern) = self.graph.lower_pack_expansion(ty) {
-            if self.graph.lower_value_argument(pattern) {
-                let operand = if let Some(index) = self.graph.lower_template_parameter(pattern) {
-                    self.abi.intern(
-                        Node::TemplateParam {
-                            index,
-                            substitutable: false,
-                        },
-                        &[],
-                    )?
-                } else {
-                    self.placeholder_node(pattern)?
-                        .ok_or(Error::Missing("value pack expansion ABI operand"))?
-                };
-                let expression = self.abi.intern(
-                    Node::Operation(abi::vocabulary::Operation::PackExpansion),
-                    &[operand],
-                )?;
-                Node::ExpressionArgument(expression)
+            let saved = self.bound_pattern;
+            self.bound_pattern |= self.graph.lower_names_bound_pack(pattern);
+            let result = self.expansion_abi_node(pattern);
+            self.bound_pattern = saved;
+            result?
+        } else if self.graph.lower_bound_parameter(ty)
+            || self.bound_pattern && self.graph.lower_parameter_level(ty).is_some()
+        {
+            let (index, level, value, pack) = self
+                .graph
+                .lower_parameter_level(ty)
+                .ok_or(Error::Missing("bound ABI parameter"))?;
+            let parameter = self.abi.intern(
+                Node::LeveledTemplateParam {
+                    index,
+                    level,
+                    substitutable: !value,
+                    pack,
+                },
+                &[],
+            )?;
+            if value {
+                Node::ExpressionArgument(parameter)
             } else {
-                Node::Modified {
-                    modifier: Modifier::PackExpansion,
-                    operand: self.abi_type(pattern)?,
-                }
+                return self.finish_abi_type(ty, parameter);
             }
         } else if let Some(index) = self.graph.lower_template_parameter(ty) {
             if self.graph.lower_value_argument(ty) {
@@ -1186,7 +1221,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         variadic,
                     };
                     let id = self.abi.intern(node, &args)?;
-                    self.types.insert(ty, id);
+                    self.types.insert((ty, self.bound_pattern), id);
                     return Ok(id);
                 }
                 TypeView::Unsupported => return Err(Error::Missing("aggregate ABI type lowering")),
@@ -1194,6 +1229,43 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         let id = self.abi.intern(node, &[]).map_err(Error::from)?;
         self.finish_abi_type(ty, id)
+    }
+    fn expansion_abi_node(&mut self, pattern: TypeId) -> Result<Node, Error> {
+        if self.graph.lower_value_argument(pattern) {
+            let operand = if let Some(index) = self.graph.lower_template_parameter(pattern) {
+                let node = if self.bound_pattern {
+                    let (_, level, _, pack) = self
+                        .graph
+                        .lower_parameter_level(pattern)
+                        .ok_or(Error::Missing("ABI parameter level"))?;
+                    Node::LeveledTemplateParam {
+                        index,
+                        level,
+                        substitutable: false,
+                        pack,
+                    }
+                } else {
+                    Node::TemplateParam {
+                        index,
+                        substitutable: false,
+                    }
+                };
+                self.abi.intern(node, &[])?
+            } else {
+                self.placeholder_node(pattern)?
+                    .ok_or(Error::Missing("value pack expansion ABI operand"))?
+            };
+            let expression = self.abi.intern(
+                Node::Operation(abi::vocabulary::Operation::PackExpansion),
+                &[operand],
+            )?;
+            Ok(Node::ExpressionArgument(expression))
+        } else {
+            Ok(Node::Modified {
+                modifier: Modifier::PackExpansion,
+                operand: self.abi_type(pattern)?,
+            })
+        }
     }
     fn finish_abi_type(&mut self, ty: TypeId, mut id: NodeId) -> Result<NodeId, Error> {
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
@@ -1214,7 +1286,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 )?;
             }
         }
-        self.types.insert(ty, id);
+        self.types.insert((ty, self.bound_pattern), id);
         Ok(id)
     }
     pub(super) fn demand_destruction(&mut self, entity: EntityId) {
@@ -2450,10 +2522,19 @@ impl<'a, 'source> Symbols<'a, 'source> {
             for (index, &argument) in arguments.iter().enumerate() {
                 let mut node = self.abi_type(argument)?;
                 if let Some(ty) = self.graph.lower_template_value_type(instance, index)
-                    && self.declared_type_dependent(ty)?
+                    && (self.declared_type_dependent(ty)?
+                        || self
+                            .graph
+                            .lower_argument_pack(argument)
+                            .is_some_and(<[TypeId]>::is_empty))
                 {
                     let ty = self.abi_type(ty)?;
                     let declaration = self.abi.intern(Node::NonTypeParameter(ty), &[])?;
+                    let declaration = if self.graph.lower_argument_pack(argument).is_some() {
+                        self.abi.intern(Node::ParameterPack(declaration), &[])?
+                    } else {
+                        declaration
+                    };
                     node = self.abi.intern(
                         Node::TypedArgument {
                             declaration,

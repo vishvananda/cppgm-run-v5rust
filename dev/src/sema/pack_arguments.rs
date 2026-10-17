@@ -60,7 +60,7 @@ impl Analyzer<'_> {
                 .iter()
                 .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
         {
-            *given = self.match_pack_arguments(head, given, location)?;
+            *given = self.match_pack_arguments(head, given, location, false)?;
         } else {
             if given.len() > count {
                 return Err(Error::at(location, "too many template arguments"));
@@ -80,11 +80,12 @@ impl Analyzer<'_> {
 
     // Keep partition scratch off the recursive, pack-free argument path.
     #[inline(never)]
-    fn match_pack_arguments(
+    pub(super) fn match_pack_arguments(
         &mut self,
         head: HeadId,
         given: &[TypeId],
         location: SourceOffset,
+        partial: bool,
     ) -> Result<Vec<TypeId>, Error> {
         let count = self.graph.templates.parameters(head).len();
         let mut result = Vec::with_capacity(count);
@@ -97,6 +98,9 @@ impl Analyzer<'_> {
                 .template_parameter
                 .ok_or(Error::Invariant("argument without parameter"))?;
             if info.is_pack() {
+                if partial && next == given.len() {
+                    break;
+                }
                 let formed = if let Some(&argument) = given.get(next)
                     && let TypeKind::Pack(elements) = &self.graph.types.get(argument).kind
                 {

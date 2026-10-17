@@ -63,10 +63,40 @@ impl Analyzer<'_> {
                     .template_head
                     .ok_or(Error::Invariant("exception pattern without head"))?;
                 let parent = analyzer.template_body_frame(entity, head, specification.scope)?;
-                let operand = analyzer.copy_expression_in_frame(specification.operand, parent)?;
+                let mut packs = super::pack_frames::FramePacks::new(
+                    &analyzer.graph,
+                    parent,
+                    analyzer.identifiers,
+                );
+                let mut cloner = crate::syntax::cloning::Cloner::new(
+                    analyzer.tree,
+                    analyzer.stack_budget,
+                    analyzer.stack_base,
+                )
+                .with_expander(&mut packs);
+                let parameters = specification
+                    .parameters
+                    .map(|clause| cloner.parameters(clause))
+                    .transpose()
+                    .map_err(|error| super::template_bodies::copy_error(&error))?;
+                let operand = cloner
+                    .expression(specification.operand)
+                    .map_err(|error| super::template_bodies::copy_error(&error))?;
+                let parameter_packs = cloner.parameter_packs().to_vec();
+                let parent = if let Some(clause) = specification.parameters {
+                    analyzer.function_pack_scope(
+                        parent,
+                        clause,
+                        &parameter_packs,
+                        prototype_type,
+                    )?
+                } else {
+                    parent
+                };
                 let prototype = analyzer.exception_prototype(TemplateException {
                     operand,
                     scope: parent,
+                    parameters,
                     ty: prototype_type,
                     ..specification
                 })?;

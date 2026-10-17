@@ -154,6 +154,34 @@ impl super::function_templates::FunctionTemplates {
     }
 }
 
+fn body_parameter_source(
+    graph: &Graph,
+    tree: &ast::Tree,
+    mut entity: EntityId,
+    body: ast::BodyId,
+    mut clause: ast::ParameterClause,
+) -> ast::ParameterClause {
+    while let Some(source) = graph.function_templates.bodies.source(entity) {
+        let original = graph.entity(source);
+        let source_body =
+            original
+                .function_definition
+                .and_then(|id| match tree.declarations.get(id).kind {
+                    ast::DeclKind::Function { body, .. } => Some(body),
+                    ast::DeclKind::SpecialMember { body, .. } => body,
+                    _ => None,
+                });
+        if source_body != Some(body) {
+            break;
+        }
+        if let Some(parameters) = original.function_parameters {
+            clause = parameters;
+        }
+        entity = source;
+    }
+    clause
+}
+
 /// Semantic analysis exclusively borrows the unit syntax: defaults append at
 /// selected calls, while this driver drains unit-tail body demands. Both paths
 /// read ordinary slab IDs directly, with no pattern redirection or overlay map.
@@ -275,6 +303,8 @@ pub(crate) fn analyze_unit(
                 .bodies
                 .states
                 .insert(entity, State::InProgress);
+            let source_parameters =
+                body_parameter_source(&graph, tree, entity, pattern.body, pattern.parameters);
             let mut packs = super::pack_frames::FramePacks::new(
                 &graph,
                 pattern.parent,
@@ -282,13 +312,20 @@ pub(crate) fn analyze_unit(
             );
             let mut cloner = Cloner::new(tree, budget, base).with_expander(&mut packs);
             let parameters = cloner
-                .parameters(pattern.parameters)
+                .parameters(source_parameters)
                 .map_err(|error| copy_error(&error))?;
             let body = cloner
                 .body(pattern.body)
                 .map_err(|error| copy_error(&error))?;
+            let parameter_packs = cloner.parameter_packs().to_vec();
             let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
             analyzer.set_semantics(true);
+            let parent = analyzer.function_pack_scope(
+                pattern.parent,
+                source_parameters,
+                &parameter_packs,
+                pattern.ty,
+            )?;
             if lowering {
                 analyzer.set_lowering();
             }
@@ -317,6 +354,8 @@ pub(crate) fn analyze_unit(
                     analyzer.function_body(DeferredBody {
                         parameters,
                         body,
+                        parent,
+                        print: parent,
                         ..pattern
                     })
                 },
@@ -616,20 +655,29 @@ impl Analyzer<'_> {
         } else {
             self.outside_member_template_frame(entity, pattern.head, definition.parent)?
         };
+        let source_parameters = body_parameter_source(
+            &self.graph,
+            self.tree,
+            primary,
+            definition.body,
+            definition.parameters,
+        );
         let mut packs = super::pack_frames::FramePacks::new(&self.graph, frame, self.identifiers);
         let mut cloner =
             Cloner::new(self.tree, self.stack_budget, self.stack_base).with_expander(&mut packs);
         let parameters = cloner
-            .parameters(definition.parameters)
+            .parameters(source_parameters)
             .map_err(|error| copy_error(&error))?;
         let body = cloner
             .body(definition.body)
             .map_err(|error| copy_error(&error))?;
+        let parameter_packs = cloner.parameter_packs().to_vec();
         let ty = self
             .graph
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("instance without type"))?;
+        let frame = self.function_pack_scope(frame, source_parameters, &parameter_packs, ty)?;
         self.graph.entity_mut(entity).function_definition =
             self.graph.entity(definition.entity).function_definition;
         self.graph.entity_mut(entity).defined = true;

@@ -254,7 +254,9 @@ impl<'a> Encoder<'a> {
                 self.tags(id);
             }
             Node::Name { .. } | Node::Template(_) => self.name(id, Qualifiers::default())?,
-            Node::TemplateParam { .. } => return self.prefix(Some(id)),
+            Node::TemplateParam { .. } | Node::LeveledTemplateParam { .. } => {
+                return self.prefix(Some(id));
+            }
             Node::Decltype {
                 expression,
                 id_expression,
@@ -499,6 +501,20 @@ impl<'a> Encoder<'a> {
                     self.record(id)?;
                 }
             }
+            Node::LeveledTemplateParam {
+                index,
+                level,
+                substitutable,
+                ..
+            } => {
+                if self.substitute(id) {
+                    return Ok(());
+                }
+                self.template_parameter(index, level);
+                if substitutable {
+                    self.record(id)?;
+                }
+            }
             Node::TemplateParam {
                 index,
                 substitutable,
@@ -585,6 +601,34 @@ impl<'a> Encoder<'a> {
         self.put(b"E");
         Ok(())
     }
+    fn template_parameter(&mut self, index: u32, level: u32) {
+        self.put(b"T");
+        if level != 0 {
+            self.put(b"L");
+            self.number(u64::from(level - 1));
+            self.put(b"_");
+        }
+        if index != 0 {
+            self.number(u64::from(index - 1));
+        }
+        self.put(b"_");
+    }
+    fn parameter_declaration(&mut self, id: NodeId) -> Result<(), Error> {
+        self.check_stack()?;
+        match self.graph.get(id) {
+            Node::ParameterPack(declaration) => {
+                self.put(b"Tp");
+                self.parameter_declaration(declaration)
+            }
+            Node::NonTypeParameter(ty) => {
+                self.put(b"Tn");
+                self.encode_type(ty)
+            }
+            _ => Err(Error::diagnostic(
+                "invalid ABI template parameter declaration",
+            )),
+        }
+    }
     fn argument(&mut self, id: NodeId) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.get(id) {
@@ -607,13 +651,7 @@ impl<'a> Encoder<'a> {
                 declaration,
                 argument,
             } => {
-                let Node::NonTypeParameter(ty) = self.graph.get(declaration) else {
-                    return Err(Error::diagnostic(
-                        "invalid ABI template parameter declaration",
-                    ));
-                };
-                self.put(b"Tn");
-                self.encode_type(ty)?;
+                self.parameter_declaration(declaration)?;
                 self.argument(argument)?;
             }
             Node::ArgumentPack => {
@@ -672,6 +710,9 @@ impl<'a> Encoder<'a> {
     fn expression(&mut self, id: NodeId) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.get(id) {
+            Node::LeveledTemplateParam { index, level, .. } => {
+                self.template_parameter(index, level);
+            }
             Node::TemplateParam { index, .. } => {
                 self.put(b"T");
                 if index != 0 {

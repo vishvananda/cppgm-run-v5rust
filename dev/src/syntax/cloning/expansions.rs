@@ -23,7 +23,8 @@ pub(super) struct Expansion<'a> {
     expander: &'a mut dyn PackExpander,
     collecting: Option<Vec<NameId>>,
     renames: HashMap<NameId, NameId>,
-    shadows: Vec<NameId>,
+    shadows: Vec<(NameId, Option<Length>)>,
+    parameter_packs: Vec<(Option<NameId>, usize)>,
 }
 impl<'a> Expansion<'a> {
     pub(super) fn new(expander: &'a mut dyn PackExpander) -> Self {
@@ -32,11 +33,18 @@ impl<'a> Expansion<'a> {
             collecting: None,
             renames: HashMap::new(),
             shadows: Vec::new(),
+            parameter_packs: Vec::new(),
         }
     }
     fn length(&self, name: NameId) -> Option<Length> {
-        if self.shadows.contains(&name) {
-            Some(Length::Deferred)
+        if let Some((_, length)) = self.shadows.iter().rev().find(|(id, _)| *id == name) {
+            *length
+        } else if let Some((_, length)) = self
+            .parameter_packs
+            .iter()
+            .find(|(id, _)| *id == Some(name))
+        {
+            Some(Length::Bound(*length))
         } else {
             self.expander.pack_length(name).map(Length::Bound)
         }
@@ -58,9 +66,18 @@ enum Pattern {
     Argument(TemplateArgument),
     Expression(ExprId),
     Type(ast::TypeId),
+    Parameter(ast::Parameter),
 }
 
 impl Cloner<'_> {
+    pub(crate) fn select_pack(&mut self, name: NameId, index: usize) -> Result<(), ParseError> {
+        if let Some(state) = self.expansion.as_mut() {
+            state
+                .renames
+                .insert(name, state.expander.element_name(name, index)?);
+        }
+        Ok(())
+    }
     pub(super) fn collecting(&self) -> bool {
         self.expansion
             .as_ref()
@@ -104,10 +121,31 @@ impl Cloner<'_> {
                 }
             };
             if let Some(name) = name {
-                state.shadows.push(name);
+                state.shadows.push((name, Some(Length::Deferred)));
             }
         }
         mark
+    }
+    pub(super) fn shadow_mark(&self) -> usize {
+        self.expansion
+            .as_ref()
+            .map_or(0, |state| state.shadows.len())
+    }
+    pub(super) fn shadow_declarator(&mut self, declarator: Option<ast::DeclaratorId>) {
+        if let Some(name) = declarator_identifier(self.tree, declarator)
+            && let Some(state) = self.expansion.as_mut()
+            && matches!(state.length(name), Some(Length::Bound(_)))
+        {
+            state.shadows.push((name, None));
+        }
+    }
+    pub(super) fn shadow_declared(&mut self, id: ast::DeclId) {
+        if let ast::DeclKind::Simple { declarators, .. } = self.tree.declarations.get(id).kind {
+            for index in 0..self.tree.init_declarators.get(declarators).len() {
+                let declarator = self.tree.init_declarators.get(declarators)[index].declarator;
+                self.shadow_declarator(Some(declarator));
+            }
+        }
     }
     pub(super) fn restore_shadows(&mut self, mark: usize) {
         if let Some(state) = self.expansion.as_mut() {
@@ -130,6 +168,9 @@ impl Cloner<'_> {
             }
             Pattern::Type(id) => {
                 self.ty(id)?;
+            }
+            Pattern::Parameter(node) => {
+                self.parameter(node)?;
             }
         }
         Ok(())
@@ -337,6 +378,92 @@ impl Cloner<'_> {
             node.pack = false;
             self.tree.declarators.replace(declarator, node);
         }
+    }
+    pub(super) fn restore_parameter_packs(&mut self, mark: usize) {
+        if let Some(state) = self.expansion.as_mut() {
+            state.parameter_packs.truncate(mark);
+        }
+    }
+    pub(super) fn for_declaration(
+        &mut self,
+        id: Option<ast::DeclId>,
+    ) -> Result<Option<ast::DeclId>, ParseError> {
+        let copy = id.map(|id| self.declaration(id)).transpose()?;
+        if let Some(copy) = copy {
+            self.shadow_declared(copy);
+        }
+        Ok(copy)
+    }
+    pub(crate) fn parameter_packs(&self) -> &[(Option<NameId>, usize)] {
+        self.expansion
+            .as_ref()
+            .map_or(&[], |state| &state.parameter_packs)
+    }
+
+    pub(super) fn expanded_parameters(
+        &mut self,
+        list: List<ast::Parameter>,
+    ) -> Result<List<ast::Parameter>, ParseError> {
+        let start = self.tree.parameters.begin();
+        for index in 0..self.tree.parameters.get(list).len() {
+            let item = self.tree.parameters.get(list)[index];
+            let expansion = if item
+                .declarator
+                .is_some_and(|id| self.tree.declarators.get(id).pack)
+            {
+                self.pattern_packs(Pattern::Parameter(item), item.location)?
+            } else {
+                None
+            };
+            if let Some((names, count)) = expansion {
+                let name = declarator_identifier(self.tree, item.declarator);
+                let state = self
+                    .expansion
+                    .as_mut()
+                    .ok_or(ParseError::Invariant("parameter pack without context"))?;
+                let saved = std::mem::take(&mut state.renames);
+                let result = self.parameter_elements(item, &names, name, count);
+                let state = self
+                    .expansion
+                    .as_mut()
+                    .ok_or(ParseError::Invariant("parameter pack lost context"))?;
+                state.renames = saved;
+                result?;
+                state.parameter_packs.push((name, count));
+            } else {
+                let copy = self.parameter(item)?;
+                self.tree.parameters.push(copy);
+            }
+        }
+        self.tree.parameters.finish(start)
+    }
+    fn parameter_elements(
+        &mut self,
+        item: ast::Parameter,
+        names: &[NameId],
+        name: Option<NameId>,
+        count: usize,
+    ) -> Result<(), ParseError> {
+        for index in 0..count {
+            let state = self
+                .expansion
+                .as_mut()
+                .ok_or(ParseError::Invariant("parameter pack lost context"))?;
+            state.rename_to(names, index)?;
+            if let Some(name) = name {
+                state
+                    .renames
+                    .insert(name, state.expander.element_name(name, index)?);
+            }
+            let copy = self.parameter(item)?;
+            if let Some(id) = copy.declarator {
+                let mut node = *self.tree.declarators.get(id);
+                node.pack = false;
+                self.tree.declarators.replace(id, node);
+            }
+            self.tree.parameters.push(copy);
+        }
+        Ok(())
     }
     pub(super) fn expanded_types(
         &mut self,
