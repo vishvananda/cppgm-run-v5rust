@@ -229,7 +229,8 @@ pub(crate) struct Graph {
     pub(super) friendships: super::friendships::Friendships,
     pub(super) base_paths: super::inheritance::BasePaths,
     pub(super) dependent_members: super::dependent_members::Members,
-    pub(super) template_operands: super::template_operands::Operands,
+    // Unit-owned query tables stay off the recursive analyzer's stack value.
+    pub(super) template_operands: Box<super::template_operands::Operands>,
     pub(super) class_templates: super::class_templates::ClassTemplates,
     pub(super) templates: super::templates::Templates,
     pub(super) function_templates: super::function_templates::FunctionTemplates,
@@ -415,7 +416,7 @@ impl Graph {
             types: Types::default(),
             base_paths: super::inheritance::BasePaths::default(),
             dependent_members: super::dependent_members::Members::default(),
-            template_operands: super::template_operands::Operands::default(),
+            template_operands: Box::default(),
             class_templates: super::class_templates::ClassTemplates::default(),
             templates: super::templates::Templates::default(),
             function_templates: super::function_templates::FunctionTemplates::default(),

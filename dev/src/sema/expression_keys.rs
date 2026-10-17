@@ -113,6 +113,10 @@ impl Analyzer<'_> {
         })?;
         match expr.kind {
             ExprKind::Id(name) => {
+                if let Some(value) = self.key_bound_constant(name, scope)? {
+                    key.words.push(KeyWord::Constant(value.ty, value.bits));
+                    return Ok(true);
+                }
                 key.words.push(KeyWord::Node(KeyNode::Id));
                 return self.key_name(name, scope, true, key);
             }
@@ -287,6 +291,40 @@ impl Analyzer<'_> {
             }
         }
         Ok(true)
+    }
+
+    fn key_bound_constant(
+        &self,
+        name: ast::Name,
+        scope: ScopeId,
+    ) -> Result<Option<super::constants::Constant>, Error> {
+        let name = self.tree.names.get(name);
+        let [component] = self.tree.name_lists.get(name.components) else {
+            return Ok(None);
+        };
+        let ast::NameKind::Identifier(identifier) = component.kind else {
+            return Ok(None);
+        };
+        if name.global || component.arguments.is_some() {
+            return Ok(None);
+        }
+        let found = self.unqualified_declaration_result(
+            scope,
+            identifier.into(),
+            super::lookup::Filter::Ordinary,
+        )?;
+        let Some(id) = found.binding.filter(|_| !found.ambiguous) else {
+            return Ok(None);
+        };
+        let binding = self.graph.binding(id);
+        if binding.kind == super::graph::BindingKind::Enumerator
+            && self.graph.scope(self.graph.binding_scope(id)).kind == ScopeKind::TemplateParameters
+            && let super::constants::ConstantState::Value(value) =
+                self.graph.entity(binding.entity).constant
+        {
+            return Ok(Some(value));
+        }
+        Ok(None)
     }
 
     fn key_arguments(

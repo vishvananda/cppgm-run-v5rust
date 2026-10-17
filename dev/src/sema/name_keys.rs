@@ -131,7 +131,20 @@ impl Analyzer<'_> {
                 return Ok(true);
             }
         }
-        if self
+        if binding.kind == BindingKind::Alias
+            && self
+                .graph
+                .entity(binding.entity)
+                .template_parameter
+                .is_some()
+        {
+            self.key_type(
+                binding
+                    .ty
+                    .ok_or(Error::Invariant("argument alias without type"))?,
+                key,
+            )?;
+        } else if self
             .graph
             .entity(binding.entity)
             .template_parameter
