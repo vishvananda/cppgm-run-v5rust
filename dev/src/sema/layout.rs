@@ -170,6 +170,9 @@ impl Analyzer<'_> {
         while !work.is_empty() || !constructors.is_empty() {
             if let Some(constructor) = constructors.pop() {
                 if let Some(binding) = self.graph.constructors.get(constructor).binding {
+                    // Reached storage construction (including arrays) demands
+                    // the selected definition, separately from its signature.
+                    self.demand_specialization_body(binding);
                     let entity = self.graph.binding(binding).entity;
                     if self.graph.function_templates.bodies.pending_member(entity)
                         && !self

@@ -507,6 +507,7 @@ impl Graph {
             .declared_constructors
             .iter()
             .map(|&binding| self.binding(binding).entity)
+            .filter(move |&entity| self.entity(entity).home == self.entity(class).scope)
     }
     pub(crate) fn lower_function_defined(&self, entity: EntityId) -> bool {
         self.entity(entity).defined

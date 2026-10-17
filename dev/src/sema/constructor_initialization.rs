@@ -503,23 +503,9 @@ impl Analyzer<'_> {
         self.request_constructor_defaults(binding, args.len())
     }
 
-    pub(super) fn class_has_default_constructor(&self, class: EntityId) -> Result<bool, Error> {
-        if self.graph.entity(class).user_constructor.is_none() {
-            return Ok(true);
-        }
-        for &binding in &self.graph.entity(class).declared_constructors {
-            let function = self.graph.entity(self.graph.binding(binding).entity);
-            let ty = function
-                .ty
-                .ok_or(Error::Invariant("constructor without type"))?;
-            let count = self.graph.types.function_parameter_count(ty)?;
-            if (0..count)
-                .all(|index| self.function_has_default(self.graph.binding(binding).entity, index))
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+    pub(super) fn class_has_default_constructor(&mut self, class: EntityId) -> Result<bool, Error> {
+        Ok(self.declared_default_constructor(class)?.is_some()
+            || self.graph.entity(class).user_constructor.is_none())
     }
     pub(super) fn validate_constructor_use(
         &mut self,

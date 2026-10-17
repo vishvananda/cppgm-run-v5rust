@@ -255,16 +255,10 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<Option<UserConversion>, Error> {
         if elements.is_empty() && self.class_has_default_constructor(class)? {
-            return Ok(Some(
-                if self.graph.entity(class).user_constructor.is_none() {
-                    UserConversion::ImplicitConstructor(class)
-                } else {
-                    UserConversion::Constructor(self.default_constructor_binding(
-                        class,
-                        crate::support::source::SourceOffset(0),
-                    )?)
-                },
-            ));
+            return Ok(Some(self.declared_default_constructor(class)?.map_or(
+                UserConversion::ImplicitConstructor(class),
+                UserConversion::Constructor,
+            )));
         }
         let mut scratch = std::mem::take(&mut self.call_scratch);
         let argument_buffer =
