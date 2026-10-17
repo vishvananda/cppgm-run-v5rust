@@ -30,8 +30,46 @@ pub(super) struct DeclarationAccess {
     pub function: Option<EntityId>,
     pub class: Option<ScopeId>,
     pub substitution: Option<(ScopeId, ScopeId)>,
+    pub before_owner_declarator: bool,
 }
 impl Analyzer<'_> {
+    // class_templates.cpp::InstanceMemberTemplate/WithinInstance: only
+    // declaration/prototype scopes qualify. Bodies retain their own demand.
+    pub(super) fn instance_member_template_scope(&self, mut scope: ScopeId) -> bool {
+        while self.graph.scope(scope).kind != ScopeKind::Class {
+            let node = self.graph.scope(scope);
+            if !matches!(
+                node.kind,
+                ScopeKind::TemplateParameters | ScopeKind::Function
+            ) {
+                return false;
+            }
+            let Some(parent) = node.parent else {
+                return false;
+            };
+            scope = parent;
+        }
+        loop {
+            let node = self.graph.scope(scope);
+            let Some(class) = node.owner.filter(|_| node.kind == ScopeKind::Class) else {
+                return false;
+            };
+            let definitions = &self.graph.class_templates.definitions;
+            if definitions.explicit(class) {
+                return false;
+            }
+            if self.graph.class_templates.instance(class).is_some()
+                || definitions.source(class).is_some()
+            {
+                return true;
+            }
+            let Some(parent) = self.graph.entity(class).home else {
+                return false;
+            };
+            scope = parent;
+        }
+    }
+
     pub(super) fn declaration_specifiers(
         &mut self,
         specifiers: crate::syntax::storage::List<crate::syntax::ast::Specifier>,
@@ -40,6 +78,9 @@ impl Analyzer<'_> {
         lone: bool,
     ) -> Result<super::specifiers::Specifiers, Error> {
         let saved = self.declaration_access.class;
+        let saved_owner = self.declaration_access.before_owner_declarator;
+        self.declaration_access.before_owner_declarator =
+            self.template_owner.is_some() && self.active_template_head(scope).is_some();
         let saved_home = self.operand_home.take();
         let result = (|| {
             if self.active_template_head(scope).is_some() {
@@ -65,6 +106,7 @@ impl Analyzer<'_> {
             self.specifiers(specifiers, scope, lone)
         })();
         self.declaration_access.class = saved;
+        self.declaration_access.before_owner_declarator = saved_owner;
         self.operand_home = saved_home;
         result
     }

@@ -160,9 +160,11 @@ mod tests {
         analyzer.instantiation_depth = 7;
         analyzer.dependent_uses.set(11);
         analyzer.operand_home = Some(analyzer.graph.global);
+        analyzer.declaration_access.before_owner_declarator = true;
         let result = analyzer.instantiation_context(1023, SourceOffset(0), 0, |inner| {
             assert_eq!(inner.instantiation_depth, 1024);
             assert!(inner.operand_home.is_none());
+            assert!(!inner.declaration_access.before_owner_declarator);
             inner.note_dependent_use();
             Ok(())
         });
@@ -170,6 +172,7 @@ mod tests {
         assert_eq!(analyzer.instantiation_depth, 7);
         assert_eq!(analyzer.dependent_uses.get(), 11);
         assert_eq!(analyzer.operand_home, Some(analyzer.graph.global));
+        assert!(analyzer.declaration_access.before_owner_declarator);
         let result = analyzer.instantiation_context(0, SourceOffset(0), 0, |inner| {
             inner.note_dependent_use();
             Err::<(), _>(Error::Missing("test substitution"))

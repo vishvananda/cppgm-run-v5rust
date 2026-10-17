@@ -30,6 +30,42 @@ impl AccessFailure {
 }
 
 impl Analyzer<'_> {
+    // analyzer_expressions.cpp::member_templates filters the visible lookup
+    // before argument formation. Ordinary declarations can hide base templates.
+    fn member_templates(
+        &self,
+        found: &mut super::lookup::LookupResult,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let templates = if found
+            .binding
+            .is_some_and(|binding| self.graph.binding(binding).kind == BindingKind::Function)
+        {
+            found
+                .functions
+                .iter()
+                .copied()
+                .filter(|&binding| {
+                    self.graph
+                        .entity(self.graph.binding(binding).entity)
+                        .template_head
+                        .is_some()
+                })
+                .collect::<super::lookup::FunctionCandidates>()
+        } else {
+            super::lookup::FunctionCandidates::default()
+        };
+        found.binding = templates.as_slice().first().copied();
+        if found.binding.is_none() {
+            return Err(Error::at(
+                location,
+                "a template-id names no member function template",
+            ));
+        }
+        found.functions = templates;
+        Ok(())
+    }
+
     pub(super) fn current_object_type(&mut self) -> Result<Option<super::types::TypeId>, Error> {
         if self.default_argument_scope.is_some() {
             return Ok(None);
@@ -189,7 +225,11 @@ impl Analyzer<'_> {
                     other => other,
                 })?
         };
+        if found.binding.is_none() {
+            return Err(Error::at(node.location, "no member of that name"));
+        }
         if last.arguments.is_some() {
+            self.member_templates(&mut found, node.location)?;
             self.explicit_function_specializations(
                 ast::NameComponent { location, ..last },
                 &mut found,

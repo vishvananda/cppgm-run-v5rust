@@ -854,12 +854,10 @@ impl Analyzer<'_> {
             {
                 self.check_declaration_member_access(binding, naming, None, scope, node.location)?;
             }
-            if self.semantic()
-                && self.template_depth == 0
-                && self.graph.binding(binding).kind != BindingKind::Function
-            {
+            if self.semantic() && self.graph.binding(binding).kind != BindingKind::Function {
                 if let Some(search) = prefix
                     && self.graph.scope(search).kind == ScopeKind::Class
+                    && (self.template_depth == 0 || self.instance_member_template_scope(scope))
                     && let Some(class) = self.graph.scope(search).owner
                 {
                     self.check_declaration_member_access(
@@ -869,7 +867,7 @@ impl Analyzer<'_> {
                         scope,
                         node.location,
                     )?;
-                } else {
+                } else if self.template_depth == 0 {
                     self.check_declaration_direct_access(binding, scope, node.location)?;
                 }
             }

@@ -7,7 +7,10 @@ use super::{
     lookup::Filter,
     types::{TypeId, TypeKind},
 };
-use crate::syntax::ast::{self, ExprKind, InitializerKind, NameKind};
+use crate::{
+    lex::pp_lexer::Punctuator,
+    syntax::ast::{self, ExprKind, InitializerKind, NameKind},
+};
 impl Analyzer<'_> {
     pub(super) fn expression(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
         if self.semantic() && self.template_depth == 0 {
@@ -123,7 +126,30 @@ impl Analyzer<'_> {
             ExprKind::Subscript { base, index } => self
                 .expression_work
                 .extend([(index, unevaluated), (base, unevaluated)]),
-            ExprKind::Member { base, .. } => self.expression_work.push((base, unevaluated)),
+            ExprKind::Member { base, op, member } => {
+                let name = self.tree.names.get(member);
+                let components = self.tree.name_lists.get(name.components);
+                let last = components
+                    .last()
+                    .ok_or(Error::Invariant("empty member name"))?;
+                if last.arguments.is_some()
+                    && !last.template_keyword
+                    && !name.global
+                    && components.len() == 1
+                    && !matches!(last.kind, NameKind::Destructor(_))
+                    && self.dependent_object(
+                        base,
+                        op.token.as_punctuator() == Some(Punctuator::Arrow),
+                        scope,
+                    )?
+                {
+                    return Err(Error::at(
+                        self.tree.names.get(member).location,
+                        "a member template-id of a dependent object needs template",
+                    ));
+                }
+                self.expression_work.push((base, unevaluated));
+            }
             ExprKind::Cast { ty, operand, .. } => {
                 self.type_syntax(ty, scope)?;
                 self.expression_work.push((operand, unevaluated));
@@ -201,6 +227,55 @@ impl Analyzer<'_> {
             ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::Lambda(_) => (),
         }
         Ok(())
+    }
+    // analyzer_bodies.cpp::dependent_object deliberately recognizes only a
+    // bare variable/parameter. This is a name check, not expression typing or
+    // overload resolution; current-instantiation members keep their exception.
+    fn dependent_object(
+        &mut self,
+        object: ast::ExprId,
+        arrow: bool,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let ExprKind::Id(name) = self.tree.expressions.get(object).kind else {
+            return Ok(false);
+        };
+        let node = self.tree.names.get(name);
+        let components = self.tree.name_lists.get(node.components);
+        if node.global || components.len() != 1 || components[0].arguments.is_some() {
+            return Ok(false);
+        }
+        let NameKind::Identifier(identifier) = components[0].kind else {
+            return Ok(false);
+        };
+        let found = self.unqualified_result(scope, identifier.into(), Filter::Ordinary)?;
+        let Some(binding) = found.binding.filter(|_| !found.ambiguous) else {
+            return Ok(false);
+        };
+        let binding = self.graph.binding(binding);
+        if !matches!(binding.kind, BindingKind::Variable | BindingKind::Parameter) {
+            return Ok(false);
+        }
+        let Some(mut ty) = binding.ty else {
+            return Ok(false);
+        };
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        if arrow {
+            let TypeKind::Pointer(element) = self.graph.types.get(ty).kind else {
+                return Ok(false);
+            };
+            ty = element;
+        }
+        if !self.graph.dependent_type(ty) {
+            return Ok(false);
+        }
+        Ok(match self.graph.types.get(ty).kind {
+            TypeKind::Class(class) => self.graph.class_templates.instance(class).is_some(),
+            TypeKind::TemplateParameter { .. } => true,
+            _ => false,
+        })
     }
     fn check_expression_name(
         &mut self,

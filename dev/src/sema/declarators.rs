@@ -785,6 +785,17 @@ impl Analyzer<'_> {
                     ));
                 }
                 if !node.typename_keyword
+                    && self.declaration_access.before_owner_declarator
+                    && result
+                        .qualifier
+                        .is_some_and(|home| self.templated_class_scope(home))
+                {
+                    return Err(Error::at(
+                        node.location,
+                        "a dependent qualified name before the declarator-id needs typename",
+                    ));
+                }
+                if !node.typename_keyword
                     && binding.kind == super::graph::BindingKind::Type
                     && result.qualifier.is_some_and(|qualifier| {
                         self.graph.binding_scope(found) == qualifier
