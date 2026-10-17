@@ -1818,7 +1818,7 @@ impl Analyzer<'_> {
         };
         self.class_bases(node, entity, parent)?;
         self.class_depth += 1;
-        self.declarations(node.members, class)?;
+        self.declare_class_members(entity, node.members, class)?;
         self.class_depth -= 1;
         self.graph.entity_mut(entity).complete = true;
         if self.semantic() && self.template_depth == 0 {

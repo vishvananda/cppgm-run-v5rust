@@ -702,6 +702,15 @@ impl<'tree> Analyzer<'tree> {
         }
     }
     pub(super) fn defer_function_body(&mut self, body: DeferredBody) {
+        if self.shared_instance_body(body)
+            && let Some(head) = self.graph.entity(body.entity).template_head
+        {
+            // The copied member template is a definition pattern even while
+            // its enclosing instance is still declaring later members.
+            self.graph
+                .function_templates
+                .record_pattern(body, head, self.graph.binding_limit());
+        }
         if self.graph.entity(body.entity).constexpr && body.template_depth == 0 {
             self.deferred_constexpr.insert(body.entity, body);
         }

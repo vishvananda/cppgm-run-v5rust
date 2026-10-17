@@ -22,6 +22,13 @@ enum State {
     InProgress,
     Complete,
 }
+struct ActiveClass {
+    entity: EntityId,
+    pattern: ast::ClassId,
+    copy: ast::ClassId,
+    declared: usize,
+    linked: usize,
+}
 #[derive(Default)]
 pub(super) struct Definitions {
     patterns: HashMap<EntityId, Pattern>,
@@ -29,7 +36,7 @@ pub(super) struct Definitions {
     members: HashMap<EntityId, Pattern>,
     sources: HashMap<EntityId, EntityId>,
     origins: HashMap<EntityId, EntityId>,
-    active: Vec<EntityId>,
+    active: Vec<ActiveClass>,
     explicit: HashSet<EntityId>,
 }
 impl Definitions {
@@ -55,6 +62,43 @@ impl Definitions {
     }
 }
 impl Analyzer<'_> {
+    // Publish only the already declared prefix. Constant evaluation can ask
+    // for a member's pattern before the enclosing instance has completed.
+    pub(super) fn link_active_member_patterns(&mut self, owner: EntityId) {
+        let Some(record) = self
+            .graph
+            .class_templates
+            .definitions
+            .active
+            .iter_mut()
+            .rev()
+            .find(|record| record.entity == owner)
+        else {
+            return;
+        };
+        let (pattern, copy, first, end) =
+            (record.pattern, record.copy, record.linked, record.declared);
+        record.linked = record.linked.max(end);
+        self.link_member_pattern_range(pattern, copy, first..end);
+    }
+
+    pub(super) fn declare_class_members(
+        &mut self,
+        entity: EntityId,
+        members: crate::syntax::storage::List<ast::DeclId>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        for index in 0..self.tree.decl_lists.get(members).len() {
+            if let Some(record) = self.graph.class_templates.definitions.active.last_mut()
+                && record.entity == entity
+            {
+                record.declared = index;
+            }
+            self.declaration(self.tree.decl_lists.get(members)[index], scope)?;
+        }
+        Ok(())
+    }
+
     // template_names.cpp::pattern_member_template/original_member_template.
     // Follow only lexical owner edges; a copied declaration may predate the
     // original's outside definition, so absence of a definition is not cached.
@@ -456,7 +500,13 @@ impl Analyzer<'_> {
                     .class_templates
                     .definitions
                     .active
-                    .push(entity);
+                    .push(ActiveClass {
+                        entity,
+                        pattern: pattern.syntax,
+                        copy,
+                        declared: 0,
+                        linked: 0,
+                    });
                 let result = analyzer.class_body(node, entity, frame, None);
                 analyzer.graph.class_templates.definitions.active.pop();
                 result?;

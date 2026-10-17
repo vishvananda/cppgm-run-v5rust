@@ -389,10 +389,46 @@ impl Analyzer<'_> {
     // A constant call demands only its selected definition. The unit-tail
     // worklist observes the same states, so it cannot copy/analyze it again.
     pub(super) fn constant_function_definition(&mut self, entity: EntityId) -> Result<bool, Error> {
+        let member = self
+            .graph
+            .function_templates
+            .primary(entity)
+            .map_or(entity, |binding| self.graph.binding(binding).entity);
+        if self
+            .graph
+            .function_templates
+            .bodies
+            .source(member)
+            .is_none()
+            && let Some(owner) = self
+                .graph
+                .entity(member)
+                .home
+                .and_then(|home| self.graph.scope(home).owner)
+        {
+            self.link_active_member_patterns(owner);
+        }
         let bodies = &self.graph.function_templates.bodies;
         if let Some(state) = bodies.states.get(&entity) {
             return Ok(matches!(state, State::Complete(_) | State::Synthesized));
         }
+        if let Some(source) = bodies.source(entity) {
+            let definition = self.graph.entity(source);
+            // A copied body cannot make its original definition available
+            // ahead of the outermost class's complete-class context. A copy
+            // inside another instance is itself a valid deferred pattern.
+            if definition.scope.is_none()
+                && !definition
+                    .home
+                    .is_some_and(|home| self.graph.within_class_instance(home))
+            {
+                return Ok(false);
+            }
+            if let Some(body) = self.deferred_constexpr.remove(&entity) {
+                self.defer_instance_member(body);
+            }
+        }
+        let bodies = &self.graph.function_templates.bodies;
         if bodies.member_links.contains_key(&entity) && !bodies.members.contains_key(&entity) {
             if bodies.outside_definition(entity).is_none() {
                 return Ok(false);
@@ -875,6 +911,72 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn early_constant_demands_share_one_body_and_leave_other_definitions_pending() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{\
+                template<class U>static constexpr int f(){return sizeof(T)+sizeof(U);}\
+                typedef char X[f<char>()];typedef char Y[f<char>()+f<char>()];\
+                template<class U>static int unused(U u){return u.missing();}};\
+              static_assert(sizeof(A<int>::Y)==10,\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"early-member-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let unused = cursor.intern_name(b"unused").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let bodies = &analyzer.graph.function_templates.bodies;
+        let complete: Vec<_> = bodies
+            .states
+            .iter()
+            .filter_map(|(&entity, state)| matches!(state, State::Complete(_)).then_some(entity))
+            .collect();
+        assert_eq!(complete.len(), 1);
+        let selected = complete[0];
+        let primary = analyzer.graph.function_templates.primary(selected).unwrap();
+        let primary = analyzer.graph.binding(primary).entity;
+        assert!(bodies.source(primary).is_some());
+        assert!(bodies.member_links.keys().any(|&entity| {
+            analyzer.graph.entity(entity).name == Some(unused)
+                && !bodies.states.contains_key(&entity)
+        }));
+        let before = (
+            analyzer.tree.bodies.mark(),
+            analyzer.tree.expressions.mark(),
+            analyzer.graph.binding_limit(),
+        );
+        let body = bodies.body(selected);
+        for _ in 0..4 {
+            assert!(analyzer.constant_function_definition(selected).unwrap());
+        }
+        assert_eq!(
+            analyzer.graph.function_templates.bodies.body(selected),
+            body
+        );
+        assert_eq!(
+            before,
+            (
+                analyzer.tree.bodies.mark(),
+                analyzer.tree.expressions.mark(),
+                analyzer.graph.binding_limit()
+            )
+        );
+        assert!(analyzer.deferred.is_empty());
+        assert!(analyzer.deferred_constexpr.is_empty());
+        assert_eq!(analyzer.class_depth, 0);
+        assert_eq!(analyzer.template_depth, 0);
+        assert_eq!(analyzer.graph.class_templates.definitions.active_depth(), 0);
+    }
 
     #[test]
     fn a_late_semantic_use_resumes_an_emission_only_destructor() {

@@ -492,16 +492,34 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn link_member_patterns(&mut self, pattern: ast::ClassId, copy: ast::ClassId) {
-        let mut work = vec![(pattern, copy)];
-        while let Some((pattern, copy)) = work.pop() {
+        let count = self
+            .tree
+            .decl_lists
+            .get(self.tree.classes.get(pattern).members)
+            .len();
+        self.link_member_pattern_range(pattern, copy, 0..count);
+    }
+    pub(super) fn link_member_pattern_range(
+        &mut self,
+        pattern: ast::ClassId,
+        copy: ast::ClassId,
+        range: std::ops::Range<usize>,
+    ) {
+        let mut work = vec![(pattern, copy, range)];
+        while let Some((pattern, copy, range)) = work.pop() {
             let a = self.tree.classes.get(pattern).members;
             let b = self.tree.classes.get(copy).members;
-            for index in 0..self.tree.decl_lists.get(a).len() {
-                if let Some(classes) = self.link_member_declarations(
+            for index in range {
+                if let Some((pattern, copy)) = self.link_member_declarations(
                     self.tree.decl_lists.get(a)[index],
                     self.tree.decl_lists.get(b)[index],
                 ) {
-                    work.push(classes);
+                    let count = self
+                        .tree
+                        .decl_lists
+                        .get(self.tree.classes.get(pattern).members)
+                        .len();
+                    work.push((pattern, copy, 0..count));
                 }
             }
         }
