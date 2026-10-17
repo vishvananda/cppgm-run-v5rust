@@ -386,6 +386,10 @@ impl Graph {
                     write!(output, "{} ", class_key(self.entity(*entity).key))?;
                     self.write_class_name(*entity, cursor, output, qualified_classes)?;
                 }
+                TypeKind::Template(entity) => {
+                    output.write_all(b"template ")?;
+                    self.write_class_name(*entity, cursor, output, false)?;
+                }
                 TypeKind::Enum(entity) => {
                     let entity = self.entity(*entity);
                     output.write_all(if entity.enumeration.is_some_and(|info| info.scoped) {

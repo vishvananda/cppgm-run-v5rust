@@ -568,6 +568,9 @@ impl Graph {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
             return None;
         };
+        if let Some(name) = self.class_templates.dependent_names.get(entity) {
+            return Some((name.qualifier, name.name));
+        }
         let member = self.dependent_members.get(entity)?;
         Some((member.qualifier, member.name))
     }
@@ -652,6 +655,23 @@ impl Graph {
             return None;
         };
         Some((node.ty.unwrap_or(value.ty), value.bits))
+    }
+    pub(crate) fn lower_template_name(&self, ty: TypeId) -> Option<(ScopeId, NameId)> {
+        let TypeKind::Template(entity) = self.types.get(ty).kind else {
+            return None;
+        };
+        let entity = self.entity(entity);
+        entity.home.zip(entity.name)
+    }
+    pub(crate) fn lower_template_id_name(&self, ty: TypeId) -> Option<(TypeId, Vec<TypeId>)> {
+        let TypeKind::Class(entity) = self.types.get(ty).kind else {
+            return None;
+        };
+        let instance = self.class_templates.instance(entity)?;
+        self.class_templates
+            .template_entities
+            .name(instance.primary)
+            .map(|name| (name, instance.arguments.clone()))
     }
     pub(crate) fn lower_template_parameter(&self, ty: TypeId) -> Option<u32> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {

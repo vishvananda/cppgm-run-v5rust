@@ -97,6 +97,7 @@ impl Parser<'_> {
                     location,
                     kind: NameKind::Decltype(operand),
                     template_keyword,
+                    expanded: false,
                     arguments: None,
                 });
                 if self.scope_continues_name(false)? {
@@ -133,6 +134,7 @@ impl Parser<'_> {
                     location,
                     kind,
                     template_keyword,
+                    expanded: false,
                     arguments,
                 });
                 break Some(Binding {
@@ -161,6 +163,7 @@ impl Parser<'_> {
                     location,
                     kind,
                     template_keyword,
+                    expanded: false,
                     arguments,
                 });
                 break None;
@@ -175,6 +178,7 @@ impl Parser<'_> {
                 location,
                 kind: NameKind::Identifier(identifier),
                 template_keyword,
+                expanded: false,
                 arguments,
             });
             if !self.scope_continues_name(true)? {
@@ -374,6 +378,7 @@ impl Parser<'_> {
             location,
             kind: NameKind::Decltype(operand),
             template_keyword: false,
+            expanded: false,
             arguments: None,
         });
         let components = self.tree.name_lists.finish(start)?;

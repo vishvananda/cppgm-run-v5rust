@@ -392,7 +392,7 @@ impl Analyzer<'_> {
                 alignment = Some(align);
                 size
             }
-            TypeKind::Value { .. } => {
+            TypeKind::Template(_) | TypeKind::Value { .. } => {
                 return Err(Error::Invariant("size query on a template value"));
             }
             TypeKind::Enum(_) => return Err(Error::Invariant("enum query not unwound")),

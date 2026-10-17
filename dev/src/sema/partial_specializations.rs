@@ -120,9 +120,15 @@ impl Analyzer<'_> {
             if self
                 .graph
                 .class_templates
-                .dependent_names
-                .get(instance.primary)
+                .template_entities
+                .name(instance.primary)
                 .is_some()
+                || self
+                    .graph
+                    .class_templates
+                    .dependent_names
+                    .get(instance.primary)
+                    .is_some()
             {
                 continue;
             }
@@ -356,7 +362,6 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        self.supported_argument_head(head)?;
         let mut own = arguments.len() == count;
         for (index, &argument) in arguments.iter().enumerate().take(count) {
             let parameter = self.graph.templates.parameters(head)[index];
@@ -507,6 +512,14 @@ impl Analyzer<'_> {
                             .get(instance.primary)
                             .is_none()
                     {
+                        if let Some(name) = self
+                            .graph
+                            .class_templates
+                            .template_entities
+                            .name(instance.primary)
+                        {
+                            work.push(name);
+                        }
                         self.deducible_pattern_list(&instance.arguments, true, &mut work);
                     }
                 }
@@ -535,6 +548,7 @@ impl Analyzer<'_> {
                 TypeKind::BoundPack { .. }
                 | TypeKind::Auto
                 | TypeKind::Scalar(_)
+                | TypeKind::Template(_)
                 | TypeKind::Enum(_)
                 | TypeKind::Value { .. } => (),
             }

@@ -1058,7 +1058,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let node = self.abi_type(aliased)?;
             return self.finish_abi_type(ty, node);
         }
-        let node = if let Some(elements) = self.graph.lower_argument_pack(ty) {
+        let node = if let Some((home, name)) = self.graph.lower_template_name(ty) {
+            Node::Name {
+                parent: self.scope(home)?,
+                terminal: self.abi.string(self.cursor.name(name))?,
+                internal: false,
+                occurrence: 0,
+            }
+        } else if let Some((name, arguments)) = self.graph.lower_template_id_name(ty) {
+            let name = self.abi_type(name)?;
+            let mut nodes = Vec::with_capacity(arguments.len());
+            for argument in arguments {
+                nodes.push(self.abi_type(argument)?);
+            }
+            let id = self.abi.intern(Node::Template(name), &nodes)?;
+            return self.finish_abi_type(ty, id);
+        } else if let Some(elements) = self.graph.lower_argument_pack(ty) {
             let elements = elements.to_vec();
             let mut nodes = Vec::with_capacity(elements.len());
             for element in elements {

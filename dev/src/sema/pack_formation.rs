@@ -92,7 +92,9 @@ impl Analyzer<'_> {
             }
             match &self.graph.types.get(ty).kind {
                 TypeKind::TemplateParameter { entity, .. } => {
-                    if let Some(member) = self.graph.dependent_members.get(*entity) {
+                    if let Some(name) = self.graph.class_templates.dependent_names.get(*entity) {
+                        work.push(name.qualifier);
+                    } else if let Some(member) = self.graph.dependent_members.get(*entity) {
                         work.push(member.qualifier);
                     } else if let Some(pattern) = self.graph.template_operands.pattern(*entity) {
                         if placeholders && let Some(ty) = pattern.pack_names.types()? {
@@ -121,6 +123,14 @@ impl Analyzer<'_> {
                         {
                             work.push(name.qualifier);
                         }
+                        if let Some(name) = self
+                            .graph
+                            .class_templates
+                            .template_entities
+                            .name(instance.primary)
+                        {
+                            work.push(name);
+                        }
                         work.extend(instance.arguments.iter().rev().copied());
                     }
                 }
@@ -147,6 +157,7 @@ impl Analyzer<'_> {
                 TypeKind::Expansion(_)
                 | TypeKind::Auto
                 | TypeKind::Scalar(_)
+                | TypeKind::Template(_)
                 | TypeKind::Enum(_)
                 | TypeKind::Value { .. } => (),
             }

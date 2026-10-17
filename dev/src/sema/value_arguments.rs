@@ -74,6 +74,35 @@ impl Analyzer<'_> {
         location: SourceOffset,
         target: Option<TypeId>,
     ) -> Result<TypeId, Error> {
+        self.template_argument_at(argument, scope, location, target, None)
+    }
+
+    pub(super) fn template_argument_at(
+        &mut self,
+        argument: ast::TemplateArgument,
+        scope: ScopeId,
+        location: SourceOffset,
+        target: Option<TypeId>,
+        template: Option<bool>,
+    ) -> Result<TypeId, Error> {
+        if template != Some(false) {
+            let plain = self.plain_template_name(argument);
+            if let Some((name, expansion)) = plain
+                && let Some(ty) = self.template_name_argument(name, scope, template.is_some())?
+            {
+                return if expansion {
+                    self.pack_expansion_type(ty, location)
+                } else {
+                    Ok(ty)
+                };
+            }
+            if template == Some(true) && !plain.is_some_and(|(_, expansion)| expansion) {
+                return Err(Error::at(
+                    location,
+                    "a template template-argument that names no template",
+                ));
+            }
+        }
         if let Some(identity) = self.template_argument_identity(argument, scope, location)? {
             return Ok(identity);
         }
@@ -180,15 +209,26 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("argument without parameter"))?;
         let argument = self.graph.types.canonical_function(argument)?;
         let value = self.value_argument(argument);
-        if value != info.value_type.is_some() {
+        let template = self.template_argument_kind(argument);
+        if value != info.value_type.is_some() || template != info.inner.is_some() {
             return Err(Error::at(
                 location,
-                if value {
+                if template {
+                    "a template given for a template parameter that is no template template-parameter"
+                } else if info.inner.is_some() {
+                    "a template template-parameter's argument that is no template"
+                } else if value {
                     "a value given for a type template parameter"
                 } else {
                     "a type given for a non-type template parameter"
                 },
             ));
+        }
+        if matches!(self.graph.types.get(argument).kind, TypeKind::Expansion(_)) {
+            return Ok(argument);
+        }
+        if template {
+            self.match_template_name(info, argument, location)?;
         }
         let TypeKind::Value { ty: source, bits } = self.graph.types.get(argument).kind else {
             return Ok(argument);

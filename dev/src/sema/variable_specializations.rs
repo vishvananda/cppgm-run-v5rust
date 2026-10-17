@@ -67,7 +67,6 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("variable template without head"))?;
-        self.supported_argument_head(head)?;
         let mut arguments = self.form_template_arguments(component, scope, Some(head))?;
         self.complete_template_arguments(head, &mut arguments, component.location)?;
         let binding = self.variable_specialization(primary, arguments, component.location, None)?;

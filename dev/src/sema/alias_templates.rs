@@ -64,6 +64,12 @@ impl Analyzer<'_> {
             || self
                 .graph
                 .class_templates
+                .template_entities
+                .name(primary)
+                .is_some()
+            || self
+                .graph
+                .class_templates
                 .dependent_names
                 .get(primary)
                 .is_some()
@@ -302,7 +308,9 @@ impl Analyzer<'_> {
                     if self.graph.template_operands.pattern(*entity).is_some() {
                         return;
                     }
-                    if let Some(member) = self.graph.dependent_members.get(*entity) {
+                    if let Some(name) = self.graph.class_templates.dependent_names.get(*entity) {
+                        children.push(name.qualifier);
+                    } else if let Some(member) = self.graph.dependent_members.get(*entity) {
                         children.push(member.qualifier);
                     } else if let Some(index) = self
                         .graph
@@ -322,6 +330,14 @@ impl Analyzer<'_> {
                         .filter(|i| i.dependent)
                     {
                         children.extend_from_slice(&instance.arguments);
+                        if let Some(name) = self
+                            .graph
+                            .class_templates
+                            .template_entities
+                            .name(instance.primary)
+                        {
+                            children.push(name);
+                        }
                         if let Some(name) = self
                             .graph
                             .class_templates

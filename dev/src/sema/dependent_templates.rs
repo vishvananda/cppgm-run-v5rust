@@ -34,7 +34,11 @@ impl Names {
     }
 }
 impl Analyzer<'_> {
-    fn dependent_template(&mut self, qualifier: TypeId, name: NameId) -> Result<EntityId, Error> {
+    pub(super) fn dependent_template(
+        &mut self,
+        qualifier: TypeId,
+        name: NameId,
+    ) -> Result<EntityId, Error> {
         let qualifier = self.bare_type(qualifier)?;
         let qualifier = self.graph.types.canonical_function(qualifier)?;
         let key = Name { qualifier, name };
@@ -131,7 +135,7 @@ impl Analyzer<'_> {
         Ok(entity.and_then(|entity| self.graph.entity(entity).ty))
     }
 
-    fn substitute_template_name(
+    pub(super) fn substitute_template_name(
         &mut self,
         name: Name,
         environment: &mut Substitution<'_>,

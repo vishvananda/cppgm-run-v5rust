@@ -828,7 +828,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("type binding lacks a type"))?;
                 if matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::TemplateParameter { template: true, .. }
+                    TypeKind::Template(_) | TypeKind::TemplateParameter { template: true, .. }
                 ) {
                     return Err(Error::at(
                         self.tree.names.get(name).location,

@@ -111,6 +111,9 @@ impl<'a> Cloner<'a> {
             other => other,
         };
         if let Some(arguments) = node.arguments {
+            node.expanded |= self.expanding() && self.tree.template_arguments.get(arguments).iter().any(|argument| {
+                argument.pack || matches!(argument.kind, TemplateArgumentKind::Type(ty) if self.tree.types.get(ty).declarator.is_some_and(|d| self.tree.declarators.get(d).pack))
+            });
             node.arguments = Some(self.copied_arguments(arguments)?);
         }
         Ok(node)

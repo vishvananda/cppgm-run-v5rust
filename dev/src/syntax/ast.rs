@@ -131,6 +131,7 @@ pub(crate) struct NameComponent {
     pub location: SourceOffset,
     pub kind: NameKind,
     pub template_keyword: bool,
+    pub expanded: bool,
     pub arguments: Option<List<TemplateArgument>>,
 }
 #[derive(Clone, Copy, Debug)]

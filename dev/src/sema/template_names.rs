@@ -54,7 +54,11 @@ impl Analyzer<'_> {
             } else {
                 None
             };
-            let mut ty = self.template_argument_for(argument, scope, component.location, target)?;
+            let template = head
+                .and_then(|head| self.template_argument_parameter(head, index))
+                .map(|info| info.inner.is_some());
+            let mut ty =
+                self.template_argument_at(argument, scope, component.location, target, template)?;
             if argument.pack {
                 ty = match self.graph.types.get(ty).kind {
                     TypeKind::BoundPack { arguments, .. } => arguments,

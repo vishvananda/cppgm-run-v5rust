@@ -33,6 +33,7 @@ pub(super) struct Instance {
 #[derive(Default)]
 pub(super) struct ClassTemplates {
     pub(super) aliases: Box<super::alias_templates::Aliases>,
+    pub(super) template_entities: Box<super::named_templates::TemplateNames>,
     pub(super) dependent_names: super::dependent_templates::Names,
     pub(super) partials: Box<super::partial_classes::ClassPartials>,
     pub(super) definitions: super::instance_definitions::Definitions,
@@ -125,14 +126,17 @@ impl Analyzer<'_> {
     ) -> Result<Option<BindingId>, Error> {
         self.check_stack()?;
         let binding = self.graph.binding(found);
-        if binding.kind == BindingKind::Alias
-            && self.graph.entity(binding.entity).template_head.is_some()
+        let parameter = self
+            .graph
+            .entity(binding.entity)
+            .template_parameter
+            .is_some_and(|info| info.inner.is_some());
+        if (parameter || binding.kind == BindingKind::Alias)
+            && let Some(name) = self.template_name_type(found, true)?
         {
-            let alias = binding.entity;
-            let head = self.graph.entity(alias).template_head;
-            let arguments = self.form_template_arguments(component, scope, head)?;
-            let ty = self.alias_specialization(alias, arguments, component.location)?;
-            return self.specialization_binding(ty, alias).map(Some);
+            return self
+                .template_parameter_id(found, name, component, scope)
+                .map(Some);
         }
         let Some(primary) = self.class_template_primary(found) else {
             return Ok(None);
@@ -142,7 +146,6 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("class template without head"))?;
-        self.supported_argument_head(head)?;
         let arguments = self.form_template_arguments(component, scope, Some(head))?;
         let result = self.class_template_with_defaults(primary, arguments, component.location)?;
         // Only the template's own arguments in its definition denote the
@@ -211,7 +214,6 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("specialization without template head"))?;
-        self.supported_argument_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count
             && !self.trailing_argument_pack(head)
@@ -242,7 +244,6 @@ impl Analyzer<'_> {
         arguments: &mut Vec<TypeId>,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        self.supported_argument_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count
             && !self.trailing_argument_pack(head)
@@ -304,6 +305,9 @@ impl Analyzer<'_> {
             return Ok(bound);
         }
         let depth = self.graph.templates.depth(head);
+        let template = self
+            .template_argument_parameter(head, arguments.len())
+            .map(|info| info.inner.is_some());
         let target = self
             .argument_target(head, arguments.len(), arguments)?
             .known();
@@ -312,11 +316,12 @@ impl Analyzer<'_> {
             // argument frames differ. Pattern facts belong to this formation.
             let copy = self.copy_template_argument(default.syntax, default.scope)?;
             let saved = self.graph.lookup_limit.replace(default.limit);
-            let result = self.template_argument_for(
+            let result = self.template_argument_at(
                 copy,
                 default.scope,
                 self.default_location(default),
                 target,
+                template,
             );
             self.graph.lookup_limit = saved;
             let pattern = result?;
@@ -357,11 +362,12 @@ impl Analyzer<'_> {
             self.default_location(default),
             default.limit,
             |analyzer| {
-                analyzer.template_argument_for(
+                analyzer.template_argument_at(
                     copy,
                     frame,
                     analyzer.default_location(default),
                     target,
+                    template,
                 )
             },
         );
@@ -382,7 +388,6 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("substituted template without head"))?;
-        self.supported_argument_head(head)?;
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count
             && !self.trailing_argument_pack(head)
@@ -451,9 +456,15 @@ impl Analyzer<'_> {
         let mut dependent = self
             .graph
             .class_templates
-            .dependent_names
-            .get(primary)
+            .template_entities
+            .name(primary)
             .is_some()
+            || self
+                .graph
+                .class_templates
+                .dependent_names
+                .get(primary)
+                .is_some()
             || self.graph.class_templates.aliases.owner(primary).is_some()
             || key
                 .arguments
@@ -523,6 +534,9 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("substitution without class instance"))?;
         let primary = instance.primary;
         let patterns = instance.arguments.clone();
+        if let Some(name) = self.graph.class_templates.template_entities.name(primary) {
+            return self.substitute_template_parameter_id(name, &patterns, environment);
+        }
         if let Some(name) = self.graph.class_templates.dependent_names.get(primary) {
             return self.substitute_dependent_template(name, &patterns, environment);
         }

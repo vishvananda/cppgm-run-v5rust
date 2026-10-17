@@ -11,6 +11,22 @@ use super::{
 };
 use crate::{lex::identifiers::NameId, support::source::SourceOffset};
 
+impl super::types::Types {
+    /// A specialization's canonical partitions as a written template-id list.
+    /// Only the outer argument packs flatten; a nested pack remains an element.
+    pub(super) fn flattened_arguments(&self, arguments: &[TypeId]) -> Vec<TypeId> {
+        let mut result = Vec::with_capacity(arguments.len());
+        for &argument in arguments {
+            if let TypeKind::Pack(elements) = &self.get(argument).kind {
+                result.extend_from_slice(elements);
+            } else {
+                result.push(argument);
+            }
+        }
+        result
+    }
+}
+
 impl Graph {
     pub(super) fn instance_levels(&self, mut scope: Option<ScopeId>) -> Result<u32, Error> {
         let mut levels = 0u32;
@@ -34,6 +50,23 @@ impl Graph {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn template_argument_parameter(
+        &self,
+        head: HeadId,
+        index: usize,
+    ) -> Option<super::templates::ParameterInfo> {
+        let parameters = self.graph.templates.parameters(head);
+        let parameter = parameters.get(index).or_else(|| {
+            parameters.last().filter(|&&parameter| {
+                self.graph
+                    .entity(parameter)
+                    .template_parameter
+                    .is_some_and(super::templates::ParameterInfo::is_pack)
+            })
+        })?;
+        self.graph.entity(*parameter).template_parameter
+    }
+
     pub(super) fn argument_parameter_pack(&self, head: HeadId, index: usize) -> bool {
         self.graph
             .templates
@@ -182,7 +215,9 @@ impl Analyzer<'_> {
                 );
             } else if let Some(&argument) = given.get(next) {
                 if let TypeKind::Expansion(pattern) = self.graph.types.get(argument).kind {
-                    if self.value_argument(pattern) != info.value_type.is_some() {
+                    if self.value_argument(pattern) != info.value_type.is_some()
+                        || self.template_argument_kind(pattern) != info.inner.is_some()
+                    {
                         return Err(Error::at(
                             location,
                             "a pack expansion of the wrong kind for its template parameter",

@@ -6,6 +6,7 @@ use super::{
     expression_keys::{ExpressionKey, KeyNode, KeyWord},
     graph::{BindingId, BindingKind, ScopeId},
     lookup::Filter,
+    types::{Cv, TypeId, TypeKind},
 };
 use crate::syntax::ast::{self, NameKind, TemplateArgumentKind};
 impl Analyzer<'_> {
@@ -63,19 +64,12 @@ impl Analyzer<'_> {
                 ]);
                 for index in 0..argument_count {
                     let argument = self.tree.template_arguments.get(arguments)[index];
-                    if argument.pack {
-                        return Err(Error::Missing("template pack name key"));
-                    }
-                    match argument.kind {
-                        TemplateArgumentKind::Type(ty) => {
-                            let ty = self.type_syntax(ty, scope)?;
-                            self.key_type(ty, key)?;
-                        }
-                        TemplateArgumentKind::Expression(_) => {
-                            let ty = self.template_argument(argument, scope, component.location)?;
-                            self.key_type(ty, key)?;
-                        }
-                    }
+                    let Some(ty) =
+                        self.key_template_argument(argument, scope, component.location)?
+                    else {
+                        return Ok(false);
+                    };
+                    self.key_type(ty, key)?;
                 }
             }
         }
@@ -83,6 +77,38 @@ impl Analyzer<'_> {
             self.key_resolution(name, scope, key)?;
         }
         Ok(true)
+    }
+
+    /// `name_words` tests for template names before interpreting a type-id.
+    /// A non-template expression expansion makes the structural key unknown.
+    fn key_template_argument(
+        &mut self,
+        argument: ast::TemplateArgument,
+        scope: ScopeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<TypeId>, Error> {
+        if let Some((name, expansion)) = self.plain_template_name(argument)
+            && let Some(ty) = self.template_name_argument(name, scope, false)?
+        {
+            let ty = if expansion {
+                self.graph
+                    .types
+                    .intern(TypeKind::Expansion(ty), Cv::default())?
+            } else {
+                ty
+            };
+            return Ok(Some(ty));
+        }
+        if argument.pack {
+            return Ok(None);
+        }
+        let ty = match argument.kind {
+            TemplateArgumentKind::Type(ty) => self.type_syntax(ty, scope)?,
+            TemplateArgumentKind::Expression(_) => {
+                self.template_argument(argument, scope, location)?
+            }
+        };
+        Ok(Some(ty))
     }
 
     pub(super) fn key_binding(

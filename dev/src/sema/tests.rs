@@ -1840,24 +1840,21 @@ fn member_bodies_wait_for_class_completion_and_elaborated_names_use_namespace_ho
     });
 }
 #[test]
-fn missing_group_remains_distinct_from_a_language_rejection() {
-    // Argument packs now form normally; template-template argument ownership
-    // is still a separate implementation boundary, never a language rejection.
-    let source = SourceBuffer::new(
-        b"template<template<class>class T>struct C{};template<class U>struct A{};C<A> c;".to_vec(),
-    )
-    .unwrap();
-    let input = Preprocessor::with_name(&source, b"missing-semantic-group").unwrap();
-    let mut unit = SyntaxUnit::new(input);
-    unit.parse().unwrap();
-    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-    let result = Analyzer::new(tree, cursor, StackBudget::default())
-        .unwrap()
-        .analyze(declarations);
-    assert!(matches!(
-        result,
-        Err(Error::Missing("template template-parameters"))
-    ));
+fn template_name_arguments_keep_their_class_declaration_identity() {
+    analyze(b"template<template<class>class T>struct C{};template<class U>struct A{};using X=C<A>;using Y=C<A>;", |graph,cursor| {
+        let a = cursor.intern_name(b"A").unwrap();
+        let a = graph.binding(graph.own(graph.global,a,Filter::Ordinary).unwrap()).entity;
+        let instances = [b"X".as_slice(),b"Y"].map(|name| {
+            let name = cursor.intern_name(name).unwrap();
+            let ty = graph.binding(graph.own(graph.global,name,Filter::Ordinary).unwrap()).ty.unwrap();
+            let TypeKind::Class(entity) = graph.types.get(ty).kind else { panic!("class specialization"); };
+            assert!(graph.entity(entity).scope.is_none());
+            graph.class_templates.instance(entity).unwrap()
+        });
+        assert_eq!(instances[0].arguments, instances[1].arguments);
+        assert!(matches!(graph.types.get(instances[0].arguments[0]).kind,TypeKind::Template(entity) if entity == a));
+        assert!(graph.root_demands.as_slice().is_empty());
+    });
 }
 
 #[test]

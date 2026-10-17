@@ -50,6 +50,7 @@ pub(super) enum TypeKind {
     Scalar(Scalar),
     Class(EntityId),
     Enum(EntityId),
+    Template(EntityId),
     TemplateParameter {
         entity: EntityId,
         template: bool,
@@ -414,6 +415,7 @@ impl Types {
                     | TypeKind::Auto
                     | TypeKind::Scalar(_)
                     | TypeKind::Class(_)
+                    | TypeKind::Template(_)
                     | TypeKind::Enum(_)
                     | TypeKind::TemplateParameter { .. } => (),
                 }

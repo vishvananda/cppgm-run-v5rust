@@ -96,6 +96,10 @@ impl Symbols<'_, '_> {
             out.push_str("...");
             return Ok(());
         }
+        if let Some((_, name)) = self.graph.lower_template_name(ty) {
+            out.push_str(self.identifier(name)?);
+            return Ok(());
+        }
         let view = self.graph.lower_type(ty)?;
         let cv = self.graph.lower_cv(ty);
         if !matches!(view, TypeView::Pointer(_) | TypeView::Array { .. }) {

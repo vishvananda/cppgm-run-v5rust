@@ -181,18 +181,6 @@ impl Analyzer<'_> {
         let Some(head) = entity.template_head else {
             return Ok(None);
         };
-        for &parameter in self.graph.templates.parameters(head) {
-            if !self
-                .graph
-                .entity(parameter)
-                .template_parameter
-                .is_some_and(super::templates::ParameterInfo::argument_parameter)
-            {
-                return Err(Error::Missing(
-                    "function template packs or template-template arguments",
-                ));
-            }
-        }
         if entity
             .function
             .and_then(|properties| properties.special)
@@ -254,7 +242,10 @@ impl Analyzer<'_> {
             } else {
                 None
             };
-            let ty = self.template_argument_for(*argument, scope, location, target)?;
+            let template = head
+                .and_then(|head| self.template_argument_parameter(head, syntax_index))
+                .map(|info| info.inner.is_some());
+            let ty = self.template_argument_at(*argument, scope, location, target, template)?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
         Ok(given)
@@ -358,11 +349,7 @@ impl Analyzer<'_> {
     }
 
     fn template_parameter_index(&self, ty: TypeId, depth: u32) -> Option<usize> {
-        let TypeKind::TemplateParameter {
-            entity,
-            template: false,
-        } = self.graph.types.get(ty).kind
-        else {
+        let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(ty).kind else {
             return None;
         };
         self.graph.entity(entity).template_parameter?.index(depth)
@@ -424,6 +411,42 @@ impl Analyzer<'_> {
                 } else {
                     Some(ty)
                 }
+            }
+            TypeKind::TemplateParameter {
+                entity,
+                template: true,
+            } if self
+                .graph
+                .class_templates
+                .dependent_names
+                .get(entity)
+                .is_some() =>
+            {
+                let name = self
+                    .graph
+                    .class_templates
+                    .dependent_names
+                    .get(entity)
+                    .ok_or(Error::Invariant("lost template name"))?;
+                self.substitute_template_name(name, environment)?
+                    .map(|primary| {
+                        let kind = if self
+                            .graph
+                            .class_templates
+                            .dependent_names
+                            .get(primary)
+                            .is_some()
+                        {
+                            TypeKind::TemplateParameter {
+                                entity: primary,
+                                template: true,
+                            }
+                        } else {
+                            TypeKind::Template(primary)
+                        };
+                        self.graph.types.intern(kind, cv)
+                    })
+                    .transpose()?
             }
             TypeKind::TemplateParameter { entity, .. }
                 if self.graph.dependent_members.get(entity).is_some() =>
@@ -681,10 +704,15 @@ impl Analyzer<'_> {
                         // context before substituting this candidate's arguments.
                         self.template_depth += 1;
                         let saved = self.graph.lookup_limit.replace(default.limit);
-                        let result = self.template_argument(
+                        let template = self
+                            .template_argument_parameter(head, index)
+                            .map(|info| info.inner.is_some());
+                        let result = self.template_argument_at(
                             copy,
                             default.scope,
                             self.default_location(default),
+                            None,
+                            template,
                         );
                         self.graph.lookup_limit = saved;
                         self.template_depth -= 1;
@@ -853,6 +881,12 @@ impl Analyzer<'_> {
         }
         if let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(pattern).kind
             && (self.graph.template_operands.pattern(entity).is_some()
+                || self
+                    .graph
+                    .class_templates
+                    .dependent_names
+                    .get(entity)
+                    .is_some()
                 || self.graph.dependent_members.get(entity).is_some())
         {
             return Ok(true); // Dependent operands and qualified members are non-deduced.
@@ -868,6 +902,9 @@ impl Analyzer<'_> {
             self.template_parameter_index(pattern, depth)
         };
         if let Some(index) = parameter {
+            if self.template_argument_kind(pattern) && !self.template_argument_kind(actual) {
+                return Ok(false);
+            }
             let acv = self.type_cv(actual).0;
             if pcv & !acv != 0 && !extra_cv {
                 return Ok(false);
@@ -905,6 +942,16 @@ impl Analyzer<'_> {
                 self.deduce_type_list(&pattern, &actual, depth, arguments)
             }
             (TypeKind::Class(p), TypeKind::Class(a)) => {
+                if let Some(instance) = self.graph.class_templates.instance(p)
+                    && let Some(name) = self
+                        .graph
+                        .class_templates
+                        .template_entities
+                        .name(instance.primary)
+                {
+                    let patterns = instance.arguments.clone();
+                    return self.deduce_template_id(name, &patterns, a, depth, arguments);
+                }
                 match (
                     self.graph.class_templates.instance(p),
                     self.graph.class_templates.instance(a),

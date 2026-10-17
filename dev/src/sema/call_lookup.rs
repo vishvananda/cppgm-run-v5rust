@@ -175,6 +175,20 @@ impl Analyzer<'_> {
                     types.extend(parameters.iter().map(|&ty| (ty, depth + 1)));
                     types.push((*result, depth + 1));
                 }
+                TypeKind::Pack(elements) => {
+                    types.extend(elements.iter().map(|&ty| (ty, depth + 1)));
+                }
+                TypeKind::Template(entity) => {
+                    // A template-name contributes its declaration owner, not
+                    // the template class itself, its definition or its bases.
+                    if let Some(home) = self.graph.entity(*entity).home {
+                        if self.graph.scope(home).kind == ScopeKind::Class {
+                            enclosing.extend(self.graph.scope(home).owner);
+                        } else {
+                            namespaces.push(self.associated_namespace(home));
+                        }
+                    }
+                }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     let identity = *entity;
                     if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {

@@ -33,7 +33,7 @@ struct Position {
 #[derive(Clone, Copy)]
 pub(super) struct ParameterInfo {
     position: Position,
-    inner: Option<HeadId>,
+    pub(super) inner: Option<HeadId>,
     pub(super) value_type: Option<TypeId>,
 }
 impl ParameterInfo {
@@ -41,9 +41,6 @@ impl ParameterInfo {
         self.value_type == other.value_type
             && self.inner.is_some() == other.inner.is_some()
             && self.is_pack() == other.is_pack()
-    }
-    pub(super) fn argument_parameter(self) -> bool {
-        self.inner.is_none()
     }
     pub(super) fn is_pack(self) -> bool {
         self.position.shape.pack
@@ -85,6 +82,7 @@ pub(super) struct Templates {
     shapes: HashMap<Vec<(ParameterShape, Option<TypeId>)>, ShapeId>,
     positions: HashMap<Position, EntityId>,
     synthesized_values: Vec<TypeId>,
+    unique_names: Vec<TypeId>,
     partial_orderings: HashMap<(EntityId, EntityId), bool>,
 }
 impl Templates {
@@ -165,6 +163,37 @@ impl Analyzer<'_> {
                 .entity(parameter)
                 .template_parameter
                 .ok_or(Error::Invariant("ordering without parameter"))?;
+            if info.inner.is_some() {
+                while self.graph.templates.unique_names.len() <= index {
+                    let position = u16::try_from(self.graph.templates.unique_names.len() & 0xffff)
+                        .map_err(|_| Error::Invariant("truncated template index"))?;
+                    let entity = self.graph.add_entity(None, None, Keyword::Class)?;
+                    self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+                        position: Position {
+                            depth: 0x7fff,
+                            index: position,
+                            shape: ParameterShape {
+                                non_type: false,
+                                pack: false,
+                                inner: None,
+                            },
+                        },
+                        inner: None,
+                        value_type: None,
+                    });
+                    let ty = self.graph.types.intern(
+                        TypeKind::TemplateParameter {
+                            entity,
+                            template: true,
+                        },
+                        Cv::default(),
+                    )?;
+                    self.graph.entity_mut(entity).ty = Some(ty);
+                    self.graph.templates.unique_names.push(ty);
+                }
+                *argument = Some(self.graph.templates.unique_names[index]);
+                continue;
+            }
             if info.value_type.is_none() {
                 continue;
             }
@@ -201,25 +230,6 @@ impl Analyzer<'_> {
         }
         Ok(arguments)
     }
-    pub(super) fn supported_argument_head(&self, head: HeadId) -> Result<(), Error> {
-        if self
-            .graph
-            .templates
-            .parameters(head)
-            .iter()
-            .all(|&parameter| {
-                self.graph
-                    .entity(parameter)
-                    .template_parameter
-                    .is_some_and(ParameterInfo::argument_parameter)
-            })
-        {
-            Ok(())
-        } else {
-            Err(Error::Missing("template template-parameters"))
-        }
-    }
-
     pub(super) fn declaration_scope(&self, mut scope: ScopeId) -> ScopeId {
         while self.graph.scope(scope).kind == ScopeKind::TemplateParameters {
             let Some(parent) = self.graph.scope(scope).parent else {
@@ -557,8 +567,20 @@ impl Analyzer<'_> {
         if let ast::TemplateArgumentKind::Type(ty) = default
             && inner.is_some()
         {
-            self.template_default_name(ty, scope, location)?;
-            return Ok(None);
+            let argument = ast::TemplateArgument {
+                kind: ast::TemplateArgumentKind::Type(ty),
+                pack: false,
+            };
+            let name = self.plain_template_name(argument).map(|(name, _)| name);
+            if let Some(name) = name
+                && self.template_name_argument(name, scope, true)?.is_some()
+            {
+                return Ok(None);
+            }
+            return Err(Error::at(
+                location,
+                "a template template-parameter's default names no template",
+            ));
         }
         self.template_depth += 1;
         // Member-template heads share immutable syntax; formation facts are private.
@@ -580,38 +602,6 @@ impl Analyzer<'_> {
                 .is_some_and(|parent| self.graph.scope(parent).kind == ScopeKind::Class)
                 && !self.graph.dependent_type(ty)
         }))
-    }
-    fn template_default_name(
-        &mut self,
-        ty: ast::TypeId,
-        scope: ScopeId,
-        location: SourceOffset,
-    ) -> Result<(), Error> {
-        let node = self.tree.types.get(ty);
-        let specs = self.tree.specs.get(node.specifiers);
-        let name = if node.declarator.is_none()
-            && specs.len() == 1
-            && let ast::SpecifierKind::Named(name) = specs[0].kind
-        {
-            Some(name)
-        } else {
-            None
-        };
-        if let Some(name) = name {
-            let binding = self.lookup(name, scope, Filter::Ordinary)?;
-            let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some()
-                || entity
-                    .template_parameter
-                    .is_some_and(|info| info.inner.is_some())
-            {
-                return Ok(());
-            }
-        }
-        Err(Error::at(
-            location,
-            "a template template-parameter's default names no template",
-        ))
     }
     pub(super) fn class_template_head(
         &mut self,
