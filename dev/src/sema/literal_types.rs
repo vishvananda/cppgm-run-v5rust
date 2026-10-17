@@ -8,7 +8,11 @@ use super::{
     special_members::SpecialDefinition,
     types::{Scalar, TypeId, TypeKind},
 };
-use crate::{lex::vocabulary::Keyword, support::source::SourceOffset};
+use crate::{
+    lex::vocabulary::Keyword,
+    support::source::SourceOffset,
+    syntax::ast::{self, ExprKind},
+};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Default)]
@@ -95,16 +99,33 @@ impl Analyzer<'_> {
         if self.graph.aggregate_class(class) {
             return Ok(true);
         }
-        for &binding in &self.graph.entity(class).declared_constructors {
-            let function = self.graph.entity(self.graph.binding(binding).entity);
-            if function.copy_kind.is_none() && function.constexpr {
+        for index in 0..self.graph.entity(class).declared_constructors.len() {
+            let binding = self.graph.entity(class).declared_constructors[index];
+            let function = self.graph.binding(binding).entity;
+            if self.graph.entity(function).copy_kind.is_some() {
+                continue;
+            }
+            if self.graph.entity(function).constexpr {
                 return Ok(true);
+            }
+            if self.graph.inherited_constructors.source(function).is_some() {
+                let plan = self.declared_constructor_plan(binding)?;
+                if self.constant_constructor_eligible(plan, &mut HashMap::new())? {
+                    return Ok(true);
+                }
             }
         }
         if self.graph.entity(class).user_constructor.is_some() {
             return Ok(false);
         }
-        let id = self.default_constructor(class, SourceOffset(0))?;
+        // An unavailable/deleted implicit default is a negative suitability
+        // query, not a use of that constructor. Actual initialization retains
+        // its diagnostic path.
+        let id = match self.default_constructor(class, SourceOffset(0)) {
+            Ok(id) => id,
+            Err(Error::Diagnostic { .. }) => return Ok(false),
+            Err(error) => return Err(error),
+        };
         self.constant_constructor_eligible(id, &mut HashMap::new())
     }
     pub(super) fn constant_constructor_eligible(
@@ -132,10 +153,17 @@ impl Analyzer<'_> {
         }
         if let Some(binding) = plan.binding {
             let function = self.graph.entity(self.graph.binding(binding).entity);
-            if !matches!(
-                function.special_definition,
-                Some(SpecialDefinition::Defaulted { .. })
-            ) {
+            if self
+                .graph
+                .inherited_constructors
+                .source(self.graph.binding(binding).entity)
+                .is_none()
+                && function.copy_origin != super::copy_construction::Origin::Implicit
+                && !matches!(
+                    function.special_definition,
+                    Some(SpecialDefinition::Defaulted { .. })
+                )
+            {
                 return Ok(function.constexpr);
             }
         }
@@ -185,7 +213,167 @@ impl Analyzer<'_> {
                 return Ok(false);
             }
         }
+        if self
+            .graph
+            .constructors
+            .get(id)
+            .binding
+            .is_some_and(|binding| {
+                self.graph
+                    .inherited_constructors
+                    .source(self.graph.binding(binding).entity)
+                    .is_some()
+            })
+        {
+            return self.constant_inherited_member_initializers(id, known);
+        }
         Ok(true)
+    }
+    fn constant_inherited_member_initializers(
+        &mut self,
+        id: ConstructorId,
+        known: &mut HashMap<ConstructorId, bool>,
+    ) -> Result<bool, Error> {
+        for index in 0..self.graph.constructors.get(id).subobjects.len() {
+            let child = self.graph.constructors.get(id).subobjects[index].constructor;
+            if self.graph.constructors.get(child).nontrivial()
+                && !self.constant_constructor_eligible(child, known)?
+            {
+                return Ok(false);
+            }
+        }
+        for index in 0..self.graph.constructors.get(id).members.len() {
+            let (member, initializer) = self.graph.constructors.get(id).members[index];
+            let Some(initializer) = initializer else {
+                continue;
+            };
+            let (ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr)) =
+                initializer.kind
+            else {
+                continue;
+            };
+            if !self.graph.member_initializers.typed(member)
+                || self.constant_initializer_uses_object(expr, 0)
+            {
+                continue;
+            }
+            let scope = self
+                .graph
+                .entity(member)
+                .home
+                .ok_or(Error::Invariant("member without home"))?;
+            let result = self.in_constant_evaluation(|analyzer| {
+                let region = analyzer.constexpr_frames.region();
+                let result = analyzer.probe_constant_member_initializer(member, initializer, scope);
+                analyzer.constexpr_frames.release(region);
+                result
+            });
+            match result {
+                Ok(()) => (),
+                Err(Error::NonConstant { .. }) => return Ok(false),
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(true)
+    }
+    fn probe_constant_member_initializer(
+        &mut self,
+        member: EntityId,
+        initializer: ast::Initializer,
+        scope: super::graph::ScopeId,
+    ) -> Result<(), Error> {
+        let ty = self.graph.lower_entity_type(member)?;
+        let frame = super::constexpr_frames::Frame::new(ty, scope);
+        self.with_constant_frame(frame, |analyzer| {
+            let place = analyzer.allocate_constant_object(ty, None, initializer.location)?;
+            let constructor = analyzer.graph.entity(member).constructor;
+            analyzer.construct_constant_object(
+                place,
+                Some(initializer),
+                constructor,
+                scope,
+                initializer.location,
+            )?;
+            for cell in analyzer
+                .constexpr_frames
+                .cells(place, initializer.location)?
+            {
+                let child = analyzer.constexpr_frames.cell_place(place, cell);
+                if !matches!(
+                    analyzer.graph.types.get(child.designated).kind,
+                    TypeKind::Class(_) | TypeKind::Array { .. }
+                ) {
+                    analyzer
+                        .constexpr_frames
+                        .read(child, initializer.location)?;
+                }
+            }
+            Ok(())
+        })
+    }
+    // analyzer_constexpr.cpp::UsesObject: conservatively defer forms outside
+    // this bounded syntax walk to evaluation with a constructing object.
+    fn constant_initializer_uses_object(&self, expr: ast::ExprId, depth: u32) -> bool {
+        if depth > 64
+            || self.graph.expression_facts.get(expr).is_ok_and(|facts| {
+                facts.object.is_some_and(|object| {
+                    matches!(
+                        object.source,
+                        super::expression_facts::ObjectSource::Implicit
+                    )
+                })
+            })
+        {
+            return true;
+        }
+        let uses = |expr| self.constant_initializer_uses_object(expr, depth + 1);
+        match self.tree.expressions.get(expr).kind {
+            ExprKind::Id(_)
+            | ExprKind::Literal(_)
+            | ExprKind::Sizeof { .. }
+            | ExprKind::SizeofPack { .. }
+            | ExprKind::TypeTrait { .. } => false,
+            ExprKind::Keyword(keyword) => keyword == Keyword::This,
+            ExprKind::Paren(inner) => uses(inner),
+            ExprKind::Binary { left, right, .. } => uses(left) || uses(right),
+            ExprKind::Unary { operand, .. }
+            | ExprKind::Postfix { operand, .. }
+            | ExprKind::Cast { operand, .. } => uses(operand),
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => uses(condition) || uses(then_expr) || uses(else_expr),
+            ExprKind::Subscript { base, index } => uses(base) || uses(index),
+            ExprKind::Member { base, .. } => uses(base),
+            ExprKind::Call { callee, arguments } => {
+                uses(callee)
+                    || self
+                        .tree
+                        .expr_lists
+                        .get(arguments)
+                        .iter()
+                        .copied()
+                        .any(uses)
+            }
+            ExprKind::FunctionalCast {
+                arguments, braced, ..
+            } => braced.map_or_else(
+                || {
+                    self.tree
+                        .expr_lists
+                        .get(arguments)
+                        .iter()
+                        .copied()
+                        .any(uses)
+                },
+                uses,
+            ),
+            ExprKind::Braced { elements, .. } => {
+                self.tree.expr_lists.get(elements).iter().copied().any(uses)
+            }
+            _ => true,
+        }
     }
     pub(super) fn check_constant_constructor_plan(
         &mut self,
@@ -216,6 +404,24 @@ impl Analyzer<'_> {
                 ));
             }
             return Ok(());
+        }
+        for index in 0..self.graph.constructors.get(id).bases.len() {
+            let base = self.graph.constructors.get(id).bases[index];
+            if let Some(child) = base.constructor {
+                let value_initialized = base.initializer.is_some_and(|initializer| match initializer.kind {
+                    ast::InitializerKind::Parenthesized(values) => self.tree.expr_lists.get(values).is_empty(),
+                    ast::InitializerKind::Braced(expr) => matches!(self.tree.expressions.get(expr).kind, ExprKind::Braced { elements, .. } if self.tree.expr_lists.get(elements).is_empty()),
+                    _ => false,
+                });
+                if (!value_initialized || self.graph.constructors.get(child).nontrivial())
+                    && !self.constant_constructor_eligible(child, &mut HashMap::new())?
+                {
+                    return Err(Error::at(
+                        location,
+                        "a constexpr constructor initializes a subobject by a constructor that is not constexpr",
+                    ));
+                }
+            }
         }
         for index in 0..self.graph.constructors.get(id).subobjects.len() {
             let plan = self.graph.constructors.get(id).subobjects[index];

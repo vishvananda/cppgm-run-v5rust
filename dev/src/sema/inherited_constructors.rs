@@ -233,8 +233,8 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<(), Error> {
         self.check_stack()?;
-        // Single nonvirtual inheritance: the forwarded base is already selected;
-        // only members ask for default construction, never the forwarded base.
+        // The inherited base is already selected. Other direct bases and
+        // uninitialized class members ask for their own default construction.
         let source = self
             .graph
             .inherited_constructors
@@ -254,6 +254,12 @@ impl Analyzer<'_> {
             .any(|edge| edge.class == base)
         {
             return Err(Error::Missing("inherited constructor indirect base plans"));
+        }
+        for index in 0..self.graph.entity(class).bases.len() {
+            let child = self.graph.entity(class).bases[index].class;
+            if child != base {
+                self.default_constructor(child, SourceOffset(0))?;
+            }
         }
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
@@ -301,6 +307,10 @@ impl Analyzer<'_> {
                     key: Keyword::Int,
                 },
             )?;
+            self.graph
+                .entity_mut(function)
+                .parameter_entities
+                .push(parameter);
         }
         self.check_subobject_destruction(class, owner, SourceOffset(0))?;
         self.prepare_destruction(class)?;

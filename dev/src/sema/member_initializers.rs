@@ -25,6 +25,11 @@ enum State {
 }
 #[derive(Default)]
 pub(super) struct Initializers(HashMap<EntityId, State>);
+impl Initializers {
+    pub(super) fn typed(&self, member: EntityId) -> bool {
+        matches!(self.0.get(&member), Some(State::Complete))
+    }
+}
 
 impl Analyzer<'_> {
     pub(super) fn defer_member_initializer(&mut self, binding: BindingId, scope: ScopeId) {

@@ -23,6 +23,39 @@ pub(super) enum Returned {
     Void,
 }
 
+/// Written arguments keep their analyzed conversions; forwarded arguments
+/// already designate parameter/subobject storage and must not replay syntax.
+#[derive(Clone, Copy)]
+pub(super) enum ConstantArguments<'a> {
+    Written(&'a [ast::ExprId]),
+    Bound(&'a [Address]),
+}
+impl ConstantArguments<'_> {
+    pub(super) fn first_place(
+        self,
+        analyzer: &mut Analyzer<'_>,
+        parameter: TypeId,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        match self {
+            Self::Bound(values) => values
+                .first()
+                .copied()
+                .ok_or(Error::Invariant("copy without source")),
+            Self::Written(values) => {
+                let &expr = values
+                    .first()
+                    .ok_or(Error::Invariant("copy without source"))?;
+                let TypeKind::Reference { element, .. } = analyzer.graph.types.get(parameter).kind
+                else {
+                    return Err(Error::Invariant("copy source parameter without reference"));
+                };
+                analyzer.bind_constant_reference(expr, element, scope)
+            }
+        }
+    }
+}
+
 impl Analyzer<'_> {
     pub(super) fn check_constexpr_scalar_signature(
         &mut self,
@@ -431,16 +464,6 @@ impl Analyzer<'_> {
         }
         result
     }
-    pub(super) fn bind_constant_parameters(
-        &mut self,
-        function: EntityId,
-        ty: TypeId,
-        arguments: &[ast::ExprId],
-        scope: ScopeId,
-        location: SourceOffset,
-    ) -> Result<Vec<Returned>, Error> {
-        self.bind_constant_arguments(function, ty, (arguments, false), scope, location)
-    }
     fn bind_constant_arguments(
         &mut self,
         function: EntityId,
@@ -449,22 +472,71 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Vec<Returned>, Error> {
+        self.bind_constant_inputs(
+            function,
+            ty,
+            (ConstantArguments::Written(arguments), postfix),
+            scope,
+            location,
+        )
+    }
+    pub(super) fn bind_constant_inputs(
+        &mut self,
+        function: EntityId,
+        ty: TypeId,
+        (arguments, postfix): (ConstantArguments<'_>, bool),
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Vec<Returned>, Error> {
         let TypeKind::Function { ref parameters, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("parameter binding without function type"));
         };
         let count = parameters.len();
         // Variadic extras are evaluated before the fixed parameters, as in C++.
-        for &argument in arguments.iter().skip(count) {
-            self.discard_constant(argument, scope)?;
+        if let ConstantArguments::Written(arguments) = arguments {
+            for &argument in arguments.iter().skip(count) {
+                let facts = self.graph.expression_facts.get(argument)?;
+                let ty = facts.ty;
+                if self.graph.class_of(ty).is_some() {
+                    let place = self.allocate_constant_object(ty, None, location)?;
+                    self.initialize_constant_class_from(argument, place, scope)?;
+                } else {
+                    let target = facts.conversion.map_or(ty, |conversion| conversion.result);
+                    let target = self.decayed_type(target)?;
+                    self.constant_operand_value(argument, target, scope)?;
+                }
+            }
         }
         let mut bound = Vec::with_capacity(count);
         for index in 0..count {
             let parameter = self.graph.types.function_parameter(ty, index)?;
-            if postfix && index == arguments.len() {
+            if let ConstantArguments::Bound(places) = arguments
+                && let Some(&source) = places.get(index)
+            {
+                let value = match self.graph.types.get(parameter).kind {
+                    TypeKind::Reference { .. } => Returned::Place(source),
+                    TypeKind::Class(_) => {
+                        let place = self.allocate_constant_object(parameter, None, location)?;
+                        self.copy_constant_object(place, source, location)?;
+                        Returned::Place(place)
+                    }
+                    _ => {
+                        let value = self.read_constant_scalar(source, location)?;
+                        Returned::Value(self.convert_constant_scalar(value, parameter, location)?)
+                    }
+                };
+                bound.push(value);
+                continue;
+            }
+            let written = match arguments {
+                ConstantArguments::Written(values) => values,
+                ConstantArguments::Bound(_) => &[],
+            };
+            if postfix && index == written.len() {
                 bound.push(Returned::Value(self.zero_constant_scalar(parameter)?));
                 continue;
             }
-            let argument = arguments
+            let argument = written
                 .get(index)
                 .copied()
                 .or_else(|| self.graph.function_default(function, index))
@@ -570,6 +642,7 @@ impl Analyzer<'_> {
             if let Some(entity) = entity {
                 frame.bind(entity, place);
             }
+            frame.parameters.push(place);
         }
         Ok(frame)
     }

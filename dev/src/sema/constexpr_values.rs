@@ -159,10 +159,12 @@ impl Analyzer<'_> {
     }
     pub(super) fn copy_constant_object(
         &mut self,
-        target: Address,
-        source: Address,
+        mut target: Address,
+        mut source: Address,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        target.designated = self.bare_type(target.designated)?;
+        source.designated = self.bare_type(source.designated)?;
         if let Root::Variable(entity) = source.root {
             self.instantiate_variable_value(entity)?;
             if self.graph.entity(entity).constexpr

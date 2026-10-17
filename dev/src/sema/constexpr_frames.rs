@@ -78,6 +78,7 @@ pub(super) struct Frame {
     pub scope: ScopeId,
     pub object: Option<Address>,
     pub destination: Option<Address>,
+    pub parameters: Vec<Address>,
     seeking: Option<crate::syntax::ast::StmtId>,
     places: HashMap<EntityId, Address>,
     locals: Vec<EntityId>,
@@ -90,6 +91,7 @@ impl Frame {
             seeking: None,
             object: None,
             destination: None,
+            parameters: Vec::new(),
             places: HashMap::new(),
             locals: Vec::new(),
         }

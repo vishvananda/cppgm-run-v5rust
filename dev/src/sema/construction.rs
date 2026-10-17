@@ -456,7 +456,13 @@ impl Analyzer<'_> {
             ) {
                 return Err(Error::Missing("extended base subobject constructor plans"));
             }
-            let base = if let Some(source) = inherited {
+            let forwarded = inherited.filter(|&source| {
+                self.graph
+                    .entity(self.graph.binding(source).entity)
+                    .member_function
+                    .is_some_and(|key| key.class == edge.class)
+            });
+            let base = if let Some(source) = forwarded {
                 self.declared_constructor_plan(source)?
             } else if let ConstructorState::Ready(base) =
                 self.graph.entity(edge.class).default_construction
@@ -470,7 +476,7 @@ impl Analyzer<'_> {
                 constructor: Some(base),
                 arguments: None,
                 initializer: None,
-                forwards: inherited.is_some(),
+                forwards: forwarded.is_some(),
             });
             let base = self.graph.constructors.get(base);
             // implicit_default_facts plans its bases with location zero;

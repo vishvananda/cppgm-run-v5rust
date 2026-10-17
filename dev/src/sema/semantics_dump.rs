@@ -829,6 +829,21 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.graph
             .write_constructor_name(class, self.cursor, self.output, false)?;
         writeln!(self.output)?;
+        let mut facts = self
+            .graph
+            .expression_facts
+            .get(expression)
+            .map_err(|_| io::Error::other("copy source without facts"))?;
+        if let Some(selected) = facts.class_copy
+            && selected.binding.second == C::DerivedToBase
+        {
+            // The constructor action shows the selected reference binding,
+            // while the source occurrence retains its original derived type.
+            facts.conversion = Some(selected.binding);
+            if self.conversion_node(expression, facts, depth + 1, None)? {
+                return Ok(true);
+            }
+        }
         self.work.push((
             Item::Expression {
                 id: expression,

@@ -76,6 +76,13 @@ impl Analyzer<'_> {
         if self.graph.entity(entity).builtin.is_some() {
             return Ok(false);
         }
+        if self.graph.entity(entity).constructor_exceptions
+            == super::construction::ConstructorExceptionSource::SubobjectPlan
+        {
+            let binding = self.graph.function_origin(entity)?;
+            let plan = self.declared_constructor_plan(binding)?;
+            return Ok(!self.graph.constructors.get(plan).nothrow);
+        }
         if self.graph.function_templates.primary(entity).is_some()
             && matches!(
                 self.graph.entity(entity).exceptions,

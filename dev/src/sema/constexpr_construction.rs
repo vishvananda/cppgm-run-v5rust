@@ -5,6 +5,7 @@ use super::{
     analyzer::Analyzer,
     call_arguments::Arguments,
     constant_addresses::{Address, nonconstant},
+    constexpr_calls::ConstantArguments,
     constexpr_frames::Frame,
     construction::ConstructorId,
     constructor_initialization::ConstructorArguments,
@@ -127,6 +128,20 @@ impl Analyzer<'_> {
         target: Address,
         scope: ScopeId,
     ) -> Result<(), Error> {
+        self.initialize_constant_class_at(
+            expr,
+            target,
+            scope,
+            self.tree.expressions.get(expr).location,
+        )
+    }
+    fn initialize_constant_class_at(
+        &mut self,
+        expr: ast::ExprId,
+        target: Address,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         if let Some((constructor, arguments)) = self.graph.expression_facts.class_conversion(expr)
             && self.graph.class_of(target.designated)
                 == Some(self.graph.constructors.get(constructor).class)
@@ -140,19 +155,28 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(expr).location,
             );
         }
+        if let Some(super::copy_initialization::CopyAction::Storage { reference, .. }) =
+            self.graph.lower_class_copy(expr)?
+        {
+            let facts = self
+                .graph
+                .expression_facts
+                .get(self.graph.expression_facts.root(expr))?;
+            if facts.category == ValueCategory::Prvalue
+                && self.graph.class_of(facts.ty) == self.graph.class_of(target.designated)
+            {
+                return self.materialize_constant_object(expr, target, scope);
+            }
+            let source = ConstantArguments::Written(&[expr]).first_place(self, reference, scope)?;
+            return self.copy_constant_object(target, source, location);
+        }
         if let Some(super::copy_initialization::CopyAction::Constructor {
             constructor,
             elision: false,
             ..
         }) = self.graph.lower_class_copy(expr)?
         {
-            return self.run_constant_constructor(
-                target,
-                constructor,
-                &[expr],
-                scope,
-                self.tree.expressions.get(expr).location,
-            );
+            return self.run_constant_constructor(target, constructor, &[expr], scope, location);
         }
         self.materialize_constant_object(expr, target, scope)
     }
@@ -226,7 +250,24 @@ impl Analyzer<'_> {
                         || self.bare_type(self.graph.expression_facts.get(expr)?.ty)?
                             == self.bare_type(target.designated)?)
                 {
-                    return self.initialize_constant_class_from(expr, target, scope);
+                    if let Some(constructor) = constructor
+                        && matches!(
+                            self.graph.lower_class_copy(expr)?,
+                            Some(super::copy_initialization::CopyAction::Constructor {
+                                elision: false,
+                                ..
+                            })
+                        )
+                    {
+                        return self.run_constant_constructor(
+                            target,
+                            constructor,
+                            &[expr],
+                            scope,
+                            location,
+                        );
+                    }
+                    return self.initialize_constant_class_at(expr, target, scope, location);
                 } else {
                     Arguments::new(&[expr])
                 }
@@ -450,15 +491,66 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        self.run_constant_constructor_inputs(
+            target,
+            id,
+            ConstantArguments::Written(values),
+            scope,
+            location,
+        )
+    }
+    fn run_constant_constructor_inputs(
+        &mut self,
+        target: Address,
+        id: ConstructorId,
+        values: ConstantArguments<'_>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         self.constant_step(location)?;
         if self.graph.constructors.get(id).deleted {
             return Err(nonconstant(location, "a call of a deleted function"));
         }
         if self.graph.lower_constructor_copies_storage(id) {
-            let Some(&source) = values.first() else {
-                return Err(Error::Invariant("copy constructor without source"));
+            return match values {
+                ConstantArguments::Written(values) => {
+                    let &source = values
+                        .first()
+                        .ok_or(Error::Invariant("copy constructor without source"))?;
+                    let facts = self
+                        .graph
+                        .expression_facts
+                        .get(self.graph.expression_facts.root(source))?;
+                    if facts.category == ValueCategory::Prvalue
+                        && self.graph.class_of(facts.ty)
+                            == Some(self.graph.constructors.get(id).class)
+                    {
+                        self.materialize_constant_object(source, target, scope)
+                    } else {
+                        let parameter = self
+                            .graph
+                            .types
+                            .function_parameter(self.graph.constructors.get(id).callable_type, 0)?;
+                        let from = ConstantArguments::Written(values)
+                            .first_place(self, parameter, scope)?;
+                        self.copy_constant_object(target, from, location)
+                    }
+                }
+                ConstantArguments::Bound(values) => {
+                    let &source = values
+                        .first()
+                        .ok_or(Error::Invariant("copy constructor without source"))?;
+                    self.copy_constant_object(target, source, location)
+                }
             };
-            return self.materialize_constant_object(source, target, scope);
+        }
+        if self.graph.constructors.get(id).copy.is_some() {
+            let parameter = self
+                .graph
+                .types
+                .function_parameter(self.graph.constructors.get(id).callable_type, 0)?;
+            let source = values.first_place(self, parameter, scope)?;
+            return self.copy_constant_subobjects(id, target, source, location);
         }
         let binding = self.graph.constructors.get(id).binding;
         let class = self.graph.constructors.get(id).class;
@@ -478,6 +570,7 @@ impl Analyzer<'_> {
         let frame = if let Some(function) = function {
             let entity = self.graph.entity(function);
             if !entity.constexpr
+                && self.graph.inherited_constructors.source(function).is_none()
                 && !matches!(
                     entity.special_definition,
                     Some(super::special_members::SpecialDefinition::Defaulted { .. })
@@ -488,7 +581,9 @@ impl Analyzer<'_> {
                     "a call of a function that is not constexpr",
                 ));
             }
-            if !self.constant_function_definition(function)? {
+            if self.graph.inherited_constructors.source(function).is_none()
+                && !self.constant_function_definition(function)?
+            {
                 return Err(nonconstant(
                     location,
                     "a constexpr function called before its definition",
@@ -496,7 +591,7 @@ impl Analyzer<'_> {
             }
             let ty = self.graph.lower_entity_type(function)?;
             let parameters =
-                self.bind_constant_parameters(function, ty, values, scope, location)?;
+                self.bind_constant_inputs(function, ty, (values, false), scope, location)?;
             // Argument temporaries belong to the caller; parameter objects end
             // with the constructor, before a later member call on its result.
             region = self.constexpr_frames.region();
@@ -513,6 +608,7 @@ impl Analyzer<'_> {
             frame.object = Some(target);
             frame
         };
+        let parameters = frame.parameters.clone();
         let result = self.with_constant_frame(frame, |analyzer| {
             analyzer.constant_constructor_subobjects(target, id, location)?;
             if let Some(function) = function
@@ -531,6 +627,20 @@ impl Analyzer<'_> {
             }
             Ok(())
         });
+        if let Some(function) = function {
+            let ty = self.graph.lower_entity_type(function)?;
+            for (index, parameter) in parameters.into_iter().enumerate() {
+                if !matches!(
+                    self.graph
+                        .types
+                        .get(self.graph.types.function_parameter(ty, index)?)
+                        .kind,
+                    TypeKind::Reference { .. }
+                ) {
+                    self.constexpr_frames.end_lifetime(parameter);
+                }
+            }
+        }
         self.constexpr_frames.release(region);
         result
     }
@@ -552,12 +662,21 @@ impl Analyzer<'_> {
         }
         for index in 0..self.graph.constructors.get(id).bases.len() {
             let base = self.graph.constructors.get(id).bases[index];
-            if base.forwards {
-                return Err(Error::Missing("constexpr inherited constructor forwarding"));
-            }
             let class = self.graph.constructors.get(id).class;
             let path = self.graph.retain_base_path(class, base.class)?;
             let place = self.constant_project_path(target, Some(path), location)?;
+            if base.forwards {
+                let parameters = self.constexpr_frames.current()?.parameters.clone();
+                self.run_constant_constructor_inputs(
+                    place,
+                    base.constructor
+                        .ok_or(Error::Invariant("forwarded base without constructor"))?,
+                    ConstantArguments::Bound(&parameters),
+                    scope,
+                    location,
+                )?;
+                continue;
+            }
             self.construct_constant_object(
                 place,
                 base.initializer,
@@ -584,5 +703,155 @@ impl Analyzer<'_> {
             self.construct_constant_object(place, initializer, constructor, scope, location)?;
         }
         Ok(())
+    }
+    fn copy_constant_subobjects(
+        &mut self,
+        id: ConstructorId,
+        target: Address,
+        source: Address,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let count = self
+            .graph
+            .constructors
+            .get(id)
+            .copy
+            .as_ref()
+            .ok_or(Error::Invariant("copy without subobject plan"))?
+            .len();
+        for index in 0..count {
+            let action = self
+                .graph
+                .constructors
+                .get(id)
+                .copy
+                .as_ref()
+                .ok_or(Error::Invariant("lost constant copy plan"))?[index];
+            let (to, from) = match action.target {
+                super::copy_construction::CopyTarget::Base(index) => {
+                    let class = self.graph.constructors.get(id).class;
+                    self.class_layout(class, location)?;
+                    let edge = self.graph.entity(class).bases[index as usize];
+                    let offset = super::integral::signed(
+                        edge.offset
+                            .ok_or(Error::Invariant("copy base without offset"))?,
+                    );
+                    let ty = self.bare_type(action.ty)?;
+                    (
+                        Address {
+                            offset: target.offset.wrapping_add(offset),
+                            designated: ty,
+                            ..target
+                        },
+                        Address {
+                            offset: source.offset.wrapping_add(offset),
+                            designated: ty,
+                            ..source
+                        },
+                    )
+                }
+                super::copy_construction::CopyTarget::Member(member) => {
+                    if self.graph.unnamed_bit_field(member) {
+                        continue;
+                    }
+                    (
+                        self.constant_member_slot(target, member, location)?,
+                        self.constant_member_slot(source, member, location)?,
+                    )
+                }
+            };
+            if let Some(child) = action
+                .constructor
+                .filter(|&id| self.graph.constructors.get(id).nontrivial())
+            {
+                self.run_constant_constructor_inputs(
+                    to,
+                    child,
+                    ConstantArguments::Bound(&[from]),
+                    self.graph.global,
+                    location,
+                )?;
+            } else {
+                self.copy_constant_object(to, from, location)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{analyzer::Analyzer, constants::ConstantState, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::{SyntaxUnit, ast},
+    };
+
+    #[test]
+    fn inherited_parameters_and_selected_member_copies_keep_local_ownership() {
+        let source = SourceBuffer::new(
+            br"
+            struct S {
+                int n;
+                constexpr S(int x):n(x){}
+                constexpr S(const S& other):n(other.n+1){}
+            };
+            struct B {int n; constexpr B(S s):n(s.n){}};
+            struct D:B {using B::B;};
+            struct M {S s; constexpr M():s(3){}};
+            constexpr int f(int n) {
+                S source(n); D d(source); M a; M b=a;
+                b.s.n+=2;
+                return d.n*100+b.s.n*10+a.s.n;
+            }
+            constexpr int a=f(3);
+            constexpr int b=f(7);
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"a", b"b"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        for (name, bits) in names.into_iter().zip([463, 863]) {
+            let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+            assert!(
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant,
+                ConstantState::Value(value) if value.bits == bits)
+            );
+        }
+        let declaration = *analyzer.tree.decl_lists.get(declarations).last().unwrap();
+        let ast::DeclKind::Simple { declarators, .. } =
+            analyzer.tree.declarations.get(declaration).kind
+        else {
+            panic!("simple declaration");
+        };
+        let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let expr = analyzer.single_initializer(initializer).unwrap();
+        let syntax = analyzer.tree.expressions.mark();
+        for _ in 0..3 {
+            assert_eq!(
+                analyzer
+                    .constant_value(expr, scope, true)
+                    .unwrap()
+                    .unwrap()
+                    .bits,
+                863
+            );
+            assert_eq!(analyzer.tree.expressions.mark(), syntax);
+            assert!(!analyzer.constexpr_frames.active());
+            assert!(analyzer.constant_evaluation.is_none());
+        }
     }
 }

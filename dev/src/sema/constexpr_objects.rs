@@ -193,6 +193,18 @@ impl Analyzer<'_> {
         member: EntityId,
         location: SourceOffset,
     ) -> Result<Address, Error> {
+        if place.past_end {
+            return Err(nonconstant(
+                location,
+                "a member of an object one past the end of an array",
+            ));
+        }
+        if self.graph.class_of(place.designated).is_none() {
+            return Err(nonconstant(
+                location,
+                "a conversion to a base class outside constant evaluation",
+            ));
+        }
         let entity = self.graph.entity(member);
         let offset = if let Some(field) = entity.bit_field {
             self.graph.bit_fields.storage(field)?.bit / 8
@@ -203,7 +215,6 @@ impl Analyzer<'_> {
         };
         let field = entity.bit_field.map(|_| member);
         let ty = self.bare_type(self.graph.lower_entity_type(member)?)?;
-        let _ = location;
         Ok(Address {
             designated: ty,
             offset: place.offset.wrapping_add(super::integral::signed(offset)),

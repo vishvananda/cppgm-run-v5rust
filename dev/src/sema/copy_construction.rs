@@ -425,6 +425,10 @@ impl Analyzer<'_> {
                     key: Keyword::Int,
                 },
             )?;
+            self.graph
+                .entity_mut(function)
+                .parameter_entities
+                .push(other);
         }
         Ok(())
     }

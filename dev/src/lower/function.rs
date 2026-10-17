@@ -403,6 +403,9 @@ impl Function<'_, '_, '_, '_> {
             };
             let incoming = self.builder.parameter(index)?;
             if matches!(self.graph.lower_type(parameter)?, TypeView::Class(class) if !self.graph.lower_direct_class_parameter(class)?)
+                && !self
+                    .entity
+                    .is_some_and(|entity| self.graph.lower_positional_parameters(entity))
             {
                 self.locals.insert(entity, incoming);
             } else {
