@@ -1,0 +1,50 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_EXPLICIT:explicit
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier value
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_EXPLICIT:explicit
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier free_function
+          parameter-clause
+  class-specifier Box
+    class-key KW_STRUCT:struct
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_EXPLICIT:explicit
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier member_function
+            parameter-clause
+    special-member-declaration Box
+      member-specifiers
+        specifier explicit
+          keyword-literal KW_TRUE:true
+      declarator
+        identifier Box
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+    special-member-declaration operatorint
+      member-specifiers
+        specifier explicit
+          keyword-literal KW_FALSE:false
+      declarator
+        identifier operatorint
+        parameter-clause
+        cv-qualifier KW_CONST:const
+end translation unit

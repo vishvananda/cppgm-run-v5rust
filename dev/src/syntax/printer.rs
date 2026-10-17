@@ -654,10 +654,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         true,
                     )
                 }
-                SpecifierKind::ExplicitCondition(operand) => {
-                    self.tasks.push(Task::Close);
-                    self.tasks.push(Task::Expression(operand));
-                    Task::Line("decl-specifier", Payload::Text("explicit"), true)
+                // The ordinary specifier dump omits the condition. Only the
+                // special-member dump presents the retained operand beneath it.
+                SpecifierKind::ExplicitCondition(_) => {
+                    Task::Line("decl-specifier", Payload::Keyword(K::Explicit), false)
                 }
                 SpecifierKind::Keyword(word) => Task::Line(
                     if !types {

@@ -364,11 +364,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 self.tasks.push(Render::Text(key.spelling()));
             }
             SpecifierKind::Enum(decl) => self.enumeration(decl),
-            SpecifierKind::ExplicitCondition(operand) => {
-                self.tasks.push(Render::Text(")"));
-                self.tasks.push(Render::Expression(operand));
-                self.tasks.push(Render::Text("explicit("));
-            }
+            SpecifierKind::ExplicitCondition(_) => self.tasks.push(Render::Text("explicit")),
             SpecifierKind::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
         }
     }
