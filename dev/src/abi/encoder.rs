@@ -254,7 +254,7 @@ impl<'a> Encoder<'a> {
                 self.tags(id);
             }
             Node::Name { .. } | Node::Template(_) => self.name(id, Qualifiers::default())?,
-            Node::TemplateParam { .. } | Node::LeveledTemplateParam { .. } => {
+            Node::TemplateParam { .. } => {
                 return self.prefix(Some(id));
             }
             Node::Decltype {
@@ -501,7 +501,7 @@ impl<'a> Encoder<'a> {
                     self.record(id)?;
                 }
             }
-            Node::LeveledTemplateParam {
+            Node::TemplateParam {
                 index,
                 level,
                 substitutable,
@@ -511,22 +511,6 @@ impl<'a> Encoder<'a> {
                     return Ok(());
                 }
                 self.template_parameter(index, level);
-                if substitutable {
-                    self.record(id)?;
-                }
-            }
-            Node::TemplateParam {
-                index,
-                substitutable,
-            } => {
-                if self.substitute(id) {
-                    return Ok(());
-                }
-                self.put(b"T");
-                if index != 0 {
-                    self.number(u64::from(index - 1));
-                }
-                self.put(b"_");
                 if substitutable {
                     self.record(id)?;
                 }
@@ -616,6 +600,18 @@ impl<'a> Encoder<'a> {
     fn parameter_declaration(&mut self, id: NodeId) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.get(id) {
+            Node::TypeParameter => {
+                self.put(b"Ty");
+                Ok(())
+            }
+            Node::TemplateParameter => {
+                self.put(b"Tt");
+                for &parameter in self.graph.items(id) {
+                    self.parameter_declaration(parameter)?;
+                }
+                self.put(b"E");
+                Ok(())
+            }
             Node::ParameterPack(declaration) => {
                 self.put(b"Tp");
                 self.parameter_declaration(declaration)
@@ -713,15 +709,8 @@ impl<'a> Encoder<'a> {
     fn expression(&mut self, id: NodeId) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.get(id) {
-            Node::LeveledTemplateParam { index, level, .. } => {
+            Node::TemplateParam { index, level, .. } => {
                 self.template_parameter(index, level);
-            }
-            Node::TemplateParam { index, .. } => {
-                self.put(b"T");
-                if index != 0 {
-                    self.number(u64::from(index - 1));
-                }
-                self.put(b"_");
             }
             Node::FunctionParam { index, level } => {
                 if level == 0 {

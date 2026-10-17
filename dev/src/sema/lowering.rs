@@ -25,6 +25,20 @@ pub(crate) use super::{
 };
 use crate::lex::vocabulary::Keyword;
 use crate::{lex::identifiers::NameId, syntax::ast};
+pub(crate) struct TemplateParameterView {
+    pub index: u32,
+    pub level: u32,
+    pub value: bool,
+    pub pack: bool,
+    pub template: bool,
+}
+
+pub(crate) enum TemplateDeclaration {
+    Type,
+    Value(TypeId),
+    Template,
+}
+
 pub(crate) struct ConstructorView<'a> {
     pub object_pointer: TypeId,
     pub union: bool,
@@ -700,7 +714,7 @@ impl Graph {
                 .pattern(entity)
                 .is_some_and(|pattern| pattern.value)
     }
-    pub(crate) fn lower_parameter_level(&self, ty: TypeId) -> Option<(u32, u32, bool, bool)> {
+    pub(crate) fn lower_parameter_level(&self, ty: TypeId) -> Option<TemplateParameterView> {
         let (entity, level) = match self.types.get(ty).kind {
             TypeKind::TemplateParameter { entity, .. } => (entity, None),
             TypeKind::BoundPack {
@@ -709,12 +723,13 @@ impl Graph {
             _ => return None,
         };
         let info = self.entity(entity).template_parameter?;
-        Some((
-            info.abi_index(),
-            level.unwrap_or_else(|| info.depth()),
-            info.value_type.is_some(),
-            info.is_pack(),
-        ))
+        Some(TemplateParameterView {
+            index: info.abi_index(),
+            level: level.unwrap_or_else(|| info.depth()),
+            value: info.value_type.is_some(),
+            pack: info.is_pack(),
+            template: info.inner.is_some(),
+        })
     }
     pub(crate) fn lower_bound_parameter(&self, ty: TypeId) -> bool {
         matches!(self.types.get(ty).kind, TypeKind::BoundPack { .. })
@@ -756,16 +771,52 @@ impl Graph {
         }
         false
     }
-    pub(crate) fn lower_template_value_type(
+    pub(crate) fn lower_template_parameter_entity(
         &self,
-        entity: EntityId,
+        instance: EntityId,
         index: usize,
-    ) -> Option<TypeId> {
-        let primary = self.function_templates.primary(entity)?;
+    ) -> Option<EntityId> {
+        let primary = self.function_templates.primary(instance)?;
         let head = self.entity(self.binding(primary).entity).template_head?;
-        self.entity(*self.templates.parameters(head).get(index)?)
-            .template_parameter?
-            .value_type
+        self.templates.parameters(head).get(index).copied()
+    }
+    pub(crate) fn lower_template_declaration(
+        &self,
+        parameter: EntityId,
+    ) -> Result<(TemplateDeclaration, bool, u32), Error> {
+        let info = self
+            .entity(parameter)
+            .template_parameter
+            .ok_or(Error::Invariant(
+                "ABI declaration without template parameter",
+            ))?;
+        let declaration = if info.inner.is_some() {
+            TemplateDeclaration::Template
+        } else if let Some(ty) = info.value_type {
+            TemplateDeclaration::Value(ty)
+        } else {
+            TemplateDeclaration::Type
+        };
+        Ok((declaration, info.is_pack(), info.depth()))
+    }
+    pub(crate) fn lower_argument_template(&self, ty: TypeId) -> Option<EntityId> {
+        match self.types.get(ty).kind {
+            TypeKind::Template(entity) => Some(entity),
+            TypeKind::TemplateParameter { entity, .. }
+                if self.entity(entity).template_parameter?.inner.is_some() =>
+            {
+                Some(entity)
+            }
+            _ => None,
+        }
+    }
+    pub(crate) fn lower_template_head_parameters(&self, entity: EntityId) -> Option<&[EntityId]> {
+        let entity = self.entity(entity);
+        let head = entity
+            .template_parameter
+            .and_then(|info| info.inner)
+            .or(entity.template_head)?;
+        Some(self.templates.parameters(head))
     }
     pub(crate) fn lower_instance_levels(&self, scope: ScopeId) -> Result<u32, Error> {
         self.instance_levels(Some(scope))

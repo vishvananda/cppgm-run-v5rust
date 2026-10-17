@@ -15,6 +15,8 @@ impl CaseReader<'_, '_> {
         let operands = &words[1..];
         let node = match words[0] {
             b"template-param" if operands.len() == 1 => Node::TemplateParam {
+                level: 0,
+                kind: super::graph::ParameterKind::Type,
                 index: self.index_value(line, operands[0])?,
                 substitutable: false,
             },

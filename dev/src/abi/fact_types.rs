@@ -70,6 +70,8 @@ impl CaseReader<'_, '_> {
                 let index = self.index_value(line, words[1])?;
                 return self.graph.intern(
                     Node::TemplateParam {
+                        level: 0,
+                        kind: super::graph::ParameterKind::Type,
                         index,
                         substitutable: form == b"template-param-subst",
                     },
@@ -80,6 +82,8 @@ impl CaseReader<'_, '_> {
                 let index = self.index_value(line, words[1])?;
                 let template = self.graph.intern(
                     Node::TemplateParam {
+                        level: 0,
+                        kind: super::graph::ParameterKind::Type,
                         index,
                         substitutable: true,
                     },
@@ -307,6 +311,8 @@ impl CaseReader<'_, '_> {
                 let index = self.index_value(line, words[1])?;
                 return self.graph.intern(
                     Node::TemplateParam {
+                        level: 0,
+                        kind: super::graph::ParameterKind::Type,
                         index,
                         substitutable: false,
                     },

@@ -87,6 +87,16 @@ pub enum Modifier {
     ExpressionArray(NodeId),
 }
 
+/// Parameter kind participates in identity even when its encoding is the same.
+/// These are the four `AbiGraph::template_param` kinds in the frozen producer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParameterKind {
+    Type,
+    TypePack,
+    Template,
+    TemplatePack,
+}
+
 /// Lists are held by the graph: tags for names/abbreviations, arguments for
 /// templates/packs/vendor types, and parameters for function nodes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -139,13 +149,9 @@ pub enum Node {
     },
     TemplateParam {
         index: u32,
-        substitutable: bool,
-    },
-    LeveledTemplateParam {
-        index: u32,
         level: u32,
         substitutable: bool,
-        pack: bool,
+        kind: ParameterKind,
     },
     Decltype {
         expression: NodeId,
@@ -193,6 +199,8 @@ pub enum Node {
         bits: u64,
     },
     NonTypeParameter(NodeId),
+    TypeParameter,
+    TemplateParameter,
     ParameterPack(NodeId),
     TypedArgument {
         // Further parameter declarations live in this node's item slice.

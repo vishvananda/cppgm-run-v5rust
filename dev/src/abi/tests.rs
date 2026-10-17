@@ -6,6 +6,82 @@ use super::{
 use crate::support::stack::StackBudget;
 
 #[test]
+fn parameter_identity_retains_kind_level_and_substitution_role() {
+    use super::graph::ParameterKind;
+    let mut graph = Graph::default();
+    let mut parameters = Vec::new();
+    for level in [0, 1, 2] {
+        for kind in [
+            ParameterKind::Type,
+            ParameterKind::TypePack,
+            ParameterKind::Template,
+            ParameterKind::TemplatePack,
+        ] {
+            let node = Node::TemplateParam {
+                index: 0,
+                level,
+                substitutable: true,
+                kind,
+            };
+            let id = graph.intern(node, &[]).unwrap();
+            assert!(!parameters.contains(&id));
+            assert_eq!(id, graph.intern(node, &[]).unwrap());
+            parameters.push(id);
+        }
+    }
+    // Identical spellings of distinct kinds must not share a dictionary entry.
+    // A later occurrence of each same canonical parameter must reuse its entry.
+    let arguments = parameters
+        .iter()
+        .chain(&parameters)
+        .copied()
+        .collect::<Vec<_>>();
+    let name = graph.string(b"f").unwrap();
+    let name = graph.name(None, name, &[]).unwrap();
+    let template = graph.intern(Node::Template(name), &arguments).unwrap();
+    let mut output = Vec::new();
+    Encoder::encode(
+        &graph,
+        Target::Entity(template),
+        &mut output,
+        StackBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        output,
+        b"_Z1fIT_T_T_T_TL0__TL0__TL0__TL0__TL1__TL1__TL1__TL1__S0_S1_S2_S3_S4_S5_S6_S7_S8_S9_SA_SB_E"
+    );
+    let value = graph
+        .intern(
+            Node::TemplateParam {
+                index: 0,
+                level: 0,
+                substitutable: false,
+                kind: ParameterKind::Type,
+            },
+            &[],
+        )
+        .unwrap();
+    assert_ne!(value, parameters[0]);
+    let value = graph.intern(Node::ExpressionArgument(value), &[]).unwrap();
+    let template = graph
+        .intern(
+            Node::Template(name),
+            &[parameters[0], value, parameters[0], value],
+        )
+        .unwrap();
+    output.clear();
+    Encoder::encode(
+        &graph,
+        Target::Entity(template),
+        &mut output,
+        StackBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(output, b"_Z1fIT_XT_ES0_XT_EE");
+}
+
+#[test]
 fn canonical_cv_and_member_function_owners_survive_store_growth() {
     assert_eq!(std::mem::size_of::<Option<NodeId>>(), 4);
     let mut graph = Graph::default();

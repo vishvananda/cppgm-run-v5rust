@@ -343,19 +343,12 @@ impl Symbols<'_, '_> {
                 level: *level,
             }
         } else {
-            let (index, level, _, pack) = self.abi_parameter_level(words.ty()?)?;
-            if level == 0 {
-                Node::TemplateParam {
-                    index,
-                    substitutable: false,
-                }
-            } else {
-                Node::LeveledTemplateParam {
-                    index,
-                    level,
-                    pack,
-                    substitutable: false,
-                }
+            let parameter = self.abi_parameter_level(words.ty()?)?;
+            Node::TemplateParam {
+                index: parameter.index,
+                level: parameter.level,
+                substitutable: false,
+                kind: super::ParameterKind::Type,
             }
         };
         let pack = self.abi.intern(node, &[])?;
@@ -511,15 +504,14 @@ impl Symbols<'_, '_> {
                 if self.graph.lower_value_argument(*ty)
                     && self.graph.lower_template_parameter(*ty).is_some() =>
             {
-                let index = self
-                    .graph
-                    .lower_template_parameter(*ty)
-                    .ok_or_else(missing)?;
+                let parameter = self.abi_parameter_level(*ty)?;
                 return Ok((
                     self.abi.intern(
                         Node::TemplateParam {
-                            index,
+                            index: parameter.index,
+                            level: parameter.level,
                             substitutable: false,
+                            kind: super::ParameterKind::Type,
                         },
                         &[],
                     )?,
