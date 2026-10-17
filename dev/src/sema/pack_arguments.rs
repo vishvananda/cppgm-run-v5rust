@@ -97,21 +97,28 @@ impl Analyzer<'_> {
                 .template_parameter
                 .ok_or(Error::Invariant("argument without parameter"))?;
             if info.is_pack() {
-                let elements = if let Some(&argument) = given.get(next)
+                let formed = if let Some(&argument) = given.get(next)
                     && let TypeKind::Pack(elements) = &self.graph.types.get(argument).kind
                 {
                     next += 1;
-                    elements.clone()
+                    Some((argument, elements.len()))
                 } else {
-                    let elements = given[next..].to_vec();
-                    next = given.len();
-                    elements
+                    None
                 };
-                let mut converted = Vec::with_capacity(elements.len());
-                for element in elements {
+                let size = formed.map_or(given.len() - next, |(_, size)| size);
+                let mut converted = Vec::with_capacity(size);
+                for position in 0..size {
+                    let element = if let Some((pack, _)) = formed {
+                        self.graph.types.pack_elements(pack)?[position]
+                    } else {
+                        given[next + position]
+                    };
                     converted.push(
                         self.match_template_argument(head, index, element, &result, location)?,
                     );
+                }
+                if formed.is_none() {
+                    next = given.len();
                 }
                 result.push(
                     self.graph
@@ -232,12 +239,10 @@ impl Analyzer<'_> {
                 ..binding
             },
         )?;
-        let TypeKind::Pack(elements) = &self.graph.types.get(arguments).kind else {
-            return Err(Error::Invariant("pack binding without argument pack"));
-        };
-        let elements = elements.clone();
+        let count = self.graph.types.pack_elements(arguments)?.len();
         if let Some(name) = binding.name {
-            for (index, element) in elements.into_iter().enumerate() {
+            for index in 0..count {
+                let element = self.graph.types.pack_elements(arguments)?[index];
                 let mut spelling = self.identifiers.bytes(name).to_vec();
                 spelling.extend_from_slice(format!("__pack{index}").as_bytes());
                 let name = self.identifiers.intern(&spelling).map_err(Error::Limit)?;

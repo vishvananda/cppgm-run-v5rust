@@ -29,7 +29,11 @@ impl Analyzer<'_> {
                 "non-type template parameter without a type",
             ));
         }
-        let ty = self.declarator(declarator, specs.ty, scope)?.ty;
+        // This ellipsis declares a template parameter pack. It does not
+        // expand the parameter's type (an inner function clause still may).
+        let mut environment = self.declarator_environment(declarator, scope)?;
+        environment.expand_pack = false;
+        let ty = self.declarator_in(declarator, specs.ty, environment)?.ty;
         let ty = self.bare_type(ty)?;
         let ty = self.graph.types.parameter(ty)?;
         if self.graph.dependent_type(ty)
@@ -107,7 +111,11 @@ impl Analyzer<'_> {
                 self.note_dependent_use();
             }
             if target.is_some_and(|ty| self.graph.address_parameter_type(ty))
-                || target.is_none() && self.is_address_expression(expression)
+                || target.is_none()
+                    && (self.is_address_expression(expression)
+                        || self.graph.address_parameter_type(
+                            self.graph.expression_facts.get(expression)?.ty,
+                        ))
             {
                 return self.null_template_argument(expression, scope, target);
             }

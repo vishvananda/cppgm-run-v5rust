@@ -184,7 +184,9 @@ impl Analyzer<'_> {
         }
         let mut value = match node.kind {
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } | ExprKind::Call { .. }
-                if facts.reference_cast.is_some() =>
+                if facts.reference_cast.is_some_and(|ty| {
+                    matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+                }) =>
             {
                 let place = self.constant_place(id, scope)?;
                 self.read_constant_address(place, location)?
@@ -316,7 +318,11 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Address, Error> {
-        if self.is_address_expression(id) {
+        if self.is_address_expression(id)
+            || self
+                .graph
+                .address_parameter_type(self.graph.expression_facts.get(id)?.ty)
+        {
             return self.evaluate_address(id, scope);
         }
         let value = self.evaluate_constant(id, scope, false)?;

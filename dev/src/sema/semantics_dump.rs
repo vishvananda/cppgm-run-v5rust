@@ -1418,6 +1418,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         if facts.call_form != super::expression_facts::CallForm::Operator
             && facts.literal_call.is_none()
+            && self
+                .graph
+                .expression_facts
+                .function_conversion(id)
+                .is_none()
             && let Some(call) = facts.call
         {
             let function = match call {

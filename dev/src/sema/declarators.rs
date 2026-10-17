@@ -19,6 +19,7 @@ pub(super) struct DeclaratorEnvironment {
     pub placement: Placement,
     pub friendship: super::specifiers::Friendship,
     pub auto_operators: bool,
+    pub expand_pack: bool,
     pub placeholder_function: Option<ast::DeclaratorId>,
     pub home: Option<ScopeId>,
     pub lookup: ScopeId,
@@ -143,6 +144,7 @@ impl Analyzer<'_> {
             placement: Placement::Declaration,
             friendship: super::specifiers::Friendship::Ordinary,
             auto_operators: false,
+            expand_pack: true,
             placeholder_function: None,
             home,
             lookup: after,
@@ -193,6 +195,7 @@ impl Analyzer<'_> {
             print,
             declaration_location,
             auto_operators,
+            expand_pack,
             placeholder_function,
         } = environment;
         if friendship != super::specifiers::Friendship::Friend
@@ -354,7 +357,7 @@ impl Analyzer<'_> {
         // In particular, invalid pointer/suffix types precede pack diagnostics.
         if let Some(root) = root {
             let node = self.tree.declarators.get(root);
-            if node.pack {
+            if node.pack && expand_pack {
                 ty = self.pack_expansion_type(ty, node.location)?;
             }
         }

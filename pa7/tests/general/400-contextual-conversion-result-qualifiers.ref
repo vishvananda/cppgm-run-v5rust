@@ -1,0 +1,32 @@
+1 translation units
+start translation unit 1
+translation-unit
+  function-definition from_value function of () returning int
+    compound-statement
+      return-statement
+        conditional-expression prvalue int
+          cast-expression prvalue bool
+          literal prvalue int 1
+          literal prvalue int 2
+  function-definition from_reference function of (lvalue-reference to struct Reference) returning int
+    parameter r lvalue-reference to struct Reference
+    compound-statement
+      return-statement
+        conditional-expression prvalue int
+          id-expression lvalue function of (pointer to struct Reference) returning lvalue-reference to const bool r
+          literal prvalue int 3
+          literal prvalue int 4
+  function-definition Value::Value function of (pointer to struct Value) returning void
+    parameter this pointer to struct Value
+    compound-statement
+  function-definition Value::operatorconstbool function of (pointer to struct Value) returning const bool
+    parameter this pointer to struct Value
+    compound-statement
+      return-statement
+        id-expression lvalue const bool value
+  function-definition Reference::operatorconstbool& function of (pointer to struct Reference) returning lvalue-reference to const bool
+    parameter this pointer to struct Reference
+    compound-statement
+      return-statement
+        id-expression lvalue const bool value
+end translation unit

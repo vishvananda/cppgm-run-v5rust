@@ -1,0 +1,20 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type Owner struct Owner
+    scope class Owner
+    scope template-parameters
+      type Pointers struct Pointers
+    scope template-parameters
+      type Unnamed struct Unnamed
+    scope template-parameters
+      type References struct References
+    scope template-parameters
+      type Members struct Members
+    scope template-parameters
+      type Functions struct Functions
+    scope template-parameters
+      type T typename T
+      type Dependent struct Dependent
+end translation unit

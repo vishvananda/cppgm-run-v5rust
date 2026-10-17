@@ -383,6 +383,10 @@ impl Analyzer<'_> {
         for index in 0..self.tree.template_parameters.get(syntax.parameters).len() {
             let syntax_item = self.tree.template_parameters.get(syntax.parameters)[index];
             let parameter = &syntax_item;
+            let pack = parameter.pack
+                || matches!(parameter.kind,
+                    ast::TemplateParameterKind::NonType { declarator: Some(id), .. }
+                    if self.tree.declarators.get(id).pack);
             let (key, name, inner_syntax, default, value_type) = match parameter.kind {
                 ast::TemplateParameterKind::Type {
                     key,
@@ -448,7 +452,7 @@ impl Analyzer<'_> {
             } else {
                 None
             };
-            if parameter.pack && default.is_some() {
+            if pack && default.is_some() {
                 return Err(Error::at(
                     parameter.location,
                     "a template parameter pack with a default argument",
@@ -456,7 +460,7 @@ impl Analyzer<'_> {
             }
             let shape = ParameterShape {
                 non_type: value_type.is_some(),
-                pack: parameter.pack,
+                pack,
                 inner: inner.map(|id| self.graph.templates.head(id).shape),
             };
             let position = Position {

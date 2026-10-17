@@ -132,6 +132,12 @@ impl Types {
     pub(super) fn get(&self, id: TypeId) -> &Type {
         &self.records[id.0 as usize]
     }
+    pub(super) fn pack_elements(&self, id: TypeId) -> Result<&[TypeId], Error> {
+        match &self.get(id).kind {
+            TypeKind::Pack(elements) => Ok(elements),
+            _ => Err(Error::Invariant("argument is not a pack")),
+        }
+    }
     pub(super) fn function_parameter_count(&self, ty: TypeId) -> Result<usize, Error> {
         let TypeKind::Function { ref parameters, .. } = self.get(ty).kind else {
             return Err(Error::Invariant("parameter query on no function"));

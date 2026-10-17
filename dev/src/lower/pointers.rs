@@ -16,6 +16,7 @@ use crate::{
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn evaluated_pointer(&mut self, id: ast::ExprId) -> Result<Option<RValue>, Error> {
+        let id = self.without_parentheses(id);
         let Some(value) = self.graph.lower_evaluated_pointer(self.tree, id)? else {
             return Ok(None);
         };
