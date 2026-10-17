@@ -811,15 +811,23 @@ impl Graph {
                 value: None,
                 tag: None,
             });
-            if binding.kind == BindingKind::Type {
+            if binding.kind == BindingKind::Type && (!invisible || entry.tag.is_none()) {
                 entry.tag = Some(id);
             }
             match binding.kind {
                 BindingKind::Type
                 | BindingKind::Alias
                 | BindingKind::Namespace
-                | BindingKind::NamespaceAlias => entry.ty = Some(id),
-                _ => entry.value = Some(id),
+                | BindingKind::NamespaceAlias => {
+                    if !invisible || entry.ty.is_none() {
+                        entry.ty = Some(id);
+                    }
+                }
+                _ => {
+                    if !invisible || entry.value.is_none() {
+                        entry.value = Some(id);
+                    }
+                }
             }
         }
         Ok(id)
@@ -1135,6 +1143,19 @@ impl Graph {
             return None;
         }
         Some(id)
+    }
+
+    // analyzer_classes.cpp::earlier_class: declarations ignore the lookup
+    // point's ordinal, including a class introduced only by hidden friends.
+    // Ordinary name lookup continues to use own/declared_name's limit.
+    pub(super) fn class_declaration(&self, scope: ScopeId, name: NameId) -> Option<BindingId> {
+        let entry = self.scope(scope).index.get(&name)?;
+        entry.tag.or(entry.ty).filter(|&id| {
+            !matches!(
+                self.binding(id).kind,
+                BindingKind::Namespace | BindingKind::NamespaceAlias
+            )
+        })
     }
     pub(super) fn add_implicit_copy_binding(
         &mut self,

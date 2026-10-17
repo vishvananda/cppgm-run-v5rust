@@ -487,21 +487,14 @@ impl Analyzer<'_> {
         if let Some(class) = befriending
             && let Some(home) = info.home
         {
-            if self.active_template_head(scope).is_some() {
-                return Err(Error::Missing("qualified friend templates"));
-            }
+            let head = self.member_template_head(scope, Some(home));
             let candidate = if self.graph.scope(home).kind == ScopeKind::Namespace {
-                self.graph.namespace_function(home, key, info.ty, None)?
+                self.graph.namespace_function(home, key, info.ty, head)?
             } else {
                 let mut next = 0;
                 let mut candidate = None;
                 while let Some(binding) = self.graph.next_function(home, key, &mut next) {
-                    let old = self
-                        .graph
-                        .binding(binding)
-                        .ty
-                        .ok_or(Error::Invariant("friend function without type"))?;
-                    if self.same_function_parameters(old, info.ty)? {
+                    if self.same_declared_function(binding, info.ty, head)? {
                         candidate = Some(binding);
                         break;
                     }

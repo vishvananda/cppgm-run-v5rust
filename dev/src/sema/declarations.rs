@@ -1452,7 +1452,31 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    fn new_class(
+    // analyzer_declarations.cpp::check_type_name_conflict. A class can
+    // coexist with a value, but cannot replace another visible type name.
+    pub(super) fn check_new_type_name(
+        &self,
+        home: ScopeId,
+        name: NameId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if self
+            .graph
+            .scope(home)
+            .index
+            .get(&name)
+            .and_then(|entry| entry.ty)
+            .is_some_and(|binding| !self.graph.friendships.hidden(binding))
+        {
+            return Err(Error::at(
+                location,
+                "type name conflicts with an earlier declaration",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) fn new_class(
         &mut self,
         key: Keyword,
         name: Option<NameId>,

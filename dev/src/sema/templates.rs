@@ -638,7 +638,21 @@ impl Analyzer<'_> {
             ));
         }
         self.merge_template_head(entity, head, location)?;
-        self.check_template_defaults(earlier.unwrap_or(head), location)
+        if let Some(earlier) = earlier
+            && !self.graph.templates.parameters(head).is_empty()
+            && self.graph.templates.depth(head) < self.graph.templates.depth(earlier)
+        {
+            // A friend first declared in a class template has deeper
+            // parameters. Its namespace redeclaration supplies the class's
+            // own positions, retaining each default's declaration context.
+            let defaults = self.graph.templates.head(earlier).defaults.clone();
+            self.graph.templates.head_mut(head).defaults = defaults;
+            self.graph.entity_mut(entity).template_head = Some(head);
+        }
+        self.check_template_defaults(
+            self.graph.entity(entity).template_head.unwrap_or(head),
+            location,
+        )
     }
     pub(super) fn check_friend_template_defaults(&self, scope: ScopeId) -> Result<(), Error> {
         let Some(head) = self.active_template_head(scope) else {
@@ -759,31 +773,33 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let earlier = self.graph.entity(entity).template_head;
         if let Some(earlier) = earlier {
-            let previous = self.graph.templates.head(earlier);
-            let again = self.graph.templates.head(head);
-            if previous.parameters.len() != again.parameters.len() {
+            let count = self.graph.templates.parameters(head).len();
+            if self.graph.templates.parameters(earlier).len() != count {
                 return Err(Error::at(
                     location,
                     "template redeclared with a different template parameter list",
                 ));
             }
-            for index in 0..again.parameters.len() {
+            for index in 0..count {
                 let old = self
                     .graph
-                    .entity(previous.parameters[index])
+                    .entity(self.graph.templates.parameters(earlier)[index])
                     .template_parameter
                     .ok_or(Error::Invariant("head without parameter"))?;
                 let new = self
                     .graph
-                    .entity(again.parameters[index])
+                    .entity(self.graph.templates.parameters(head)[index])
                     .template_parameter
                     .ok_or(Error::Invariant("head without parameter"))?;
-                if old.position.shape != new.position.shape
-                    || old.value_type.map(|ty| self.graph.types.canonical_view(ty))
-                        != new.value_type.map(|ty| self.graph.types.canonical_view(ty))
+                if old.position.shape.pack != new.position.shape.pack
+                    || !self.template_parameters_match(old, new)?
+                    || !self.template_parameters_match(new, old)?
                 {
-                    let location =
-                        self.tree.template_parameters.get(again.syntax.parameters)[index].location;
+                    let location = self
+                        .tree
+                        .template_parameters
+                        .get(self.graph.templates.head(head).syntax.parameters)[index]
+                        .location;
                     return Err(Error::at(
                         location,
                         "template redeclared with a different template parameter list",

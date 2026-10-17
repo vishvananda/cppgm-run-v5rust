@@ -192,7 +192,7 @@ impl Analyzer<'_> {
         }
     }
 
-    fn template_parameters_match(
+    pub(super) fn template_parameters_match(
         &mut self,
         p: ParameterInfo,
         a: ParameterInfo,

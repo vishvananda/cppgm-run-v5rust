@@ -195,7 +195,8 @@ impl Analyzer<'_> {
                 .parent
                 .ok_or(Error::Invariant("friend class without enclosing scope"))?;
         }
-        let prefix = self.prefix(name, scope)?;
+        let node = *self.tree.names.get(name);
+        let qualified = node.global || self.tree.name_lists.get(node.components).len() > 1;
         let last = self
             .tree
             .name_lists
@@ -203,12 +204,14 @@ impl Analyzer<'_> {
             .last()
             .ok_or(Error::Invariant("empty friend class name"))?;
         let named = Self::component_name(last.kind)?;
-        if prefix.is_none() {
+        if !qualified {
             self.check_template_parameter_name(scope, named, self.tree.names.get(name).location)?;
         }
         self.check_friend_template_defaults(scope)?;
-        let previous = if let Some(prefix) = prefix {
-            self.qualified(prefix, named, super::lookup::Filter::Elaborated)?
+        let previous = if qualified {
+            // A qualified friend names an existing, accessible declaration;
+            // it never introduces a name into the enclosing namespace.
+            Some(self.lookup(name, scope, super::lookup::Filter::Elaborated)?)
         } else {
             let mut current = Some(scope);
             let mut found = None;
@@ -220,7 +223,7 @@ impl Analyzer<'_> {
                 ) {
                     found = self
                         .graph
-                        .declared_name(owner, named, super::lookup::Filter::Elaborated)
+                        .class_declaration(owner, named)
                         .filter(|&binding| {
                             node.kind != ScopeKind::Class
                                 || Some(self.graph.binding(binding).entity) != node.owner
@@ -247,16 +250,33 @@ impl Analyzer<'_> {
                 .ty
                 .ok_or(Error::Invariant("friend class without type"))?
         } else {
-            let ty = self.elaborated_type(key, name, home, true)?;
-            let binding = self
+            // Publish the declaration directly: an instantiation's lookup
+            // limit predates this binding, and must not hide it from its owner.
+            self.check_new_type_name(home, named, self.tree.names.get(name).location)?;
+            let entity = self.new_class(key, Some(named), home)?;
+            self.graph.entity_mut(entity).home = Some(home);
+            self.class_template_head(entity, scope, false, self.tree.names.get(name).location)?;
+            let ty = self
                 .graph
-                .declared_name(home, named, super::lookup::Filter::Elaborated)
-                .ok_or(Error::Invariant("friend class declaration without binding"))?;
-            self.graph.friendships.hide(binding);
+                .entity(entity)
+                .ty
+                .ok_or(Error::Invariant("friend class without type"))?;
+            self.graph.add_value_binding(
+                home,
+                Some(home),
+                super::graph::Binding {
+                    kind: super::graph::BindingKind::Type,
+                    entity,
+                    name: Some(named),
+                    ty: Some(ty),
+                    key,
+                },
+                true,
+            )?;
             ty
         };
         if let TypeKind::Class(entity) = self.graph.types.get(ty).kind {
-            if self.active_template_head(scope).is_some() {
+            if previous.is_some() && self.active_template_head(scope).is_some() {
                 self.class_template_head(
                     entity,
                     scope,
@@ -322,7 +342,7 @@ impl Analyzer<'_> {
         if self
             .declaration_access
             .function
-            .is_some_and(|function| self.graph.friendships.grants(class, function))
+            .is_some_and(|function| self.function_friend(class, function))
         {
             return true;
         }
@@ -331,7 +351,14 @@ impl Analyzer<'_> {
             matches!(current.kind, ScopeKind::Class | ScopeKind::Function)
                 && current.owner.is_some_and(|entity| {
                     current.kind == ScopeKind::Class && entity == class
-                        || self.graph.friendships.grants(class, entity)
+                        || if current.kind == ScopeKind::Function {
+                            self.function_friend(class, entity)
+                        } else {
+                            self.friend_entities(entity)
+                                .into_iter()
+                                .flatten()
+                                .any(|entity| self.graph.friendships.grants(class, entity))
+                        }
                 })
         })
     }
@@ -339,6 +366,7 @@ impl Analyzer<'_> {
         self.declaration_access
             .function
             .into_iter()
+            .flat_map(|function| self.friend_entities(function).into_iter().flatten())
             .flat_map(|function| self.graph.friendships.granting(function).iter().copied())
             .chain(
                 self.access_scopes(scope)
@@ -351,9 +379,36 @@ impl Analyzer<'_> {
                         (kind == ScopeKind::Class)
                             .then_some(entity)
                             .into_iter()
-                            .chain(self.graph.friendships.granting(entity).iter().copied())
+                            .chain(self.friend_entities(entity).into_iter().flatten().flat_map(
+                                |entity| self.graph.friendships.granting(entity).iter().copied(),
+                            ))
                     }),
             )
+    }
+
+    // analyzer_access.cpp::Befriending: grants to a template name apply to
+    // every specialization, while a grant to one specialization stays local.
+    fn friend_entities(&self, entity: EntityId) -> [Option<EntityId>; 2] {
+        let primary = if self.graph.entity(entity).function.is_some() {
+            self.graph
+                .function_templates
+                .primary(entity)
+                .map(|binding| self.graph.binding(binding).entity)
+        } else {
+            self.graph
+                .class_templates
+                .instance(entity)
+                .map(|instance| instance.primary)
+        };
+        [Some(entity), primary]
+    }
+
+    fn function_friend(&self, class: EntityId, function: EntityId) -> bool {
+        self.friend_entities(function)
+            .into_iter()
+            .flatten()
+            .chain(self.graph.function_templates.bodies.source(function))
+            .any(|entity| self.graph.friendships.grants(class, entity))
     }
 }
 
@@ -396,6 +451,106 @@ mod tests {
             .flatten()
             .map(|init| graph.declared_bindings[init.declarator.index()].unwrap())
             .collect()
+    }
+
+    #[test]
+    fn template_grants_reuse_declarations_without_demanding_friend_definitions() {
+        let source = SourceBuffer::new(
+            b"template<class T>int read(T);\
+              template<class T>struct Owner{template<class U>friend struct Reader;\
+                  template<class U>friend int ::read(U);};\
+              template<class U>struct Reader{static int unused(){return U::missing;}};\
+              using O=Owner<int>;using R=Reader<int>;using S=Reader<char>;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"template-grant-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"O".as_slice(), b"R", b"S", b"Reader", b"read"]
+            .map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let [owner, reader, other, primary, function] = names.map(|name| {
+            let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+            let binding = analyzer.graph.binding(binding);
+            if let Some(ty) = binding.ty
+                && let TypeKind::Class(entity) = analyzer.graph.types.get(ty).kind
+            {
+                entity
+            } else {
+                binding.entity
+            }
+        });
+        let origin = analyzer.graph.function_origin(function).unwrap();
+        assert!(analyzer.complete_class(owner).unwrap());
+        assert_eq!(
+            analyzer
+                .graph
+                .class_templates
+                .instance(reader)
+                .unwrap()
+                .primary,
+            primary
+        );
+        assert_eq!(
+            analyzer
+                .graph
+                .class_templates
+                .instance(other)
+                .unwrap()
+                .primary,
+            primary
+        );
+        assert!(analyzer.graph.friendships.grants(owner, primary));
+        assert!(analyzer.graph.friendships.grants(owner, function));
+        assert!(!analyzer.graph.friendships.grants(owner, reader));
+        assert!(!analyzer.graph.friendships.grants(owner, other));
+        let owner_scope = analyzer.graph.entity(owner).scope.unwrap();
+        assert!(
+            analyzer
+                .graph
+                .friendships
+                .functions(owner, names[4].into())
+                .is_empty()
+        );
+        assert!(
+            analyzer
+                .graph
+                .functions_at(owner_scope, names[4].into())
+                .next()
+                .is_none()
+        );
+        assert_eq!(
+            analyzer
+                .graph
+                .functions_at(global, names[4].into())
+                .collect::<Vec<_>>(),
+            [origin]
+        );
+        assert!(!analyzer.graph.function_templates.body_demanded(function));
+        assert!(analyzer.graph.entity(reader).scope.is_none());
+        assert!(analyzer.graph.entity(other).scope.is_none());
+        assert!(analyzer.complete_class(reader).unwrap());
+        let scope = analyzer.graph.entity(reader).scope.unwrap();
+        let expressions = analyzer.tree.expressions.mark();
+        let bindings = analyzer.graph.binding_limit();
+        for _ in 0..3 {
+            assert!(analyzer.member_or_friend(scope, owner));
+            assert!(analyzer.access_contexts(scope).any(|class| class == owner));
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.graph.binding_limit(), bindings);
+        assert!(matches!(
+            analyzer.graph.entity(reader).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 
     #[test]
