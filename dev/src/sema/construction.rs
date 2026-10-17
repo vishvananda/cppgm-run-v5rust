@@ -338,6 +338,11 @@ impl Analyzer<'_> {
         let ConstructorState::Ready(id) = self.graph.entity(class).default_construction else {
             return Err(Error::Invariant("uncompleted default constructor"));
         };
+        // A cached plan is shared; its omitted arguments belong to this use's
+        // emitting owner, even when an unused inline body first built the plan.
+        if let Some(binding) = self.graph.constructors.get(id).binding {
+            self.request_constructor_defaults(binding, 0)?;
+        }
         Ok(id)
     }
 
@@ -379,7 +384,6 @@ impl Analyzer<'_> {
             ConstructorState::NotStarted => (),
         }
         if let Some(binding) = selected {
-            self.request_constructor_defaults(binding, 0)?;
             let id = self.selected_constructor_plan(binding, location)?;
             self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
             return Ok(id);

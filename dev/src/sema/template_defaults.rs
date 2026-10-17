@@ -37,6 +37,73 @@ impl Defaults {
     }
 }
 impl Analyzer<'_> {
+    /// A shared plan's selected subobject calls retain their own supplied
+    /// counts. Activate their defaults only when that plan is reached.
+    pub(super) fn request_subobject_constructor_defaults(
+        &mut self,
+        id: super::construction::ConstructorId,
+    ) -> Result<(), Error> {
+        for index in 0..self.graph.constructors.get(id).bases.len() {
+            let base = self.graph.constructors.get(id).bases[index];
+            if !base.forwards
+                && let Some(child) = base.constructor
+            {
+                self.request_planned_constructor_defaults(child, base.arguments)?;
+            }
+        }
+        for index in 0..self.graph.constructors.get(id).subobjects.len() {
+            let member = self.graph.constructors.get(id).subobjects[index];
+            self.request_planned_constructor_defaults(member.constructor, member.arguments)?;
+        }
+        if let Some(delegation) = self.graph.constructors.get(id).delegation {
+            self.request_planned_constructor_defaults(
+                delegation.constructor,
+                Some(delegation.arguments),
+            )?;
+        }
+        let count = self
+            .graph
+            .constructors
+            .get(id)
+            .copy
+            .as_ref()
+            .map_or(0, Vec::len);
+        for index in 0..count {
+            let action = self
+                .graph
+                .constructors
+                .get(id)
+                .copy
+                .as_ref()
+                .ok_or(Error::Invariant("copy defaults without actions"))?[index];
+            if let Some(child) = action.constructor
+                && let Some(binding) = self.graph.constructors.get(child).binding
+            {
+                self.request_constructor_defaults(binding, 1)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn request_planned_constructor_defaults(
+        &mut self,
+        id: super::construction::ConstructorId,
+        arguments: Option<super::constructor_initialization::ConstructorArguments>,
+    ) -> Result<(), Error> {
+        use super::constructor_initialization::ConstructorArguments;
+        if let Some(binding) = self.graph.constructors.get(id).binding {
+            let supplied = match arguments {
+                Some(ConstructorArguments::Single(_)) => 1,
+                Some(ConstructorArguments::Values(values)) => {
+                    self.tree.expr_lists.get(values).len()
+                }
+                Some(ConstructorArguments::Value) | None => 0,
+            };
+            self.request_constructor_defaults(binding, supplied)?;
+        }
+        Ok(())
+    }
+
     /// C++ `call_copy` asks for omitted constructor arguments only when emitting
     /// its selected use. Retain that edge on its emitting function instead of
     /// instantiating defaults while checking an unused inline body.
@@ -439,6 +506,55 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn cached_default_plans_keep_per_owner_demand_and_memoize_only_reached_defaults() {
+        let source = SourceBuffer::new(
+            b"struct Cell{template<class T=int>Cell(int=sizeof(T)){}};\
+              struct Store{Cell cells[9];};\
+              struct Bad{template<class T=int>Bad(int=T::missing){}};\
+              struct Unused{Bad cells[2];};\
+              inline void unused(){Store s;Unused u;Bad direct;}\
+              int main(){Store a;Store b;Bad supplied(3);return 0;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"cached-defaults").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert!(
+            analyzer
+                .graph
+                .function_templates
+                .argument_defaults
+                .states
+                .is_empty()
+        );
+        analyzer.finish_lowering_boundaries().unwrap();
+        let defaults = &analyzer.graph.function_templates.argument_defaults;
+        assert_eq!(defaults.states.len(), 1);
+        assert!(
+            defaults
+                .states
+                .values()
+                .all(|state| matches!(state, State::Complete))
+        );
+        assert_eq!(
+            defaults.constructor_edges.len(),
+            1,
+            "unused owner retains its edge"
+        );
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+    }
 
     #[test]
     fn converting_defaults_follow_emission_edges_and_share_one_typed_copy() {

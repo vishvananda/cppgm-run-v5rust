@@ -80,6 +80,12 @@ impl Analyzer<'_> {
             .map(|body| body.entity)
             .filter(|&entity| {
                 self.graph.entity(entity).definition_emission == DefinitionEmission::Demanded
+                    // Semantic dumps retain potentially evaluated uses. Output
+                    // boundaries additionally keep ordinary inline uses on the
+                    // function that must be reached before their code is emitted.
+                    || self.lowering()
+                        && self.graph.entity(entity).inline
+                            == super::specifiers::InlinePreference::Inline
             });
         let key = match demand {
             Demand::Constructor(id) => DemandKey::Constructor(id),

@@ -97,12 +97,12 @@ impl Analyzer<'_> {
     }
     fn constructor_default_boundaries(
         &mut self,
-        entity: EntityId,
+        entity: Option<EntityId>,
         first: usize,
         work: &mut Vec<EntityId>,
         constructors: &mut Vec<super::construction::ConstructorId>,
     ) -> Result<usize, Error> {
-        self.prepare_constructor_defaults(Some(entity))?;
+        self.prepare_constructor_defaults(entity)?;
         for demand in &self.graph.root_demands.as_slice()[first..] {
             match demand {
                 super::function_demands::Demand::Function { binding, .. } => {
@@ -112,6 +112,54 @@ impl Analyzer<'_> {
             }
         }
         Ok(self.graph.root_demands.as_slice().len())
+    }
+    fn constructor_plan_boundaries(
+        &mut self,
+        constructor: super::construction::ConstructorId,
+        root_count: &mut usize,
+        seen_constructors: &mut std::collections::HashSet<super::construction::ConstructorId>,
+        seen_tables: &mut std::collections::HashSet<EntityId>,
+        work: &mut Vec<EntityId>,
+        constructors: &mut Vec<super::construction::ConstructorId>,
+    ) -> Result<(), Error> {
+        if let Some(binding) = self.graph.constructors.get(constructor).binding {
+            // Reached storage construction (including arrays) demands
+            // the selected definition, separately from its signature.
+            self.demand_specialization_body(binding);
+            let entity = self.graph.binding(binding).entity;
+            if self.graph.function_templates.bodies.pending_member(entity)
+                && !self
+                    .graph
+                    .function_templates
+                    .specializations
+                    .contains(entity)
+            {
+                self.demand_instance_member(entity);
+                self.graph.boundary_roots.push(entity);
+                return Ok(());
+            }
+        }
+        if !seen_constructors.insert(constructor) {
+            return Ok(());
+        }
+        self.request_subobject_constructor_defaults(constructor)?;
+        *root_count = self.constructor_default_boundaries(None, *root_count, work, constructors)?;
+        let class = self.graph.constructors.get(constructor).class;
+        self.virtual_table_boundaries(class, seen_tables, work)?;
+        let plan = self.graph.constructors.get(constructor);
+        if let Some(binding) = plan.binding {
+            work.push(self.graph.binding(binding).entity);
+        }
+        constructors.extend(plan.bases.iter().filter_map(|base| base.constructor));
+        constructors.extend(plan.subobjects.iter().map(|child| child.constructor));
+        constructors.extend(
+            plan.copy
+                .iter()
+                .flatten()
+                .filter_map(|action| action.constructor)
+                .filter(|&id| self.graph.constructors.get(id).nontrivial()),
+        );
+        Ok(())
     }
     fn advance_lowering_boundaries(&mut self, state: &mut Boundaries) -> Result<(), Error> {
         use super::function_demands::Demand;
@@ -169,41 +217,14 @@ impl Analyzer<'_> {
         *root_count = self.graph.root_demands.as_slice().len();
         while !work.is_empty() || !constructors.is_empty() {
             if let Some(constructor) = constructors.pop() {
-                if let Some(binding) = self.graph.constructors.get(constructor).binding {
-                    // Reached storage construction (including arrays) demands
-                    // the selected definition, separately from its signature.
-                    self.demand_specialization_body(binding);
-                    let entity = self.graph.binding(binding).entity;
-                    if self.graph.function_templates.bodies.pending_member(entity)
-                        && !self
-                            .graph
-                            .function_templates
-                            .specializations
-                            .contains(entity)
-                    {
-                        self.demand_instance_member(entity);
-                        self.graph.boundary_roots.push(entity);
-                        continue;
-                    }
-                }
-                if !seen_constructors.insert(constructor) {
-                    continue;
-                }
-                let class = self.graph.constructors.get(constructor).class;
-                self.virtual_table_boundaries(class, seen_tables, &mut work)?;
-                let plan = self.graph.constructors.get(constructor);
-                if let Some(binding) = plan.binding {
-                    work.push(self.graph.binding(binding).entity);
-                }
-                constructors.extend(plan.bases.iter().filter_map(|base| base.constructor));
-                constructors.extend(plan.subobjects.iter().map(|child| child.constructor));
-                constructors.extend(
-                    plan.copy
-                        .iter()
-                        .flatten()
-                        .filter_map(|action| action.constructor)
-                        .filter(|&id| self.graph.constructors.get(id).nontrivial()),
-                );
+                self.constructor_plan_boundaries(
+                    constructor,
+                    root_count,
+                    seen_constructors,
+                    seen_tables,
+                    &mut work,
+                    &mut constructors,
+                )?;
                 continue;
             }
             let entity = work
@@ -227,7 +248,7 @@ impl Analyzer<'_> {
                 self.resolve_specialization_exception(entity)?;
             }
             *root_count = self.constructor_default_boundaries(
-                entity,
+                Some(entity),
                 *root_count,
                 &mut work,
                 &mut constructors,

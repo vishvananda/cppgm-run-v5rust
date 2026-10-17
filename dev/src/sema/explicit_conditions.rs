@@ -64,6 +64,10 @@ impl Analyzer<'_> {
         else {
             return Ok(self.graph.entity(entity).explicitness);
         };
+        // Check before allocating the specialization frame or copying syntax.
+        // Resource exhaustion must escape substitution as a limit, rather than
+        // become a soft operand failure that retries recursive candidates.
+        self.check_stack()?;
         let parent = self
             .graph
             .scope(pending.scope)
@@ -92,6 +96,13 @@ impl Analyzer<'_> {
             self.graph.binding_limit(),
             |analyzer| analyzer.explicit_value(copy, frame),
         )
+        .map_err(|error| match error {
+            Error::Diagnostic {
+                message: "constructs nested too deeply",
+                ..
+            } => error.required_instantiation(),
+            other => other,
+        })
     }
 
     fn explicit_value(&mut self, condition: ExprId, scope: ScopeId) -> Result<Explicitness, Error> {
@@ -143,6 +154,52 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn recursive_condition_preserves_resource_failure_and_restores_query_context() {
+        let source = SourceBuffer::new(
+            b"struct A{template<class T>explicit(noexcept(A(T()))) A(T);};".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"recursive-condition").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"A").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.set_lowering();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let class = analyzer
+            .graph
+            .binding(
+                analyzer
+                    .graph
+                    .own(global, name, super::super::lookup::Filter::Ordinary)
+                    .unwrap(),
+            )
+            .entity;
+        let primary = analyzer.graph.entity(class).declared_constructors[0];
+        let int = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        analyzer.stack_budget =
+            StackBudget::from_limit(crate::support::stack::StackLimit::Bytes(128 << 10)).unwrap();
+        assert!(matches!(
+            analyzer.complete_signature(primary, &mut [Some(int)]),
+            Err(Error::InstantiationDiagnostic {
+                message: "constructs nested too deeply",
+                ..
+            } | Error::Limit("constructs nested too deeply"))
+        ));
+        assert_eq!(analyzer.instantiation_depth, 0);
+        assert!(analyzer.graph.function_templates.arguments.is_empty());
+        assert_eq!(analyzer.constexpr_frames.depth(), 0);
+    }
 
     #[test]
     fn conditions_are_isolated_memoized_and_never_publish_failed_signatures() {

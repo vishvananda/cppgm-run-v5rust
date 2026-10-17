@@ -409,6 +409,20 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(crate::sema::Error::Invariant("assignment call signature").into());
         };
+        // copy_lowering.cpp::copied_parameter requires the retained constructor
+        // for every by-value subobject assignment, including a scalar selected
+        // through a user conversion. Preserve its lowering diagnostic.
+        if !matches!(
+            self.graph.lower_type(parameters[0])?,
+            TypeView::Reference { .. }
+        ) && action.parameter_constructor.is_none()
+        {
+            return Err(crate::sema::Error::at(
+                crate::support::source::SourceOffset(0),
+                "a by-value assignment parameter without its constructor",
+            )
+            .into());
+        }
         let caller_destroyed = matches!(self.graph.lower_type(parameters[0])?, TypeView::Class(_))
             && self.symbols.storage_destructor(parameters[0])?.is_some();
         let began = caller_destroyed && !self.lifetime.full_expression;
