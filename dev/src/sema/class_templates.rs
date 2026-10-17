@@ -131,7 +131,7 @@ impl Analyzer<'_> {
             .template_head
             .ok_or(Error::Invariant("class template without head"))?;
         self.supported_fixed_template_head(head)?;
-        let arguments = self.form_template_arguments(component, scope)?;
+        let arguments = self.form_template_arguments(component, scope, Some(head))?;
         let count = self.graph.templates.parameters(head).len();
         let result = self.class_template_with_defaults(primary, arguments, component.location)?;
         // Only the template's own arguments in its definition denote the
@@ -285,13 +285,20 @@ impl Analyzer<'_> {
             return Ok(bound);
         }
         let depth = self.graph.templates.depth(head);
+        let target = self
+            .argument_target(head, arguments.len(), arguments)?
+            .known();
         if self.template_depth != 0 && arguments.iter().any(|&ty| self.graph.dependent_type(ty)) {
             // Copied member template heads share syntax, but their enclosing
             // argument frames differ. Pattern facts belong to this formation.
             let copy = self.copy_template_argument(default.syntax)?;
             let saved = self.graph.lookup_limit.replace(default.limit);
-            let result =
-                self.template_argument(copy, default.scope, self.default_location(default));
+            let result = self.template_argument_for(
+                copy,
+                default.scope,
+                self.default_location(default),
+                target,
+            );
             self.graph.lookup_limit = saved;
             let pattern = result?;
             let given: Vec<_> = arguments.iter().copied().map(Some).collect();
@@ -330,7 +337,14 @@ impl Analyzer<'_> {
             self.instantiation_depth,
             self.default_location(default),
             default.limit,
-            |analyzer| analyzer.template_argument(copy, frame, analyzer.default_location(default)),
+            |analyzer| {
+                analyzer.template_argument_for(
+                    copy,
+                    frame,
+                    analyzer.default_location(default),
+                    target,
+                )
+            },
         );
         match usage {
             DefaultUse::Required => result.map_err(Error::required_instantiation),

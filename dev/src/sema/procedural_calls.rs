@@ -151,7 +151,10 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("empty call name"))?;
             let explicit = component
                 .arguments
-                .map(|syntax| self.explicit_function_arguments(syntax, scope, component.location))
+                .map(|syntax| {
+                    let head = self.sole_template_head(found.functions.as_slice())?;
+                    self.explicit_function_arguments(syntax, scope, component.location, head)
+                })
                 .transpose()?;
             let uses = if component.arguments.is_some() {
                 callee_uses
@@ -287,9 +290,12 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "use of a deleted function"));
         }
         let callable = facts.call_form == super::expression_facts::CallForm::CallableObject;
-        let receiver = self.record_call_receiver(callee, binding, facts, scope, location)?;
-        if !callable {
-            self.graph.expression_facts.set(callee, receiver);
+        if let Some(receiver) =
+            self.record_call_receiver(callee, binding, &facts, scope, location)?
+        {
+            self.graph
+                .expression_facts
+                .set_callable_receiver(id, receiver);
         }
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
@@ -309,17 +315,6 @@ impl Analyzer<'_> {
             // Calling an object does not replace the object's own designation
             // or base paths. The call owns its selected receiver conversion.
             facts.call_form = super::expression_facts::CallForm::CallableObject;
-            self.graph.expression_facts.set_callable_receiver(
-                id,
-                super::expression_facts::CallReceiver {
-                    object: receiver
-                        .object
-                        .ok_or(Error::Invariant("callable receiver missing"))?,
-                    path: receiver.base_path,
-                    naming_path: receiver.member_naming_path,
-                    member_path: receiver.member_path,
-                },
-            );
         }
         facts.call = Some(CallTarget::Direct(
             self.graph
@@ -355,10 +350,10 @@ impl Analyzer<'_> {
         &mut self,
         callee: ast::ExprId,
         binding: BindingId,
-        facts: ExprFacts,
+        facts: &ExprFacts,
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
-    ) -> Result<ExprFacts, Error> {
+    ) -> Result<Option<super::expression_facts::CallReceiver>, Error> {
         let mut receiver = self.graph.expression_facts.get(callee)?;
         receiver.object = facts.object;
         if facts.call_form == super::expression_facts::CallForm::CallableObject {
@@ -421,7 +416,19 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        Ok(receiver)
+        if facts.call_form == super::expression_facts::CallForm::CallableObject {
+            Ok(Some(super::expression_facts::CallReceiver {
+                object: receiver
+                    .object
+                    .ok_or(Error::Invariant("callable receiver missing"))?,
+                path: receiver.base_path,
+                naming_path: receiver.member_naming_path,
+                member_path: receiver.member_path,
+            }))
+        } else {
+            self.graph.expression_facts.set(callee, receiver);
+            Ok(None)
+        }
     }
     pub(super) fn object_sequence(
         &mut self,

@@ -91,6 +91,14 @@ impl Symbols<'_, '_> {
         }
         match view {
             TypeView::Value { ty, bits } => {
+                if matches!(
+                    self.graph.lower_type(ty)?,
+                    TypeView::Pointer(_) | TypeView::Scalar(Scalar::Nullptr)
+                ) || self.graph.lower_member_pointer_type(ty).is_some()
+                {
+                    out.push_str("nullptr");
+                    return Ok(());
+                }
                 if matches!(self.graph.lower_type(ty)?, TypeView::Enum(_)) {
                     out.push('(');
                     self.append_type_label(ty, out, limit)?;

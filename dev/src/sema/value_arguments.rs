@@ -1,11 +1,10 @@
 // Translated from sema/analyzer.cpp::non_type_parameter_type and class_templates.cpp.
 // See NOTICE.
-//! Integral template arguments retain canonical type and target bits, never text.
+//! Value arguments retain canonical types and target values, never text.
 use super::{
     Error,
     analyzer::Analyzer,
     constants::{Constant, ConstantState},
-    function_templates::Substitution,
     graph::{Binding, BindingKind, ScopeId},
     templates::{DefaultArgument, HeadId},
     types::{Cv, TypeId, TypeKind},
@@ -61,19 +60,38 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
+        self.template_argument_for(argument, scope, location, None)
+    }
+
+    pub(super) fn template_argument_for(
+        &mut self,
+        argument: ast::TemplateArgument,
+        scope: ScopeId,
+        location: SourceOffset,
+        target: Option<TypeId>,
+    ) -> Result<TypeId, Error> {
         if let Some(identity) = self.template_argument_identity(argument, scope, location)? {
             return Ok(identity);
         }
         let ast::TemplateArgumentKind::Expression(expression) = argument.kind else {
             return Err(Error::Invariant("type argument without identity"));
         };
-        self.template_value(expression, scope)
+        self.template_value_for(expression, scope, target)
     }
 
     pub(super) fn template_value(
         &mut self,
         expression: ast::ExprId,
         scope: ScopeId,
+    ) -> Result<TypeId, Error> {
+        self.template_value_for(expression, scope, None)
+    }
+
+    fn template_value_for(
+        &mut self,
+        expression: ast::ExprId,
+        scope: ScopeId,
+        target: Option<TypeId>,
     ) -> Result<TypeId, Error> {
         if self.semantic() && self.template_depth == 0 {
             let value_uses = self.value_parameter_uses.get();
@@ -87,6 +105,11 @@ impl Analyzer<'_> {
             // for instantiation-context ADL even when today's value is concrete.
             if self.value_parameter_uses.get() != value_uses {
                 self.note_dependent_use();
+            }
+            if target.is_some_and(|ty| self.graph.address_parameter_type(ty))
+                || target.is_none() && self.is_address_expression(expression)
+            {
+                return self.null_template_argument(expression, scope, target);
             }
         }
         if let Some(value) = self.constant_value(expression, scope, self.template_depth == 0)? {
@@ -157,25 +180,20 @@ impl Analyzer<'_> {
         let TypeKind::Value { ty: source, bits } = self.graph.types.get(argument).kind else {
             return Ok(argument);
         };
-        let mut target = info
-            .value_type
-            .ok_or(Error::Invariant("value argument without target"))?;
-        if self.graph.dependent_type(target) {
-            let given = earlier.iter().copied().map(Some).collect::<Vec<_>>();
-            let mut substitution = Substitution::new(self.graph.templates.depth(head), &given);
-            target = self
-                .substitute_signature_type(target, &mut substitution)?
-                .ok_or_else(|| {
-                    Error::at(
-                        location,
-                        "a non-type template parameter of a type 14.1p4 does not allow",
-                    )
-                })?;
-            if self.graph.dependent_type(target) {
-                return Ok(argument);
+        let target = match self.argument_target(head, index, earlier)? {
+            super::address_arguments::ArgumentTarget::Type(ty) => ty,
+            super::address_arguments::ArgumentTarget::Unknown => return Ok(argument),
+            super::address_arguments::ArgumentTarget::Invalid => {
+                return Err(Error::at(
+                    location,
+                    "a non-type template parameter of a type 14.1p4 does not allow",
+                ));
             }
+        };
+        let target = self.bare_type(target)?;
+        if self.graph.address_parameter_type(target) || self.graph.address_parameter_type(source) {
+            return self.converted_null_argument(target, argument, location);
         }
-        target = self.bare_type(target)?;
         let failure =
             if matches!(self.graph.types.get(target).kind, TypeKind::Enum(_)) && source != target {
                 Some("a template argument does not convert to the parameter's enumeration type")

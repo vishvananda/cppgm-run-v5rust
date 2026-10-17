@@ -71,7 +71,7 @@ impl Analyzer<'_> {
             .template_head
             .ok_or(Error::Invariant("variable template without head"))?;
         self.supported_fixed_template_head(head)?;
-        let mut arguments = self.form_template_arguments(component, scope)?;
+        let mut arguments = self.form_template_arguments(component, scope, Some(head))?;
         self.complete_template_arguments(head, &mut arguments, component.location)?;
         let binding = self.variable_specialization(primary, arguments, component.location, None)?;
         if self.graph.binding_scope(found) == self.graph.binding_scope(binding) {
@@ -443,7 +443,7 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("variable template without head"))?;
-        let mut arguments = self.form_template_arguments(last, scope)?;
+        let mut arguments = self.form_template_arguments(last, scope, Some(head))?;
         self.complete_template_arguments(head, &mut arguments, location)?;
         let ty = if specs.constexpr {
             self.graph.types.qualify(info.ty, super::types::Cv::CONST)?

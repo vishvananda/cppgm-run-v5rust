@@ -195,7 +195,8 @@ impl Analyzer<'_> {
                 "class or alias template specialization lookup",
             ));
         }
-        let given = self.explicit_function_arguments(syntax, scope, component.location)?;
+        let head = self.sole_template_head(found.functions.as_slice())?;
+        let given = self.explicit_function_arguments(syntax, scope, component.location, head)?;
         self.specialize_explicit_functions(component, found, &given, call)
     }
     pub(super) fn explicit_function_arguments(
@@ -203,6 +204,7 @@ impl Analyzer<'_> {
         syntax: crate::syntax::storage::List<ast::TemplateArgument>,
         scope: ScopeId,
         location: SourceOffset,
+        head: Option<HeadId>,
     ) -> Result<Vec<TypeId>, Error> {
         let mut given = Vec::new();
         for syntax_index in 0..self.tree.template_arguments.get(syntax).len() {
@@ -211,10 +213,56 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("function template argument expansion"));
             }
-            let ty = self.template_argument(*argument, scope, location)?;
+            let target = if let Some(head) = head
+                && syntax_index < self.graph.templates.parameters(head).len()
+            {
+                self.argument_target(head, syntax_index, &given)?.known()
+            } else {
+                None
+            };
+            let ty = self.template_argument_for(*argument, scope, location, target)?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
         Ok(given)
+    }
+    pub(super) fn sole_template_head(
+        &self,
+        functions: &[BindingId],
+    ) -> Result<Option<HeadId>, Error> {
+        let mut found = None;
+        for &binding in functions {
+            let Some(head) = self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .template_head
+            else {
+                continue;
+            };
+            if let Some(previous) = found {
+                let first = self.graph.templates.parameters(previous);
+                let second = self.graph.templates.parameters(head);
+                for (&a, &b) in first.iter().zip(second) {
+                    let a = self
+                        .graph
+                        .entity(a)
+                        .template_parameter
+                        .ok_or(Error::Invariant("head without parameter"))?;
+                    let b = self
+                        .graph
+                        .entity(b)
+                        .template_parameter
+                        .ok_or(Error::Invariant("head without parameter"))?;
+                    if !a.same_argument_kind(b) {
+                        return Ok(None);
+                    }
+                }
+                if second.len() <= first.len() {
+                    continue;
+                }
+            }
+            found = Some(head);
+        }
+        Ok(found)
     }
     pub(super) fn specialize_explicit_functions(
         &mut self,

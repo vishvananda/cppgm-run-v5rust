@@ -87,7 +87,7 @@ impl Analyzer<'_> {
             .template_head
             .ok_or(Error::Invariant("variable template lost head"))?;
         self.supported_fixed_template_head(primary_head)?;
-        let mut arguments = self.form_template_arguments(last, scope)?;
+        let mut arguments = self.form_template_arguments(last, scope, Some(primary_head))?;
         self.complete_template_arguments(primary_head, &mut arguments, node.location)?;
         self.check_type_partial_arguments(head, &arguments, node.location)?;
         let ty = if specs.constexpr {

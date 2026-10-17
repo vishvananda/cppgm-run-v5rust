@@ -37,6 +37,11 @@ pub(super) struct ParameterInfo {
     pub(super) value_type: Option<TypeId>,
 }
 impl ParameterInfo {
+    pub(super) fn same_argument_kind(self, other: Self) -> bool {
+        self.value_type == other.value_type
+            && self.inner.is_some() == other.inner.is_some()
+            && self.is_pack() == other.is_pack()
+    }
     pub(super) fn is_pack(self) -> bool {
         self.position.shape.pack
     }

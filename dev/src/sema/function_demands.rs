@@ -145,6 +145,7 @@ pub(super) fn trailing(graph: &super::graph::Graph) -> Vec<Demand> {
                         if entity.assignment_origin != super::assignment::Origin::Implicit
                             && !graph.function_templates.bodies.synthesized(function)
                             && (entity.definition_emission == DefinitionEmission::Demanded
+                                || graph.function_templates.primary(function).is_some()
                                 || call
                                     && !entity.defined
                                     && entity.home.is_some_and(|home| {

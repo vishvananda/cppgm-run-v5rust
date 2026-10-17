@@ -160,6 +160,12 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         let facts = self.graph.expression_facts.get(id)?;
         let location = node.location;
+        if facts.category == ValueCategory::Prvalue
+            && facts.folded == Some(0)
+            && self.graph.address_parameter_type(facts.ty)
+        {
+            return Ok(Address::new(Root::Null, facts.ty));
+        }
         match self.graph.types.get(facts.ty).kind {
             TypeKind::Array { element, .. }
             | TypeKind::Function {

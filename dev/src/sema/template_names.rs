@@ -19,6 +19,7 @@ impl Analyzer<'_> {
         &mut self,
         component: ast::NameComponent,
         scope: ScopeId,
+        head: Option<super::templates::HeadId>,
     ) -> Result<Vec<TypeId>, Error> {
         let syntax = component
             .arguments
@@ -29,7 +30,14 @@ impl Analyzer<'_> {
             if argument.pack {
                 return Err(Error::Missing("template argument expansion"));
             }
-            let ty = self.template_argument(argument, scope, component.location)?;
+            let target = if let Some(head) = head
+                && index < self.graph.templates.parameters(head).len()
+            {
+                self.argument_target(head, index, &arguments)?.known()
+            } else {
+                None
+            };
+            let ty = self.template_argument_for(argument, scope, component.location, target)?;
             arguments.push(self.graph.types.canonical_function(ty)?);
         }
         Ok(arguments)

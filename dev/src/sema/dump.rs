@@ -354,7 +354,9 @@ impl Graph {
             }
             match &node.kind {
                 TypeKind::Value { ty, bits } => {
-                    if self.integral_kind(*ty).is_some_and(|kind| kind.signed) {
+                    if self.address_parameter_type(*ty) {
+                        output.write_all(b"nullptr")?;
+                    } else if self.integral_kind(*ty).is_some_and(|kind| kind.signed) {
                         write!(output, "{}", super::integral::signed(*bits))?;
                     } else {
                         write!(output, "{bits}")?;
