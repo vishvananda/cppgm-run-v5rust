@@ -1002,7 +1002,11 @@ impl Analyzer<'_> {
         let saved_body = self.body_context.take();
         let saved_limit = self.graph.lookup_limit.replace(pattern.limit);
         let saved_depth = std::mem::replace(&mut self.template_depth, usize::from(open));
-        let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 1);
+        // A substituted value/bound is potentially evaluated even when the
+        // query arose in an unevaluated operand. decltype_type establishes
+        // its own unevaluated context; failed value deduction still retains
+        // the functions it used, as InstantiationContext does in C++.
+        let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 0);
         let saved_arguments = std::mem::replace(&mut self.template_arguments, 0);
         let saved_default = self.default_argument_scope.take();
         let saved_head = self.template_head.take();

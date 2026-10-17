@@ -371,9 +371,10 @@ impl Analyzer<'_> {
         }
         if let Some((clause, prototype)) = prototype
             && parameters.is_some_and(|parameters| parameters.location == clause)
-            && let Some(name) = name
+            && let Some(syntax_name) = syntax_name
         {
-            self.graph.scope_mut(prototype).name = Some(name);
+            self.graph.scope_mut(prototype).name = name;
+            self.graph.scope_mut(prototype).written_name = name.is_none().then_some(syntax_name);
             self.graph.scope_mut(print).children.push(prototype);
         }
         // A suffix view is a query result, not the original declarator's fact.

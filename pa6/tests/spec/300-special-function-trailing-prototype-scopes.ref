@@ -1,0 +1,23 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type A struct A
+    function operator- function of (struct A, int) returning int
+    function operator""_audit function of (unsigned long long int) returning unsigned int
+    scope class A
+      function operator+ function of (int) returning int
+      function operator+ function of (int) returning int
+      scope function operator+
+        parameter  int
+      scope function operator+
+        parameter n int
+        scope block
+    scope function operator-
+      parameter  struct A
+      parameter  int
+    scope function operator+
+      parameter n int
+    scope function operator""_audit
+      parameter  unsigned long long int
+end translation unit

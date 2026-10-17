@@ -287,6 +287,64 @@ mod tests {
     };
 
     #[test]
+    fn failed_value_default_retains_use_and_restores_unevaluated_caller() {
+        let source = SourceBuffer::new(
+            b"template<class T>int f();\
+              struct A{template<class T,int N=f<T>()>operator T*();};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"conversion-default").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let a = cursor.intern_name(b"A").unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let class = analyzer.graph.own(global, a, Filter::Ordinary).unwrap();
+        let class = analyzer.graph.binding(class).entity;
+        let primary = analyzer.graph.entity(class).declared_conversions[0];
+        let signature = analyzer.graph.binding(primary).ty;
+        let helper = analyzer
+            .graph
+            .functions_at(global, f.into())
+            .next()
+            .unwrap();
+        let helper = analyzer.graph.binding(helper).entity;
+        let int = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        let target = analyzer.graph.types.pointer(int).unwrap();
+        analyzer.unevaluated = 3;
+        for _ in 0..2 {
+            assert!(
+                analyzer
+                    .deduce_conversion_template(primary, target, ConversionDeduction::Named)
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(analyzer.unevaluated, 3);
+            assert_eq!(analyzer.graph.binding(primary).ty, signature);
+            assert!(analyzer.graph.function_templates.body_demanded(helper));
+            assert!(
+                !analyzer
+                    .graph
+                    .function_templates
+                    .body_demanded(analyzer.graph.binding(primary).entity)
+            );
+            // Only the helper's successful signature survives the failed trial.
+            assert_eq!(analyzer.graph.function_templates.arguments.len(), 1);
+        }
+    }
+
+    #[test]
     fn result_queries_reuse_signatures_without_body_or_syntax_demand() {
         let source = SourceBuffer::new(
             b"struct A{template<class T>operator T*(){return T::bad;}\

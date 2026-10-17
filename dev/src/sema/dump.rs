@@ -109,7 +109,11 @@ impl Graph {
                 crate::syntax::write_member_label(tree, cursor, name, output)?;
             } else if let Some(name) = scope.written_name {
                 output.write_all(b" ")?;
-                crate::syntax::write_expression_name(tree, cursor, name, output)?;
+                if scope.kind == ScopeKind::Function {
+                    crate::syntax::write_member_label(tree, cursor, name, output)?;
+                } else {
+                    crate::syntax::write_expression_name(tree, cursor, name, output)?;
+                }
             } else if let Some(name) = scope.name {
                 output.write_all(b" ")?;
                 write_name(cursor, name, output)?;
