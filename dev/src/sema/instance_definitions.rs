@@ -28,6 +28,7 @@ pub(super) struct Definitions {
     states: HashMap<EntityId, State>,
     members: HashMap<EntityId, Pattern>,
     sources: HashMap<EntityId, EntityId>,
+    origins: HashMap<EntityId, EntityId>,
     active: Vec<EntityId>,
     explicit: HashSet<EntityId>,
 }
@@ -54,6 +55,79 @@ impl Definitions {
     }
 }
 impl Analyzer<'_> {
+    // template_names.cpp::pattern_member_template/original_member_template.
+    // Follow only lexical owner edges; a copied declaration may predate the
+    // original's outside definition, so absence of a definition is not cached.
+    fn original_member_class(&self, mut entity: EntityId) -> Option<EntityId> {
+        let requested = entity;
+        let mut nested = Vec::new();
+        loop {
+            if self.graph.class_templates.definitions.explicit(entity) {
+                return None;
+            }
+            let node = self.graph.entity(entity);
+            let name = node.name?;
+            let owner = self.graph.scope(node.home?).owner?;
+            let source = self
+                .graph
+                .class_templates
+                .partials
+                .selected(owner)
+                .map(|(source, _)| source)
+                .or_else(|| {
+                    self.graph
+                        .class_templates
+                        .definitions
+                        .origins
+                        .get(&owner)
+                        .copied()
+                })
+                .or_else(|| {
+                    self.graph
+                        .class_templates
+                        .instance(owner)
+                        .map(|i| i.primary)
+                })
+                .or_else(|| self.graph.class_templates.definitions.source(owner));
+            if let Some(source) = source {
+                let mut source = self.original_class_member(source, name)?;
+                for name in nested.into_iter().rev() {
+                    source = self.original_class_member(source, name)?;
+                }
+                return (source != requested).then_some(source);
+            }
+            self.graph.entity(owner).template_head?;
+            nested.push(name);
+            entity = owner;
+        }
+    }
+
+    fn original_class_member(
+        &self,
+        source: EntityId,
+        name: crate::lex::identifiers::NameId,
+    ) -> Option<EntityId> {
+        let scope = self.graph.entity(source).scope?;
+        let found = self
+            .graph
+            .own(scope, name, super::lookup::Filter::Elaborated)?;
+        let binding = self.graph.binding(found);
+        (binding.kind == super::graph::BindingKind::Type
+            && self.graph.entity(binding.entity).enumeration.is_none())
+        .then_some(binding.entity)
+    }
+
+    fn outside_class_definition(&self, mut entity: EntityId) -> Option<(EntityId, Pattern)> {
+        // The frozen compiler bounds traversal of original member templates.
+        for _ in 0..64 {
+            entity = self.original_member_class(entity)?;
+            if let Some(&pattern) = self.graph.class_templates.definitions.patterns.get(&entity) {
+                return Some((entity, pattern));
+            }
+        }
+        None
+    }
+
     pub(super) fn record_class_pattern(
         &mut self,
         entity: EntityId,
@@ -99,6 +173,14 @@ impl Analyzer<'_> {
             .partials
             .selected(owner)
             .map(|(pattern, _)| pattern)
+            .or_else(|| {
+                self.graph
+                    .class_templates
+                    .definitions
+                    .origins
+                    .get(&owner)
+                    .copied()
+            })
             .or_else(|| {
                 self.graph
                     .class_templates
@@ -184,6 +266,36 @@ impl Analyzer<'_> {
         Ok(complete)
     }
 
+    fn selected_class_definition(
+        &mut self,
+        primary: EntityId,
+        arguments: &[super::types::TypeId],
+    ) -> Result<(EntityId, Vec<super::types::TypeId>, bool), Error> {
+        let (source, deduced) = self.matched_class_partial(primary, arguments)?;
+        if source != primary {
+            return Ok((source, deduced, false));
+        }
+        let mut member = self.original_member_class(primary);
+        for _ in 0..64 {
+            let Some(candidate) = member else { break };
+            if self.graph.class_templates.partials.has_partials(candidate) {
+                let owner = self
+                    .graph
+                    .entity(primary)
+                    .home
+                    .and_then(|scope| self.graph.scope(scope).owner);
+                let (partial, deduced) =
+                    self.matched_member_class_partial(candidate, arguments, owner)?;
+                if partial != candidate {
+                    return Ok((partial, deduced, true));
+                }
+                break;
+            }
+            member = self.original_member_class(candidate);
+        }
+        Ok((source, deduced, false))
+    }
+
     fn complete_class_definition(&mut self, entity: EntityId) -> Result<bool, Error> {
         if self.graph.entity(entity).complete {
             return Ok(true);
@@ -197,6 +309,8 @@ impl Analyzer<'_> {
         {
             return Ok(false);
         }
+        let mut outside = false;
+        let mut origin = None;
         let (pattern, arguments) = if let Some(instance) =
             self.graph.class_templates.instance(entity)
         {
@@ -212,8 +326,8 @@ impl Analyzer<'_> {
                 .definitions
                 .states
                 .insert(entity, State::InProgress);
-            let selected = self.matched_class_partial(primary, &arguments);
-            let (source, arguments) = match selected {
+            let selected = self.selected_class_definition(primary, &arguments);
+            let (source, arguments, selected_outside) = match selected {
                 Ok(selected) => selected,
                 Err(error) => {
                     self.graph
@@ -224,6 +338,7 @@ impl Analyzer<'_> {
                     return Err(error);
                 }
             };
+            outside = selected_outside;
             let Some(pattern) = self
                 .graph
                 .class_templates
@@ -231,6 +346,15 @@ impl Analyzer<'_> {
                 .patterns
                 .get(&source)
                 .copied()
+                .or_else(|| {
+                    if source != primary {
+                        return None;
+                    }
+                    let (source, pattern) = self.outside_class_definition(source)?;
+                    origin = Some(source);
+                    outside = true;
+                    Some(pattern)
+                })
             else {
                 self.graph
                     .class_templates
@@ -252,8 +376,21 @@ impl Analyzer<'_> {
             .definitions
             .sources
             .get(&entity)
-            .and_then(|source| self.graph.class_templates.definitions.patterns.get(source))
-            .copied()
+            .and_then(|&source| {
+                self.graph
+                    .class_templates
+                    .definitions
+                    .patterns
+                    .get(&source)
+                    .copied()
+                    .or_else(|| {
+                        self.outside_class_definition(source)
+                            .map(|(source, pattern)| {
+                                origin = Some(source);
+                                pattern
+                            })
+                    })
+            })
         {
             (pattern, Vec::new())
         } else if let Some(&pattern) = self.graph.class_templates.definitions.members.get(&entity) {
@@ -266,6 +403,13 @@ impl Analyzer<'_> {
             .definitions
             .states
             .insert(entity, State::InProgress);
+        if let Some(origin) = origin {
+            self.graph
+                .class_templates
+                .definitions
+                .origins
+                .insert(entity, origin);
+        }
         let result = self.required_instantiation(
             self.graph.instantiation_levels.get(entity)?,
             self.tree.classes.get(pattern.syntax).location,
@@ -284,6 +428,16 @@ impl Analyzer<'_> {
                         .home
                         .ok_or(Error::Invariant("member class without owner"))?;
                     analyzer.outside_class_frame(owner, pattern.head, pattern.parent)?
+                } else if outside {
+                    let owner = analyzer
+                        .graph
+                        .entity(entity)
+                        .home
+                        .ok_or(Error::Invariant("member template without owner"))?;
+                    let head = pattern
+                        .head
+                        .ok_or(Error::Invariant("outside template without head"))?;
+                    analyzer.outside_template_frame(owner, head, &arguments, pattern.parent)?
                 } else {
                     analyzer.class_definition_frame(pattern, &arguments)?
                 };
@@ -318,6 +472,11 @@ impl Analyzer<'_> {
                 .states
                 .insert(entity, State::Complete);
         } else {
+            self.graph
+                .class_templates
+                .definitions
+                .origins
+                .remove(&entity);
             self.graph.class_templates.partials.forget_selection(entity);
             self.graph
                 .class_templates
@@ -399,6 +558,132 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn outside_definitions_retain_origins_and_independent_instance_demand() {
+        let source = SourceBuffer::new(
+            b"template<class A>struct X{template<class B>struct Y;};\
+              using I=X<int>::Y<char>;using L=X<long>::Y<short>;\
+              template<class T>template<class U>struct X<T>::Y{\
+                T a;U b;struct Nested;void unused(){U::missing;}};\
+              template<class T>template<class U>struct X<T>::Y<U>::Nested{T a;U b;};\
+              using N=I::Nested;int size=sizeof(I)+sizeof(N);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"outside-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"I".as_slice(), b"L", b"N"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let bodies = tree.bodies.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let classes: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+                let TypeKind::Class(class) = analyzer
+                    .graph
+                    .types
+                    .get(analyzer.graph.binding(binding).ty.unwrap())
+                    .kind
+                else {
+                    panic!("class alias")
+                };
+                class
+            })
+            .collect();
+        assert!(analyzer.graph.entity(classes[0]).complete);
+        assert!(!analyzer.graph.entity(classes[1]).complete);
+        assert!(analyzer.graph.entity(classes[1]).scope.is_none());
+        assert!(analyzer.graph.entity(classes[2]).complete);
+        let definitions = &analyzer.graph.class_templates.definitions;
+        let origin = definitions.origins[&classes[0]];
+        assert_ne!(origin, classes[0]);
+        assert!(definitions.patterns.contains_key(&origin));
+        assert!(definitions.sources.contains_key(&classes[2]));
+        assert!(definitions.active.is_empty());
+        assert_eq!(analyzer.tree.bodies.mark(), bodies);
+        let before = (
+            analyzer.tree.declarations.mark(),
+            analyzer.tree.types.mark(),
+            analyzer.graph.binding_limit(),
+        );
+        for _ in 0..8 {
+            assert!(analyzer.complete_class(classes[0]).unwrap());
+            assert!(analyzer.complete_class(classes[2]).unwrap());
+        }
+        assert_eq!(
+            before,
+            (
+                analyzer.tree.declarations.mark(),
+                analyzer.tree.types.mark(),
+                analyzer.graph.binding_limit()
+            )
+        );
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
+    fn failed_outside_partial_selection_publishes_no_definition() {
+        let source = SourceBuffer::new(
+            b"template<class A>struct X{template<class B,class C>struct Y;};\
+              template<class A>template<class B>struct X<A>::Y<B*,int>{};\
+              template<class A>template<class C>struct X<A>::Y<int*,C>{};\
+              using Bad=X<char>::Y<int*,int>;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"outside-trial").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"Bad").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+        let TypeKind::Class(class) = analyzer
+            .graph
+            .types
+            .get(analyzer.graph.binding(binding).ty.unwrap())
+            .kind
+        else {
+            panic!("class alias")
+        };
+        for _ in 0..2 {
+            assert!(matches!(
+                analyzer.complete_class(class),
+                Err(Error::Diagnostic {
+                    message: "a specialization matches several partial specializations, none more specialized",
+                    ..
+                })
+            ));
+            let definitions = &analyzer.graph.class_templates.definitions;
+            assert!(!definitions.started(class));
+            assert!(!definitions.origins.contains_key(&class));
+            assert!(definitions.active.is_empty());
+            assert!(
+                analyzer
+                    .graph
+                    .class_templates
+                    .partials
+                    .selected(class)
+                    .is_none()
+            );
+            assert!(analyzer.graph.entity(class).scope.is_none());
+        }
+    }
 
     #[test]
     fn definitions_and_named_members_have_independent_memoized_demand() {

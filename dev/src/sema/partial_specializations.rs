@@ -188,6 +188,17 @@ impl Analyzer<'_> {
         candidates: Vec<(Vec<TypeId>, EntityId)>,
         location: SourceOffset,
     ) -> Result<(EntityId, Vec<TypeId>), Error> {
+        self.matched_enclosing_partial(primary, arguments, candidates, location, None)
+    }
+
+    pub(super) fn matched_enclosing_partial(
+        &mut self,
+        primary: EntityId,
+        arguments: &[TypeId],
+        candidates: Vec<(Vec<TypeId>, EntityId)>,
+        location: SourceOffset,
+        enclosing: Option<EntityId>,
+    ) -> Result<(EntityId, Vec<TypeId>), Error> {
         let mut matches: Vec<(Vec<TypeId>, EntityId)> = Vec::new();
         let mut best = None;
         for (pattern, candidate) in candidates {
@@ -196,7 +207,16 @@ impl Analyzer<'_> {
                 .entity(candidate)
                 .template_head
                 .ok_or(Error::Invariant("partial without head"))?;
-            let Some(deduced) = self.deduce_partial_arguments(head, &pattern, arguments)? else {
+            let substituted;
+            let deduction_pattern = if let Some(enclosing) = enclosing {
+                substituted = self.enclosing_class_arguments(&pattern, enclosing)?;
+                &substituted
+            } else {
+                &pattern
+            };
+            let Some(deduced) =
+                self.deduce_partial_arguments(head, deduction_pattern, arguments)?
+            else {
                 continue;
             };
             if let Some((_, previous)) = best {

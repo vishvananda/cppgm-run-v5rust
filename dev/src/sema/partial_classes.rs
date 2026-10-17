@@ -22,6 +22,9 @@ pub(super) struct ClassPartials {
     selections: HashMap<EntityId, (EntityId, Vec<TypeId>)>,
 }
 impl ClassPartials {
+    pub(super) fn has_partials(&self, primary: EntityId) -> bool {
+        self.patterns.contains_key(&primary)
+    }
     pub(super) fn replace_primary(&mut self, entity: EntityId) {
         self.patterns.remove(&entity);
         self.identities.remove(&entity);
@@ -248,6 +251,15 @@ impl Analyzer<'_> {
         primary: EntityId,
         arguments: &[TypeId],
     ) -> Result<(EntityId, Vec<TypeId>), Error> {
+        self.matched_member_class_partial(primary, arguments, None)
+    }
+
+    pub(super) fn matched_member_class_partial(
+        &mut self,
+        primary: EntityId,
+        arguments: &[TypeId],
+        enclosing: Option<EntityId>,
+    ) -> Result<(EntityId, Vec<TypeId>), Error> {
         let store = &self.graph.class_templates.partials;
         let Some(patterns) = store.patterns.get(&primary) else {
             return Ok((primary, arguments.to_vec()));
@@ -259,7 +271,7 @@ impl Analyzer<'_> {
             .into_iter()
             .map(|index| patterns[index].clone())
             .collect();
-        self.matched_partial(primary, arguments, candidates, SourceOffset(0))
+        self.matched_enclosing_partial(primary, arguments, candidates, SourceOffset(0), enclosing)
     }
 }
 

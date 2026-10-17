@@ -13,6 +13,61 @@ use super::{
 use crate::syntax::ast;
 
 impl Analyzer<'_> {
+    // template_names.cpp::enclosing_substitution: only enclosing class
+    // specialization arguments substitute here, outermost depth first.
+    pub(super) fn enclosing_class_arguments(
+        &mut self,
+        patterns: &[TypeId],
+        mut class: EntityId,
+    ) -> Result<Vec<TypeId>, Error> {
+        let mut levels = Vec::new();
+        loop {
+            let owner = if let Some(instance) = self.graph.class_templates.instance(class) {
+                let arguments = self
+                    .graph
+                    .class_templates
+                    .partials
+                    .selected(class)
+                    .map_or(instance.arguments.as_slice(), |(_, arguments)| arguments);
+                levels.push(arguments.to_vec());
+                self.graph.entity(instance.primary).home
+            } else if self
+                .graph
+                .class_templates
+                .definitions
+                .source(class)
+                .is_some()
+            {
+                self.graph.entity(class).home
+            } else {
+                break;
+            };
+            let Some(enclosing) = owner.and_then(|scope| self.graph.scope(scope).owner) else {
+                break;
+            };
+            class = enclosing;
+        }
+        let mut result = patterns.to_vec();
+        for (depth, arguments) in levels.into_iter().rev().enumerate() {
+            let depth = u32::try_from(depth).map_err(|_| Error::Limit("template depth limit"))?;
+            let arguments: Vec<_> = arguments.into_iter().map(Some).collect();
+            let mut environment = super::function_templates::Substitution::new(depth, &arguments);
+            for ty in &mut result {
+                // Enclosing substitution precedes deduction's soft trial in
+                // C++; an invalid enclosing type diagnoses immediately.
+                *ty = self
+                    .substitute_signature_type(*ty, &mut environment)?
+                    .ok_or(Error::at(
+                        environment.failure_location,
+                        environment
+                            .failure
+                            .unwrap_or("invalid enclosing template substitution"),
+                    ))?;
+            }
+        }
+        Ok(result)
+    }
+
     pub(super) fn templated_class_scope(&self, scope: ScopeId) -> bool {
         std::iter::successors(Some(self.declaration_scope(scope)), |&id| {
             self.graph.scope(id).parent
