@@ -699,6 +699,13 @@ impl Analyzer<'_> {
                 continue;
             };
             let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if matches!(
+                context,
+                ConstructorContext::Copy | ConstructorContext::Standard { explicit: false }
+            ) && entity.explicitness == super::specifiers::Explicitness::Explicit
+            {
+                continue;
+            }
             let ty = entity
                 .ty
                 .ok_or(Error::Invariant("constructor without type"))?;

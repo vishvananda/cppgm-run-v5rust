@@ -553,15 +553,22 @@ impl Analyzer<'_> {
                 "a conversion function of an ambiguous base class subobject",
             ));
         }
-        self.check_named_member_access(binding, class, class, scope, location)?;
-        let path = if class == owner {
-            None
-        } else {
-            Some(self.checked_base_path(class, owner, scope, location, true, false)?)
-        };
+        let path = self
+            .check_named_member_access(binding, class, class, scope, location)
+            .and_then(|()| {
+                if class == owner {
+                    Ok(None)
+                } else {
+                    self.checked_base_path(class, owner, scope, location, true, false)
+                        .map(Some)
+                }
+            });
+        // C++ apply_user_conversion records this use even when a soft access
+        // failure rejects the surrounding specialization. The retained body
+        // demand remains observable in the semantic tool's output.
         self.demand_specialization_body(binding);
         self.demand_function(binding, true);
-        Ok(path)
+        path
     }
 
     pub(super) fn cast_conversion_function(

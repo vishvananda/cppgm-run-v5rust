@@ -362,11 +362,7 @@ impl Analyzer<'_> {
         }
         if self.graph.entity(class).user_constructor.is_some() {
             let binding = self.default_constructor_binding(class, location)?;
-            // The semantic view records this constructor action without
-            // lowering its omitted arguments; emission needs their facts.
-            if self.lowering() {
-                self.instantiate_call_defaults(binding, 0)?;
-            }
+            self.request_constructor_defaults(binding, 0)?;
             let id = self.selected_constructor_plan(binding, location)?;
             self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
             return Ok(id);

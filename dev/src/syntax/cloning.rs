@@ -145,6 +145,9 @@ impl<'a> Cloner<'a> {
                 name: self.name(name)?,
             },
             SpecifierKind::Decltype(id) => SpecifierKind::Decltype(self.expression(id)?),
+            SpecifierKind::ExplicitCondition(id) => {
+                SpecifierKind::ExplicitCondition(self.expression(id)?)
+            }
             SpecifierKind::Vector { extended, operand } => SpecifierKind::Vector {
                 extended,
                 operand: self.expression(operand)?,

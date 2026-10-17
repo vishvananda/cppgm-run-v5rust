@@ -610,6 +610,7 @@ impl<'a> Parser<'a> {
                         .and_then(|binding| binding.scope);
                 }
                 super::ast::SpecifierKind::Keyword(_)
+                | super::ast::SpecifierKind::ExplicitCondition(_)
                 | super::ast::SpecifierKind::Decltype(_)
                 | super::ast::SpecifierKind::Vector { .. } => (),
             }

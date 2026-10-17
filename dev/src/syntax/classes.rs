@@ -427,10 +427,12 @@ impl Parser<'_> {
             {
                 let location = self.location()?;
                 self.cursor.advance()?;
-                self.tree.specs.push(Specifier {
-                    location,
-                    kind: SpecifierKind::Keyword(word),
-                });
+                let kind = if word == K::Explicit && self.at(P::LeftParen)? {
+                    SpecifierKind::ExplicitCondition(self.decltype_operand()?)
+                } else {
+                    SpecifierKind::Keyword(word)
+                };
+                self.tree.specs.push(Specifier { location, kind });
             } else {
                 break;
             }

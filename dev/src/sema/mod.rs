@@ -54,6 +54,7 @@ mod evaluated_data;
 mod exception_operands;
 mod exceptions;
 mod explicit_classes;
+mod explicit_conditions;
 mod explicit_instantiations;
 mod explicit_specializations;
 mod expression_facts;

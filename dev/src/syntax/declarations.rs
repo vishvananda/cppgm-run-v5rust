@@ -446,10 +446,12 @@ impl Parser<'_> {
                     has_type |= Self::has_type_keyword(word);
                     has_friend |= word == K::Friend;
                     self.cursor.advance()?;
-                    self.tree.specs.push(Specifier {
-                        location,
-                        kind: SpecifierKind::Keyword(word),
-                    });
+                    let kind = if word == K::Explicit && self.at(P::LeftParen)? {
+                        SpecifierKind::ExplicitCondition(self.decltype_operand()?)
+                    } else {
+                        SpecifierKind::Keyword(word)
+                    };
+                    self.tree.specs.push(Specifier { location, kind });
                 }
                 Some(K::Enum) if !has_type => {
                     let enumeration = self.enum_specifier(definite)?;
@@ -572,7 +574,7 @@ impl Parser<'_> {
             .iter()
             .any(|specifier| match &specifier.kind {
                 SpecifierKind::Keyword(word) => Self::has_type_keyword(*word),
-                SpecifierKind::Vector { .. } => false,
+                SpecifierKind::Vector { .. } | SpecifierKind::ExplicitCondition(_) => false,
                 SpecifierKind::Named(_)
                 | SpecifierKind::Enum(_)
                 | SpecifierKind::Class(_)

@@ -174,9 +174,16 @@ impl Analyzer<'_> {
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit && !direct
-                || entity.template_head.is_some()
-            {
+            if entity.explicitness == Explicitness::Explicit && !direct {
+                continue;
+            }
+            let Some(binding) = self.deduce_function_call(binding, &[], false, Some(source))?
+            else {
+                continue;
+            };
+            let binding = self.inherited_constructor_specialization(class, binding, 1)?;
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.explicitness == Explicitness::Explicit && !direct {
                 continue;
             }
             let ty = entity
@@ -357,6 +364,7 @@ impl Analyzer<'_> {
             .expression_facts
             .set_user_conversion(id, constructor, sequence.conversion);
         self.demand_constructor_use(constructor);
+        self.request_constructor_defaults(binding, 1)?;
         Ok(true)
     }
 }

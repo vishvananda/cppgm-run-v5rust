@@ -9,7 +9,7 @@ use super::{
     templates::HeadId,
 };
 use crate::syntax::ast;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 pub(super) struct Pattern {
@@ -27,6 +27,9 @@ pub(super) struct Defaults {
     states: HashMap<(EntityId, usize), State>,
     members: HashMap<EntityId, (ScopeId, usize)>,
     patterns: HashMap<EntityId, Vec<Option<DefaultArgument>>>,
+    constructor_roots: Vec<(BindingId, usize)>,
+    constructor_edges: HashMap<EntityId, Vec<(BindingId, usize)>>,
+    constructor_requests: HashSet<(Option<EntityId>, BindingId, usize)>,
 }
 impl Defaults {
     pub(super) fn pattern(&self, entity: EntityId, index: usize) -> Option<DefaultArgument> {
@@ -34,6 +37,84 @@ impl Defaults {
     }
 }
 impl Analyzer<'_> {
+    /// C++ `call_copy` asks for omitted constructor arguments only when emitting
+    /// its selected use. Retain that edge on its emitting function instead of
+    /// instantiating defaults while checking an unused inline body.
+    pub(super) fn request_constructor_defaults(
+        &mut self,
+        binding: BindingId,
+        supplied: usize,
+    ) -> Result<(), Error> {
+        if !self.lowering() || self.unevaluated != 0 || self.template_depth != 0 {
+            return Ok(());
+        }
+        let ty = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or(Error::Invariant("constructor defaults without signature"))?;
+        if self.graph.types.function_parameter_count(ty)? <= supplied {
+            return Ok(());
+        }
+        let owner = self
+            .body_context
+            .as_ref()
+            .map(|body| body.entity)
+            .filter(|&entity| {
+                self.graph.entity(entity).definition_emission
+                    == super::function_demands::DefinitionEmission::Demanded
+                    || self.graph.entity(entity).inline
+                        == super::specifiers::InlinePreference::Inline
+            });
+        let defaults = &mut self.graph.function_templates.argument_defaults;
+        if !defaults
+            .constructor_requests
+            .insert((owner, binding, supplied))
+        {
+            return Ok(());
+        }
+        if let Some(owner) = owner {
+            defaults
+                .constructor_edges
+                .entry(owner)
+                .or_default()
+                .push((binding, supplied));
+        } else {
+            defaults.constructor_roots.push((binding, supplied));
+        }
+        Ok(())
+    }
+
+    pub(super) fn prepare_constructor_defaults(
+        &mut self,
+        owner: Option<EntityId>,
+    ) -> Result<(), Error> {
+        let mut bindings = owner
+            .and_then(|entity| {
+                self.graph
+                    .function_templates
+                    .argument_defaults
+                    .constructor_edges
+                    .remove(&entity)
+            })
+            .unwrap_or_default();
+        loop {
+            bindings.extend(std::mem::take(
+                &mut self
+                    .graph
+                    .function_templates
+                    .argument_defaults
+                    .constructor_roots,
+            ));
+            if bindings.is_empty() {
+                return Ok(());
+            }
+            for (binding, supplied) in bindings.drain(..) {
+                self.instantiate_call_defaults(binding, supplied)?;
+            }
+        }
+    }
+
     // function_templates.cpp::specialize: only parameters outside the first
     // and last expansion retain defaults. Pack elements never inherit one.
     pub(super) fn specialization_defaults(
@@ -114,9 +195,31 @@ impl Analyzer<'_> {
         binding: BindingId,
         supplied: usize,
     ) -> Result<(), Error> {
+        self.instantiate_selected_defaults(binding, supplied, None)
+    }
+
+    pub(super) fn constant_default_argument(
+        &mut self,
+        function: EntityId,
+        index: usize,
+    ) -> Result<Option<ast::ExprId>, Error> {
+        let end = index
+            .checked_add(1)
+            .ok_or(Error::Limit("default argument index limit"))?;
+        let binding = self.graph.function_origin(function)?;
+        self.instantiate_selected_defaults(binding, index, Some(end))?;
+        Ok(self.graph.function_default(function, index))
+    }
+
+    fn instantiate_selected_defaults(
+        &mut self,
+        binding: BindingId,
+        supplied: usize,
+        end: Option<usize>,
+    ) -> Result<(), Error> {
         let entity = self.graph.binding(binding).entity;
         let Some(_) = self.graph.function_templates.primary(entity) else {
-            return self.instantiate_member_defaults(entity, supplied);
+            return self.instantiate_member_defaults(entity, supplied, end);
         };
         let ty = self
             .graph
@@ -124,7 +227,7 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("default without function type"))?;
         let count = self.graph.types.function_parameter_count(ty)?;
-        for index in supplied..count {
+        for index in supplied..end.map_or(count, |end| end.min(count)) {
             let key = (entity, index);
             match self
                 .graph
@@ -186,6 +289,7 @@ impl Analyzer<'_> {
         &mut self,
         entity: EntityId,
         supplied: usize,
+        end: Option<usize>,
     ) -> Result<(), Error> {
         let Some(&(scope, limit)) = self
             .graph
@@ -201,7 +305,8 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("member default without function type"))?;
-        for index in supplied..self.graph.entity(entity).defaults.len() {
+        let count = self.graph.entity(entity).defaults.len();
+        for index in supplied..end.map_or(count, |end| end.min(count)) {
             let Some(default) = self.graph.entity(entity).defaults[index] else {
                 continue;
             };
@@ -334,6 +439,48 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn converting_defaults_follow_emission_edges_and_share_one_typed_copy() {
+        for lowering in [false, true] {
+            let source = SourceBuffer::new(
+                b"struct Deferred{template<class T>Deferred(T,int=T::missing){}};\
+                  inline void unused(){Deferred d=1;}\
+                  struct Box{int n;template<class T>Box(T v,int x=7):n(v+x){}};\
+                  inline int used(){Box a=1;Box b=2;return a.n+b.n;}\
+                  int main(){return used()-17;}"
+                    .to_vec(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"conversion-defaults").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let graph = super::super::analyze_unit(
+                tree,
+                cursor,
+                declarations,
+                StackBudget::default(),
+                true,
+                lowering,
+            )
+            .unwrap();
+            let defaults = &graph.function_templates.argument_defaults;
+            assert_eq!(defaults.states.len(), usize::from(lowering));
+            if lowering {
+                assert_eq!(defaults.constructor_requests.len(), 2);
+                assert_eq!(defaults.constructor_edges.len(), 1);
+                assert!(defaults.constructor_roots.is_empty());
+                let (&(entity, index), &state) = defaults.states.iter().next().unwrap();
+                assert!(matches!(state, State::Complete));
+                let pattern = defaults.pattern(entity, index).unwrap();
+                let typed = graph.entity(entity).defaults[index].unwrap();
+                assert_ne!(pattern.expression, typed.expression);
+                assert!(graph.expression_facts.get(pattern.expression).is_err());
+                assert!(graph.expression_facts.get(typed.expression).is_ok());
+            }
+        }
+    }
 
     #[test]
     fn expanded_defaults_keep_partition_positions_and_only_demanded_copies() {

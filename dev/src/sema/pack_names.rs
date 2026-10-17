@@ -97,7 +97,8 @@ impl Analyzer<'_> {
                             SpecifierKind::Named(name) | SpecifierKind::Elaborated { name, .. } => {
                                 work.push(Probe::Name(name, true));
                             }
-                            SpecifierKind::Decltype(expr)
+                            SpecifierKind::ExplicitCondition(expr)
+                            | SpecifierKind::Decltype(expr)
                             | SpecifierKind::Vector { operand: expr, .. } => {
                                 work.push(Probe::Expression(expr));
                             }

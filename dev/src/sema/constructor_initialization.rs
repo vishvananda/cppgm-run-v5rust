@@ -500,7 +500,7 @@ impl Analyzer<'_> {
             }
         }
         let binding = self.graph.function_origin(function)?;
-        self.instantiate_call_defaults(binding, args.len())
+        self.request_constructor_defaults(binding, args.len())
     }
 
     pub(super) fn class_has_default_constructor(&self, class: EntityId) -> Result<bool, Error> {

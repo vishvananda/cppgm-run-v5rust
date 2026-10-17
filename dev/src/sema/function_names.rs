@@ -602,6 +602,7 @@ impl Analyzer<'_> {
             specs,
         )?;
         let entity = self.graph.binding(binding).entity;
+        self.record_explicit_condition(entity, specs, scope)?;
         if head.is_some() && self.graph.function_origin(entity)? == binding {
             // Redeclarations already checked their specification in agreement.
             // A first declaration records it once, before default name checks.

@@ -209,6 +209,7 @@ pub(crate) enum SpecifierKind {
     Class(ClassId),
     Elaborated { key: Keyword, name: Name },
     Decltype(ExprId),
+    ExplicitCondition(ExprId),
     Vector { extended: bool, operand: ExprId },
 }
 #[derive(Clone, Copy, Debug)]

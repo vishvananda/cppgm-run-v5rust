@@ -66,6 +66,7 @@ pub(super) struct Specifiers {
     pub virtuality: Virtuality,
     pub constexpr: bool,
     pub explicitness: Explicitness,
+    pub explicit_condition: Option<crate::syntax::ast::ExprId>,
     pub thread_storage: ThreadStorage,
 }
 impl Analyzer<'_> {
@@ -132,12 +133,31 @@ impl Analyzer<'_> {
         let mut constexpr = false;
         let mut inline = InlinePreference::Unspecified;
         let mut explicitness = Explicitness::Converting;
+        let mut explicit_condition = None;
         let mut thread_storage = ThreadStorage::Ordinary;
         let mut fundamental = Vec::new();
         let mut auto_type = false;
         for syntax_index in 0..self.tree.specs.get(list).len() {
             let syntax_item = self.tree.specs.get(list)[syntax_index];
             let specifier = &syntax_item;
+            let conditional = match specifier.kind {
+                SpecifierKind::ExplicitCondition(operand) => Some(operand),
+                _ => None,
+            };
+            if conditional.is_some()
+                || matches!(specifier.kind, SpecifierKind::Keyword(Keyword::Explicit))
+            {
+                if explicitness == Explicitness::Explicit
+                    && (explicit_condition.is_some() || conditional.is_some())
+                {
+                    return Err(Error::at(
+                        specifier.location,
+                        "an explicit-specifier repeated in a decl-specifier-seq",
+                    ));
+                }
+                explicit_condition = conditional;
+                explicitness = Explicitness::Explicit;
+            }
             if let SpecifierKind::Keyword(key) = specifier.kind {
                 match key {
                     Keyword::Const | Keyword::Volatile => {
@@ -170,7 +190,10 @@ impl Analyzer<'_> {
         let mut declared = None;
         for syntax_index in 0..self.tree.specs.get(list).len() {
             let specifier = self.tree.specs.get(list)[syntax_index];
-            if matches!(specifier.kind, SpecifierKind::Keyword(_)) {
+            if matches!(
+                specifier.kind,
+                SpecifierKind::Keyword(_) | SpecifierKind::ExplicitCondition(_)
+            ) {
                 continue;
             }
             let named = if friendship == Friendship::Friend {
@@ -253,6 +276,7 @@ impl Analyzer<'_> {
                 virtuality,
                 constexpr,
                 explicitness,
+                explicit_condition,
                 thread_storage,
             },
             has_written_type.then_some(ty),

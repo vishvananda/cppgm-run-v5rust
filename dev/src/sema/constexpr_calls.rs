@@ -664,13 +664,12 @@ impl Analyzer<'_> {
                 bound.push(Returned::Value(self.zero_constant_scalar(parameter)?));
                 continue;
             }
-            let argument = written
-                .get(index)
-                .copied()
-                .or_else(|| self.graph.function_default(function, index))
-                .ok_or_else(|| {
-                    nonconstant(location, "a call without an argument for a parameter")
-                })?;
+            let argument = if let Some(&argument) = written.get(index) {
+                Some(argument)
+            } else {
+                self.constant_default_argument(function, index)?
+            }
+            .ok_or_else(|| nonconstant(location, "a call without an argument for a parameter"))?;
             let value = match self.graph.types.get(parameter).kind {
                 TypeKind::Reference { element, .. } => {
                     Returned::Place(self.bind_constant_reference(argument, element, scope)?)

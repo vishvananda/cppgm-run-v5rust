@@ -364,6 +364,11 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 self.tasks.push(Render::Text(key.spelling()));
             }
             SpecifierKind::Enum(decl) => self.enumeration(decl),
+            SpecifierKind::ExplicitCondition(operand) => {
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Expression(operand));
+                self.tasks.push(Render::Text("explicit("));
+            }
             SpecifierKind::Decltype(operand) => self.tasks.push(Render::Decltype(operand)),
         }
     }
@@ -476,6 +481,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 SpecifierKind::Vector { .. }
                 | SpecifierKind::Keyword(_)
                 | SpecifierKind::Enum(_)
+                | SpecifierKind::ExplicitCondition(_)
                 | SpecifierKind::Decltype(_)
                 | SpecifierKind::Class(_)
                 | SpecifierKind::Elaborated { .. } => true,

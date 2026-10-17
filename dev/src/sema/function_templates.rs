@@ -25,6 +25,7 @@ struct SpecializationKey {
 
 #[derive(Default)]
 pub(super) struct FunctionTemplates {
+    pub(super) conditions: super::explicit_conditions::Conditions,
     pub(super) specializations: super::explicit_specializations::Specializations,
     signatures: HashMap<SpecializationKey, BindingId>,
     active_signatures: HashSet<(SpecializationKey, usize)>,
@@ -795,6 +796,11 @@ impl Analyzer<'_> {
         if let Some(&binding) = self.graph.function_templates.signatures.get(&key) {
             return Ok(Some(binding));
         }
+        let explicitness = match self.specialized_explicitness(primary, depth, &key.arguments) {
+            Ok(value) => value,
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => return Ok(None),
+            Err(error) => return Err(error),
+        };
         let origin = self.graph.binding(primary);
         let entity = self.graph.add_entity(Some(ty), origin.name, origin.key)?;
         self.graph
@@ -817,7 +823,6 @@ impl Analyzer<'_> {
             ..key
         });
         let special_definition = old.special_definition;
-        let explicitness = old.explicitness;
         let exceptions = old.exceptions.clone();
         let specialized = self.graph.entity_mut(entity);
         specialized.function = properties.0;

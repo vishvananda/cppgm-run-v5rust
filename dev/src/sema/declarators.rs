@@ -850,7 +850,7 @@ impl Analyzer<'_> {
             SpecifierKind::Enum(id) => self.enum_type(id, scope, lone),
             SpecifierKind::Decltype(expr) => self.decltype_type(expr, scope),
             SpecifierKind::Vector { .. } => Err(Error::Missing("vector types")),
-            SpecifierKind::Keyword(_) => {
+            SpecifierKind::Keyword(_) | SpecifierKind::ExplicitCondition(_) => {
                 Err(Error::Invariant("keyword reached named-type dispatcher"))
             }
         }

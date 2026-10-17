@@ -859,6 +859,9 @@ impl Analyzer<'_> {
             let Some(binding) = self.deduce_function_call(primary, args, false, prefix)? else {
                 continue;
             };
+            if !set.includes(&self.graph, binding) {
+                continue;
+            }
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             let ty = entity.ty.ok_or(Error::Invariant("function without type"))?;
             let ty = self.graph.types.canonical_function(ty)?;
@@ -1231,7 +1234,16 @@ impl Analyzer<'_> {
         scratch: &CallScratch,
     ) -> Result<(), Error> {
         self.apply_written_call_arguments(selected, args, scope, scratch)?;
-        self.instantiate_call_defaults(selected.binding, args.len())
+        if self
+            .graph
+            .entity(self.graph.binding(selected.binding).entity)
+            .member_function
+            .is_some_and(|member| member.kind == super::graph::MemberKind::Constructor)
+        {
+            self.request_constructor_defaults(selected.binding, args.len())
+        } else {
+            self.instantiate_call_defaults(selected.binding, args.len())
+        }
     }
     fn apply_written_call_arguments(
         &mut self,

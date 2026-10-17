@@ -95,6 +95,24 @@ impl Analyzer<'_> {
         self.graph.boundaries = state;
         result
     }
+    fn constructor_default_boundaries(
+        &mut self,
+        entity: EntityId,
+        first: usize,
+        work: &mut Vec<EntityId>,
+        constructors: &mut Vec<super::construction::ConstructorId>,
+    ) -> Result<usize, Error> {
+        self.prepare_constructor_defaults(Some(entity))?;
+        for demand in &self.graph.root_demands.as_slice()[first..] {
+            match demand {
+                super::function_demands::Demand::Function { binding, .. } => {
+                    work.push(self.graph.binding(*binding).entity);
+                }
+                super::function_demands::Demand::Constructor(id) => constructors.push(*id),
+            }
+        }
+        Ok(self.graph.root_demands.as_slice().len())
+    }
     fn advance_lowering_boundaries(&mut self, state: &mut Boundaries) -> Result<(), Error> {
         use super::function_demands::Demand;
         let Boundaries {
@@ -108,6 +126,7 @@ impl Analyzer<'_> {
             constructor_edges,
             layouts,
         } = state;
+        self.prepare_constructor_defaults(None)?;
         let mut work = std::mem::take(&mut self.graph.boundary_roots);
         // Explicit definitions are emitted even without a calling expression.
         // Prepare only those named roots' ordinary class ABI boundaries.
@@ -204,6 +223,12 @@ impl Analyzer<'_> {
             if self.graph.function_templates.primary(entity).is_some() {
                 self.resolve_specialization_exception(entity)?;
             }
+            *root_count = self.constructor_default_boundaries(
+                entity,
+                *root_count,
+                &mut work,
+                &mut constructors,
+            )?;
             seen.insert(entity);
             if let Some(requests) = layouts.remove(&entity) {
                 self.graph.storage_layouts.extend(

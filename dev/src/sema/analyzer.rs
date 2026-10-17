@@ -474,6 +474,7 @@ impl<'tree> Analyzer<'tree> {
                         virtuality: super::specifiers::Virtuality::NonVirtual,
                         constexpr: false,
                         explicitness: super::specifiers::Explicitness::Converting,
+                        explicit_condition: None,
                         thread_storage: super::specifiers::ThreadStorage::Ordinary,
                     },
                     scope,

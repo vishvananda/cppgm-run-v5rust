@@ -492,6 +492,16 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 if !specifiers.is_empty() {
                     self.tasks.push(Task::Close);
                     for &specifier in self.renderer.tree.specs.get(specifiers).iter().rev() {
+                        if let SpecifierKind::ExplicitCondition(operand) = specifier.kind {
+                            self.tasks.push(Task::Close);
+                            self.tasks.push(Task::Expression(operand));
+                            self.tasks.push(Task::Line(
+                                "specifier",
+                                Payload::Text("explicit"),
+                                true,
+                            ));
+                            continue;
+                        }
                         let SpecifierKind::Keyword(word) = specifier.kind else {
                             return Err(io::Error::other("invalid member specifier"));
                         };
@@ -643,6 +653,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         Payload::Render(Render::Expression(operand)),
                         true,
                     )
+                }
+                SpecifierKind::ExplicitCondition(operand) => {
+                    self.tasks.push(Task::Close);
+                    self.tasks.push(Task::Expression(operand));
+                    Task::Line("decl-specifier", Payload::Text("explicit"), true)
                 }
                 SpecifierKind::Keyword(word) => Task::Line(
                     if !types {
