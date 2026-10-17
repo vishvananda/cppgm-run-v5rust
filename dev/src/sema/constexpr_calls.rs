@@ -208,6 +208,14 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Returned, Error> {
+        self.constant_call_into(id, scope, None)
+    }
+    pub(super) fn constant_call_into(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        destination: Option<Address>,
+    ) -> Result<Returned, Error> {
         let ExprKind::Call { callee, arguments } = self.tree.expressions.get(id).kind else {
             return Err(Error::Missing("constexpr operator and literal invocation"));
         };
@@ -264,13 +272,29 @@ impl Analyzer<'_> {
             None
         };
         let arguments = super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
-        self.invoke_constant_function(function, arguments.as_slice(), object, scope, location)
+        self.invoke_constant_function_into(
+            function,
+            arguments.as_slice(),
+            (object, destination),
+            scope,
+            location,
+        )
     }
     pub(super) fn invoke_constant_function(
         &mut self,
         function: EntityId,
         arguments: &[ast::ExprId],
         object: Option<Address>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Returned, Error> {
+        self.invoke_constant_function_into(function, arguments, (object, None), scope, location)
+    }
+    fn invoke_constant_function_into(
+        &mut self,
+        function: EntityId,
+        arguments: &[ast::ExprId],
+        (object, destination): (Option<Address>, Option<Address>),
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Returned, Error> {
@@ -301,9 +325,33 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("constant function without function type"));
         };
+        let destination = if self.graph.class_of(returns).is_some() {
+            Some(if let Some(destination) = destination {
+                destination
+            } else {
+                self.allocate_constant_object(returns, None, location)?
+            })
+        } else {
+            None
+        };
         let bound = self.bind_constant_parameters(function, ty, arguments, scope, location)?;
+        let mut parameters = Vec::new();
+        for (index, &value) in bound.iter().enumerate() {
+            if self
+                .graph
+                .class_of(self.graph.types.function_parameter(ty, index)?)
+                .is_some()
+                && let Returned::Place(place) = value
+            {
+                parameters.push(place);
+            }
+        }
         let region = self.constexpr_frames.region();
-        let result = self.run_constant_function(function, returns, bound, object, location);
+        let result =
+            self.run_constant_function(function, (returns, destination), bound, object, location);
+        for parameter in parameters {
+            self.constexpr_frames.end_lifetime(parameter);
+        }
         self.constexpr_frames.release(region);
         if let Ok(Returned::Value(Value::Pointer(value))) = result {
             self.constexpr_frames.valid_pointer(value, location)?;
@@ -340,6 +388,11 @@ impl Analyzer<'_> {
                 TypeKind::Reference { element, .. } => {
                     Returned::Place(self.bind_constant_reference(argument, element, scope)?)
                 }
+                TypeKind::Class(_) => {
+                    let place = self.allocate_constant_object(parameter, None, location)?;
+                    self.initialize_constant_class_from(argument, place, scope)?;
+                    Returned::Place(place)
+                }
                 _ => Returned::Value(self.constant_operand_value(argument, parameter, scope)?),
             };
             bound.push(value);
@@ -349,7 +402,7 @@ impl Analyzer<'_> {
     fn run_constant_function(
         &mut self,
         function: EntityId,
-        returns: TypeId,
+        (returns, destination): (TypeId, Option<Address>),
         bound: Vec<Returned>,
         object: Option<Address>,
         location: SourceOffset,
@@ -367,7 +420,8 @@ impl Analyzer<'_> {
                 "a function-try-block in a constant expression",
             ));
         }
-        let frame = self.constant_function_frame(function, returns, bound, object, location)?;
+        let mut frame = self.constant_function_frame(function, returns, bound, object, location)?;
+        frame.destination = destination;
         self.with_constant_frame(frame, |analyzer| {
             analyzer
                 .constant_compound(body.compound)

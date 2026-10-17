@@ -30,6 +30,28 @@ impl Analyzer<'_> {
         // earlier declaration-time binding was unavailable. Preserve request
         // order: a preceding dynamic initializer cannot see a later retry.
         for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
+            let ty = self.graph.lower_entity_type(entity)?;
+            if !self.graph.lower_variable(entity)?.thread_local
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Class(_) | TypeKind::Array { .. }
+                )
+                && !self
+                    .graph
+                    .class_of(ty)
+                    .is_some_and(|class| self.graph.lower_polymorphic(class))
+            {
+                if self
+                    .graph
+                    .lower_construction(entity)
+                    .is_some_and(|id| !self.graph.lower_constructor_trivial(id))
+                {
+                    self.record_aggregate_constant(entity, initializer, scope, false)?;
+                }
+                if self.record_completed_image(entity)? {
+                    continue;
+                }
+            }
             if let Some(initializer) = initializer {
                 if self.graph.constant_addresses.value(entity).is_none() {
                     self.record_address_initializer(entity, initializer, scope)?;

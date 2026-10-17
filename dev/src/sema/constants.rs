@@ -1128,6 +1128,15 @@ impl Analyzer<'_> {
         if self.semantic() && reference {
             return Ok(());
         }
+        if self.semantic()
+            && self.graph.entity(entity).constexpr
+            && matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Class(_) | TypeKind::Array { .. }
+            )
+        {
+            return self.record_aggregate_constant(entity, Some(initializer), scope, true);
+        }
         let object = if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
             element
         } else {

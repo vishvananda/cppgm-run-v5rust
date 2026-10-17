@@ -147,6 +147,11 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         self.default_initialize(binding, location)?;
+        let entity = self.graph.binding(binding).entity;
+        if self.graph.entity(entity).constexpr {
+            let scope = self.graph.binding_scope(binding);
+            self.record_aggregate_constant(entity, None, scope, true)?;
+        }
         if self.lowering() {
             self.request_in_class_initializer(self.graph.binding(binding).entity)?;
         }

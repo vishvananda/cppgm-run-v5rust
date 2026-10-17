@@ -303,7 +303,9 @@ fn define_storage<'a>(
         GlobalInit::Data(if let Some(image) = table_image {
             dynamic = false;
             data::items(output.program, symbols, graph, tree, image)?
-        } else if (initializer.is_some() || facts.name.is_none())
+        } else if (initializer.is_some()
+            || facts.name.is_none()
+            || graph.lower_evaluated_construction(entity))
             && let Some(image) = graph.lower_array_image(entity)
         {
             dynamic = false;

@@ -519,6 +519,12 @@ impl Analyzer<'_> {
                 "an access one past the end of an array",
             ));
         }
+        if let Some(value) = self.published_scalar(place, location)? {
+            return match value {
+                Value::Floating(value) => Ok(value),
+                _ => Err(Error::Invariant("published scalar read as floating")),
+            };
+        }
         let const_temporary = self.type_cv(place.designated).0 == 1;
         place.designated = self.bare_type(place.designated)?;
         let value = match place.root {

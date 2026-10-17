@@ -33,7 +33,7 @@ impl Analyzer<'_> {
         if facts.category != ValueCategory::Prvalue {
             let mut source = self.constant_place(id, scope)?;
             source.designated = self.bare_type(source.designated)?;
-            return self.constexpr_frames.copy(target, source, location);
+            return self.copy_constant_object(target, source, location);
         }
         let initializer = match facts.class_initialization {
             Some(ClassInitialization::Aggregate(elements)) => {
@@ -81,6 +81,10 @@ impl Analyzer<'_> {
                 ExprKind::Call { arguments, .. } if facts.functional_call => {
                     InitializerKind::Parenthesized(arguments)
                 }
+                ExprKind::Call { .. } => {
+                    self.constant_call_into(id, scope, Some(target))?;
+                    return Ok(());
+                }
                 ExprKind::Conditional {
                     condition,
                     then_expr,
@@ -113,7 +117,7 @@ impl Analyzer<'_> {
             location,
         )
     }
-    fn initialize_constant_class_from(
+    pub(super) fn initialize_constant_class_from(
         &mut self,
         expr: ast::ExprId,
         target: Address,
@@ -158,10 +162,24 @@ impl Analyzer<'_> {
             if let Some(constructor) = constructor
                 && self.graph.constructors.get(constructor).nontrivial()
             {
+                if matches!(
+                    self.graph.types.get(target.designated).kind,
+                    TypeKind::Array { .. }
+                ) {
+                    return self.constant_default_array(target, constructor, scope, location);
+                }
                 return self.run_constant_constructor(target, constructor, &[], scope, location);
             }
             return Ok(());
         };
+        if matches!(
+            self.graph.types.get(target.designated).kind,
+            TypeKind::Array { .. }
+        ) && let Some(expr) = self.single_initializer(initializer)
+            && self.constant_string_array(target, expr, location)?
+        {
+            return Ok(());
+        }
         let values = match initializer.kind {
             InitializerKind::Assign(expr) | InitializerKind::Braced(expr) => {
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind {
@@ -183,7 +201,10 @@ impl Analyzer<'_> {
                         );
                     }
                     values
-                } else if self.graph.class_of(target.designated).is_some() && constructor.is_none()
+                } else if self.graph.class_of(target.designated).is_some()
+                    && (constructor.is_none()
+                        || self.bare_type(self.graph.expression_facts.get(expr)?.ty)?
+                            == self.bare_type(target.designated)?)
                 {
                     return self.initialize_constant_class_from(expr, target, scope);
                 } else {
@@ -234,6 +255,33 @@ impl Analyzer<'_> {
         } else {
             self.constant_zero_object(target, location)
         }
+    }
+    fn constant_default_array(
+        &mut self,
+        target: Address,
+        constructor: ConstructorId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let mut element = target.designated;
+        while let TypeKind::Array { element: child, .. } = self.graph.types.get(element).kind {
+            element = child;
+        }
+        let size = self.type_size(element, location)?.0;
+        let total = self.type_size(target.designated, location)?.0;
+        let mut offset = 0;
+        while size != 0 && offset < total {
+            let place = Address {
+                designated: element,
+                offset: target.offset.wrapping_add(super::integral::signed(offset)),
+                ..target
+            };
+            self.run_constant_constructor(place, constructor, &[], scope, location)?;
+            offset = offset
+                .checked_add(size)
+                .ok_or(Error::Limit("constant array offset"))?;
+        }
+        Ok(())
     }
     fn constant_class_initialize(
         &mut self,
@@ -395,7 +443,14 @@ impl Analyzer<'_> {
         let binding = self.graph.constructors.get(id).binding;
         let class = self.graph.constructors.get(id).class;
         let returns = self.graph.types.scalar(Scalar::Void)?;
-        let function = binding.map(|binding| self.graph.binding(binding).entity);
+        let function = binding
+            .map(|binding| self.graph.binding(binding).entity)
+            .filter(|&entity| {
+                !matches!(
+                    self.graph.entity(entity).special_definition,
+                    Some(super::special_members::SpecialDefinition::Defaulted { .. })
+                )
+            });
         if self.constexpr_frames.depth() >= 512 {
             return Err(nonconstant(location, "constexpr calls nested too deeply"));
         }

@@ -32,6 +32,9 @@ enum Image {
     Dynamic(Vec<Item>),
 }
 impl Images {
+    pub(super) fn set_constant(&mut self, entity: EntityId, items: Vec<Item>) {
+        self.values.insert(entity, Image::Constant(items));
+    }
     pub(super) fn get(&self, entity: EntityId) -> Option<&[Item]> {
         match self.values.get(&entity) {
             Some(Image::Constant(items)) => Some(items),

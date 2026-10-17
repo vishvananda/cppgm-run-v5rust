@@ -819,6 +819,7 @@ impl Analyzer<'_> {
             self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         self.declare_variable_template(binding, init, &info, scope, location, automatic)?;
+        self.check_constexpr_variable(specs.constexpr, ty, location)?;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
         if let Some(initializer) = init.initializer {
             if self.semantic() {

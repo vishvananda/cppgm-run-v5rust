@@ -14,6 +14,59 @@ use super::{
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
 
 impl Analyzer<'_> {
+    pub(super) fn constant_string_array(
+        &mut self,
+        target: Address,
+        expr: ast::ExprId,
+        location: SourceOffset,
+    ) -> Result<bool, Error> {
+        let expr = self.graph.expression_facts.root(expr);
+        let ast::ExprKind::Literal(literal) = self.tree.expressions.get(expr).kind else {
+            return Ok(false);
+        };
+        let crate::lex::PostTokenKind::String { ty, .. } = literal.kind else {
+            return Ok(false);
+        };
+        let TypeKind::Array { element, bound, .. } = self.graph.types.get(target.designated).kind
+        else {
+            return Err(Error::Invariant("constant string without array target"));
+        };
+        let element = self.bare_type(element)?;
+        let width = ty.size();
+        for index in 0..bound {
+            let start = usize::try_from(index)
+                .ok()
+                .and_then(|i| i.checked_mul(width));
+            let mut bytes = [0; 8];
+            if let Some((start, end)) =
+                start.and_then(|start| start.checked_add(width).map(|end| (start, end)))
+                && let Some(unit) = self.literal_bytes.get(literal.data).get(start..end)
+            {
+                bytes[..width].copy_from_slice(unit);
+            }
+            let kind = self
+                .integral_kind(element)
+                .ok_or(Error::Invariant("string array element type"))?;
+            let place = Address {
+                designated: element,
+                offset: target
+                    .offset
+                    .wrapping_add(super::integral::signed(index.wrapping_mul(
+                        u64::try_from(width).map_err(|_| Error::Limit("string code unit size"))?,
+                    ))),
+                ..target
+            };
+            self.store_constant_value(
+                place,
+                Value::Integer(super::constants::Constant {
+                    bits: kind.convert(u64::from_le_bytes(bytes)),
+                    ty: element,
+                }),
+                location,
+            )?;
+        }
+        Ok(true)
+    }
     pub(super) fn allocate_constant_object(
         &mut self,
         ty: TypeId,
@@ -170,7 +223,12 @@ impl Analyzer<'_> {
             self.graph.types.get(place.designated).kind,
             TypeKind::Reference { .. }
         ) {
-            let Value::Pointer(referent) = self.constexpr_frames.read(place, location)? else {
+            let value = if let Some(value) = self.published_scalar(place, location)? {
+                value
+            } else {
+                self.constexpr_frames.read(place, location)?
+            };
+            let Value::Pointer(referent) = value else {
                 return Err(Error::Invariant(
                     "constant reference member without binding",
                 ));

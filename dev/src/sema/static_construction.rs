@@ -151,10 +151,12 @@ impl Graph {
             .as_deref()
     }
     pub(crate) fn lower_evaluated_construction(&self, entity: EntityId) -> bool {
-        self.static_constructions
-            .attempts
-            .get(&entity)
-            .is_some_and(|a| a.evaluated)
+        self.aggregate_constants.get(entity).is_some()
+            || self
+                .static_constructions
+                .attempts
+                .get(&entity)
+                .is_some_and(|a| a.evaluated)
     }
     pub(crate) fn lower_static_construction_demands(&self, entity: EntityId) -> &[Item] {
         self.static_constructions

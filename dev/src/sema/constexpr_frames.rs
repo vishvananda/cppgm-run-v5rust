@@ -25,8 +25,49 @@ struct Cell {
     value: Option<TemporaryValue>,
     end: usize,
 }
+/// A completed object's cells, detached from evaluation slot generations.
+pub(super) struct Frozen {
+    cells: Vec<Cell>,
+    index: HashMap<(i64, TypeId, Option<EntityId>), CellId>,
+}
+impl Frozen {
+    fn locate(&self, place: Address, location: SourceOffset) -> Result<usize, Error> {
+        if place.past_end {
+            return Err(nonconstant(
+                location,
+                "an access one past the end of an array",
+            ));
+        }
+        self.index
+            .get(&(place.offset, place.designated, place.bit_field))
+            .map(|id| id.0 as usize)
+            .ok_or_else(|| {
+                nonconstant(
+                    location,
+                    "an access outside the designated object or to an inactive union member",
+                )
+            })
+    }
+    pub(super) fn read(
+        &self,
+        place: Address,
+        location: SourceOffset,
+    ) -> Result<TemporaryValue, Error> {
+        self.cells[self.locate(place, location)?]
+            .value
+            .ok_or_else(|| nonconstant(location, "a read of an object that is not initialized"))
+    }
+    pub(super) fn values(
+        &self,
+    ) -> impl Iterator<Item = (TypeId, i64, Option<EntityId>, Option<TemporaryValue>)> + '_ {
+        self.cells
+            .iter()
+            .map(|cell| (cell.ty, cell.offset, cell.field, cell.value))
+    }
+}
 struct Object {
     id: ObjectId,
+    alive: bool,
     ty: TypeId,
     cells: std::ops::Range<usize>,
 }
@@ -36,6 +77,7 @@ pub(super) struct Frame {
     pub result: TypeId,
     pub scope: ScopeId,
     pub object: Option<Address>,
+    pub destination: Option<Address>,
     seeking: Option<crate::syntax::ast::StmtId>,
     places: HashMap<EntityId, Address>,
     locals: Vec<EntityId>,
@@ -47,6 +89,7 @@ impl Frame {
             scope,
             seeking: None,
             object: None,
+            destination: None,
             places: HashMap::new(),
             locals: Vec::new(),
         }
@@ -72,6 +115,47 @@ pub(super) struct Frames {
     steps: u64,
 }
 impl Frames {
+    pub(super) fn freeze(
+        &self,
+        place: Address,
+        location: SourceOffset,
+        mut publish: impl FnMut(TemporaryValue) -> Result<TemporaryValue, Error>,
+    ) -> Result<Frozen, Error> {
+        let range = self.cells(place, location)?;
+        let mut cells = self.cells[range.clone()].to_vec();
+        let mut index = HashMap::with_capacity(cells.len());
+        for (i, cell) in cells.iter_mut().enumerate() {
+            cell.offset = cell.offset.wrapping_sub(place.offset);
+            cell.end -= range.start;
+            cell.value = cell.value.map(&mut publish).transpose()?;
+            index
+                .entry((cell.offset, cell.ty, cell.field))
+                .or_insert(CellId(
+                    u32::try_from(i).map_err(|_| Error::Limit("published constant cell limit"))?,
+                ));
+        }
+        Ok(Frozen { cells, index })
+    }
+    pub(super) fn copy_published(
+        &mut self,
+        to: Address,
+        from: Address,
+        value: &Frozen,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let target = self.cells(to, location)?;
+        let first = value.locate(from, location)?;
+        let source = first..value.cells[first].end;
+        if target.len() != source.len() {
+            return Err(Error::Invariant(
+                "incompatible published constant object copy",
+            ));
+        }
+        for (to, from) in target.zip(source) {
+            self.cells[to].value = value.cells[from].value;
+        }
+        Ok(())
+    }
     pub(super) fn seeking(&self) -> Option<crate::syntax::ast::StmtId> {
         self.stack.last()?.seeking
     }
@@ -165,6 +249,7 @@ impl Frames {
         };
         self.objects.push(Object {
             id,
+            alive: true,
             ty,
             cells: self.cells.len()..self.cells.len(),
         });
@@ -175,7 +260,7 @@ impl Frames {
     fn object(&self, id: ObjectId, location: SourceOffset) -> Result<&Object, Error> {
         self.objects
             .get(id.slot as usize)
-            .filter(|object| object.id == id)
+            .filter(|object| object.id == id && object.alive)
             .ok_or_else(|| nonconstant(location, "an access to an object whose lifetime has ended"))
     }
     pub(super) fn ty(&self, id: ObjectId, location: SourceOffset) -> Result<TypeId, Error> {
@@ -192,6 +277,14 @@ impl Frames {
             })?;
         }
         Ok(())
+    }
+    pub(super) fn end_lifetime(&mut self, place: Address) {
+        if let Root::Object(id) = place.root
+            && let Some(object) = self.objects.get_mut(id.slot as usize)
+            && object.id == id
+        {
+            object.alive = false;
+        }
     }
     pub(super) fn add_cell(
         &mut self,

@@ -496,6 +496,11 @@ impl Analyzer<'_> {
                     place.designated = facts.ty;
                     return Ok(place);
                 }
+                if let Some(mut place) = self.graph.aggregate_constants.constructing(binding.entity)
+                {
+                    place.designated = facts.ty;
+                    return Ok(place);
+                }
                 match binding.kind {
                     BindingKind::Function => {
                         Ok(Address::new(Root::Function(binding.entity), facts.ty))
@@ -817,6 +822,12 @@ impl Analyzer<'_> {
         if self.graph.types.get(place.designated).cv.0 & 2 != 0 {
             return Err(nonconstant(location, "a read of a volatile glvalue"));
         }
+        if let Some(value) = self.published_scalar(place, location)? {
+            return match value {
+                TemporaryValue::Pointer(value) => Ok(value),
+                _ => Err(Error::Invariant("published scalar read as pointer")),
+            };
+        }
         if matches!(place.root, Root::Object(_)) {
             place.designated = self.bare_type(place.designated)?;
             return match self.constexpr_frames.read(place, location)? {
@@ -954,6 +965,12 @@ impl Analyzer<'_> {
                 location,
                 "an access one past the end of an array",
             ));
+        }
+        if let Some(value) = self.published_scalar(place, location)? {
+            return match value {
+                TemporaryValue::Integer(value) => Ok(value),
+                _ => Err(Error::Invariant("published scalar read as integer")),
+            };
         }
         match place.root {
             Root::Object(_) => {

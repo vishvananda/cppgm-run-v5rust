@@ -268,6 +268,7 @@ pub(crate) struct Graph {
     pub(super) special_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) floating_constants: super::constant_floats::Floats,
+    pub(super) aggregate_constants: Box<super::constexpr_values::Values>,
     pub(super) constant_addresses: super::constant_addresses::Addresses,
     pub(super) initializer_constructors: super::constructor_initialization::InitializerConstructors,
     pub(super) array_images: super::static_arrays::Images,
@@ -467,6 +468,7 @@ impl Graph {
             special_labels: HashMap::new(),
             constant_facts: Vec::new(),
             floating_constants: super::constant_floats::Floats::default(),
+            aggregate_constants: Box::default(),
             constant_addresses: super::constant_addresses::Addresses::default(),
             initializer_constructors:
                 super::constructor_initialization::InitializerConstructors::default(),

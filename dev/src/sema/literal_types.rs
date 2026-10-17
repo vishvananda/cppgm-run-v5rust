@@ -19,6 +19,24 @@ pub(super) enum LiteralState {
     Complete(bool),
 }
 impl Analyzer<'_> {
+    pub(super) fn check_constexpr_variable(
+        &mut self,
+        is_constexpr: bool,
+        ty: TypeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if self.semantic()
+            && self.template_depth == 0
+            && is_constexpr
+            && !self.constant_literal_type(ty)?
+        {
+            return Err(Error::at(
+                location,
+                "a constexpr variable of a type that is not a literal type",
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn constant_literal_type(&mut self, mut ty: TypeId) -> Result<bool, Error> {
         self.check_stack()?;
         if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
