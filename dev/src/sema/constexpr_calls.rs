@@ -6,7 +6,7 @@ use super::{
     constant_addresses::{Address, Root, TemporaryValue as Value, nonconstant},
     constants::Constant,
     constexpr_frames::Frame,
-    expression_facts::ValueCategory,
+    expression_facts::{CallForm, ValueCategory},
     function_resolution::CallTarget,
     graph::{EntityId, FunctionAvailability, ScopeId},
     types::{Scalar, TypeId, TypeKind},
@@ -159,6 +159,23 @@ impl Analyzer<'_> {
     ) -> Result<Address, Error> {
         let root = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(root)?;
+        if let Some((constructor, arguments)) = self.graph.expression_facts.class_conversion(id)
+            && self.graph.class_of(element) == Some(self.graph.constructors.get(constructor).class)
+        {
+            let location = self.tree.expressions.get(id).location;
+            let class = self.graph.constructors.get(constructor).class;
+            let ty = self.graph.lower_entity_type(class)?;
+            let place = self.allocate_constant_object(ty, None, location)?;
+            let arguments = self.constant_constructor_arguments(arguments);
+            self.run_constant_constructor(
+                place,
+                constructor,
+                arguments.as_slice(),
+                scope,
+                location,
+            )?;
+            return Ok(place);
+        }
         if self.graph.class_of(element).is_some() {
             let place = self.constant_object_place(id, scope)?;
             let mut place = self.constant_project_path(
@@ -216,6 +233,12 @@ impl Analyzer<'_> {
         scope: ScopeId,
         destination: Option<Address>,
     ) -> Result<Returned, Error> {
+        let id = self.graph.expression_facts.root(id);
+        if self.graph.expression_facts.get(id)?.call_form == CallForm::Operator
+            && !matches!(self.tree.expressions.get(id).kind, ExprKind::Call { .. })
+        {
+            return self.constant_operator_into(id, scope, destination);
+        }
         let ExprKind::Call { callee, arguments } = self.tree.expressions.get(id).kind else {
             return Err(Error::Missing("constexpr operator and literal invocation"));
         };
@@ -230,7 +253,7 @@ impl Analyzer<'_> {
         let function = if let Some(CallTarget::Direct(binding)) = facts.call {
             self.graph.binding(binding).entity
         } else {
-            let address = self.evaluate_address(callee, scope)?;
+            let address = self.address_operand(callee, scope)?;
             let Root::Function(entity) = address.root else {
                 return Err(nonconstant(
                     location,
@@ -251,6 +274,13 @@ impl Analyzer<'_> {
                     naming_path: facts.member_naming_path,
                     member_path: facts.member_path,
                 })
+            })
+            .filter(|_| {
+                !self
+                    .graph
+                    .entity(function)
+                    .function
+                    .is_some_and(|f| f.is_static)
             });
         let object = if let Some(receiver) = receiver {
             let place = self.constant_receiver_place(receiver.object.source, scope, location)?;
@@ -266,15 +296,51 @@ impl Analyzer<'_> {
             )
         } else {
             let callee = self.graph.expression_facts.root(callee);
-            if let ExprKind::Member { base, .. } = self.tree.expressions.get(callee).kind {
-                self.constant_member_object(base, scope)?;
+            if let ExprKind::Member { .. } = self.tree.expressions.get(callee).kind {
+                self.constant_member_object(callee, scope)?;
             }
             None
         };
         let arguments = super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
         self.invoke_constant_function_into(
             function,
-            arguments.as_slice(),
+            (arguments.as_slice(), false),
+            (object, destination),
+            scope,
+            location,
+        )
+    }
+    fn constant_operator_into(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        destination: Option<Address>,
+    ) -> Result<Returned, Error> {
+        let facts = self.graph.expression_facts.get(id)?;
+        let location = self.tree.expressions.get(id).location;
+        let Some(CallTarget::Direct(binding)) = facts.call else {
+            return Err(Error::Invariant("operator without selected function"));
+        };
+        let function = self.graph.binding(binding).entity;
+        let (operands, count, postfix) = match self.tree.expressions.get(id).kind {
+            ExprKind::Binary { left, right, .. } => ([left, right], 2, false),
+            ExprKind::Subscript { base, index } => ([base, index], 2, false),
+            ExprKind::Unary { operand, .. } => ([operand; 2], 1, false),
+            ExprKind::Postfix { operand, .. } => ([operand; 2], 1, true),
+            _ => return Err(Error::Invariant("operator call without operands")),
+        };
+        let member = self.member_function_owner(binding).is_some();
+        let object = if member {
+            let receiver = operands[0];
+            let place = self.constant_object_place(receiver, scope)?;
+            let path = self.graph.expression_facts.get(receiver)?.base_path;
+            Some(self.constant_project_path(place, path, location)?)
+        } else {
+            None
+        };
+        self.invoke_constant_function_into(
+            function,
+            (&operands[usize::from(member)..count], postfix),
             (object, destination),
             scope,
             location,
@@ -288,12 +354,18 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Returned, Error> {
-        self.invoke_constant_function_into(function, arguments, (object, None), scope, location)
+        self.invoke_constant_function_into(
+            function,
+            (arguments, false),
+            (object, None),
+            scope,
+            location,
+        )
     }
     fn invoke_constant_function_into(
         &mut self,
         function: EntityId,
-        arguments: &[ast::ExprId],
+        (arguments, postfix): (&[ast::ExprId], bool),
         (object, destination): (Option<Address>, Option<Address>),
         scope: ScopeId,
         location: SourceOffset,
@@ -334,7 +406,8 @@ impl Analyzer<'_> {
         } else {
             None
         };
-        let bound = self.bind_constant_parameters(function, ty, arguments, scope, location)?;
+        let bound =
+            self.bind_constant_arguments(function, ty, (arguments, postfix), scope, location)?;
         let mut parameters = Vec::new();
         for (index, &value) in bound.iter().enumerate() {
             if self
@@ -366,6 +439,16 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Vec<Returned>, Error> {
+        self.bind_constant_arguments(function, ty, (arguments, false), scope, location)
+    }
+    fn bind_constant_arguments(
+        &mut self,
+        function: EntityId,
+        ty: TypeId,
+        (arguments, postfix): (&[ast::ExprId], bool),
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Vec<Returned>, Error> {
         let TypeKind::Function { ref parameters, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("parameter binding without function type"));
         };
@@ -377,6 +460,10 @@ impl Analyzer<'_> {
         let mut bound = Vec::with_capacity(count);
         for index in 0..count {
             let parameter = self.graph.types.function_parameter(ty, index)?;
+            if postfix && index == arguments.len() {
+                bound.push(Returned::Value(self.zero_constant_scalar(parameter)?));
+                continue;
+            }
             let argument = arguments
                 .get(index)
                 .copied()
@@ -515,6 +602,51 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn operators_reuse_syntax_and_release_each_invocation_region() {
+        let source = SourceBuffer::new(
+            br"
+            struct S {
+                int n;
+                constexpr S(int x): n(x) {}
+                constexpr S operator++(int zero) const { return S(n+zero); }
+                constexpr const int& operator[](int) const { return n; }
+                friend constexpr S operator+(S a, S b) { return S(a.n+b.n); }
+            };
+            constexpr int f(int n) { S s(n); S old=s++; return (old+2)[0]*10+s[0]; }
+            constexpr int a=f(3);
+            constexpr int b=f(7);
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constexpr-operators").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"a".as_slice(), b"b"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer.declarations(declarations, global).unwrap();
+        for (name, bits) in names.into_iter().zip([53, 97]) {
+            let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+            assert!(
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant,
+                ConstantState::Value(value) if value.bits == bits)
+            );
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert!(!analyzer.constexpr_frames.active());
+        assert!(analyzer.constant_evaluation.is_none());
+    }
 
     #[test]
     fn scalar_calls_reuse_body_facts_without_publishing_invocation_values() {

@@ -203,6 +203,14 @@ impl Analyzer<'_> {
             _ => (),
         }
         let mut value = match node.kind {
+            _ if facts.call_form == super::expression_facts::CallForm::Operator => {
+                let returned = self.constant_call_result(id, scope)?;
+                let value = self.returned_scalar(returned, location)?;
+                let TemporaryValue::Pointer(value) = value else {
+                    return Err(Error::Invariant("pointer operator returned no address"));
+                };
+                value
+            }
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } | ExprKind::Call { .. }
                 if facts.reference_cast.is_some_and(|ty| {
                     matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
@@ -347,6 +355,20 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Address, Error> {
+        if self
+            .graph
+            .expression_facts
+            .function_conversion(id)
+            .is_some()
+        {
+            return match self.scalar_value(id, scope)? {
+                TemporaryValue::Pointer(value) => Ok(value),
+                _ => Err(nonconstant(
+                    self.tree.expressions.get(id).location,
+                    "an integer converted to a pointer in a constant expression",
+                )),
+            };
+        }
         if self.is_address_expression(id)
             || self
                 .graph
@@ -484,6 +506,12 @@ impl Analyzer<'_> {
         self.constant_step(location)?;
         if self.graph.class_of(facts.ty).is_some() && facts.category == ValueCategory::Prvalue {
             return self.constant_object_place(id, scope);
+        }
+        if facts.call_form == super::expression_facts::CallForm::Operator {
+            return match self.constant_call_result(id, scope)? {
+                super::constexpr_calls::Returned::Place(place) => Ok(place),
+                _ => Err(Error::Invariant("reference operator returned no place")),
+            };
         }
         match node.kind {
             ExprKind::Id(name) => {
@@ -711,7 +739,7 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
         let mut place = if arrow {
-            self.address_operand(base, scope)?
+            self.constant_arrow_operand(base, scope)?
         } else {
             self.constant_object_place(base, scope)?
         };
@@ -1104,6 +1132,10 @@ impl Analyzer<'_> {
                 let id = self.graph.expression_facts.root(id);
                 let node = *self.tree.expressions.get(id);
                 let facts = self.graph.expression_facts.get(id)?;
+                if facts.call_form == super::expression_facts::CallForm::Operator {
+                    self.constant_call_result(id, scope)?;
+                    continue;
+                }
                 let void = matches!(
                     self.graph.types.get(facts.ty).kind,
                     TypeKind::Scalar(Scalar::Void)

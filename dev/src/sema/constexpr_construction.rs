@@ -35,6 +35,10 @@ impl Analyzer<'_> {
             source.designated = self.bare_type(source.designated)?;
             return self.copy_constant_object(target, source, location);
         }
+        if facts.call_form == super::expression_facts::CallForm::Operator {
+            self.constant_call_into(id, scope, Some(target))?;
+            return Ok(());
+        }
         let initializer = match facts.class_initialization {
             Some(ClassInitialization::Aggregate(elements)) => {
                 let arguments = Arguments::new(self.tree.expr_lists.get(elements));
@@ -123,6 +127,19 @@ impl Analyzer<'_> {
         target: Address,
         scope: ScopeId,
     ) -> Result<(), Error> {
+        if let Some((constructor, arguments)) = self.graph.expression_facts.class_conversion(expr)
+            && self.graph.class_of(target.designated)
+                == Some(self.graph.constructors.get(constructor).class)
+        {
+            let arguments = self.constant_constructor_arguments(arguments);
+            return self.run_constant_constructor(
+                target,
+                constructor,
+                arguments.as_slice(),
+                scope,
+                self.tree.expressions.get(expr).location,
+            );
+        }
         if let Some(super::copy_initialization::CopyAction::Constructor {
             constructor,
             elision: false,
@@ -139,7 +156,10 @@ impl Analyzer<'_> {
         }
         self.materialize_constant_object(expr, target, scope)
     }
-    fn constant_constructor_arguments(&self, arguments: ConstructorArguments) -> Arguments {
+    pub(super) fn constant_constructor_arguments(
+        &self,
+        arguments: ConstructorArguments,
+    ) -> Arguments {
         match arguments {
             ConstructorArguments::Values(values) => {
                 Arguments::new(self.tree.expr_lists.get(values))

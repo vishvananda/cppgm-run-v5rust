@@ -185,7 +185,9 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         self.constant_step(node.location)?;
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.literal_call.is_some() {
+        if facts.literal_call.is_some()
+            || facts.call_form == super::expression_facts::CallForm::Operator
+        {
             let returned = self.constant_call_result(id, scope)?;
             let value = self.returned_scalar(returned, node.location)?;
             let Value::Floating(value) =

@@ -616,6 +616,22 @@ impl Function<'_, '_, '_, '_> {
         if let CallTarget::Direct(entity) = target
             && matches!(
                 self.graph.lower_function(entity)?.builtin,
+                Some(crate::sema::lowering::BuiltinFunction::Expect)
+            )
+        {
+            let [value, expected] = *self.tree.expr_lists.get(arguments) else {
+                return Err(
+                    crate::sema::Error::Invariant("expect builtin without two arguments").into(),
+                );
+            };
+            let value = self.operand(value, Context::Argument)?;
+            let value = self.convert(value, source, Context::Argument)?;
+            self.discard(expected)?;
+            return Ok(value);
+        }
+        if let CallTarget::Direct(entity) = target
+            && matches!(
+                self.graph.lower_function(entity)?.builtin,
                 Some(crate::sema::lowering::BuiltinFunction::Unreachable)
             )
         {

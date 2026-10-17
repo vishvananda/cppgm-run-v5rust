@@ -142,11 +142,10 @@ impl Analyzer<'_> {
             return self.read_constant_integer(place, location);
         }
         if self.semantic()
-            && self
-                .graph
-                .expression_facts
-                .get(id)
-                .is_ok_and(|facts| facts.literal_call.is_some())
+            && self.graph.expression_facts.get(id).is_ok_and(|facts| {
+                facts.literal_call.is_some()
+                    || facts.call_form == super::expression_facts::CallForm::Operator
+            })
         {
             return self.constant_call(id, scope, skipping);
         }
@@ -403,17 +402,14 @@ impl Analyzer<'_> {
         }
         if self.semantic()
             && !skipping
-            && let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind
+            && let ExprKind::Member { .. } = self.tree.expressions.get(id).kind
             && self
                 .graph
                 .expression_facts
                 .get(id)
                 .is_ok_and(|facts| facts.folded.is_some())
         {
-            if op.token.as_punctuator() == Some(P::Arrow) {
-                return Err(Error::Missing("constant pointer-object evaluation"));
-            }
-            self.constant_member_object(base, scope)?;
+            self.constant_member_object(id, scope)?;
         }
         if self.semantic()
             && let Ok(facts) = self.graph.expression_facts.get(id)
@@ -510,6 +506,27 @@ impl Analyzer<'_> {
             return self.constant_floating_intrinsic(id, kind, scope);
         }
         if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+            && matches!(
+                self.graph
+                    .entity(self.graph.binding(binding).entity)
+                    .builtin,
+                Some(super::builtin_calls::BuiltinFunction::Expect)
+            )
+        {
+            let ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
+                return Err(Error::Invariant("expect builtin without call syntax"));
+            };
+            let [value, expected] = *self.tree.expr_lists.get(arguments) else {
+                return Err(Error::Invariant("expect builtin without two arguments"));
+            };
+            let value = self.constant_operand_value(value, facts.ty, scope)?;
+            self.constant_operand_value(expected, facts.ty, scope)?;
+            let super::constant_addresses::TemporaryValue::Integer(value) = value else {
+                return Err(Error::Invariant("expect builtin without integer result"));
+            };
+            return Ok(value);
+        }
+        if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -555,8 +572,8 @@ impl Analyzer<'_> {
         }
         match node.kind {
             ExprKind::Id(_) | ExprKind::Literal(_) | ExprKind::Keyword(_) => Ok(()),
-            ExprKind::Member { op, .. } if op.token.as_punctuator() == Some(P::Arrow) => {
-                Err(Error::Missing("constant pointer-object evaluation"))
+            ExprKind::Member { op, base, .. } if op.token.as_punctuator() == Some(P::Arrow) => {
+                self.constant_arrow_operand(base, scope).map(|_| ())
             }
             ExprKind::Paren(inner) | ExprKind::Member { base: inner, .. } => {
                 self.constant_member_object(inner, scope)
@@ -776,6 +793,9 @@ impl Analyzer<'_> {
         {
             if self.semantic()
                 && (assignment
+                    || self.graph.expression_facts.get(id).is_ok_and(|facts| {
+                        facts.call_form == super::expression_facts::CallForm::Operator
+                    })
                     || self.consumes_address(id)
                     || self.floating_binary(id)
                     || op.token.as_punctuator() == Some(P::Comma))

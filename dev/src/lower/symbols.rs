@@ -2070,7 +2070,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     metadata.role = Some(Role::Terminate);
                     metadata.object = Some(program.names.intern("abort")?);
                 }
-                B::Memcmp | B::Memset | B::Unreachable | B::Floating(_) => {
+                B::Memcmp | B::Memset | B::Unreachable | B::Expect | B::Floating(_) => {
                     metadata.linkage = Linkage::C;
                 }
             }

@@ -40,6 +40,14 @@ impl Analyzer<'_> {
         Ok(value.bits != 0)
     }
     pub(super) fn consumes_address(&self, id: ast::ExprId) -> bool {
+        if self
+            .graph
+            .expression_facts
+            .get(id)
+            .is_ok_and(|facts| facts.call_form == super::expression_facts::CallForm::Operator)
+        {
+            return false;
+        }
         if self.is_address_expression(id) {
             return false;
         }

@@ -156,6 +156,9 @@ impl<'tree> Analyzer<'tree> {
             abort: cursor
                 .intern_name(b"__builtin_abort")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            expect: cursor
+                .intern_name(b"__builtin_expect")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
             constant_p: cursor
                 .intern_name(b"__builtin_constant_p")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,

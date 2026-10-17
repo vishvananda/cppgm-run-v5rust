@@ -16,6 +16,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(crate) enum BuiltinFunction {
     Abort,
+    Expect,
     Memcpy,
     Memmove,
     Memcmp,
@@ -51,6 +52,7 @@ mod tests {
 #[derive(Clone)]
 pub(super) struct BuiltinNames {
     pub abort: NameId,
+    pub expect: NameId,
     pub constant_p: NameId,
     pub memcpy: NameId,
     pub memmove: NameId,
@@ -68,6 +70,8 @@ impl Analyzer<'_> {
         let names = &self.builtin_names;
         let builtin = if key == names.abort {
             BuiltinFunction::Abort
+        } else if key == names.expect {
+            BuiltinFunction::Expect
         } else if key == names.memcpy {
             BuiltinFunction::Memcpy
         } else if key == names.memmove {
@@ -114,6 +118,9 @@ impl Analyzer<'_> {
             (void, Vec::new())
         } else if matches!(builtin, BuiltinFunction::Floating(_)) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
+        } else if matches!(builtin, BuiltinFunction::Expect) {
+            let long = self.graph.types.scalar(Scalar::Basic(F::LongInt))?;
+            (long, vec![long, long])
         } else {
             let size = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
             if matches!(builtin, BuiltinFunction::Strlen) {
@@ -142,6 +149,7 @@ impl Analyzer<'_> {
                     BuiltinFunction::Memcmp => (integer, vec![source, source, size]),
                     BuiltinFunction::Memset => (pointer, vec![pointer, integer, size]),
                     BuiltinFunction::Abort
+                    | BuiltinFunction::Expect
                     | BuiltinFunction::Strlen
                     | BuiltinFunction::Unreachable
                     | BuiltinFunction::Floating(_) => {

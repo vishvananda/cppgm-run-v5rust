@@ -340,7 +340,7 @@ impl Analyzer<'_> {
                 expression,
                 arrow: true,
             } => {
-                let place = self.address_operand(expression, scope)?;
+                let place = self.constant_arrow_operand(expression, scope)?;
                 if place.root == Root::Null {
                     return Err(nonconstant(
                         location,
@@ -350,6 +350,42 @@ impl Analyzer<'_> {
                 Ok(place)
             }
         }
+    }
+    pub(super) fn constant_arrow_operand(
+        &mut self,
+        base: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        let count = self.graph.expression_facts.arrow_calls(base).len();
+        if count == 0 {
+            return self.address_operand(base, scope);
+        }
+        let location = self.tree.expressions.get(base).location;
+        let mut object = self.constant_object_place(base, scope)?;
+        for index in 0..count {
+            let step = self.graph.expression_facts.arrow_calls(base)[index];
+            let function = self.graph.binding(step.binding).entity;
+            if self.graph.virtuals.function(function).is_virtual {
+                return Err(nonconstant(
+                    location,
+                    "a virtual function call in a constant expression",
+                ));
+            }
+            object = self.constant_project_path(object, step.path, location)?;
+            let result =
+                self.invoke_constant_function(function, &[], Some(object), scope, location)?;
+            if index + 1 == count {
+                return match self.returned_scalar(result, location)? {
+                    Value::Pointer(pointer) => Ok(pointer),
+                    _ => Err(Error::Invariant("arrow chain without pointer result")),
+                };
+            }
+            let Returned::Place(place) = result else {
+                return Err(Error::Invariant("intermediate arrow without object result"));
+            };
+            object = place;
+        }
+        Err(Error::Invariant("empty arrow chain"))
     }
     pub(super) fn constant_project_path(
         &mut self,
