@@ -25,22 +25,56 @@ pub(super) enum Root {
     Ephemeral(ast::ExprId),
     Object(super::constexpr_frames::ObjectId),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct Variant {
+    pub member: EntityId,
+    pub owner: TypeId,
+    pub offset: i64,
+}
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) enum Selection {
+    #[default]
+    None,
+    BitField(EntityId),
+    Variant(super::constexpr_frames::VariantId),
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Address {
     pub root: Root,
     pub offset: i64,
     pub past_end: bool,
-    pub bit_field: Option<EntityId>,
+    pub selection: Selection,
     // The designated object's type for a place; the pointer's element for a value.
     pub designated: TypeId,
 }
 impl Address {
+    pub(super) fn bit_field(self) -> Option<EntityId> {
+        if let Selection::BitField(member) = self.selection {
+            Some(member)
+        } else {
+            None
+        }
+    }
+    pub(super) fn variant(self) -> Option<super::constexpr_frames::VariantId> {
+        if let Selection::Variant(id) = self.selection {
+            Some(id)
+        } else {
+            None
+        }
+    }
+    // PointerTo/PlaceOf transport storage, type and offset, not a named
+    // variant designation. Stored reference values use this transport;
+    // direct local/parameter/result bindings retain their designated place.
+    pub(super) fn pointer(mut self) -> Self {
+        self.selection = Selection::None;
+        self
+    }
     pub(super) fn new(root: Root, designated: TypeId) -> Self {
         Self {
             root,
             offset: 0,
             past_end: false,
-            bit_field: None,
+            selection: Selection::None,
             designated,
         }
     }
@@ -168,6 +202,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<Address, Error> {
         self.in_constant_evaluation(|analyzer| analyzer.evaluate_address_inner(id, scope))
+            .map(Address::pointer)
     }
     fn evaluate_address_inner(
         &mut self,
@@ -556,15 +591,6 @@ impl Analyzer<'_> {
                                 facts.member_path.or(facts.base_path),
                                 location,
                             )?;
-                            let object = Address {
-                                offset: object.offset.wrapping_add(super::integral::signed(
-                                    self.graph.lower_anonymous_member_offset(
-                                        binding.entity,
-                                        self.graph.class_of(object.designated),
-                                    )?,
-                                )),
-                                ..object
-                            };
                             return self.constant_member_designation(
                                 object,
                                 binding.entity,
@@ -599,13 +625,14 @@ impl Analyzer<'_> {
                                 .class_of(self.graph.lower_entity_type(object)?)
                                 .ok_or(Error::Invariant("anonymous storage without class"))?;
                             self.class_layout(owner, location)?;
-                            let (_, offset) = self
-                                .graph
-                                .lower_injected_member(id)?
-                                .ok_or(Error::Invariant("anonymous member without storage"))?;
-                            let mut place = Address::new(Root::Variable(object), facts.ty);
-                            place.offset = super::integral::signed(offset);
-                            return Ok(place);
+                            let ty = self.graph.lower_entity_type(object)?;
+                            let place = Address::new(Root::Variable(object), ty);
+                            return self.constant_member_designation(
+                                place,
+                                binding.entity,
+                                facts.ty,
+                                location,
+                            );
                         }
                         Ok(Address::new(Root::Variable(binding.entity), facts.ty))
                     }
@@ -758,9 +785,6 @@ impl Analyzer<'_> {
                 ));
             }
             self.class_layout(owner, location)?;
-            place.offset = place.offset.wrapping_add(super::integral::signed(
-                self.graph.lower_anonymous_field_offset(id)?,
-            ));
             place = self.constant_project_path(place, facts.member_naming_path, location)?;
             place = self.constant_project_path(place, facts.member_path, location)?;
             return self.constant_member_designation(place, entity, facts.ty, location);
@@ -1023,7 +1047,7 @@ impl Analyzer<'_> {
                         "a variable is not usable in a constant expression",
                     ));
                 }
-                if place.bit_field.is_some()
+                if place.bit_field().is_some()
                     || place.offset != 0
                     || self
                         .integral_kind(
@@ -1287,7 +1311,9 @@ impl Analyzer<'_> {
         })();
         match result {
             Ok(value) if self.address_publishable(value) => {
-                self.graph.constant_addresses.finish(entity, Some(value));
+                self.graph
+                    .constant_addresses
+                    .finish(entity, Some(value.pointer()));
                 Ok(())
             }
             Ok(_) => {

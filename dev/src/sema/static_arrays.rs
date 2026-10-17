@@ -376,12 +376,18 @@ impl Analyzer<'_> {
         let ty = self.graph.lower_entity_type(class)?;
         let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
         let union = self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union;
+        let selected = union
+            .then(|| self.graph.union_list_member(class, *next >= list.len()))
+            .flatten();
         let mut position = 0;
         let mut bits = [0u8; 8];
         let mut bit_bytes = 0;
         let mut unit_at = 0;
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
+            if selected.is_some_and(|selected| member != selected) {
+                continue;
+            }
             let ty = self.graph.lower_entity_type(member)?;
             if let Some(field) = self.graph.entity(member).bit_field {
                 if self.graph.unnamed_bit_field(member) {

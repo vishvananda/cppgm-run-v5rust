@@ -31,6 +31,10 @@ impl Analyzer<'_> {
         // order: a preceding dynamic initializer cannot see a later retry.
         for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
             let ty = self.graph.lower_entity_type(entity)?;
+            let constructed = self
+                .graph
+                .lower_construction(entity)
+                .is_some_and(|id| !self.graph.lower_constructor_trivial(id));
             if !self.graph.lower_variable(entity)?.thread_local
                 && matches!(
                     self.graph.types.get(ty).kind,
@@ -41,11 +45,7 @@ impl Analyzer<'_> {
                     .class_of(ty)
                     .is_some_and(|class| self.graph.lower_polymorphic(class))
             {
-                if self
-                    .graph
-                    .lower_construction(entity)
-                    .is_some_and(|id| !self.graph.lower_constructor_trivial(id))
-                {
+                if constructed {
                     self.record_aggregate_constant(entity, initializer, scope, false)?;
                 }
                 if self.record_completed_image(entity)? {
@@ -57,6 +57,27 @@ impl Analyzer<'_> {
                     self.record_address_initializer(entity, initializer, scope)?;
                 }
                 self.record_static_initializer(entity, initializer, scope)?;
+            }
+            // global_lowering.cpp::static_global retries initialization_value
+            // after static_object cannot form an aggregate's image. This is
+            // still a probe: core constant failures retain dynamic startup.
+            if !constructed
+                && initializer.is_some()
+                && !self.graph.lower_variable(entity)?.thread_local
+                && self.graph.lower_array_image(entity).is_none()
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Class(_) | TypeKind::Array { .. }
+                )
+                && !self
+                    .graph
+                    .class_of(ty)
+                    .is_some_and(|class| self.graph.lower_polymorphic(class))
+            {
+                self.record_aggregate_constant(entity, initializer, scope, false)?;
+                if self.record_completed_image(entity)? {
+                    continue;
+                }
             }
             self.record_static_construction(entity, initializer, scope)?;
         }

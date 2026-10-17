@@ -19,6 +19,33 @@ pub(super) enum Aggregation {
 }
 
 impl Graph {
+    // aggregates.h::UnionListMember: an empty list prefers the variant
+    // initialized by a brace-or-equal-initializer, including anonymous storage.
+    pub(super) fn union_list_member(&self, class: EntityId, empty: bool) -> Option<EntityId> {
+        let mut first = None;
+        for &member in &self.entity(class).members {
+            if self.unnamed_bit_field(member) {
+                continue;
+            }
+            if !empty {
+                return Some(member);
+            }
+            let entity = self.entity(member);
+            if entity.member_initializer.is_some()
+                || entity
+                    .ty
+                    .and_then(|ty| self.class_of(ty))
+                    .is_some_and(|child| {
+                        self.anonymous_member_storage(child).is_some()
+                            && self.entity(child).initialized_members != 0
+                    })
+            {
+                return Some(member);
+            }
+            first.get_or_insert(member);
+        }
+        first
+    }
     pub(super) fn aggregate_class(&self, class: EntityId) -> bool {
         let entity = self.entity(class);
         entity.aggregation == Aggregation::Eligible && entity.bases.is_empty()
@@ -81,9 +108,17 @@ impl Analyzer<'_> {
             return Err(Error::Missing("nonaggregate subobject list initialization"));
         }
         let union = self.graph.entity(class).key == Keyword::Union;
+        let selected = union
+            .then(|| {
+                self.graph
+                    .union_list_member(class, *next >= self.tree.expr_lists.get(elements).len())
+            })
+            .flatten();
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
-            if self.graph.unnamed_bit_field(member) {
+            if self.graph.unnamed_bit_field(member)
+                || selected.is_some_and(|selected| member != selected)
+            {
                 continue;
             }
             let ty = self.graph.lower_entity_type(member)?;
@@ -114,6 +149,22 @@ impl Analyzer<'_> {
                 let constructor = self.default_constructor(class, location)?;
                 self.validate_constructor_use(constructor, scope, location)?;
                 self.demand_constructor_use(constructor);
+                // Value-initializing an omitted aggregate element calls its
+                // constructor, even for an anonymous member object. A written
+                // enclosing constructor instead executes the nested plan.
+                if self.unevaluated == 0 && self.graph.anonymous_member_storage(class).is_some() {
+                    if self.body_context.is_none()
+                        && self.graph.constructors.get(constructor).nontrivial()
+                        && let Some(entity) = self.initializing
+                        && self.graph.entity(entity).data_member
+                            != Some(super::graph::DataMemberKind::Instance)
+                    {
+                        self.graph
+                            .initializer_constructors
+                            .note(entity, constructor);
+                    }
+                    self.record_demand(super::function_demands::Demand::Constructor(constructor));
+                }
                 Ok(())
             }
             TypeKind::Class(class) => {

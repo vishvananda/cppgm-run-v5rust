@@ -166,14 +166,16 @@ impl Analyzer<'_> {
                             .wrapping_add(super::integral::signed(index.wrapping_mul(size))),
                         ..place
                     };
-                    let cell = self.constexpr_frames.add_cell(child, None, location)?;
-                    self.constant_skeleton(child, cell, location)?;
+                    let child_cell = self
+                        .constexpr_frames
+                        .add_child(cell, child, None, location)?;
+                    self.constant_skeleton(child, child_cell, location)?;
                 }
             }
             TypeKind::Class(class) => {
                 self.class_layout(class, location)?;
                 if self.graph.entity(class).key == Keyword::Union {
-                    return Err(Error::Missing("constexpr union active member storage"));
+                    self.constexpr_frames.mark_union(cell);
                 }
                 for index in 0..self.graph.entity(class).bases.len() {
                     let base = self.graph.entity(class).bases[index];
@@ -186,8 +188,10 @@ impl Analyzer<'_> {
                         offset: place.offset.wrapping_add(super::integral::signed(offset)),
                         ..place
                     };
-                    let cell = self.constexpr_frames.add_cell(child, None, location)?;
-                    self.constant_skeleton(child, cell, location)?;
+                    let child_cell = self
+                        .constexpr_frames
+                        .add_child(cell, child, None, location)?;
+                    self.constant_skeleton(child, child_cell, location)?;
                 }
                 for index in 0..self.graph.entity(class).members.len() {
                     let member = self.graph.entity(class).members[index];
@@ -195,8 +199,10 @@ impl Analyzer<'_> {
                         continue;
                     }
                     let child = self.constant_member_slot(place, member, location)?;
-                    let cell = self.constexpr_frames.add_cell(child, None, location)?;
-                    self.constant_skeleton(child, cell, location)?;
+                    let child_cell =
+                        self.constexpr_frames
+                            .add_child(cell, child, Some(member), location)?;
+                    self.constant_skeleton(child, child_cell, location)?;
                 }
             }
             _ => (),
@@ -222,6 +228,45 @@ impl Analyzer<'_> {
                 "a conversion to a base class outside constant evaluation",
             ));
         };
+        let mut home = self
+            .graph
+            .entity(member)
+            .home
+            .and_then(|scope| self.graph.scope(scope).owner)
+            .ok_or(Error::Invariant("constant member without owner"))?;
+        let mut chain = Vec::new();
+        while home != class {
+            let Some(storage) = self.graph.anonymous_member_storage(home) else {
+                break;
+            };
+            chain.push(storage);
+            home = self
+                .graph
+                .entity(storage)
+                .home
+                .and_then(|scope| self.graph.scope(scope).owner)
+                .ok_or(Error::Invariant("anonymous constant member without owner"))?;
+        }
+        let mut place = place;
+        if home != class {
+            let path = self.graph.retain_base_path(class, home)?;
+            place = self.constant_project_path(place, Some(path), location)?;
+        }
+        for storage in chain.into_iter().rev() {
+            place = self.constant_direct_member_slot(place, storage, location)?;
+        }
+        self.constant_direct_member_slot(place, member, location)
+    }
+    fn constant_direct_member_slot(
+        &mut self,
+        place: Address,
+        member: EntityId,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
+        let class = self
+            .graph
+            .class_of(place.designated)
+            .ok_or(Error::Invariant("constant member owner type"))?;
         self.class_layout(class, location)?;
         let entity = self.graph.entity(member);
         let offset = if let Some(field) = entity.bit_field {
@@ -236,7 +281,18 @@ impl Analyzer<'_> {
         Ok(Address {
             designated: ty,
             offset: place.offset.wrapping_add(super::integral::signed(offset)),
-            bit_field: field,
+            selection: if let Some(field) = field {
+                super::constant_addresses::Selection::BitField(field)
+            } else if self.graph.entity(class).key == Keyword::Union {
+                let owner = self.bare_type(place.designated)?;
+                super::constant_addresses::Selection::Variant(self.constexpr_frames.designate(
+                    member,
+                    owner,
+                    place.offset,
+                )?)
+            } else {
+                place.selection
+            },
             ..place
         })
     }
@@ -273,7 +329,7 @@ impl Analyzer<'_> {
         mut value: Value,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        if let Some(member) = place.bit_field
+        if let Some(member) = place.bit_field()
             && let Value::Integer(integer) = value
         {
             let field = self
@@ -311,7 +367,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         place.designated = self.bare_type(place.designated)?;
-        let cells = self.constexpr_frames.cells(place, location)?;
+        let cells = self.constexpr_frames.zero_cells(place, location)?;
         for index in cells {
             let child = self.constexpr_frames.cell_place(place, index);
             if matches!(

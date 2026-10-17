@@ -306,7 +306,7 @@ impl Analyzer<'_> {
             let place = self.bind_constant_reference(expr, element, scope)?;
             return self.constexpr_frames.write(
                 target,
-                super::constant_addresses::TemporaryValue::Pointer(place),
+                super::constant_addresses::TemporaryValue::Pointer(place.pointer()),
                 location,
             );
         }
@@ -407,13 +407,23 @@ impl Analyzer<'_> {
                 }
             }
             TypeKind::Class(class) => {
+                let selected = (self.graph.entity(class).key
+                    == crate::lex::vocabulary::Keyword::Union)
+                    .then(|| self.graph.union_list_member(class, *next >= values.len()))
+                    .flatten();
                 for index in 0..self.graph.entity(class).members.len() {
                     let member = self.graph.entity(class).members[index];
-                    if self.graph.unnamed_bit_field(member) {
+                    if self.graph.unnamed_bit_field(member)
+                        || selected.is_some_and(|selected| member != selected)
+                    {
                         continue;
                     }
                     let place = self.constant_member_slot(target, member, location)?;
+                    self.constexpr_frames.activate(place, location)?;
                     self.constant_aggregate_element(place, values, next, scope, location)?;
+                    if self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union {
+                        break;
+                    }
                 }
             }
             _ => {
@@ -757,6 +767,34 @@ impl Analyzer<'_> {
                 .map(|plan| plan.constructor);
             if constructor.is_some() {
                 next_subobject += 1;
+            }
+            let anonymous = self
+                .graph
+                .entity(member)
+                .ty
+                .and_then(|ty| self.graph.class_of(ty))
+                .is_some_and(|class| self.graph.anonymous_member_storage(class).is_some());
+            if anonymous {
+                if let Some(child) = constructor {
+                    if place.variant().is_some() && self.constant_plan_initializes(child) {
+                        self.constexpr_frames.activate(place, location)?;
+                    }
+                    self.constant_constructor_subobjects(place, child, location)?;
+                }
+                continue;
+            }
+            if initializer.is_none()
+                && constructor.is_none_or(|id| !self.graph.constructors.get(id).nontrivial())
+            {
+                continue;
+            }
+            if place.variant().is_some()
+                && !matches!(
+                    self.graph.types.get(place.designated).kind,
+                    TypeKind::Reference { .. }
+                )
+            {
+                self.constexpr_frames.activate(place, location)?;
             }
             self.construct_constant_object(place, initializer, constructor, scope, location)?;
         }

@@ -168,9 +168,6 @@ impl Analyzer<'_> {
             }
         }
         let class = plan.class;
-        if self.graph.entity(class).key == Keyword::Union {
-            return Err(Error::Missing("constexpr union constructor eligibility"));
-        }
         if let Some(copy) = plan.copy.as_ref() {
             let count = copy.len();
             for index in 0..count {
@@ -196,9 +193,44 @@ impl Analyzer<'_> {
                 return Ok(false);
             }
         }
+        let union = self.graph.entity(class).key == Keyword::Union;
+        let mut selected_count = 0;
+        let mut next_subobject = 0;
         for index in 0..self.graph.constructors.get(id).members.len() {
-            let (member, initializer) = self.graph.constructors.get(id).members[index];
-            if initializer.is_some() || self.graph.unnamed_bit_field(member) {
+            let owner = self.graph.constructors.get(id);
+            let (member, initializer) = owner.members[index];
+            let child = owner
+                .subobjects
+                .get(next_subobject)
+                .filter(|plan| plan.member == member)
+                .map(|plan| plan.constructor);
+            if child.is_some() {
+                next_subobject += 1;
+            }
+            if self.graph.unnamed_bit_field(member) {
+                continue;
+            }
+            let anonymous = self
+                .graph
+                .entity(member)
+                .ty
+                .and_then(|ty| self.graph.class_of(ty))
+                .is_some_and(|class| self.graph.anonymous_member_storage(class).is_some());
+            let selected = initializer.is_some()
+                || anonymous && child.is_some_and(|child| self.constant_plan_initializes(child));
+            selected_count += usize::from(selected);
+            if union && !selected {
+                continue;
+            }
+            if anonymous {
+                if let Some(child) = child
+                    && !self.constant_constructor_eligible(child, known)?
+                {
+                    return Ok(false);
+                }
+                continue;
+            }
+            if initializer.is_some() {
                 continue;
             }
             let mut ty = self.graph.lower_entity_type(member)?;
@@ -208,10 +240,16 @@ impl Analyzer<'_> {
             let Some(class) = self.graph.class_of(ty) else {
                 return Ok(false);
             };
-            let child = self.default_constructor(class, SourceOffset(0))?;
+            let child = match child {
+                Some(child) => child,
+                None => self.default_constructor(class, SourceOffset(0))?,
+            };
             if !self.constant_constructor_eligible(child, known)? {
                 return Ok(false);
             }
+        }
+        if union && !self.graph.entity(class).members.is_empty() && selected_count != 1 {
+            return Ok(false);
         }
         if self
             .graph
@@ -228,6 +266,34 @@ impl Analyzer<'_> {
             return self.constant_inherited_member_initializers(id, known);
         }
         Ok(true)
+    }
+    pub(super) fn constant_plan_initializes(&self, id: ConstructorId) -> bool {
+        let mut work = vec![id];
+        while let Some(id) = work.pop() {
+            let plan = self.graph.constructors.get(id);
+            if plan
+                .members
+                .iter()
+                .any(|(_, initializer)| initializer.is_some())
+            {
+                return true;
+            }
+            work.extend(
+                plan.subobjects
+                    .iter()
+                    .filter(|child| {
+                        self.graph
+                            .entity(child.member)
+                            .ty
+                            .and_then(|ty| self.graph.class_of(ty))
+                            .is_some_and(|class| {
+                                self.graph.anonymous_member_storage(class).is_some()
+                            })
+                    })
+                    .map(|child| child.constructor),
+            );
+        }
+        false
     }
     fn constant_inherited_member_initializers(
         &mut self,
@@ -296,7 +362,7 @@ impl Analyzer<'_> {
             )?;
             for cell in analyzer
                 .constexpr_frames
-                .cells(place, initializer.location)?
+                .active_cells(place, initializer.location)?
             {
                 let child = analyzer.constexpr_frames.cell_place(place, cell);
                 if !matches!(
@@ -418,35 +484,65 @@ impl Analyzer<'_> {
                 ));
             }
         }
+        self.check_constant_member_plan(id, false, location)
+    }
+    fn check_constant_member_plan(
+        &mut self,
+        id: ConstructorId,
+        variant: bool,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.check_stack()?;
+        let class = self.graph.constructors.get(id).class;
+        let union = self.graph.entity(class).key == Keyword::Union;
+        let mut selected_count = 0;
         let mut next_subobject = 0;
         for index in 0..self.graph.constructors.get(id).members.len() {
             let owner = self.graph.constructors.get(id);
             let (member, initializer) = owner.members[index];
-            let Some(&plan) = owner
+            let child = owner
                 .subobjects
                 .get(next_subobject)
                 .filter(|plan| plan.member == member)
-            else {
+                .map(|plan| plan.constructor);
+            if child.is_some() {
+                next_subobject += 1;
+            }
+            let anonymous = self
+                .graph
+                .entity(member)
+                .ty
+                .and_then(|ty| self.graph.class_of(ty))
+                .is_some_and(|class| self.graph.anonymous_member_storage(class).is_some());
+            let selected = initializer.is_some()
+                || anonymous && child.is_some_and(|child| self.constant_plan_initializes(child));
+            selected_count += usize::from(selected);
+            if union && !selected || self.graph.unnamed_bit_field(member) {
                 continue;
-            };
-            next_subobject += 1;
-            let written_initializer = owner.written_members[index]
+            }
+            let written = owner.written_members[index]
                 .then_some(initializer)
                 .flatten();
-            if !self.graph.constructors.get(plan.constructor).deleted
-                && !self
-                    .constant_trivial_value_initialization(plan.constructor, written_initializer)
-                && !self.constant_constructor_eligible(plan.constructor, &mut HashMap::new())?
+            if !anonymous
+                && let Some(child) = child
+                && !self.graph.constructors.get(child).deleted
+                && !self.constant_trivial_value_initialization(child, written)
+                && !self.constant_constructor_eligible(child, &mut HashMap::new())?
             {
                 return Err(Error::at(
                     location,
                     "a constexpr constructor initializes a subobject by a constructor that is not constexpr",
                 ));
             }
-        }
-        for index in 0..self.graph.constructors.get(id).members.len() {
-            let (member, initializer) = self.graph.constructors.get(id).members[index];
-            if initializer.is_some() || self.graph.unnamed_bit_field(member) {
+            if anonymous {
+                if (!variant || selected)
+                    && let Some(child) = child
+                {
+                    self.check_constant_member_plan(child, union || variant, location)?;
+                }
+                continue;
+            }
+            if initializer.is_some() || union || variant {
                 continue;
             }
             let mut ty = self.graph.lower_entity_type(member)?;
@@ -459,6 +555,16 @@ impl Analyzer<'_> {
                     "a constexpr constructor leaves a non-static data member uninitialized",
                 ));
             }
+        }
+        if union && selected_count == 0 && !self.graph.entity(class).members.is_empty() {
+            return Err(Error::at(
+                location,
+                if self.graph.anonymous_member_storage(class).is_some() {
+                    "a constexpr constructor initializes no member of an anonymous union"
+                } else {
+                    "a constexpr constructor of a union initializes no member"
+                },
+            ));
         }
         Ok(())
     }

@@ -121,18 +121,16 @@ impl Analyzer<'_> {
             }
             Ok(Value::Pointer(pointer))
         })?;
-        for (ty, _, _, value) in value.values() {
-            if value.is_none()
-                && !matches!(
-                    self.graph.types.get(ty).kind,
-                    TypeKind::Class(_) | TypeKind::Array { .. }
-                )
-            {
-                return Err(nonconstant(
-                    location,
-                    "a constexpr object leaves a subobject uninitialized",
-                ));
-            }
+        if !value.complete(|ty| {
+            matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Class(_) | TypeKind::Array { .. }
+            )
+        }) {
+            return Err(nonconstant(
+                location,
+                "a constexpr object leaves a subobject uninitialized",
+            ));
         }
         Ok(value)
     }
@@ -155,7 +153,13 @@ impl Analyzer<'_> {
         self.graph
             .aggregate_constants
             .get(entity)
-            .map(|value| value.read(place, location))
+            .map(|value| {
+                value.read(
+                    place,
+                    self.constexpr_frames.designation(place.variant()),
+                    location,
+                )
+            })
             .transpose()
     }
     pub(super) fn copy_constant_object(
