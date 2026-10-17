@@ -133,7 +133,12 @@ impl Analyzer<'_> {
                 });
                 entity.static_initializer = value;
             } else {
-                let value = match self.constant_place(expr, scope) {
+                let address = self
+                    .graph
+                    .constant_addresses
+                    .value(entity)
+                    .map_or_else(|| self.constant_place(expr, scope), Ok);
+                let value = match address {
                     Ok(address) => match address.root {
                         Root::Variable(root)
                             if self

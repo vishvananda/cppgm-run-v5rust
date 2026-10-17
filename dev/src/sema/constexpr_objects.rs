@@ -13,6 +13,12 @@ use super::{
 };
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
 
+#[derive(Default)]
+pub(super) struct ProjectionQuery {
+    work: Vec<(TypeId, i64)>,
+    visited: std::collections::HashSet<(TypeId, i64)>,
+}
+
 impl Analyzer<'_> {
     pub(super) fn constant_string_array(
         &mut self,
@@ -479,6 +485,12 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<Address, Error> {
         if let Some(path) = path {
+            if place.past_end {
+                return Err(nonconstant(
+                    location,
+                    "a base class of an object one past the end of an array",
+                ));
+            }
             let class = self
                 .graph
                 .class_of(place.designated)
@@ -494,6 +506,178 @@ impl Analyzer<'_> {
             }
         }
         Ok(place)
+    }
+    pub(super) fn constant_base_pointer(
+        &mut self,
+        place: Address,
+        element: TypeId,
+        path: BasePathId,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
+        if place.root == Root::Null {
+            return Ok(Address {
+                designated: element,
+                ..place
+            });
+        }
+        self.constant_cast_subobject(
+            place,
+            element,
+            super::expression_facts::BaseCast {
+                path,
+                downcast: false,
+                project_zero: false,
+            },
+            location,
+        )
+    }
+    /// A cast owns its route independently of any conversion on its result.
+    /// Downcasts inspect storage types without reading an object's value.
+    pub(super) fn constant_cast_subobject(
+        &mut self,
+        mut place: Address,
+        target: TypeId,
+        cast: super::expression_facts::BaseCast,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
+        let &(derived, _) = self
+            .graph
+            .base_paths
+            .get(cast.path)
+            .first()
+            .ok_or(Error::Invariant("empty constant cast route"))?;
+        self.class_layout(derived, location)?;
+        let offset = super::integral::signed(self.graph.lower_path_offset(cast.path)?);
+        if cast.downcast {
+            place.offset = place.offset.wrapping_sub(offset);
+            let root = self.address_root_type(place, location)?;
+            if !self.constant_type_holds(root, place.offset, target, location)? {
+                return Err(nonconstant(
+                    location,
+                    "a cast to a derived class of an object that is not one",
+                ));
+            }
+        } else {
+            if place.past_end {
+                return Err(nonconstant(
+                    location,
+                    "a base class of an object one past the end of an array",
+                ));
+            }
+            place.offset = place.offset.wrapping_add(offset);
+        }
+        place.designated = target;
+        Ok(place)
+    }
+    fn constant_type_holds(
+        &mut self,
+        root: TypeId,
+        offset: i64,
+        wanted: TypeId,
+        location: SourceOffset,
+    ) -> Result<bool, Error> {
+        // Like ConstantInterpreter::holds, this is a type/layout query, including
+        // inactive union members. Array indices are selected arithmetically;
+        // repeated base graphs visit each (type, offset) only once per query.
+        if offset == 0 && self.same_array_shape(root, wanted) {
+            return Ok(true);
+        }
+        let mut query = self
+            .constant_evaluation
+            .as_mut()
+            .ok_or(Error::Invariant("projection outside constant evaluation"))?
+            .projections
+            .take()
+            .unwrap_or_default();
+        query.work.push((root, offset));
+        let result = self.constant_subobject_search(wanted, location, &mut query);
+        query.work.clear();
+        query.visited.clear();
+        self.constant_evaluation
+            .as_mut()
+            .ok_or(Error::Invariant("projection lost evaluation storage"))?
+            .projections = Some(query);
+        result
+    }
+    fn constant_subobject_search(
+        &mut self,
+        wanted: TypeId,
+        location: SourceOffset,
+        query: &mut ProjectionQuery,
+    ) -> Result<bool, Error> {
+        while let Some((ty, offset)) = query.work.pop() {
+            if offset == 0 && self.same_array_shape(ty, wanted) {
+                return Ok(true);
+            }
+            if offset < 0 || !query.visited.insert((ty, offset)) {
+                continue;
+            }
+            match self.graph.types.get(ty).kind {
+                TypeKind::Array { element, bound, .. } => {
+                    let size = self.type_size(element, location)?.0;
+                    let offset = offset.cast_unsigned();
+                    if size != 0 && offset / size < bound {
+                        query
+                            .work
+                            .push((element, super::integral::signed(offset % size)));
+                    }
+                }
+                TypeKind::Class(class) => {
+                    self.class_layout(class, location)?;
+                    for index in 0..self.graph.entity(class).bases.len() {
+                        let edge = self.graph.entity(class).bases[index];
+                        let ty = self.graph.lower_entity_type(edge.class)?;
+                        let start = super::integral::signed(
+                            edge.offset.ok_or(Error::Invariant("base without layout"))?,
+                        );
+                        self.queue_constant_subobject(
+                            &mut query.work,
+                            ty,
+                            start,
+                            offset,
+                            location,
+                        )?;
+                    }
+                    for index in 0..self.graph.entity(class).members.len() {
+                        let member = self.graph.entity(class).members[index];
+                        let entity = self.graph.entity(member);
+                        if entity.bit_field.is_some() {
+                            continue;
+                        }
+                        let ty = self.graph.lower_entity_type(member)?;
+                        let start = super::integral::signed(
+                            entity
+                                .member_offset
+                                .ok_or(Error::Invariant("member without layout"))?,
+                        );
+                        self.queue_constant_subobject(
+                            &mut query.work,
+                            ty,
+                            start,
+                            offset,
+                            location,
+                        )?;
+                    }
+                }
+                _ => (),
+            }
+        }
+        Ok(false)
+    }
+
+    fn queue_constant_subobject(
+        &mut self,
+        work: &mut Vec<(TypeId, i64)>,
+        ty: TypeId,
+        start: i64,
+        offset: i64,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let size = super::integral::signed(self.type_size(ty, location)?.0.max(1));
+        if offset >= start && offset < start.wrapping_add(size) {
+            work.push((ty, offset.wrapping_sub(start)));
+        }
+        Ok(())
     }
     pub(super) fn constant_conversion_result(
         &mut self,
@@ -527,6 +711,69 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn base_cast_queries_keep_storage_identity_and_release_failed_probes() {
+        let source = SourceBuffer::new(
+            br"
+            struct A{int n;constexpr A(int n):n(n){}};
+            struct B{int n;constexpr B(int n):n(n){}};
+            struct D:A,B{int n;constexpr D(int n):A(n),B(n+1),n(n+2){}};
+            struct E{int pad;D d;constexpr E(int n):pad(1),d(n){}};
+            constexpr const D& down(const B& b){return static_cast<const D&>(b);}
+            constexpr int read(int n){E e(n);const B* p=&e.d;return down(*p).n;}
+            constexpr int first=read(5);
+            int fallback=down(B(3)).n;
+            constexpr int second=read(9);
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constant-base-storage").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"first".as_slice(), b"second"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer.declarations(declarations, global).unwrap();
+        analyzer.finish_static_initializers().unwrap();
+        for (name, bits) in names.into_iter().zip([7, 11]) {
+            let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+            assert!(
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant,
+                ConstantState::Value(value) if value.bits == bits)
+            );
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert!(!analyzer.constexpr_frames.active());
+        assert!(analyzer.constant_evaluation.is_none());
+        assert!(
+            analyzer
+                .constant_scratch
+                .projections
+                .as_ref()
+                .unwrap()
+                .work
+                .is_empty()
+        );
+        assert!(
+            analyzer
+                .constant_scratch
+                .projections
+                .as_ref()
+                .unwrap()
+                .visited
+                .is_empty()
+        );
+    }
 
     #[test]
     fn objects_keep_invocation_values_local_and_reuse_concrete_member_bodies() {

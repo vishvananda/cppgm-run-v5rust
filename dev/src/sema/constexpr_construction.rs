@@ -731,8 +731,26 @@ impl Analyzer<'_> {
         for index in 0..self.graph.constructors.get(id).bases.len() {
             let base = self.graph.constructors.get(id).bases[index];
             let class = self.graph.constructors.get(id).class;
-            let path = self.graph.retain_base_path(class, base.class)?;
-            let place = self.constant_project_path(target, Some(path), location)?;
+            // The ordered plan names a direct base, even if that same class
+            // also occurs indirectly. This is not an unambiguous base conversion.
+            let edge = self
+                .graph
+                .entity(class)
+                .bases
+                .get(index)
+                .copied()
+                .filter(|edge| edge.class == base.class)
+                .ok_or(Error::Invariant(
+                    "constructor base plan without direct edge",
+                ))?;
+            let place = Address {
+                offset: target.offset.wrapping_add(super::integral::signed(
+                    edge.offset
+                        .ok_or(Error::Invariant("constructor base without layout"))?,
+                )),
+                designated: self.graph.lower_entity_type(base.class)?,
+                ..target
+            };
             if base.forwards {
                 let parameters = self.constexpr_frames.current()?.parameters.clone();
                 self.run_constant_constructor_inputs(

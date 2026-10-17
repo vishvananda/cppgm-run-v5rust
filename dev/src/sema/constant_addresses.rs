@@ -94,6 +94,7 @@ pub(super) enum TemporaryValue {
 #[derive(Default)]
 pub(super) struct Evaluation {
     values: HashMap<ast::ExprId, TemporaryValue>,
+    pub(super) projections: Option<Box<super::constexpr_objects::ProjectionQuery>>,
 }
 pub(super) struct Temporaries(HashMap<ast::ExprId, TemporaryValue>);
 impl Evaluation {
@@ -350,9 +351,7 @@ impl Analyzer<'_> {
                         "a reinterpret_cast or dynamic_cast in a constant expression",
                     ));
                 }
-                let value = self.address_cast_operand(operand, scope, location)?;
-                self.check_address_cast(value, operand, facts.ty, location)?;
-                value
+                self.constant_pointer_cast(id, operand, scope)?
             }
             ExprKind::FunctionalCast {
                 arguments, braced, ..
@@ -409,7 +408,26 @@ impl Analyzer<'_> {
                 .graph
                 .address_parameter_type(self.graph.expression_facts.get(id)?.ty)
         {
-            return self.evaluate_address(id, scope);
+            let value = self.evaluate_address(id, scope)?;
+            let facts = self.graph.expression_facts.get(id)?;
+            if let Some(conversion) = facts.conversion
+                && conversion.second == super::expression_facts::ValueConversion::DerivedToBase
+            {
+                let path = facts
+                    .base_path
+                    .ok_or(Error::Invariant("base address conversion without route"))?;
+                let TypeKind::Pointer(element) = self.graph.types.get(conversion.result).kind
+                else {
+                    return Err(Error::Invariant("base address conversion without pointer"));
+                };
+                return self.constant_base_pointer(
+                    value,
+                    element,
+                    path,
+                    self.tree.expressions.get(id).location,
+                );
+            }
+            return Ok(value);
         }
         let value = self.evaluate_constant(id, scope, false)?;
         if value.bits != 0 {
@@ -450,13 +468,43 @@ impl Analyzer<'_> {
                 Root::Null,
                 self.graph.expression_facts.get(id)?.ty,
             )),
-            [operand] => {
-                self.address_cast_operand(*operand, scope, self.tree.expressions.get(id).location)
-            }
+            [operand] => self.constant_pointer_cast(id, *operand, scope),
             _ => Err(Error::Invariant(
                 "typed pointer cast with several arguments",
             )),
         }
+    }
+    fn constant_pointer_cast(
+        &mut self,
+        id: ast::ExprId,
+        operand: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        let facts = self.graph.expression_facts.get(id)?;
+        let location = self.tree.expressions.get(id).location;
+        let value = self.address_cast_operand(operand, scope, location)?;
+        if let Some(cast) = facts.base_cast {
+            let TypeKind::Pointer(element) = self.graph.types.get(facts.ty).kind else {
+                return Err(Error::Invariant("base pointer cast without pointer type"));
+            };
+            if value.root != Root::Null {
+                let source = self.graph.expression_facts.get(operand)?;
+                let location = if source.conversion.is_some_and(|conversion| {
+                    conversion.second == super::expression_facts::ValueConversion::DerivedToBase
+                }) {
+                    self.tree.expressions.get(operand).location
+                } else {
+                    location
+                };
+                return self.constant_cast_subobject(value, element, cast, location);
+            }
+            return Ok(Address {
+                designated: element,
+                ..value
+            });
+        }
+        self.check_address_cast(value, operand, facts.ty, location)?;
+        Ok(value)
     }
     fn address_cast_operand(
         &mut self,
@@ -464,17 +512,21 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Address, Error> {
-        self.address_operand(operand, scope)
-            .map_err(|error| match error {
-                Error::NonConstant {
-                    message: "an integer converted to a pointer in a constant expression",
-                    ..
-                } => nonconstant(
-                    location,
-                    "an integer converted to a pointer in a constant expression",
-                ),
-                other => other,
-            })
+        let result = if self.is_address_expression(operand) {
+            self.evaluate_address(operand, scope)
+        } else {
+            self.address_operand(operand, scope)
+        };
+        result.map_err(|error| match error {
+            Error::NonConstant {
+                message: "an integer converted to a pointer in a constant expression",
+                ..
+            } => nonconstant(
+                location,
+                "an integer converted to a pointer in a constant expression",
+            ),
+            other => other,
+        })
     }
     fn check_address_cast(
         &self,
@@ -510,12 +562,9 @@ impl Analyzer<'_> {
                 ));
             }
             if value.root != Root::Null && !to_void && from != to {
-                // CV changes have no storage adjustment. Base projection needs
-                // the separate class-layout owner rather than a fabricated zero.
+                // Selected hierarchy casts were projected before this query.
+                // Remaining non-void casts can change cv, but not object type.
                 if !self.same_array_shape(from, to) {
-                    if self.graph.class_of(from).is_some() && self.graph.class_of(to).is_some() {
-                        return Err(Error::Missing("constant base subobject projection"));
-                    }
                     return Err(nonconstant(
                         location,
                         "a pointer cast between unrelated types in a constant expression",
@@ -829,6 +878,13 @@ impl Analyzer<'_> {
             ));
         }
         let source = self.graph.expression_facts.get(operand)?;
+        if self.graph.class_of(facts.ty).is_some() {
+            if let Some(cast) = facts.base_cast {
+                let place = self.constant_object_place(operand, scope)?;
+                return self.constant_cast_subobject(place, facts.ty, cast, location);
+            }
+            return self.bind_constant_reference(operand, facts.ty, scope);
+        }
         if source.category == ValueCategory::Prvalue
             || source
                 .conversion
@@ -1274,6 +1330,17 @@ impl Analyzer<'_> {
                     )
                 {
                     let place = self.constant_place(expr, scope)?;
+                    let place = self.constant_project_path(
+                        place,
+                        facts
+                            .conversion
+                            .filter(|conversion| {
+                                conversion.second
+                                    == super::expression_facts::ValueConversion::DerivedToBase
+                            })
+                            .and(facts.base_path),
+                        self.tree.expressions.get(expr).location,
+                    )?;
                     return Ok(place);
                 }
                 if self.is_address_expression(expr) {

@@ -78,7 +78,14 @@ impl Analyzer<'_> {
         if let Some(step) = self.graph.expression_facts.function_conversion(id) {
             let returned = self.constant_conversion_result(id, scope)?;
             let location = self.tree.expressions.get(id).location;
-            let value = self.returned_scalar(returned, location)?;
+            let mut value = self.returned_scalar(returned, location)?;
+            if let Value::Pointer(pointer) = value
+                && let Some(path) = step.after_path
+                && let TypeKind::Pointer(element) = self.graph.types.get(step.after.result).kind
+            {
+                value =
+                    Value::Pointer(self.constant_base_pointer(pointer, element, path, location)?);
+            }
             return self.convert_constant_scalar(value, step.after.result, location);
         }
         if self.floating_expression(id) {

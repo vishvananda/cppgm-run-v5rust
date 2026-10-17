@@ -192,6 +192,22 @@ impl Analyzer<'_> {
     ) -> Result<Address, Error> {
         let root = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(root)?;
+        let location = self.tree.expressions.get(id).location;
+        if let Some(step) = self.graph.expression_facts.function_conversion(id) {
+            let returned = self.constant_conversion_result(id, scope)?;
+            let mut place = match returned {
+                Returned::Place(place) if !step.after.temporary => place,
+                Returned::Place(place) if self.graph.class_of(element).is_some() => place,
+                _ => {
+                    let value = self.returned_scalar(returned, location)?;
+                    let value = self.convert_constant_scalar(value, element, location)?;
+                    self.allocate_constant_object(element, Some(value), location)?
+                }
+            };
+            place = self.constant_project_path(place, step.after_path, location)?;
+            place.designated = element;
+            return Ok(place);
+        }
         if let Some((constructor, arguments)) = self.graph.expression_facts.class_conversion(id)
             && self.graph.class_of(element) == Some(self.graph.constructors.get(constructor).class)
         {
@@ -213,7 +229,14 @@ impl Analyzer<'_> {
             let place = self.constant_object_place(id, scope)?;
             let mut place = self.constant_project_path(
                 place,
-                facts.base_path,
+                facts
+                    .class_copy
+                    .map(|copy| copy.binding)
+                    .or(facts.conversion)
+                    .filter(|conversion| {
+                        conversion.second == super::expression_facts::ValueConversion::DerivedToBase
+                    })
+                    .and(facts.base_path),
                 self.tree.expressions.get(id).location,
             )?;
             place.designated = element;

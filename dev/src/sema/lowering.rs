@@ -790,7 +790,10 @@ impl Graph {
         Ok(self.expression_facts.get(id)?.call_form
             == super::expression_facts::CallForm::CallableObject)
     }
-    fn lower_path_offset(&self, path: super::inheritance::BasePathId) -> Result<u64, Error> {
+    pub(super) fn lower_path_offset(
+        &self,
+        path: super::inheritance::BasePathId,
+    ) -> Result<u64, Error> {
         self.base_paths
             .get(path)
             .iter()
