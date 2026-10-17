@@ -131,6 +131,14 @@ impl Analyzer<'_> {
             let node = self.tree.declarators.get(current);
             if let Some(named) = node.name {
                 home = self.prefix(named, scope)?;
+                if home.is_some_and(|home| {
+                    self.graph.scope(home).kind == super::graph::ScopeKind::Enum
+                }) {
+                    return Err(Error::at(
+                        self.tree.names.get(named).location,
+                        "qualified declarator-id must name a namespace or class member",
+                    ));
+                }
                 after = if let Some(home) = home {
                     self.member_lookup_bridge(scope, home)?
                 } else {

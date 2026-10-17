@@ -913,6 +913,51 @@ mod tests {
     };
 
     #[test]
+    fn failed_early_constant_demand_releases_active_class_and_query_context() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{\
+                template<class U>static constexpr int f(U);\
+                typedef char X[f(T(1))];};A<int> a;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"failed-member-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        assert!(
+            analyzer
+                .declarations(declarations, analyzer.graph.global)
+                .is_err()
+        );
+        assert_eq!(analyzer.graph.class_templates.definitions.active_depth(), 0);
+        assert_eq!(analyzer.class_depth, 0);
+        assert_eq!(analyzer.template_depth, 0);
+        assert!(analyzer.operand_home.is_none());
+        assert!(analyzer.template_head.is_none());
+        assert!(analyzer.template_owner.is_none());
+        assert!(analyzer.graph.lookup_limit.is_none());
+        assert!(analyzer.deferred.is_empty());
+        assert!(analyzer.deferred_constexpr.is_empty());
+        assert!(analyzer.constant_spine.is_empty());
+        assert!(analyzer.constant_discard_work.is_empty());
+        assert!(analyzer.constant_evaluation.is_none());
+        assert!(
+            !analyzer
+                .graph
+                .function_templates
+                .bodies
+                .states
+                .values()
+                .any(|state| matches!(state, State::InProgress))
+        );
+    }
+
+    #[test]
     fn early_constant_demands_share_one_body_and_leave_other_definitions_pending() {
         let source = SourceBuffer::new(
             b"template<class T>struct A{\

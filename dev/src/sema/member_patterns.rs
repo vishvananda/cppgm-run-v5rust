@@ -8,7 +8,7 @@ use super::{
     graph::{BindingKind, EntityId, ScopeId, ScopeKind},
     lookup::Filter,
     templates::HeadId,
-    types::TypeId,
+    types::{TypeId, TypeKind},
 };
 use crate::syntax::ast;
 
@@ -227,7 +227,14 @@ impl Analyzer<'_> {
                 }
                 owner = Some(binding.entity);
             }
-            let entity = if component.arguments.is_some() && owner == Some(binding.entity) {
+            let entity = if binding.kind == BindingKind::Alias && component.arguments.is_none() {
+                // A typedef-name names its class, not the alias declaration
+                // entity, which has no member scope (class_templates.cpp).
+                match binding.ty.map(|ty| &self.graph.types.get(ty).kind) {
+                    Some(TypeKind::Class(class)) => *class,
+                    _ => return Ok((owner, None)),
+                }
+            } else if component.arguments.is_some() && owner == Some(binding.entity) {
                 let partial = self.named_class_partial(binding.entity, component, scope)?;
                 if let Some(partial) = partial {
                     owner = Some(partial);
