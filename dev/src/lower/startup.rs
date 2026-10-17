@@ -21,7 +21,29 @@ pub(super) struct Guard {
     pub shared: SymbolId,
     pub constructed: Option<SymbolId>,
 }
+pub(super) struct FunctionOutput<'a> {
+    pub program: &'a mut Program,
+    pub initialization: Option<InitializationOutput<'a>>,
+}
+impl<'a> FunctionOutput<'a> {
+    pub(super) fn new(
+        program: &'a mut Program,
+        startup: &'a mut Startup,
+        definitions: &'a mut super::definition_order::Definitions,
+        finalizers: &'a mut Vec<super::shutdown::Finalizer>,
+    ) -> Self {
+        Self {
+            program,
+            initialization: Some(InitializationOutput {
+                startup: Some(startup),
+                definitions,
+                finalizers,
+            }),
+        }
+    }
+}
 pub(super) struct InitializationOutput<'a> {
+    pub startup: Option<&'a mut Startup>,
     pub definitions: &'a mut super::definition_order::Definitions,
     pub finalizers: &'a mut Vec<super::shutdown::Finalizer>,
 }
@@ -80,6 +102,7 @@ impl Startup {
         function.persistent_references = true;
         function.static_initializer = true;
         function.initialization_output = Some(InitializationOutput {
+            startup: None,
             definitions,
             finalizers,
         });
@@ -106,6 +129,53 @@ impl Startup {
         Ok(())
     }
 }
+impl<'a, 'source> Function<'a, 'source, '_, '_> {
+    /// Suspend only this function's construction while a data address defines
+    /// its dependencies. Startup fragments share the current body; ordinary
+    /// functions borrow the unit's independent startup owner.
+    pub(super) fn with_static_data<T>(
+        &mut self,
+        action: impl FnOnce(&mut dyn super::data::Output, &mut Symbols<'a, 'source>) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let Some(mut output) = self.initialization_output.take() else {
+            return action(self.builder.program(), self.symbols);
+        };
+        let inline = output.startup.is_none();
+        let mut current = Startup {
+            body: Some(self.builder.take_construction()),
+            next_block: self.next_block,
+            terminated: self.terminated,
+            selector: self.destruction.selector,
+        };
+        let startup = output.startup.as_deref_mut().unwrap_or(&mut current);
+        let result = action(
+            &mut super::globals::GlobalOutput {
+                program: self.builder.program(),
+                startup,
+                definitions: output.definitions,
+                finalizers: output.finalizers,
+            },
+            self.symbols,
+        );
+        self.initialization_output = Some(output);
+        if let Some(body) = current.body {
+            self.builder.restore_construction(body);
+            if inline {
+                self.next_block = current.next_block;
+                self.terminated = current.terminated;
+                self.destruction.selector = current.selector;
+            }
+            result
+        } else {
+            // A failed nested initializer may already have consumed its body.
+            // Preserve that failure rather than replacing its diagnostic.
+            result.and(Err(crate::sema::Error::Invariant(
+                "data dependency lost function construction",
+            )
+            .into()))
+        }
+    }
+}
 impl Function<'_, '_, '_, '_> {
     /// A first reference made by an initializer defines its dependencies at
     /// that exact position in the shared startup body. Move the builder while
@@ -130,35 +200,8 @@ impl Function<'_, '_, '_, '_> {
         if self.symbols.instance_variables.is_empty() {
             return Ok(());
         }
-        let Some(output) = self.initialization_output.take() else {
-            return Ok(());
-        };
-        let mut startup = Startup {
-            body: Some(self.builder.take_construction()),
-            next_block: self.next_block,
-            terminated: self.terminated,
-            selector: self.destruction.selector,
-        };
-        let result = super::globals::emit_instance_variables(
-            &mut super::globals::GlobalOutput {
-                program: self.builder.program(),
-                startup: &mut startup,
-                definitions: output.definitions,
-                finalizers: output.finalizers,
-            },
-            self.symbols,
-            (self.graph, self.tree),
-        );
-        self.initialization_output = Some(output);
-        result?;
-        self.builder
-            .restore_construction(startup.body.ok_or(crate::sema::Error::Invariant(
-                "nested initializer lost startup construction",
-            ))?);
-        self.next_block = startup.next_block;
-        self.terminated = startup.terminated;
-        self.destruction.selector = startup.selector;
-        Ok(())
+        let (graph, tree) = (self.graph, self.tree);
+        self.with_static_data(|output, symbols| output.referenced_variable(symbols, graph, tree))
     }
     fn initialize_guarded_global(
         &mut self,

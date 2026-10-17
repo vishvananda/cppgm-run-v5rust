@@ -15,6 +15,7 @@ use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast
 
 #[derive(Default)]
 pub(super) struct ProjectionQuery {
+    pub(super) member_spans: super::constant_pointer_operations::MemberSpans,
     work: Vec<(TypeId, i64)>,
     visited: std::collections::HashSet<(TypeId, i64)>,
 }

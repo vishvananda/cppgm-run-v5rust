@@ -84,7 +84,7 @@ impl Graph {
                 Root::Variable(root) | Root::Temporary(root) | Root::Function(root) => {
                     Some(Value::Address(root, address.offset))
                 }
-                Root::Published(root) => Some(Value::Temporary(root, address.offset)),
+                Root::Published(root) => self.static_temporary_value(root, address.offset),
                 Root::Literal(root) => Some(Value::Literal(root, address.offset)),
                 _ => None,
             }))
@@ -126,7 +126,7 @@ impl Graph {
         };
         Ok(match address.root {
             Root::Null => Some(Value::Integer(0)),
-            Root::Published(root) => Some(Value::Temporary(root, address.offset)),
+            Root::Published(root) => self.static_temporary_value(root, address.offset),
             Root::Literal(root) => Some(Value::Literal(root, address.offset)),
             Root::Function(root) => Some(Value::Address(root, address.offset)),
             Root::Temporary(root) if self.entity(root).reference_temporary.is_some() => {

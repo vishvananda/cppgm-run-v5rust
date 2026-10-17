@@ -411,7 +411,9 @@ impl Analyzer<'_> {
                 &mut scratch,
             )
         };
-        let chosen = chosen.and_then(|selected| {
+        let chosen = chosen.and_then(|mut selected| {
+            selected.binding =
+                self.inherited_constructor_specialization(class, selected.binding, args.len())?;
             self.check_inherited_constructor_access(selected.binding, location)?;
             let function = self.graph.binding(selected.binding).entity;
             if copy_list && self.graph.entity(function).explicitness == Explicitness::Explicit {

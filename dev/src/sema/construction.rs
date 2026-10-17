@@ -240,6 +240,7 @@ impl Analyzer<'_> {
                 && self.unevaluated == 0
             {
                 if let Some(selected) = self.graph.constructors.get(constructor).binding {
+                    self.demand_specialization_body(selected);
                     self.demand_function(selected, true);
                 } else {
                     self.record_demand(super::function_demands::Demand::Constructor(constructor));
@@ -280,19 +281,15 @@ impl Analyzer<'_> {
             ) {
                 active.remove(current);
                 work.pop();
-            } else if *next == 0
-                && self.graph.entity(*current).user_constructor.is_some()
-                && !matches!(
+            } else if *next == 0 && self.graph.entity(*current).user_constructor.is_some() && {
+                let binding = self.default_constructor_binding(*current, plan_location)?;
+                !matches!(
                     self.graph
-                        .entity(
-                            self.graph
-                                .binding(self.default_constructor_binding(*current, plan_location)?)
-                                .entity
-                        )
+                        .entity(self.graph.binding(binding).entity)
                         .special_definition,
                     Some(SpecialDefinition::Defaulted { .. })
                 )
-            {
+            } {
                 // A user-provided declaration does not ask for its bases'
                 // default constructors. Written/defaulted plans own that demand.
                 self.select_default_constructor(*current, plan_location)?;
@@ -390,14 +387,17 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn default_constructor_binding(
-        &self,
+        &mut self,
         class: EntityId,
         location: SourceOffset,
     ) -> Result<BindingId, Error> {
         let mut selected = None;
-        let mut templates = false;
-        for &binding in &self.graph.entity(class).declared_constructors {
+        for index in 0..self.graph.entity(class).declared_constructors.len() {
+            let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.template_head.is_some() {
+                continue;
+            }
             let count = self.graph.types.function_parameter_count(
                 entity
                     .ty
@@ -406,18 +406,31 @@ impl Analyzer<'_> {
             if (0..count).any(|index| entity.defaults.get(index).is_none_or(Option::is_none)) {
                 continue;
             }
-            if entity.template_head.is_some() {
-                templates = true;
-                continue;
-            }
             if selected.replace(binding).is_some() {
                 return Err(Error::at(SourceOffset(0), "ambiguous default constructor"));
             }
         }
-        if selected.is_none() && templates {
-            return Err(Error::Missing("default constructor template deduction"));
+        if let Some(binding) = selected {
+            return Ok(binding);
         }
-        selected.ok_or_else(|| Error::at(location, "no default constructor for the class"))
+        // The frozen default-constructor query tries templates only after all
+        // ordinary candidates. Empty calls do not partially order templates.
+        for index in 0..self.graph.entity(class).declared_constructors.len() {
+            let binding = self.graph.entity(class).declared_constructors[index];
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.template_head.is_none() {
+                continue;
+            }
+            let Some(binding) = self.deduce_function_call(binding, &[], false, None)? else {
+                continue;
+            };
+            if selected.replace(binding).is_some() {
+                return Err(Error::at(SourceOffset(0), "ambiguous default constructor"));
+            }
+        }
+        let binding =
+            selected.ok_or_else(|| Error::at(location, "no default constructor for the class"))?;
+        self.inherited_constructor_specialization(class, binding, 0)
     }
 
     fn prepare_defaulted_subobjects(&mut self, class: EntityId) -> Result<(), Error> {

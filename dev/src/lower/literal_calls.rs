@@ -96,30 +96,24 @@ impl Function<'_, '_, '_, '_> {
                     .constant(Constant::Float(FloatKind::F80, u128::from_le_bytes(bits)))?;
                 (Some([value; 2]), 1)
             }
-            LiteralCall::Raw { digits } => {
-                let mut units = self.symbols.data.take_string_units();
-                let spelling = self.symbols.literal_spelling(literal);
-                let digits = spelling.get(..digits).ok_or(crate::sema::Error::Invariant(
-                    "numeric literal digits outside spelling",
-                ))?;
-                units.extend(digits.iter().copied().map(u64::from));
-                units.push(0);
-                let symbol = super::data::string_object(
+            LiteralCall::Raw { .. } => {
+                let symbol = super::data::literal_object(
                     self.builder.program(),
                     self.symbols,
-                    Type::I8,
-                    units,
+                    self.graph,
+                    self.tree,
+                    id,
                 )?;
                 let address = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
                 (Some([address; 2]), 1)
             }
-            LiteralCall::String { element, units } => {
-                let symbol = super::data::string(
+            LiteralCall::String { units, .. } => {
+                let symbol = super::data::literal_object(
                     self.builder.program(),
                     self.symbols,
                     self.graph,
-                    literal,
-                    element,
+                    self.tree,
+                    id,
                 )?;
                 let address = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
                 let length = self.builder.integer(u128::from(units - 1))?;

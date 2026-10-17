@@ -5,7 +5,7 @@ use super::{
     analyzer::Analyzer,
     constant_addresses::{Address, Root, nonconstant},
     constants::Constant,
-    graph::ScopeId,
+    graph::{EntityId, ScopeId},
     integral,
     types::{Scalar, TypeId, TypeKind},
 };
@@ -14,6 +14,29 @@ use crate::{
     support::source::SourceOffset,
     syntax::ast::{self, ExprKind},
 };
+
+/// A completed class's immutable byte spans. The evaluation scratch belongs to
+/// one analyzer/unit; only complete layouts enter the class-identity cache.
+#[derive(Default)]
+pub(super) struct MemberSpans(std::collections::HashMap<EntityId, Vec<MemberSpan>>);
+#[derive(Clone, Copy)]
+struct MemberSpan {
+    member: EntityId,
+    ty: TypeId,
+    start: i64,
+    size: i64,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OrderedPart {
+    Base(usize),
+    Member(EntityId),
+}
+#[derive(Clone, Copy)]
+struct Subobject {
+    part: OrderedPart,
+    ty: TypeId,
+    start: i64,
+}
 
 impl Analyzer<'_> {
     pub(super) fn constant_truth(
@@ -282,7 +305,7 @@ impl Analyzer<'_> {
             }
             Root::Published(id) => Ok(self.graph.aggregate_constants.temporary(id).ty),
             Root::Ephemeral(expr) => Ok(self.graph.expression_facts.get(expr)?.ty),
-            Root::Literal(id) => Ok(self.graph.expression_facts.get(id)?.ty),
+            Root::Literal(id) => self.graph.lower_literal_storage(id),
             Root::Function(_) => Err(nonconstant(location, "a function is not an object")),
             Root::Null => Err(nonconstant(
                 location,
@@ -297,13 +320,41 @@ impl Analyzer<'_> {
         let (Root::Literal(a), Root::Literal(b)) = (a.root, b.root) else {
             return Ok(false);
         };
-        let (ExprKind::Literal(a), ExprKind::Literal(b)) = (
-            self.tree.expressions.get(a).kind,
-            self.tree.expressions.get(b).kind,
-        ) else {
+        let (a_element, a_bytes, a_null) = self.constant_literal_units(a)?;
+        let (b_element, b_bytes, b_null) = self.constant_literal_units(b)?;
+        Ok(a_element == b_element
+            && a_bytes
+                .iter()
+                .copied()
+                .chain(a_null.then_some(0))
+                .eq(b_bytes.iter().copied().chain(b_null.then_some(0))))
+    }
+    fn constant_literal_units(&self, id: ast::ExprId) -> Result<(Scalar, &[u8], bool), Error> {
+        let ExprKind::Literal(literal) = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("literal address without literal syntax"));
         };
-        Ok(a.kind == b.kind && self.literal_bytes.get(a.data) == self.literal_bytes.get(b.data))
+        let TypeKind::Array { element, .. } = self
+            .graph
+            .types
+            .get(self.graph.lower_literal_storage(id)?)
+            .kind
+        else {
+            return Err(Error::Invariant("literal address without array storage"));
+        };
+        let TypeKind::Scalar(element) = self.graph.types.get(element).kind else {
+            return Err(Error::Invariant("literal address without scalar elements"));
+        };
+        if let Some(super::literal_calls::LiteralCall::Raw { digits, .. }) =
+            self.graph.expression_facts.get(id)?.literal_call
+        {
+            let bytes = self
+                .literal_bytes
+                .get(literal.spelling)
+                .get(..digits)
+                .ok_or(Error::Invariant("raw literal digits outside spelling"))?;
+            return Ok((element, bytes, true));
+        }
+        Ok((element, self.literal_bytes.get(literal.data), false))
     }
     fn address_comparison(
         &mut self,
@@ -319,18 +370,176 @@ impl Analyzer<'_> {
         if !same || matches!(a.root, Root::Null | Root::Function(_)) {
             return Err(nonconstant(location, "an unspecified pointer comparison"));
         }
-        // Ordered scalar and array roots have one access-control domain. Class
-        // member ordering is a distinct owner and must not be assumed from offsets.
-        let mut ty = self.address_root_type(a, location)?;
-        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
-            ty = element;
-        }
-        if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
-            return Err(Error::Missing("constant class member pointer ordering"));
+        let ty = self.address_root_type(a, location)?;
+        if !self.ordered_constant_offsets(ty, a.offset, b.offset, location)? {
+            return Err(nonconstant(location, "an unspecified pointer comparison"));
         }
         integral::comparison(op, true, a.offset.cast_unsigned(), b.offset.cast_unsigned()).ok_or(
             Error::Invariant("pointer comparison without comparison operator"),
         )
+    }
+    fn ordered_constant_offsets(
+        &mut self,
+        mut ty: TypeId,
+        mut a: i64,
+        mut b: i64,
+        location: SourceOffset,
+    ) -> Result<bool, Error> {
+        loop {
+            if a == b {
+                return Ok(true);
+            }
+            if let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+                let size = self.address_element_size(element, location)?;
+                if size == 0 || a / size != b / size {
+                    return Ok(true);
+                }
+                ty = element;
+                a %= size;
+                b %= size;
+                continue;
+            }
+            let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+                return Ok(true);
+            };
+            if self.graph.entity(class).key == Keyword::Union {
+                return Ok(true);
+            }
+            self.class_layout(class, location)?;
+            let left = self.ordered_constant_subobject(class, a, location)?;
+            let right = self.ordered_constant_subobject(class, b, location)?;
+            if left.is_some_and(|s| matches!(s.part, OrderedPart::Base(_)))
+                || right.is_some_and(|s| matches!(s.part, OrderedPart::Base(_)))
+            {
+                if left.map(|s| s.part) != right.map(|s| s.part) {
+                    return Ok(false);
+                }
+            } else if let (Some(left), Some(right)) = (left, right) {
+                if left.part != right.part {
+                    return Ok(self
+                        .ordered_member_access(class, left.part)
+                        .is_some_and(|a| {
+                            Some(a) == self.ordered_member_access(class, right.part)
+                        }));
+                }
+                if matches!(
+                    self.graph.types.get(left.ty).kind,
+                    TypeKind::Reference { .. }
+                ) {
+                    return Ok(true);
+                }
+            }
+            let (Some(left), Some(right)) = (left, right) else {
+                return Ok(true);
+            };
+            ty = left.ty;
+            a = a.wrapping_sub(left.start);
+            b = b.wrapping_sub(right.start);
+        }
+    }
+    fn ordered_member_access(
+        &self,
+        class: EntityId,
+        part: OrderedPart,
+    ) -> Option<super::graph::Access> {
+        let OrderedPart::Member(member) = part else {
+            return None;
+        };
+        let name = self.graph.entity(member).name?;
+        let scope = self.graph.entity(class).scope?;
+        self.graph
+            .own(scope, name, super::lookup::Filter::Ordinary)
+            .map(|binding| self.graph.binding_access(binding))
+    }
+    fn ordered_constant_subobject(
+        &mut self,
+        class: EntityId,
+        offset: i64,
+        location: SourceOffset,
+    ) -> Result<Option<Subobject>, Error> {
+        for index in 0..self.graph.entity(class).bases.len() {
+            let base = self.graph.entity(class).bases[index];
+            if self.graph.lower_class_empty(base.class)? {
+                continue;
+            }
+            let start = integral::signed(
+                base.offset
+                    .ok_or(Error::Invariant("ordered base without layout"))?,
+            );
+            let ty = self.graph.lower_entity_type(base.class)?;
+            let size = self.address_element_size(ty, location)?;
+            if offset >= start && offset < start.wrapping_add(size) {
+                return Ok(Some(Subobject {
+                    part: OrderedPart::Base(index),
+                    ty,
+                    start,
+                }));
+            }
+        }
+        let known = self
+            .constant_evaluation
+            .as_ref()
+            .ok_or(Error::Invariant("ordering outside evaluation"))?
+            .projections
+            .as_ref()
+            .is_some_and(|query| query.member_spans.0.contains_key(&class));
+        if !known {
+            let mut spans = Vec::with_capacity(self.graph.entity(class).members.len());
+            for index in 0..self.graph.entity(class).members.len() {
+                let member = self.graph.entity(class).members[index];
+                if self.graph.entity(member).bit_field.is_some() {
+                    continue;
+                }
+                let ty = self.graph.lower_entity_type(member)?;
+                let start = integral::signed(
+                    self.graph
+                        .entity(member)
+                        .member_offset
+                        .ok_or(Error::Invariant("ordered member without layout"))?,
+                );
+                let size = if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
+                    8
+                } else {
+                    self.address_element_size(ty, location)?.max(1)
+                };
+                spans.push(MemberSpan {
+                    member,
+                    ty,
+                    start,
+                    size,
+                });
+            }
+            spans.sort_unstable_by_key(|span| span.start);
+            self.constant_evaluation
+                .as_mut()
+                .ok_or(Error::Invariant("ordering lost evaluation"))?
+                .projections
+                .get_or_insert_with(Box::default)
+                .member_spans
+                .0
+                .insert(class, spans);
+        }
+        let spans = &self
+            .constant_evaluation
+            .as_ref()
+            .ok_or(Error::Invariant("ordering outside evaluation"))?
+            .projections
+            .as_ref()
+            .ok_or(Error::Invariant("ordering lost member spans"))?
+            .member_spans
+            .0
+            .get(&class)
+            .ok_or(Error::Invariant("completed member spans missing"))?;
+        let found = spans
+            .partition_point(|span| span.start <= offset)
+            .checked_sub(1)
+            .and_then(|index| spans.get(index))
+            .filter(|span| offset < span.start.wrapping_add(span.size));
+        Ok(found.map(|span| Subobject {
+            part: OrderedPart::Member(span.member),
+            ty: span.ty,
+            start: span.start,
+        }))
     }
     fn address_difference(
         &mut self,
@@ -487,5 +696,66 @@ impl Analyzer<'_> {
             }
         }
         found.ok_or_else(|| nonconstant(location, "pointer arithmetic outside an array"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn ordered_member_spans_are_reused_only_for_their_completed_class() {
+        let source = SourceBuffer::new(
+            br#"
+            struct First;
+            struct Second { int b, a; } second;
+            struct First { int a, b; } first;
+            static_assert(&first.a < &first.b, "first");
+            static_assert(&second.b < &second.a, "second");
+            static_assert(&first.a < &first.b, "reuse");
+            int main(){return 0;}
+        "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"ordered-spans").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mark = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert_eq!(analyzer.tree.expressions.mark(), mark);
+        assert_eq!(analyzer.constexpr_frames.depth(), 0);
+        let spans = &analyzer
+            .constant_scratch
+            .projections
+            .as_ref()
+            .unwrap()
+            .member_spans
+            .0;
+        assert_eq!(spans.len(), 2);
+        let mut keys = spans.keys();
+        let first = &spans[keys.next().unwrap()];
+        let second = &spans[keys.next().unwrap()];
+        assert_eq!(first.len(), 2);
+        assert_eq!(second.len(), 2);
+        assert_ne!(first[0].member, second[0].member);
+        assert_eq!(
+            first.iter().map(|s| s.start).collect::<Vec<_>>(),
+            vec![0, 4]
+        );
+        assert_eq!(
+            second.iter().map(|s| s.start).collect::<Vec<_>>(),
+            vec![0, 4]
+        );
     }
 }

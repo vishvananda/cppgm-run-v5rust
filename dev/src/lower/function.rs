@@ -91,7 +91,7 @@ pub(super) fn definition_body(
     )
 }
 pub(super) fn lower<'a>(
-    program: &mut Program,
+    output: super::startup::FunctionOutput<'_>,
     symbols: &mut Symbols<'a, '_>,
     graph: &'a Graph,
     tree: &'a ast::Tree,
@@ -99,6 +99,7 @@ pub(super) fn lower<'a>(
     body: Option<ast::BodyId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
+    let program = output.program;
     let facts = entry.facts(graph)?;
     let entity = entry.entity(graph);
     let TypeView::Function {
@@ -221,6 +222,7 @@ pub(super) fn lower<'a>(
     builder.boundary(boundary);
     builder.block("entry")?;
     let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
+    function.initialization_output = output.initialization;
     if result_boundary.indirect {
         function.result_destination = Some(function.builder.parameter(0)?);
     }

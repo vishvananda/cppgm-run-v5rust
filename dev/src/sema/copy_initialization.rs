@@ -233,6 +233,9 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<Option<RefKind>, Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
+        if entity.template_head.is_some() {
+            return Ok(None);
+        }
         if !entity.member_function.is_some_and(|key| key.class == class) {
             return Err(Error::Invariant("copy constructor of another class"));
         }
@@ -574,7 +577,19 @@ impl Analyzer<'_> {
         let selected = self.rank_class_copy(class, facts, context, &mut scratch.candidates);
         scratch.candidates.clear();
         self.copy_scratch = scratch;
-        selected
+        let mut selected = selected?;
+        if let CopyResolution::Selected(candidate) = &mut selected
+            && let CopyOrigin::Declared(binding) = candidate.selection.origin
+        {
+            let binding = self.inherited_constructor_specialization(class, binding, 1)?;
+            candidate.selection.origin = CopyOrigin::Declared(binding);
+            candidate.deleted |= self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .availability
+                == FunctionAvailability::Deleted;
+        }
+        Ok(selected)
     }
     pub(super) fn single_constructor_not_viable(
         &mut self,
@@ -596,79 +611,7 @@ impl Analyzer<'_> {
         let copies = self.implicit_copy_candidates(class)?;
         candidates.clear();
         let mut offered = copies.copy.is_some() || copies.moving.is_some();
-        for index in 0..self.graph.entity(class).declared_constructors.len() {
-            let binding = self.graph.entity(class).declared_constructors[index];
-            let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if matches!(
-                context,
-                ConstructorContext::Copy | ConstructorContext::Standard { explicit: false }
-            ) && entity.explicitness == super::specifiers::Explicitness::Explicit
-            {
-                continue;
-            }
-            offered = true;
-            let ty = entity
-                .ty
-                .ok_or(Error::Invariant("constructor without type"))?;
-            let count = self.graph.types.function_parameter_count(ty)?;
-            let variadic = matches!(
-                self.graph.types.get(ty).kind,
-                TypeKind::Function { variadic: true, .. }
-            );
-            if count == 0 && !variadic
-                || (1..count).any(|i| {
-                    self.graph
-                        .function_default(self.graph.binding(binding).entity, i)
-                        .is_none()
-                })
-            {
-                continue;
-            }
-            if entity.template_head.is_some() {
-                return Err(Error::Missing("copy constructor template deduction"));
-            }
-            let defaulted = matches!(
-                entity.special_definition,
-                Some(SpecialDefinition::Defaulted { .. })
-            );
-            let explicitly_deleted = entity.availability == FunctionAvailability::Deleted;
-            let copy_properties = entity.copy_properties;
-            let sequence = if count == 0 {
-                let target = self.decayed_type(facts.ty)?;
-                let Some(mut conversion) = self.scalar_sequence(facts, target, false)? else {
-                    continue;
-                };
-                conversion.rank = super::expression_facts::ConversionRank::Ellipsis;
-                ArgumentSequence {
-                    conversion,
-                    application: Some(conversion),
-                    function: None,
-                    user_conversion: None,
-                }
-            } else {
-                let parameter = self.graph.types.function_parameter(ty, 0)?;
-                let Some(sequence) =
-                    self.copy_argument_sequence(facts, parameter, class, context)?
-                else {
-                    continue;
-                };
-                sequence
-            };
-            let kind = self.declared_copy_kind(binding, class)?;
-            let deleted = explicitly_deleted
-                || copy_properties.is_some_and(|id| self.graph.copy_properties.get(id).deleted);
-            if defaulted && deleted && kind == Some(RefKind::Rvalue) {
-                continue;
-            }
-            candidates.push(Candidate {
-                selection: CopySelection {
-                    origin: CopyOrigin::Declared(binding),
-                    binding: sequence.conversion,
-                },
-                argument: sequence.user_conversion.map(|_| sequence),
-                deleted,
-            });
-        }
+        offered |= self.declared_copy_candidates(class, facts, context, false, candidates)?;
         for (kind, parameter, deleted) in [
             copies
                 .copy
@@ -691,6 +634,23 @@ impl Analyzer<'_> {
                 });
             }
         }
+        // Preserve resolve's last viable non-template's perfect-sequence flag;
+        // a later converting copy candidate can require template deduction.
+        if !candidates.last().is_some_and(|&candidate| {
+            self.perfect_sequence(
+                Some(candidate.argument.unwrap_or(ArgumentSequence {
+                    conversion: candidate.selection.binding,
+                    application: Some(candidate.selection.binding),
+                    function: None,
+                    user_conversion: None,
+                })),
+                facts.ty,
+                facts.category,
+                facts.functions.is_some(),
+            )
+        }) {
+            offered |= self.declared_copy_candidates(class, facts, context, true, candidates)?;
+        }
         let mut best = 0;
         for index in 1..candidates.len() {
             if self.compare_copy_candidates(candidates[index], candidates[best])?
@@ -710,6 +670,92 @@ impl Analyzer<'_> {
             }
         }
         Ok(CopyResolution::Selected(chosen))
+    }
+
+    fn declared_copy_candidates(
+        &mut self,
+        class: EntityId,
+        facts: super::expression_facts::ExprFacts,
+        context: ConstructorContext,
+        templated: bool,
+        candidates: &mut Vec<Candidate>,
+    ) -> Result<bool, Error> {
+        let mut offered = false;
+        for index in 0..self.graph.entity(class).declared_constructors.len() {
+            let binding = self.graph.entity(class).declared_constructors[index];
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if entity.template_head.is_some() != templated {
+                continue;
+            }
+            if matches!(
+                context,
+                ConstructorContext::Copy | ConstructorContext::Standard { explicit: false }
+            ) && entity.explicitness == super::specifiers::Explicitness::Explicit
+            {
+                continue;
+            }
+            offered = true;
+            let Some(binding) = self.deduce_function_call(binding, &[], false, Some(facts))? else {
+                continue;
+            };
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            let ty = entity
+                .ty
+                .ok_or(Error::Invariant("constructor without type"))?;
+            let count = self.graph.types.function_parameter_count(ty)?;
+            let variadic = matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Function { variadic: true, .. }
+            );
+            if count == 0 && !variadic
+                || (1..count)
+                    .any(|i| !self.function_has_default(self.graph.binding(binding).entity, i))
+            {
+                continue;
+            }
+            let defaulted = matches!(
+                entity.special_definition,
+                Some(SpecialDefinition::Defaulted { .. })
+            );
+            let explicitly_deleted = entity.availability == FunctionAvailability::Deleted;
+            let copy_properties = entity.copy_properties;
+            let kind = entity.copy_kind;
+            let sequence = if count == 0 {
+                let target = self.decayed_type(facts.ty)?;
+                let Some(mut conversion) = self.scalar_sequence(facts, target, false)? else {
+                    continue;
+                };
+                conversion.rank = super::expression_facts::ConversionRank::Ellipsis;
+                ArgumentSequence {
+                    conversion,
+                    application: Some(conversion),
+                    function: None,
+                    user_conversion: None,
+                }
+            } else {
+                let parameter = self.graph.types.function_parameter(ty, 0)?;
+                let Some(sequence) =
+                    self.copy_argument_sequence(facts, parameter, class, context)?
+                else {
+                    continue;
+                };
+                sequence
+            };
+            let deleted = explicitly_deleted
+                || copy_properties.is_some_and(|id| self.graph.copy_properties.get(id).deleted);
+            if defaulted && deleted && kind == Some(RefKind::Rvalue) {
+                continue;
+            }
+            candidates.push(Candidate {
+                selection: CopySelection {
+                    origin: CopyOrigin::Declared(binding),
+                    binding: sequence.conversion,
+                },
+                argument: sequence.user_conversion.map(|_| sequence),
+                deleted,
+            });
+        }
+        Ok(offered)
     }
 
     fn copy_argument_sequence(
@@ -744,7 +790,40 @@ impl Analyzer<'_> {
                 user_conversion: None,
             })
         };
-        self.compare_argument_sequences(sequence(a), sequence(b))
+        let order = self.compare_argument_sequences(sequence(a), sequence(b))?;
+        if order != Ordering::Equal {
+            return Ok(order);
+        }
+        match (a.selection.origin, b.selection.origin) {
+            (CopyOrigin::Declared(a), CopyOrigin::Declared(b)) => {
+                self.compare_function_templates(a, b, Some(1))
+            }
+            (CopyOrigin::Declared(binding), CopyOrigin::Implicit { .. }) => Ok(
+                if self
+                    .graph
+                    .function_templates
+                    .primary(self.graph.binding(binding).entity)
+                    .is_some()
+                {
+                    Ordering::Less
+                } else {
+                    Ordering::Equal
+                },
+            ),
+            (CopyOrigin::Implicit { .. }, CopyOrigin::Declared(binding)) => Ok(
+                if self
+                    .graph
+                    .function_templates
+                    .primary(self.graph.binding(binding).entity)
+                    .is_some()
+                {
+                    Ordering::Greater
+                } else {
+                    Ordering::Equal
+                },
+            ),
+            _ => Ok(Ordering::Equal),
+        }
     }
     pub(super) fn initialize_single_constructor(
         &mut self,

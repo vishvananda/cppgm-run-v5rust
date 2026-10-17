@@ -225,7 +225,15 @@ impl Analyzer<'_> {
             self.graph.entity_mut(class).aggregation =
                 super::aggregate_initialization::Aggregation::Ineligible;
         }
-        if self.semantic() {
+        if self.semantic() && self.template_depth != 0 {
+            self.record_template_function_defaults(
+                function,
+                info.parameters
+                    .ok_or(Error::Invariant("special member without parameters"))?,
+                info.lookup,
+                info.ty,
+            )?;
+        } else if self.semantic() {
             self.record_function_defaults(
                 function,
                 info.parameters

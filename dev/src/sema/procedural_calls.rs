@@ -1019,7 +1019,7 @@ impl Analyzer<'_> {
         Ok(true)
     }
 
-    fn perfect_sequence(
+    pub(super) fn perfect_sequence(
         &self,
         sequence: Option<ArgumentSequence>,
         ty: TypeId,

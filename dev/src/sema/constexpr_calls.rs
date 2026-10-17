@@ -29,6 +29,7 @@ pub(super) enum Returned {
 pub(super) enum ConstantArguments<'a> {
     Written(&'a [ast::ExprId]),
     Bound(&'a [Address]),
+    Values(&'a [Value]),
 }
 impl ConstantArguments<'_> {
     pub(super) fn first_place(
@@ -38,6 +39,9 @@ impl ConstantArguments<'_> {
         scope: ScopeId,
     ) -> Result<Address, Error> {
         match self {
+            Self::Values(_) => Err(Error::Invariant(
+                "scalar literal arguments used for object copy",
+            )),
             Self::Bound(values) => values
                 .first()
                 .copied()
@@ -290,6 +294,9 @@ impl Analyzer<'_> {
         destination: Option<Address>,
     ) -> Result<Returned, Error> {
         let id = self.graph.expression_facts.root(id);
+        if self.graph.expression_facts.get(id)?.literal_call.is_some() {
+            return self.constant_literal_call(id, scope, destination);
+        }
         if self.graph.expression_facts.get(id)?.call_form == CallForm::Operator
             && !matches!(self.tree.expressions.get(id).kind, ExprKind::Call { .. })
         {
@@ -300,6 +307,15 @@ impl Analyzer<'_> {
         };
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
+        if matches!(
+            facts.destructor,
+            Some(super::expression_facts::DestructorTarget::Scalar)
+        ) {
+            return Err(nonconstant(
+                location,
+                "a pseudo-destructor call in a constant expression",
+            ));
+        }
         if facts.dispatch.is_virtual() {
             return Err(nonconstant(
                 location,
@@ -357,6 +373,19 @@ impl Analyzer<'_> {
             }
             None
         };
+        // The frozen interpreter evaluates the receiver, then treats a
+        // trivial destructor as an inert call, without requiring constexpr.
+        if let Some(super::expression_facts::DestructorTarget::Class(binding)) = facts.destructor {
+            let class = self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .member_function
+                .ok_or(Error::Invariant("constant destructor without class"))?
+                .class;
+            if self.graph.destructor_trivial(class)? {
+                return Ok(Returned::Void);
+            }
+        }
         let arguments = super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
         self.invoke_constant_function_into(
             function,
@@ -421,7 +450,7 @@ impl Analyzer<'_> {
             location,
         )
     }
-    fn invoke_constant_function_into(
+    pub(super) fn invoke_constant_function_into(
         &mut self,
         function: EntityId,
         (arguments, postfix): (ConstantArguments<'_>, bool),
@@ -619,9 +648,17 @@ impl Analyzer<'_> {
                 bound.push(value);
                 continue;
             }
+            if let ConstantArguments::Values(values) = arguments
+                && let Some(&value) = values.get(index)
+            {
+                bound.push(Returned::Value(
+                    self.convert_constant_scalar(value, parameter, location)?,
+                ));
+                continue;
+            }
             let written = match arguments {
                 ConstantArguments::Written(values) => values,
-                ConstantArguments::Bound(_) => &[],
+                ConstantArguments::Bound(_) | ConstantArguments::Values(_) => &[],
             };
             if postfix && index == written.len() {
                 bound.push(Returned::Value(self.zero_constant_scalar(parameter)?));

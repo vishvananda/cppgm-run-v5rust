@@ -16,12 +16,41 @@ use super::{
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct InstanceKey {
+    class: EntityId,
+    source: EntityId,
+    count: usize,
+}
+#[derive(Clone, Copy)]
+enum Instance {
+    InProgress,
+    Ready(BindingId),
+}
 #[derive(Default)]
 pub(super) struct InheritedConstructors {
     bases: HashMap<EntityId, EntityId>,
     sources: HashMap<EntityId, BindingId>,
+    #[expect(
+        clippy::box_collection,
+        reason = "Demand-only cache keeps the by-value semantic graph out of the measured oversized analyze_unit stack frame"
+    )]
+    specializations: Option<Box<HashMap<InstanceKey, Instance>>>,
 }
 impl InheritedConstructors {
+    fn instance(&self, key: InstanceKey) -> Option<Instance> {
+        self.specializations.as_deref()?.get(&key).copied()
+    }
+    fn set_instance(&mut self, key: InstanceKey, value: Instance) {
+        self.specializations
+            .get_or_insert_with(Box::default)
+            .insert(key, value);
+    }
+    fn discard_instance(&mut self, key: InstanceKey) {
+        if let Some(instances) = &mut self.specializations {
+            instances.remove(&key);
+        }
+    }
     pub(super) fn source(&self, function: EntityId) -> Option<BindingId> {
         self.sources.get(&function).copied()
     }
@@ -76,7 +105,17 @@ impl Analyzer<'_> {
             let source = self.graph.entity(base).declared_constructors[index];
             let entity = self.graph.binding(source).entity;
             if self.graph.entity(entity).template_head.is_some() {
-                return Err(Error::Missing("inherited constructor templates"));
+                // The base template retains its own canonical identity. Only a
+                // selected specialization creates a derived forwarding entry.
+                let binding = self
+                    .graph
+                    .add_binding(owner, None, self.graph.binding(source))?;
+                self.graph.inherit_binding_access(binding, source);
+                self.graph
+                    .entity_mut(class)
+                    .declared_constructors
+                    .push(binding);
+                continue;
             }
             let ty = self
                 .graph
@@ -170,6 +209,160 @@ impl Analyzer<'_> {
                     .sources
                     .insert(function, source);
             }
+        }
+        Ok(())
+    }
+    pub(super) fn inherited_constructor_specialization(
+        &mut self,
+        class: EntityId,
+        source: BindingId,
+        arguments: usize,
+    ) -> Result<BindingId, Error> {
+        let function = self.graph.binding(source).entity;
+        let Some(member) = self.graph.entity(function).member_function else {
+            return Ok(source);
+        };
+        if member.class == class || self.graph.function_templates.primary(function).is_none() {
+            return Ok(source);
+        }
+        self.check_stack()?;
+        let base = *self
+            .graph
+            .inherited_constructors
+            .bases
+            .get(&class)
+            .ok_or(Error::Invariant("inherited template without named base"))?;
+        let forwarded = if member.class == base {
+            source
+        } else {
+            self.inherited_constructor_specialization(base, source, arguments)?
+        };
+        let ty = self
+            .graph
+            .lower_entity_type(self.graph.binding(forwarded).entity)?;
+        let count = arguments.min(self.graph.types.function_parameter_count(ty)?);
+        let key = InstanceKey {
+            class,
+            source: function,
+            count,
+        };
+        match self.graph.inherited_constructors.instance(key) {
+            Some(Instance::Ready(binding)) => {
+                self.demand_inherited_definition(binding)?;
+                return Ok(binding);
+            }
+            Some(Instance::InProgress) => {
+                return Err(Error::at(
+                    SourceOffset(0),
+                    "template instantiation nested too deeply",
+                ));
+            }
+            None => (),
+        }
+        let TypeKind::Function { variadic, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("inherited template without function type"));
+        };
+        let parameters = (0..count)
+            .map(|index| self.graph.types.function_parameter(ty, index))
+            .collect::<Result<Vec<_>, _>>()?;
+        let void = self.graph.types.scalar(Scalar::Void)?;
+        let signature = self.graph.types.intern(
+            TypeKind::Function {
+                result: void,
+                parameters,
+                variadic,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )?;
+        let owner = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("inherited template without owner"))?;
+        let inherited =
+            self.graph
+                .add_entity(Some(signature), self.graph.entity(class).name, Keyword::Int)?;
+        let source_entity = self.graph.entity(self.graph.binding(forwarded).entity);
+        let properties = (
+            source_entity.function,
+            source_entity.availability,
+            source_entity.explicitness,
+        );
+        let node = self.graph.entity_mut(inherited);
+        node.home = Some(owner);
+        node.defined = true;
+        node.inline = super::specifiers::InlinePreference::Inline;
+        node.definition_emission = super::function_demands::DefinitionEmission::Demanded;
+        node.function = properties.0;
+        node.availability = properties.1;
+        node.explicitness = properties.2;
+        node.constructor_exceptions =
+            super::construction::ConstructorExceptionSource::SubobjectPlan;
+        node.member_function = Some(MemberKey {
+            class,
+            kind: MemberKind::Constructor,
+            signature,
+            shape: None,
+        });
+        let binding = self.graph.add_binding(
+            owner,
+            None,
+            Binding {
+                kind: BindingKind::Function,
+                name: None,
+                entity: inherited,
+                ty: Some(signature),
+                key: Keyword::Int,
+            },
+        )?;
+        self.graph.inherit_binding_access(binding, forwarded);
+        self.graph
+            .inherited_constructors
+            .sources
+            .insert(inherited, forwarded);
+        self.graph
+            .inherited_constructors
+            .set_instance(key, Instance::InProgress);
+        if let Err(error) = self.build_inherited_constructor(binding, class) {
+            if !matches!(error, Error::Diagnostic { .. } | Error::NonConstant { .. }) {
+                self.graph.inherited_constructors.discard_instance(key);
+                return Err(error);
+            }
+            // The implicit definition's invalid subobject plan deletes this
+            // selected forwarding entry; the use owns its final diagnostic.
+            self.graph.entity_mut(inherited).availability =
+                super::graph::FunctionAvailability::Deleted;
+        }
+        self.graph
+            .inherited_constructors
+            .set_instance(key, Instance::Ready(binding));
+        // Exception facts precede definition demand, as in the frozen plan.
+        self.demand_inherited_definition(binding)?;
+        Ok(binding)
+    }
+    fn demand_inherited_definition(&mut self, mut binding: BindingId) -> Result<(), Error> {
+        if self.unevaluated != 0 || self.template_depth != 0 {
+            return Ok(());
+        }
+        while let Some(source) = self
+            .graph
+            .inherited_constructors
+            .source(self.graph.binding(binding).entity)
+        {
+            let function = self.graph.entity(self.graph.binding(binding).entity);
+            if function.availability == super::graph::FunctionAvailability::Deleted {
+                break;
+            }
+            let count = self.graph.types.function_parameter_count(
+                function
+                    .ty
+                    .ok_or(Error::Invariant("inherited definition without type"))?,
+            )?;
+            self.instantiate_call_defaults(source, count)?;
+            self.demand_specialization_body(source);
+            binding = source;
         }
         Ok(())
     }
@@ -351,6 +544,7 @@ impl super::graph::Graph {
 
 #[cfg(test)]
 mod tests {
+    use super::Instance;
     use crate::{
         preprocess::unit::Preprocessor,
         sema::{Analyzer, construction::ConstructorState, lookup::Filter, types::TypeKind},
@@ -470,5 +664,78 @@ mod tests {
                     .is_none())
         );
         assert!(graph.lower_class_layout(unused).is_err());
+    }
+
+    #[test]
+    fn inherited_instance_keys_retain_class_source_and_forwarded_count() {
+        let source = SourceBuffer::new(
+            br#"
+            struct A { int n; template<class T>constexpr A(T x,int y=5):n(x+y){} };
+            struct B:A { using A::A; };
+            struct C:A { using A::A; };
+            constexpr B b1(3),b2(4),b3(5,6);
+            constexpr C c1(7);
+            static_assert(b1.n==8 && b2.n==9 && b3.n==11 && c1.n==12, "values");
+            int main(){return 0;}
+        "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"inherited-keys").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let entries: Vec<_> = analyzer
+            .graph
+            .inherited_constructors
+            .specializations
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|(&key, &value)| (key, value))
+            .collect();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(key, _)| key.source)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            1
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(key, _)| key.class)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            2
+        );
+        let mark = analyzer.tree.expressions.mark();
+        for (key, value) in entries {
+            let Instance::Ready(binding) = value else {
+                panic!("completed forwarding entry");
+            };
+            let source = analyzer.graph.function_origin(key.source).unwrap();
+            assert_eq!(
+                analyzer
+                    .inherited_constructor_specialization(key.class, source, key.count)
+                    .unwrap(),
+                binding
+            );
+            let entity = analyzer
+                .graph
+                .entity(analyzer.graph.binding(binding).entity);
+            assert_eq!(entity.parameter_entities.len(), key.count);
+            assert!(entity.constructor.is_some());
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), mark);
+        assert_eq!(analyzer.constexpr_frames.depth(), 0);
     }
 }

@@ -39,7 +39,18 @@ pub(super) fn lower_definitions<'a>(
             && emitted.insert(entity)
         {
             let entry = super::construction::Entry::Function(entity);
-            super::function::lower(program, symbols, graph, tree, entry, None, budget)?;
+            super::function::lower(
+                super::startup::FunctionOutput {
+                    program,
+                    initialization: None,
+                },
+                symbols,
+                graph,
+                tree,
+                entry,
+                None,
+                budget,
+            )?;
             symbols.stream_definition(program, definitions, entry)?;
         }
     }

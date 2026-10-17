@@ -36,7 +36,9 @@ impl Analyzer<'_> {
             source.designated = self.bare_type(source.designated)?;
             return self.copy_constant_object(target, source, location);
         }
-        if facts.call_form == super::expression_facts::CallForm::Operator {
+        if facts.literal_call.is_some()
+            || facts.call_form == super::expression_facts::CallForm::Operator
+        {
             self.constant_call_into(id, scope, Some(target))?;
             return Ok(());
         }
@@ -378,7 +380,7 @@ impl Analyzer<'_> {
             return self.run_constant_constructor(target, id, values, scope, location);
         }
         if let Some(&expr) = values.first() {
-            return self.materialize_constant_object(expr, target, scope);
+            return self.initialize_constant_class_from(expr, target, scope);
         }
         Ok(())
     }
@@ -580,6 +582,9 @@ impl Analyzer<'_> {
         }
         if self.graph.lower_constructor_copies_storage(id) {
             return match values {
+                ConstantArguments::Values(_) => Err(Error::Invariant(
+                    "literal values used for a copy constructor",
+                )),
                 ConstantArguments::Written(values) => {
                     let &source = values
                         .first()

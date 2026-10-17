@@ -21,11 +21,26 @@ use crate::{
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum LiteralCall {
-    Character { source: TypeId, bits: u64 },
-    String { element: TypeId, units: u32 },
-    Integer { source: TypeId, bits: u64 },
-    Floating { digits: usize },
-    Raw { digits: usize },
+    Character {
+        source: TypeId,
+        bits: u64,
+    },
+    String {
+        element: TypeId,
+        units: u32,
+        object: TypeId,
+    },
+    Integer {
+        source: TypeId,
+        bits: u64,
+    },
+    Floating {
+        digits: usize,
+    },
+    Raw {
+        digits: usize,
+        object: TypeId,
+    },
     Template,
 }
 
@@ -121,6 +136,7 @@ impl Analyzer<'_> {
                     LiteralCall::String {
                         element,
                         units: elements,
+                        object: array,
                     },
                     ExprFacts::new(array, ValueCategory::Lvalue),
                     Some(ExprFacts::new(length, ValueCategory::Prvalue)),
@@ -232,7 +248,18 @@ impl Analyzer<'_> {
             ));
         };
         let shape = if is_raw {
-            LiteralCall::Raw { digits }
+            let object = self.graph.types.intern(
+                TypeKind::Array {
+                    element: character,
+                    bound: u64::try_from(digits)
+                        .map_err(|_| Error::Limit("raw literal length"))?
+                        .checked_add(1)
+                        .ok_or(Error::Limit("raw literal length"))?,
+                    operand: None,
+                },
+                Cv::default(),
+            )?;
+            LiteralCall::Raw { digits, object }
         } else if form == LiteralForm::Floating {
             LiteralCall::Floating { digits }
         } else {
@@ -334,6 +361,103 @@ impl Analyzer<'_> {
             }
         }
         Ok(None)
+    }
+
+    pub(super) fn constant_literal_call(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        destination: Option<super::constant_addresses::Address>,
+    ) -> Result<super::constexpr_calls::Returned, Error> {
+        use super::{
+            constant_addresses::{Address, Root, TemporaryValue as Value, nonconstant},
+            constants::Constant,
+            constexpr_calls::ConstantArguments,
+        };
+        let ast::ExprKind::Literal(literal) = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant(
+                "literal invocation without literal syntax",
+            ));
+        };
+        let facts = self.graph.expression_facts.get(id)?;
+        let Some(CallTarget::Direct(binding)) = facts.call else {
+            return Err(Error::Invariant(
+                "literal invocation without selected function",
+            ));
+        };
+        let function = self.graph.binding(binding).entity;
+        let ty = self.graph.lower_entity_type(function)?;
+        let location = self.tree.expressions.get(id).location;
+        let zero = Value::Integer(Constant {
+            bits: 0,
+            ty: facts.ty,
+        });
+        let mut values = [zero; 2];
+        let count = match facts
+            .literal_call
+            .ok_or(Error::Invariant("literal invocation without operands"))?
+        {
+            LiteralCall::Template => 0,
+            LiteralCall::Character { source, bits } => {
+                values[0] = Value::Integer(Constant { bits, ty: source });
+                1
+            }
+            LiteralCall::Integer { bits, .. } => {
+                values[0] = Value::Integer(Constant {
+                    bits,
+                    ty: self.graph.types.function_parameter(ty, 0)?,
+                });
+                1
+            }
+            LiteralCall::Floating { digits } => {
+                let digits = self
+                    .literal_bytes
+                    .get(literal.spelling)
+                    .get(..digits)
+                    .ok_or(Error::Invariant("numeric literal digits outside spelling"))?;
+                let data = self
+                    .literal_scanner
+                    .scan(digits, FundamentalType::LongDouble)
+                    .map_err(|_| Error::Limit("constant literal floating scan"))?
+                    .ok_or_else(|| {
+                        nonconstant(location, "a floating literal outside constant evaluation")
+                    })?;
+                let mut bytes = [0; 16];
+                bytes[..data.as_slice().len()].copy_from_slice(data.as_slice());
+                let value = crate::types::float_value::BinaryFloat::from_bits(
+                    crate::types::float_value::Format::Extended,
+                    u128::from_le_bytes(bytes),
+                )
+                .ok_or(Error::Invariant("constant literal floating encoding"))?;
+                values[0] = Value::Floating(super::constant_floats::Floating {
+                    ty: self.graph.types.function_parameter(ty, 0)?,
+                    value,
+                });
+                1
+            }
+            LiteralCall::String { element, units, .. } => {
+                values[0] = Value::Pointer(Address::new(Root::Literal(id), element));
+                values[1] = Value::Integer(Constant {
+                    bits: u64::from(units - 1),
+                    ty: self.graph.types.function_parameter(ty, 1)?,
+                });
+                2
+            }
+            LiteralCall::Raw { object, .. } => {
+                let TypeKind::Array { element, .. } = self.graph.types.get(object).kind else {
+                    return Err(Error::Invariant("raw literal without array storage"));
+                };
+                values[0] = Value::Pointer(Address::new(Root::Literal(id), element));
+                1
+            }
+        };
+        self.invoke_constant_function_into(
+            function,
+            (ConstantArguments::Values(&values[..count]), false),
+            (None, destination),
+            scope,
+            location,
+        )
     }
 
     fn finish_literal_call(
@@ -490,7 +614,7 @@ mod tests {
         let mut lengths = Vec::new();
         for id in literals {
             if let Ok(facts) = analyzer.graph.expression_facts.get(id)
-                && let Some(LiteralCall::Raw { digits }) = facts.literal_call
+                && let Some(LiteralCall::Raw { digits, .. }) = facts.literal_call
             {
                 lengths.push(digits);
                 assert!(!facts.null_literal);
@@ -612,5 +736,48 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert_eq!(output.matches("literal lvalue int 3_x").count(), 3);
         assert!(output.contains("call-expression lvalue lvalue-reference to int"));
+    }
+    #[test]
+    fn evaluated_literal_arrays_share_type_identity_without_synthetic_syntax() {
+        let source = SourceBuffer::new(
+            br#"
+            constexpr const char* operator""_p(const char*p,unsigned long){return p;}
+            constexpr const char* operator""_r(const char*p){return p;}
+            static_assert("123"_p==123_r, "same array code units");
+            int main(){return "123"_p==123_r;}
+        "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"literal-storage").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let literals = return_literals(tree, declarations);
+        let mark = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert_eq!(analyzer.tree.expressions.mark(), mark);
+        assert_eq!(analyzer.constexpr_frames.depth(), 0);
+        let objects: Vec<_> = literals
+            .iter()
+            .map(|&id| analyzer.graph.lower_literal_storage(id).unwrap())
+            .collect();
+        assert_eq!(objects.len(), 2);
+        assert_eq!(objects[0], objects[1]);
+        assert!(matches!(
+            analyzer.graph.types.get(objects[0]).kind,
+            TypeKind::Array { bound: 4, .. }
+        ));
+        for literal in literals {
+            assert_ne!(
+                analyzer.graph.expression_facts.get(literal).unwrap().ty,
+                objects[0]
+            );
+        }
     }
 }

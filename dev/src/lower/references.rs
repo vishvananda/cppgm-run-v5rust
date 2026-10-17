@@ -20,13 +20,7 @@ impl Function<'_, '_, '_, '_> {
         value: crate::sema::lowering::StaticValue,
         source: TypeId,
     ) -> Result<Value, Error> {
-        let (symbol, offset) = super::data::address(
-            self.builder.program(),
-            self.symbols,
-            self.graph,
-            self.tree,
-            value,
-        )?;
+        let (symbol, offset) = self.static_data_address(value)?;
         let place = Value::Symbol(symbol);
         if offset == 0 {
             return Ok(place);

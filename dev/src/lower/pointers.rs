@@ -24,13 +24,7 @@ impl Function<'_, '_, '_, '_> {
         let place = if matches!(value, crate::sema::lowering::StaticValue::Integer(0)) {
             None
         } else {
-            let (symbol, offset) = super::data::address(
-                self.builder.program(),
-                self.symbols,
-                self.graph,
-                self.tree,
-                value,
-            )?;
+            let (symbol, offset) = self.static_data_address(value)?;
             let mut place = Value::Symbol(symbol);
             if offset != 0 {
                 let address = self.emit(I::Addr(place), source)?.value;

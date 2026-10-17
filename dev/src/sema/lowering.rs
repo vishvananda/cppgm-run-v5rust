@@ -185,6 +185,11 @@ pub(crate) struct BitField {
     pub shared: bool,
 }
 #[derive(Clone, Copy)]
+pub(crate) struct InitializerDemands {
+    pub function: Option<EntityId>,
+    pub constructor: Option<ConstructorId>,
+}
+#[derive(Clone, Copy)]
 pub(crate) struct Expression {
     pub ty: TypeId,
     pub target: Option<TypeId>,
@@ -1111,6 +1116,57 @@ impl Graph {
     ) -> Result<Option<ConstructorId>, Error> {
         Ok(self.expression_facts.get(id)?.constructor)
     }
+    pub(crate) fn lower_reference_reads_storage(&self, entity: EntityId) -> bool {
+        self.constant_addresses.read_through_storage(entity)
+    }
+    pub(crate) fn lower_initializer_demands(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<InitializerDemands>, Error> {
+        let Ok(facts) = self.expression_facts.get(id) else {
+            return Ok(None);
+        };
+        let mut function = self
+            .expression_facts
+            .function_conversion(id)
+            .map(|step| step.binding)
+            .or(match facts.call {
+                Some(super::function_resolution::CallTarget::Direct(binding)) => Some(binding),
+                _ => None,
+            })
+            .map(|binding| self.binding(binding).entity);
+        if let Some(id) = function {
+            let entity = self.entity(id);
+            let trivial_destructor = if let Some(member) = entity.member_function
+                && member.kind == super::graph::MemberKind::Destructor
+            {
+                self.destructor_trivial(member.class)?
+            } else {
+                false
+            };
+            if trivial_destructor
+                || entity
+                    .assignment
+                    .as_ref()
+                    .is_some_and(|properties| properties.trivial)
+                || entity
+                    .copy_properties
+                    .is_some_and(|id| self.copy_properties.get(id).trivial)
+                || entity
+                    .constructor
+                    .is_some_and(|id| self.lower_constructor_trivial(id))
+            {
+                function = None;
+            }
+        }
+        Ok(Some(InitializerDemands {
+            function,
+            constructor: self
+                .expression_facts
+                .class_conversion(id)
+                .map(|(constructor, _)| constructor),
+        }))
+    }
     pub(crate) fn lower_constant_constructors(
         &self,
         id: ast::ExprId,
@@ -1629,6 +1685,13 @@ impl Graph {
     }
     pub(crate) fn lower_operator_call(&self, id: ast::ExprId) -> Result<bool, Error> {
         Ok(self.expression_facts.get(id)?.call_form == super::expression_facts::CallForm::Operator)
+    }
+    pub(crate) fn lower_literal_storage(&self, id: ast::ExprId) -> Result<TypeId, Error> {
+        let facts = self.expression_facts.get(id)?;
+        Ok(match facts.literal_call {
+            Some(LiteralCall::String { object, .. } | LiteralCall::Raw { object, .. }) => object,
+            _ => facts.ty,
+        })
     }
     pub(crate) fn lower_literal_call(&self, id: ast::ExprId) -> Result<Option<LiteralCall>, Error> {
         Ok(self.expression_facts.get(id)?.literal_call)

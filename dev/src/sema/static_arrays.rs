@@ -238,7 +238,12 @@ impl Analyzer<'_> {
                 Root::Temporary(entity) | Root::Function(entity) => {
                     Value::Address(entity, address.offset)
                 }
-                Root::Published(id) => Value::Temporary(id, address.offset),
+                Root::Published(id) => {
+                    let Some(value) = self.graph.static_temporary_value(id, address.offset) else {
+                        return Ok(false);
+                    };
+                    value
+                }
                 Root::Literal(expr) => Value::Literal(expr, address.offset),
                 _ => return Ok(false),
             };

@@ -128,7 +128,7 @@ impl Analyzer<'_> {
                     && let Root::Published(id) = address.root
                 {
                     self.graph.entity_mut(entity).static_initializer =
-                        Some(Value::Temporary(id, address.offset));
+                        self.graph.static_temporary_value(id, address.offset);
                     return Ok(());
                 }
                 let object = facts.conversion.map_or(element, |c| c.result);
@@ -160,7 +160,9 @@ impl Analyzer<'_> {
                         Root::Temporary(root) | Root::Function(root) => {
                             Some(Value::Address(root, address.offset))
                         }
-                        Root::Published(root) => Some(Value::Temporary(root, address.offset)),
+                        Root::Published(root) => {
+                            self.graph.static_temporary_value(root, address.offset)
+                        }
                         Root::Literal(root) => Some(Value::Literal(root, address.offset)),
                         _ => None,
                     },
@@ -268,7 +270,7 @@ impl Analyzer<'_> {
                 Root::Temporary(entity) | Root::Function(entity) => {
                     Some(Value::Address(entity, value.offset))
                 }
-                Root::Published(id) => Some(Value::Temporary(id, value.offset)),
+                Root::Published(id) => self.graph.static_temporary_value(id, value.offset),
                 Root::Literal(expr) => Some(Value::Literal(expr, value.offset)),
                 _ => None,
             },
@@ -332,7 +334,7 @@ impl Analyzer<'_> {
                     Root::Temporary(entity) | Root::Function(entity) => {
                         Some(Value::Address(entity, address.offset))
                     }
-                    Root::Published(id) => Some(Value::Temporary(id, address.offset)),
+                    Root::Published(id) => self.graph.static_temporary_value(id, address.offset),
                     Root::Literal(expr) => Some(Value::Literal(expr, address.offset)),
                     _ => None,
                 },

@@ -110,7 +110,11 @@ impl Analyzer<'_> {
                         Item::Scalar(ty, Value::Address(root, pointer.offset))
                     }
                     Root::Published(root) => {
-                        Item::Scalar(ty, Value::Temporary(root, pointer.offset))
+                        let Some(value) = self.graph.static_temporary_value(root, pointer.offset)
+                        else {
+                            return Ok(None);
+                        };
+                        Item::Scalar(ty, value)
                     }
                     Root::Literal(root) => Item::Scalar(ty, Value::Literal(root, pointer.offset)),
                     _ => return Ok(None),

@@ -240,7 +240,9 @@ impl Analyzer<'_> {
             _ => (),
         }
         let mut value = match node.kind {
-            _ if facts.call_form == super::expression_facts::CallForm::Operator => {
+            _ if (facts.literal_call.is_some()
+                || facts.call_form == super::expression_facts::CallForm::Operator) =>
+            {
                 let returned = self.constant_call_result(id, scope)?;
                 let value = self.returned_scalar(returned, location)?;
                 let TemporaryValue::Pointer(value) = value else {
@@ -372,6 +374,12 @@ impl Analyzer<'_> {
                 }
                 _ => return Err(Error::Invariant("pointer call returned no address")),
             },
+            ExprKind::New { .. } => {
+                return Err(nonconstant(
+                    location,
+                    "an expression that is not a constant expression",
+                ));
+            }
             _ => {
                 return Err(nonconstant(
                     location,
@@ -591,6 +599,12 @@ impl Analyzer<'_> {
         self.constant_step(location)?;
         if self.graph.class_of(facts.ty).is_some() && facts.category == ValueCategory::Prvalue {
             return self.constant_object_place(id, scope);
+        }
+        if facts.literal_call.is_some() {
+            return Err(nonconstant(
+                location,
+                "a glvalue outside constant evaluation",
+            ));
         }
         if facts.call_form == super::expression_facts::CallForm::Operator {
             return match self.constant_call_result(id, scope)? {
@@ -1171,6 +1185,25 @@ impl Analyzer<'_> {
                 let offset = usize::try_from(place.offset).map_err(|_| {
                     nonconstant(location, "an access outside the designated object")
                 })?;
+                if let Some(super::literal_calls::LiteralCall::Raw { digits, .. }) =
+                    self.graph.expression_facts.get(id)?.literal_call
+                {
+                    let spelling = self.literal_bytes.get(literal.spelling);
+                    let byte = if offset == digits {
+                        0
+                    } else {
+                        *spelling
+                            .get(..digits)
+                            .and_then(|s| s.get(offset))
+                            .ok_or_else(|| {
+                                nonconstant(location, "an access outside the designated object")
+                            })?
+                    };
+                    return Ok(Constant {
+                        bits: kind.convert(u64::from(byte)),
+                        ty,
+                    });
+                }
                 let data = self
                     .literal_bytes
                     .get(literal.data)
@@ -1214,7 +1247,9 @@ impl Analyzer<'_> {
                 let id = self.graph.expression_facts.root(id);
                 let node = *self.tree.expressions.get(id);
                 let facts = self.graph.expression_facts.get(id)?;
-                if facts.call_form == super::expression_facts::CallForm::Operator {
+                if facts.literal_call.is_some()
+                    || facts.call_form == super::expression_facts::CallForm::Operator
+                {
                     self.constant_call_result(id, scope)?;
                     continue;
                 }
@@ -1324,12 +1359,18 @@ impl Analyzer<'_> {
                     nonconstant(initializer.location, "a reference without an initializer")
                 })?;
                 let facts = analyzer.graph.expression_facts.get(expr)?;
-                if facts.category != ValueCategory::Prvalue
-                    && !facts.conversion.is_some_and(|c| c.temporary)
-                    || matches!(
-                        analyzer.graph.types.get(facts.ty).kind,
-                        TypeKind::Function { .. }
-                    )
+                let converted = analyzer
+                    .graph
+                    .expression_facts
+                    .function_conversion(expr)
+                    .is_some();
+                if !converted
+                    && (facts.category != ValueCategory::Prvalue
+                        && !facts.conversion.is_some_and(|c| c.temporary)
+                        || matches!(
+                            analyzer.graph.types.get(facts.ty).kind,
+                            TypeKind::Function { .. }
+                        ))
                 {
                     let place = analyzer.constant_place(expr, scope)?;
                     let place = analyzer.constant_project_path(
@@ -1352,7 +1393,7 @@ impl Analyzer<'_> {
                 let TypeKind::Reference { element, .. } = analyzer.graph.types.get(ty).kind else {
                     return Err(Error::Invariant("reference temporary type"));
                 };
-                if analyzer.graph.class_of(element).is_some() {
+                if analyzer.graph.class_of(element).is_some() || converted {
                     // A converting constructor creates class storage. Its
                     // scalar source is never the reference's backing value.
                     let place = analyzer.bind_constant_reference(expr, element, scope)?;

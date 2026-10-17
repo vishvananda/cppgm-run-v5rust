@@ -215,13 +215,7 @@ impl Function<'_, '_, '_, '_> {
                     .lower_static_construction(entity)
                     .or_else(|| self.graph.lower_array_image(entity))
                 {
-                    data::items(
-                        self.builder.program(),
-                        self.symbols,
-                        self.graph,
-                        self.tree,
-                        image,
-                    )?
+                    self.static_data_items(image)?
                 } else {
                     vec![DataItem::Zero(
                         i64::try_from(types::layout(self.graph, facts.ty)?.0)
@@ -230,29 +224,13 @@ impl Function<'_, '_, '_, '_> {
                 },
             )
         } else if facts.reference_temporary.is_some() && facts.initializer.is_some() {
-            GlobalInit::Address(
-                data::reference_temporary(
-                    self.builder.program(),
-                    self.symbols,
-                    self.graph,
-                    self.tree,
-                    entity,
-                    false,
-                )?,
-                0,
-            )
+            GlobalInit::Address(self.static_reference_temporary(entity, false)?, 0)
         } else if let Some(value) = facts.initializer.filter(|_| initializer.is_some()) {
             match value {
                 StaticValue::Address(..)
                 | StaticValue::Literal(..)
                 | StaticValue::Temporary(..) => {
-                    let (target, offset) = data::address(
-                        self.builder.program(),
-                        self.symbols,
-                        self.graph,
-                        self.tree,
-                        value,
-                    )?;
+                    let (target, offset) = self.static_data_address(value)?;
                     GlobalInit::Address(target, offset)
                 }
                 _ => GlobalInit::Constant(data::constant(value)?),
@@ -260,6 +238,13 @@ impl Function<'_, '_, '_, '_> {
         } else {
             GlobalInit::Zero
         };
+        if !dynamic
+            && matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. })
+            && self.graph.lower_reference_reads_storage(entity)
+        {
+            self.symbols
+                .demand_reference_initializer_calls(self.graph, self.tree, initializer)?;
+        }
         if !dynamic && !facts.thread_local && self.symbols.readonly_object(facts.ty)? {
             metadata.storage = Some(Storage::ReadOnly);
         }
@@ -361,13 +346,7 @@ impl Function<'_, '_, '_, '_> {
         };
         if !initialized {
             let items = if let Some(image) = self.graph.lower_array_image(entity) {
-                data::items(
-                    self.builder.program(),
-                    self.symbols,
-                    self.graph,
-                    self.tree,
-                    image,
-                )?
+                self.static_data_items(image)?
             } else {
                 vec![DataItem::Zero(
                     i64::try_from(types::layout(self.graph, ty)?.0)

@@ -367,6 +367,17 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
+    /// A successfully evaluated object can still lack the frozen static-data
+    /// representation (shared/split bit units). Keep its semantic value while
+    /// allowing the owning initializer to retain runtime storage construction.
+    pub(super) fn static_temporary_value(
+        &self,
+        id: TemporaryId,
+        offset: i64,
+    ) -> Option<super::static_initialization::Value> {
+        self.aggregate_constants.temporary(id).image.as_ref()?;
+        Some(super::static_initialization::Value::Temporary(id, offset))
+    }
     pub(crate) fn lower_constant_temporary(
         &self,
         id: TemporaryId,
@@ -568,5 +579,49 @@ mod tests {
             assert!(analyzer.constant_evaluation.is_none());
             assert!(!analyzer.constexpr_frames.active());
         }
+    }
+    #[test]
+    fn published_values_without_static_images_keep_runtime_storage_demand() {
+        let source = SourceBuffer::new(
+            br#"
+            #pragma pack(push,1)
+            struct Bits { unsigned a:5; unsigned b:30;
+                constexpr Bits(unsigned a,unsigned b):a(a),b(b){} };
+            #pragma pack(pop)
+            constexpr const Bits& r=Bits(3,7);
+            static_assert(r.a==3 && r.b==7, "published semantic value");
+            int main(){return r.a+r.b;}
+        "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"unrepresented-storage").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"r").unwrap();
+        let mark = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let reference = graph
+            .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+            .entity;
+        let address = graph.constant_addresses.value(reference).unwrap();
+        let Root::Published(id) = address.root else {
+            panic!("published backing");
+        };
+        assert!(graph.aggregate_constants.temporary(id).image.is_none());
+        assert!(graph.static_temporary_value(id, 0).is_none());
+        assert!(
+            graph
+                .lower_variable(reference)
+                .unwrap()
+                .initializer
+                .is_none()
+        );
+        assert_eq!(tree.expressions.mark(), mark);
     }
 }

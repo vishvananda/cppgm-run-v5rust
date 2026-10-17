@@ -142,22 +142,43 @@ pub(crate) fn lower_unit(
     budget: StackBudget,
 ) -> Result<(), Error> {
     let mut symbols = symbols::Symbols::new(graph, tree, cursor, budget, &mut output.symbols);
+    emit_source_definitions(
+        &mut globals::GlobalOutput {
+            program: &mut output.program,
+            startup: &mut output.startup,
+            definitions: &mut output.definitions,
+            finalizers: &mut output.finalizers,
+        },
+        &mut symbols,
+        (graph, tree),
+        declarations,
+        budget,
+    )?;
+    output.initializer = finish_unit(
+        &mut output.program,
+        &mut output.definitions,
+        &mut output.finalizers,
+        &mut symbols,
+        graph,
+    )?
+    .or(output.initializer);
+    Ok(())
+}
+
+// The source-order walk owns syntax roots; the same output context follows
+// every requested body and its immediate static-data dependencies.
+fn emit_source_definitions<'a>(
+    output: &mut globals::GlobalOutput<'_>,
+    symbols: &mut symbols::Symbols<'a, '_>,
+    (graph, tree): (&'a Graph, &'a ast::Tree),
+    declarations: List<ast::DeclId>,
+    budget: StackBudget,
+) -> Result<(), Error> {
     let mut declarations = anonymous_names::Declarations::new(tree, declarations);
     let mut emitted = std::collections::HashSet::new();
     let mut emitted_entries = std::collections::HashSet::new();
-    while let Some((id, explicit_specialization)) = declarations.next(tree, graph, &mut symbols)? {
-        globals::lower_anonymous_declaration(
-            &mut globals::GlobalOutput {
-                program: &mut output.program,
-                startup: &mut output.startup,
-                definitions: &mut output.definitions,
-                finalizers: &mut output.finalizers,
-            },
-            &mut symbols,
-            (graph, tree),
-            id,
-            budget,
-        )?;
+    while let Some((id, explicit_specialization)) = declarations.next(tree, graph, symbols)? {
+        globals::lower_anonymous_declaration(output, symbols, (graph, tree), id, budget)?;
         match tree.declarations.get(id).kind {
             ast::DeclKind::Function {
                 declarator, body, ..
@@ -167,8 +188,8 @@ pub(crate) fn lower_unit(
                     && emitted.insert(entity)
                 {
                     function::lower(
-                        &mut output.program,
-                        &mut symbols,
+                        output.function_output(),
+                        symbols,
                         graph,
                         tree,
                         construction::Entry::Function(entity),
@@ -176,8 +197,8 @@ pub(crate) fn lower_unit(
                         budget,
                     )?;
                     symbols.stream_definition(
-                        &mut output.program,
-                        &mut output.definitions,
+                        output.program,
+                        output.definitions,
                         construction::Entry::Function(entity),
                     )?;
                 }
@@ -201,19 +222,15 @@ pub(crate) fn lower_unit(
                     {
                         let entry = construction::Entry::Function(entity);
                         function::lower(
-                            &mut output.program,
-                            &mut symbols,
+                            output.function_output(),
+                            symbols,
                             graph,
                             tree,
                             entry,
                             graph.lower_function_body(entity),
                             budget,
                         )?;
-                        symbols.stream_definition(
-                            &mut output.program,
-                            &mut output.definitions,
-                            entry,
-                        )?;
+                        symbols.stream_definition(output.program, output.definitions, entry)?;
                     }
                     continue;
                 }
@@ -230,19 +247,15 @@ pub(crate) fn lower_unit(
                         for entry in variants.into_iter().flatten() {
                             emitted_entries.insert(entry);
                             function::lower(
-                                &mut output.program,
-                                &mut symbols,
+                                output.function_output(),
+                                symbols,
                                 graph,
                                 tree,
                                 entry,
                                 graph.lower_function_body(entity),
                                 budget,
                             )?;
-                            symbols.stream_definition(
-                                &mut output.program,
-                                &mut output.definitions,
-                                entry,
-                            )?;
+                            symbols.stream_definition(output.program, output.definitions, entry)?;
                         }
                     }
                     continue;
@@ -260,43 +273,34 @@ pub(crate) fn lower_unit(
                         }
                         emitted_entries.insert(entry);
                         function::lower(
-                            &mut output.program,
-                            &mut symbols,
+                            output.function_output(),
+                            symbols,
                             graph,
                             tree,
                             construction::Entry::Constructor(id, variant),
                             graph.lower_function_body(entity),
                             budget,
                         )?;
-                        symbols.stream_definition(
-                            &mut output.program,
-                            &mut output.definitions,
-                            entry,
-                        )?;
+                        symbols.stream_definition(output.program, output.definitions, entry)?;
                     }
                 }
             }
             ast::DeclKind::Simple { declarators, .. } => {
                 assignment::lower_definitions(
                     assignment::DefinitionOutput {
-                        program: &mut output.program,
-                        definitions: &mut output.definitions,
+                        program: output.program,
+                        definitions: output.definitions,
                         emitted: &mut emitted,
                     },
-                    &mut symbols,
+                    symbols,
                     graph,
                     tree,
                     declarators,
                     budget,
                 )?;
                 globals::lower_declaration(
-                    &mut globals::GlobalOutput {
-                        program: &mut output.program,
-                        startup: &mut output.startup,
-                        definitions: &mut output.definitions,
-                        finalizers: &mut output.finalizers,
-                    },
-                    &mut symbols,
+                    output,
+                    symbols,
                     graph,
                     tree,
                     declarators,
@@ -323,16 +327,7 @@ pub(crate) fn lower_unit(
                     .is_empty() => {}
             _ => return Err(Error::Missing("class and template declaration lowering")),
         }
-        globals::emit_instance_variables(
-            &mut globals::GlobalOutput {
-                program: &mut output.program,
-                startup: &mut output.startup,
-                definitions: &mut output.definitions,
-                finalizers: &mut output.finalizers,
-            },
-            &mut symbols,
-            (graph, tree),
-        )?;
+        globals::emit_instance_variables(output, symbols, (graph, tree))?;
     }
     for id in graph.lower_root_delegations() {
         symbols.demand_entry(construction::Entry::Constructor(
@@ -341,25 +336,12 @@ pub(crate) fn lower_unit(
         ));
     }
     emit_pending(
-        &mut globals::GlobalOutput {
-            program: &mut output.program,
-            startup: &mut output.startup,
-            definitions: &mut output.definitions,
-            finalizers: &mut output.finalizers,
-        },
-        &mut symbols,
+        output,
+        symbols,
         (graph, tree),
         (&mut emitted, &mut emitted_entries),
         budget,
     )?;
-    output.initializer = finish_unit(
-        &mut output.program,
-        &mut output.definitions,
-        &mut output.finalizers,
-        &mut symbols,
-        graph,
-    )?
-    .or(output.initializer);
     Ok(())
 }
 
@@ -446,7 +428,15 @@ fn emit_pending<'a>(
                 .lower_constructor_entity(id)
                 .and_then(|entity| graph.lower_function_body(entity))
         };
-        function::lower(output.program, symbols, graph, tree, entry, body, budget)?;
+        function::lower(
+            output.function_output(),
+            symbols,
+            graph,
+            tree,
+            entry,
+            body,
+            budget,
+        )?;
         symbols.stream_definition(output.program, output.definitions, entry)?;
         exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
         aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;

@@ -20,6 +20,29 @@ pub(super) struct GlobalOutput<'a> {
     pub definitions: &'a mut super::definition_order::Definitions,
     pub finalizers: &'a mut Vec<super::shutdown::Finalizer>,
 }
+impl GlobalOutput<'_> {
+    pub(super) fn function_output(&mut self) -> super::startup::FunctionOutput<'_> {
+        super::startup::FunctionOutput::new(
+            self.program,
+            self.startup,
+            self.definitions,
+            self.finalizers,
+        )
+    }
+}
+impl data::Output for GlobalOutput<'_> {
+    fn program(&mut self) -> &mut Program {
+        self.program
+    }
+    fn referenced_variable<'a>(
+        &mut self,
+        symbols: &mut Symbols<'a, '_>,
+        graph: &'a Graph,
+        tree: &'a ast::Tree,
+    ) -> Result<(), Error> {
+        emit_instance_variables(self, symbols, (graph, tree))
+    }
+}
 pub(super) fn lower_anonymous_declaration<'a>(
     output: &mut GlobalOutput<'_>,
     symbols: &mut Symbols<'a, '_>,
@@ -280,7 +303,7 @@ fn define_storage<'a>(
     // Replay only its recorded symbolic demand, before publishing storage.
     let table_image = graph.lower_static_construction(entity);
     let _ = data::items(
-        output.program,
+        output,
         symbols,
         graph,
         tree,
@@ -289,11 +312,11 @@ fn define_storage<'a>(
     let mut init = if matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
         if facts.reference_temporary.is_some() && facts.initializer.is_some() {
             GlobalInit::Address(
-                data::reference_temporary(output.program, symbols, graph, tree, entity, false)?,
+                data::reference_temporary(output, symbols, graph, tree, entity, false)?,
                 0,
             )
         } else if let Some(value) = facts.initializer {
-            let (symbol, offset) = data::address(output.program, symbols, graph, tree, value)?;
+            let (symbol, offset) = data::address(output, symbols, graph, tree, value)?;
             GlobalInit::Address(symbol, offset)
         } else {
             dynamic = true;
@@ -302,20 +325,20 @@ fn define_storage<'a>(
     } else if array {
         GlobalInit::Data(if let Some(image) = table_image {
             dynamic = false;
-            data::items(output.program, symbols, graph, tree, image)?
+            data::items(output, symbols, graph, tree, image)?
         } else if (initializer.is_some()
             || facts.name.is_none()
             || graph.lower_evaluated_construction(entity))
             && let Some(image) = graph.lower_array_image(entity)
         {
             dynamic = false;
-            data::items(output.program, symbols, graph, tree, image)?
+            data::items(output, symbols, graph, tree, image)?
         } else {
             dynamic |= initializer.is_some();
             if !constructed && let Some(prefix) = graph.lower_array_image_prefix(entity) {
                 // The C++ constant attempt demands addresses before publishing
                 // the object's zero image, even when a later member is dynamic.
-                let _ = data::items(output.program, symbols, graph, tree, prefix)?;
+                let _ = data::items(output, symbols, graph, tree, prefix)?;
             }
             vec![crate::lowir::model::DataItem::Zero(
                 i64::try_from(types::layout(graph, facts.ty)?.0)
@@ -342,7 +365,7 @@ fn define_storage<'a>(
                 | StaticValue::Address(..)
                 | StaticValue::Temporary(..)),
             ) => {
-                let (symbol, offset) = data::address(output.program, symbols, graph, tree, value)?;
+                let (symbol, offset) = data::address(output, symbols, graph, tree, value)?;
                 GlobalInit::Address(symbol, offset)
             }
             None => {
@@ -351,6 +374,12 @@ fn define_storage<'a>(
             }
         }
     };
+    if !dynamic
+        && matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. })
+        && graph.lower_reference_reads_storage(entity)
+    {
+        symbols.demand_reference_initializer_calls(graph, tree, initializer)?;
+    }
     if array && let GlobalInit::Data(items) = &init {
         ty = structured_type(graph, facts.ty, items)?;
     }

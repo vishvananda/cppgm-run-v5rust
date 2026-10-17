@@ -3,7 +3,6 @@
 use super::{
     Error,
     conversions::Context,
-    data,
     function::{Function, RValue},
     types,
 };
@@ -155,13 +154,7 @@ impl Function<'_, '_, '_, '_> {
             && self.graph.lower_cv(element) & 2 == 0
             && let Some(image) = self.graph.lower_array_image(entity)
         {
-            let image = data::image(
-                self.builder.program(),
-                self.symbols,
-                self.graph,
-                self.tree,
-                image,
-            )?;
+            let image = self.static_data_image(image)?;
             let (bytes, align) = types::layout(self.graph, ty)?;
             let destination = self.emit(I::Addr(slot), ty)?;
             return self.effect(I::CopyObject(

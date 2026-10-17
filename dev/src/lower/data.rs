@@ -15,6 +15,31 @@ use crate::{
     syntax::ast,
 };
 use std::collections::HashMap;
+/// Static addresses may demand a template object's definition immediately.
+/// The unit initialization context follows namespace and function images;
+/// isolated generated bodies leave demand in their parent-owned queue.
+pub(super) trait Output {
+    fn program(&mut self) -> &mut Program;
+    fn referenced_variable<'a>(
+        &mut self,
+        symbols: &mut Symbols<'a, '_>,
+        graph: &'a Graph,
+        tree: &'a ast::Tree,
+    ) -> Result<(), Error>;
+}
+impl Output for Program {
+    fn program(&mut self) -> &mut Program {
+        self
+    }
+    fn referenced_variable<'a>(
+        &mut self,
+        _symbols: &mut Symbols<'a, '_>,
+        _graph: &'a Graph,
+        _tree: &'a ast::Tree,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+}
 #[derive(Default)]
 pub(super) struct Objects {
     strings: HashMap<(crate::lowir::vocabulary::Type, Vec<u64>), SymbolId>,
@@ -60,57 +85,48 @@ pub(super) fn constant(value: StaticValue) -> Result<Constant, Error> {
         }
     })
 }
-pub(super) fn address(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    tree: &ast::Tree,
+pub(super) fn address<'a>(
+    output: &mut (impl Output + ?Sized),
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
     value: StaticValue,
 ) -> Result<(SymbolId, i64), Error> {
     symbols.check_stack()?;
     match value {
         StaticValue::Temporary(id, offset) => Ok((
-            constant_temporary(program, symbols, graph, tree, id)?,
+            constant_temporary(output, symbols, graph, tree, id)?,
             offset,
         )),
         StaticValue::Address(entity, offset) => {
             let symbol = if graph.lower_is_variable(entity)
                 && graph.lower_variable(entity)?.reference_temporary.is_some()
             {
-                reference_temporary(program, symbols, graph, tree, entity, true)?
+                reference_temporary(output, symbols, graph, tree, entity, true)?
             } else if graph.lower_is_variable(entity) {
-                symbols.variable_symbol(program, entity)?
+                let symbol = symbols.variable_symbol(output.program(), entity)?;
+                output.referenced_variable(symbols, graph, tree)?;
+                symbol
             } else {
                 symbols.demand(entity);
-                symbols.function_symbol(program, entity)?
+                symbols.function_symbol(output.program(), entity)?
             };
             Ok((symbol, offset))
         }
-        StaticValue::Literal(expr, offset) => {
-            let ast::ExprKind::Literal(literal) = tree.expressions.get(expr).kind else {
-                return Err(Error::Semantic(crate::sema::Error::Invariant(
-                    "string address without literal",
-                )));
-            };
-            let crate::sema::lowering::TypeView::Array { element, .. } =
-                graph.lower_type(graph.lower_expression(expr)?.ty)?
-            else {
-                return Err(Error::Semantic(crate::sema::Error::Invariant(
-                    "string address without array",
-                )));
-            };
-            Ok((string(program, symbols, graph, literal, element)?, offset))
-        }
+        StaticValue::Literal(expr, offset) => Ok((
+            literal_object(output.program(), symbols, graph, tree, expr)?,
+            offset,
+        )),
         _ => Err(Error::Semantic(crate::sema::Error::Invariant(
             "scalar used as address data",
         ))),
     }
 }
-fn constant_temporary(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    tree: &ast::Tree,
+fn constant_temporary<'a>(
+    output: &mut (impl Output + ?Sized),
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
     id: crate::sema::lowering::TemporaryId,
 ) -> Result<SymbolId, Error> {
     if let Some(&symbol) = symbols.data.constant_temporaries.get(&id) {
@@ -121,7 +137,7 @@ fn constant_temporary(
         graph.lower_type(ty)?,
         crate::sema::lowering::TypeView::Class(_) | crate::sema::lowering::TypeView::Array { .. }
     );
-    let data = items(program, symbols, graph, tree, image)?;
+    let data = items(output, symbols, graph, tree, image)?;
     let init = if aggregate {
         GlobalInit::Data(data)
     } else {
@@ -136,9 +152,9 @@ fn constant_temporary(
             }
         }
     };
-    let (symbol, object) = symbols.constant_temporary_symbol(program)?;
-    let name = program.symbol(symbol).name;
-    program.add_global(
+    let (symbol, object) = symbols.constant_temporary_symbol(output.program())?;
+    let name = output.program().symbol(symbol).name;
+    output.program().add_global(
         symbol,
         Global {
             name,
@@ -159,11 +175,11 @@ fn constant_temporary(
     symbols.data.constant_temporaries.insert(id, symbol);
     Ok(symbol)
 }
-pub(super) fn items(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    tree: &ast::Tree,
+pub(super) fn items<'a>(
+    output: &mut (impl Output + ?Sized),
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
     image: &[StaticItem],
 ) -> Result<Vec<DataItem>, Error> {
     let mut out = Vec::with_capacity(image.len());
@@ -171,7 +187,7 @@ pub(super) fn items(
         out.push(match item {
             StaticItem::Table(class) => DataItem::Address(
                 crate::lowir::vocabulary::Type::Ptr,
-                symbols.vtable_symbol(program, class)?,
+                symbols.vtable_symbol(output.program(), class)?,
                 16,
             ),
             StaticItem::BitUnit(bytes, bits) => DataItem::Constant(
@@ -190,7 +206,7 @@ pub(super) fn items(
                 StaticValue::Address(..)
                 | StaticValue::Literal(..)
                 | StaticValue::Temporary(..) => {
-                    let (symbol, offset) = address(program, symbols, graph, tree, value)?;
+                    let (symbol, offset) = address(output, symbols, graph, tree, value)?;
                     DataItem::Address(types::storage(graph, ty)?, symbol, offset)
                 }
                 _ => DataItem::Constant(types::storage(graph, ty)?, constant(value)?),
@@ -198,6 +214,34 @@ pub(super) fn items(
         });
     }
     Ok(out)
+}
+pub(super) fn literal_object(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    tree: &ast::Tree,
+    expr: ast::ExprId,
+) -> Result<SymbolId, Error> {
+    let ast::ExprKind::Literal(literal) = tree.expressions.get(expr).kind else {
+        return Err(crate::sema::Error::Invariant("string address without literal").into());
+    };
+    if let Some(crate::sema::lowering::LiteralCall::Raw { digits, .. }) =
+        graph.lower_literal_call(expr)?
+    {
+        let mut units = symbols.data.take_string_units();
+        let digits = symbols.literal_spelling(literal).get(..digits).ok_or(
+            crate::sema::Error::Invariant("numeric literal digits outside spelling"),
+        )?;
+        units.extend(digits.iter().copied().map(u64::from));
+        units.push(0);
+        return string_object(program, symbols, crate::lowir::vocabulary::Type::I8, units);
+    }
+    let crate::sema::lowering::TypeView::Array { element, .. } =
+        graph.lower_type(graph.lower_literal_storage(expr)?)?
+    else {
+        return Err(crate::sema::Error::Invariant("string address without array").into());
+    };
+    string(program, symbols, graph, literal, element)
 }
 pub(super) fn string(
     program: &mut Program,
@@ -244,19 +288,19 @@ pub(super) fn string_object(
     symbols.data.strings.insert(key, symbol);
     Ok(symbol)
 }
-pub(super) fn image(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    tree: &ast::Tree,
+pub(super) fn image<'a>(
+    output: &mut (impl Output + ?Sized),
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
     image: &[StaticItem],
 ) -> Result<SymbolId, Error> {
-    let items = items(program, symbols, graph, tree, image)?;
+    let items = items(output, symbols, graph, tree, image)?;
     if let Some(&symbol) = symbols.data.images.get(&items) {
         return Ok(symbol);
     }
-    let symbol = symbols.data_symbol(program, Some(symbols.data.images.len()))?;
-    define(program, symbol, items.clone())?;
+    let symbol = symbols.data_symbol(output.program(), Some(symbols.data.images.len()))?;
+    define(output.program(), symbol, items.clone())?;
     symbols.data.images.insert(items, symbol);
     Ok(symbol)
 }
@@ -278,11 +322,11 @@ fn define(program: &mut Program, symbol: SymbolId, items: Vec<DataItem>) -> Resu
     Ok(())
 }
 
-pub(super) fn reference_temporary(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    tree: &ast::Tree,
+pub(super) fn reference_temporary<'a>(
+    output: &mut (impl Output + ?Sized),
+    symbols: &mut Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
     entity: crate::sema::lowering::EntityId,
     evaluated: bool,
 ) -> Result<SymbolId, Error> {
@@ -314,11 +358,12 @@ pub(super) fn reference_temporary(
     // Resolve nested backing objects before allocating/naming their owner.
     let target = match value {
         StaticValue::Address(..) | StaticValue::Literal(..) | StaticValue::Temporary(..) => {
-            Some(address(program, symbols, graph, tree, value)?)
+            Some(address(output, symbols, graph, tree, value)?)
         }
         _ => None,
     };
-    let (symbol, object) = symbols.reference_temporary_symbol(program, entity, evaluated)?;
+    let (symbol, object) =
+        symbols.reference_temporary_symbol(output.program(), entity, evaluated)?;
     let init = match value {
         StaticValue::Integer(0)
             if !evaluated
@@ -345,8 +390,8 @@ pub(super) fn reference_temporary(
         }
         _ => GlobalInit::Constant(constant(value)?),
     };
-    let name = program.symbol(symbol).name;
-    program.add_global(
+    let name = output.program().symbol(symbol).name;
+    output.program().add_global(
         symbol,
         Global {
             name,
@@ -366,4 +411,35 @@ pub(super) fn reference_temporary(
     )?;
     symbols.data.reference_temporaries.insert(entity, symbol);
     Ok(symbol)
+}
+
+impl super::function::Function<'_, '_, '_, '_> {
+    pub(super) fn static_data_items(
+        &mut self,
+        image: &[StaticItem],
+    ) -> Result<Vec<DataItem>, Error> {
+        let (graph, tree) = (self.graph, self.tree);
+        self.with_static_data(|output, symbols| items(output, symbols, graph, tree, image))
+    }
+    pub(super) fn static_data_address(
+        &mut self,
+        value: StaticValue,
+    ) -> Result<(SymbolId, i64), Error> {
+        let (graph, tree) = (self.graph, self.tree);
+        self.with_static_data(|output, symbols| address(output, symbols, graph, tree, value))
+    }
+    pub(super) fn static_data_image(&mut self, value: &[StaticItem]) -> Result<SymbolId, Error> {
+        let (graph, tree) = (self.graph, self.tree);
+        self.with_static_data(|output, symbols| image(output, symbols, graph, tree, value))
+    }
+    pub(super) fn static_reference_temporary(
+        &mut self,
+        entity: crate::sema::lowering::EntityId,
+        evaluated: bool,
+    ) -> Result<SymbolId, Error> {
+        let (graph, tree) = (self.graph, self.tree);
+        self.with_static_data(|output, symbols| {
+            reference_temporary(output, symbols, graph, tree, entity, evaluated)
+        })
+    }
 }
