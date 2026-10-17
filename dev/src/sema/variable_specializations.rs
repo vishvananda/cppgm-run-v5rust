@@ -206,49 +206,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(EntityId, Vec<TypeId>), Error> {
         let candidates = self.variable_partial_candidates(primary, arguments);
-        let mut matches: Vec<(Vec<TypeId>, EntityId)> = Vec::new();
-        let mut best = None;
-        for (pattern, candidate) in candidates {
-            let head = self
-                .graph
-                .entity(candidate)
-                .template_head
-                .ok_or(Error::Invariant("partial without head"))?;
-            let Some(deduced) = self.deduce_partial_arguments(head, &pattern, arguments)? else {
-                continue;
-            };
-            if let Some((_, previous)) = best {
-                let previous_pattern = &matches[previous];
-                if self.partial_arguments_ordered(candidate, &pattern, previous_pattern)?
-                    && !self.partial_arguments_ordered(
-                        previous_pattern.1,
-                        &previous_pattern.0,
-                        &(pattern.clone(), candidate),
-                    )?
-                {
-                    best = Some((deduced, matches.len()));
-                }
-            } else {
-                best = Some((deduced, matches.len()));
-            }
-            matches.push((pattern, candidate));
-        }
-        let Some((deduced, index)) = best else {
-            return Ok((primary, arguments.to_vec()));
-        };
-        let winner = &matches[index];
-        for other in &matches {
-            if other.1 != winner.1
-                && (!self.partial_arguments_ordered(winner.1, &winner.0, other)?
-                    || self.partial_arguments_ordered(other.1, &other.0, winner)?)
-            {
-                return Err(Error::at(
-                    location,
-                    "a specialization matches several partial specializations, none more specialized",
-                ));
-            }
-        }
-        Ok((winner.1, deduced))
+        self.matched_partial(primary, arguments, candidates, location)
     }
     pub(super) fn instantiate_variable_specialization(
         &mut self,

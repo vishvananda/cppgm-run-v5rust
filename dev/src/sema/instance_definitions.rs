@@ -96,8 +96,15 @@ impl Analyzer<'_> {
         let source = self
             .graph
             .class_templates
-            .instance(owner)
-            .map(|instance| instance.primary)
+            .partials
+            .selected(owner)
+            .map(|(pattern, _)| pattern)
+            .or_else(|| {
+                self.graph
+                    .class_templates
+                    .instance(owner)
+                    .map(|instance| instance.primary)
+            })
             .or_else(|| {
                 self.graph
                     .class_templates
@@ -196,19 +203,49 @@ impl Analyzer<'_> {
             if instance.dependent {
                 return Ok(false);
             }
+            let primary = instance.primary;
+            let arguments = instance.arguments.clone();
+            // Selection can recursively observe this shell. Publish only the
+            // in-progress guard until a selected definition actually exists.
+            self.graph
+                .class_templates
+                .definitions
+                .states
+                .insert(entity, State::InProgress);
+            let selected = self.matched_class_partial(primary, &arguments);
+            let (source, arguments) = match selected {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.graph
+                        .class_templates
+                        .definitions
+                        .states
+                        .remove(&entity);
+                    return Err(error);
+                }
+            };
             let Some(pattern) = self
                 .graph
                 .class_templates
                 .definitions
                 .patterns
-                .get(&instance.primary)
+                .get(&source)
                 .copied()
             else {
-                // A later definition can satisfy a later demand. Do not memoize
-                // incompleteness when the primary is still only declared.
+                self.graph
+                    .class_templates
+                    .definitions
+                    .states
+                    .remove(&entity);
                 return Ok(false);
             };
-            (pattern, instance.arguments.clone())
+            if source != primary {
+                self.graph
+                    .class_templates
+                    .partials
+                    .select(entity, source, arguments.clone());
+            }
+            (pattern, arguments)
         } else if let Some(pattern) = self
             .graph
             .class_templates
@@ -281,6 +318,7 @@ impl Analyzer<'_> {
                 .states
                 .insert(entity, State::Complete);
         } else {
+            self.graph.class_templates.partials.forget_selection(entity);
             self.graph
                 .class_templates
                 .definitions

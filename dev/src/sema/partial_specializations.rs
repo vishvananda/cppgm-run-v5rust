@@ -27,7 +27,6 @@ pub(super) struct PartialLists {
     unindexed: HashMap<EntityId, Vec<usize>>,
     indexed: HashMap<(EntityId, PartialIndex), Vec<usize>>,
     positions: HashMap<EntityId, u64>,
-    orderings: HashMap<(EntityId, EntityId), bool>,
 }
 impl PartialLists {
     pub(super) fn add(&mut self, primary: EntityId, key: Option<PartialIndex>, index: usize) {
@@ -131,7 +130,19 @@ impl Analyzer<'_> {
         arguments: &[TypeId],
     ) -> Vec<(Vec<TypeId>, EntityId)> {
         let lists = &self.graph.variable_instances.partial_lists;
-        let positions = lists.positions(primary);
+        let keys = self.partial_candidate_keys(lists.positions(primary), arguments);
+        let all = self.graph.variable_instances.partials(primary);
+        lists
+            .candidates(primary, &keys)
+            .into_iter()
+            .map(|index| all[index].clone())
+            .collect()
+    }
+    pub(super) fn partial_candidate_keys(
+        &self,
+        positions: u64,
+        arguments: &[TypeId],
+    ) -> Vec<PartialIndex> {
         let mut keys = Vec::new();
         for (position, &argument) in (0u8..64).zip(arguments) {
             if positions >> position & 1 == 0 {
@@ -148,12 +159,58 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        let all = self.graph.variable_instances.partials(primary);
-        lists
-            .candidates(primary, &keys)
-            .into_iter()
-            .map(|index| all[index].clone())
-            .collect()
+        keys
+    }
+    pub(super) fn matched_partial(
+        &mut self,
+        primary: EntityId,
+        arguments: &[TypeId],
+        candidates: Vec<(Vec<TypeId>, EntityId)>,
+        location: SourceOffset,
+    ) -> Result<(EntityId, Vec<TypeId>), Error> {
+        let mut matches: Vec<(Vec<TypeId>, EntityId)> = Vec::new();
+        let mut best = None;
+        for (pattern, candidate) in candidates {
+            let head = self
+                .graph
+                .entity(candidate)
+                .template_head
+                .ok_or(Error::Invariant("partial without head"))?;
+            let Some(deduced) = self.deduce_partial_arguments(head, &pattern, arguments)? else {
+                continue;
+            };
+            if let Some((_, previous)) = best {
+                let previous_pattern = &matches[previous];
+                if self.partial_arguments_ordered(candidate, &pattern, previous_pattern)?
+                    && !self.partial_arguments_ordered(
+                        previous_pattern.1,
+                        &previous_pattern.0,
+                        &(pattern.clone(), candidate),
+                    )?
+                {
+                    best = Some((deduced, matches.len()));
+                }
+            } else {
+                best = Some((deduced, matches.len()));
+            }
+            matches.push((pattern, candidate));
+        }
+        let Some((deduced, index)) = best else {
+            return Ok((primary, arguments.to_vec()));
+        };
+        let winner = &matches[index];
+        for other in &matches {
+            if other.1 != winner.1
+                && (!self.partial_arguments_ordered(winner.1, &winner.0, other)?
+                    || self.partial_arguments_ordered(other.1, &other.0, winner)?)
+            {
+                return Err(Error::at(
+                    location,
+                    "a specialization matches several partial specializations, none more specialized",
+                ));
+            }
+        }
+        Ok((winner.1, deduced))
     }
     pub(super) fn deduce_partial_arguments(
         &mut self,
@@ -210,22 +267,13 @@ impl Analyzer<'_> {
         pattern: &[TypeId],
         other: &(Vec<TypeId>, EntityId),
     ) -> Result<bool, Error> {
-        let key = (first, other.1);
-        if let Some(&ordered) = self
-            .graph
-            .variable_instances
-            .partial_lists
-            .orderings
-            .get(&key)
-        {
+        if let Some(ordered) = self.graph.templates.partial_ordering(first, other.1) {
             return Ok(ordered);
         }
         let ordered = self.compute_partial_ordering(first, pattern, other)?;
         self.graph
-            .variable_instances
-            .partial_lists
-            .orderings
-            .insert(key, ordered);
+            .templates
+            .record_partial_ordering(first, other.1, ordered);
         Ok(ordered)
     }
     fn compute_partial_ordering(
@@ -314,6 +362,56 @@ impl Analyzer<'_> {
                 location,
                 "a partial specialization's template parameter that its arguments do not deduce",
             ));
+        }
+        Ok(())
+    }
+
+    /// A specialized value cannot fix a parameter whose substituted type
+    /// still depends on this partial's parameters (14.5.5p8).
+    pub(super) fn check_partial_value_types(
+        &mut self,
+        primary: HeadId,
+        head: HeadId,
+        arguments: &[TypeId],
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let depth = self.graph.templates.depth(head);
+        let given: Vec<_> = arguments.iter().copied().map(Some).collect();
+        let mut substitution = Substitution::new(self.graph.templates.depth(primary), &given);
+        for (index, &argument) in arguments.iter().enumerate() {
+            let Some(&parameter) = self.graph.templates.parameters(primary).get(index) else {
+                break;
+            };
+            let Some(info) = self.graph.entity(parameter).template_parameter else {
+                continue;
+            };
+            let Some(ty) = info.value_type.filter(|&ty| self.graph.dependent_type(ty)) else {
+                continue;
+            };
+            if info.is_pack() {
+                continue;
+            }
+            if let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(argument).kind
+                && (self
+                    .graph
+                    .entity(entity)
+                    .template_parameter
+                    .is_some_and(|info| info.index(depth).is_some())
+                    || self.named_bound_parameter(argument, depth).is_some())
+            {
+                continue;
+            }
+            let Some(ty) = self.substitute_signature_type(ty, &mut substitution)? else {
+                return Err(Error::Invariant("partial value type substitution failed"));
+            };
+            if depth == 0 && self.graph.dependent_type(ty)
+                || depth != 0 && !self.type_pattern_parameters(&[ty], depth).is_empty()
+            {
+                return Err(Error::at(
+                    location,
+                    "a specialized non-type argument for a parameter whose type depends on the partial specialization's parameters",
+                ));
+            }
         }
         Ok(())
     }

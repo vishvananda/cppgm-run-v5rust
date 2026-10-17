@@ -88,8 +88,22 @@ pub(super) struct Templates {
     shapes: HashMap<Vec<(ParameterShape, Option<TypeId>)>, ShapeId>,
     positions: HashMap<Position, EntityId>,
     synthesized_values: Vec<TypeId>,
+    partial_orderings: HashMap<(EntityId, EntityId), bool>,
 }
 impl Templates {
+    pub(super) fn partial_ordering(&self, first: EntityId, second: EntityId) -> Option<bool> {
+        self.partial_orderings.get(&(first, second)).copied()
+    }
+    pub(super) fn record_partial_ordering(
+        &mut self,
+        first: EntityId,
+        second: EntityId,
+        ordered: bool,
+    ) {
+        self.partial_orderings
+            .entry((first, second))
+            .or_insert(ordered);
+    }
     pub(super) fn parameter_scope(&self, id: HeadId) -> ScopeId {
         self.head(id).scope
     }

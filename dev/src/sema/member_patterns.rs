@@ -115,7 +115,16 @@ impl Analyzer<'_> {
             {
                 owner = Some(binding.entity);
             }
-            let Some(next) = self.graph.entity(binding.entity).scope else {
+            let entity = if component.arguments.is_some() && owner == Some(binding.entity) {
+                let partial = self.named_class_partial(binding.entity, component, scope)?;
+                if let Some(partial) = partial {
+                    owner = Some(partial);
+                }
+                partial.unwrap_or(binding.entity)
+            } else {
+                binding.entity
+            };
+            let Some(next) = self.graph.entity(entity).scope else {
                 break;
             };
             prefix = Some(next);
@@ -326,7 +335,13 @@ impl Analyzer<'_> {
             if let Some(class) = node.owner
                 && let Some(instance) = self.graph.class_templates.instance(class)
             {
-                enclosing.push((class, instance.arguments.clone()));
+                let arguments = self
+                    .graph
+                    .class_templates
+                    .partials
+                    .selected(class)
+                    .map_or(instance.arguments.as_slice(), |(_, arguments)| arguments);
+                enclosing.push((class, arguments.to_vec()));
             }
             current = node.parent;
         }

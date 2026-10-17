@@ -33,6 +33,7 @@ pub(super) struct Instance {
 #[derive(Default)]
 pub(super) struct ClassTemplates {
     pub(super) dependent_names: super::dependent_templates::Names,
+    pub(super) partials: Box<super::partial_classes::ClassPartials>,
     pub(super) definitions: super::instance_definitions::Definitions,
     pub(super) enumerations: super::enum_instances::Enumerations,
     specializations: HashMap<Key, EntityId>,
@@ -142,6 +143,16 @@ impl Analyzer<'_> {
             .instance(self.graph.binding(result).entity)
             .ok_or(Error::Invariant("template-id without instance"))?;
         let arguments = instance.arguments.clone();
+        if instance.dependent
+            && let Some((partial, binding)) = self
+                .graph
+                .class_templates
+                .partials
+                .current(primary, &arguments)
+            && self.current_class_instantiation(partial, scope)
+        {
+            return Ok(Some(binding));
+        }
         let mut own = arguments.len() == count;
         for (index, &argument) in arguments.iter().enumerate().take(count) {
             let parameter = self.graph.templates.parameters(head)[index];
@@ -163,22 +174,24 @@ impl Analyzer<'_> {
             }
             own &= pattern == argument;
         }
-        if own
-            && self.graph.entity(primary).scope.is_some_and(|class| {
-                self.graph.encloses(class, scope)
-                    || self.template_owner.is_some_and(|owner| {
-                        owner == primary
-                            || self
-                                .graph
-                                .entity(owner)
-                                .home
-                                .is_some_and(|home| self.graph.encloses(class, home))
-                    })
-            })
-        {
+        if own && self.current_class_instantiation(primary, scope) {
             return Ok(Some(found));
         }
         Ok(Some(result))
+    }
+
+    fn current_class_instantiation(&self, primary: EntityId, scope: ScopeId) -> bool {
+        self.graph.entity(primary).scope.is_some_and(|class| {
+            self.graph.encloses(class, scope)
+                || self.template_owner.is_some_and(|owner| {
+                    owner == primary
+                        || self
+                            .graph
+                            .entity(owner)
+                            .home
+                            .is_some_and(|home| self.graph.encloses(class, home))
+                })
+        })
     }
 
     pub(super) fn class_template_primary(
@@ -195,7 +208,9 @@ impl Analyzer<'_> {
             self.graph
                 .class_templates
                 .instance(binding.entity)
-                .map_or(binding.entity, |instance| instance.primary)
+                .map(|instance| instance.primary)
+                .or_else(|| self.graph.class_templates.partials.primary(binding.entity))
+                .unwrap_or(binding.entity)
         } else {
             binding.entity
         };

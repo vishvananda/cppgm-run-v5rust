@@ -90,6 +90,7 @@ impl Analyzer<'_> {
         let mut arguments = self.form_template_arguments(last, scope, Some(primary_head))?;
         self.complete_template_arguments(primary_head, &mut arguments, node.location)?;
         self.check_type_partial_arguments(head, &arguments, node.location)?;
+        self.check_partial_value_types(primary_head, head, &arguments, node.location)?;
         let ty = if specs.constexpr {
             self.graph.types.qualify(info.ty, Cv::CONST)?
         } else {

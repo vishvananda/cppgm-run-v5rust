@@ -186,7 +186,7 @@ impl Analyzer<'_> {
 
     // template_specializations.cpp::SpecializedEnclosing: count only class
     // template specializations, walking through copied ordinary member classes.
-    fn specialized_enclosing(&self, mut scope: Option<ScopeId>) -> u32 {
+    pub(super) fn specialized_enclosing(&self, mut scope: Option<ScopeId>) -> u32 {
         let mut count = 0;
         while let Some(home) = scope {
             let node = self.graph.scope(home);

@@ -1529,8 +1529,9 @@ impl Analyzer<'_> {
                     ));
                 }
                 if self.active_template_head(scope).is_some() {
-                    return Err(Error::Missing(
-                        "class template partial specialization declaration",
+                    let entity = self.partial_class(name, key, scope)?;
+                    return self.graph.entity(entity).ty.ok_or(Error::Invariant(
+                        "class partial specialization without type",
                     ));
                 }
                 return Err(Error::at(
@@ -1626,6 +1627,16 @@ impl Analyzer<'_> {
                 .is_some_and(|last| last.arguments.is_some())
         {
             return self.class_explicit_specialization(node, name, scope);
+        }
+        if self.active_template_head(scope).is_some()
+            && self
+                .tree
+                .name_lists
+                .get(qualified_name.components)
+                .last()
+                .is_some_and(|last| last.arguments.is_some())
+        {
+            return self.class_partial_definition(id, name, scope);
         }
         let prefix = self.prefix(name, scope)?;
         let home = prefix.unwrap_or(self.declaration_scope(scope));
