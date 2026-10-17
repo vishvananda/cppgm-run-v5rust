@@ -336,7 +336,10 @@ impl super::graph::Graph {
                 continue;
             }
             match &self.types.get(ty).kind {
-                TypeKind::TemplateParameter { .. } => return true,
+                TypeKind::TemplateParameter { .. }
+                | TypeKind::Expansion(_)
+                | TypeKind::BoundPack { .. } => return true,
+                TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
                 TypeKind::Class(entity)
                     if self.entity(*entity).template_head.is_some()
                         || self.type_has_template_owner(*entity)

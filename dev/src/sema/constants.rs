@@ -270,6 +270,15 @@ impl Analyzer<'_> {
             ExprKind::Subscript { base, index } => {
                 self.constant_string_element(base, index, scope, skipping, location)?
             }
+            ExprKind::SizeofPack(name) => {
+                let bits = self
+                    .pack_size(name, scope)?
+                    .ok_or_else(|| not_constant(location, "a value-dependent sizeof..."))?;
+                self.scalar_constant(
+                    bits,
+                    Scalar::Basic(crate::types::FundamentalType::UnsignedLongInt),
+                )?
+            }
             ExprKind::Sizeof { ty, operand, .. } => {
                 self.constant_query(ty, operand, scope, false, location)?
             }

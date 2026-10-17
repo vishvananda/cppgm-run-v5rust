@@ -42,8 +42,14 @@ impl ParameterInfo {
             && self.inner.is_some() == other.inner.is_some()
             && self.is_pack() == other.is_pack()
     }
+    pub(super) fn argument_parameter(self) -> bool {
+        self.inner.is_none()
+    }
     pub(super) fn is_pack(self) -> bool {
         self.position.shape.pack
+    }
+    pub(super) fn depth(self) -> u32 {
+        self.position.depth
     }
     pub(super) fn abi_index(self) -> u32 {
         // Ordinary signature mangling uses T_, T0_, ... at every lexical
@@ -199,6 +205,25 @@ impl Analyzer<'_> {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn supported_argument_head(&self, head: HeadId) -> Result<(), Error> {
+        if self
+            .graph
+            .templates
+            .parameters(head)
+            .iter()
+            .all(|&parameter| {
+                self.graph
+                    .entity(parameter)
+                    .template_parameter
+                    .is_some_and(ParameterInfo::argument_parameter)
+            })
+        {
+            Ok(())
+        } else {
+            Err(Error::Missing("template template-parameters"))
+        }
     }
 
     pub(super) fn declaration_scope(&self, mut scope: ScopeId) -> ScopeId {

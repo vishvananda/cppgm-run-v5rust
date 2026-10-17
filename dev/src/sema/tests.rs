@@ -1839,8 +1839,12 @@ fn member_bodies_wait_for_class_completion_and_elaborated_names_use_namespace_ho
 }
 #[test]
 fn missing_group_remains_distinct_from_a_language_rejection() {
-    let source =
-        SourceBuffer::new(b"template<class... Ts> struct C {}; C<int> c;".to_vec()).unwrap();
+    // Argument packs now form normally; template-template argument ownership
+    // is still a separate implementation boundary, never a language rejection.
+    let source = SourceBuffer::new(
+        b"template<template<class>class T>struct C{};template<class U>struct A{};C<A> c;".to_vec(),
+    )
+    .unwrap();
     let input = Preprocessor::with_name(&source, b"missing-semantic-group").unwrap();
     let mut unit = SyntaxUnit::new(input);
     unit.parse().unwrap();
@@ -1848,7 +1852,10 @@ fn missing_group_remains_distinct_from_a_language_rejection() {
     let result = Analyzer::new(tree, cursor, StackBudget::default())
         .unwrap()
         .analyze(declarations);
-    assert!(matches!(result, Err(Error::Missing(_))));
+    assert!(matches!(
+        result,
+        Err(Error::Missing("template template-parameters"))
+    ));
 }
 
 #[test]

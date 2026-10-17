@@ -353,6 +353,24 @@ impl Graph {
                 output.write_all(b"volatile ")?;
             }
             match &node.kind {
+                TypeKind::Pack(elements) => {
+                    output.write_all(b"pack of (")?;
+                    tasks.push(Task::Text(")"));
+                    for (index, &element) in elements.iter().enumerate().rev() {
+                        tasks.push(Task::Type(element));
+                        if index != 0 {
+                            tasks.push(Task::Text(", "));
+                        }
+                    }
+                }
+                TypeKind::Expansion(pattern) => {
+                    output.write_all(b"expansion of ")?;
+                    tasks.push(Task::Type(*pattern));
+                }
+                TypeKind::BoundPack { arguments, .. } => {
+                    output.write_all(b"bound ")?;
+                    tasks.push(Task::Type(*arguments));
+                }
                 TypeKind::Value { ty, bits } => {
                     if self.address_parameter_type(*ty) {
                         output.write_all(b"nullptr")?;

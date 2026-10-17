@@ -27,18 +27,58 @@ impl Analyzer<'_> {
         let mut arguments = Vec::new();
         for index in 0..self.tree.template_arguments.get(syntax).len() {
             let argument = self.tree.template_arguments.get(syntax)[index];
-            if argument.pack {
-                return Err(Error::Missing("template argument expansion"));
-            }
-            let target = if let Some(head) = head
-                && index < self.graph.templates.parameters(head).len()
-            {
-                self.argument_target(head, index, &arguments)?.known()
+            let index = arguments.len();
+            let position = if let Some(head) = head {
+                let count = self.graph.templates.parameters(head).len();
+                if index < count {
+                    Some(index)
+                } else {
+                    count
+                        .checked_sub(1)
+                        .filter(|&last| self.argument_parameter_pack(head, last))
+                }
             } else {
                 None
             };
-            let ty = self.template_argument_for(argument, scope, component.location, target)?;
-            arguments.push(self.graph.types.canonical_function(ty)?);
+            let target = if let (Some(head), Some(position)) = (head, position) {
+                if self.argument_parameter_pack(head, position) {
+                    let parameter = self.graph.templates.parameters(head)[position];
+                    self.graph
+                        .entity(parameter)
+                        .template_parameter
+                        .and_then(|info| info.value_type)
+                        .filter(|&ty| !self.graph.dependent_type(ty))
+                } else {
+                    self.argument_target(head, position, &arguments)?.known()
+                }
+            } else {
+                None
+            };
+            let mut ty = self.template_argument_for(argument, scope, component.location, target)?;
+            if argument.pack {
+                ty = match self.graph.types.get(ty).kind {
+                    TypeKind::BoundPack { arguments, .. } => arguments,
+                    TypeKind::Pack(_) => ty,
+                    _ => self.pack_expansion_type(ty, component.location)?,
+                };
+            }
+            let expanded = argument.pack
+                || matches!(argument.kind,
+                ast::TemplateArgumentKind::Type(ty) if self.tree.types.get(ty).declarator
+                    .is_some_and(|d| self.tree.declarators.get(d).pack));
+            if expanded && matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)) {
+                let location = match argument.kind {
+                    ast::TemplateArgumentKind::Type(ty) => self.tree.types.get(ty).location,
+                    ast::TemplateArgumentKind::Expression(expr) => {
+                        self.tree.expressions.get(expr).location
+                    }
+                };
+                arguments.extend(self.bound_argument_expansion(ty, location)?);
+            } else if expanded && let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind {
+                arguments.extend(elements.iter().copied());
+            } else {
+                arguments.push(self.graph.types.canonical_function(ty)?);
+            }
         }
         Ok(arguments)
     }
@@ -102,10 +142,10 @@ impl Analyzer<'_> {
         for syntax_index in 0..self.tree.template_arguments.get(arguments).len() {
             let syntax_item = self.tree.template_arguments.get(arguments)[syntax_index];
             let argument = &syntax_item;
+            let ty = self.template_argument(*argument, scope, location)?;
             if argument.pack {
-                return Err(Error::Missing("template argument pack names"));
+                self.pack_expansion_type(ty, location)?;
             }
-            self.template_argument(*argument, scope, location)?;
         }
         Ok(())
     }

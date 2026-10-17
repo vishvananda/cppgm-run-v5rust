@@ -30,7 +30,8 @@ impl Analyzer<'_> {
         ) {
             self.dependent_uses.set(uses);
         }
-        let mut facts = result?;
+        result?;
+        let mut facts = self.graph.expression_facts.get(id)?;
         // new_facts completes a class-template object's definition, except
         // the designated final call in decltype (5.2.2p11). A pointer or a
         // function designation still needs only its declared type.
@@ -45,14 +46,10 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(id, facts);
         Ok(facts)
     }
-    fn typed_expression_form(
-        &mut self,
-        id: ast::ExprId,
-        scope: ScopeId,
-    ) -> Result<ExprFacts, Error> {
+    fn typed_expression_form(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
         if self.deduced_initializer == Some(id) {
             self.deduced_initializer = None;
-            return self.graph.expression_facts.get(id);
+            return self.graph.expression_facts.get(id).map(|_| ());
         }
         super::record(&mut self.graph.expression_scopes, id.index(), scope);
         let node = *self.tree.expressions.get(id);
@@ -64,9 +61,9 @@ impl Analyzer<'_> {
         })?;
         let mut facts = match node.kind {
             ExprKind::Paren(inner) => {
-                let facts = self.typed_expression(inner, scope)?;
+                self.typed_expression(inner, scope)?;
                 self.graph.expression_facts.share(id, inner);
-                return Ok(facts);
+                return Ok(());
             }
             ExprKind::Id(name) => {
                 let found = self.lookup_result(name, scope, Filter::Ordinary)?;
@@ -96,7 +93,7 @@ impl Analyzer<'_> {
                 {
                     self.graph.expression_facts.set(id, facts);
                     super::record(&mut self.graph.expression_types, id.index(), facts.ty);
-                    return Ok(facts);
+                    return Ok(());
                 }
                 self.typed_expression(operand, scope)?;
                 let Some(op) = op.token.as_punctuator() else {
@@ -224,6 +221,20 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.semantic_alignment(ty, operand, scope, node.location)?,
+            ExprKind::SizeofPack(name) => {
+                let count = self.pack_size(name, scope)?.ok_or_else(|| {
+                    Error::at(
+                        node.location,
+                        "sizeof... of a name that is no parameter pack",
+                    )
+                })?;
+                let ty = self.graph.types.scalar(Scalar::Basic(
+                    crate::types::FundamentalType::UnsignedLongInt,
+                ))?;
+                let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
+                facts.query_value = Some(count);
+                facts
+            }
             ExprKind::Sizeof {
                 ty,
                 operand,
@@ -263,7 +274,7 @@ impl Analyzer<'_> {
         facts.ty = self.graph.types.canonical_function(facts.ty)?;
         self.graph.expression_facts.set(id, facts);
         super::record(&mut self.graph.expression_types, id.index(), facts.ty);
-        Ok(facts)
+        Ok(())
     }
     pub(super) fn named_expression(
         &mut self,
@@ -484,7 +495,7 @@ impl Analyzer<'_> {
         &mut self,
         id: ast::ExprId,
         scope: ScopeId,
-    ) -> Result<ExprFacts, Error> {
+    ) -> Result<(), Error> {
         let base = self.binary_spine.len();
         let uses = self.dependent_uses.get();
         let result = (|| {
@@ -523,7 +534,7 @@ impl Analyzer<'_> {
                 self.graph.expression_facts.set(current, facts);
                 super::record(&mut self.graph.expression_types, current.index(), facts.ty);
             }
-            self.graph.expression_facts.get(id)
+            Ok(())
         })();
         self.binary_spine.truncate(base);
         result

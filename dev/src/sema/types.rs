@@ -58,6 +58,13 @@ pub(super) enum TypeKind {
         ty: TypeId,
         bits: u64,
     },
+    Pack(Vec<TypeId>),
+    Expansion(TypeId),
+    BoundPack {
+        arguments: TypeId,
+        parameter: EntityId,
+        depth: u32,
+    },
     Pointer(TypeId),
     MemberPointer {
         owner: TypeId,
@@ -209,7 +216,10 @@ impl Types {
         }
         if !matches!(
             self.get(id).kind,
-            TypeKind::Reference { .. } | TypeKind::Value { .. }
+            TypeKind::Reference { .. }
+                | TypeKind::Value { .. }
+                | TypeKind::Pack(_)
+                | TypeKind::Expansion(_)
         ) {
             let node = self.get(id);
             let cv = Cv(node.cv.0 | cv.0);
@@ -345,9 +355,15 @@ impl Types {
             if !finish {
                 work.push((id, true));
                 match &self.get(id).kind {
-                    TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
+                    TypeKind::Pointer(element)
+                    | TypeKind::Reference { element, .. }
+                    | TypeKind::Expansion(element) => {
                         work.push((*element, false));
                     }
+                    TypeKind::Pack(elements) => {
+                        work.extend(elements.iter().map(|&p| (p, false)));
+                    }
+                    TypeKind::BoundPack { arguments, .. } => work.push((*arguments, false)),
                     TypeKind::Array {
                         element, operand, ..
                     } => {
@@ -375,6 +391,24 @@ impl Types {
             }
             let node = self.get(id).clone();
             let kind = match node.kind {
+                TypeKind::Pack(elements) => TypeKind::Pack(
+                    elements
+                        .into_iter()
+                        .map(|p| self.canonical_child(p, declaration))
+                        .collect::<Result<_, _>>()?,
+                ),
+                TypeKind::Expansion(pattern) => {
+                    TypeKind::Expansion(self.canonical_child(pattern, declaration)?)
+                }
+                TypeKind::BoundPack {
+                    arguments,
+                    parameter,
+                    depth,
+                } => TypeKind::BoundPack {
+                    arguments: self.canonical_child(arguments, declaration)?,
+                    parameter,
+                    depth,
+                },
                 TypeKind::Pointer(element) => {
                     TypeKind::Pointer(self.canonical_child(element, declaration)?)
                 }

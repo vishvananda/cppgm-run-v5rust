@@ -355,8 +355,7 @@ impl Analyzer<'_> {
         if let Some(root) = root {
             let node = self.tree.declarators.get(root);
             if node.pack {
-                self.check_pack_pattern(ty, node.location)?;
-                return Err(Error::Missing("semantic parameter pack expansion"));
+                ty = self.pack_expansion_type(ty, node.location)?;
             }
         }
         if let Some((clause, prototype)) = prototype

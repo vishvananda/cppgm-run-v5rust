@@ -152,21 +152,7 @@ impl Analyzer<'_> {
             .template_parameter
             .ok_or(Error::Invariant("argument without parameter"))?;
         let argument = self.graph.types.canonical_function(argument)?;
-        let value = match self.graph.types.get(argument).kind {
-            TypeKind::Value { .. } => true,
-            TypeKind::TemplateParameter { entity, .. } => {
-                self.graph
-                    .entity(entity)
-                    .template_parameter
-                    .is_some_and(|info| info.value_type.is_some())
-                    || self
-                        .graph
-                        .template_operands
-                        .pattern(entity)
-                        .is_some_and(|pattern| pattern.value)
-            }
-            _ => false,
-        };
+        let value = self.value_argument(argument);
         if value != info.value_type.is_some() {
             return Err(Error::at(
                 location,
@@ -248,6 +234,9 @@ impl Analyzer<'_> {
         binding: Binding,
         argument: TypeId,
     ) -> Result<(), Error> {
+        if matches!(self.graph.types.get(argument).kind, TypeKind::Pack(_)) {
+            return self.bind_argument_pack(scope, binding, argument);
+        }
         let (kind, entity, ty) = if let TypeKind::Value { ty, bits } =
             self.graph.types.get(argument).kind
         {
@@ -419,6 +408,7 @@ impl Analyzer<'_> {
                 TypeKind::MemberPointer { owner, element } => {
                     work.extend([(*owner, next), (*element, next)]);
                 }
+                TypeKind::Pack(elements) => work.extend(elements.iter().map(|&ty| (ty, next))),
                 TypeKind::Function {
                     result, parameters, ..
                 } => {

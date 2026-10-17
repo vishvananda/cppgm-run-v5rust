@@ -4,11 +4,19 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    graph::EntityId,
     templates::HeadId,
     types::{TypeId, TypeKind},
 };
 use crate::support::source::SourceOffset;
 use std::collections::HashSet;
+
+#[derive(Default)]
+pub(super) struct PackPattern {
+    pub parameters: Vec<EntityId>,
+    pub bound: Vec<TypeId>,
+    pub expression: bool,
+}
 
 impl Analyzer<'_> {
     pub(super) fn check_pack_pattern(
@@ -16,7 +24,10 @@ impl Analyzer<'_> {
         pattern: TypeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        if self.template_depth == 0 || !self.has_unexpanded_type_pack(pattern, true)? {
+        let packs = self.type_pack_pattern(pattern, true)?;
+        if (self.template_depth == 0 && packs.bound.is_empty())
+            || (packs.parameters.is_empty() && packs.bound.is_empty() && !packs.expression)
+        {
             return Err(Error::at(
                 location,
                 "a pack expansion that names no parameter pack",
@@ -62,8 +73,19 @@ impl Analyzer<'_> {
         root: TypeId,
         placeholders: bool,
     ) -> Result<bool, Error> {
+        let packs = self.type_pack_pattern(root, placeholders)?;
+        Ok(!packs.parameters.is_empty() || packs.expression)
+    }
+
+    pub(super) fn type_pack_pattern(
+        &self,
+        root: TypeId,
+        placeholders: bool,
+    ) -> Result<PackPattern, Error> {
+        let mut packs = PackPattern::default();
         let mut work = vec![root];
         let mut visited = HashSet::new();
+        let mut parameters = HashSet::new();
         while let Some(ty) = work.pop() {
             if !visited.insert(ty) {
                 continue;
@@ -74,15 +96,16 @@ impl Analyzer<'_> {
                         work.push(member.qualifier);
                     } else if let Some(pattern) = self.graph.template_operands.pattern(*entity) {
                         if placeholders && pattern.pack_names.contains_pack()? {
-                            return Ok(true);
+                            packs.expression = true;
                         }
                     } else if self
                         .graph
                         .entity(*entity)
                         .template_parameter
                         .is_some_and(super::templates::ParameterInfo::is_pack)
+                        && parameters.insert(*entity)
                     {
-                        return Ok(true);
+                        packs.parameters.push(*entity);
                     }
                 }
                 TypeKind::Class(entity) => {
@@ -118,13 +141,16 @@ impl Analyzer<'_> {
                     work.push(*result);
                     work.extend(parameters.iter().rev().copied());
                 }
-                TypeKind::Auto
+                TypeKind::Pack(elements) => work.extend(elements.iter().rev().copied()),
+                TypeKind::BoundPack { .. } => packs.bound.push(ty),
+                TypeKind::Expansion(_)
+                | TypeKind::Auto
                 | TypeKind::Scalar(_)
                 | TypeKind::Enum(_)
                 | TypeKind::Value { .. } => (),
             }
         }
-        Ok(false)
+        Ok(packs)
     }
 }
 

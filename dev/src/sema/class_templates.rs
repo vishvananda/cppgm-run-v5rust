@@ -130,7 +130,7 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("class template without head"))?;
-        self.supported_fixed_template_head(head)?;
+        self.supported_argument_head(head)?;
         let arguments = self.form_template_arguments(component, scope, Some(head))?;
         let count = self.graph.templates.parameters(head).len();
         let result = self.class_template_with_defaults(primary, arguments, component.location)?;
@@ -150,7 +150,18 @@ impl Analyzer<'_> {
                 .entity(parameter)
                 .ty
                 .ok_or(Error::Invariant("class parameter without type"))?;
-            own &= self.graph.types.canonical_function(pattern)? == argument;
+            let mut pattern = self.graph.types.canonical_function(pattern)?;
+            if self.argument_parameter_pack(head, index) {
+                let expansion = self
+                    .graph
+                    .types
+                    .intern(TypeKind::Expansion(pattern), Cv::default())?;
+                pattern = self
+                    .graph
+                    .types
+                    .intern(TypeKind::Pack(vec![expansion]), Cv::default())?;
+            }
+            own &= pattern == argument;
         }
         if own
             && self.graph.entity(primary).scope.is_some_and(|class| {
@@ -204,9 +215,14 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("specialization without template head"))?;
-        self.supported_fixed_template_head(head)?;
+        self.supported_argument_head(head)?;
         let count = self.graph.templates.parameters(head).len();
-        if arguments.len() > count {
+        if arguments.len() > count
+            && !self.trailing_argument_pack(head)
+            && !arguments
+                .iter()
+                .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+        {
             return Err(Error::at(location, "too many template arguments"));
         }
         let omitted = arguments.len() < count;
@@ -230,12 +246,27 @@ impl Analyzer<'_> {
         arguments: &mut Vec<TypeId>,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        self.supported_fixed_template_head(head)?;
+        self.supported_argument_head(head)?;
         let count = self.graph.templates.parameters(head).len();
-        if arguments.len() > count {
+        if arguments.len() > count
+            && !self.trailing_argument_pack(head)
+            && !arguments
+                .iter()
+                .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+        {
             return Err(Error::at(location, "too many template arguments"));
         }
+        if arguments
+            .iter()
+            .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+        {
+            self.match_argument_list(head, arguments, location)?;
+            return Ok(());
+        }
         for index in arguments.len()..count {
+            if self.argument_parameter_pack(head, index) {
+                break;
+            }
             let default = self
                 .graph
                 .templates
@@ -252,15 +283,7 @@ impl Analyzer<'_> {
             };
             arguments.push(ty);
         }
-        for index in 0..arguments.len() {
-            arguments[index] = self.match_template_argument(
-                head,
-                index,
-                arguments[index],
-                &arguments[..index],
-                location,
-            )?;
-        }
+        self.match_argument_list(head, arguments, location)?;
         Ok(())
     }
 
@@ -362,12 +385,23 @@ impl Analyzer<'_> {
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("substituted template without head"))?;
-        self.supported_fixed_template_head(head)?;
+        self.supported_argument_head(head)?;
         let count = self.graph.templates.parameters(head).len();
-        if arguments.len() > count {
+        if arguments.len() > count
+            && !self.trailing_argument_pack(head)
+            && !arguments
+                .iter()
+                .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+        {
             return Ok(None);
         }
+        let expansion = arguments
+            .iter()
+            .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)));
         for index in arguments.len()..count {
+            if expansion || self.argument_parameter_pack(head, index) {
+                break;
+            }
             let Some(default) = self.graph.templates.default_argument(head, index) else {
                 return Ok(None);
             };
@@ -387,6 +421,11 @@ impl Analyzer<'_> {
                 ty
             };
             arguments.push(ty);
+        }
+        match self.match_argument_list(head, &mut arguments, SourceOffset(0)) {
+            Ok(()) => (),
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => return Ok(None),
+            Err(error) => return Err(error),
         }
         self.class_specialization(primary, arguments).map(Some)
     }
@@ -483,12 +522,11 @@ impl Analyzer<'_> {
         if let Some(name) = self.graph.class_templates.dependent_names.get(primary) {
             return self.substitute_dependent_template(name, patterns, environment);
         }
-        let mut arguments = Vec::with_capacity(patterns.len());
-        for pattern in patterns {
-            let Some(ty) = self.substitute_signature_type(pattern, environment)? else {
-                return Ok(None);
-            };
-            arguments.push(self.graph.types.canonical_function(ty)?);
+        let Some(mut arguments) = self.substitute_pack_list(&patterns, environment)? else {
+            return Ok(None);
+        };
+        for argument in &mut arguments {
+            *argument = self.graph.types.canonical_function(*argument)?;
         }
         let head = self
             .graph

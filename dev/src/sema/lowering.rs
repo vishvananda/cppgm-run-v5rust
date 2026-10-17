@@ -882,7 +882,7 @@ impl Graph {
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     return is_local(self, entity);
                 }
-                TypeKind::Function { .. } => break,
+                TypeKind::Function { .. } | TypeKind::Pack(_) => break,
                 _ => return false,
             }
         }
@@ -903,6 +903,7 @@ impl Graph {
                     work.push(*result);
                     work.extend(parameters);
                 }
+                TypeKind::Pack(elements) => work.extend(elements),
                 TypeKind::Class(entity) | TypeKind::Enum(entity) if is_local(self, *entity) => {
                     return true;
                 }
@@ -1427,6 +1428,18 @@ impl Graph {
                 (binding.kind == BindingKind::Parameter).then_some(binding)
             })
             .filter_map(|binding| binding.ty.map(|ty| (binding.entity, binding.name, ty)))
+    }
+    pub(crate) fn lower_argument_pack(&self, id: TypeId) -> Option<&[TypeId]> {
+        match &self.types.get(id).kind {
+            TypeKind::Pack(elements) => Some(elements),
+            _ => None,
+        }
+    }
+    pub(crate) fn lower_pack_expansion(&self, id: TypeId) -> Option<TypeId> {
+        match self.types.get(id).kind {
+            TypeKind::Expansion(pattern) => Some(pattern),
+            _ => None,
+        }
     }
     pub(crate) fn lower_type(&self, id: TypeId) -> Result<TypeView<'_>, Error> {
         Ok(match &self.types.get(self.types.canonical_view(id)).kind {

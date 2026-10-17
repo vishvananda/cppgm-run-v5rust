@@ -995,7 +995,40 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(&id) = self.types.get(&ty) {
             return Ok(id);
         }
-        let node = if let Some(index) = self.graph.lower_template_parameter(ty) {
+        let node = if let Some(elements) = self.graph.lower_argument_pack(ty) {
+            let elements = elements.to_vec();
+            let mut nodes = Vec::with_capacity(elements.len());
+            for element in elements {
+                nodes.push(self.abi_type(element)?);
+            }
+            let id = self.abi.intern(Node::ArgumentPack, &nodes)?;
+            return self.finish_abi_type(ty, id);
+        } else if let Some(pattern) = self.graph.lower_pack_expansion(ty) {
+            if self.graph.lower_value_argument(pattern) {
+                let operand = if let Some(index) = self.graph.lower_template_parameter(pattern) {
+                    self.abi.intern(
+                        Node::TemplateParam {
+                            index,
+                            substitutable: false,
+                        },
+                        &[],
+                    )?
+                } else {
+                    self.placeholder_node(pattern)?
+                        .ok_or(Error::Missing("value pack expansion ABI operand"))?
+                };
+                let expression = self.abi.intern(
+                    Node::Operation(abi::vocabulary::Operation::PackExpansion),
+                    &[operand],
+                )?;
+                Node::ExpressionArgument(expression)
+            } else {
+                Node::Modified {
+                    modifier: Modifier::PackExpansion,
+                    operand: self.abi_type(pattern)?,
+                }
+            }
+        } else if let Some(index) = self.graph.lower_template_parameter(ty) {
             if self.graph.lower_value_argument(ty) {
                 let parameter = self.abi.intern(
                     Node::TemplateParam {

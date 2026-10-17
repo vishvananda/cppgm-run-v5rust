@@ -373,7 +373,10 @@ impl Analyzer<'_> {
                     work.push(*result);
                     work.extend(parameters.iter().copied());
                 }
-                TypeKind::Auto
+                TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
+                TypeKind::Expansion(pattern) => work.push(*pattern),
+                TypeKind::BoundPack { .. }
+                | TypeKind::Auto
                 | TypeKind::Scalar(_)
                 | TypeKind::Enum(_)
                 | TypeKind::Value { .. } => (),

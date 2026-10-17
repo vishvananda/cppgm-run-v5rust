@@ -79,6 +79,23 @@ impl Symbols<'_, '_> {
         if out.len() > limit {
             return Ok(());
         }
+        if let Some(elements) = self.graph.lower_argument_pack(ty) {
+            for (index, &element) in elements.iter().enumerate() {
+                if out.len() > limit {
+                    break;
+                }
+                if index != 0 {
+                    out.push_str(", ");
+                }
+                self.append_type_label(element, out, limit)?;
+            }
+            return Ok(());
+        }
+        if let Some(pattern) = self.graph.lower_pack_expansion(ty) {
+            self.append_type_label(pattern, out, limit)?;
+            out.push_str("...");
+            return Ok(());
+        }
         let view = self.graph.lower_type(ty)?;
         let cv = self.graph.lower_cv(ty);
         if !matches!(view, TypeView::Pointer(_)) {

@@ -51,11 +51,16 @@ impl FunctionTemplates {
         self.primaries.get(&entity).copied()
     }
 }
+pub(super) struct PackSelection<'a> {
+    pub elements: &'a [Option<usize>],
+    pub bound_element: Option<usize>,
+}
 pub(super) struct Substitution<'a> {
     pub(super) depth: u32,
     pub(super) arguments: &'a [Option<TypeId>],
     memo: HashMap<TypeId, Option<TypeId>>,
     pub(super) context: Option<EntityId>,
+    pub(super) selection: Option<&'a PackSelection<'a>>,
 }
 impl<'a> Substitution<'a> {
     pub(super) fn new(depth: u32, arguments: &'a [Option<TypeId>]) -> Self {
@@ -64,6 +69,7 @@ impl<'a> Substitution<'a> {
             arguments,
             memo: HashMap::new(),
             context: None,
+            selection: None,
         }
     }
 }
@@ -344,7 +350,17 @@ impl Analyzer<'_> {
         let cv = self.graph.types.get(ty).cv;
         if let Some(index) = self.template_parameter_index(ty, environment.depth) {
             let result = if let Some(Some(argument)) = environment.arguments.get(index) {
-                Some(self.graph.types.qualify(*argument, cv)?)
+                let mut argument = *argument;
+                if let Some(Some(position)) = environment
+                    .selection
+                    .and_then(|selection| selection.elements.get(index))
+                    && let TypeKind::Pack(elements) = &self.graph.types.get(argument).kind
+                {
+                    argument = *elements
+                        .get(*position)
+                        .ok_or(Error::Invariant("pack element outside argument"))?;
+                }
+                Some(self.graph.types.qualify(argument, cv)?)
             } else {
                 Some(ty)
             };
@@ -354,6 +370,30 @@ impl Analyzer<'_> {
         let incomplete = self.incomplete_class_observations;
         let kind = self.graph.types.get(ty).kind.clone();
         let result = match kind {
+            TypeKind::Pack(elements) => self
+                .substitute_pack_list(&elements, environment)?
+                .map(|elements| self.graph.types.intern(TypeKind::Pack(elements), cv))
+                .transpose()?,
+            TypeKind::Expansion(pattern) => self
+                .substitute_signature_type(pattern, environment)?
+                .map(|pattern| self.graph.types.intern(TypeKind::Expansion(pattern), cv))
+                .transpose()?,
+            TypeKind::BoundPack { arguments, .. } => {
+                if let Some(position) = environment
+                    .selection
+                    .and_then(|selection| selection.bound_element)
+                {
+                    let TypeKind::Pack(elements) = &self.graph.types.get(arguments).kind else {
+                        return Err(Error::Invariant("bound pack without arguments"));
+                    };
+                    let element = *elements
+                        .get(position)
+                        .ok_or(Error::Invariant("bound pack element outside argument"))?;
+                    Some(self.graph.types.qualify(element, cv)?)
+                } else {
+                    Some(ty)
+                }
+            }
             TypeKind::TemplateParameter { entity, .. }
                 if self.graph.dependent_members.get(entity).is_some() =>
             {
@@ -503,11 +543,11 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         }
+        let Some(parameters) = self.substitute_pack_list(&parameters, environment)? else {
+            return Ok(None);
+        };
         let mut substituted = Vec::with_capacity(parameters.len());
         for parameter in parameters {
-            let Some(parameter) = self.substitute_signature_type(parameter, environment)? else {
-                return Ok(None);
-            };
             substituted.push(self.graph.types.parameter(parameter)?);
         }
         let Some(result) = (if leading {
@@ -766,6 +806,23 @@ impl Analyzer<'_> {
             self.graph.types.get(pattern).kind.clone(),
             self.graph.types.get(actual).kind.clone(),
         ) {
+            (TypeKind::Pack(pattern), TypeKind::Pack(actual)) => {
+                if pattern
+                    .iter()
+                    .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+                {
+                    return Err(Error::Missing("template argument pack deduction"));
+                }
+                if pattern.len() != actual.len() {
+                    return Ok(false);
+                }
+                for (pattern, actual) in pattern.into_iter().zip(actual) {
+                    if !self.deduce_signature_type(pattern, actual, depth, arguments, false)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
             (TypeKind::Class(p), TypeKind::Class(a)) => {
                 match (
                     self.graph.class_templates.instance(p),
@@ -1008,6 +1065,7 @@ impl Analyzer<'_> {
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => work.push(*element),
+                TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
                 TypeKind::MemberPointer { owner, element } => work.extend([*owner, *element]),
                 TypeKind::Function {
                     result, parameters, ..
@@ -1579,6 +1637,7 @@ impl Analyzer<'_> {
                     }
                     work.push(*element);
                 }
+                TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
                 TypeKind::MemberPointer { owner, element } => work.extend([*owner, *element]),
                 TypeKind::Function {
                     result, parameters, ..

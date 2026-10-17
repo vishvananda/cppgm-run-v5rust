@@ -63,6 +63,7 @@ pub(crate) enum KeyNode {
     Delete,
     Throw,
     PackExpansion,
+    SizeofPack,
     Function,
 }
 #[derive(Default)]
@@ -251,7 +252,28 @@ impl Analyzer<'_> {
             // C++ likewise leaves lambda operands unkeyed. Packs require their
             // declaration owner, which is outside the PA6 template boundary.
             ExprKind::Lambda(_) => return Ok(false),
-            ExprKind::SizeofPack(_) => return Err(Error::Missing("template pack expression key")),
+            ExprKind::SizeofPack(name) => {
+                let Some(binding) =
+                    self.unqualified(scope, name, super::lookup::Filter::Ordinary)?
+                else {
+                    return Ok(false);
+                };
+                let binding = self.graph.binding(binding);
+                if self
+                    .graph
+                    .entity(binding.entity)
+                    .template_parameter
+                    .is_none()
+                {
+                    return Ok(false);
+                }
+                let Some(ty) = self.graph.entity(binding.entity).ty else {
+                    return Ok(false);
+                };
+                key.words.push(KeyWord::Node(KeyNode::SizeofPack));
+                self.key_type(ty, key)?;
+                key.dependent = true;
+            }
         }
         Ok(true)
     }

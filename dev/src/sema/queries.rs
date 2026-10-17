@@ -397,7 +397,10 @@ impl Analyzer<'_> {
             }
             TypeKind::Enum(_) => return Err(Error::Invariant("enum query not unwound")),
             TypeKind::Array { .. } => return Err(Error::Invariant("array query not unwound")),
-            TypeKind::TemplateParameter { .. } => {
+            TypeKind::TemplateParameter { .. }
+            | TypeKind::Pack(_)
+            | TypeKind::Expansion(_)
+            | TypeKind::BoundPack { .. } => {
                 return Err(Error::NonConstant {
                     location,
                     message: "size of a dependent type",

@@ -194,8 +194,9 @@ impl Analyzer<'_> {
                     self.expression_work.push((operand, unevaluated));
                 }
             }
-            ExprKind::PackExpansion(_) | ExprKind::SizeofPack(_) => {
-                return Err(Error::Missing("template expression names"));
+            ExprKind::PackExpansion(pattern) => self.expression_work.push((pattern, unevaluated)),
+            ExprKind::SizeofPack(name) => {
+                self.check_sizeof_pack_name(name, scope, self.tree.expressions.get(id).location)?;
             }
             ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::Lambda(_) => (),
         }
