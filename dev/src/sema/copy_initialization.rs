@@ -5,6 +5,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{Conversion, ValueCategory as V},
+    function_templates::TemplateOrdering,
     graph::{BindingId, EntityId, FunctionAvailability, ScopeId},
     procedural_calls::ArgumentSequence,
     special_members::SpecialDefinition,
@@ -803,7 +804,7 @@ impl Analyzer<'_> {
         }
         match (a.selection.origin, b.selection.origin) {
             (CopyOrigin::Declared(a), CopyOrigin::Declared(b)) => {
-                self.compare_function_templates(a, b, Some(1))
+                self.compare_function_templates(a, b, TemplateOrdering::Call(1))
             }
             (CopyOrigin::Declared(binding), CopyOrigin::Implicit { .. }) => Ok(
                 if self

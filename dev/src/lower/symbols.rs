@@ -2630,6 +2630,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )?);
         }
         let parent = self.scope(facts.home)?;
+        // The frozen encoder uses the primary's written parameter count for
+        // operator arity, just as it uses that signature for parameter types.
+        // An empty expansion must not turn a binary terminal into a unary one.
+        let template = facts
+            .template_instance
+            .map(|instance| self.graph.lower_template_signature(instance))
+            .transpose()?;
+        let signature = template.map_or(facts.ty, |(pattern, _)| pattern);
         let terminal = if matches!(
             facts.name,
             FunctionName::Constructor(_) | FunctionName::Destructor(_)
@@ -2656,7 +2664,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 &[],
             )?
         } else {
-            self.function_terminal(facts.name, facts.ty, facts.object.is_some())?
+            self.function_terminal(facts.name, signature, facts.object.is_some())?
         };
         let name = self
             .abi
@@ -2673,17 +2681,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )
             .map_err(Error::from)?;
         let mut name = name;
-        let signature = if let Some(instance) = facts.template_instance {
-            let (pattern, arguments) = self.graph.lower_template_signature(instance)?;
+        if let Some((instance, (_, arguments))) = facts.template_instance.zip(template) {
             let mut nodes = Vec::with_capacity(arguments.len());
             for (index, &argument) in arguments.iter().enumerate() {
                 nodes.push(self.declared_template_argument(instance, index, argument)?);
             }
             name = self.abi.intern(Node::Template(name), &nodes)?;
-            pattern
-        } else {
-            facts.ty
-        };
+        }
         let TypeView::Function {
             result,
             parameters,

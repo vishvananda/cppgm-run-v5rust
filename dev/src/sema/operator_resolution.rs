@@ -5,6 +5,7 @@ use super::{
     analyzer::Analyzer,
     expression_facts::{ExprFacts, ObjectArgument, ObjectSource},
     function_resolution::CallTarget,
+    function_templates::TemplateOrdering,
     graph::{BindingId, FunctionAvailability, ScopeId},
     procedural_calls::ArgumentSequence,
     types::{Scalar, TypeKind},
@@ -476,7 +477,9 @@ impl Analyzer<'_> {
             (true, false) => Ordering::Greater,
             (false, true) => Ordering::Less,
             (false, false) => match (ab, bb) {
-                (Some(a), Some(b)) => self.compare_function_templates(a, b, Some(count))?,
+                (Some(a), Some(b)) => {
+                    self.compare_function_templates(a, b, TemplateOrdering::Operator(count))?
+                }
                 (Some(a), None) => {
                     if self
                         .graph

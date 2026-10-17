@@ -23,6 +23,21 @@ struct SpecializationKey {
     arguments: Vec<TypeId>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum TemplateOrdering {
+    FunctionType,
+    Call(usize),
+    Operator(usize),
+}
+
+/// A borrowed function parameter sequence with an optional implicit object.
+/// The published signature itself never acquires a synthetic parameter.
+#[derive(Clone, Copy)]
+struct OrderingParameters {
+    function: TypeId,
+    object: Option<TypeId>,
+}
+
 #[derive(Default)]
 pub(super) struct FunctionTemplates {
     pub(super) conditions: super::explicit_conditions::Conditions,
@@ -1601,7 +1616,8 @@ impl Analyzer<'_> {
                     .function_templates
                     .primary(self.graph.binding(previous).entity)
                     .ok_or(Error::Invariant("declared specialization without primary"))?;
-                let count = Some(self.graph.types.function_parameter_count(info.ty)?);
+                let count =
+                    TemplateOrdering::Call(self.graph.types.function_parameter_count(info.ty)?);
                 let forward = self.template_at_least_as_specialized(primary, previous, count)?;
                 let backward = self.template_at_least_as_specialized(previous, primary, count)?;
                 if forward == backward {
@@ -1662,7 +1678,7 @@ impl Analyzer<'_> {
         &mut self,
         first: BindingId,
         second: BindingId,
-        call_count: Option<usize>,
+        form: TemplateOrdering,
     ) -> Result<bool, Error> {
         let Some(from_head) = self.function_template_head(first)? else {
             return Ok(false);
@@ -1684,29 +1700,94 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("ordering without pattern"))?;
         let depth = self.graph.templates.depth(to_head);
         let mut arguments = vec![None; self.graph.templates.parameters(to_head).len()];
-        if let Some(count) = call_count {
-            self.order_call_parameters(from, to, count, depth, &mut arguments, &mut environment)
-        } else {
-            self.order_function_types(from, to, depth, &mut arguments, &mut environment)
+        match form {
+            TemplateOrdering::FunctionType => {
+                self.order_function_types(from, to, depth, &mut arguments, &mut environment)
+            }
+            TemplateOrdering::Call(count) | TemplateOrdering::Operator(count) => {
+                let (from, to) = self.ordering_parameters(first, second, form)?;
+                self.order_call_parameters(from, to, count, depth, &mut arguments, &mut environment)
+            }
         }
+    }
+
+    fn ordering_parameters(
+        &mut self,
+        first: BindingId,
+        second: BindingId,
+        form: TemplateOrdering,
+    ) -> Result<(OrderingParameters, OrderingParameters), Error> {
+        let inserting = matches!(form, TemplateOrdering::Operator(_))
+            && self.member_function_owner(first).is_some()
+                != self.member_function_owner(second).is_some();
+        Ok((
+            self.ordering_parameter_sequence(first, inserting)?,
+            self.ordering_parameter_sequence(second, inserting)?,
+        ))
+    }
+
+    fn ordering_parameter_sequence(
+        &mut self,
+        binding: BindingId,
+        inserting: bool,
+    ) -> Result<OrderingParameters, Error> {
+        let function = self
+            .graph
+            .binding(binding)
+            .ty
+            .ok_or(Error::Invariant("ordering without function type"))?;
+        let object = if let Some(owner) = self.member_function_owner(binding).filter(|_| inserting)
+        {
+            let TypeKind::Function { cv, reference, .. } = self.graph.types.get(function).kind
+            else {
+                return Err(Error::Invariant("ordering nonfunction"));
+            };
+            let owner = self.graph.types.qualify(owner, cv)?;
+            let kind = reference.unwrap_or(RefKind::Lvalue);
+            Some(self.graph.types.reference(owner, kind)?)
+        } else {
+            None
+        };
+        Ok(OrderingParameters { function, object })
+    }
+
+    fn ordering_parameter(
+        &self,
+        parameters: OrderingParameters,
+        index: usize,
+    ) -> Result<TypeId, Error> {
+        if let Some(object) = parameters.object {
+            if index == 0 {
+                return Ok(object);
+            }
+            return self
+                .graph
+                .types
+                .function_parameter(parameters.function, index - 1);
+        }
+        self.graph
+            .types
+            .function_parameter(parameters.function, index)
     }
 
     fn order_call_parameters(
         &mut self,
-        from: TypeId,
-        to: TypeId,
+        from: OrderingParameters,
+        to: OrderingParameters,
         count: usize,
         depth: u32,
         arguments: &mut [Option<TypeId>],
         environment: &mut Substitution<'_>,
     ) -> Result<bool, Error> {
-        let from_count = self.graph.types.function_parameter_count(from)?;
-        let to_count = self.graph.types.function_parameter_count(to)?;
+        let from_count = self.graph.types.function_parameter_count(from.function)?
+            + usize::from(from.object.is_some());
+        let to_count = self.graph.types.function_parameter_count(to.function)?
+            + usize::from(to.object.is_some());
         let from_pack = from_count != 0
             && matches!(
                 self.graph
                     .types
-                    .get(self.graph.types.function_parameter(from, from_count - 1)?)
+                    .get(self.ordering_parameter(from, from_count - 1)?)
                     .kind,
                 TypeKind::Expansion(_)
             );
@@ -1714,7 +1795,7 @@ impl Analyzer<'_> {
             && matches!(
                 self.graph
                     .types
-                    .get(self.graph.types.function_parameter(to, to_count - 1)?)
+                    .get(self.ordering_parameter(to, to_count - 1)?)
                     .kind,
                 TypeKind::Expansion(_)
             );
@@ -1726,10 +1807,8 @@ impl Analyzer<'_> {
                 break;
             }
             let from_expansion = index >= from_fixed;
-            let mut parameter = self
-                .graph
-                .types
-                .function_parameter(from, if from_expansion { from_fixed } else { index })?;
+            let mut parameter =
+                self.ordering_parameter(from, if from_expansion { from_fixed } else { index })?;
             if let TypeKind::Expansion(pattern) = self.graph.types.get(parameter).kind {
                 parameter = pattern;
             }
@@ -1747,7 +1826,7 @@ impl Analyzer<'_> {
             if from_expansion {
                 return Ok(false);
             }
-            let mut pattern = self.graph.types.function_parameter(to, index)?;
+            let mut pattern = self.ordering_parameter(to, index)?;
             if let TypeKind::Reference { element, .. } = self.graph.types.get(pattern).kind {
                 pattern = element;
             }
@@ -1759,7 +1838,7 @@ impl Analyzer<'_> {
         if packed.is_empty() {
             return Ok(true);
         }
-        let mut pattern = self.graph.types.function_parameter(to, to_count - 1)?;
+        let mut pattern = self.ordering_parameter(to, to_count - 1)?;
         if let TypeKind::Expansion(element) = self.graph.types.get(pattern).kind {
             pattern = element;
         }
@@ -1904,28 +1983,26 @@ impl Analyzer<'_> {
     }
 
     fn template_reference_order(
-        &self,
+        &mut self,
         first: BindingId,
         second: BindingId,
         count: usize,
+        form: TemplateOrdering,
     ) -> Result<Ordering, Error> {
-        let a = self
-            .graph
-            .binding(first)
-            .ty
-            .ok_or(Error::Invariant("reference ordering without type"))?;
-        let b = self
-            .graph
-            .binding(second)
-            .ty
-            .ok_or(Error::Invariant("reference ordering without type"))?;
+        let (a, b) = self.ordering_parameters(first, second, form)?;
         let count = count
-            .min(self.graph.types.function_parameter_count(a)?)
-            .min(self.graph.types.function_parameter_count(b)?);
+            .min(
+                self.graph.types.function_parameter_count(a.function)?
+                    + usize::from(a.object.is_some()),
+            )
+            .min(
+                self.graph.types.function_parameter_count(b.function)?
+                    + usize::from(b.object.is_some()),
+            );
         let mut order = Ordering::Equal;
         for index in 0..count {
-            let a = self.graph.types.function_parameter(a, index)?;
-            let b = self.graph.types.function_parameter(b, index)?;
+            let a = self.ordering_parameter(a, index)?;
+            let b = self.ordering_parameter(b, index)?;
             let (
                 TypeKind::Reference {
                     element: a,
@@ -2009,7 +2086,7 @@ impl Analyzer<'_> {
         &mut self,
         first: BindingId,
         second: BindingId,
-        call_count: Option<usize>,
+        form: TemplateOrdering,
     ) -> Result<Ordering, Error> {
         let a = self
             .graph
@@ -2029,13 +2106,15 @@ impl Analyzer<'_> {
         if self.graph.binding(a).entity == self.graph.binding(b).entity {
             return Ok(Ordering::Equal);
         }
-        let forward = self.template_at_least_as_specialized(a, b, call_count)?;
-        let backward = self.template_at_least_as_specialized(b, a, call_count)?;
-        if forward != backward || !forward || call_count.is_none() {
+        let forward = self.template_at_least_as_specialized(a, b, form)?;
+        let backward = self.template_at_least_as_specialized(b, a, form)?;
+        if forward != backward || !forward {
             return Ok(forward.cmp(&backward));
         }
-        let count = call_count.unwrap_or(0);
-        let references = self.template_reference_order(a, b, count)?;
+        let (TemplateOrdering::Call(count) | TemplateOrdering::Operator(count)) = form else {
+            return Ok(Ordering::Equal);
+        };
+        let references = self.template_reference_order(a, b, count, form)?;
         if references != Ordering::Equal {
             return Ok(references);
         }
@@ -2058,6 +2137,93 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn inserted_object_ordering_preserves_signatures_syntax_and_body_demand() {
+        let source = SourceBuffer::new(
+            b"struct A{template<class R>int f(R&)const&&{return R::bad;}};\
+              template<class R>int g(A const&&,R&){return R::bad;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"inserted-object").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax = (tree.expressions.mark(), tree.declarations.mark());
+        let a = cursor.intern_name(b"A").unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let g = cursor.intern_name(b"g").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let class = analyzer
+            .graph
+            .own(global, a, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let class = analyzer.graph.binding(class).entity;
+        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let member = analyzer.graph.functions_at(scope, f.into()).next().unwrap();
+        let free = analyzer
+            .graph
+            .functions_at(global, g.into())
+            .next()
+            .unwrap();
+        let member_type = analyzer.graph.binding(member).ty.unwrap();
+        let free_type = analyzer.graph.binding(free).ty.unwrap();
+        let form = TemplateOrdering::Operator(2);
+        let (member_parameters, free_parameters) =
+            analyzer.ordering_parameters(member, free, form).unwrap();
+        let object = member_parameters.object.unwrap();
+        assert!(free_parameters.object.is_none());
+        let TypeKind::Reference { element, kind } = analyzer.graph.types.get(object).kind else {
+            panic!("inserted object without reference");
+        };
+        assert_eq!(kind, RefKind::Rvalue);
+        assert_eq!(analyzer.graph.class_of(element), Some(class));
+        assert_eq!(analyzer.type_cv(element), Cv(1));
+        for _ in 0..3 {
+            assert!(
+                analyzer
+                    .template_at_least_as_specialized(member, free, form)
+                    .unwrap()
+            );
+            assert!(
+                analyzer
+                    .template_at_least_as_specialized(free, member, form)
+                    .unwrap()
+            );
+            assert_eq!(
+                analyzer
+                    .template_reference_order(member, free, 2, form)
+                    .unwrap(),
+                Ordering::Equal
+            );
+            let (parameters, _) = analyzer.ordering_parameters(member, free, form).unwrap();
+            assert_eq!(parameters.object, Some(object));
+        }
+        let (member_parameters, _) = analyzer
+            .ordering_parameters(member, free, TemplateOrdering::Call(1))
+            .unwrap();
+        assert!(member_parameters.object.is_none());
+        assert_eq!(analyzer.graph.binding(member).ty, Some(member_type));
+        assert_eq!(analyzer.graph.binding(free).ty, Some(free_type));
+        assert_eq!(
+            analyzer
+                .graph
+                .types
+                .function_parameter_count(member_type)
+                .unwrap(),
+            1
+        );
+        assert!(analyzer.graph.function_templates.signatures.is_empty());
+        assert!(analyzer.graph.function_templates.demanded_bodies.is_empty());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
+    }
 
     #[test]
     fn class_reentry_publishes_one_signature_without_demanding_its_body() {

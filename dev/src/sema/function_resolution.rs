@@ -7,6 +7,7 @@ use super::{
         Conversion, ConversionRank as R, ExprFacts, ReferenceSource, ValueCategory as V,
         ValueConversion as C,
     },
+    function_templates::TemplateOrdering,
     graph::{BindingId, BindingKind, ScopeId, ScopeKind},
     lookup::Filter,
     types::{RefKind, TypeId, TypeKind},
@@ -280,7 +281,12 @@ impl Analyzer<'_> {
             }
             for &binding in &candidates {
                 if let Some(old) = found {
-                    if self.compare_function_templates(binding, old, None)? == Ordering::Greater {
+                    if self.compare_function_templates(
+                        binding,
+                        old,
+                        TemplateOrdering::FunctionType,
+                    )? == Ordering::Greater
+                    {
                         found = Some(binding);
                     }
                 } else {
@@ -290,8 +296,11 @@ impl Analyzer<'_> {
             if let Some(best) = found {
                 for binding in candidates {
                     if binding != best
-                        && self.compare_function_templates(best, binding, None)?
-                            != Ordering::Greater
+                        && self.compare_function_templates(
+                            best,
+                            binding,
+                            TemplateOrdering::FunctionType,
+                        )? != Ordering::Greater
                     {
                         return Ok(None);
                     }

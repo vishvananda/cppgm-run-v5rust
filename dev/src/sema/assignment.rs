@@ -6,6 +6,7 @@ use super::{
     analyzer::Analyzer,
     expression_facts::{Conversion, ExprFacts, ObjectArgument, ObjectSource, ValueCategory},
     function_names::ValueKey,
+    function_templates::TemplateOrdering,
     graph::{BindingId, EntityId, FunctionAvailability, Graph, Mutability, ScopeId, ScopeKind},
     procedural_calls::ArgumentSequence,
     special_members::SpecialDefinition,
@@ -937,7 +938,7 @@ impl Analyzer<'_> {
         let source = self.compare_argument_sequences(a.source, b.source)?;
         Ok(match (object, source) {
             (Ordering::Equal, Ordering::Equal) => {
-                self.compare_function_templates(a.binding, b.binding, Some(1))?
+                self.compare_function_templates(a.binding, b.binding, TemplateOrdering::Call(1))?
             }
             (Ordering::Greater, Ordering::Less) | (Ordering::Less, Ordering::Greater) => {
                 Ordering::Equal

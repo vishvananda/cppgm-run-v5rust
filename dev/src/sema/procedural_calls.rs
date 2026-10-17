@@ -8,6 +8,7 @@ use super::{
         ValueCategory as V, ValueConversion as C,
     },
     function_resolution::CallTarget,
+    function_templates::TemplateOrdering,
     graph::{BindingId, ScopeId},
     types::{RefKind, Scalar, TypeId, TypeKind},
 };
@@ -1362,7 +1363,7 @@ impl Analyzer<'_> {
             return self.compare_function_templates(
                 scratch.candidates[a].0,
                 scratch.candidates[b].0,
-                Some(count),
+                TemplateOrdering::Call(count),
             );
         }
         Ok(order)
