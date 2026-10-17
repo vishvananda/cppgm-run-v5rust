@@ -82,6 +82,13 @@ pub(super) struct ObjectArgument {
     pub ty: TypeId,
     pub category: ValueCategory,
 }
+#[derive(Clone, Copy)]
+pub(super) struct CallReceiver {
+    pub object: ObjectArgument,
+    pub path: Option<super::inheritance::BasePathId>,
+    pub naming_path: Option<super::inheritance::BasePathId>,
+    pub member_path: Option<super::inheritance::BasePathId>,
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BaseCast {
     pub path: super::inheritance::BasePathId,
@@ -92,6 +99,7 @@ pub(super) struct BaseCast {
 pub(super) enum CallForm {
     Ordinary,
     Operator,
+    CallableObject,
 }
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) enum Dispatch {
@@ -270,8 +278,17 @@ pub(super) struct ExpressionFacts {
     deletions: std::collections::HashMap<ast::ExprId, super::allocation::Deletion>,
     // The member access owns a bounded selected-call chain over its original base.
     arrow_calls: std::collections::HashMap<ast::ExprId, Vec<super::arrow_calls::ArrowStep>>,
+    // A callable object's designation remains independent of operator()'s
+    // implicit object conversion, including when the object is itself a member.
+    callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn callable_receiver(&self, id: ast::ExprId) -> Option<CallReceiver> {
+        self.callable_receivers.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_callable_receiver(&mut self, id: ast::ExprId, receiver: CallReceiver) {
+        self.callable_receivers.insert(self.root(id), receiver);
+    }
     pub(super) fn function_conversion(
         &self,
         id: ast::ExprId,

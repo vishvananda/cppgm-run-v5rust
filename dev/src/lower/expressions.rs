@@ -194,6 +194,9 @@ impl Function<'_, '_, '_, '_> {
                 bits: Some(bits),
             });
         }
+        if let Some(pointer) = self.evaluated_pointer(id)? {
+            return Ok(pointer);
+        }
         match self.tree.expressions.get(id).kind {
             ExprKind::Paren(inner) => self.expression(inner, context),
             ExprKind::Literal(literal) => {
@@ -624,7 +627,12 @@ impl Function<'_, '_, '_, '_> {
             ))?);
         }
         if let CallTarget::Direct(entity) = target {
-            let object = self.graph.lower_object_source(callee_expression)?;
+            let receiver = if self.graph.lower_callable_object_call(id)? {
+                id
+            } else {
+                callee_expression
+            };
+            let object = self.graph.lower_object_source(receiver)?;
             if self.graph.lower_function(entity)?.object.is_some() {
                 let value = match object.ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "member call without receiver",
@@ -643,7 +651,7 @@ impl Function<'_, '_, '_, '_> {
                 let mut value = value;
                 for offset in self
                     .graph
-                    .lower_receiver_base_offsets(callee_expression)?
+                    .lower_receiver_base_offsets(receiver)?
                     .into_iter()
                     .flatten()
                 {
@@ -733,6 +741,13 @@ impl Function<'_, '_, '_, '_> {
         if ty == Type::Void {
             self.discard(id)?;
             return self.zero(source);
+        }
+        if let Some(selected) = self.graph.lower_constant_conversion(self.tree, condition)? {
+            let value = self.operand(
+                if selected { then_expr } else { else_expr },
+                Context::Operand,
+            )?;
+            return self.fit(value, source);
         }
         let slot = self.generated_slot("cond", ty)?;
         let then_name = self.block_name("cond_then")?;

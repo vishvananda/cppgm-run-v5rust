@@ -132,7 +132,9 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let from_signed = types::signed(self.graph, value.source)?;
         let operation = {
-            if to == value.ty && from_signed == to_signed {
+            let sign_change =
+                !types::boolean(self.graph, value.source)? && from_signed != to_signed;
+            if to == value.ty && !sign_change {
                 return Ok(RValue {
                     source: target,
                     ..value

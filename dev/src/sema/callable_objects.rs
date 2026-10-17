@@ -83,6 +83,7 @@ impl Analyzer<'_> {
                     self.function_designation(binding, found.functions.as_slice())?;
                 designation.object = Some(object);
                 designation.member_naming = Some(class);
+                designation.call_form = super::expression_facts::CallForm::CallableObject;
                 let set = designation
                     .functions
                     .ok_or(Error::Invariant("call operator candidates"))?;
@@ -112,10 +113,6 @@ impl Analyzer<'_> {
                         &scratch,
                     )?,
                 };
-                let mut receiver = facts;
-                receiver.object = Some(object);
-                receiver.member_naming = Some(class);
-                self.graph.expression_facts.set(callee, receiver);
                 self.finish_selected_call(id, designation, scope, selected, &scratch)
             } else if let Some(binding) = self.surrogate_call(id, class, &mut scratch.surrogates)? {
                 let produced = self.convert_class_operand(callee, binding, scope)?;
@@ -236,6 +233,81 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn callable_member_keeps_its_designation_and_owns_a_separate_call_receiver() {
+        use super::super::{expression_facts::CallForm, template_bodies::analyze_unit};
+        use crate::syntax::ast::{Body, ExprKind, StmtKind};
+        let source = SourceBuffer::new(
+            b"struct F0{int operator()(int x)const{return x;}};struct F:F0{};\
+              struct B{F const& f;};struct A:B{int run(int x)const{return ((B::f))(x);}};\
+              int use(A const&a){return a.run(1);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"call-receiver").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let a = cursor.intern_name(b"A").unwrap();
+        let run = cursor.intern_name(b"run").unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let binding = graph.own(graph.global, a, Filter::Ordinary).unwrap();
+        let class = graph.binding(binding).entity;
+        let binding = graph
+            .own(graph.entity(class).scope.unwrap(), run, Filter::Ordinary)
+            .unwrap();
+        let definition = graph
+            .lower_function(graph.binding(binding).entity)
+            .unwrap()
+            .definition
+            .unwrap();
+        let ast::DeclKind::Function { body, .. } = tree.declarations.get(definition).kind else {
+            panic!("member definition")
+        };
+        let Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed member body")
+        };
+        let StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+            panic!("compound")
+        };
+        let StmtKind::Return(Some(call)) = tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+        else {
+            panic!("return")
+        };
+        let ExprKind::Call { callee, .. } = tree.expressions.get(call).kind else {
+            panic!("call")
+        };
+        let object = graph.expression_facts.get(callee).unwrap();
+        assert!(matches!(
+            object.object.unwrap().source,
+            ObjectSource::Implicit
+        ));
+        assert!(object.member.is_some());
+        assert!(object.function.is_none());
+        assert!(object.conversion.is_none());
+        let receiver = graph.expression_facts.callable_receiver(call).unwrap();
+        assert!(
+            matches!(receiver.object.source, ObjectSource::Explicit { expression, arrow: false } if expression == callee)
+        );
+        assert!(receiver.path.is_some());
+        assert_ne!(receiver.path, object.member_path);
+        let call_facts = graph.expression_facts.get(call).unwrap();
+        assert_eq!(call_facts.call_form, CallForm::CallableObject);
+        assert!(
+            call_facts
+                .conversion
+                .is_none_or(|conversion| conversion.target == call_facts.ty)
+        );
+        assert!(matches!(call_facts.call, Some(CallTarget::Direct(_))));
+    }
 
     #[test]
     fn indirect_result_boundaries_follow_evaluation_and_body_demand() {

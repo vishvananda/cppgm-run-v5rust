@@ -286,7 +286,11 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        self.record_call_receiver(callee, binding, facts, scope, location)?;
+        let callable = facts.call_form == super::expression_facts::CallForm::CallableObject;
+        let receiver = self.record_call_receiver(callee, binding, facts, scope, location)?;
+        if !callable {
+            self.graph.expression_facts.set(callee, receiver);
+        }
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
         self.apply_call_arguments(selected, argument_buffer.as_slice(), scope, scratch)?;
@@ -301,6 +305,22 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("function without type"))?,
         )?;
         let mut facts = self.call_result(ty)?;
+        if callable {
+            // Calling an object does not replace the object's own designation
+            // or base paths. The call owns its selected receiver conversion.
+            facts.call_form = super::expression_facts::CallForm::CallableObject;
+            self.graph.expression_facts.set_callable_receiver(
+                id,
+                super::expression_facts::CallReceiver {
+                    object: receiver
+                        .object
+                        .ok_or(Error::Invariant("callable receiver missing"))?,
+                    path: receiver.base_path,
+                    naming_path: receiver.member_naming_path,
+                    member_path: receiver.member_path,
+                },
+            );
+        }
         facts.call = Some(CallTarget::Direct(
             self.graph
                 .function_origin(self.graph.binding(binding).entity)?,
@@ -310,7 +330,7 @@ impl Analyzer<'_> {
             .virtuals
             .function(self.graph.binding(binding).entity)
             .is_virtual
-            && !self.qualified_call_designator(callee)
+            && (callable || !self.qualified_call_designator(callee))
         {
             facts.dispatch = super::expression_facts::Dispatch::Virtual;
         }
@@ -338,7 +358,15 @@ impl Analyzer<'_> {
         facts: ExprFacts,
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
-    ) -> Result<(), Error> {
+    ) -> Result<ExprFacts, Error> {
+        let mut receiver = self.graph.expression_facts.get(callee)?;
+        receiver.object = facts.object;
+        if facts.call_form == super::expression_facts::CallForm::CallableObject {
+            receiver.conversion = None;
+            receiver.base_path = None;
+            receiver.member_naming_path = None;
+            receiver.member_path = None;
+        }
         if let Some(object) = facts.object {
             let class = self
                 .graph
@@ -377,14 +405,12 @@ impl Analyzer<'_> {
                 let object_facts = ExprFacts::new(object.ty, object.category);
                 let path =
                     self.conversion_base_path(object_facts, conversion, scope, location, false)?;
-                let mut selected = self.graph.expression_facts.get(callee)?;
-                selected.conversion = Some(conversion);
-                selected.base_path = path;
+                receiver.conversion = Some(conversion);
+                receiver.base_path = path;
                 if naming != class && naming != home {
-                    selected.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
-                    selected.member_path = Some(self.graph.retain_base_path(naming, home)?);
+                    receiver.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
+                    receiver.member_path = Some(self.graph.retain_base_path(naming, home)?);
                 }
-                self.graph.expression_facts.set(callee, selected);
             }
         } else {
             self.check_declaration_direct_access(binding, scope, location)?;
@@ -395,7 +421,7 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        Ok(())
+        Ok(receiver)
     }
     pub(super) fn object_sequence(
         &mut self,

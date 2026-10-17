@@ -718,11 +718,18 @@ impl Graph {
         &self,
         id: ast::ExprId,
     ) -> Result<Option<ObjectSource>, Error> {
+        if let Some(receiver) = self.expression_facts.callable_receiver(id) {
+            return Ok(Some(receiver.object.source));
+        }
         Ok(self
             .expression_facts
             .get(id)?
             .object
             .map(|object| object.source))
+    }
+    pub(crate) fn lower_callable_object_call(&self, id: ast::ExprId) -> Result<bool, Error> {
+        Ok(self.expression_facts.get(id)?.call_form
+            == super::expression_facts::CallForm::CallableObject)
     }
     fn lower_path_offset(&self, path: super::inheritance::BasePathId) -> Result<u64, Error> {
         self.base_paths
@@ -791,6 +798,19 @@ impl Graph {
         &self,
         id: ast::ExprId,
     ) -> Result<[Option<u64>; 2], Error> {
+        if let Some(receiver) = self.expression_facts.callable_receiver(id) {
+            return Ok([
+                receiver
+                    .naming_path
+                    .or(receiver.path)
+                    .map(|path| self.lower_path_offset(path))
+                    .transpose()?,
+                receiver
+                    .member_path
+                    .map(|path| self.lower_path_offset(path))
+                    .transpose()?,
+            ]);
+        }
         let offsets = self.lower_member_base_offsets(id)?;
         if offsets[0].is_some() {
             Ok(offsets)

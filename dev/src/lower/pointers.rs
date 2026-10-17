@@ -15,6 +15,51 @@ use crate::{
     syntax::ast,
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn evaluated_pointer(&mut self, id: ast::ExprId) -> Result<Option<RValue>, Error> {
+        let Some(value) = self.graph.lower_evaluated_pointer(self.tree, id)? else {
+            return Ok(None);
+        };
+        let source = self.graph.lower_expression(id)?.ty;
+        let place = if matches!(value, crate::sema::lowering::StaticValue::Integer(0)) {
+            None
+        } else {
+            let (symbol, offset) = super::data::address(
+                self.builder.program(),
+                self.symbols,
+                self.graph,
+                self.tree,
+                value,
+            )?;
+            let mut place = Value::Symbol(symbol);
+            if offset != 0 {
+                let address = self.emit(I::Addr(place), source)?.value;
+                let offset = self
+                    .builder
+                    .integer(u128::from(u64::from_le_bytes(offset.to_le_bytes())))?;
+                place = self
+                    .emit(I::Index(Type::I8, None, address, offset), source)?
+                    .value;
+            }
+            Some(place)
+        };
+        if let ast::ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
+            self.member_object(
+                base,
+                op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Arrow),
+            )?;
+        }
+        Ok(Some(if let Some(place) = place {
+            RValue {
+                value: self.storage_address(place, source)?,
+                ty: Type::Ptr,
+                source,
+                literal: false,
+                bits: None,
+            }
+        } else {
+            self.zero(source)?
+        }))
+    }
     pub(super) fn pointer_element(&self, source: TypeId) -> Result<Option<TypeId>, Error> {
         Ok(match self.graph.lower_type(source)? {
             TypeView::Pointer(element) | TypeView::Array { element, .. } => Some(element),

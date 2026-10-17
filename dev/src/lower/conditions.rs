@@ -131,6 +131,31 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Keyword(Keyword::True) => Ok(Some(true)),
             ExprKind::Keyword(Keyword::False) => Ok(Some(false)),
             ExprKind::Id(_) if facts.folded.is_some() => Ok(facts.folded.map(|v| v != 0)),
+            ExprKind::Id(_)
+                if matches!(
+                    self.graph.lower_evaluated_pointer(self.tree, id)?,
+                    Some(crate::sema::lowering::StaticValue::Integer(0))
+                ) =>
+            {
+                Ok(Some(false))
+            }
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } if !matches!(
+                self.graph.lower_type(facts.ty)?,
+                crate::sema::lowering::TypeView::Class(_)
+            ) =>
+            {
+                if let Some(selected) =
+                    self.graph.lower_constant_conversion(self.tree, condition)?
+                {
+                    self.literal_truth(if selected { then_expr } else { else_expr })
+                } else {
+                    Ok(None)
+                }
+            }
             ExprKind::Literal(literal)
                 if types::storage(self.graph, facts.ty)?.float_rank() == 0 =>
             {

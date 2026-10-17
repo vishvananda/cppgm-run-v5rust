@@ -9,6 +9,7 @@ use super::{
 use crate::{
     lex::{
         identifiers::NameId,
+        pp_lexer::Punctuator as P,
         vocabulary::{Keyword, SimpleToken},
     },
     syntax::{
@@ -29,7 +30,7 @@ enum Item {
     },
     Binding(BindingId, Option<ast::Initializer>),
     Storage(BindingId),
-    ObjectReceiver(ast::ExprId, BindingId),
+    ObjectReceiver(ast::ExprId, BindingId, Option<ast::ExprId>),
     ArrowCall(ast::ExprId, usize),
     This(TypeId),
     Constructor(super::construction::ConstructorId),
@@ -88,8 +89,8 @@ impl Graph {
                 }
                 Item::Binding(id, initializer) => printer.binding(id, initializer, depth)?,
                 Item::Storage(id) => printer.storage_expression(id, depth)?,
-                Item::ObjectReceiver(callee, binding) => {
-                    printer.object_receiver(callee, binding, depth)?;
+                Item::ObjectReceiver(callee, binding, call) => {
+                    printer.object_receiver(callee, binding, call, depth)?;
                 }
                 Item::ArrowCall(base, index) => printer.arrow_call(base, index, depth)?,
                 Item::This(ty) => printer.this_pointer(ty, depth)?,
@@ -563,6 +564,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         &mut self,
         callee: ast::ExprId,
         binding: BindingId,
+        call: Option<ast::ExprId>,
         depth: usize,
     ) -> io::Result<()> {
         let Some((owner, cv)) = self.function_object(binding) else {
@@ -573,12 +575,52 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .expression_facts
             .get(callee)
             .map_err(|_| io::Error::other("receiver without facts"))?;
-        let Some(object) = facts.object else {
+        let callable = call.and_then(|id| self.graph.expression_facts.callable_receiver(id));
+        let object = if callable.is_some() {
+            let ExprKind::Member { base, op, .. } = self
+                .tree
+                .expressions
+                .get(self.graph.expression_facts.root(callee))
+                .kind
+            else {
+                return Ok(());
+            };
+            let base_facts = self
+                .graph
+                .expression_facts
+                .get(base)
+                .map_err(|_| io::Error::other("member base without facts"))?;
+            let arrow = op.token.as_punctuator() == Some(P::Arrow);
+            let ty = if arrow {
+                match self.graph.types.get(base_facts.ty).kind {
+                    TypeKind::Pointer(element) | TypeKind::Array { element, .. } => element,
+                    _ => base_facts.ty,
+                }
+            } else {
+                base_facts.ty
+            };
+            Some(super::expression_facts::ObjectArgument {
+                source: super::expression_facts::ObjectSource::Explicit {
+                    expression: base,
+                    arrow,
+                },
+                ty,
+                category: base_facts.category,
+            })
+        } else {
+            facts.object
+        };
+        let Some(object) = object else {
             return Ok(());
         };
-        let converted = facts
-            .conversion
-            .is_some_and(|conversion| conversion.second == C::DerivedToBase);
+        let converted = callable.map_or_else(
+            || {
+                facts
+                    .conversion
+                    .is_some_and(|conversion| conversion.second == C::DerivedToBase)
+            },
+            |receiver| receiver.path.is_some(),
+        );
         let at = depth + usize::from(converted);
         if converted {
             self.indent(depth)?;
@@ -1306,7 +1348,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .get(id)
             .map_err(|_| io::Error::other("expression without facts"))?;
         if let Some(converted) = self.graph.expression_facts.function_conversion(id)
-            && converted.usage == super::conversion_functions::ConversionUse::Builtin
+            && matches!(
+                converted.usage,
+                super::conversion_functions::ConversionUse::Builtin
+                    | super::conversion_functions::ConversionUse::Contextual
+            )
         {
             // convert_class_operand replaces the C++ occurrence's facts with
             // its selected call. Rust keeps the receiver facts for lowering;
@@ -1370,7 +1416,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         {
             ty = target;
         }
-        if facts.call_form == super::expression_facts::CallForm::Ordinary
+        if facts.call_form != super::expression_facts::CallForm::Operator
             && facts.literal_call.is_none()
             && let Some(call) = facts.call
         {
@@ -1499,7 +1545,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
             }
             ExprKind::Call { callee, arguments } => {
-                return self.call_node(callee, arguments, facts, depth);
+                return self.call_node(id, callee, arguments, facts, depth);
             }
             ExprKind::FunctionalCast {
                 arguments, braced, ..
@@ -1533,6 +1579,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     }
     fn call_node(
         &mut self,
+        id: ast::ExprId,
         callee: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
         facts: super::expression_facts::ExprFacts,
@@ -1573,8 +1620,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         if matches!(facts.call, Some(CallTarget::Indirect(_, _))) {
             self.expr(callee, depth + 1);
         } else if let Some(CallTarget::Direct(binding)) = facts.call {
+            let call = (facts.call_form == super::expression_facts::CallForm::CallableObject)
+                .then_some(id);
             self.work
-                .push((Item::ObjectReceiver(callee, binding), depth + 1));
+                .push((Item::ObjectReceiver(callee, binding, call), depth + 1));
         }
         Ok(())
     }

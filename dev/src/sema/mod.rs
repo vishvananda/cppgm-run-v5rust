@@ -19,6 +19,7 @@ mod class_templates;
 mod constant_addresses;
 mod constant_mutations;
 mod constant_pointer_operations;
+mod constant_views;
 mod constants;
 mod construction;
 mod constructor_initialization;
