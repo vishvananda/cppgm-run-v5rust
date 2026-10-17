@@ -663,7 +663,7 @@ impl Graph {
         let entity = self.entity(entity);
         entity.home.zip(entity.name)
     }
-    pub(crate) fn lower_template_id_name(&self, ty: TypeId) -> Option<(TypeId, Vec<TypeId>)> {
+    pub(crate) fn lower_template_id_name(&self, ty: TypeId) -> Option<(TypeId, &[TypeId])> {
         let TypeKind::Class(entity) = self.types.get(ty).kind else {
             return None;
         };
@@ -671,7 +671,7 @@ impl Graph {
         self.class_templates
             .template_entities
             .name(instance.primary)
-            .map(|name| (name, instance.arguments.clone()))
+            .map(|name| (name, instance.arguments.as_slice()))
     }
     pub(crate) fn lower_template_parameter(&self, ty: TypeId) -> Option<u32> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {

@@ -215,9 +215,10 @@ impl Analyzer<'_> {
                 );
             } else if let Some(&argument) = given.get(next) {
                 if let TypeKind::Expansion(pattern) = self.graph.types.get(argument).kind {
-                    if self.value_argument(pattern) != info.value_type.is_some()
-                        || self.template_argument_kind(pattern) != info.inner.is_some()
-                    {
+                    // The frozen owner checks only value versus non-value
+                    // here. Expansion positions and template-name kind checks
+                    // remain deferred until the concrete list is substituted.
+                    if self.value_argument(pattern) != info.value_type.is_some() {
                         return Err(Error::at(
                             location,
                             "a pack expansion of the wrong kind for its template parameter",

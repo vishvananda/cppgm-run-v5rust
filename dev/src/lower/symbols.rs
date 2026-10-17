@@ -1068,7 +1068,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else if let Some((name, arguments)) = self.graph.lower_template_id_name(ty) {
             let name = self.abi_type(name)?;
             let mut nodes = Vec::with_capacity(arguments.len());
-            for argument in arguments {
+            for &argument in arguments {
                 nodes.push(self.abi_type(argument)?);
             }
             let id = self.abi.intern(Node::Template(name), &nodes)?;

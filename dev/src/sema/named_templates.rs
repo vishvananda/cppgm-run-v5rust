@@ -243,17 +243,17 @@ impl Analyzer<'_> {
                 template: false,
             },
         ) = (
-            self.graph.types.get(first).kind.clone(),
-            self.graph.types.get(second).kind.clone(),
+            &self.graph.types.get(first).kind,
+            &self.graph.types.get(second).kind,
         )
         else {
             return Ok(false);
         };
         let Some((x, y)) = self
             .graph
-            .entity(x)
+            .entity(*x)
             .template_parameter
-            .zip(self.graph.entity(y).template_parameter)
+            .zip(self.graph.entity(*y).template_parameter)
         else {
             return Ok(false);
         };
