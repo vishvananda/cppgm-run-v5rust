@@ -108,7 +108,7 @@ impl Analyzer<'_> {
         let mut dependent = false;
         for index in 0..self.tree.expr_lists.get(arguments).len() {
             let argument = self.tree.expr_lists.get(arguments)[index];
-            if self.type_dependent_expression(argument, scope)? {
+            if self.expression_type_dependence(argument, scope, key.precise)? {
                 dependent = true;
                 break;
             }
@@ -134,6 +134,15 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<bool, Error> {
+        self.expression_type_dependence(id, scope, false)
+    }
+
+    fn expression_type_dependence(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        precise: bool,
+    ) -> Result<bool, Error> {
         self.check_stack()?;
         match self.tree.expressions.get(id).kind {
             ExprKind::Literal(_)
@@ -148,35 +157,35 @@ impl Analyzer<'_> {
             ExprKind::Paren(inner)
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Postfix { operand: inner, .. } => {
-                self.type_dependent_expression(inner, scope)
+                self.expression_type_dependence(inner, scope, precise)
             }
             ExprKind::Binary { left, right, .. }
             | ExprKind::Subscript {
                 base: left,
                 index: right,
-            } => Ok(self.type_dependent_expression(left, scope)?
-                || self.type_dependent_expression(right, scope)?),
+            } => Ok(self.expression_type_dependence(left, scope, precise)?
+                || self.expression_type_dependence(right, scope, precise)?),
             ExprKind::Conditional {
                 condition,
                 then_expr,
                 else_expr,
-            } => Ok(self.type_dependent_expression(condition, scope)?
-                || self.type_dependent_expression(then_expr, scope)?
-                || self.type_dependent_expression(else_expr, scope)?),
+            } => Ok(self.expression_type_dependence(condition, scope, precise)?
+                || self.expression_type_dependence(then_expr, scope, precise)?
+                || self.expression_type_dependence(else_expr, scope, precise)?),
             ExprKind::Call { callee, arguments } => {
-                if self.type_dependent_expression(callee, scope)? {
+                if self.expression_type_dependence(callee, scope, precise)? {
                     return Ok(true);
                 }
                 for index in 0..self.tree.expr_lists.get(arguments).len() {
                     let argument = self.tree.expr_lists.get(arguments)[index];
-                    if self.type_dependent_expression(argument, scope)? {
+                    if self.expression_type_dependence(argument, scope, precise)? {
                         return Ok(true);
                     }
                 }
                 Ok(false)
             }
             ExprKind::Member { base, member, .. } => {
-                if self.type_dependent_expression(base, scope)? {
+                if self.expression_type_dependence(base, scope, precise)? {
                     return Ok(true);
                 }
                 let name = self.tree.names.get(member);
@@ -193,20 +202,37 @@ impl Analyzer<'_> {
             ExprKind::Cast { ty, operand, .. } => {
                 let ty = self.type_syntax(ty, scope)?;
                 Ok(self.exception_dependent_type(ty)
-                    || self.type_dependent_expression(operand, scope)?)
+                    || self.expression_type_dependence(operand, scope, precise)?)
             }
             ExprKind::Braced { elements, .. } => {
                 for index in 0..self.tree.expr_lists.get(elements).len() {
                     let element = self.tree.expr_lists.get(elements)[index];
-                    if self.type_dependent_expression(element, scope)? {
+                    if self.expression_type_dependence(element, scope, precise)? {
                         return Ok(true);
                     }
                 }
                 Ok(false)
             }
-            ExprKind::Id(name) => self.dependent_name_expression(name, scope),
+            ExprKind::Id(name) => self.dependent_name_expression(name, scope, precise),
             // These forms likewise remain conservative in C++'s ordinary
             // dependence walk. Precise member-template checking is separate.
+            ExprKind::FunctionalCast {
+                specifiers,
+                arguments,
+                braced,
+            } if precise => {
+                let ty = self.specifiers(specifiers, scope, false)?.ty;
+                if self.exception_dependent_type(ty) || braced.is_some() {
+                    return Ok(true);
+                }
+                for index in 0..self.tree.expr_lists.get(arguments).len() {
+                    let argument = self.tree.expr_lists.get(arguments)[index];
+                    if self.expression_type_dependence(argument, scope, precise)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
             ExprKind::FunctionalCast { .. }
             | ExprKind::New { .. }
             | ExprKind::Lambda(_)
@@ -231,18 +257,133 @@ impl Analyzer<'_> {
         }
     }
 
+    /// An instantiated class declares its member templates even while their
+    /// own parameters remain open. Check only calls/accesses proven fixed;
+    /// their enclosing decltype still retains its original dependent operand.
+    pub(super) fn check_fixed_decltype_operands(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        level: u32,
+    ) -> Result<(), Error> {
+        // This is the frozen semantic walk's bound, not a native stack cutoff.
+        if level > 64 {
+            return Ok(());
+        }
+        let next = level + 1;
+        let kind = self.tree.expressions.get(id).kind;
+        if matches!(kind, ExprKind::Call { .. } | ExprKind::Member { .. })
+            && !self.expression_type_dependence(id, scope, true)?
+            && self
+                .fixed_operand_key(id, scope)?
+                .is_some_and(|key| !key.dependent)
+        {
+            let saved = std::mem::replace(&mut self.template_depth, 0);
+            let result = self.decltype_type(id, scope);
+            self.template_depth = saved;
+            return result.map(|_| ());
+        }
+        match kind {
+            ExprKind::Member { base: operand, .. }
+            | ExprKind::Paren(operand)
+            | ExprKind::Unary { operand, .. }
+            | ExprKind::Postfix { operand, .. }
+            | ExprKind::Cast { operand, .. } => {
+                self.check_fixed_decltype_operands(operand, scope, next)
+            }
+            ExprKind::Call {
+                mut callee,
+                arguments,
+            } => {
+                while let ExprKind::Paren(inner) = self.tree.expressions.get(callee).kind {
+                    callee = inner;
+                }
+                // A member function name is typed together with its call.
+                // If that call is dependent, visit only the object and args.
+                if let ExprKind::Member { base, .. } = self.tree.expressions.get(callee).kind {
+                    self.check_fixed_decltype_operands(base, scope, next)?;
+                }
+                self.check_fixed_decltype_arguments(arguments, scope, next)
+            }
+            ExprKind::Binary { left, right, .. } => {
+                self.check_fixed_decltype_operands(left, scope, next)?;
+                self.check_fixed_decltype_operands(right, scope, next)
+            }
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                self.check_fixed_decltype_operands(condition, scope, next)?;
+                self.check_fixed_decltype_operands(then_expr, scope, next)?;
+                self.check_fixed_decltype_operands(else_expr, scope, next)
+            }
+            ExprKind::FunctionalCast { arguments, .. } => {
+                self.check_fixed_decltype_arguments(arguments, scope, next)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn check_fixed_decltype_arguments(
+        &mut self,
+        arguments: List<ast::ExprId>,
+        scope: ScopeId,
+        level: u32,
+    ) -> Result<(), Error> {
+        for index in 0..self.tree.expr_lists.get(arguments).len() {
+            let argument = self.tree.expr_lists.get(arguments)[index];
+            self.check_fixed_decltype_operands(argument, scope, level)?;
+        }
+        Ok(())
+    }
+
+    fn fixed_template_type_arguments(
+        &mut self,
+        arguments: List<ast::TemplateArgument>,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        for index in 0..self.tree.template_arguments.get(arguments).len() {
+            let argument = self.tree.template_arguments.get(arguments)[index];
+            let ast::TemplateArgumentKind::Type(ty) = argument.kind else {
+                return Ok(false);
+            };
+            if argument.pack {
+                return Ok(false);
+            }
+            let ty = self.type_syntax(ty, scope)?;
+            if self.exception_dependent_type(ty) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     fn dependent_name_expression(
         &mut self,
         name: ast::Name,
         scope: ScopeId,
+        precise: bool,
     ) -> Result<bool, Error> {
         let node = *self.tree.names.get(name);
         let components = self.tree.name_lists.get(node.components);
-        if components.iter().any(|component| {
-            !matches!(component.kind, NameKind::Identifier(_)) || component.arguments.is_some()
-        }) {
-            return Ok(true);
+        let mut fixed_template_id = false;
+        for index in 0..components.len() {
+            let component = self.tree.name_lists.get(node.components)[index];
+            if !matches!(component.kind, NameKind::Identifier(_)) {
+                return Ok(true);
+            }
+            if let Some(arguments) = component.arguments {
+                if !precise
+                    || index + 1 != self.tree.name_lists.get(node.components).len()
+                    || !self.fixed_template_type_arguments(arguments, scope)?
+                {
+                    return Ok(true);
+                }
+                fixed_template_id = true;
+            }
         }
+        let components = self.tree.name_lists.get(node.components);
         let NameKind::Identifier(name_key) = components
             .last()
             .ok_or(Error::Invariant("empty dependence name"))?
@@ -292,6 +433,7 @@ impl Analyzer<'_> {
                 .ty
                 .is_none_or(|ty| self.exception_dependent_type(ty)),
             BindingKind::Enumerator => false,
+            BindingKind::Function if fixed_template_id => false,
             BindingKind::Function => found.functions.iter().any(|&binding| {
                 self.graph
                     .binding(binding)
@@ -374,5 +516,80 @@ impl super::graph::Graph {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn fixed_decltype_checks_restore_context_without_function_use() {
+        let source = SourceBuffer::new(
+            b"struct X{int member;};X source();void use(){source().member;source().missing;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"fixed-decltype").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declarations = tree.decl_lists.get(declarations).to_vec();
+        let ast::DeclKind::Function { body, .. } = tree.declarations.get(declarations[2]).kind
+        else {
+            unreachable!()
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            unreachable!()
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            unreachable!()
+        };
+        let expressions: Vec<_> = tree
+            .stmt_lists
+            .get(statements)
+            .iter()
+            .map(|&statement| {
+                let ast::StmtKind::Expression(Some(expression)) =
+                    tree.statements.get(statement).kind
+                else {
+                    unreachable!()
+                };
+                expression
+            })
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        for &declaration in &declarations[..2] {
+            analyzer.declaration(declaration, scope).unwrap();
+        }
+        analyzer.template_depth = 3;
+        analyzer.unevaluated = 2;
+        for (index, expression) in expressions.into_iter().enumerate() {
+            let result = analyzer.check_fixed_decltype_operands(expression, scope, 0);
+            if index == 0 {
+                result.unwrap();
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(Error::Diagnostic {
+                        message: "no member of that name",
+                        ..
+                    })
+                ));
+            }
+            assert_eq!(analyzer.template_depth, 3);
+            assert_eq!(analyzer.unevaluated, 2);
+            assert!(analyzer.decltype_call.is_none());
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        }
     }
 }

@@ -70,6 +70,7 @@ pub(crate) enum KeyNode {
 pub(super) struct ExpressionKey {
     pub words: Vec<KeyWord>,
     pub dependent: bool,
+    pub precise: bool,
 }
 impl Analyzer<'_> {
     pub(super) fn expression_key(
@@ -87,6 +88,19 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<Option<ExpressionKey>, Error> {
         let mut key = ExpressionKey::default();
+        self.key_expression(operand, scope, &mut key)
+            .map(|known| known.then_some(key))
+    }
+
+    pub(super) fn fixed_operand_key(
+        &mut self,
+        operand: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<ExpressionKey>, Error> {
+        let mut key = ExpressionKey {
+            precise: true,
+            ..ExpressionKey::default()
+        };
         self.key_expression(operand, scope, &mut key)
             .map(|known| known.then_some(key))
     }

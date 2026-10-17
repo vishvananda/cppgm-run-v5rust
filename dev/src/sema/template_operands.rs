@@ -141,6 +141,9 @@ impl Analyzer<'_> {
             self.template_depth = saved;
             return result;
         }
+        if fixed && !value && self.graph.class_templates.definitions.active_depth() != 0 {
+            self.check_fixed_decltype_operands(expression, scope, 0)?;
+        }
         let key_dependent = key.as_ref().is_some_and(|key| key.dependent);
         let words = key.map(|key| key.words);
         let parameters = words
