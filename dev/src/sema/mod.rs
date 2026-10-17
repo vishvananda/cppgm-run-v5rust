@@ -18,6 +18,7 @@ mod class_casts;
 mod class_conditionals;
 mod class_templates;
 mod constant_addresses;
+mod constant_floats;
 mod constant_mutations;
 mod constant_pointer_operations;
 mod constant_views;

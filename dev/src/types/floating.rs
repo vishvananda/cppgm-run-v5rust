@@ -346,9 +346,46 @@ impl FloatingScanner {
         text: &[u8],
         ty: FundamentalType,
     ) -> Result<Option<ScalarBytes>, FloatError> {
-        let result = self.scan_value(text, ty);
+        let result = if text.starts_with(b"0x") || text.starts_with(b"0X") {
+            self.hexadecimal_literal(text, ty)
+        } else {
+            self.scan_value(text, ty)
+        };
         self.clear();
         result
+    }
+
+    fn hexadecimal_literal(
+        &mut self,
+        text: &[u8],
+        ty: FundamentalType,
+    ) -> Result<Option<ScalarBytes>, FloatError> {
+        let format = Format::for_type(ty)?;
+        let Some(end) = text.iter().position(|&byte| matches!(byte, b'p' | b'P')) else {
+            return Ok(None);
+        };
+        let exponent = &text[end + 1..];
+        let (negative, digits) = match exponent.first() {
+            Some(b'-') => (true, &exponent[1..]),
+            Some(b'+') => (false, &exponent[1..]),
+            _ => (false, exponent),
+        };
+        if end < 2 || digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            return Ok(None);
+        }
+        let mut written = 0i64;
+        for &digit in digits {
+            if written < 1_000_000_000 {
+                written = written * 10 + i64::from(digit - b'0');
+            }
+        }
+        let exponent = if negative { -written } else { written };
+        Ok(self
+            .hexadecimal(&text[2..end], exponent, ty)?
+            .map(|bits| ScalarBytes {
+                bytes: bits.to_le_bytes(),
+                size: format.size,
+            }))
     }
 
     fn scan_value(

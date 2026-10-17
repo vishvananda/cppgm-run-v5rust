@@ -61,8 +61,16 @@ pub(crate) struct SourceInput<'a> {
     tokens_read: u64,
     includes: u64,
     guarded_skips: u64,
+    binary_exponents: bool,
 }
 impl<'a> SourceInput<'a> {
+    pub(crate) fn set_binary_exponents(&mut self, enabled: bool) {
+        self.binary_exponents = enabled;
+        self.frame.lexer.set_binary_exponents(enabled);
+        for frame in &mut self.suspended {
+            frame.lexer.set_binary_exponents(enabled);
+        }
+    }
     #[cfg(test)]
     pub(crate) fn with_name(
         source: &'a SourceBuffer,
@@ -118,6 +126,7 @@ impl<'a> SourceInput<'a> {
             tokens_read: 0,
             includes: 0,
             guarded_skips: 0,
+            binary_exponents: false,
         })
     }
     fn next_base(base: u32, source: &SourceBuffer) -> Result<u32, PreprocessError> {
@@ -546,6 +555,7 @@ impl<'a> SourceInput<'a> {
             PpLexerOptions {
                 location_base: base,
                 header_names_on_request: true,
+                binary_exponents: self.binary_exponents,
                 ..PpLexerOptions::default()
             },
         )?;

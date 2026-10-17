@@ -189,6 +189,10 @@ impl Function<'_, '_, '_, '_> {
                         .function_symbol(self.builder.program(), entity)
                         .map(Value::Symbol)
                 } else {
+                    if let Some(value) = self.graph.lower_evaluated_reference(entity)? {
+                        return self
+                            .evaluated_reference_place(value, self.graph.lower_expression(id)?.ty);
+                    }
                     let place = self.global_place(entity)?;
                     self.reference_holder(place, self.graph.lower_entity_type(entity)?)
                 }

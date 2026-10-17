@@ -54,6 +54,7 @@ enum State {
 #[derive(Clone, Copy)]
 pub(super) enum TemporaryValue {
     Integer(Constant),
+    Floating(super::constant_floats::Floating),
     Pointer(Address),
 }
 #[derive(Default)]
@@ -73,8 +74,15 @@ impl Evaluation {
 pub(super) struct Addresses {
     values: HashMap<EntityId, State>,
     temporaries: HashMap<EntityId, TemporaryValue>,
+    stored_references: std::collections::HashSet<EntityId>,
 }
 impl Addresses {
+    pub(super) fn read_through_storage(&self, entity: EntityId) -> bool {
+        self.stored_references.contains(&entity)
+    }
+    pub(super) fn temporary_scalar(&self, entity: EntityId) -> Option<TemporaryValue> {
+        self.temporaries.get(&entity).copied()
+    }
     fn evaluating(&self, entity: EntityId) -> bool {
         matches!(self.values.get(&entity), Some(State::Evaluating))
     }
@@ -129,7 +137,7 @@ impl Analyzer<'_> {
         result
     }
 
-    fn expression_temporary_value(&self, id: ast::ExprId) -> Option<TemporaryValue> {
+    pub(super) fn expression_temporary_value(&self, id: ast::ExprId) -> Option<TemporaryValue> {
         self.constant_evaluation.as_ref()?.values.get(&id).copied()
     }
     pub(super) fn is_address_expression(&self, id: ast::ExprId) -> bool {
@@ -776,6 +784,9 @@ impl Analyzer<'_> {
             if self.expression_temporary_value(id).is_none() {
                 let value = if self.is_address_expression(id) {
                     TemporaryValue::Pointer(self.address_operand(operand, scope)?)
+                } else if self.float_format(facts.ty).is_some() || self.floating_expression(operand)
+                {
+                    self.constant_operand_value(operand, facts.ty, scope)?
                 } else {
                     let value = self.evaluate_constant(operand, scope, false)?;
                     let kind = self
@@ -813,7 +824,7 @@ impl Analyzer<'_> {
                     self.constexpr_frames.valid_pointer(value, location)?;
                     Ok(value)
                 }
-                TemporaryValue::Integer(_) => {
+                TemporaryValue::Integer(_) | TemporaryValue::Floating(_) => {
                     Err(Error::Invariant("integer object read as pointer"))
                 }
             };
@@ -907,6 +918,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("write to an uncreated constant temporary"))?;
                 let matches = match old {
                     TemporaryValue::Integer(old) => self.bare_type(place.designated)? == old.ty,
+                    TemporaryValue::Floating(old) => self.bare_type(place.designated)? == old.ty,
                     TemporaryValue::Pointer(_) => matches!(
                         self.graph.types.get(place.designated).kind,
                         TypeKind::Pointer(_)
@@ -948,7 +960,7 @@ impl Analyzer<'_> {
                 place.designated = self.bare_type(place.designated)?;
                 match self.constexpr_frames.read(place, location)? {
                     TemporaryValue::Integer(value) => Ok(value),
-                    TemporaryValue::Pointer(_) => {
+                    TemporaryValue::Pointer(_) | TemporaryValue::Floating(_) => {
                         Err(Error::Invariant("pointer object read as integer"))
                     }
                 }
@@ -996,7 +1008,8 @@ impl Analyzer<'_> {
                         location,
                         "a read of an object that is not initialized",
                     )),
-                    super::constants::ConstantState::None => Err(nonconstant(
+                    super::constants::ConstantState::None
+                    | super::constants::ConstantState::Floating(_) => Err(nonconstant(
                         location,
                         "a variable is not usable in a constant expression",
                     )),
@@ -1121,6 +1134,9 @@ impl Analyzer<'_> {
                     _ if self.is_address_expression(id) => {
                         self.evaluate_address(id, scope)?;
                     }
+                    _ if self.floating_expression(id) => {
+                        self.evaluate_floating(id, scope)?;
+                    }
                     _ => {
                         self.evaluate_constant(id, scope, false)?;
                     }
@@ -1152,6 +1168,23 @@ impl Analyzer<'_> {
         {
             return Ok(());
         }
+        if reference
+            && self.graph.entity(entity).constexpr
+            && let Some(mut expr) = self.single_initializer(initializer)
+        {
+            while let ExprKind::Paren(inner) = self.tree.expressions.get(expr).kind {
+                expr = inner;
+            }
+            if matches!(
+                self.tree.expressions.get(expr).kind,
+                ExprKind::Conditional { .. }
+            ) {
+                self.graph
+                    .constant_addresses
+                    .stored_references
+                    .insert(entity);
+            }
+        }
         self.graph.constant_addresses.begin(entity);
         let result = (|| {
             let expr = self.single_initializer(initializer);
@@ -1178,11 +1211,19 @@ impl Analyzer<'_> {
                         .insert(entity, TemporaryValue::Pointer(value));
                     return Ok(Address::new(Root::Temporary(entity), facts.ty));
                 }
-                let value = self.evaluate_constant(expr, scope, false)?;
+                let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind else {
+                    return Err(Error::Invariant("reference temporary type"));
+                };
+                let value =
+                    if self.float_format(element).is_some() || self.floating_expression(expr) {
+                        self.constant_operand_value(expr, element, scope)?
+                    } else {
+                        TemporaryValue::Integer(self.evaluate_constant(expr, scope, false)?)
+                    };
                 self.graph
                     .constant_addresses
                     .temporaries
-                    .insert(entity, TemporaryValue::Integer(value));
+                    .insert(entity, value);
                 return Ok(Address::new(Root::Temporary(entity), facts.ty));
             }
             let mut value = if let Some(expr) = expr {

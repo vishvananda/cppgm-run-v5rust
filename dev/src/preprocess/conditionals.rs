@@ -64,6 +64,9 @@ impl Default for Conditionals {
     }
 }
 impl Conditionals {
+    pub(crate) fn set_number_dialect(&mut self, dialect: NumberDialect) {
+        self.evaluator.set_number_dialect(dialect);
+    }
     pub(crate) fn depth(&self) -> usize {
         self.sections.len()
     }

@@ -2,4 +2,5 @@
 mod fundamental;
 pub use fundamental::FundamentalType;
 
+pub(crate) mod float_value;
 pub mod floating;

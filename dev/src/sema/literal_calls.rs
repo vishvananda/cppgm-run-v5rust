@@ -245,7 +245,7 @@ impl Analyzer<'_> {
                 "a user-defined integer literal beyond unsigned long long",
             ))?;
             let source = if let NumberLiteral::Integer { ty, .. } =
-                classify_number(digits, NumberDialect::Cxx11)
+                classify_number(digits, NumberDialect::Gnu)
             {
                 self.graph.types.scalar(Scalar::Basic(ty))?
             } else {

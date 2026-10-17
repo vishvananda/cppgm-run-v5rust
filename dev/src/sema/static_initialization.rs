@@ -155,6 +155,23 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let source = self.graph.expression_facts.get(id)?.ty;
+        if let Some(format) = self.float_format(source) {
+            return match self.evaluate_floating(id, scope) {
+                Ok(value) => {
+                    let TypeKind::Scalar(Scalar::Basic(ty)) = self.graph.types.get(source).kind
+                    else {
+                        return Err(Error::Invariant("static floating type"));
+                    };
+                    let bits = value
+                        .value
+                        .bits(format)
+                        .ok_or(Error::Invariant("rounded static floating encoding"))?;
+                    Ok(Some(Value::Floating(ty, bits)))
+                }
+                Err(Error::NonConstant { .. } | Error::Missing(_)) => Ok(None),
+                Err(error) => Err(error),
+            };
+        }
         if self.integral_kind(source).is_some() {
             let value = if let Some(value) = self.graph.constant_fact(id) {
                 Some(value)

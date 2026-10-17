@@ -15,6 +15,30 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn evaluated_reference_place(
+        &mut self,
+        value: crate::sema::lowering::StaticValue,
+        source: TypeId,
+    ) -> Result<Value, Error> {
+        let (symbol, offset) = super::data::address(
+            self.builder.program(),
+            self.symbols,
+            self.graph,
+            self.tree,
+            value,
+        )?;
+        let place = Value::Symbol(symbol);
+        if offset == 0 {
+            return Ok(place);
+        }
+        let address = self.emit(I::Addr(place), source)?.value;
+        let offset = self
+            .builder
+            .integer(u128::from(u64::from_le_bytes(offset.to_le_bytes())))?;
+        Ok(self
+            .emit(I::Index(Type::I8, None, address, offset), source)?
+            .value)
+    }
     pub(super) fn storage_address(&mut self, storage: Value, ty: TypeId) -> Result<Value, Error> {
         if matches!(storage, Value::Slot(_) | Value::Symbol(_)) {
             Ok(self.emit(I::Addr(storage), ty)?.value)

@@ -115,6 +115,9 @@ pub struct PpLexer<'a> {
 }
 
 impl<'a> PpLexer<'a> {
+    pub(crate) fn set_binary_exponents(&mut self, enabled: bool) {
+        self.options.binary_exponents = enabled;
+    }
     /// Start at the first source byte after a possible BOM.
     ///
     /// # Errors

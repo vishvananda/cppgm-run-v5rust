@@ -111,6 +111,14 @@ impl Analyzer<'_> {
         ) {
             return Ok(Value::Pointer(self.evaluate_address(id, scope)?));
         }
+        if self.float_format(target).is_some() || self.floating_expression(id) {
+            let value = self.scalar_value(id, scope)?;
+            return self.convert_constant_scalar(
+                value,
+                target,
+                self.tree.expressions.get(id).location,
+            );
+        }
         let kind = self
             .integral_kind(target)
             .ok_or(Error::Missing("nonintegral constexpr scalar value"))?;
@@ -125,6 +133,12 @@ impl Analyzer<'_> {
         }))
     }
     pub(super) fn zero_constant_scalar(&mut self, target: TypeId) -> Result<Value, Error> {
+        if self.float_format(target).is_some() {
+            return Ok(Value::Floating(super::constant_floats::Floating {
+                ty: self.bare_type(target)?,
+                value: crate::types::float_value::BinaryFloat::zero(),
+            }));
+        }
         match self.graph.types.get(target).kind {
             TypeKind::Pointer(element) => Ok(Value::Pointer(Address::new(Root::Null, element))),
             TypeKind::Scalar(Scalar::Nullptr) => {
@@ -184,7 +198,7 @@ impl Analyzer<'_> {
                 bits: 0,
                 ty: self.graph.expression_facts.get(id)?.ty,
             }),
-            Returned::Value(Value::Pointer(_)) => {
+            Returned::Value(Value::Pointer(_) | Value::Floating(_)) => {
                 Err(nonconstant(location, "not an integral constant expression"))
             }
         }

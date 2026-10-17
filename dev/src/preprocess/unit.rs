@@ -27,6 +27,11 @@ pub struct Preprocessor<'a> {
     directives: u64,
 }
 impl<'a> Preprocessor<'a> {
+    pub(crate) fn set_number_options(&mut self, options: crate::lex::number::NumberOptions) {
+        self.source.set_binary_exponents(options.binary_exponents);
+        self.expander.set_binary_exponents(options.binary_exponents);
+        self.conditionals.set_number_dialect(options.dialect);
+    }
     /// # Errors
     /// Returns lexical construction errors before token delivery begins.
     pub fn new(source: &'a SourceBuffer) -> Result<Self, PreprocessError> {
@@ -287,6 +292,31 @@ impl PostTokenInput for Preprocessor<'_> {
 mod tests {
     use super::*;
     use crate::lex::pp_lexer::Punctuator;
+
+    #[test]
+    fn compiler_numeric_dialect_reaches_conditionals_and_pasted_tokens() {
+        use crate::lex::{PostTokenKind, PostTokenizer, number::NumberDialect};
+        let source = SourceBuffer::new(
+            b"#define join(a,b) a##b\n#if 0b1 == 1\njoin(0x1.p+,2_x)\n#endif\n".to_vec(),
+        )
+        .unwrap();
+        let mut input = Preprocessor::new(&source).unwrap();
+        input.set_number_options(crate::lex::number::NumberOptions {
+            dialect: NumberDialect::Gnu,
+            binary_exponents: true,
+        });
+        let mut tokens = PostTokenizer::from_input(input, NumberDialect::Gnu);
+        let token = tokens.next_token().unwrap();
+        assert_eq!(token.source, b"0x1.p+2_x");
+        assert!(matches!(
+            token.kind,
+            PostTokenKind::UserDefinedNumber {
+                suffix_begin: 7,
+                ..
+            }
+        ));
+        assert_eq!(tokens.next_token().unwrap().kind, PostTokenKind::EndOfFile);
+    }
 
     #[test]
     fn predefined_values_are_owned_and_parsed_on_demand_in_each_unit() {

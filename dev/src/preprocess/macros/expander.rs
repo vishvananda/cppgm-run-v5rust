@@ -78,9 +78,13 @@ pub(crate) struct Expander<'a> {
     read_disabled: HideSetId,
     counter: u64,
     controlling_expression: bool,
+    binary_exponents: bool,
     counters: crate::preprocess::counters::ExpansionCounters,
 }
 impl<'a> Expander<'a> {
+    pub(crate) fn set_binary_exponents(&mut self, enabled: bool) {
+        self.binary_exponents = enabled;
+    }
     pub(crate) fn counters(&self) -> crate::preprocess::counters::ExpansionCounters {
         self.counters
     }
@@ -948,6 +952,7 @@ impl<'a> Expander<'a> {
             PpLexerOptions {
                 header_names_on_request: true,
                 token_text: true,
+                binary_exponents: self.binary_exponents,
                 ..PpLexerOptions::default()
             },
         )

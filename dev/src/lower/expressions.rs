@@ -104,6 +104,27 @@ impl Function<'_, '_, '_, '_> {
             _ => false,
         })
     }
+    fn evaluated_floating(&mut self, id: ast::ExprId) -> Result<Option<RValue>, Error> {
+        let id = self.without_parentheses(id);
+        let Some(bits) = self.graph.lower_evaluated_floating(self.tree, id)? else {
+            return Ok(None);
+        };
+        let source = self.graph.lower_expression(id)?.ty;
+        let ty = types::storage(self.graph, source)?;
+        let kind = FloatKind::from_type(ty).ok_or(crate::sema::Error::Invariant(
+            "floating constant storage type",
+        ))?;
+        if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
+            self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
+        }
+        Ok(Some(RValue {
+            value: self.builder.constant(Constant::Float(kind, bits))?,
+            ty,
+            source,
+            literal: false,
+            bits: None,
+        }))
+    }
     fn expression_value(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
         self.check_stack()?;
         let facts = self.graph.lower_expression(id)?;
@@ -196,6 +217,9 @@ impl Function<'_, '_, '_, '_> {
         }
         if let Some(pointer) = self.evaluated_pointer(id)? {
             return Ok(pointer);
+        }
+        if let Some(value) = self.evaluated_floating(id)? {
+            return Ok(value);
         }
         match self.tree.expressions.get(id).kind {
             ExprKind::Paren(inner) => self.expression(inner, context),

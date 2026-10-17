@@ -22,7 +22,7 @@ mod statements;
 pub(crate) mod storage;
 mod templates;
 
-use crate::lex::{PostTokenizer, number::NumberDialect};
+use crate::lex::PostTokenizer;
 use crate::preprocess::{error::PreprocessError, unit::Preprocessor};
 use crate::support::source::SourceOffset;
 use ast::DeclId;
@@ -85,19 +85,30 @@ pub(crate) struct SyntaxUnit<'a> {
     declarations: Option<List<DeclId>>,
 }
 impl<'a> SyntaxUnit<'a> {
+    #[cfg(test)]
     pub(crate) fn new(preprocessor: Preprocessor<'a>) -> Self {
+        Self::with_token_origin(
+            preprocessor,
+            0,
+            crate::lex::number::NumberOptions {
+                dialect: crate::lex::number::NumberDialect::Cxx11,
+                binary_exponents: false,
+            },
+        )
+    }
+    pub(crate) fn with_token_origin(
+        mut preprocessor: Preprocessor<'a>,
+        origin: u64,
+        numbers: crate::lex::number::NumberOptions,
+    ) -> Self {
+        preprocessor.set_number_options(numbers);
+        let mut cursor =
+            cursor::Cursor::new(PostTokenizer::from_input(preprocessor, numbers.dialect));
+        cursor.set_origin(origin);
         Self {
-            parser: parser::Parser::new(cursor::Cursor::new(PostTokenizer::from_input(
-                preprocessor,
-                NumberDialect::Cxx11,
-            ))),
+            parser: parser::Parser::new(cursor),
             declarations: None,
         }
-    }
-    pub(crate) fn with_token_origin(preprocessor: Preprocessor<'a>, origin: u64) -> Self {
-        let mut unit = Self::new(preprocessor);
-        unit.parser.cursor.set_origin(origin);
-        unit
     }
     pub(crate) fn parse(&mut self) -> Result<(), ParseError> {
         if self.declarations.is_some() {

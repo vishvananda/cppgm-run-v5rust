@@ -72,6 +72,9 @@ pub struct ExpressionEvaluator<'a, M: MacroDefinitionQuery, E = SourceError> {
 }
 
 impl<'a, M: MacroDefinitionQuery, E> ExpressionEvaluator<'a, M, E> {
+    pub(crate) fn set_number_dialect(&mut self, dialect: NumberDialect) {
+        self.literals = dialect;
+    }
     #[must_use]
     pub fn new(macros: &'a M, literals: NumberDialect) -> Self {
         Self {

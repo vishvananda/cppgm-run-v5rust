@@ -243,6 +243,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("condition local missing"))?;
                 match self.constexpr_frames.read(place, location)? {
                     Value::Integer(value) => Ok(value.bits != 0),
+                    Value::Floating(value) => Ok(value.value.truth()),
                     Value::Pointer(value) => {
                         Ok(value.root != super::constant_addresses::Root::Null)
                     }

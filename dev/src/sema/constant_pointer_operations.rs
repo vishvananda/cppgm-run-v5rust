@@ -22,6 +22,13 @@ impl Analyzer<'_> {
         scope: ScopeId,
         skipping: bool,
     ) -> Result<bool, Error> {
+        if self.semantic() && self.floating_expression(id) {
+            return if skipping {
+                Ok(false)
+            } else {
+                Ok(self.evaluate_floating(id, scope)?.value.truth())
+            };
+        }
         if self.semantic() && self.is_address_expression(id) {
             if skipping {
                 return Ok(false);

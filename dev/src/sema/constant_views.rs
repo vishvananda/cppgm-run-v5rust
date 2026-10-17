@@ -20,6 +20,74 @@ fn without_parentheses(tree: &ast::Tree, mut id: ast::ExprId) -> ast::ExprId {
 }
 
 impl Graph {
+    pub(crate) fn lower_evaluated_floating(
+        &self,
+        tree: &ast::Tree,
+        id: ast::ExprId,
+    ) -> Result<Option<u128>, Error> {
+        let id = without_parentheses(tree, id);
+        let facts = self.expression_facts.get(id)?;
+        if facts.category == ValueCategory::Prvalue || self.types.get(facts.ty).cv.0 & 2 != 0 {
+            return Ok(None);
+        }
+        let TypeKind::Scalar(Scalar::Basic(kind)) = self.types.get(facts.ty).kind else {
+            return Ok(None);
+        };
+        let Some(format) = crate::types::float_value::Format::of(kind) else {
+            return Ok(None);
+        };
+        let entity = match tree.expressions.get(id).kind {
+            ExprKind::Id(name) => self.lower_name(name)?,
+            ExprKind::Member { .. } => self.lower_member(id)?.0,
+            _ => return Ok(None),
+        };
+        let variable = self.entity(entity);
+        if !variable.constexpr
+            || !self.lower_static_member(entity)
+            || matches!(
+                self.types.get(self.lower_entity_type(entity)?).kind,
+                TypeKind::Reference { .. }
+            )
+        {
+            return Ok(None);
+        }
+        let super::constants::ConstantState::Floating(value) = variable.constant else {
+            return Ok(None);
+        };
+        self.floating_constants
+            .get(value)
+            .value
+            .bits(format)
+            .map(Some)
+            .ok_or(Error::Invariant("completed floating constant encoding"))
+    }
+    pub(crate) fn lower_evaluated_reference(
+        &self,
+        entity: super::graph::EntityId,
+    ) -> Result<Option<Value>, Error> {
+        let variable = self.entity(entity);
+        if !variable.constexpr
+            || !matches!(
+                self.types.get(self.lower_entity_type(entity)?).kind,
+                TypeKind::Reference { .. }
+            )
+        {
+            return Ok(None);
+        }
+        if self.constant_addresses.read_through_storage(entity) {
+            return Ok(None);
+        }
+        Ok(self
+            .constant_addresses
+            .value(entity)
+            .and_then(|address| match address.root {
+                Root::Variable(root) | Root::Temporary(root) | Root::Function(root) => {
+                    Some(Value::Address(root, address.offset))
+                }
+                Root::Literal(root) => Some(Value::Literal(root, address.offset)),
+                _ => None,
+            }))
+    }
     pub(crate) fn lower_evaluated_pointer(
         &self,
         tree: &ast::Tree,

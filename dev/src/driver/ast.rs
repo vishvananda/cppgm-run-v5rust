@@ -89,7 +89,11 @@ pub fn emit_unit(
     } else {
         0
     };
-    let mut unit = SyntaxUnit::with_token_origin(preprocessor, origin);
+    let numbers = crate::lex::number::NumberOptions {
+        dialect: crate::lex::number::NumberDialect::Gnu,
+        binary_exponents: mode == EmitMode::LowIr,
+    };
+    let mut unit = SyntaxUnit::with_token_origin(preprocessor, origin, numbers);
     unit.set_stack_budget(stack_budget);
     if let Err(error) = unit.parse() {
         return Err(match error {

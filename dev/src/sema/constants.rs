@@ -23,6 +23,7 @@ pub(super) enum ConstantState {
     None,
     Evaluating,
     Value(Constant),
+    Floating(super::constant_floats::FloatingId),
 }
 fn not_constant(location: SourceOffset, message: &'static str) -> Error {
     Error::NonConstant { location, message }
@@ -148,6 +149,9 @@ impl Analyzer<'_> {
                 .is_ok_and(|facts| facts.literal_call.is_some())
         {
             return self.constant_call(id, scope, skipping);
+        }
+        if self.semantic() && self.floating_binary(id) {
+            return self.integral_floating_operation(id, scope, skipping);
         }
         let value = match expr.kind {
             ExprKind::Literal(literal) => {
@@ -386,45 +390,16 @@ impl Analyzer<'_> {
             && let Some(step) = self.graph.expression_facts.function_conversion(id)
         {
             let location = self.tree.expressions.get(id).location;
-            let value = match self.constant_conversion_result(id, scope)? {
-                super::constexpr_calls::Returned::Value(
-                    super::constant_addresses::TemporaryValue::Integer(value),
-                ) => value,
-                super::constexpr_calls::Returned::Place(place) => {
-                    self.read_constant_integer(place, location)?
-                }
-                super::constexpr_calls::Returned::Value(
-                    super::constant_addresses::TemporaryValue::Pointer(pointer),
-                ) if matches!(
-                    self.graph.types.get(step.after.result).kind,
-                    TypeKind::Scalar(Scalar::Bool)
-                ) =>
-                {
-                    Constant {
-                        bits: u64::from(pointer.root != super::constant_addresses::Root::Null),
-                        ty: self.bare_type(step.after.result)?,
-                    }
-                }
-                _ => {
-                    return Err(not_constant(
-                        location,
-                        "not an integral constant expression",
-                    ));
-                }
+            let returned = self.constant_conversion_result(id, scope)?;
+            let value = self.returned_scalar(returned, location)?;
+            let value = self.convert_constant_scalar(value, step.after.result, location)?;
+            return match value {
+                super::constant_addresses::TemporaryValue::Integer(value) => Ok(Some(value)),
+                _ => Err(not_constant(
+                    location,
+                    "not an integral constant expression",
+                )),
             };
-            let target = step.after.result;
-            let ty = if self.integral_kind(target).is_some() {
-                self.bare_type(target)?
-            } else {
-                value.ty
-            };
-            let kind = self
-                .integral_kind(ty)
-                .ok_or(Error::Invariant("nonintegral conversion result"))?;
-            return Ok(Some(Constant {
-                bits: kind.convert(value.bits),
-                ty,
-            }));
         }
         if self.semantic()
             && !skipping
@@ -802,6 +777,7 @@ impl Analyzer<'_> {
             if self.semantic()
                 && (assignment
                     || self.consumes_address(id)
+                    || self.floating_binary(id)
                     || op.token.as_punctuator() == Some(P::Comma))
             {
                 break;
@@ -900,7 +876,7 @@ impl Analyzer<'_> {
         let scalar = integral::common(*a, *b).ok_or(Error::Invariant("nonintegral common kind"))?;
         self.graph.types.scalar(scalar)
     }
-    fn constant_arithmetic(
+    pub(super) fn constant_arithmetic(
         &mut self,
         op: P,
         left: Constant,
@@ -982,13 +958,19 @@ impl Analyzer<'_> {
         id: ast::ExprId,
     ) -> Result<Constant, Error> {
         let location = self.tree.expressions.get(id).location;
+        if self.semantic() && op == Some(P::LogicalNot) && self.floating_expression(operand) {
+            let truth = self.constant_truth(operand, scope, skipping)?;
+            return self.boolean(!truth);
+        }
+
         if self.semantic() && matches!(op, Some(P::Increment | P::Decrement)) && !skipping {
             let (place, old) =
                 self.constant_increment_values(id, operand, op == Some(P::Decrement), scope)?;
             return if matches!(self.tree.expressions.get(id).kind, ExprKind::Postfix { .. }) {
                 match old {
                     super::constant_addresses::TemporaryValue::Integer(old) => Ok(old),
-                    super::constant_addresses::TemporaryValue::Pointer(_) => {
+                    super::constant_addresses::TemporaryValue::Pointer(_)
+                    | super::constant_addresses::TemporaryValue::Floating(_) => {
                         Err(Error::Invariant("integer increment with pointer value"))
                     }
                 }
@@ -1067,6 +1049,24 @@ impl Analyzer<'_> {
             .graph
             .types
             .intern(self.graph.types.get(ty).kind.clone(), Cv::default())?;
+        if self.semantic() && operand.is_some_and(|id| self.floating_expression(id)) {
+            if skipping {
+                return Ok(Constant { bits: 0, ty });
+            }
+            let value = self.scalar_value(
+                operand.ok_or(Error::Invariant("floating cast operand"))?,
+                scope,
+            )?;
+            let super::constant_addresses::TemporaryValue::Integer(value) =
+                self.convert_constant_scalar(value, ty, location)?
+            else {
+                return Err(not_constant(
+                    location,
+                    "cast to a type that is not integral",
+                ));
+            };
+            return Ok(value);
+        }
         let kind = self
             .integral_kind(ty)
             .ok_or_else(|| not_constant(location, "cast to a type that is not integral"))?;
@@ -1133,6 +1133,13 @@ impl Analyzer<'_> {
         } else {
             ty
         };
+        if self.semantic()
+            && !reference
+            && self.float_format(object).is_some()
+            && self.graph.entity(entity).constexpr
+        {
+            return self.record_floating_initializer(entity, initializer, scope);
+        }
         let Some(kind) = self.integral_kind(object) else {
             return Ok(());
         };

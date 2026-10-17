@@ -21,32 +21,7 @@ impl Analyzer<'_> {
         target: TypeId,
         scope: ScopeId,
     ) -> Result<Value, Error> {
-        if let TypeKind::Pointer(element) = self.graph.types.get(target).kind {
-            let mut value = self.address_operand(id, scope)?;
-            value.designated = element;
-            return Ok(Value::Pointer(value));
-        }
-        let target = self.bare_type(target)?;
-        let kind = self
-            .integral_kind(target)
-            .ok_or(Error::Missing("nonintegral constant mutation operand"))?;
-        let bits = if self.is_address_expression(id) {
-            if !matches!(
-                self.graph.types.get(target).kind,
-                TypeKind::Scalar(Scalar::Bool)
-            ) {
-                return Err(Error::Invariant(
-                    "implicit address to integer mutation operand",
-                ));
-            }
-            u64::from(self.evaluate_address(id, scope)?.root != Root::Null)
-        } else {
-            self.evaluate_constant(id, scope, false)?.bits
-        };
-        Ok(Value::Integer(Constant {
-            bits: kind.convert(bits),
-            ty: target,
-        }))
+        self.constant_operand_value(id, target, scope)
     }
 
     pub(super) fn constant_assignment_place(
@@ -66,13 +41,8 @@ impl Analyzer<'_> {
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(right).kind {
                     if let Some(&element) = self.tree.expr_lists.get(elements).first() {
                         self.mutation_operand(element, target, scope)?
-                    } else if let TypeKind::Pointer(element) = self.graph.types.get(target).kind {
-                        Value::Pointer(Address::new(Root::Null, element))
                     } else {
-                        Value::Integer(Constant {
-                            bits: 0,
-                            ty: self.bare_type(target)?,
-                        })
+                        self.zero_constant_scalar(target)?
                     }
                 } else {
                     self.mutation_operand(right, target, scope)?
@@ -108,6 +78,23 @@ impl Analyzer<'_> {
                 location,
             )?;
             return Ok((place, Value::Pointer(pointer)));
+        }
+        let (operation, _) = self.graph.arithmetic_types(id)?;
+        if self.float_format(operation).is_some() {
+            let old = self.read_constant_scalar(place, location)?;
+            let right = self.scalar_value(right, scope)?;
+            let op = match op {
+                Some(P::AddAssign) => P::Add,
+                Some(P::SubtractAssign) => P::Subtract,
+                Some(P::MultiplyAssign) => P::Multiply,
+                Some(P::DivideAssign) => P::Divide,
+                _ => return Err(Error::Invariant("floating compound operation")),
+            };
+            let value = self.constant_numeric_operation(id, Some(op), old, right)?;
+            return Ok((
+                place,
+                self.convert_constant_scalar(value, place.designated, location)?,
+            ));
         }
         let old = self.read_constant_integer(place, location)?;
         let (operation, right_type) = self.graph.arithmetic_types(id)?;
@@ -181,6 +168,26 @@ impl Analyzer<'_> {
             let mut pointer = old;
             self.advance_address(&mut pointer, if decrement { -1 } else { 1 }, location)?;
             (Value::Pointer(old), Value::Pointer(pointer))
+        } else if let Some(format) = self.float_format(place.designated) {
+            let old = self.read_constant_floating(place, location)?;
+            let value = old
+                .value
+                .operation(
+                    if decrement {
+                        crate::types::float_value::Operation::Subtract
+                    } else {
+                        crate::types::float_value::Operation::Add
+                    },
+                    crate::types::float_value::BinaryFloat::integer(1, false),
+                    format,
+                )
+                .ok_or_else(|| {
+                    nonconstant(location, "a floating operation with an undefined result")
+                })?;
+            (
+                Value::Floating(old),
+                Value::Floating(super::constant_floats::Floating { ty: old.ty, value }),
+            )
         } else {
             let old = self.read_constant_integer(place, location)?;
             let target = self.bare_type(place.designated)?;
