@@ -1,5 +1,18 @@
 # PA5 port ledger
 
+## Conditional-explicit presentation regression during PA17 audit (2026-10-17)
+
+The PA17 partial checkpoint audit corrects ordinary explicit-specifier AST and
+render spelling while preserving special-member operand children. The earliest
+owning executed regression is
+`tests/spec/300-conditional-explicit-specifier-presentation.t`, with its new
+expected AST and success-status sidecar. No existing frozen reference changed.
+The final PA1–PA16 ladder passes, including PA5's 297/297 course checks and
+all fixed differential cases. Evidence and implementation commit `a33299bb`
+are recorded in the latest PA17 ledger audit and
+`/home/vishvananda/work/private/v5rust/artifacts/pa17-checkpoint-audit-n/`.
+PA5's stage base and last-audited markers remain unchanged.
+
 ## Full-stage acceptance audit — 2026-10-12
 
 **PA5 full-stage acceptance is complete under the current clone contract.**
