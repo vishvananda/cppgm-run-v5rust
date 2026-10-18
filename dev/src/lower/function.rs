@@ -670,7 +670,17 @@ impl Function<'_, '_, '_, '_> {
         if object && self.graph.lower_automatic(entity) {
             self.reference_lifetimes.aggregate = Some(entity);
         }
-        let result = self.initialize_local_variable(entity, initializer, tokens);
+        let root = initializer.and_then(|initializer| match initializer.kind {
+            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => Some(id),
+            ast::InitializerKind::Parenthesized(args) => {
+                let arguments = self.tree.expr_lists.get(args);
+                (arguments.len() == 1).then(|| arguments[0])
+            }
+            _ => None,
+        });
+        let result = self.with_full_root(root, |this| {
+            this.initialize_local_variable(entity, initializer, tokens)
+        });
         self.reference_lifetimes.aggregate = saved_owner;
         result?;
         // A conditional's private result remains alive through the outer copy,

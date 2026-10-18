@@ -1808,6 +1808,11 @@ impl Graph {
                 )
             }))
     }
+    /// A scalar functional cast's brace list is syntax only. Class/array
+    /// initialization lists instead own typed value and construction facts.
+    pub(crate) fn lower_list_is_typed(&self, id: ast::ExprId) -> bool {
+        self.expression_facts.known(id).is_some()
+    }
     pub(crate) fn lower_expression(&self, id: ast::ExprId) -> Result<Expression, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(Expression {

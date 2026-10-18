@@ -38,6 +38,19 @@ pub(super) struct Tracking {
     query_work: Vec<(ast::ExprId, bool, u32)>,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn with_full_root<T>(
+        &mut self,
+        root: Option<ast::ExprId>,
+        evaluate: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        // full_root/choice_root_ is a source evaluation scope, independent
+        // of whether the temporary query opens an exception region.
+        let root = root.map(|id| self.without_parentheses(id));
+        let saved = std::mem::replace(&mut self.lifetime.tracking.root, root);
+        let result = evaluate(self);
+        self.lifetime.tracking.root = saved;
+        result
+    }
     pub(super) fn branch_temporaries(&mut self, root: ast::ExprId) -> Result<bool, Error> {
         let mut work = std::mem::take(&mut self.lifetime.tracking.query_work);
         work.push((root, false, 0));
@@ -163,6 +176,12 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<bool, Error> {
         while let Some((id, at_root, depth)) = work.pop() {
             let id = self.without_parentheses(id);
+            // guarded_temporaries also excludes syntax-only scalar lists.
+            if matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
+                && !self.graph.lower_list_is_typed(id)
+            {
+                continue;
+            }
             let facts = self.graph.lower_expression(id)?;
             if depth > 64 || facts.folded.is_some() {
                 continue;

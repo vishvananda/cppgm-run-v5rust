@@ -52,6 +52,14 @@ impl Function<'_, '_, '_, '_> {
         work.push(root);
         while let Some(id) = work.pop() {
             let id = self.without_parentheses(id);
+            // may_throw walks even an untyped scalar list's elements. The
+            // list itself has no selected calls or conversions to inspect.
+            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind
+                && !self.graph.lower_list_is_typed(id)
+            {
+                work.extend(self.tree.expr_lists.get(elements));
+                continue;
+            }
             let facts = self.graph.lower_expression(id)?;
             let mut step = 0;
             while let Some(call) = self.graph.lower_arrow_call(id, step)? {

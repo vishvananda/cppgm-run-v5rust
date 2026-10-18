@@ -567,9 +567,22 @@ impl Function<'_, '_, '_, '_> {
         arguments: crate::syntax::storage::List<ast::ExprId>,
         braced: Option<ast::ExprId>,
     ) -> Result<RValue, Error> {
-        let operand = braced.or_else(|| self.tree.expr_lists.get(arguments).first().copied());
+        if let Some(braced) = braced {
+            let ExprKind::Braced { elements, .. } = self.tree.expressions.get(braced).kind else {
+                return Err(crate::sema::Error::Invariant("functional cast without list").into());
+            };
+            // Scalar list initialization records the conversion on its element;
+            // the enclosing list is syntax, with no expression facts of its own.
+            return if let Some(&element) = self.tree.expr_lists.get(elements).first() {
+                let value = self.operand(element, Context::Cast)?;
+                self.fit(value, source)
+            } else {
+                self.zero(source)
+            };
+        }
+        let operand = self.tree.expr_lists.get(arguments).first().copied();
         if let Some(operand) = operand {
-            if braced.is_none() && types::storage(self.graph, source)? == Type::Void {
+            if types::storage(self.graph, source)? == Type::Void {
                 self.discard_to_void(operand)?;
                 return self.zero(source);
             }

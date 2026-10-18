@@ -360,6 +360,12 @@ impl Function<'_, '_, '_, '_> {
         let mut summary = TemporarySummary::default();
         while let Some(id) = work.pop() {
             let id = self.without_parentheses(id);
+            // creates_temporaries skips a scalar cast's syntax-only list.
+            if matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
+                && !self.graph.lower_list_is_typed(id)
+            {
+                continue;
+            }
             let facts = self.graph.lower_expression(id)?;
             let mut step = 0;
             while let Some(call) = self.graph.lower_arrow_call(id, step)? {

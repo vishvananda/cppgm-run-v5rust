@@ -561,7 +561,7 @@ impl Function<'_, '_, '_, '_> {
         let first = self.lifetime.cleanups.len();
         let began =
             self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Ordinary)?;
-        self.discard(id)?;
+        self.with_full_root(Some(id), |this| this.discard(id))?;
         self.destroy_temporaries(first)?;
         self.end_lifetime_expression(began)
     }

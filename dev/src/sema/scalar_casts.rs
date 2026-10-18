@@ -46,9 +46,13 @@ impl Analyzer<'_> {
                 if matches!(self.graph.types.get(ea).kind, TypeKind::Function { .. })
                     || matches!(self.graph.types.get(eb).kind, TypeKind::Function { .. })
                 {
+                    // The level kinds and member owners already agree. Compare
+                    // their canonical elements so this level's cv is discarded,
+                    // as in conversions.cpp::const_castable. A function pointer
+                    // is an object only below another pointer level.
                     return levels != 0
-                        && self.graph.types.canonical_view(from)
-                            == self.graph.types.canonical_view(to);
+                        && self.graph.types.canonical_view(ea)
+                            == self.graph.types.canonical_view(eb);
                 }
                 from = ea;
                 to = eb;
@@ -504,5 +508,78 @@ impl Analyzer<'_> {
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
         facts.folded = Some(0);
         Ok(facts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn scalar_brace_syntax_keeps_conversions_on_original_elements() {
+        let source = SourceBuffer::new(
+            b"long f(volatile short& n){return long{n};}bool g(){return bool{};}".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"scalar-list-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax_count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(syntax_count, tree.expressions.mark());
+        for (index, &declaration) in tree.decl_lists.get(declarations).iter().enumerate() {
+            let ast::DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind
+            else {
+                panic!("function");
+            };
+            let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+                panic!("parsed body");
+            };
+            let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind
+            else {
+                panic!("compound");
+            };
+            let ast::StmtKind::Return(Some(cast)) =
+                tree.statements.get(tree.stmt_lists.get(statements)[0]).kind
+            else {
+                panic!("return");
+            };
+            let ast::ExprKind::FunctionalCast {
+                braced: Some(list), ..
+            } = tree.expressions.get(cast).kind
+            else {
+                panic!("scalar cast");
+            };
+            let ast::ExprKind::Braced { elements, .. } = tree.expressions.get(list).kind else {
+                panic!("brace list");
+            };
+            assert!(!graph.lower_list_is_typed(list));
+            assert!(graph.expression_facts.known(list).is_none());
+            let facts = graph.expression_facts.get(cast).unwrap();
+            assert_eq!(facts.category, V::Prvalue);
+            if index == 0 {
+                let element = tree.expr_lists.get(elements)[0];
+                let operand = graph.expression_facts.get(element).unwrap();
+                assert_eq!(graph.types.get(operand.ty).cv.0, 2);
+                let conversion = operand.conversion.unwrap();
+                assert_eq!(conversion.result, facts.ty);
+                assert_eq!(conversion.first, L::Read);
+                assert!(conversion.initialization);
+            } else {
+                assert!(elements.is_empty());
+                assert!(matches!(
+                    graph.types.get(facts.ty).kind,
+                    TypeKind::Scalar(Scalar::Bool)
+                ));
+            }
+        }
     }
 }

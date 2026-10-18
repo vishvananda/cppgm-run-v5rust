@@ -261,6 +261,8 @@ impl Function<'_, '_, '_, '_> {
         let first = self.lifetime.cleanups.len();
         let began =
             self.begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::Value)?;
+        // The frozen switch selector is a full-expression without full_root;
+        // its conditional temporaries remain guarded until selector evaluation.
         let value = if to_bool {
             self.truth(id)
         } else {
@@ -271,6 +273,21 @@ impl Function<'_, '_, '_, '_> {
         value
     }
     pub(super) fn condition_branch(
+        &mut self,
+        condition: Condition,
+        yes: BlockId,
+        no: BlockId,
+        fold: bool,
+    ) -> Result<(), Error> {
+        let root = match condition {
+            Condition::Expression(id) => Some(id),
+            Condition::Declaration { .. } => None,
+        };
+        self.with_full_root(root, |this| {
+            this.condition_branch_in_context(condition, yes, no, fold)
+        })
+    }
+    fn condition_branch_in_context(
         &mut self,
         condition: Condition,
         yes: BlockId,

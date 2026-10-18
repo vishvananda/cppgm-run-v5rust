@@ -32,6 +32,45 @@ impl Function<'_, '_, '_, '_> {
         self.terminated = true;
         Ok(())
     }
+    fn returned_value(&mut self, operand: Option<ast::ExprId>) -> Result<(), Error> {
+        let result = self
+            .result
+            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                "source return in synthetic function",
+            )))?;
+        let ty = types::storage(self.graph, result)?;
+        if matches!(
+            self.graph.lower_type(result)?,
+            crate::sema::lowering::TypeView::Class(_)
+        ) {
+            return self.class_return(
+                operand.ok_or(crate::sema::Error::Invariant(
+                    "class return without operand",
+                ))?,
+                result,
+            );
+        }
+        let began =
+            self.begin_full_expression(operand, super::temporary_scan::ExpressionUse::Value)?;
+        let value = if let Some(id) = operand {
+            if matches!(
+                self.graph.lower_type(result)?,
+                crate::sema::lowering::TypeView::Reference { .. }
+            ) {
+                Some(self.bind_reference(id, result, Context::Return)?)
+            } else {
+                let value = self.operand(id, Context::Return)?;
+                if ty == crate::lowir::vocabulary::Type::Void {
+                    None
+                } else {
+                    Some(self.fit(value, result)?.value)
+                }
+            }
+        } else {
+            None
+        };
+        self.cleanup_return(ty, value, began)
+    }
     pub(super) fn statement(&mut self, id: ast::StmtId) -> Result<(), Error> {
         self.check_stack()?;
         if self.terminated && !self.reachable_label(id)? {
@@ -74,43 +113,7 @@ impl Function<'_, '_, '_, '_> {
                 self.leave_scope(depth)?;
             }
             StmtKind::Return(operand) => {
-                let result = self
-                    .result
-                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                        "source return in synthetic function",
-                    )))?;
-                let ty = types::storage(self.graph, result)?;
-                if matches!(
-                    self.graph.lower_type(result)?,
-                    crate::sema::lowering::TypeView::Class(_)
-                ) {
-                    return self.class_return(
-                        operand.ok_or(crate::sema::Error::Invariant(
-                            "class return without operand",
-                        ))?,
-                        result,
-                    );
-                }
-                let began = self
-                    .begin_full_expression(operand, super::temporary_scan::ExpressionUse::Value)?;
-                let value = if let Some(id) = operand {
-                    if matches!(
-                        self.graph.lower_type(result)?,
-                        crate::sema::lowering::TypeView::Reference { .. }
-                    ) {
-                        Some(self.bind_reference(id, result, Context::Return)?)
-                    } else {
-                        let value = self.operand(id, Context::Return)?;
-                        if ty == crate::lowir::vocabulary::Type::Void {
-                            None
-                        } else {
-                            Some(self.fit(value, result)?.value)
-                        }
-                    }
-                } else {
-                    None
-                };
-                self.cleanup_return(ty, value, began)?;
+                self.with_full_root(operand, |this| this.returned_value(operand))?;
             }
             StmtKind::Expression(expression) => {
                 if let Some(id) = expression {
