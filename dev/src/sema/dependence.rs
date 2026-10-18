@@ -589,7 +589,12 @@ mod tests {
     fn explicit_callee_keys_reuse_signatures_without_body_or_emission_demand() {
         let source = SourceBuffer::new(
             b"template<class T>T make(){return T::missing;} \
-              void probe(){make<int>();make<int>();make<>();make<int,long>();}"
+              namespace ns{template<class T>T make(){return T::missing;} \
+              template<class T>typename T::missing bad();} \
+              struct C{template<class T>static T make(){return T::missing;}}; \
+              void probe(){make<int>();make<int>();make<>();make<int,long>(); \
+              ::make<int>();ns::make<int>();ns::make<int>();C::make<int>(); \
+              ns::bad<int>();ns::make<>();ns::make<int,long>();}"
                 .to_vec(),
         )
         .unwrap();
@@ -597,7 +602,7 @@ mod tests {
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
         let declarations = tree.decl_lists.get(declarations).to_vec();
-        let ast::DeclKind::Function { body, .. } = tree.declarations.get(declarations[1]).kind
+        let ast::DeclKind::Function { body, .. } = tree.declarations.get(declarations[3]).kind
         else {
             unreachable!()
         };
@@ -625,23 +630,46 @@ mod tests {
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         let scope = analyzer.graph.global;
-        analyzer.declaration(declarations[0], scope).unwrap();
+        for &declaration in &declarations[..3] {
+            analyzer.declaration(declaration, scope).unwrap();
+        }
         let mut resolved = Vec::new();
         for (index, expression) in expressions.into_iter().enumerate() {
             let key = analyzer.operand_key(expression, scope).unwrap().unwrap();
-            let entity = key.words.iter().find_map(|word| {
-                if let KeyWord::ResolvedFunction(entity) = word {
-                    Some(*entity)
-                } else {
-                    None
-                }
-            });
-            assert_eq!(entity.is_some(), index < 2);
+            let entity = key
+                .words
+                .iter()
+                .find_map(|word| {
+                    if let KeyWord::ResolvedFunction(entity) = word {
+                        Some(*entity)
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    key.words.windows(2).find_map(|words| {
+                        if let [
+                            KeyWord::Node(super::super::expression_keys::KeyNode::Function),
+                            KeyWord::Entity(entity),
+                        ] = words
+                        {
+                            Some(*entity)
+                        } else {
+                            None
+                        }
+                    })
+                });
+            assert_eq!(entity.is_some(), index < 2 || (4..8).contains(&index));
             if let Some(entity) = entity {
                 resolved.push(entity);
             }
         }
         assert_eq!(resolved[0], resolved[1]);
+        assert_eq!(resolved[0], resolved[2]);
+        assert_eq!(resolved[3], resolved[4]);
+        for &entity in &resolved {
+            assert!(analyzer.graph.lower_function_body(entity).is_none());
+        }
         let primary = analyzer
             .graph
             .function_templates

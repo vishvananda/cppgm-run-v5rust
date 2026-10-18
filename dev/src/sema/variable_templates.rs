@@ -72,7 +72,12 @@ impl Analyzer<'_> {
         // Suppress specialization of the last component, retaining ordinary
         // qualified lookup of its owner and all normal ambiguity checks.
         let found = self
-            .lookup_result_in(name, scope, Filter::Ordinary, false)?
+            .lookup_result_in(
+                name,
+                scope,
+                Filter::Ordinary,
+                super::lookup::Specialization::None,
+            )?
             .binding
             .ok_or_else(|| Error::at(node.location, "undeclared name"))?;
         let primary = self.variable_template_primary(found).ok_or_else(|| {

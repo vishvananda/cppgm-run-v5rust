@@ -98,7 +98,12 @@ impl Analyzer<'_> {
             ));
         }
         let found = self
-            .lookup_result_in(name, scope, super::lookup::Filter::Elaborated, false)?
+            .lookup_result_in(
+                name,
+                scope,
+                super::lookup::Filter::Elaborated,
+                super::lookup::Specialization::None,
+            )?
             .binding
             .ok_or_else(|| Error::at(location, "undeclared name"))?;
         let component = self

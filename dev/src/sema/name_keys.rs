@@ -5,7 +5,7 @@ use super::{
     analyzer::Analyzer,
     expression_keys::{ExpressionKey, KeyNode, KeyWord},
     graph::{BindingId, BindingKind, ScopeId},
-    lookup::Filter,
+    lookup::{Filter, Specialization},
     types::{Cv, TypeId, TypeKind},
 };
 use crate::syntax::ast::{self, NameKind, TemplateArgumentKind};
@@ -24,6 +24,7 @@ impl Analyzer<'_> {
             KeyWord::Count(component_count),
             KeyWord::Flag(node.global),
         ]);
+        let mut last_arguments = None;
         for index in 0..component_count {
             let component = self.tree.name_lists.get(node.components)[index];
             match component.kind {
@@ -62,6 +63,7 @@ impl Analyzer<'_> {
                     KeyWord::Node(KeyNode::Arguments),
                     KeyWord::Count(argument_count),
                 ]);
+                last_arguments = Some(key.words.len());
                 for index in 0..argument_count {
                     let argument = self.tree.template_arguments.get(arguments)[index];
                     let Some(ty) =
@@ -74,7 +76,7 @@ impl Analyzer<'_> {
             }
         }
         if resolve && (component_count > 1 || node.global) {
-            self.key_resolution(name, scope, key)?;
+            self.key_resolution(name, scope, last_arguments, key)?;
         }
         Ok(true)
     }
@@ -198,6 +200,7 @@ impl Analyzer<'_> {
         &mut self,
         name: ast::Name,
         scope: ScopeId,
+        last_arguments: Option<usize>,
         key: &mut ExpressionKey,
     ) -> Result<(), Error> {
         let node = *self.tree.names.get(name);
@@ -208,16 +211,41 @@ impl Analyzer<'_> {
             key.words.push(KeyWord::Absent);
             return Ok(());
         }
-        let found = self.lookup_result(name, scope, Filter::Ordinary)?;
+        // Structural resolution names the original overload set. Only a sole
+        // template with a complete explicit head may resolve a signature here;
+        // ordinary use-site specialization would eagerly reject unused keys.
+        let found =
+            self.lookup_result_in(name, scope, Filter::Ordinary, Specialization::NonFunction)?;
         let binding = found
             .binding
             .ok_or_else(|| Error::at(node.location, "undeclared name"))?;
+        let binding_id = binding;
         let binding = self.graph.binding(binding);
         if let Some(member) = self.graph.dependent_members.get(binding.entity) {
             self.key_type(member.qualifier, key)?;
         } else if binding.kind == BindingKind::Function {
+            let resolved = if self.semantic()
+                && found.functions.as_slice().len() <= 1
+                && let Some(start) = last_arguments.filter(|_| last.arguments.is_some())
+            {
+                let given = key.words[start..]
+                    .iter()
+                    .map(|word| {
+                        if let KeyWord::Type(ty) = word {
+                            Ok(*ty)
+                        } else {
+                            Err(Error::Invariant("qualified key without argument type"))
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.key_explicit_specialization(binding_id, &given, last.location)?
+            } else {
+                None
+            };
             key.words.push(KeyWord::Node(KeyNode::Function));
-            if found.functions.as_slice().len() <= 1
+            if let Some(entity) = resolved {
+                key.words.push(KeyWord::Entity(entity));
+            } else if found.functions.as_slice().len() <= 1
                 && last.arguments.is_none()
                 && self.graph.entity(binding.entity).template_head.is_none()
             {

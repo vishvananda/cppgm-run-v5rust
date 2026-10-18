@@ -62,7 +62,12 @@ impl Analyzer<'_> {
     ) -> Result<EntityId, Error> {
         let node = *self.tree.names.get(name);
         let found = self
-            .lookup_result_in(name, scope, Filter::Elaborated, false)?
+            .lookup_result_in(
+                name,
+                scope,
+                Filter::Elaborated,
+                super::lookup::Specialization::None,
+            )?
             .binding
             .ok_or_else(|| Error::at(node.location, "undeclared name"))?;
         let primary = self.class_template_primary(found).ok_or_else(|| {

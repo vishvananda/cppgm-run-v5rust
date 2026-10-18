@@ -381,7 +381,12 @@ impl Analyzer<'_> {
         let location = self.tree.names.get(name).location;
         self.specialization_mode = super::analyzer::SpecializationMode::Ordinary;
         let found = self
-            .lookup_result_in(name, scope, super::lookup::Filter::Ordinary, false)?
+            .lookup_result_in(
+                name,
+                scope,
+                super::lookup::Filter::Ordinary,
+                super::lookup::Specialization::None,
+            )?
             .binding
             .ok_or(Error::at(location, "undeclared name"))?;
         let primary = self.variable_template_primary(found).ok_or(Error::at(

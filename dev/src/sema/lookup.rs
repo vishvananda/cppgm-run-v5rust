@@ -20,6 +20,13 @@ pub(super) enum Filter {
     Elaborated,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Specialization {
+    None,
+    NonFunction,
+    All,
+}
+
 // A dependent qualifier has no scope until substitution. Never manufacture a
 // class scope for its placeholder or search its members speculatively.
 #[derive(Clone, Copy)]
@@ -765,21 +772,21 @@ impl Analyzer<'_> {
         scope: ScopeId,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
-        self.lookup_result_in(name, scope, filter, true)
+        self.lookup_result_in(name, scope, filter, Specialization::All)
     }
     pub(super) fn lookup_call_result(
         &mut self,
         name: Name,
         scope: ScopeId,
     ) -> Result<LookupResult, Error> {
-        self.lookup_result_in(name, scope, Filter::Ordinary, false)
+        self.lookup_result_in(name, scope, Filter::Ordinary, Specialization::None)
     }
     pub(super) fn lookup_result_in(
         &mut self,
         name: Name,
         scope: ScopeId,
         filter: Filter,
-        specialize: bool,
+        specialize: Specialization,
     ) -> Result<LookupResult, Error> {
         let node = *self.tree.names.get(name);
         self.lookup_location = node.location;
@@ -872,7 +879,7 @@ impl Analyzer<'_> {
                 }
             }
         }
-        if specialize && last.arguments.is_some() {
+        if specialize != Specialization::None && last.arguments.is_some() {
             if found.functions.as_slice().is_empty()
                 && let Some(binding) = found.binding
             {
@@ -889,9 +896,9 @@ impl Analyzer<'_> {
                             })?
                     },
                 );
-            } else if self.semantic() {
+            } else if self.semantic() && specialize == Specialization::All {
                 self.explicit_function_specializations(last, &mut found, scope, false)?;
-            } else if found.functions.as_slice().is_empty() {
+            } else if !self.semantic() && found.functions.as_slice().is_empty() {
                 return Err(Error::Missing("template specialization lookup"));
             }
         }

@@ -29,6 +29,14 @@ impl<'a> Words<'a> {
         };
         Ok(*flag)
     }
+    fn argument_count(&mut self) -> Result<usize, Error> {
+        if matches!(self.words.get(self.at), Some(W::Node(N::Arguments))) {
+            self.next()?;
+            self.count()
+        } else {
+            Ok(0)
+        }
+    }
     fn ty(&mut self) -> Result<TypeId, Error> {
         let W::Type(ty) = self.next()? else {
             return Err(missing());
@@ -609,11 +617,17 @@ impl Symbols<'_, '_> {
         let mut levels = Vec::new();
         let mut terminal = None;
         let mut arguments = Vec::new();
+        let mut parameter_root = false;
         for index in 0..count {
             let word = words.next()?;
             let name = match word {
                 W::Type(ty) if index == 0 && !global => {
-                    root = self.qualifier_levels(*ty, &mut levels)?;
+                    parameter_root = self.graph.lower_template_parameter(*ty).is_some();
+                    if parameter_root {
+                        root = self.parameter_qualifier_root(*ty, words, count)?;
+                    } else {
+                        root = self.qualifier_levels(*ty, &mut levels)?;
+                    }
                     None
                 }
                 W::Entity(entity) if index == 0 && !global => self.graph.lower_local_name(*entity),
@@ -636,6 +650,12 @@ impl Symbols<'_, '_> {
         // function, an overload set, and a named entity. Written levels alone
         // cannot decide which ABI production the frozen reader uses.
         match words.next()? {
+            // One parameter qualifier uses the resolved dependent qualifier
+            // type, including its defaults. Longer qualifiers retain the
+            // parameter template-id as written, followed by member levels.
+            W::Type(ty) if parameter_root && count == 2 => {
+                root = Some(self.abi_type(*ty)?);
+            }
             W::Type(_) => (),
             W::Node(N::Function) => match words.next()? {
                 W::Entity(entity) => {
@@ -722,16 +742,33 @@ impl Symbols<'_, '_> {
         }
         Ok(root)
     }
-    fn operand_arguments(&mut self, words: &mut Words<'_>) -> Result<Vec<NodeId>, Error> {
-        let mut arguments = Vec::new();
-        if matches!(words.words.get(words.at), Some(W::Node(N::Arguments))) {
-            words.next()?;
-            let count = words.count()?;
+    fn parameter_qualifier_root(
+        &mut self,
+        ty: TypeId,
+        words: &mut Words<'_>,
+        components: usize,
+    ) -> Result<Option<NodeId>, Error> {
+        let count = words.argument_count()?;
+        // A single qualifier uses the recorded dependent type at resolution.
+        // Consume and validate its written words without allocating ABI nodes.
+        if components == 2 {
             for _ in 0..count {
-                arguments.push(self.abi_type(words.ty()?)?);
+                words.ty()?;
             }
+            return Ok(None);
         }
-        Ok(arguments)
+        if count == 0 {
+            return self.abi_type(ty).map(Some);
+        }
+        let arguments = (0..count)
+            .map(|_| words.ty())
+            .collect::<Result<Vec<_>, _>>()?;
+        self.name_template_id(self.graph.lower_named_template_id(ty, &arguments))
+            .map(Some)
+    }
+    fn operand_arguments(&mut self, words: &mut Words<'_>) -> Result<Vec<NodeId>, Error> {
+        let count = words.argument_count()?;
+        (0..count).map(|_| self.abi_type(words.ty()?)).collect()
     }
     fn dependent_operand_arguments(&self, words: &Words<'_>) -> Result<bool, Error> {
         let Some([W::Node(N::Arguments), W::Count(count), tail @ ..]) = words.words.get(words.at..)

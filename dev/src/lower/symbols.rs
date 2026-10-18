@@ -1059,7 +1059,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         Ok(())
     }
-    fn name_template_id(
+    pub(super) fn name_template_id(
         &mut self,
         view: crate::sema::lowering::TemplateIdView<'_>,
     ) -> Result<NodeId, Error> {

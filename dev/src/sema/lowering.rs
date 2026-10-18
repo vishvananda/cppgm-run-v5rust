@@ -718,7 +718,13 @@ impl Graph {
             .class_templates
             .template_entities
             .name(instance.primary)?;
-        let arguments = instance.arguments.as_slice();
+        Some(self.lower_named_template_id(name, &instance.arguments))
+    }
+    pub(crate) fn lower_named_template_id<'a>(
+        &self,
+        name: TypeId,
+        arguments: &'a [TypeId],
+    ) -> TemplateIdView<'a> {
         // C++ name_template_id: a positional template-name's own head
         // partitions its written arguments. An expansion before the pack
         // makes that partition unknown; an expansion in the pack does not.
@@ -748,11 +754,11 @@ impl Graph {
         } else {
             None
         };
-        Some(TemplateIdView {
+        TemplateIdView {
             name,
             arguments,
             pack,
-        })
+        }
     }
     pub(crate) fn lower_template_parameter(&self, ty: TypeId) -> Option<u32> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {

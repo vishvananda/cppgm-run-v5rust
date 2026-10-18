@@ -4,7 +4,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     graph::{BindingId, BindingKind, ScopeId, ScopeKind},
-    lookup::Filter,
+    lookup::{Filter, Specialization},
     types::{TypeId, TypeKind},
 };
 use crate::{
@@ -313,7 +313,19 @@ impl Analyzer<'_> {
                 return Err(Error::at(node.location, "undeclared name"));
             }
         }
-        let binding = match self.lookup(name, scope, Filter::Ordinary) {
+        let specialization = if self.template_depth == 0 {
+            Specialization::All
+        } else {
+            Specialization::NonFunction
+        };
+        let found = self
+            .lookup_result_in(name, scope, Filter::Ordinary, specialization)
+            .and_then(|found| {
+                found
+                    .binding
+                    .ok_or_else(|| Error::at(node.location, "undeclared name"))
+            });
+        let binding = match found {
             Ok(binding) => binding,
             // type_qualifier has already resolved a typed dependent root.
             // Definition-time name checking does not select its members;
@@ -339,7 +351,7 @@ impl Analyzer<'_> {
             }
             Err(error) => return Err(error),
         };
-        if !self.semantic()
+        if (!self.semantic() || self.template_depth != 0)
             && self.graph.binding(binding).kind == BindingKind::Function
             && let Some(arguments) = last.arguments
         {

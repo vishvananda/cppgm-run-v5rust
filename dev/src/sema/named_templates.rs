@@ -152,7 +152,12 @@ impl Analyzer<'_> {
                 )
                 .map(Some);
         }
-        let found = self.lookup_result_in(name, scope, Filter::Ordinary, false)?;
+        let found = self.lookup_result_in(
+            name,
+            scope,
+            Filter::Ordinary,
+            super::lookup::Specialization::None,
+        )?;
         let Some(binding) = found
             .binding
             .filter(|_| !found.ambiguous || found.injected_template)
