@@ -319,6 +319,7 @@ impl Analyzer<'_> {
                 self.default_location(default),
                 target,
                 template,
+                false,
             );
             self.graph.lookup_limit = saved;
             let pattern = result?;
@@ -368,6 +369,7 @@ impl Analyzer<'_> {
                     analyzer.default_location(default),
                     target,
                     template,
+                    false,
                 )
             },
         );

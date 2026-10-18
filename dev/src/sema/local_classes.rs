@@ -166,6 +166,7 @@ impl Graph {
             .function
             .ok_or(Error::Invariant("function locality without function"))?;
         if facts.internal_linkage
+            || self.lower_function_arguments_unit_local(function)
             || node
                 .home
                 .filter(|&home| self.scope(home).kind == ScopeKind::Class)
@@ -212,6 +213,15 @@ impl Graph {
             return Ok(false);
         }
         Ok(self.lower_type_unit_local(result))
+    }
+
+    pub(super) fn lower_function_arguments_unit_local(&self, function: EntityId) -> bool {
+        // symbol_lowering.cpp::argument_locality: only this specialization's
+        // canonical arguments determine its argument locality.
+        self.function_templates
+            .arguments
+            .get(&function)
+            .is_some_and(|arguments| arguments.iter().any(|&ty| self.lower_type_unit_local(ty)))
     }
 
     pub(crate) fn lower_class_no_linkage(&self, class: EntityId) -> bool {

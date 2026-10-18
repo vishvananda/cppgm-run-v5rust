@@ -109,7 +109,7 @@ impl Analyzer<'_> {
         }
         let binding = found
             .binding
-            .ok_or(Error::Invariant("address lookup without binding"))?;
+            .ok_or_else(|| Error::at(location, "undeclared name"))?;
         super::record(&mut self.graph.resolved_names, name.index(), binding);
         if let Some(naming) = self.graph.scope(prefix).owner
             && self.graph.scope(prefix).kind == ScopeKind::Class

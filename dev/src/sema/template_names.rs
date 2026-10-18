@@ -57,8 +57,19 @@ impl Analyzer<'_> {
             let template = head
                 .and_then(|head| self.template_argument_parameter(head, index))
                 .map(|info| info.inner.is_some());
-            let mut ty =
-                self.template_argument_at(argument, scope, component.location, target, template)?;
+            let unknown = target.is_none()
+                && head
+                    .zip(position)
+                    .and_then(|(head, index)| self.template_argument_parameter(head, index))
+                    .is_none_or(|info| info.value_type.is_some());
+            let mut ty = self.template_argument_at(
+                argument,
+                scope,
+                component.location,
+                target,
+                template,
+                unknown,
+            )?;
             if argument.pack {
                 ty = match self.graph.types.get(ty).kind {
                     TypeKind::BoundPack { arguments, .. } => arguments,
@@ -146,7 +157,7 @@ impl Analyzer<'_> {
         for syntax_index in 0..self.tree.template_arguments.get(arguments).len() {
             let syntax_item = self.tree.template_arguments.get(arguments)[syntax_index];
             let argument = &syntax_item;
-            let ty = self.template_argument(*argument, scope, location)?;
+            let ty = self.template_argument_at(*argument, scope, location, None, None, true)?;
             if argument.pack {
                 self.pack_expansion_type(ty, location)?;
             }

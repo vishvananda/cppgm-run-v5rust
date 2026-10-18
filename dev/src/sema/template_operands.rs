@@ -18,6 +18,11 @@ use std::{
 #[derive(Clone, Copy)]
 pub(super) struct Pattern {
     pub value: bool,
+    // argument_target supplies only a concrete address target. It belongs to
+    // placeholder identity as well as later overload selection.
+    value_target: Option<TypeId>,
+    fixed: bool,
+    fixed_value: Option<FixedValue>,
     pub expression: ast::ExprId,
     pub scope: ScopeId,
     pub key_dependent: bool,
@@ -36,6 +41,11 @@ enum HeadDepth {
     None,
     One(u32),
     Several,
+}
+#[derive(Clone, Copy)]
+struct FixedValue {
+    target: Option<TypeId>,
+    value: TypeId,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -78,13 +88,23 @@ enum Evaluation {
     Type(TypeId),
     Bound(u64),
 }
+#[derive(Clone, Copy)]
+enum OperandKind {
+    Type {
+        fixed: bool,
+    },
+    Value {
+        target: Option<TypeId>,
+        unknown: bool,
+    },
+}
 #[derive(Default)]
 pub(super) struct Operands {
     index: HashMap<u64, EntityId>,
     words: HashMap<EntityId, Vec<KeyWord>>,
     fingerprints: RandomState,
     patterns: HashMap<EntityId, Pattern>,
-    equivalents: HashMap<(ScopeId, Vec<KeyWord>, bool), EntityId>,
+    equivalents: HashMap<(ScopeId, Vec<KeyWord>, bool, Option<TypeId>), EntityId>,
     substitutions: HashMap<Key, Evaluation>,
     active: HashSet<(Key, usize)>,
     pending: HashMap<EntityId, Pending>,
@@ -109,35 +129,39 @@ impl Analyzer<'_> {
         scope: ScopeId,
         fixed: bool,
     ) -> Result<TypeId, Error> {
-        self.dependent_operand_in(expression, scope, fixed, false)
+        self.dependent_operand_in(expression, scope, OperandKind::Type { fixed })
     }
     pub(super) fn dependent_value_operand(
         &mut self,
         expression: ast::ExprId,
         scope: ScopeId,
+        target: Option<TypeId>,
+        unknown: bool,
     ) -> Result<TypeId, Error> {
-        self.dependent_operand_in(expression, scope, false, true)
+        self.dependent_operand_in(expression, scope, OperandKind::Value { target, unknown })
     }
     fn dependent_operand_in(
         &mut self,
         expression: ast::ExprId,
         scope: ScopeId,
-        fixed: bool,
-        value: bool,
+        kind: OperandKind,
     ) -> Result<TypeId, Error> {
+        let (fixed, value, target, unknown) = match kind {
+            OperandKind::Type { fixed } => (fixed, false, None, false),
+            OperandKind::Value { target, unknown } => (false, true, target, unknown),
+        };
+        let value_target = target.filter(|&ty| self.graph.address_parameter_type(ty));
         self.expression(expression, scope)?;
         let key = self.operand_key(expression, scope)?;
-        // Non-dependent operands in semantic mode have their ordinary type.
-        if (fixed || value && self.semantic())
+        let is_fixed = (fixed || value && self.semantic())
             && key.as_ref().is_some_and(|key| !key.dependent)
-            && !self.type_dependent_expression(expression, scope)?
-        {
+            && !self.type_dependent_expression(expression, scope)?;
+        // Fixed decltypes are ordinary types. Fixed values retain their
+        // placeholder's last target/value, as later structural keying may
+        // reuse an object designation formed for an unknown parameter.
+        if is_fixed && !value {
             let saved = std::mem::replace(&mut self.template_depth, 0);
-            let result = if value {
-                self.template_value(expression, scope)
-            } else {
-                self.decltype_type(expression, scope)
-            };
+            let result = self.decltype_type(expression, scope);
             self.template_depth = saved;
             return result;
         }
@@ -173,7 +197,7 @@ impl Analyzer<'_> {
             self.graph
                 .template_operands
                 .fingerprints
-                .hash_one((home, words, value))
+                .hash_one((home, words, value, value_target))
         });
         let head = fingerprint.and_then(|fingerprint| {
             self.graph
@@ -190,9 +214,13 @@ impl Analyzer<'_> {
                 .pattern(entity)
                 .ok_or(Error::Invariant("operand index without pattern"))?;
             if pattern.value == value
+                && pattern.value_target == value_target
                 && pattern.home == home
                 && self.graph.template_operands.words.get(&entity) == words.as_ref()
             {
+                if pattern.fixed {
+                    return self.fixed_value_operand(entity, expression, scope, target, unknown);
+                }
                 return self
                     .graph
                     .entity(entity)
@@ -219,6 +247,9 @@ impl Analyzer<'_> {
             entity,
             Pattern {
                 value,
+                value_target,
+                fixed: is_fixed,
+                fixed_value: None,
                 expression,
                 scope,
                 key_dependent,
@@ -252,7 +283,7 @@ impl Analyzer<'_> {
                     .graph
                     .template_operands
                     .equivalents
-                    .entry((home, equivalent, value))
+                    .entry((home, equivalent, value, value_target))
                     .or_insert(entity);
                 if earlier != entity {
                     self.graph
@@ -262,7 +293,41 @@ impl Analyzer<'_> {
             }
             self.graph.template_operands.words.insert(entity, words);
         }
-        Ok(ty)
+        if is_fixed {
+            self.fixed_value_operand(entity, expression, scope, target, unknown)
+        } else {
+            Ok(ty)
+        }
+    }
+
+    fn fixed_value_operand(
+        &mut self,
+        entity: EntityId,
+        expression: ast::ExprId,
+        scope: ScopeId,
+        target: Option<TypeId>,
+        unknown: bool,
+    ) -> Result<TypeId, Error> {
+        let pattern = self
+            .graph
+            .template_operands
+            .pattern(entity)
+            .ok_or(Error::Invariant("fixed value without pattern"))?;
+        if !unknown && let Some(value) = pattern.fixed_value.filter(|value| value.target == target)
+        {
+            return Ok(value.value);
+        }
+        let saved = std::mem::replace(&mut self.template_depth, 0);
+        let result = self.template_value(expression, scope, target, unknown);
+        self.template_depth = saved;
+        let value = result?;
+        self.graph
+            .template_operands
+            .patterns
+            .get_mut(&entity)
+            .ok_or(Error::Invariant("fixed value lost its pattern"))?
+            .fixed_value = Some(FixedValue { target, value });
+        Ok(value)
     }
 
     pub(super) fn substitute_operand(
@@ -563,6 +628,7 @@ impl Analyzer<'_> {
                     pattern.home,
                     &key.words,
                     pattern.value,
+                    pattern.value_target,
                 ));
                 made_pattern.next = self.graph.template_operands.index.insert(fingerprint, made);
             }
@@ -645,6 +711,7 @@ impl Analyzer<'_> {
             pattern.home,
             &key.words,
             pattern.value,
+            pattern.value_target,
         ));
         let mut next = self
             .graph
@@ -662,6 +729,7 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("equivalent index without pattern"))?;
             if other.home == pattern.home
                 && other.value == pattern.value
+                && other.value_target == pattern.value_target
                 && self.graph.template_operands.words(id) == Some(key.words.as_slice())
             {
                 framed = self.graph.template_operands.pending.contains_key(&id);
@@ -1047,7 +1115,7 @@ impl Analyzer<'_> {
                     .transpose()
             }),
             Query::Value => self
-                .template_value(copy, scope)
+                .template_value(copy, scope, pattern.value_target, false)
                 .map(|ty| Some(Evaluation::Type(ty))),
         };
         self.declaration_access.substitution = saved_access;
@@ -1658,6 +1726,72 @@ mod value_tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn deferred_addresses_keep_target_identity_and_memoize_selection() {
+        let source = SourceBuffer::new(
+            b"struct O{static int f(int);static long f(long);};\
+            template<int(*)(int)>struct I;template<long(*)(long)>struct L;\
+            template<class T>I<&T::f>* a();template<class T>L<&T::f>* b();\
+            template<class U>I<&U::f>* c();"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"address-targets").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let owner = cursor.intern_name(b"O").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let owner = analyzer
+            .graph
+            .own(global, owner, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let owner = analyzer.graph.binding(owner).ty.unwrap();
+        let patterns = analyzer
+            .graph
+            .template_operands
+            .patterns
+            .iter()
+            .filter_map(|(&entity, pattern)| pattern.value_target.map(|target| (entity, target)))
+            .collect::<Vec<_>>();
+        // Renaming T to U shares an operand; changing its target does not.
+        assert_eq!(patterns.len(), 2);
+        assert_ne!(patterns[0].1, patterns[1].1);
+        let arguments = [Some(owner)];
+        let mut selected = Vec::new();
+        for (entity, target) in patterns {
+            let ty = analyzer.graph.entity(entity).ty.unwrap();
+            let result = analyzer
+                .substitute_operand(ty, entity, &mut Substitution::new(0, &arguments))
+                .unwrap()
+                .unwrap();
+            let TypeKind::Address {
+                ty: address_type,
+                entity: function,
+            } = analyzer.graph.types.get(result).kind
+            else {
+                panic!("selected function address")
+            };
+            assert_eq!(address_type, target);
+            selected.push(function);
+            let expressions = analyzer.tree.expressions.mark();
+            assert_eq!(
+                analyzer
+                    .substitute_operand(ty, entity, &mut Substitution::new(0, &arguments))
+                    .unwrap(),
+                Some(result)
+            );
+            assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        }
+        assert_ne!(selected[0], selected[1]);
+        assert!(analyzer.graph.template_operands.active.is_empty());
+    }
 
     #[test]
     fn same_operand_has_separate_type_and_value_queries() {

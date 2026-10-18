@@ -262,7 +262,12 @@ impl Analyzer<'_> {
             let template = head
                 .and_then(|head| self.template_argument_parameter(head, syntax_index))
                 .map(|info| info.inner.is_some());
-            let ty = self.template_argument_at(*argument, scope, location, target, template)?;
+            let unknown = target.is_none()
+                && head
+                    .and_then(|head| self.template_argument_parameter(head, syntax_index))
+                    .is_none_or(|info| info.value_type.is_some());
+            let ty =
+                self.template_argument_at(*argument, scope, location, target, template, unknown)?;
             given.push(self.graph.types.canonical_function(ty)?);
         }
         Ok(given)
@@ -730,6 +735,7 @@ impl Analyzer<'_> {
                             self.default_location(default),
                             None,
                             template,
+                            false,
                         );
                         self.graph.lookup_limit = saved;
                         self.template_depth -= 1;

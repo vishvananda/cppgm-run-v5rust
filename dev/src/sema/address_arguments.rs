@@ -47,11 +47,11 @@ impl Graph {
 
     pub(super) fn address_argument_unit_local(&self, entity: EntityId) -> bool {
         let node = self.entity(entity);
-        node.function
-            .is_some_and(|function| function.internal_linkage)
-            || node
-                .variable
-                .is_some_and(|variable| variable.internal_linkage)
+        node.function.is_some_and(|function| {
+            function.internal_linkage || self.lower_function_arguments_unit_local(entity)
+        }) || node
+            .variable
+            .is_some_and(|variable| variable.internal_linkage)
             || self.lower_entity_unit_local(entity)
     }
     pub(super) fn reference_argument_entity(&self, binding: EntityId) -> Option<EntityId> {
@@ -163,6 +163,74 @@ impl Analyzer<'_> {
         })
     }
 
+    pub(super) fn names_linked_integral_object(
+        &self,
+        mut expression: ast::ExprId,
+    ) -> Result<bool, Error> {
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(expression).kind {
+            expression = inner;
+        }
+        let ast::ExprKind::Id(name) = self.tree.expressions.get(expression).kind else {
+            return Ok(false);
+        };
+        let Some(binding) = self.graph.resolved_name(name) else {
+            return Ok(false);
+        };
+        let binding = self.graph.binding(binding);
+        let ty = self.graph.expression_facts.get(expression)?.ty;
+        Ok(binding.kind == BindingKind::Variable
+            && self.graph.linked_argument_entity(binding.entity)
+            && self.graph.entity(binding.entity).ty.is_some_and(|ty| {
+                !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+            })
+            && (self.integral_kind(ty).is_some()
+                || matches!(self.graph.types.get(ty).kind, TypeKind::Enum(_))))
+    }
+
+    pub(super) fn read_integral_argument(
+        &mut self,
+        argument: TypeId,
+        target: TypeId,
+        location: SourceOffset,
+    ) -> Result<TypeId, Error> {
+        let TypeKind::Address { ty, entity } = self.graph.types.get(argument).kind else {
+            return Ok(argument);
+        };
+        if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+            || self.graph.entity(entity).variable.is_none()
+            || !(self.integral_kind(target).is_some()
+                || matches!(self.graph.types.get(target).kind, TypeKind::Enum(_)))
+        {
+            return Ok(argument);
+        }
+        // Match variable_constant: only a const/constexpr member's initializer
+        // can be demanded here. Taking its designation did not demand it.
+        let variable = self.graph.entity(entity);
+        if matches!(variable.constant, super::constants::ConstantState::None)
+            && (variable.constexpr
+                || variable
+                    .ty
+                    .is_some_and(|ty| self.graph.types.get(ty).cv.0 & Cv::CONST.0 != 0))
+        {
+            self.use_instance_variable(entity)?;
+        }
+        let super::constants::ConstantState::Value(value) = self.graph.entity(entity).constant
+        else {
+            return Err(Error::at(
+                location,
+                "a template argument that is not a constant expression",
+            ));
+        };
+        let ty = self.bare_type(value.ty)?;
+        self.graph.types.intern(
+            TypeKind::Value {
+                ty,
+                bits: value.bits,
+            },
+            Cv::default(),
+        )
+    }
+
     pub(super) fn address_template_argument(
         &mut self,
         expression: ast::ExprId,
@@ -248,9 +316,13 @@ impl Analyzer<'_> {
                         message,
                     ));
                 }
-                if binding.kind == BindingKind::Variable {
+                let readable = !address
+                    && target.is_none()
+                    && (self.integral_kind(named_type).is_some()
+                        || matches!(self.graph.types.get(named_type).kind, TypeKind::Enum(_)));
+                if binding.kind == BindingKind::Variable && !readable {
                     self.use_instance_variable(entity)?;
-                } else {
+                } else if binding.kind == BindingKind::Function {
                     self.note_argument_function(entity);
                 }
                 let ty = if address {
@@ -395,6 +467,116 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn unknown_value_parameters_keep_object_identity_until_candidate_conversion() {
+        let source = SourceBuffer::new(
+            b"int x=3;const int y=7;\
+            template<int& V>int pick(int){return V;}\
+            template<int V>int pick(...){return V;}\
+            template<class T>auto caller(T)->decltype(pick<x>(0)){return pick<x>(0);}\
+            int main(){return caller(0)+pick<y>(0);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"unknown-object").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let pick = cursor.intern_name(b"pick").unwrap();
+        let x = cursor.intern_name(b"x").unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let x = graph
+            .binding(graph.own(graph.global, x, Filter::Ordinary).unwrap())
+            .entity;
+        let arguments = graph
+            .function_templates
+            .arguments
+            .iter()
+            .filter(|(entity, _)| graph.entity(**entity).name == Some(pick))
+            .map(|(_, arguments)| arguments[0])
+            .collect::<Vec<_>>();
+        assert_eq!(arguments.len(), 2);
+        assert!(
+            arguments
+                .iter()
+                .any(|&argument| matches!(graph.types.get(argument).kind,
+            TypeKind::Address { entity, .. } if entity == x))
+        );
+        assert!(arguments.iter().any(|&argument| matches!(
+            graph.types.get(argument).kind,
+            TypeKind::Value { bits: 7, .. }
+        )));
+    }
+
+    #[test]
+    fn function_argument_locality_inherits_a_const_objects_internal_linkage() {
+        let source = SourceBuffer::new(
+            b"const int y=7;template<const int& V>int f(){return V;}\
+            int main(){return f<y>();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"argument-locality").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let primary = graph
+            .binding(graph.own(graph.global, f, Filter::Ordinary).unwrap())
+            .entity;
+        assert!(!graph.lower_function_unit_local(primary).unwrap());
+        let (&instance, arguments) = graph
+            .function_templates
+            .arguments
+            .iter()
+            .find(|(entity, _)| graph.entity(**entity).name == Some(f))
+            .unwrap();
+        assert!(graph.lower_type_unit_local(arguments[0]));
+        assert!(graph.lower_function_unit_local(instance).unwrap());
+        assert!(graph.address_argument_unit_local(instance));
+    }
+
+    #[test]
+    fn absent_qualified_operator_is_a_substitution_failure() {
+        let source = SourceBuffer::new(
+            b"void* operator new(unsigned long);enum E{};\
+            template<class T,void*(*P)(unsigned long)=&T::operator new>char f(int);\
+            template<class>long f(...);static_assert(sizeof(f<E>(0))==sizeof(long),\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"missing-operator").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+    }
 
     #[test]
     fn target_probe_stops_before_substitution_past_a_parameter_pack() {

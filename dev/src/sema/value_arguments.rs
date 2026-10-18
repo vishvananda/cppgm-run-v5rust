@@ -77,7 +77,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
         target: Option<TypeId>,
     ) -> Result<TypeId, Error> {
-        self.template_argument_at(argument, scope, location, target, None)
+        self.template_argument_at(argument, scope, location, target, None, false)
     }
 
     pub(super) fn template_argument_at(
@@ -87,6 +87,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
         target: Option<TypeId>,
         template: Option<bool>,
+        unknown: bool,
     ) -> Result<TypeId, Error> {
         if template != Some(false) {
             let plain = self.plain_template_name(argument);
@@ -112,22 +113,15 @@ impl Analyzer<'_> {
         let ast::TemplateArgumentKind::Expression(expression) = argument.kind else {
             return Err(Error::Invariant("type argument without identity"));
         };
-        self.template_value_for(expression, scope, target)
+        self.template_value(expression, scope, target, unknown)
     }
 
     pub(super) fn template_value(
         &mut self,
         expression: ast::ExprId,
         scope: ScopeId,
-    ) -> Result<TypeId, Error> {
-        self.template_value_for(expression, scope, None)
-    }
-
-    fn template_value_for(
-        &mut self,
-        expression: ast::ExprId,
-        scope: ScopeId,
         target: Option<TypeId>,
+        unknown: bool,
     ) -> Result<TypeId, Error> {
         if self.semantic() && self.template_depth == 0 {
             let value_uses = self.value_parameter_uses.get();
@@ -170,6 +164,12 @@ impl Analyzer<'_> {
             {
                 return self.address_template_argument(expression, scope, target);
             }
+            // An integral object named before its parameter is known may bind
+            // a reference or be read as a value. Keep its designation until
+            // candidate conversion chooses between those two operations.
+            if unknown && self.names_linked_integral_object(expression)? {
+                return self.address_template_argument(expression, scope, None);
+            }
         }
         if let Some(value) = self.constant_value(expression, scope, self.template_depth == 0)? {
             if self.integral_kind(value.ty).is_none() {
@@ -193,7 +193,7 @@ impl Analyzer<'_> {
                 "a template argument that is not a constant expression",
             ));
         }
-        self.dependent_value_operand(expression, scope)
+        self.dependent_value_operand(expression, scope, target, unknown)
     }
 
     pub(super) fn match_template_argument(
@@ -245,11 +245,12 @@ impl Analyzer<'_> {
         if template {
             self.match_template_name(info, argument, location)?;
         }
-        let (TypeKind::Value { ty: source, .. } | TypeKind::Address { ty: source, .. }) =
-            self.graph.types.get(argument).kind
-        else {
+        if !matches!(
+            self.graph.types.get(argument).kind,
+            TypeKind::Value { .. } | TypeKind::Address { .. }
+        ) {
             return Ok(argument);
-        };
+        }
         // Value conversion substitutes its declared target even if unrelated
         // earlier arguments remain dependent. argument_target's conservative
         // probe is only for typing the expression before its value is formed.
@@ -280,6 +281,12 @@ impl Analyzer<'_> {
             // beyond its bound elements. C++ leaves that value unconverted.
             return Ok(argument);
         }
+        let argument = self.read_integral_argument(argument, target, location)?;
+        let (TypeKind::Value { ty: source, .. } | TypeKind::Address { ty: source, .. }) =
+            self.graph.types.get(argument).kind
+        else {
+            return Err(Error::Invariant("converted argument without value"));
+        };
         if self.graph.address_parameter_type(target) || self.graph.address_parameter_type(source) {
             return self.converted_address_argument(target, argument, location);
         }
