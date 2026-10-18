@@ -1493,6 +1493,17 @@ impl Graph {
             .variable
             .is_some_and(|properties| properties.automatic)
     }
+    pub(crate) fn lower_block_static(&self, id: EntityId) -> bool {
+        let entity = self.entity(id);
+        entity.variable.is_some_and(|variable| {
+            variable.static_specifier == super::specifiers::StaticSpecifier::Present
+        }) && entity.home.is_some_and(|home| {
+            matches!(
+                self.scope(home).kind,
+                super::graph::ScopeKind::Block | super::graph::ScopeKind::Function
+            )
+        })
+    }
     pub(crate) fn lower_result_local(
         &self,
         id: EntityId,

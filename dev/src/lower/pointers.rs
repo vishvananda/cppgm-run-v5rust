@@ -86,9 +86,9 @@ impl Function<'_, '_, '_, '_> {
                 types::signed(self.graph, offset.source)?,
                 Context::Additive,
             )?;
-            let size = self
-                .builder
-                .integer(u128::from(types::layout(self.graph, facts.ty)?.0))?;
+            let size =
+                types::size_of(self.graph, facts.ty, self.tree.expressions.get(id).location)?;
+            let size = self.builder.integer(u128::from(size))?;
             (
                 Type::I8,
                 self.emit(

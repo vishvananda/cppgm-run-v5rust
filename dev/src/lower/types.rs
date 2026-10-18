@@ -50,6 +50,18 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
                 count = count.checked_mul(bound).ok_or(crate::lowir::Error::Limit)?;
                 element = inner;
             }
+            // object_layout checks a direct class before type_size, but an
+            // array's element goes through type_size at the unlocated layout
+            // boundary and preserves its incomplete-class diagnostic.
+            if matches!(graph.lower_type(element)?, TypeView::Class(_))
+                && !graph.lower_complete_object(element)?
+            {
+                return Err(crate::sema::Error::at(
+                    crate::support::source::SourceOffset(0),
+                    "size of an incomplete class",
+                )
+                .into());
+            }
             let (bytes, align) = layout(graph, element)?;
             Type::Object {
                 bytes: bytes.checked_mul(count).ok_or(crate::lowir::Error::Limit)?,
@@ -85,6 +97,18 @@ pub(super) fn layout(graph: &Graph, ty: TypeId) -> Result<(u64, u8), Error> {
         Type::I8 | Type::U8 => (1, 0),
         _ => return Err(Error::Missing("aggregate target layout")),
     })
+}
+// ProgramLowering::size_of is a located size demand, distinct from the
+// storage-type view's unlocated unsupported-type diagnostic.
+pub(super) fn size_of(
+    graph: &Graph,
+    ty: TypeId,
+    location: crate::support::source::SourceOffset,
+) -> Result<u64, Error> {
+    if !graph.lower_complete_object(ty)? {
+        return Err(crate::sema::Error::at(location, "the size of an incomplete type").into());
+    }
+    Ok(layout(graph, ty)?.0)
 }
 pub(super) fn local_storage(
     graph: &Graph,

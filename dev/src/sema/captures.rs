@@ -26,6 +26,7 @@ struct FrameId(u32);
 pub(super) struct Frames {
     records: Vec<Frame>,
     by_call: std::collections::HashMap<EntityId, FrameId>,
+    crossed: Vec<FrameId>,
 }
 impl Frames {
     pub(super) fn push(&mut self, frame: Frame) -> Result<(), Error> {
@@ -195,12 +196,27 @@ impl Analyzer<'_> {
         entity: EntityId,
         location: SourceOffset,
     ) -> Result<bool, Error> {
+        // This query only follows body/scope IDs and adds captures; it cannot
+        // enter another capture query. Retain its capacity across name uses,
+        // and restore empty scratch even when a crossed body rejects the use.
+        let mut crossed = std::mem::take(&mut self.capture_frames.crossed);
+        let result = self.capture_variable_in_context(entity, location, &mut crossed);
+        crossed.clear();
+        self.capture_frames.crossed = crossed;
+        result
+    }
+
+    fn capture_variable_in_context(
+        &mut self,
+        entity: EntityId,
+        location: SourceOffset,
+        crossed: &mut Vec<FrameId>,
+    ) -> Result<bool, Error> {
         let owner = self
             .graph
             .entity(entity)
             .home
             .ok_or(Error::Invariant("captured entity owner"))?;
-        let mut crossed = Vec::new();
         let mut reached = false;
         for function in self
             .body_context
@@ -225,7 +241,7 @@ impl Analyzer<'_> {
         if !reached {
             return Ok(false);
         }
-        for index in crossed.into_iter().rev() {
+        for &index in crossed.iter().rev() {
             let frame = self.capture_frames.frame_mut(index);
             if frame.captured.contains(&entity) {
                 continue;
@@ -329,6 +345,38 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn failed_nested_capture_restores_body_and_capture_contexts() {
+        let source =
+            SourceBuffer::new(b"int f(){int x=1;return [&]{return []{return x;}();}();}".to_vec())
+                .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"capture-rollback").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let result = analyzer.declarations(declarations, analyzer.graph.global);
+        assert!(matches!(
+            result,
+            Err(Error::Diagnostic {
+                message: "a lambda odr-uses an automatic variable it does not capture (5.1.2p11)",
+                ..
+            })
+        ));
+        assert!(analyzer.capture_frames.records.is_empty());
+        assert!(analyzer.capture_frames.by_call.is_empty());
+        assert!(analyzer.capture_frames.crossed.is_empty());
+        assert!(analyzer.capture_frames.crossed.capacity() >= 2);
+        assert!(analyzer.body_context.is_none());
+        assert!(analyzer.enclosing_bodies.is_empty());
+        assert!(analyzer.callee_name.is_none());
+        assert_eq!(analyzer.unevaluated, 0);
+        assert_eq!(analyzer.template_depth, 0);
+    }
 
     #[test]
     fn nested_captures_share_entity_identity_and_own_distinct_reference_members() {

@@ -196,6 +196,23 @@ impl Function<'_, '_, '_, '_> {
                         .function_symbol(self.builder.program(), entity)
                         .map(Value::Symbol)
                 } else {
+                    if self.graph.lower_block_static(entity) {
+                        let place =
+                            self.symbols.existing_local_storage(entity).ok_or_else(|| {
+                                crate::sema::Error::at(
+                                    self.tree.expressions.get(id).location,
+                                    "a static local variable of a function not lowered first",
+                                )
+                            })?;
+                        return self.reference_holder(place, self.graph.lower_entity_type(entity)?);
+                    }
+                    if !self.graph.lower_program_storage(entity) {
+                        return Err(crate::sema::Error::at(
+                            self.tree.expressions.get(id).location,
+                            "a variable outside the procedural lowering slice",
+                        )
+                        .into());
+                    }
                     if let Some(value) = self.graph.lower_evaluated_reference(entity)? {
                         return self
                             .evaluated_reference_place(value, self.graph.lower_expression(id)?.ty);
