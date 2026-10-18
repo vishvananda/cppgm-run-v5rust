@@ -350,6 +350,15 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
+        if self.member_function_owner(binding).is_some()
+            && let Some(declaration) = self.selected_function_declaration(binding, set)
+        {
+            let class = self
+                .graph
+                .class_of(self.graph.expression_facts.get(operands[0])?.ty)
+                .ok_or(Error::Invariant("operator receiver without class"))?;
+            self.check_named_member_access(declaration, class, class, scope, location)?;
+        }
         self.demand_specialization_body(binding);
         self.operator_conversions(
             id,
@@ -418,13 +427,6 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(operand).location,
                 "invalid implicit conversion",
             ))?;
-            if member && index == 0 {
-                let class = self
-                    .graph
-                    .class_of(facts.ty)
-                    .ok_or(Error::Invariant("operator receiver without class"))?;
-                self.check_named_member_access(binding, class, class, scope, location)?;
-            }
             facts.base_path = self.conversion_base_path(
                 facts,
                 conversion,

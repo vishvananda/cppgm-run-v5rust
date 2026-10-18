@@ -253,8 +253,11 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        if let Some(naming) = naming {
-            self.check_named_member_access(function, naming, naming, scope, location)?;
+        if let Some(naming) = naming
+            && let Some(declaration) =
+                self.selected_function_declaration(function, found.functions.as_slice())
+        {
+            self.check_named_member_access(declaration, naming, naming, scope, location)?;
         }
         self.demand_function(function, true);
         if !incomplete && self.unevaluated == 0 {
@@ -410,8 +413,11 @@ impl Analyzer<'_> {
             if self.graph.entity(function).availability == FunctionAvailability::Deleted {
                 return Err(Error::at(location, "use of a deleted function"));
             }
-            if let Some(naming) = naming {
-                self.check_named_member_access(chosen.binding, naming, naming, scope, location)?;
+            if let Some(naming) = naming
+                && let Some(declaration) =
+                    self.selected_function_declaration(chosen.binding, found.functions.as_slice())
+            {
+                self.check_named_member_access(declaration, naming, naming, scope, location)?;
             }
             self.apply_prefixed_arguments(chosen, args, scope, &scratch)?;
             Ok(chosen.binding)
@@ -584,8 +590,11 @@ impl Analyzer<'_> {
         if let Some(binding) = selected
             && class.is_some()
         {
-            if let Some(naming) = naming {
-                self.check_named_member_access(binding, naming, naming, scope, location)?;
+            if let Some(naming) = naming
+                && let Some(declaration) =
+                    self.selected_function_declaration(binding, found.functions.as_slice())
+            {
+                self.check_named_member_access(declaration, naming, naming, scope, location)?;
             }
             self.demand_function(binding, true);
         }

@@ -20,6 +20,7 @@ pub(super) enum AccessFailure {
     Inaccessible,
     ProtectedObject,
 }
+
 impl AccessFailure {
     pub(super) fn message(&self) -> &'static str {
         match self {
@@ -30,6 +31,26 @@ impl AccessFailure {
 }
 
 impl Analyzer<'_> {
+    // analyzer_access.cpp::check_function_access: selection identifies an
+    // entity, but access belongs to the declaration that introduced it into
+    // this lookup set. Specialization identity must not erase a using's path.
+    pub(super) fn selected_function_declaration(
+        &self,
+        selected: BindingId,
+        functions: &[BindingId],
+    ) -> Option<BindingId> {
+        let function = self.graph.binding(selected).entity;
+        let declared = self
+            .graph
+            .function_templates
+            .primary(function)
+            .map_or(function, |binding| self.graph.binding(binding).entity);
+        functions.iter().copied().find(|&binding| {
+            let entity = self.graph.binding(binding).entity;
+            entity == function || entity == declared
+        })
+    }
+
     // analyzer_expressions.cpp::member_templates filters the visible lookup
     // before argument formation. Ordinary declarations can hide base templates.
     fn member_templates(
@@ -567,5 +588,93 @@ impl Analyzer<'_> {
             return Some(AccessFailure::ProtectedObject);
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+        types::FundamentalType,
+    };
+
+    #[test]
+    fn shared_specialization_keeps_lookup_local_using_access_and_receiver_owner() {
+        let source = SourceBuffer::new(
+            b"struct Base { template<class T> int f(T); };\
+              struct Public : private Base { public: using Base::f; };\
+              struct Private : private Base { private: using Base::f; };"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"using-access-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let names = [b"Base".as_slice(), b"Public", b"Private", b"f"]
+            .map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        for declaration in analyzer.tree.decl_lists.get(declarations).to_vec() {
+            analyzer
+                .declaration(declaration, analyzer.graph.global)
+                .unwrap();
+        }
+        let classes = [names[0], names[1], names[2]].map(|name| {
+            let binding = analyzer
+                .graph
+                .own(analyzer.graph.global, name, Filter::Elaborated)
+                .unwrap();
+            analyzer.graph.binding(binding).entity
+        });
+        let int = analyzer
+            .graph
+            .types
+            .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        let mut specialization = None;
+        for (index, class) in classes.into_iter().enumerate() {
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let found = analyzer
+                .qualified_result(scope, names[3].into(), Filter::Ordinary)
+                .unwrap();
+            let selected = analyzer
+                .complete_signature(found.binding.unwrap(), &mut [Some(int)])
+                .unwrap()
+                .unwrap();
+            assert_eq!(*specialization.get_or_insert(selected), selected);
+            let declaration = analyzer
+                .selected_function_declaration(selected, found.functions.as_slice())
+                .unwrap();
+            assert_eq!(analyzer.graph.binding_scope(declaration), scope);
+            assert!(
+                analyzer.graph.binding_access(declaration)
+                    == if index == 2 {
+                        Access::Private
+                    } else {
+                        Access::Public
+                    }
+            );
+            assert_eq!(
+                analyzer
+                    .member_access_failure(declaration, class, Some(class), analyzer.graph.global)
+                    .is_none(),
+                index != 2
+            );
+            let owner = analyzer.member_function_owner(selected).unwrap();
+            assert_eq!(analyzer.graph.class_of(owner), Some(classes[0]));
+            assert!(matches!(
+                analyzer.graph.entity(class).layout,
+                super::super::layout::LayoutState::NotStarted
+            ));
+        }
+        assert_eq!(expressions, analyzer.tree.expressions.mark());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 }

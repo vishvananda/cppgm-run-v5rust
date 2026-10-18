@@ -371,13 +371,18 @@ impl Analyzer<'_> {
             receiver.member_naming_path = None;
             receiver.member_path = None;
         }
+        let declaration = facts.functions.map_or(facts.function, |set| {
+            self.selected_function_declaration(binding, self.graph.overloads.get(set))
+        });
         if let Some(object) = facts.object {
             let class = self
                 .graph
                 .class_of(object.ty)
                 .ok_or(Error::Invariant("call object without class"))?;
             let naming = facts.member_naming.unwrap_or(class);
-            self.check_named_member_access(binding, naming, class, scope, location)?;
+            if let Some(declaration) = declaration {
+                self.check_named_member_access(declaration, naming, class, scope, location)?;
+            }
             if let Some(home_type) = self.member_function_owner(binding) {
                 let home = self
                     .graph
@@ -417,7 +422,9 @@ impl Analyzer<'_> {
                 }
             }
         } else {
-            self.check_declaration_direct_access(binding, scope, location)?;
+            if let Some(declaration) = declaration {
+                self.check_declaration_direct_access(declaration, scope, location)?;
+            }
             if self.member_function_owner(binding).is_some() && self.unevaluated == 0 {
                 return Err(Error::at(
                     location,
@@ -633,7 +640,7 @@ impl Analyzer<'_> {
                     .ty
                     .ok_or(Error::Invariant("function argument without type"))?,
             )?;
-            facts.ty = if facts.member_address_scope.is_some() {
+            facts.ty = if facts.member_address.is_some() {
                 self.function_address_type(binding, ty)?
             } else if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Pointer(_))
                 || overloaded

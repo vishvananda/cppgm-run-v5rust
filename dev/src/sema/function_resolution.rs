@@ -104,6 +104,9 @@ impl Analyzer<'_> {
                     other => other,
                 })?
         };
+        let address_functions = (!found.functions.as_slice().is_empty())
+            .then(|| self.graph.overloads.add(found.functions.as_slice()))
+            .transpose()?;
         if last.arguments.is_some() {
             self.explicit_function_specializations(last, &mut found, scope, false)?;
         }
@@ -111,7 +114,8 @@ impl Analyzer<'_> {
             .binding
             .ok_or_else(|| Error::at(location, "undeclared name"))?;
         super::record(&mut self.graph.resolved_names, name.index(), binding);
-        if let Some(naming) = self.graph.scope(prefix).owner
+        if self.graph.binding(binding).kind != BindingKind::Function
+            && let Some(naming) = self.graph.scope(prefix).owner
             && self.graph.scope(prefix).kind == ScopeKind::Class
             && self.graph.binding_scope(binding) != prefix
         {
@@ -120,14 +124,39 @@ impl Analyzer<'_> {
         if self.graph.binding(binding).kind != BindingKind::Function {
             return Ok(None);
         }
+        let address = self.graph.expression_facts.add_member_address(
+            super::expression_facts::MemberAddress {
+                naming: (self.graph.scope(prefix).kind == ScopeKind::Class)
+                    .then_some(self.graph.scope(prefix).owner)
+                    .flatten(),
+                scope,
+                functions: address_functions
+                    .ok_or(Error::Invariant("function address without lookup"))?,
+                // A sole ordinary declaration is checked at the name during
+                // address formation; template/overload selection checks the
+                // address expression. Retain that source fact with the lookup.
+                location: if last.arguments.is_none()
+                    && found.functions.as_slice().len() == 1
+                    && self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .template_head
+                        .is_none()
+                {
+                    node.location
+                } else {
+                    self.tree.expressions.get(id).location
+                },
+            },
+        )?;
         let mut inner = self.function_designation(binding, found.functions.as_slice())?;
-        inner.member_address_scope = Some(scope);
+        inner.member_address = Some(address);
         self.graph.expression_facts.set(operand, inner);
         super::record(&mut self.graph.expression_types, operand.index(), inner.ty);
         let ty = self.function_address_type(binding, inner.ty)?;
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
         facts.functions = inner.functions;
-        facts.member_address_scope = Some(scope);
+        facts.member_address = Some(address);
         if found.functions.as_slice().len() == 1
             && self
                 .graph
@@ -135,7 +164,6 @@ impl Analyzer<'_> {
                 .template_head
                 .is_none()
         {
-            self.check_declaration_direct_access(binding, scope, node.location)?;
             if self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -220,8 +248,7 @@ impl Analyzer<'_> {
         let entity = self.graph.entity(self.graph.binding(*binding).entity);
         (entity.template_head.is_none()
             && !self.graph.function_templates.requires_target(*binding)
-            && (self.member_function_owner(*binding).is_none()
-                || facts.member_address_scope.is_some()))
+            && (self.member_function_owner(*binding).is_none() || facts.member_address.is_some()))
         .then_some(*binding)
     }
     pub(super) fn matching_function(
@@ -333,13 +360,23 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("function without type"))?;
         let ty = self.graph.types.canonical_function(ty)?;
         let root = self.graph.expression_facts.root(id);
-        let address_scope = self.graph.expression_facts.get(root)?.member_address_scope;
-        if let Some(scope) = address_scope {
-            self.check_declaration_direct_access(
-                binding,
-                scope,
-                self.tree.expressions.get(root).location,
-            )?;
+        let address = self.graph.expression_facts.get(root)?.member_address;
+        if let Some(address) = address {
+            let address = self.graph.expression_facts.member_address(address);
+            if let Some(naming) = address.naming
+                && let Some(declaration) = self.selected_function_declaration(
+                    binding,
+                    self.graph.overloads.get(address.functions),
+                )
+            {
+                self.check_named_member_access(
+                    declaration,
+                    naming,
+                    naming,
+                    address.scope,
+                    address.location,
+                )?;
+            }
         }
         // Ordinary unary designations are already typed, including their
         // function-to-pointer operand conversions. Only unresolved overload
@@ -364,7 +401,7 @@ impl Analyzer<'_> {
             let current = self.graph.expression_facts.root(current);
             let mut facts = self.graph.expression_facts.get(current)?;
             facts.ty = if current == root && inner.is_some() {
-                if address_scope.is_some() {
+                if address.is_some() {
                     self.function_address_type(binding, ty)?
                 } else {
                     self.graph.types.pointer(ty)?

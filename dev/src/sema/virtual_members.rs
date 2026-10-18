@@ -869,8 +869,11 @@ impl Analyzer<'_> {
                 == super::graph::FunctionAvailability::Deleted
             {
                 Some(Error::at(location, "use of a deleted function"))
-            } else if let Some(naming) = naming {
-                self.check_named_member_access(binding, naming, naming, scope, location)
+            } else if let Some(naming) = naming
+                && let Some(declaration) =
+                    self.selected_function_declaration(binding, found.functions.as_slice())
+            {
+                self.check_named_member_access(declaration, naming, naming, scope, location)
                     .err()
             } else {
                 None

@@ -95,7 +95,11 @@ impl Analyzer<'_> {
             if self.graph.entity(entity).availability == FunctionAvailability::Deleted {
                 return Err(Error::at(location, "use of a deleted function"));
             }
-            self.check_named_member_access(binding, class, class, scope, location)?;
+            if let Some(declaration) =
+                self.selected_function_declaration(binding, found.functions.as_slice())
+            {
+                self.check_named_member_access(declaration, class, class, scope, location)?;
+            }
             let owner = self
                 .member_function_owner(binding)
                 .ok_or(Error::Invariant("static arrow operator"))?;

@@ -3,6 +3,16 @@
 use super::{Error, types::TypeId};
 use crate::syntax::ast;
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct MemberAddressId(u32);
+#[derive(Clone, Copy)]
+pub(super) struct MemberAddress {
+    pub naming: Option<super::graph::EntityId>,
+    pub scope: super::graph::ScopeId,
+    pub functions: super::function_resolution::OverloadId,
+    pub location: crate::support::source::SourceOffset,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ValueCategory {
     Lvalue,
@@ -190,7 +200,7 @@ pub(super) struct ExprFacts {
     pub member_path: Option<super::inheritance::BasePathId>,
     pub member_naming_path: Option<super::inheritance::BasePathId>,
     // Qualified address formation is distinct from parenthesized designations.
-    pub member_address_scope: Option<super::graph::ScopeId>,
+    pub member_address: Option<MemberAddressId>,
     pub constructor: Option<super::construction::ConstructorId>,
     pub class_initialization: Option<ClassInitialization>,
     pub class_copy: Option<super::copy_initialization::CopySelection>,
@@ -245,7 +255,7 @@ impl ExprFacts {
             base_cast: None,
             member_path: None,
             member_naming_path: None,
-            member_address_scope: None,
+            member_address: None,
             constructor: None,
             class_initialization: None,
             class_copy: None,
@@ -261,6 +271,9 @@ struct ClassConversion {
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
     records: Vec<Option<ExprFacts>>,
+    // Qualified addresses keep their original lookup independently of the
+    // specialization set. The dense use fact carries only a compact identity.
+    member_addresses: Vec<MemberAddress>,
     // Only nonelided class copies own a lowering action. Selection remains
     // on the source facts, independently of its existing operand conversion.
     copy_actions: std::collections::HashMap<ast::ExprId, super::copy_initialization::CopyAction>,
@@ -283,6 +296,18 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn add_member_address(
+        &mut self,
+        address: MemberAddress,
+    ) -> Result<MemberAddressId, Error> {
+        let id = u32::try_from(self.member_addresses.len())
+            .map_err(|_| Error::Limit("member address limit"))?;
+        self.member_addresses.push(address);
+        Ok(MemberAddressId(id))
+    }
+    pub(super) fn member_address(&self, id: MemberAddressId) -> MemberAddress {
+        self.member_addresses[id.0 as usize]
+    }
     pub(super) fn callable_receiver(&self, id: ast::ExprId) -> Option<CallReceiver> {
         self.callable_receivers.get(&self.root(id)).copied()
     }
