@@ -81,6 +81,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) template_arguments: u32,
     pub(super) decltype_call: Option<ast::ExprId>,
     pub(super) builtin_names: super::builtin_calls::BuiltinNames,
+    pub(super) pretyped_callable: Option<ast::ExprId>,
     pub(super) operator_scratch: super::operator_resolution::OperatorScratch,
     pub(super) operator_lookup: super::operator_candidates::OperatorLookup,
     pub(super) association_scratch: super::call_lookup::AssociationScratch,
@@ -165,6 +166,9 @@ impl<'tree> Analyzer<'tree> {
             constant_p: cursor
                 .intern_name(b"__builtin_constant_p")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            invoke: cursor
+                .intern_name(b"__builtin_invoke")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
             memcpy: cursor
                 .intern_name(b"__builtin_memcpy")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
@@ -247,6 +251,7 @@ impl<'tree> Analyzer<'tree> {
             copy_scratch: super::copy_initialization::CopyScratch::default(),
             assignment_scratch: super::assignment::Scratch::default(),
             builtin_names,
+            pretyped_callable: None,
             default_argument_scope: None,
             unevaluated: 0,
             template_arguments: 0,

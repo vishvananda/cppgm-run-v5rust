@@ -23,6 +23,7 @@ pub(crate) enum BuiltinFunction {
     Memset,
     Strlen,
     Unreachable,
+    Invoke,
     Floating(super::floating_intrinsics::FloatingIntrinsic),
 }
 
@@ -48,12 +49,66 @@ mod tests {
         let graph = analyzer.analyze(declarations).unwrap();
         assert_eq!(graph.functions_at(graph.global, key.into()).count(), 1);
     }
+
+    #[test]
+    fn invoke_signature_queries_keep_bodies_and_emission_undemanded() {
+        let source = SourceBuffer::new(
+            b"template<class T>T&& dv();\
+            template<class T>struct R{typename T::missing member;};\
+            struct F{template<class T>R<T> operator()(T){T::missing();}};\
+            typedef decltype(__builtin_invoke(dv<F>(),1)) A;\
+            typedef decltype(::__builtin_invoke(dv<F&>(),2)) B;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"invoke-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let bodies = tree.bodies.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert_eq!(analyzer.tree.bodies.mark(), bodies);
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert_eq!(analyzer.pretyped_callable, None);
+        assert!(analyzer.body_context.is_none());
+        assert_eq!(analyzer.unevaluated, 0);
+        assert_eq!(analyzer.decltype_call, None);
+        let key = analyzer.builtin_names.invoke;
+        assert_eq!(analyzer.graph.functions_at(global, key.into()).count(), 1);
+    }
+
+    #[test]
+    fn nested_invoke_failure_restores_pretyped_operand_context() {
+        let source = SourceBuffer::new(
+            b"int f(int);int g(){return __builtin_invoke(f,__builtin_invoke(0));}".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"invoke-failure").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        assert!(matches!(
+            analyzer.declarations(declarations, global),
+            Err(Error::Diagnostic { .. })
+        ));
+        assert_eq!(analyzer.pretyped_callable, None);
+    }
 }
 #[derive(Clone)]
 pub(super) struct BuiltinNames {
     pub abort: NameId,
     pub expect: NameId,
     pub constant_p: NameId,
+    pub invoke: NameId,
     pub memcpy: NameId,
     pub memmove: NameId,
     pub memcmp: NameId,
@@ -84,6 +139,8 @@ impl Analyzer<'_> {
             BuiltinFunction::Strlen
         } else if key == names.unreachable {
             BuiltinFunction::Unreachable
+        } else if key == names.invoke {
+            BuiltinFunction::Invoke
         } else if let Some((_, kind)) = names.floating.iter().find(|&&(name, _)| name == key) {
             BuiltinFunction::Floating(*kind)
         } else {
@@ -116,7 +173,10 @@ impl Analyzer<'_> {
             BuiltinFunction::Abort | BuiltinFunction::Unreachable
         ) {
             (void, Vec::new())
-        } else if matches!(builtin, BuiltinFunction::Floating(_)) {
+        } else if matches!(
+            builtin,
+            BuiltinFunction::Floating(_) | BuiltinFunction::Invoke
+        ) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
         } else if matches!(builtin, BuiltinFunction::Expect) {
             let long = self.graph.types.scalar(Scalar::Basic(F::LongInt))?;
@@ -152,6 +212,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Expect
                     | BuiltinFunction::Strlen
                     | BuiltinFunction::Unreachable
+                    | BuiltinFunction::Invoke
                     | BuiltinFunction::Floating(_) => {
                         return Err(Error::Invariant("memory builtin signature"));
                     }
@@ -162,7 +223,10 @@ impl Analyzer<'_> {
             TypeKind::Function {
                 result,
                 parameters,
-                variadic: matches!(builtin, BuiltinFunction::Floating(_)),
+                variadic: matches!(
+                    builtin,
+                    BuiltinFunction::Floating(_) | BuiltinFunction::Invoke
+                ),
                 cv: Cv::default(),
                 reference: None,
             },
@@ -225,6 +289,16 @@ impl Analyzer<'_> {
         let node = self.tree.names.get(name);
         let components = self.tree.name_lists.get(node.components);
         if let Some(binding) = found.binding
+            && matches!(
+                self.graph
+                    .entity(self.graph.binding(binding).entity)
+                    .builtin,
+                Some(BuiltinFunction::Invoke)
+            )
+        {
+            return self.builtin_invoke(id, arguments, scope).map(Some);
+        }
+        if let Some(binding) = found.binding
             && let Some(BuiltinFunction::Floating(kind)) = self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -242,6 +316,9 @@ impl Analyzer<'_> {
         };
         if let Some(builtin) = self.builtin_lookup(key)? {
             *found = builtin;
+            if key == self.builtin_names.invoke {
+                return self.builtin_invoke(id, arguments, scope).map(Some);
+            }
             return Ok(None);
         }
         if key != self.builtin_names.constant_p {
@@ -310,5 +387,58 @@ impl Analyzer<'_> {
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
         facts.folded = Some(u64::from(constant));
         Ok(Some(facts))
+    }
+
+    fn builtin_invoke(
+        &mut self,
+        id: ast::ExprId,
+        arguments: List<ast::ExprId>,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let arguments = super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        let Some((&callable, rest)) = arguments.as_slice().split_first() else {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "__builtin_invoke without a callable operand",
+            ));
+        };
+        let function = self.typed_expression(callable, scope)?;
+        if matches!(
+            self.graph.types.get(function.ty).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            return Err(Error::Missing("invoke of a pointer to member"));
+        }
+        // Rewrite only this fact-bearing instance. The retained template syntax
+        // stays untouched, and lowering consumes the ordinary call's facts.
+        let callee = self
+            .tree
+            .expressions
+            .add(ast::Expression {
+                location: self.tree.expressions.get(callable).location,
+                kind: ast::ExprKind::Paren(callable),
+            })
+            .map_err(|_| Error::Limit("invoke syntax limit"))?;
+        let start = self.tree.expr_lists.begin();
+        for &argument in rest {
+            self.tree.expr_lists.push(argument);
+        }
+        let arguments = self
+            .tree
+            .expr_lists
+            .finish(start)
+            .map_err(|_| Error::Limit("invoke argument limit"))?;
+        let location = self.tree.expressions.get(id).location;
+        self.tree.expressions.replace(
+            id,
+            ast::Expression {
+                location,
+                kind: ast::ExprKind::Call { callee, arguments },
+            },
+        );
+        let saved = self.pretyped_callable.replace(callable);
+        let result = self.procedural_call(id, callee, arguments, scope);
+        self.pretyped_callable = saved;
+        result
     }
 }

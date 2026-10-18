@@ -2234,6 +2234,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 B::Memcmp | B::Memset | B::Unreachable | B::Expect | B::Floating(_) => {
                     metadata.linkage = Linkage::C;
                 }
+                B::Invoke => {}
             }
             return Ok(metadata);
         }

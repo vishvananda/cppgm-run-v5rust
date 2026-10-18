@@ -47,6 +47,9 @@ impl Analyzer<'_> {
         Ok(facts)
     }
     fn typed_expression_form(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
+        if self.pretyped_callable == Some(id) {
+            return self.graph.expression_facts.get(id).map(|_| ());
+        }
         if self.deduced_initializer == Some(id) {
             self.deduced_initializer = None;
             return self.graph.expression_facts.get(id).map(|_| ());
@@ -299,7 +302,10 @@ impl Analyzer<'_> {
                     self.graph
                         .entity(self.graph.binding(binding).entity)
                         .builtin,
-                    Some(super::builtin_calls::BuiltinFunction::Floating(_))
+                    Some(
+                        super::builtin_calls::BuiltinFunction::Floating(_)
+                            | super::builtin_calls::BuiltinFunction::Invoke
+                    )
                 )
             {
                 return Err(Error::at(

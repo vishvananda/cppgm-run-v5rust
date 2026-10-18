@@ -106,7 +106,9 @@ impl Analyzer<'_> {
         while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
             named = inner;
         }
-        let facts = if let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind {
+        let facts = if self.pretyped_callable != Some(named)
+            && let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind
+        {
             let callee_uses = self.dependent_uses.get();
             let mut found = self.lookup_call_result(name, scope)?;
             if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
