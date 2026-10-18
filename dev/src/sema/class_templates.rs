@@ -82,19 +82,16 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
         let location = self.tree.names.get(name).location;
-        let found = self
-            .lookup_result_in(name, scope, super::lookup::Filter::Elaborated, false)?
-            .binding
-            .ok_or_else(|| Error::at(location, "undeclared name"))?;
-        let binding = self.graph.binding(found);
-        if binding.kind == BindingKind::Alias
-            && self.graph.entity(binding.entity).template_head.is_some()
-        {
+        if self.alias_template_id(name, scope)? {
             return Err(Error::at(
                 location,
                 "an elaborated-type-specifier names an alias template specialization",
             ));
         }
+        let found = self
+            .lookup_result_in(name, scope, super::lookup::Filter::Elaborated, false)?
+            .binding
+            .ok_or_else(|| Error::at(location, "undeclared name"))?;
         let component = self
             .tree
             .name_lists
@@ -329,9 +326,12 @@ impl Analyzer<'_> {
             let mut environment = Substitution::new(depth, &given);
             return self
                 .substitute_signature_type(pattern, &mut environment)?
-                .ok_or(Error::Missing(
-                    "dependent class template default substitution",
-                ));
+                .ok_or_else(|| {
+                    environment.failure.map_or(
+                        Error::Invariant("class default substitution without failure reason"),
+                        |message| Error::at(environment.failure_location, message),
+                    )
+                });
         }
         let parent = self
             .graph

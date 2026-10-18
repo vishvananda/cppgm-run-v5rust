@@ -49,6 +49,46 @@ impl super::graph::Graph {
 }
 
 impl Analyzer<'_> {
+    /// Identify the declaration before forming its arguments or checking the
+    /// terminal name's access. Elaborated types and explicit instantiations
+    /// reject alias template-ids even when the aliased result is a class.
+    pub(super) fn alias_template_id(
+        &mut self,
+        name: crate::syntax::ast::Name,
+        scope: super::graph::ScopeId,
+    ) -> Result<bool, Error> {
+        let node = *self.tree.names.get(name);
+        let components = self.tree.name_lists.get(node.components);
+        let Some(last) = components.last() else {
+            return Err(Error::Invariant("empty alias template name"));
+        };
+        let crate::syntax::ast::NameKind::Identifier(identifier) = last.kind else {
+            return Ok(false);
+        };
+        if last.arguments.is_none() {
+            return Ok(false);
+        }
+        let count = components.len() - 1;
+        let found = match self.name_prefix(name, scope, count, true)? {
+            Some(super::lookup::Prefix::Scope(prefix)) => self.qualified_declaration_result(
+                prefix,
+                identifier.into(),
+                super::lookup::Filter::Ordinary,
+            )?,
+            Some(super::lookup::Prefix::Dependent(_)) => return Ok(false),
+            None => self.unqualified_declaration_result(
+                scope,
+                identifier.into(),
+                super::lookup::Filter::Ordinary,
+            )?,
+        };
+        Ok(found.binding.is_some_and(|binding| {
+            let binding = self.graph.binding(binding);
+            binding.kind == BindingKind::Alias
+                && self.graph.entity(binding.entity).template_head.is_some()
+        }))
+    }
+
     pub(super) fn record_instance_declared_type(&mut self, entity: EntityId) -> Result<(), Error> {
         if self.graph.class_templates.aliases.stand_ins.is_empty() {
             return Ok(());

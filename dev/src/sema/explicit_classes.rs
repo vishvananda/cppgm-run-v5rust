@@ -34,6 +34,12 @@ impl Analyzer<'_> {
                 "an explicit instantiation names a class template specialization",
             ));
         }
+        if self.alias_template_id(name, scope)? {
+            return Err(Error::at(
+                node.location,
+                "an explicit instantiation names an alias template specialization",
+            ));
+        }
         let access = self.begin_declaration_access(scope, true);
         let found = self.lookup(name, scope, Filter::Elaborated);
         self.finish_declaration_access(access);
