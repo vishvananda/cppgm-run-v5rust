@@ -96,6 +96,16 @@ impl Graph {
     ) -> Result<Option<Value>, Error> {
         let id = without_parentheses(tree, id);
         let facts = self.expression_facts.get(id)?;
+        if let ExprKind::Id(name) = tree.expressions.get(id).kind
+            && let Some(binding) = self.resolved_name(name)
+            && let Some(argument) = self
+                .constant_addresses
+                .argument(self.binding(binding).entity)
+            && let TypeKind::Address { ty, entity } = self.types.get(argument).kind
+            && matches!(self.types.get(ty).kind, TypeKind::Pointer(_))
+        {
+            return Ok(Some(Value::Address(entity, 0)));
+        }
         if facts.category == ValueCategory::Prvalue
             || self.types.get(facts.ty).cv.0 & 2 != 0
             || !matches!(

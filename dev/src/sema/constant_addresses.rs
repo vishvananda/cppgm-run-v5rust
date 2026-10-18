@@ -108,11 +108,34 @@ impl Evaluation {
 }
 #[derive(Default)]
 pub(super) struct Addresses {
+    arguments: HashMap<EntityId, TypeId>,
+    argument_functions: HashMap<Option<EntityId>, Vec<EntityId>>,
+    argument_function_set: std::collections::HashSet<(Option<EntityId>, EntityId)>,
     values: HashMap<EntityId, State>,
     temporaries: HashMap<EntityId, TemporaryValue>,
     stored_references: std::collections::HashSet<EntityId>,
 }
 impl Addresses {
+    pub(super) fn argument(&self, binding: EntityId) -> Option<TypeId> {
+        self.arguments.get(&binding).copied()
+    }
+    pub(super) fn bind_argument(&mut self, binding: EntityId, argument: TypeId) {
+        self.arguments.insert(binding, argument);
+    }
+    pub(super) fn note_argument_function(&mut self, context: Option<EntityId>, function: EntityId) {
+        if self.argument_function_set.insert((context, function)) {
+            self.argument_functions
+                .entry(context)
+                .or_default()
+                .push(function);
+        }
+    }
+    pub(super) fn argument_functions(&self, context: Option<EntityId>) -> &[EntityId] {
+        self.argument_functions
+            .get(&context)
+            .map_or(&[], Vec::as_slice)
+    }
+
     pub(super) fn read_through_storage(&self, entity: EntityId) -> bool {
         self.stored_references.contains(&entity)
     }
@@ -217,6 +240,22 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         let location = node.location;
         self.constant_step(location)?;
+        if let ExprKind::Id(name) = node.kind
+            && let Some(binding) = self.graph.resolved_name(name)
+            && let Some(argument) = self
+                .graph
+                .constant_addresses
+                .argument(self.graph.binding(binding).entity)
+            && let TypeKind::Address { ty, entity } = self.graph.types.get(argument).kind
+            && let TypeKind::Pointer(element) = self.graph.types.get(ty).kind
+        {
+            let root = if self.graph.entity(entity).function.is_some() {
+                Root::Function(entity)
+            } else {
+                Root::Variable(entity)
+            };
+            return Ok(Address::new(root, element));
+        }
         if facts.category == ValueCategory::Prvalue
             && facts.folded == Some(0)
             && self.graph.address_parameter_type(facts.ty)
@@ -627,6 +666,14 @@ impl Analyzer<'_> {
                 {
                     place.designated = facts.ty;
                     return Ok(place);
+                }
+                if let Some(entity) = self.graph.reference_argument_entity(binding.entity) {
+                    let root = if self.graph.entity(entity).function.is_some() {
+                        Root::Function(entity)
+                    } else {
+                        Root::Variable(entity)
+                    };
+                    return Ok(Address::new(root, facts.ty));
                 }
                 match binding.kind {
                     BindingKind::Function => {

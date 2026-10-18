@@ -4,6 +4,22 @@ use super::{EntityId, Error, Node, NodeId, Symbols, TypeId, TypeView};
 use crate::sema::lowering::TemplateDeclaration;
 
 impl Symbols<'_, '_> {
+    pub(super) fn abi_address_argument(
+        &mut self,
+        ty: TypeId,
+        entity: EntityId,
+    ) -> Result<Node, Error> {
+        let entity = if self.graph.lower_is_variable(entity) {
+            self.variable_abi_name(entity)?
+        } else {
+            self.function_encoding(entity)?
+        };
+        Ok(Node::EntityArgument {
+            entity,
+            address: !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }),
+        })
+    }
+
     pub(super) fn declared_template_argument(
         &mut self,
         instance: EntityId,
@@ -66,7 +82,9 @@ impl Symbols<'_, '_> {
                     .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                         "lost ABI pack",
                     )))?[position];
-                let TypeView::Value { ty, .. } = self.graph.lower_type(element)? else {
+                let (TypeView::Value { ty, .. } | TypeView::Address { ty, .. }) =
+                    self.graph.lower_type(element)?
+                else {
                     return Err(Error::Missing(
                         "an expanded template parameter pack's argument is not a value",
                     ));

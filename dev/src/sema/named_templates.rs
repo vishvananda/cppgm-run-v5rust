@@ -485,7 +485,8 @@ impl Analyzer<'_> {
                     .template_parameter
                     .and_then(|info| info.value_type)
                     && !self.graph.dependent_type(ty)
-                    && let TypeKind::Value { ty: actual, .. } = self.graph.types.get(argument).kind
+                    && let TypeKind::Value { ty: actual, .. } | TypeKind::Address { ty: actual, .. } =
+                        self.graph.types.get(argument).kind
                     && !self.graph.address_parameter_type(actual)
                 {
                     let expected = self.graph.types.canonical_function(ty)?;

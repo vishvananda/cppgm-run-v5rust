@@ -248,7 +248,7 @@ impl Analyzer<'_> {
             argument = pattern;
         }
         match self.graph.types.get(argument).kind {
-            TypeKind::Value { .. } => true,
+            TypeKind::Value { .. } | TypeKind::Address { .. } => true,
             TypeKind::TemplateParameter { entity, .. }
             | TypeKind::BoundPack {
                 parameter: entity, ..

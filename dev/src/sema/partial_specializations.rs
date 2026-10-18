@@ -89,7 +89,7 @@ impl Analyzer<'_> {
             }
             let indexable = match self.graph.types.get(argument).kind {
                 TypeKind::TemplateParameter { .. } => false,
-                TypeKind::Value { ty, .. } => self
+                TypeKind::Value { ty, .. } | TypeKind::Address { ty, .. } => self
                     .graph
                     .entity(parameter)
                     .template_parameter
@@ -570,7 +570,8 @@ impl Analyzer<'_> {
                 | TypeKind::Scalar(_)
                 | TypeKind::Template(_)
                 | TypeKind::Enum(_)
-                | TypeKind::Value { .. } => (),
+                | TypeKind::Value { .. }
+                | TypeKind::Address { .. } => (),
             }
         }
         deduced

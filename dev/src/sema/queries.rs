@@ -392,7 +392,7 @@ impl Analyzer<'_> {
                 alignment = Some(align);
                 size
             }
-            TypeKind::Template(_) | TypeKind::Value { .. } => {
+            TypeKind::Template(_) | TypeKind::Value { .. } | TypeKind::Address { .. } => {
                 return Err(Error::Invariant("size query on a template value"));
             }
             TypeKind::Enum(_) => return Err(Error::Invariant("enum query not unwound")),
@@ -607,6 +607,11 @@ impl Analyzer<'_> {
             let ty = match binding.kind {
                 BindingKind::Variable => self.graph.entity(binding.entity).ty,
                 BindingKind::Enumerator => {
+                    if let Some(argument) = self.graph.constant_addresses.argument(binding.entity)
+                        && let TypeKind::Address { ty, .. } = self.graph.types.get(argument).kind
+                    {
+                        return Ok(ty);
+                    }
                     let super::constants::ConstantState::Value(value) =
                         self.graph.entity(binding.entity).constant
                     else {

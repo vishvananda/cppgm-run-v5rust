@@ -59,6 +59,12 @@ pub(super) enum TypeKind {
         ty: TypeId,
         bits: u64,
     },
+    // A non-null template argument: canonical target type plus designated entity.
+    // Null address arguments retain Value(type, 0); both are immutable leaves.
+    Address {
+        ty: TypeId,
+        entity: EntityId,
+    },
     Pack(Vec<TypeId>),
     Expansion(TypeId),
     BoundPack {
@@ -235,6 +241,7 @@ impl Types {
             self.get(id).kind,
             TypeKind::Reference { .. }
                 | TypeKind::Value { .. }
+                | TypeKind::Address { .. }
                 | TypeKind::Pack(_)
                 | TypeKind::Expansion(_)
         ) {
@@ -412,6 +419,7 @@ impl Types {
                         work.extend(parameters.iter().map(|&p| (p, false)));
                     }
                     TypeKind::Value { .. }
+                    | TypeKind::Address { .. }
                     | TypeKind::Auto
                     | TypeKind::Scalar(_)
                     | TypeKind::Class(_)

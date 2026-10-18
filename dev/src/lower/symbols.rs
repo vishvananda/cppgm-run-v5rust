@@ -1153,6 +1153,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
         } else {
             match self.graph.lower_type(ty)? {
+                TypeView::Address { ty, entity } => self.abi_address_argument(ty, entity)?,
                 TypeView::Value { ty, bits } => Node::Literal {
                     ty: self.abi_type(ty)?,
                     bits,
@@ -2614,7 +2615,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             Ok(())
         }
     }
-    fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
+    pub(super) fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
         let facts = self.graph.lower_function(entity)?;
         self.encode_function(&facts, super::construction::Variant::Complete)
     }

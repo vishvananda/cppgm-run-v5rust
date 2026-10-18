@@ -1,12 +1,12 @@
 // Translated from sema/template_addresses.cpp and class_templates.cpp::argument_target.
 // See NOTICE.
-//! Null address arguments share canonical Value identities with integral arguments.
+//! Address arguments retain canonical target types and designated entity identities.
 use super::{
     Error,
     analyzer::Analyzer,
     constant_addresses::Root,
     function_templates::Substitution,
-    graph::{Graph, ScopeId},
+    graph::{BindingKind, EntityId, Graph, ScopeId, ScopeKind},
     templates::HeadId,
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
@@ -28,7 +28,64 @@ impl ArgumentTarget {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum AddressIdentity {
+    Null,
+    Entity(EntityId),
+}
+
 impl Graph {
+    pub(super) fn argument_address(&self, argument: TypeId) -> Option<AddressIdentity> {
+        match self.types.get(argument).kind {
+            TypeKind::Address { entity, .. } => Some(AddressIdentity::Entity(entity)),
+            TypeKind::Value { ty, .. } if self.address_parameter_type(ty) => {
+                Some(AddressIdentity::Null)
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn address_argument_unit_local(&self, entity: EntityId) -> bool {
+        let node = self.entity(entity);
+        node.function
+            .is_some_and(|function| function.internal_linkage)
+            || node
+                .variable
+                .is_some_and(|variable| variable.internal_linkage)
+            || self.lower_entity_unit_local(entity)
+    }
+    pub(super) fn reference_argument_entity(&self, binding: EntityId) -> Option<EntityId> {
+        let argument = self.constant_addresses.argument(binding)?;
+        if let TypeKind::Address { ty, entity } = self.types.get(argument).kind
+            && matches!(self.types.get(ty).kind, TypeKind::Reference { .. })
+        {
+            Some(entity)
+        } else {
+            None
+        }
+    }
+
+    fn linked_argument_entity(&self, entity: EntityId) -> bool {
+        let record = self.entity(entity);
+        if let Some(function) = record.function {
+            return function.is_static
+                || record
+                    .home
+                    .is_none_or(|home| self.scope(home).kind != ScopeKind::Class);
+        }
+        record.data_member != Some(super::graph::DataMemberKind::Instance)
+            && record.variable.is_some_and(|variable| {
+                variable.thread_storage == super::specifiers::ThreadStorage::Ordinary
+                    && (variable.is_extern
+                        || record.home.is_some_and(|home| {
+                            matches!(
+                                self.scope(home).kind,
+                                ScopeKind::Namespace | ScopeKind::Class
+                            )
+                        }))
+            })
+    }
+
     pub(super) fn address_parameter_type(&self, ty: TypeId) -> bool {
         matches!(
             self.types.get(ty).kind,
@@ -44,6 +101,16 @@ impl Graph {
 }
 
 impl Analyzer<'_> {
+    fn note_argument_function(&mut self, function: EntityId) {
+        if self.unevaluated != 0 || self.template_depth != 0 {
+            return;
+        }
+        let context = self.body_context.as_ref().map(|body| body.entity);
+        self.graph
+            .constant_addresses
+            .note_argument_function(context, function);
+    }
+
     pub(super) fn argument_target(
         &mut self,
         head: HeadId,
@@ -96,7 +163,7 @@ impl Analyzer<'_> {
         })
     }
 
-    pub(super) fn null_template_argument(
+    pub(super) fn address_template_argument(
         &mut self,
         expression: ast::ExprId,
         scope: ScopeId,
@@ -107,18 +174,101 @@ impl Analyzer<'_> {
         while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
             named = inner;
         }
-        if let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind
-            && self.graph.resolved_name(name).is_some_and(|binding| {
-                self.graph.binding(binding).kind == super::graph::BindingKind::Variable
-            })
-            && (target.is_some_and(|ty| {
-                matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
-            }) || !self.graph.address_parameter_type(ty))
+        let address = matches!(self.tree.expressions.get(named).kind, ast::ExprKind::Unary { op, .. }
+            if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd));
+        if address
+            && let ast::ExprKind::Unary { operand, .. } = self.tree.expressions.get(named).kind
         {
-            // A known address parameter designates this object instead of
-            // reading its integral value. Non-null entity arguments are a
-            // separate representation boundary, never an ordinary rejection.
-            return Err(Error::Missing("non-null address template arguments"));
+            named = operand;
+            while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
+                named = inner;
+            }
+        }
+        if let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind
+            && let Some(binding) = self
+                .graph
+                .expression_facts
+                .get(named)?
+                .function
+                .or_else(|| self.graph.resolved_name(name))
+        {
+            let binding = self.graph.binding(binding);
+            if let Some(argument) = self.graph.constant_addresses.argument(binding.entity) {
+                if !address {
+                    return Ok(argument);
+                }
+                if let TypeKind::Address { ty: source, entity } =
+                    self.graph.types.get(argument).kind
+                    && matches!(
+                        self.graph.types.get(source).kind,
+                        TypeKind::Reference { .. }
+                    )
+                {
+                    if self.graph.entity(entity).variable.is_some() {
+                        self.use_instance_variable(entity)?;
+                    } else {
+                        self.note_argument_function(entity);
+                    }
+                    let ty = self.bare_type(ty)?;
+                    return self
+                        .graph
+                        .types
+                        .intern(TypeKind::Address { ty, entity }, Cv::default());
+                }
+            }
+            let named_type = self.graph.expression_facts.get(named)?.ty;
+            let read_pointer = !address
+                && self.graph.address_parameter_type(named_type)
+                && !target.is_some_and(|target| {
+                    matches!(
+                        self.graph.types.get(target).kind,
+                        TypeKind::Reference { .. }
+                    )
+                });
+            if matches!(binding.kind, BindingKind::Variable | BindingKind::Function)
+                && !read_pointer
+            {
+                let entity = binding.entity;
+                let failure = if !self.graph.linked_argument_entity(entity) {
+                    Some(
+                        "a template argument designates no object of static storage duration with linkage",
+                    )
+                } else if !address
+                    && self.graph.entity(entity).ty.is_some_and(|ty| {
+                        matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+                    })
+                {
+                    Some("a reference named as a template argument (14.3.2p1 names an object)")
+                } else {
+                    None
+                };
+                if let Some(message) = failure {
+                    return Err(Error::at(
+                        self.tree.expressions.get(named).location,
+                        message,
+                    ));
+                }
+                if binding.kind == BindingKind::Variable {
+                    self.use_instance_variable(entity)?;
+                } else {
+                    self.note_argument_function(entity);
+                }
+                let ty = if address {
+                    self.bare_type(ty)?
+                } else {
+                    self.graph.types.reference(named_type, RefKind::Lvalue)?
+                };
+                return self
+                    .graph
+                    .types
+                    .intern(TypeKind::Address { ty, entity }, Cv::default());
+            }
+        }
+        if address {
+            return Err(Error::at(
+                self.tree.expressions.get(expression).location,
+                "a template argument's address of something that is no named object or function",
+            ));
         }
         if !self.graph.address_parameter_type(ty) {
             // Even literal integer zero retains its integer type; conversion
@@ -135,17 +285,6 @@ impl Analyzer<'_> {
         }
         let value = self.evaluate_address(expression, scope)?;
         if value.root != Root::Null {
-            let address = matches!(self.tree.expressions.get(named).kind,
-                ast::ExprKind::Unary { op, .. }
-                    if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd));
-            if address
-                || matches!(
-                    self.graph.types.get(ty).kind,
-                    TypeKind::Array { .. } | TypeKind::Function { .. }
-                )
-            {
-                return Err(Error::Missing("non-null address template arguments"));
-            }
             return Err(Error::at(
                 self.tree.expressions.get(expression).location,
                 "a template argument that designates no named object or function",
@@ -157,14 +296,16 @@ impl Analyzer<'_> {
             .intern(TypeKind::Value { ty, bits: 0 }, Cv::default())
     }
 
-    pub(super) fn converted_null_argument(
+    pub(super) fn converted_address_argument(
         &mut self,
         target: TypeId,
         argument: TypeId,
         location: SourceOffset,
     ) -> Result<TypeId, Error> {
-        let TypeKind::Value { ty: source, .. } = self.graph.types.get(argument).kind else {
-            return Err(Error::Invariant("null argument without value"));
+        let (source, entity) = match self.graph.types.get(argument).kind {
+            TypeKind::Value { ty, .. } => (ty, None),
+            TypeKind::Address { ty, entity } => (ty, Some(entity)),
+            _ => return Err(Error::Invariant("address argument without value")),
         };
         let null_type = TypeKind::Scalar(Scalar::Nullptr);
         let failure = if !self.graph.address_parameter_type(source) {
@@ -180,7 +321,7 @@ impl Analyzer<'_> {
                 },
             )
         } else if self.graph.types.get(target).kind == null_type {
-            (self.graph.types.get(source).kind != null_type)
+            (entity.is_some() || self.graph.types.get(source).kind != null_type)
                 .then_some("a std::nullptr_t template parameter's argument is not nullptr")
         } else if let TypeKind::MemberPointer { element, .. } = self.graph.types.get(target).kind {
             let same = source == target
@@ -191,31 +332,57 @@ impl Analyzer<'_> {
                     self.graph.types.get(source).kind,
                     TypeKind::MemberPointer { .. }
                 ) && self.pointer_qualification(source, target)?;
-            (self.graph.types.get(source).kind != null_type && !same).then_some(
+            (!(same || entity.is_none() && self.graph.types.get(source).kind == null_type)).then_some(
                 "a template argument does not convert to its pointer to member parameter's type",
             )
-        } else if matches!(
-            self.graph.types.get(target).kind,
-            TypeKind::Reference { .. }
-        ) {
-            Some("a reference template parameter's argument names no object or function")
-        } else {
+        } else if let TypeKind::Reference {
+            element: referred, ..
+        } = self.graph.types.get(target).kind
+        {
+            if let TypeKind::Reference { element, .. } = self.graph.types.get(source).kind {
+                (self.bare_type(element)? != self.bare_type(referred)?
+                    || self.graph.types.get(element).cv.0 & !self.graph.types.get(referred).cv.0
+                        != 0)
+                    .then_some("a reference template parameter's argument of another type")
+            } else {
+                Some("a reference template parameter's argument names no object or function")
+            }
+        } else if entity.is_none() {
             (self.graph.types.get(source).kind != null_type
                 && source != target
                 && !(matches!(self.graph.types.get(source).kind, TypeKind::Pointer(_))
                     && self.pointer_qualification(source, target)?))
             .then_some("a null pointer template argument of another pointer type")
+        } else {
+            let pointer =
+                if let TypeKind::Reference { element, .. } = self.graph.types.get(source).kind {
+                    match self.graph.types.get(element).kind {
+                        TypeKind::Array { element, .. } => Some(self.graph.types.pointer(element)?),
+                        TypeKind::Function { .. } => Some(self.graph.types.pointer(element)?),
+                        _ => None,
+                    }
+                } else {
+                    Some(source)
+                };
+            if let Some(pointer) = pointer {
+                (pointer != target && !self.pointer_qualification(pointer, target)?).then_some(
+                    "a template argument does not convert to its pointer parameter's type",
+                )
+            } else {
+                Some("a pointer template parameter's argument is an object without `&`")
+            }
         };
         if let Some(failure) = failure {
             return Err(Error::at(location, failure));
         }
-        self.graph.types.intern(
+        let kind = entity.map_or(
             TypeKind::Value {
                 ty: target,
                 bits: 0,
             },
-            Cv::default(),
-        )
+            |entity| TypeKind::Address { ty: target, entity },
+        );
+        self.graph.types.intern(kind, Cv::default())
     }
 }
 
@@ -266,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn converted_null_arguments_reuse_shells_without_initializer_or_body_demand() {
+    fn converted_address_arguments_reuse_shells_without_initializer_or_body_demand() {
         let source = SourceBuffer::new(
             b"template<int* P>struct A{static int f(){return 3;}};\
             using X=A<nullptr>;using Y=A<(int*)nullptr>;\
@@ -311,5 +478,158 @@ mod tests {
             assert!(!instance.dependent);
         }
         assert!(graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
+    fn address_arguments_keep_entity_and_target_identity_without_completing_shells() {
+        let source = SourceBuffer::new(b"static int x;int y;template<int* V>struct P;template<const int* V>struct C;template<int& V>struct R;using A=P<&x>;using B=P<(&x)>;using D=P<&y>;using E=C<&x>;using F=R<x>;".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"address-identity").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            false,
+        )
+        .unwrap();
+        let mut alias = |name| {
+            let name = cursor.intern_name(name).unwrap();
+            graph
+                .binding(
+                    graph
+                        .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                        .unwrap(),
+                )
+                .ty
+                .unwrap()
+        };
+        assert_eq!(alias(b"A"), alias(b"B"));
+        let TypeKind::Class(class) = graph.types.get(alias(b"A")).kind else {
+            panic!("class argument")
+        };
+        assert!(graph.lower_entity_unit_local(class));
+        assert!(!graph.lower_class_no_linkage(class));
+        assert_ne!(alias(b"A"), alias(b"D"));
+        let mut values = Vec::new();
+        for name in [b"A", b"D", b"E", b"F"] {
+            let TypeKind::Class(entity) = graph.types.get(alias(name)).kind else {
+                panic!("class shell")
+            };
+            assert!(graph.entity(entity).scope.is_none());
+            let argument = graph.class_templates.instance(entity).unwrap().arguments[0];
+            let TypeKind::Address { ty, entity } = graph.types.get(argument).kind else {
+                panic!("address argument")
+            };
+            values.push((ty, entity));
+        }
+        assert_ne!(values[0].1, values[1].1);
+        assert_eq!(values[0].1, values[2].1);
+        assert_eq!(values[0].1, values[3].1);
+        assert_ne!(values[0].0, values[2].0);
+        assert!(matches!(
+            graph.types.get(values[3].0).kind,
+            TypeKind::Reference { .. }
+        ));
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
+    fn function_argument_demand_is_deduplicated_and_owned_by_its_definition() {
+        let source = SourceBuffer::new(b"inline int f(int x){return x;}inline int g(int x){return x;}template<int(*F)(int)>struct H{};using Root=H<f>;using Again=H<&f>;void owner(){using A=H<g>;using B=H<&g>;using C=H<f>;}void other(){(void)sizeof((H<&g>()));}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"argument-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let mut entity = |name| {
+            let name = cursor.intern_name(name).unwrap();
+            graph
+                .binding(
+                    graph
+                        .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                        .unwrap(),
+                )
+                .entity
+        };
+        let (f, g, owner, other) = (
+            entity(b"f"),
+            entity(b"g"),
+            entity(b"owner"),
+            entity(b"other"),
+        );
+        assert_eq!(
+            graph.lower_argument_functions(None).collect::<Vec<_>>(),
+            [f]
+        );
+        assert_eq!(
+            graph
+                .lower_argument_functions(Some(owner))
+                .collect::<Vec<_>>(),
+            [f, g]
+        );
+        assert_eq!(graph.lower_argument_functions(Some(other)).count(), 0);
+    }
+
+    #[test]
+    fn function_reference_argument_retains_the_selected_direct_call_target() {
+        let source = SourceBuffer::new(b"int f(int x){return x;}template<int(&F)(int)>int call(int x){return F(x);}int main(){return call<f>(1);}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"function-reference").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let f = graph
+            .binding(
+                graph
+                    .own(graph.global, f, super::super::lookup::Filter::Ordinary)
+                    .unwrap(),
+            )
+            .entity;
+        let call = cursor.intern_name(b"call").unwrap();
+        let instance = graph
+            .function_templates
+            .arguments
+            .keys()
+            .copied()
+            .find(|&entity| graph.entity(entity).name == Some(call))
+            .unwrap();
+        let ast::Body::Parsed(body) = tree
+            .bodies
+            .get(graph.lower_function_body(instance).unwrap())
+        else {
+            panic!("instantiated body")
+        };
+        let ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind else {
+            panic!("compound")
+        };
+        let ast::StmtKind::Return(Some(call)) =
+            tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+        else {
+            panic!("return call")
+        };
+        assert!(
+            matches!(graph.lower_call(call).unwrap(), super::super::lowering::CallTarget::Direct(entity) if entity == f)
+        );
     }
 }

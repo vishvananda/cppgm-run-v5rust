@@ -366,6 +366,23 @@ impl Analyzer<'_> {
                 "type name used as a value",
             ));
         }
+        if let Some(argument) = self.graph.constant_addresses.argument(binding.entity) {
+            let TypeKind::Address { ty, entity } = self.graph.types.get(argument).kind else {
+                return Err(Error::Invariant("address binding without argument"));
+            };
+            return if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+                let mut facts = self.new_expression_facts(element, V::Lvalue)?;
+                if matches!(
+                    self.graph.types.get(element).kind,
+                    TypeKind::Function { .. }
+                ) {
+                    facts.function = Some(self.graph.function_origin(entity)?);
+                }
+                Ok(facts)
+            } else {
+                self.new_expression_facts(ty, V::Prvalue)
+            };
+        }
         let mut ty = binding
             .ty
             .ok_or(Error::Invariant("value binding without type"))?;

@@ -159,7 +159,8 @@ impl Analyzer<'_> {
                 | TypeKind::Scalar(_)
                 | TypeKind::Template(_)
                 | TypeKind::Enum(_)
-                | TypeKind::Value { .. } => (),
+                | TypeKind::Value { .. }
+                | TypeKind::Address { .. } => (),
             }
         }
         Ok(packs)

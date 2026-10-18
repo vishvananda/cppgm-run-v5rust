@@ -99,6 +99,10 @@ pub(crate) enum DeclaredLinkage {
 }
 
 pub(crate) enum TypeView<'a> {
+    Address {
+        ty: TypeId,
+        entity: EntityId,
+    },
     Value {
         ty: TypeId,
         bits: u64,
@@ -460,6 +464,19 @@ impl Graph {
             .get(id)
             .binding
             .map(|binding| self.binding(binding).entity)
+    }
+    // An argument's odr-use schedules definitions only. A declaration is emitted
+    // when generated code actually refers to the function (C++ demand_entry).
+    pub(crate) fn lower_argument_functions(
+        &self,
+        context: Option<EntityId>,
+    ) -> impl Iterator<Item = EntityId> + '_ {
+        self.constant_addresses
+            .argument_functions(context)
+            .iter()
+            .rev()
+            .copied()
+            .filter(|&entity| self.lower_function_defined(self.lower_function_entity(entity)))
     }
     pub(crate) fn lower_root_delegations(&self) -> impl Iterator<Item = ConstructorId> + '_ {
         self.root_demands.as_slice().iter().filter_map(|demand| {
@@ -1006,12 +1023,17 @@ impl Graph {
         )
     }
     pub(super) fn lower_type_unit_local(&self, ty: TypeId) -> bool {
-        self.lower_type_entity_locality(ty, Self::lower_entity_scope_unit_local)
+        self.lower_type_entity_locality(
+            ty,
+            Self::lower_entity_scope_unit_local,
+            Self::address_argument_unit_local,
+        )
     }
     pub(super) fn lower_type_entity_locality(
         &self,
         mut ty: TypeId,
         is_local: fn(&Self, EntityId) -> bool,
+        address_is_local: fn(&Self, EntityId) -> bool,
     ) -> bool {
         // Scalar/object and linear pointer shells need no scratch allocation.
         // Function components and class-template arguments share a DAG worklist.
@@ -1035,6 +1057,9 @@ impl Graph {
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     return is_local(self, entity);
                 }
+                TypeKind::Address { entity, .. } => {
+                    return address_is_local(self, entity);
+                }
                 TypeKind::Function { .. } | TypeKind::Pack(_) => break,
                 _ => return false,
             }
@@ -1057,6 +1082,9 @@ impl Graph {
                     work.extend(parameters);
                 }
                 TypeKind::Pack(elements) => work.extend(elements),
+                TypeKind::Address { entity, .. } if address_is_local(self, *entity) => {
+                    return true;
+                }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) if is_local(self, *entity) => {
                     return true;
                 }
@@ -1668,6 +1696,10 @@ impl Graph {
     }
     pub(crate) fn lower_type(&self, id: TypeId) -> Result<TypeView<'_>, Error> {
         Ok(match &self.types.get(self.types.canonical_view(id)).kind {
+            TypeKind::Address { ty, entity } => TypeView::Address {
+                ty: *ty,
+                entity: *entity,
+            },
             TypeKind::Value { ty, bits } => TypeView::Value {
                 ty: *ty,
                 bits: *bits,
@@ -1748,17 +1780,23 @@ impl Graph {
     }
     pub(crate) fn lower_name(&self, name: ast::Name) -> Result<EntityId, Error> {
         self.resolved_name(name)
-            .map(|id| self.binding(id).entity)
+            .map(|id| {
+                let entity = self.binding(id).entity;
+                self.reference_argument_entity(entity).unwrap_or(entity)
+            })
             .ok_or(Error::Invariant("lowering name without entity"))
     }
     pub(crate) fn lower_named_object(&self, name: ast::Name) -> Result<bool, Error> {
         let binding = self
             .resolved_name(name)
             .ok_or(Error::Invariant("lowering name without binding"))?;
-        Ok(matches!(
-            self.binding(binding).kind,
-            BindingKind::Variable | BindingKind::Parameter
-        ))
+        Ok(self
+            .reference_argument_entity(self.binding(binding).entity)
+            .is_some()
+            || matches!(
+                self.binding(binding).kind,
+                BindingKind::Variable | BindingKind::Parameter
+            ))
     }
     pub(crate) fn lower_entity_type(&self, id: EntityId) -> Result<TypeId, Error> {
         self.entity(id)
@@ -1865,6 +1903,20 @@ impl Graph {
                     .collect()
             })
         }
+    }
+    pub(crate) fn lower_address_name(
+        &self,
+        id: EntityId,
+    ) -> Result<(ScopeId, Option<NameId>), Error> {
+        let entity = self.entity(id);
+        Ok((
+            self.lower_linkage_scope(
+                entity
+                    .home
+                    .ok_or(Error::Invariant("address entity without home"))?,
+            )?,
+            entity.name,
+        ))
     }
     pub(crate) fn lower_nominal_name(
         &self,

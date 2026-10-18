@@ -1068,9 +1068,10 @@ impl Analyzer<'_> {
                 }
                 self.deduce_signature_type(p, a, depth, arguments, false)
             }
-            (TypeKind::Value { .. }, TypeKind::Value { .. }) => {
-                Ok(self.same_template_value(pattern, actual))
-            }
+            (
+                TypeKind::Value { .. } | TypeKind::Address { .. },
+                TypeKind::Value { .. } | TypeKind::Address { .. },
+            ) => Ok(self.same_template_value(pattern, actual)),
             _ => Ok(pattern == actual),
         }
     }

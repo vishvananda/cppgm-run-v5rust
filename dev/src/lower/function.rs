@@ -327,8 +327,7 @@ pub(super) fn lower<'a>(
     function.place_destructor_terminates()?;
     function.place_function_guard(entry)?;
     function.builder.finish()?;
-    symbols.finish_entry(program, entry, symbol)?;
-    symbols.key_function_table(program, entry)?;
+    super::definition_demands::finish_function_definition(symbols, graph, program, entry, symbol)?;
     Ok(())
 }
 impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> {

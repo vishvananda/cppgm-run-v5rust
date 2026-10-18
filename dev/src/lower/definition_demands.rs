@@ -3,7 +3,27 @@
 //! First-reference variable work reserves a position in the emission queue.
 //! Its initializer's requests fill that position after the caller's body has
 //! released its builder. Appending children never shifts unrelated requests.
-use super::construction::Entry;
+use super::{Error, construction::Entry, symbols::Symbols};
+use crate::lowir::model::{Program, SymbolId};
+
+// Finalize the ABI entry before appending functions designated by this
+// definition's template arguments, matching emit_definition's demand order.
+pub(super) fn finish_function_definition(
+    symbols: &mut Symbols<'_, '_>,
+    graph: &crate::sema::Graph,
+    program: &mut Program,
+    entry: Entry,
+    symbol: SymbolId,
+) -> Result<(), Error> {
+    symbols.finish_entry(program, entry, symbol)?;
+    symbols.key_function_table(program, entry)?;
+    if let Some(entity) = entry.entity(graph) {
+        for function in graph.lower_argument_functions(Some(entity)) {
+            symbols.demand(function);
+        }
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct RequestId(usize);

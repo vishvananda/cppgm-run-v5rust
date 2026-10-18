@@ -132,9 +132,21 @@ impl Analyzer<'_> {
         if self.semantic() && self.template_depth == 0 {
             let value_uses = self.value_parameter_uses.get();
             self.template_arguments += 1;
-            let result = self
-                .typed_expression(expression, scope)
-                .and_then(|_| self.check_resolved_function(expression));
+            let result = self.typed_expression(expression, scope).and_then(|facts| {
+                if let Some(target) = target.filter(|&ty| self.graph.address_parameter_type(ty))
+                    && facts.functions.is_some()
+                {
+                    let binding = self.matching_function(facts, target)?.ok_or_else(|| {
+                        Error::at(
+                            self.tree.expressions.get(expression).location,
+                            "no overloaded function matches the template parameter's type",
+                        )
+                    })?;
+                    self.select_function_designation(expression, binding)
+                } else {
+                    self.check_resolved_function(expression)
+                }
+            });
             self.template_arguments -= 1;
             result?;
             if self
@@ -156,7 +168,7 @@ impl Analyzer<'_> {
                             self.graph.expression_facts.get(expression)?.ty,
                         ))
             {
-                return self.null_template_argument(expression, scope, target);
+                return self.address_template_argument(expression, scope, target);
             }
         }
         if let Some(value) = self.constant_value(expression, scope, self.template_depth == 0)? {
@@ -233,7 +245,9 @@ impl Analyzer<'_> {
         if template {
             self.match_template_name(info, argument, location)?;
         }
-        let TypeKind::Value { ty: source, bits } = self.graph.types.get(argument).kind else {
+        let (TypeKind::Value { ty: source, .. } | TypeKind::Address { ty: source, .. }) =
+            self.graph.types.get(argument).kind
+        else {
             return Ok(argument);
         };
         // Value conversion substitutes its declared target even if unrelated
@@ -267,8 +281,13 @@ impl Analyzer<'_> {
             return Ok(argument);
         }
         if self.graph.address_parameter_type(target) || self.graph.address_parameter_type(source) {
-            return self.converted_null_argument(target, argument, location);
+            return self.converted_address_argument(target, argument, location);
         }
+        let TypeKind::Value { bits, .. } = self.graph.types.get(argument).kind else {
+            return Err(Error::Invariant(
+                "address conversion did not consume argument",
+            ));
+        };
         let failure =
             if matches!(self.graph.types.get(target).kind, TypeKind::Enum(_)) && source != target {
                 Some("a template argument does not convert to the parameter's enumeration type")
@@ -340,9 +359,15 @@ impl Analyzer<'_> {
         if matches!(self.graph.types.get(argument).kind, TypeKind::Pack(_)) {
             return self.bind_argument_pack(scope, binding, argument);
         }
-        let (kind, entity, ty) = if let TypeKind::Value { ty, bits } =
+        let (kind, entity, ty) = if let TypeKind::Address { ty, .. } =
             self.graph.types.get(argument).kind
         {
+            let entity = self.graph.add_entity(Some(ty), binding.name, binding.key)?;
+            self.graph
+                .constant_addresses
+                .bind_argument(entity, argument);
+            (BindingKind::Enumerator, entity, ty)
+        } else if let TypeKind::Value { ty, bits } = self.graph.types.get(argument).kind {
             let entity = self.graph.add_entity(Some(ty), binding.name, binding.key)?;
             self.graph.entity_mut(entity).constant = ConstantState::Value(Constant { bits, ty });
             (BindingKind::Enumerator, entity, ty)
@@ -416,7 +441,7 @@ impl Analyzer<'_> {
                 _ => std::slice::from_ref(argument),
             };
             if values.iter().any(|&value| {
-                matches!(self.graph.types.get(value).kind, TypeKind::Value { ty, .. }
+                matches!(self.graph.types.get(value).kind, TypeKind::Value { ty, .. } | TypeKind::Address { ty, .. }
                 if self.graph.types.canonical_view(ty) != self.graph.types.canonical_view(declared))
             }) && !self.bound_names_value(signature, self.graph.templates.depth(head), index)
             {
@@ -469,6 +494,11 @@ impl Analyzer<'_> {
     pub(super) fn same_template_value(&self, first: TypeId, second: TypeId) -> bool {
         if first == second {
             return true;
+        }
+        let first_address = self.graph.argument_address(first);
+        let second_address = self.graph.argument_address(second);
+        if first_address.is_some() || second_address.is_some() {
+            return first_address == second_address;
         }
         let (
             TypeKind::Value {

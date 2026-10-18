@@ -271,7 +271,7 @@ pub(crate) struct Graph {
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) floating_constants: super::constant_floats::Floats,
     pub(super) aggregate_constants: Box<super::constexpr_values::Values>,
-    pub(super) constant_addresses: super::constant_addresses::Addresses,
+    pub(super) constant_addresses: Box<super::constant_addresses::Addresses>,
     pub(super) initializer_constructors: super::constructor_initialization::InitializerConstructors,
     pub(super) array_images: super::static_arrays::Images,
     pub(super) static_constructions: super::static_construction::Images,
@@ -475,7 +475,7 @@ impl Graph {
             constant_facts: Vec::new(),
             floating_constants: super::constant_floats::Floats::default(),
             aggregate_constants: Box::default(),
-            constant_addresses: super::constant_addresses::Addresses::default(),
+            constant_addresses: Box::default(),
             initializer_constructors:
                 super::constructor_initialization::InitializerConstructors::default(),
             array_images: super::static_arrays::Images::default(),

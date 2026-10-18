@@ -381,6 +381,15 @@ impl Graph {
                     output.write_all(b"bound ")?;
                     tasks.push(Task::Type(*arguments));
                 }
+                TypeKind::Address { ty, entity } => {
+                    if !matches!(self.types.get(*ty).kind, TypeKind::Reference { .. }) {
+                        output.write_all(b"&")?;
+                    }
+                    self.write_class_qualifier(self.entity(*entity).home, cursor, output, false)?;
+                    if let Some(name) = self.entity(*entity).name {
+                        output.write_all(cursor.name(name))?;
+                    }
+                }
                 TypeKind::Value { ty, bits } => {
                     if self.address_parameter_type(*ty) {
                         output.write_all(b"nullptr")?;

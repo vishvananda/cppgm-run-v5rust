@@ -68,7 +68,7 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             let (bytes, align) = graph.lower_class_layout(entity)?;
             Type::Object { bytes, align }
         }
-        TypeView::Value { .. } => {
+        TypeView::Value { .. } | TypeView::Address { .. } => {
             return Err(Error::Missing("template argument used as storage type"));
         }
         TypeView::Unsupported => return Err(Error::Missing("aggregate storage lowering")),

@@ -143,6 +143,26 @@ impl Symbols<'_, '_> {
             }
         }
         match view {
+            TypeView::Address { ty, entity } => {
+                if !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
+                    out.push('&');
+                }
+                let (home, name) = self.graph.lower_address_name(entity)?;
+                let mut parts = Vec::new();
+                let mut scope = home;
+                while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
+                    parts.push(self.presentation_scope_label(scope, name)?);
+                    scope = parent;
+                }
+                parts.reverse();
+                for part in parts {
+                    out.push_str(&part);
+                    out.push_str("::");
+                }
+                if let Some(name) = name {
+                    out.push_str(self.identifier(name)?);
+                }
+            }
             TypeView::Value { ty, bits } => {
                 if matches!(
                     self.graph.lower_type(ty)?,
