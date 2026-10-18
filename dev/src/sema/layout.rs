@@ -254,6 +254,15 @@ impl Analyzer<'_> {
                 &mut constructors,
             )?;
             seen.insert(entity);
+            if let Some(invoker) = self.graph.lower_closure_converter(entity) {
+                work.push(invoker);
+            }
+            // A captureless invoker runs the call operator's analyzed body.
+            // Its locals and selected calls retain that body's demand owner.
+            let body_owner = self.graph.lower_closure_body_owner(entity);
+            if body_owner != entity {
+                work.push(body_owner);
+            }
             self.request_qualifier_signature(entity);
             if let Some(requests) = layouts.remove(&entity) {
                 self.graph.storage_layouts.extend(

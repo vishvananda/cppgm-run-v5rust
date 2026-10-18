@@ -156,6 +156,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("empty call name"))?;
                 let explicit = component
                     .arguments
+                    .filter(|_| named_value.is_none())
                     .map(|syntax| {
                         let head = self.sole_template_head(found.functions.as_slice())?;
                         self.explicit_function_arguments(syntax, scope, component.location, head)

@@ -261,6 +261,12 @@ impl Graph {
                 return true;
             };
             let scope = self.scope(home);
+            if scope.kind == ScopeKind::Class
+                && self.lower_closure(class).is_some()
+                && !self.closure_member_context(class)
+            {
+                return true;
+            }
             if scope.kind != ScopeKind::Class {
                 return entity.name.is_none()
                     || matches!(scope.kind, ScopeKind::Block | ScopeKind::Function);
@@ -366,6 +372,18 @@ impl Graph {
         self.lower_inline_function(outer)
     }
     pub(crate) fn lower_numbered_closure(&self, class: EntityId) -> bool {
+        if self
+            .lower_closure(class)
+            .is_some_and(|closure| match closure.context {
+                super::lambdas::ClosureContext::None => false,
+                super::lambdas::ClosureContext::MemberSpecification(_) => true,
+                super::lambdas::ClosureContext::StaticMemberInitializer(variable) => {
+                    self.variable_instances.instance(variable)
+                }
+            })
+        {
+            return true;
+        }
         let mut function = self
             .lower_closure(class)
             .and_then(|closure| closure.enclosing);

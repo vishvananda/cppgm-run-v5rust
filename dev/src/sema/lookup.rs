@@ -779,7 +779,10 @@ impl Analyzer<'_> {
         name: Name,
         scope: ScopeId,
     ) -> Result<LookupResult, Error> {
-        self.lookup_result_in(name, scope, Filter::Ordinary, Specialization::None)
+        // Function template candidates wait for argument-dependent lookup and
+        // deduction. A variable or class template-id already denotes its
+        // specialization before the call checks whether that value is callable.
+        self.lookup_result_in(name, scope, Filter::Ordinary, Specialization::NonFunction)
     }
     pub(super) fn lookup_result_in(
         &mut self,

@@ -15,11 +15,18 @@ use crate::{
 use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
+pub(crate) enum ClosureContext {
+    None,
+    MemberSpecification(EntityId),
+    StaticMemberInitializer(EntityId),
+}
+#[derive(Clone, Copy)]
 pub(crate) struct Closure {
     pub call: EntityId,
     pub invoker: Option<EntityId>,
     pub conversion: Option<EntityId>,
     pub enclosing: Option<EntityId>,
+    pub context: ClosureContext,
     pub ordinal: u32,
     pub course_number: u16,
     deduces: bool,
@@ -41,6 +48,12 @@ pub(super) struct Closures {
     pub(super) captures: HashMap<EntityId, Vec<Capture>>,
 }
 impl Graph {
+    pub(super) fn closure_member_context(&self, class: EntityId) -> bool {
+        self.lower_closure(class).is_some_and(|closure| {
+            matches!(closure.context, ClosureContext::MemberSpecification(owner)
+                if self.class_templates.instance(owner).is_none())
+        })
+    }
     pub(crate) fn lower_closure_captures(&self, class: EntityId) -> &[Capture] {
         self.closures
             .captures
@@ -310,6 +323,7 @@ impl Analyzer<'_> {
         let (call, ty) =
             self.declare_closure_call(class_scope, lambda, parameters, scope, location)?;
         let enclosing = self.body_context.as_ref().map(|body| body.entity);
+        let context = self.closure_context(home);
         let canonical = self.graph.types.canonical_function(ty)?;
         let TypeKind::Function {
             parameters: ref types,
@@ -318,7 +332,12 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("closure signature"));
         };
-        let signature = types.clone();
+        let mut signature = types.clone();
+        if let ClosureContext::MemberSpecification(class) = context
+            && self.graph.class_templates.instance(class).is_none()
+        {
+            signature.insert(0, self.graph.lower_entity_type(class)?);
+        }
         let key = self
             .graph
             .types
@@ -340,6 +359,7 @@ impl Analyzer<'_> {
                 invoker: None,
                 conversion: None,
                 enclosing,
+                context,
                 ordinal,
                 course_number: u16::try_from(earlier).unwrap_or(u16::MAX),
                 deduces: lambda.trailing.is_none(),
@@ -427,6 +447,28 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("closure type"))?;
         self.new_expression_facts(ty, ValueCategory::Prvalue)
+    }
+
+    fn closure_context(&self, home: ScopeId) -> ClosureContext {
+        if self.body_context.is_some() || self.graph.scope(home).kind != ScopeKind::Class {
+            return ClosureContext::None;
+        }
+        let Some(class) = self.graph.scope(home).owner else {
+            return ClosureContext::None;
+        };
+        match self.initializing {
+            Some(variable)
+                if self.graph.entity(variable).data_member
+                    == Some(super::graph::DataMemberKind::Instance) =>
+            {
+                ClosureContext::MemberSpecification(class)
+            }
+            Some(variable) if self.graph.variable_instances.instance(variable) => {
+                ClosureContext::StaticMemberInitializer(variable)
+            }
+            None => ClosureContext::MemberSpecification(class),
+            _ => ClosureContext::None,
+        }
     }
     fn declare_closure_call(
         &mut self,

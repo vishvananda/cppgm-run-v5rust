@@ -520,6 +520,7 @@ mod tests {
         assert!(!graph.entity(entity).defined);
         assert!(graph.root_demands.as_slice().is_empty());
         assert!(graph.variable_instances.demands().is_empty());
+        assert_eq!(graph.variable_instances.initializer_requests(), [entity]);
     }
 
     #[test]
@@ -605,6 +606,10 @@ mod tests {
         let store = &analyzer.graph.variable_instances;
         assert_eq!(store.templates.instances.len(), 2);
         assert!(store.demands().is_empty());
+        assert_eq!(store.initializer_requests().len(), 2);
+        assert_eq!(store.initializer_requests()[0], entity);
+        assert_ne!(store.initializer_requests()[1], entity);
+        assert!(store.templates.contains(store.initializer_requests()[1]));
         let mut copies = Vec::new();
         for &entity in store.templates.instances.keys() {
             let definition = store.initializer(entity).unwrap();

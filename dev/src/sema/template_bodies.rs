@@ -848,6 +848,9 @@ impl Analyzer<'_> {
 
     pub(super) fn defer_instance_member(&mut self, body: DeferredBody) -> bool {
         if body.template_depth == 0
+            // A lambda is analyzed at its expression, even inside a class
+            // specialization's initializer. It has no deferred member pattern.
+            && self.graph.lower_call_closure(body.entity).is_none()
             && !self
                 .graph
                 .function_templates
@@ -994,6 +997,97 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn initializer_closures_own_completed_bodies_per_variable_specialization() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct W{static int(*get)();};\
+              template<class T>int(*W<T>::get)()=[]{return int(sizeof(T));};\
+              template<class T>int(*get)()=[]{return int(sizeof(T));};\
+              template<class T>int(*unused)()=[]{return T::missing;};\
+              int main(){return W<int>::get()+get<int>()+W<char>::get()\
+                  +(get<char>)()+W<int>::get()+get<int>();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"initializer-closure-ownership").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        assert!(analyzer.graph.closures.records.is_empty());
+        analyzer.finish_instance_variables().unwrap();
+        // Each demanded initializer owns one copy. Repeated calls reuse it;
+        // the unused pattern's invalid dependent body has no closure or facts.
+        assert_eq!(analyzer.graph.closures.records.len(), 4);
+        let mut contexts: Vec<_> = analyzer
+            .graph
+            .closures
+            .records
+            .values()
+            .map(|closure| {
+                (
+                    closure.ordinal,
+                    matches!(
+                        closure.context,
+                        super::super::lambdas::ClosureContext::StaticMemberInitializer(_)
+                    ),
+                )
+            })
+            .collect();
+        contexts.sort_unstable();
+        assert_eq!(contexts, [(1, true), (2, false), (3, true), (4, false)]);
+        let mut bodies = HashSet::new();
+        let mut scopes = HashSet::new();
+        for (&class, closure) in &analyzer.graph.closures.records {
+            let call = analyzer.graph.entity(closure.call);
+            assert!(closure.enclosing.is_none());
+            assert!(bodies.insert(call.analyzed_body.unwrap()));
+            assert!(scopes.insert(call.scope.unwrap()));
+            assert_eq!(analyzer.graph.lower_call_closure(closure.call), Some(class));
+            assert!(
+                !analyzer
+                    .graph
+                    .function_templates
+                    .bodies
+                    .members
+                    .contains_key(&closure.call)
+            );
+            assert!(closure.invoker.is_some());
+        }
+        let before = (
+            analyzer.tree.expressions.mark(),
+            analyzer.tree.bodies.mark(),
+            analyzer.graph.binding_limit(),
+        );
+        let variables = analyzer
+            .graph
+            .variable_instances
+            .initializer_requests()
+            .to_vec();
+        for _ in 0..3 {
+            for &entity in &variables {
+                analyzer.use_instance_variable(entity).unwrap();
+            }
+            analyzer.finish_instance_variables().unwrap();
+        }
+        assert_eq!(analyzer.graph.closures.records.len(), 4);
+        assert_eq!(
+            before,
+            (
+                analyzer.tree.expressions.mark(),
+                analyzer.tree.bodies.mark(),
+                analyzer.graph.binding_limit(),
+            )
+        );
+    }
 
     #[test]
     fn failed_early_constant_demand_releases_active_class_and_query_context() {

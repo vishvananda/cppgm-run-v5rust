@@ -1180,6 +1180,12 @@ impl Graph {
                 return true;
             };
             let scope = self.scope(owner);
+            if scope.kind == ScopeKind::Class
+                && self.lower_closure(entity).is_some()
+                && !self.closure_member_context(entity)
+            {
+                return true;
+            }
             if scope.kind != ScopeKind::Class {
                 return matches!(scope.kind, ScopeKind::Block | ScopeKind::Function)
                     || node.name.is_none()

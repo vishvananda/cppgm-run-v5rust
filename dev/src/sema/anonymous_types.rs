@@ -158,6 +158,12 @@ impl Graph {
     ) -> Result<UnnamedNumbering, Error> {
         if let Some(home) = self.entity(entity).home {
             if self.scope(home).kind == ScopeKind::Class {
+                // Unnumbered closures use a private unit name even in a
+                // visible class (for example, a static member initializer).
+                // They are not unnamed declarations in the class's member list.
+                if self.lower_closure(entity).is_some() {
+                    return Ok(UnnamedNumbering::Private(None));
+                }
                 if self
                     .scope(home)
                     .owner

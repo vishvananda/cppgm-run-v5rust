@@ -49,6 +49,8 @@ pub(super) struct Variables {
     states: HashMap<EntityId, State>,
     demands: Vec<EntityId>,
     seen: HashSet<EntityId>,
+    initializers: Vec<EntityId>,
+    queued_initializers: HashSet<EntityId>,
     layout_uses: Vec<(EntityId, Option<EntityId>)>,
     layout_seen: HashSet<(EntityId, Option<EntityId>)>,
     next_layout: usize,
@@ -133,6 +135,20 @@ impl Variables {
     }
     pub(super) fn demands(&self) -> &[EntityId] {
         &self.demands
+    }
+    pub(super) fn initializer_requests(&self) -> &[EntityId] {
+        &self.initializers
+    }
+    fn request_initializer(&mut self, entity: EntityId) {
+        if self.queued_initializers.insert(entity) {
+            self.initializers.push(entity);
+        }
+    }
+    fn demand(&mut self, entity: EntityId) {
+        self.request_initializer(entity);
+        if self.seen.insert(entity) {
+            self.demands.push(entity);
+        }
     }
     pub(super) fn initializer(&self, entity: EntityId) -> Option<Definition> {
         match self.states.get(&entity) {
@@ -245,9 +261,7 @@ impl Analyzer<'_> {
             return Ok(());
         }
         self.instantiate_variable(entity)?;
-        if self.graph.variable_instances.seen.insert(entity) {
-            self.graph.variable_instances.demands.push(entity);
-        }
+        self.graph.variable_instances.demand(entity);
         Ok(())
     }
     pub(super) fn compatible_variable_type(
@@ -325,32 +339,20 @@ impl Analyzer<'_> {
             }
             return Ok(());
         }
-        if self.graph.variable_instances.templates.contains(entity) {
-            if self.graph.variable_instances.templates.concrete(entity)
-                && (self.lowering() && self.template_depth == 0 && self.unevaluated == 0
-                    || self.graph.entity(entity).ty.is_some_and(|ty| {
-                        self.integral_kind(ty).is_some() && self.graph.lower_cv(ty) & 1 != 0
-                            || matches!(
-                                self.graph.types.get(ty).kind,
-                                TypeKind::Array {
-                                    bound: 0,
-                                    operand: None,
-                                    ..
-                                }
-                            )
-                    }))
-            {
-                self.instantiate_variable(entity)?;
-            }
-            if self
-                .graph
-                .entity(entity)
-                .home
-                .is_none_or(|home| self.graph.scope(home).kind != super::graph::ScopeKind::Class)
-            {
-                self.record_variable_storage_use(entity);
-                return Ok(());
-            }
+        if self.graph.variable_instances.templates.concrete(entity)
+            && self.graph.entity(entity).ty.is_some_and(|ty| {
+                self.integral_kind(ty).is_some() && self.graph.lower_cv(ty) & 1 != 0
+                    || matches!(
+                        self.graph.types.get(ty).kind,
+                        TypeKind::Array {
+                            bound: 0,
+                            operand: None,
+                            ..
+                        }
+                    )
+            })
+        {
+            self.instantiate_variable(entity)?;
         }
         let ty = self
             .graph
@@ -371,11 +373,23 @@ impl Analyzer<'_> {
             self.instantiate_variable(entity)?;
         }
         self.record_variable_storage_use(entity);
-        if self.unevaluated == 0
-            && self.template_arguments == 0
-            && self.graph.variable_instances.seen.insert(entity)
-        {
-            self.graph.variable_instances.demands.push(entity);
+        // Fixed-type namespace and member specializations share the same
+        // first evaluated-use queue. Only a type/constant demand above needs
+        // the initializer now; eager storage initialization changes closure
+        // identities when the two kinds of variables are interleaved.
+        if self.unevaluated == 0 && self.template_arguments == 0 {
+            self.graph.variable_instances.request_initializer(entity);
+            // Class statics have the course's separate emission demand even
+            // for constant reads. Namespace definitions are emitted only when
+            // the lowered code/data actually refers to their storage.
+            if self
+                .graph
+                .entity(entity)
+                .home
+                .is_some_and(|home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+            {
+                self.graph.variable_instances.demand(entity);
+            }
         }
         Ok(())
     }
@@ -485,7 +499,7 @@ impl Analyzer<'_> {
         while let Some(&entity) = self
             .graph
             .variable_instances
-            .demands
+            .initializer_requests()
             .get(self.graph.variable_instances.next)
         {
             self.graph.variable_instances.next += 1;
@@ -622,9 +636,7 @@ impl Analyzer<'_> {
                 "an explicit instantiation of a variable whose template's definition is not available",
             ));
         }
-        if self.graph.variable_instances.seen.insert(entity) {
-            self.graph.variable_instances.demands.push(entity);
-        }
+        self.graph.variable_instances.demand(entity);
         Ok(())
     }
     fn instantiate_variable(&mut self, entity: EntityId) -> Result<(), Error> {
