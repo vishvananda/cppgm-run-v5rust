@@ -424,7 +424,12 @@ impl Analyzer<'_> {
             own.or_else(|| self.template_name_head(name)),
         )?;
         if let Some(own) = own {
-            self.complete_template_arguments(own, &mut arguments, component.location)?;
+            self.complete_template_arguments_in(
+                own,
+                &mut arguments,
+                component.location,
+                Some(self.graph.binding_scope(found)),
+            )?;
             arguments = self.graph.types.flattened_arguments(&arguments);
         }
         let ty = self.specialize_template_name(name, arguments, component.location)?;
@@ -529,6 +534,58 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn inner_defaults_bind_earlier_slots_and_keep_outer_frames_distinct() {
+        let source = SourceBuffer::new(
+            b"template<class A,class B,class C>struct P{void unused(){A::missing();}};\
+            template<class Outer,template<class A,class B=Outer,class C=B*>class TT>\
+            struct W{using type=TT<char>;};\
+            using X=W<int,P>::type;using Y=W<long,P>::type;using Z=W<int,P>::type;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"inner-default-frames").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"X".as_slice(), b"Y", b"Z"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let types = names.map(|name| {
+            analyzer
+                .graph
+                .binding(analyzer.graph.own(global, name, Filter::Ordinary).unwrap())
+                .ty
+                .unwrap()
+        });
+        assert_eq!(types[0], types[2]);
+        assert_ne!(types[0], types[1]);
+        for (ty, expected) in types[..2].iter().zip([
+            crate::types::FundamentalType::Int,
+            crate::types::FundamentalType::LongInt,
+        ]) {
+            let TypeKind::Class(entity) = analyzer.graph.types.get(*ty).kind else {
+                panic!("class result");
+            };
+            let instance = analyzer.graph.class_templates.instance(entity).unwrap();
+            assert!(
+                matches!(analyzer.graph.types.get(instance.arguments[1]).kind,
+                TypeKind::Scalar(super::super::types::Scalar::Basic(kind)) if kind == expected)
+            );
+            assert!(
+                matches!(analyzer.graph.types.get(instance.arguments[2]).kind,
+                TypeKind::Pointer(element) if element == instance.arguments[1])
+            );
+            assert!(!analyzer.graph.entity(entity).complete);
+            assert!(analyzer.graph.entity(entity).scope.is_none());
+        }
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert!(analyzer.graph.lookup_limit.is_none());
+    }
 
     #[test]
     fn declared_defaults_survive_positional_identity_without_demanding_argument_classes() {

@@ -582,7 +582,10 @@ impl Analyzer<'_> {
             if name.is_some() {
                 self.graph.add_binding(
                     scope,
-                    declare.then_some(scope),
+                    // Inner template-template lists also own their bindings:
+                    // default instantiation frames bind these earlier slots.
+                    // Their private scopes are never traversed by the dump.
+                    Some(scope),
                     Binding {
                         kind: if value_type.is_some() {
                             BindingKind::TemplateValue

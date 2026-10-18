@@ -1205,6 +1205,14 @@ impl Analyzer<'_> {
             match &self.graph.types.get(ty).kind {
                 TypeKind::Class(entity) => {
                     if let Some(instance) = self.graph.class_templates.instance(*entity) {
+                        // TT<int> deduces TT even though none of its written
+                        // arguments names a parameter (C++ Deducible).
+                        work.extend(
+                            self.graph
+                                .class_templates
+                                .template_entities
+                                .name(instance.primary),
+                        );
                         work.extend(&instance.arguments);
                     }
                 }

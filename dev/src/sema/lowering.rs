@@ -33,6 +33,13 @@ pub(crate) struct TemplateParameterView {
     pub template: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct TemplateIdView<'a> {
+    pub name: TypeId,
+    pub arguments: &'a [TypeId],
+    pub pack: Option<usize>,
+}
+
 pub(crate) enum TemplateDeclaration {
     Type,
     Value(TypeId),
@@ -702,15 +709,50 @@ impl Graph {
         let entity = self.entity(entity);
         entity.home.zip(entity.name)
     }
-    pub(crate) fn lower_template_id_name(&self, ty: TypeId) -> Option<(TypeId, &[TypeId])> {
+    pub(crate) fn lower_template_id_name(&self, ty: TypeId) -> Option<TemplateIdView<'_>> {
         let TypeKind::Class(entity) = self.types.get(ty).kind else {
             return None;
         };
         let instance = self.class_templates.instance(entity)?;
-        self.class_templates
+        let name = self
+            .class_templates
             .template_entities
-            .name(instance.primary)
-            .map(|name| (name, instance.arguments.as_slice()))
+            .name(instance.primary)?;
+        let arguments = instance.arguments.as_slice();
+        // C++ name_template_id: a positional template-name's own head
+        // partitions its written arguments. An expansion before the pack
+        // makes that partition unknown; an expansion in the pack does not.
+        let pack = if let TypeKind::TemplateParameter {
+            entity,
+            template: true,
+        } = self.types.get(name).kind
+            && let Some(head) = self
+                .entity(entity)
+                .template_parameter
+                .and_then(|info| info.inner)
+        {
+            self.templates
+                .parameters(head)
+                .iter()
+                .position(|&parameter| {
+                    self.entity(parameter)
+                        .template_parameter
+                        .is_some_and(super::templates::ParameterInfo::is_pack)
+                })
+                .filter(|&position| {
+                    position <= arguments.len()
+                        && arguments[..position].iter().all(|&argument| {
+                            !matches!(self.types.get(argument).kind, TypeKind::Expansion(_))
+                        })
+                })
+        } else {
+            None
+        };
+        Some(TemplateIdView {
+            name,
+            arguments,
+            pack,
+        })
     }
     pub(crate) fn lower_template_parameter(&self, ty: TypeId) -> Option<u32> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {

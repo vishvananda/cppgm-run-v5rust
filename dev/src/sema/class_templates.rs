@@ -18,6 +18,14 @@ struct Key {
     arguments: Vec<TypeId>,
 }
 
+#[derive(PartialEq, Eq, Hash)]
+struct DefaultKey {
+    head: HeadId,
+    index: usize,
+    arguments: Vec<TypeId>,
+    named_in: Option<ScopeId>,
+}
+
 #[derive(Clone, Copy)]
 enum DefaultUse {
     Required,
@@ -42,7 +50,7 @@ pub(super) struct ClassTemplates {
     specializations: HashMap<Key, EntityId>,
     instances: HashMap<EntityId, Instance>,
     defaults: HashMap<Key, BindingId>,
-    argument_defaults: HashMap<(HeadId, usize, Vec<TypeId>), TypeId>,
+    argument_defaults: HashMap<DefaultKey, TypeId>,
 }
 impl ClassTemplates {
     pub(super) fn instance(&self, entity: EntityId) -> Option<&Instance> {
@@ -242,6 +250,16 @@ impl Analyzer<'_> {
         arguments: &mut Vec<TypeId>,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        self.complete_template_arguments_in(head, arguments, location, None)
+    }
+
+    pub(super) fn complete_template_arguments_in(
+        &mut self,
+        head: HeadId,
+        arguments: &mut Vec<TypeId>,
+        location: SourceOffset,
+        named_in: Option<ScopeId>,
+    ) -> Result<(), Error> {
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count
             && !self.trailing_argument_pack(head)
@@ -267,11 +285,22 @@ impl Analyzer<'_> {
                 .templates
                 .default_argument(head, index)
                 .ok_or_else(|| Error::at(location, "too few template arguments"))?;
-            let key = (head, index, arguments.clone());
+            let key = DefaultKey {
+                head,
+                index,
+                arguments: arguments.clone(),
+                named_in,
+            };
             let ty = if let Some(&ty) = self.graph.class_templates.argument_defaults.get(&key) {
                 ty
             } else {
-                let ty = self.class_default_type(default, head, arguments)?;
+                let ty = self.class_default_type_in(
+                    default,
+                    head,
+                    arguments,
+                    DefaultUse::Required,
+                    named_in,
+                )?;
                 let ty = self.graph.types.canonical_function(ty)?;
                 self.graph.class_templates.argument_defaults.insert(key, ty);
                 ty
@@ -282,21 +311,13 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn class_default_type(
-        &mut self,
-        default: super::templates::DefaultArgument,
-        head: HeadId,
-        arguments: &[TypeId],
-    ) -> Result<TypeId, Error> {
-        self.class_default_type_in(default, head, arguments, DefaultUse::Required)
-    }
-
     fn class_default_type_in(
         &mut self,
         default: super::templates::DefaultArgument,
         head: HeadId,
         arguments: &[TypeId],
         usage: DefaultUse,
+        named_in: Option<ScopeId>,
     ) -> Result<TypeId, Error> {
         self.check_stack()?;
         if let Some(bound) = default.bound {
@@ -309,7 +330,10 @@ impl Analyzer<'_> {
         let target = self
             .argument_target(head, arguments.len(), arguments)?
             .known();
-        if self.template_depth != 0 && arguments.iter().any(|&ty| self.graph.dependent_type(ty)) {
+        if named_in.is_none()
+            && self.template_depth != 0
+            && arguments.iter().any(|&ty| self.graph.dependent_type(ty))
+        {
             // Copied member template heads share syntax, but their enclosing
             // argument frames differ. Pattern facts belong to this formation.
             let copy = self.copy_template_argument(default.syntax, default.scope)?;
@@ -335,10 +359,8 @@ impl Analyzer<'_> {
                     )
                 });
         }
-        let parent = self
-            .graph
-            .scope(default.scope)
-            .parent
+        let parent = named_in
+            .or(self.graph.scope(default.scope).parent)
             .ok_or(Error::Invariant("class default without parent"))?;
         let frame = self
             .graph
@@ -359,6 +381,16 @@ impl Analyzer<'_> {
             }
         }
         let copy = self.copy_template_argument(default.syntax, frame)?;
+        if named_in.is_some() && self.template_depth != 0 && template != Some(true) {
+            return self.template_argument_at(
+                copy,
+                frame,
+                self.default_location(default),
+                target,
+                template,
+                false,
+            );
+        }
         let result = self.instantiation_context(
             self.instantiation_depth,
             self.default_location(default),
@@ -410,12 +442,22 @@ impl Analyzer<'_> {
             let Some(default) = self.graph.templates.default_argument(head, index) else {
                 return Ok(environment.reject("too few template arguments"));
             };
-            let key = (head, index, arguments.clone());
+            let key = DefaultKey {
+                head,
+                index,
+                arguments: arguments.clone(),
+                named_in: None,
+            };
             let ty = if let Some(&ty) = self.graph.class_templates.argument_defaults.get(&key) {
                 ty
             } else {
-                let result =
-                    self.class_default_type_in(default, head, &arguments, DefaultUse::Signature);
+                let result = self.class_default_type_in(
+                    default,
+                    head,
+                    &arguments,
+                    DefaultUse::Signature,
+                    None,
+                );
                 let ty = match result {
                     Ok(ty) => ty,
                     Err(
@@ -831,7 +873,7 @@ mod tests {
         analyzer.initializing = Some(entity);
         analyzer.declaration_access.function = Some(entity);
         assert!(matches!(
-            analyzer.class_default_type(default, head, &[reference]),
+            analyzer.class_default_type_in(default, head, &[reference], DefaultUse::Required, None),
             Err(Error::InstantiationDiagnostic { .. })
         ));
         assert_eq!(analyzer.template_depth, 4);

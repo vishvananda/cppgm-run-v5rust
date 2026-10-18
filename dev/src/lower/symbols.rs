@@ -1059,6 +1059,24 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         Ok(())
     }
+    fn name_template_id(
+        &mut self,
+        view: crate::sema::lowering::TemplateIdView<'_>,
+    ) -> Result<NodeId, Error> {
+        let name = self.abi_type(view.name)?;
+        let mut nodes = Vec::with_capacity(view.arguments.len());
+        for &argument in view.arguments {
+            nodes.push(self.abi_type(argument)?);
+        }
+        if let Some(first) = view.pack {
+            let pack = self.abi.intern(Node::ArgumentPack, &nodes[first..])?;
+            nodes.truncate(first);
+            nodes.push(pack);
+        }
+        self.abi
+            .intern(Node::Template(name), &nodes)
+            .map_err(Error::from)
+    }
     fn abi_type(&mut self, ty: TypeId) -> Result<NodeId, Error> {
         self.check_stack()?;
         if let Some(&id) = self.types.get(&(ty, self.bound_pattern, self.own_level)) {
@@ -1075,13 +1093,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 internal: false,
                 occurrence: 0,
             }
-        } else if let Some((name, arguments)) = self.graph.lower_template_id_name(ty) {
-            let name = self.abi_type(name)?;
-            let mut nodes = Vec::with_capacity(arguments.len());
-            for &argument in arguments {
-                nodes.push(self.abi_type(argument)?);
-            }
-            let id = self.abi.intern(Node::Template(name), &nodes)?;
+        } else if let Some(view) = self.graph.lower_template_id_name(ty) {
+            let id = self.name_template_id(view)?;
             return self.finish_abi_type(ty, id);
         } else if let Some(elements) = self.graph.lower_argument_pack(ty) {
             let elements = elements.to_vec();
