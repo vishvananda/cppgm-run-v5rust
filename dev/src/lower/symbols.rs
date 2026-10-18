@@ -1136,9 +1136,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 occurrence: 0,
             }
         } else if let Some((operand, _)) = self.graph.lower_template_operand(ty) {
-            let expression = self
-                .placeholder_node(ty)?
-                .ok_or(Error::Missing("unmangled dependent ABI type"))?;
+            let Some(expression) = self.placeholder_node(ty)? else {
+                let node = self.unencoded_placeholder(ty)?;
+                return self.finish_abi_type(ty, node);
+            };
             let kind = self.tree.expressions.get(operand).kind;
             if self.graph.lower_value_argument(ty) {
                 Node::ExpressionArgument(expression)

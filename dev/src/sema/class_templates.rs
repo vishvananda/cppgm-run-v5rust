@@ -32,6 +32,7 @@ pub(super) struct Instance {
 }
 #[derive(Default)]
 pub(super) struct ClassTemplates {
+    pub(super) qualifiers: Box<super::qualifier_prefixes::Qualifiers>,
     pub(super) aliases: Box<super::alias_templates::Aliases>,
     pub(super) template_entities: Box<super::named_templates::TemplateNames>,
     pub(super) dependent_names: super::dependent_templates::Names,

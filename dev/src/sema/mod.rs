@@ -103,6 +103,7 @@ mod pack_substitution;
 mod placeholders;
 mod procedural_calls;
 mod procedural_statements;
+mod qualifier_prefixes;
 mod queries;
 mod scalar_casts;
 mod scalar_conversions;

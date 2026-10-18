@@ -1904,6 +1904,34 @@ impl Graph {
             })
         }
     }
+    pub(crate) fn lower_qualifier_level(
+        &self,
+        ty: TypeId,
+    ) -> Result<Option<(NameId, &[TypeId])>, Error> {
+        let TypeKind::Class(entity) = self.types.get(ty).kind else {
+            return Ok(None);
+        };
+        let Some(instance) = self.class_templates.instance(entity) else {
+            return Ok(None);
+        };
+        if self
+            .class_templates
+            .template_entities
+            .name(instance.primary)
+            .is_some()
+        {
+            return Ok(None);
+        }
+        let Some(name) = self.entity(entity).name else {
+            return Ok(None);
+        };
+        let count = self
+            .class_templates
+            .qualifiers
+            .count(entity)?
+            .ok_or(Error::Invariant("bound qualifier without argument facts"))?;
+        Ok(Some((name, &instance.arguments[..count])))
+    }
     pub(crate) fn lower_address_name(
         &self,
         id: EntityId,

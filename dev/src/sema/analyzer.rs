@@ -303,6 +303,9 @@ impl<'tree> Analyzer<'tree> {
         if boundaries && self.lowering() {
             self.finish_lowering_boundaries()?;
         }
+        if self.lowering() {
+            self.finish_qualifier_arguments()?;
+        }
         Ok(self.graph)
     }
     pub(super) fn check_stack(&self) -> Result<(), Error> {

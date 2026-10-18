@@ -254,6 +254,7 @@ impl Analyzer<'_> {
                 &mut constructors,
             )?;
             seen.insert(entity);
+            self.request_qualifier_signature(entity);
             if let Some(requests) = layouts.remove(&entity) {
                 self.graph.storage_layouts.extend(
                     requests

@@ -40,6 +40,30 @@ fn missing() -> Error {
     Error::Missing("dependent ABI expression form")
 }
 impl Symbols<'_, '_> {
+    pub(super) fn unencoded_placeholder(&mut self, ty: TypeId) -> Result<NodeId, Error> {
+        // Frozen abi_type_node retains an unmangled placeholder's zero-initialized
+        // parameter position inside a larger type. Whole signature fallback is
+        // separately owned by function_encoding.
+        let value = self.graph.lower_value_argument(ty);
+        let parameter = self.abi.intern(
+            Node::TemplateParam {
+                index: 0,
+                level: if self.bound_pattern {
+                    self.own_level
+                } else {
+                    0
+                },
+                substitutable: !value,
+                kind: super::ParameterKind::Type,
+            },
+            &[],
+        )?;
+        if value {
+            Ok(self.abi.intern(Node::ExpressionArgument(parameter), &[])?)
+        } else {
+            Ok(parameter)
+        }
+    }
     pub(super) fn declared_type_dependent(&self, ty: TypeId) -> Result<bool, Error> {
         let mut work = vec![ty];
         let mut visited = std::collections::HashSet::new();
@@ -556,6 +580,16 @@ impl Symbols<'_, '_> {
                     None,
                 )
             }
+            W::Entity(entity)
+                if self.graph.lower_is_variable(*entity)
+                    && self.dependent_operand_arguments(words)? =>
+            {
+                let name = self.graph.lower_local_name(*entity).ok_or_else(missing)?;
+                (
+                    Node::UnresolvedName(self.abi.string(self.cursor.name(name))?),
+                    None,
+                )
+            }
             W::Entity(entity) => return self.operand_entity(*entity),
             _ => return Err(missing()),
         };
@@ -579,7 +613,7 @@ impl Symbols<'_, '_> {
             let word = words.next()?;
             let name = match word {
                 W::Type(ty) if index == 0 && !global => {
-                    root = Some(self.abi_type(*ty)?);
+                    root = self.qualifier_levels(*ty, &mut levels)?;
                     None
                 }
                 W::Entity(entity) if index == 0 && !global => self.graph.lower_local_name(*entity),
@@ -658,6 +692,36 @@ impl Symbols<'_, '_> {
             .map(|node| (node, None))
             .map_err(Error::from)
     }
+    fn qualifier_levels(
+        &mut self,
+        mut ty: TypeId,
+        levels: &mut Vec<NodeId>,
+    ) -> Result<Option<NodeId>, Error> {
+        let mut members = Vec::new();
+        while let Some((qualifier, name)) = self.graph.lower_dependent_member(ty) {
+            members.push(name);
+            ty = qualifier;
+        }
+        if let Some(aliased) = self.graph.lower_aliased_type(ty) {
+            ty = aliased;
+        }
+        let root = if let Some((name, arguments)) = self.graph.lower_qualifier_level(ty)? {
+            let mut nodes = Vec::with_capacity(arguments.len());
+            for &argument in arguments {
+                nodes.push(self.abi_type(argument)?);
+            }
+            let name = self.abi.string(self.cursor.name(name))?;
+            levels.push(self.abi.intern(Node::UnresolvedName(name), &nodes)?);
+            None
+        } else {
+            Some(self.abi_type(ty)?)
+        };
+        for name in members.into_iter().rev() {
+            let name = self.abi.string(self.cursor.name(name))?;
+            levels.push(self.abi.intern(Node::UnresolvedName(name), &[])?);
+        }
+        Ok(root)
+    }
     fn operand_arguments(&mut self, words: &mut Words<'_>) -> Result<Vec<NodeId>, Error> {
         let mut arguments = Vec::new();
         if matches!(words.words.get(words.at), Some(W::Node(N::Arguments))) {
@@ -668,6 +732,22 @@ impl Symbols<'_, '_> {
             }
         }
         Ok(arguments)
+    }
+    fn dependent_operand_arguments(&self, words: &Words<'_>) -> Result<bool, Error> {
+        let Some([W::Node(N::Arguments), W::Count(count), tail @ ..]) = words.words.get(words.at..)
+        else {
+            return Ok(false);
+        };
+        let arguments = tail.get(..*count).ok_or_else(missing)?;
+        for argument in arguments {
+            let W::Type(ty) = argument else {
+                return Err(missing());
+            };
+            if self.graph.lower_dependent_type(*ty) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
