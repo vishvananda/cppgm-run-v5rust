@@ -130,15 +130,29 @@ impl Analyzer<'_> {
         while let Some(current) = probe {
             let node = self.tree.declarators.get(current);
             if let Some(named) = node.name {
-                home = self.prefix(named, scope)?;
-                if home.is_some_and(|home| {
-                    self.graph.scope(home).kind == super::graph::ScopeKind::Enum
-                }) {
-                    return Err(Error::at(
-                        self.tree.names.get(named).location,
-                        "qualified declarator-id must name a namespace or class member",
-                    ));
-                }
+                let name = *self.tree.names.get(named);
+                let count = self
+                    .tree
+                    .name_lists
+                    .get(name.components)
+                    .len()
+                    .saturating_sub(1);
+                home = match self.name_prefix(named, scope, count, false)? {
+                    Some(super::lookup::Prefix::Scope(home))
+                        if self.graph.scope(home).kind != super::graph::ScopeKind::Enum =>
+                    {
+                        Some(home)
+                    }
+                    None => None,
+                    // A dependent type is not a declared member owner. Primary
+                    // and registered partial patterns already have class scopes.
+                    _ => {
+                        return Err(Error::at(
+                            name.location,
+                            "qualified declarator-id must name a namespace or class member",
+                        ));
+                    }
+                };
                 after = if let Some(home) = home {
                     self.member_lookup_bridge(scope, home)?
                 } else {

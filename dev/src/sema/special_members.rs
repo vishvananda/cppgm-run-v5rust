@@ -59,14 +59,25 @@ impl Analyzer<'_> {
         }
         let syntax_item = *self.tree.names.get(name);
         let node = &syntax_item;
-        let prefix = self.prefix(name, scope)?;
-        let owner = prefix.unwrap_or(self.declaration_scope(scope));
-        if self.graph.scope(owner).kind != ScopeKind::Class {
-            return Err(Error::at(
+        let count = self
+            .tree
+            .name_lists
+            .get(node.components)
+            .len()
+            .saturating_sub(1);
+        let prefix = self.name_prefix(name, scope, count, false)?;
+        let owner = match prefix {
+            Some(super::lookup::Prefix::Scope(owner)) => Some(owner),
+            Some(super::lookup::Prefix::Dependent(_)) => None,
+            None => Some(self.declaration_scope(scope)),
+        }
+        .filter(|&owner| self.graph.scope(owner).kind == ScopeKind::Class)
+        .ok_or_else(|| {
+            Error::at(
                 location,
                 "constructor, destructor or conversion function outside its class",
-            ));
-        }
+            )
+        })?;
         let class = self
             .graph
             .scope(owner)
