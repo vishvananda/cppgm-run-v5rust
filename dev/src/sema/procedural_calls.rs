@@ -106,124 +106,126 @@ impl Analyzer<'_> {
         while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
             named = inner;
         }
-        let facts = if self.pretyped_callable != Some(named)
-            && let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind
-        {
-            let callee_uses = self.dependent_uses.get();
-            let mut found = self.lookup_call_result(name, scope)?;
-            if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
-                return Ok(facts);
-            }
-            let syntax_item = *self.tree.names.get(name);
-            let syntax_name = &syntax_item;
-            let qualified =
-                syntax_name.global || self.tree.name_lists.get(syntax_name.components).len() > 1;
-            if found.binding.is_none() && (qualified || callee != named) {
-                return Err(Error::at(
-                    self.tree.expressions.get(named).location,
-                    self.missing_callee_message(name),
-                ));
-            }
-            if let Some(binding) = found.binding {
-                let binding = self.graph.binding(binding);
-                if matches!(
-                    binding.kind,
-                    super::graph::BindingKind::Type | super::graph::BindingKind::Alias
-                ) {
-                    let target = binding
-                        .ty
-                        .ok_or(Error::Invariant("cast name without type"))?;
-                    let mut facts =
-                        self.scalar_functional_cast(id, target, arguments, None, scope)?;
-                    facts.functional_call = true;
+        let pretyped = self
+            .pretyped_callable
+            .is_some_and(|callable| self.graph.expression_facts.root(callable) == named);
+        let facts =
+            if !pretyped && let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind {
+                let callee_uses = self.dependent_uses.get();
+                let mut found = self.lookup_call_result(name, scope)?;
+                if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
                     return Ok(facts);
                 }
-            }
-            let named_value = if found.binding.is_some_and(|binding| {
-                self.graph.binding(binding).kind != super::graph::BindingKind::Function
-            }) {
-                Some(self.named_expression(named, &found, scope)?)
-            } else {
-                None
-            };
-            let component = *self
-                .tree
-                .name_lists
-                .get(syntax_name.components)
-                .last()
-                .ok_or(Error::Invariant("empty call name"))?;
-            let explicit = component
-                .arguments
-                .map(|syntax| {
-                    let head = self.sole_template_head(found.functions.as_slice())?;
-                    self.explicit_function_arguments(syntax, scope, component.location, head)
-                })
-                .transpose()?;
-            let uses = if component.arguments.is_some() {
-                callee_uses
-            } else {
-                self.dependent_uses.get()
-            };
-            for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
-                let argument = self.tree.expr_lists.get(arguments)[syntax_index];
-                self.type_call_argument(argument, scope)?;
-            }
-            if callee == named
-                && !qualified
-                && !found.binding.is_some_and(|binding| {
-                    self.graph
-                        .entity(self.graph.binding(binding).entity)
-                        .home
-                        .is_some_and(|home| {
-                            self.graph.scope(home).kind == super::graph::ScopeKind::Class
-                        })
-                })
-            {
-                let key = Self::expression_name(component.kind)?;
-                let context = super::call_lookup::AssociationContext::from_dependence(
-                    self.dependent_uses.get() != uses,
-                );
-                self.argument_dependent_lookup(key, arguments, &mut found, context)?;
-            }
-            if found.binding.is_none() {
-                return Err(Error::at(
-                    self.tree.expressions.get(callee).location,
-                    if self.tree.names.get(name).global
-                        || self
-                            .tree
-                            .name_lists
-                            .get(self.tree.names.get(name).components)
-                            .len()
-                            > 1
-                    {
-                        "undeclared name"
-                    } else {
-                        "undeclared function name"
-                    },
-                ));
-            }
-            if let Some(given) = explicit {
-                let component = ast::NameComponent {
-                    location: self.tree.expressions.get(callee).location,
-                    ..component
+                let syntax_item = *self.tree.names.get(name);
+                let syntax_name = &syntax_item;
+                let qualified = syntax_name.global
+                    || self.tree.name_lists.get(syntax_name.components).len() > 1;
+                if found.binding.is_none() && (qualified || callee != named) {
+                    return Err(Error::at(
+                        self.tree.expressions.get(named).location,
+                        self.missing_callee_message(name),
+                    ));
+                }
+                if let Some(binding) = found.binding {
+                    let binding = self.graph.binding(binding);
+                    if matches!(
+                        binding.kind,
+                        super::graph::BindingKind::Type | super::graph::BindingKind::Alias
+                    ) {
+                        let target = binding
+                            .ty
+                            .ok_or(Error::Invariant("cast name without type"))?;
+                        let mut facts =
+                            self.scalar_functional_cast(id, target, arguments, None, scope)?;
+                        facts.functional_call = true;
+                        return Ok(facts);
+                    }
+                }
+                let named_value = if found.binding.is_some_and(|binding| {
+                    self.graph.binding(binding).kind != super::graph::BindingKind::Function
+                }) {
+                    Some(self.named_expression(named, &found, scope)?)
+                } else {
+                    None
                 };
-                self.specialize_explicit_functions(component, &mut found, &given, true)?;
-            }
-            let facts = if let Some(facts) = named_value {
+                let component = *self
+                    .tree
+                    .name_lists
+                    .get(syntax_name.components)
+                    .last()
+                    .ok_or(Error::Invariant("empty call name"))?;
+                let explicit = component
+                    .arguments
+                    .map(|syntax| {
+                        let head = self.sole_template_head(found.functions.as_slice())?;
+                        self.explicit_function_arguments(syntax, scope, component.location, head)
+                    })
+                    .transpose()?;
+                let uses = if component.arguments.is_some() {
+                    callee_uses
+                } else {
+                    self.dependent_uses.get()
+                };
+                for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+                    let argument = self.tree.expr_lists.get(arguments)[syntax_index];
+                    self.type_call_argument(argument, scope)?;
+                }
+                if callee == named
+                    && !qualified
+                    && !found.binding.is_some_and(|binding| {
+                        self.graph
+                            .entity(self.graph.binding(binding).entity)
+                            .home
+                            .is_some_and(|home| {
+                                self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                            })
+                    })
+                {
+                    let key = Self::expression_name(component.kind)?;
+                    let context = super::call_lookup::AssociationContext::from_dependence(
+                        self.dependent_uses.get() != uses,
+                    );
+                    self.argument_dependent_lookup(key, arguments, &mut found, context)?;
+                }
+                if found.binding.is_none() {
+                    return Err(Error::at(
+                        self.tree.expressions.get(callee).location,
+                        if self.tree.names.get(name).global
+                            || self
+                                .tree
+                                .name_lists
+                                .get(self.tree.names.get(name).components)
+                                .len()
+                                > 1
+                        {
+                            "undeclared name"
+                        } else {
+                            "undeclared function name"
+                        },
+                    ));
+                }
+                if let Some(given) = explicit {
+                    let component = ast::NameComponent {
+                        location: self.tree.expressions.get(callee).location,
+                        ..component
+                    };
+                    self.specialize_explicit_functions(component, &mut found, &given, true)?;
+                }
+                let facts = if let Some(facts) = named_value {
+                    facts
+                } else {
+                    self.named_expression(named, &found, scope)?
+                };
+                self.publish_named_callee(callee, named, facts, scope)?;
                 facts
             } else {
-                self.named_expression(named, &found, scope)?
+                let facts = self.typed_expression(callee, scope)?;
+                for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
+                    let argument = self.tree.expr_lists.get(arguments)[syntax_index];
+                    self.type_call_argument(argument, scope)?;
+                }
+                facts
             };
-            self.publish_named_callee(callee, named, facts, scope)?;
-            facts
-        } else {
-            let facts = self.typed_expression(callee, scope)?;
-            for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
-                let argument = self.tree.expr_lists.get(arguments)[syntax_index];
-                self.type_call_argument(argument, scope)?;
-            }
-            facts
-        };
         if let Some(target) = facts.destructor {
             let mut result = self.destructor_call(id, arguments, target)?;
             result.dispatch = facts.dispatch;

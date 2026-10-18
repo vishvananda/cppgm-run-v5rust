@@ -671,11 +671,21 @@ impl Analyzer<'_> {
                         .member
                         .map(|member| self.graph.types.qualify(member, cv))
                         .transpose()?;
-                    let saved_object = std::mem::replace(&mut self.signature_object, object);
-                    let saved_body = self.body_context.take();
+                    // Only the declaration's own member suffix introduces a
+                    // new object context. Nested function types and nonmember
+                    // declarations retain the enclosing context, as in C++.
+                    let saved_object = self.signature_object;
+                    let saved_body = if let Some(object) = object {
+                        self.signature_object = Some(object);
+                        self.body_context.take()
+                    } else {
+                        None
+                    };
                     let result = self.type_syntax_with_auto(result, prototype, placeholder_result);
                     self.signature_object = saved_object;
-                    self.body_context = saved_body;
+                    if object.is_some() {
+                        self.body_context = saved_body;
+                    }
                     ty = result?;
                     trailing_prototype = Some(prototype);
                 }
