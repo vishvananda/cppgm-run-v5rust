@@ -21,6 +21,7 @@ pub(super) struct DeclaratorEnvironment {
     pub auto_operators: bool,
     pub expand_pack: bool,
     pub placeholder_function: Option<ast::DeclaratorId>,
+    pub member_function: Option<TypeId>,
     pub home: Option<ScopeId>,
     pub lookup: ScopeId,
     pub declaring: ScopeId,
@@ -35,6 +36,11 @@ pub(super) struct DeclaratorInfo {
     pub parameters: Option<ast::ParameterClause>,
     pub qualifiers: Option<crate::syntax::storage::List<ast::Qualifier>>,
     pub syntax_name: Option<ast::Name>,
+}
+#[derive(Clone, Copy, Default)]
+pub(super) struct FunctionContext {
+    pub placeholder_result: bool,
+    pub member: Option<TypeId>,
 }
 impl Analyzer<'_> {
     pub(super) fn conversion_declarator(&self, info: &DeclaratorInfo) -> bool {
@@ -168,6 +174,7 @@ impl Analyzer<'_> {
             auto_operators: false,
             expand_pack: true,
             placeholder_function: None,
+            member_function: None,
             home,
             lookup: after,
             declaring: self.declaration_scope(scope),
@@ -219,6 +226,7 @@ impl Analyzer<'_> {
             auto_operators,
             expand_pack,
             placeholder_function,
+            member_function,
         } = environment;
         if friendship != super::specifiers::Friendship::Friend
             && matches!(placement, Placement::Declaration)
@@ -349,7 +357,13 @@ impl Analyzer<'_> {
                             qualifiers,
                             after,
                             node.location,
-                            placeholder_function == Some(current) && index == 0,
+                            FunctionContext {
+                                placeholder_result: placeholder_function == Some(current)
+                                    && index == 0,
+                                member: member_function.filter(|_| {
+                                    placeholder_function == Some(current) && index == 0
+                                }),
+                            },
                         )?;
                         ty = formed.0;
                         prototype = formed.1.map(|scope| (clause.location, scope));
@@ -543,8 +557,9 @@ impl Analyzer<'_> {
         qualifiers: crate::syntax::storage::List<ast::Qualifier>,
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
-        placeholder_result: bool,
+        context: FunctionContext,
     ) -> Result<(TypeId, Option<ScopeId>), Error> {
+        let placeholder_result = context.placeholder_result;
         if matches!(
             self.graph.types.get(ty).kind,
             TypeKind::Array { .. } | TypeKind::Function { .. }
@@ -652,7 +667,16 @@ impl Analyzer<'_> {
                             self.tree.parameters.get(clause.parameters)[parameter_index];
                         self.prototype_parameter(parameter, ty, prototype, true, parameter_index)?;
                     }
-                    ty = self.type_syntax_with_auto(result, prototype, placeholder_result)?;
+                    let object = context
+                        .member
+                        .map(|member| self.graph.types.qualify(member, cv))
+                        .transpose()?;
+                    let saved_object = std::mem::replace(&mut self.signature_object, object);
+                    let saved_body = self.body_context.take();
+                    let result = self.type_syntax_with_auto(result, prototype, placeholder_result);
+                    self.signature_object = saved_object;
+                    self.body_context = saved_body;
+                    ty = result?;
                     trailing_prototype = Some(prototype);
                 }
                 ast::QualifierKind::Noexcept(_)

@@ -381,15 +381,22 @@ impl Analyzer<'_> {
                 KeyWord::Keyword(Some(keyword)),
             ]);
             if keyword == Keyword::This {
-                self.key_this(scope, key);
+                self.key_this(scope, key)?;
             }
         }
         Ok(())
     }
 
-    fn key_this(&self, scope: ScopeId, key: &mut ExpressionKey) {
+    fn key_this(&mut self, scope: ScopeId, key: &mut ExpressionKey) -> Result<(), Error> {
         let mut current = Some(scope);
         key.words.push(KeyWord::Node(KeyNode::This));
+        if let Some(ty) = self.current_object_type()? {
+            let pointer = self.graph.types.pointer(ty)?;
+            let pointer = self.graph.types.canonical_function(pointer)?;
+            key.words.push(KeyWord::Type(pointer));
+            key.dependent |= self.graph.dependent_type(ty);
+            return Ok(());
+        }
         while let Some(scope) = current {
             let node = self.graph.scope(scope);
             if node.kind == ScopeKind::Class {
@@ -399,11 +406,12 @@ impl Analyzer<'_> {
                 } else {
                     key.words.push(KeyWord::Absent);
                 }
-                return;
+                return Ok(());
             }
             current = node.parent;
         }
         key.words.push(KeyWord::Absent);
+        Ok(())
     }
 
     fn key_literal(&mut self, literal: ast::Literal, key: &mut ExpressionKey) -> Result<(), Error> {

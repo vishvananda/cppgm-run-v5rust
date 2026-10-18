@@ -169,8 +169,18 @@ impl Analyzer<'_> {
     pub(super) fn alias_specialization(
         &mut self,
         alias: EntityId,
+        arguments: Vec<TypeId>,
+        location: SourceOffset,
+    ) -> Result<TypeId, Error> {
+        self.alias_specialization_in(alias, arguments, location, None)
+    }
+
+    fn alias_specialization_in(
+        &mut self,
+        alias: EntityId,
         mut arguments: Vec<TypeId>,
         location: SourceOffset,
+        context: Option<EntityId>,
     ) -> Result<TypeId, Error> {
         self.check_stack()?;
         let head = self
@@ -199,6 +209,7 @@ impl Analyzer<'_> {
         } else {
             let arguments: Vec<_> = key.arguments.iter().copied().map(Some).collect();
             let mut environment = Substitution::new(self.graph.templates.depth(head), &arguments);
+            environment.context = context;
             self.substitute_signature_type(pattern, &mut environment)?
                 .ok_or_else(|| {
                     environment.failure.map_or(
@@ -305,7 +316,7 @@ impl Analyzer<'_> {
         let Some(arguments) = self.substitute_pack_list(&patterns, environment)? else {
             return Ok(None);
         };
-        match self.alias_specialization(alias, arguments, SourceOffset(0)) {
+        match self.alias_specialization_in(alias, arguments, SourceOffset(0), environment.context) {
             Ok(ty) => Ok(Some(ty)),
             Err(
                 Error::Diagnostic { location, message } | Error::NonConstant { location, message },
@@ -471,6 +482,31 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn partial_alias_access_uses_primary_friendship_and_keeps_failed_queries_uncached() {
+        let source = SourceBuffer::new(
+            b"template<class...>using V=void;\
+              template<class T>using A=typename T::type;\
+              template<class T,class=void>struct D{static const int n=1;};\
+              template<class T,class=void>struct E{static const int n=3;};\
+              class Hidden{typedef int type;template<class,class>friend struct D;};\
+              template<class T>struct D<T,V<A<T>>>{static const int n=2;};\
+              template<class T>struct E<T,V<A<T>>>{static const int n=4;};\
+              static_assert(E<Hidden>::n==3,\"\");\
+              static_assert(D<Hidden>::n==2,\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"alias-access").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert!(graph.root_demands.as_slice().is_empty());
+        assert!(!graph.class_templates.aliases.specializations.is_empty());
+    }
 
     #[test]
     fn defaults_and_cv_keys_reuse_hidden_results_without_definition_demand() {

@@ -70,6 +70,12 @@ impl Analyzer<'_> {
         if self.default_argument_scope.is_some() {
             return Ok(None);
         }
+        if let Some(ty) = self
+            .signature_object
+            .filter(|_| self.body_context.is_none())
+        {
+            return Ok(Some(ty));
+        }
         if let Some(class) = self.member_initializer_class {
             return Ok(Some(self.graph.lower_entity_type(class)?));
         }
@@ -300,6 +306,7 @@ impl Analyzer<'_> {
         }
         self.check_named_member_access(binding, naming, class, scope, node.location)?;
         if self.lowering()
+            && self.unevaluated == 0
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)

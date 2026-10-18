@@ -214,8 +214,16 @@ impl Analyzer<'_> {
             } else {
                 &pattern
             };
+            // Frozen class partials check access as their primary template;
+            // variable partial matching has no such access context.
+            let context = self
+                .graph
+                .class_templates
+                .partials
+                .primary(candidate)
+                .map(|_| primary);
             let Some(deduced) =
-                self.deduce_partial_arguments(head, deduction_pattern, arguments)?
+                self.deduce_partial_arguments(head, deduction_pattern, arguments, context)?
             else {
                 continue;
             };
@@ -257,6 +265,7 @@ impl Analyzer<'_> {
         head: HeadId,
         pattern: &[TypeId],
         actual: &[TypeId],
+        context: Option<EntityId>,
     ) -> Result<Option<Vec<TypeId>>, Error> {
         if pattern.len() != actual.len() {
             return Ok(None);
@@ -287,6 +296,7 @@ impl Analyzer<'_> {
         }
         let given: Vec<_> = arguments.iter().copied().map(Some).collect();
         let mut substitution = Substitution::new(depth, &given);
+        substitution.context = context;
         for (&pattern, &actual) in pattern.iter().zip(actual) {
             let result = self.substitute_signature_type(pattern, &mut substitution);
             let substituted = match result {

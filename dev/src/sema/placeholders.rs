@@ -65,6 +65,18 @@ impl Analyzer<'_> {
                 part = node.nested;
             }
             environment.placeholder_function = own;
+            if !specs.is_static
+                && specs.friendship != super::specifiers::Friendship::Friend
+                && own.is_some_and(|id| self.tree.declarators.get(id).name.is_some())
+            {
+                let home = environment.home.unwrap_or(environment.declaring);
+                environment.member_function = self
+                    .graph
+                    .scope(home)
+                    .owner
+                    .filter(|_| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+                    .and_then(|entity| self.graph.entity(entity).ty);
+            }
         }
     }
 

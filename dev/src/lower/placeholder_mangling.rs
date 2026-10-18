@@ -201,6 +201,21 @@ impl Symbols<'_, '_> {
                 bits: *bits,
             },
             W::Node(N::Id) => return self.operand_name(words).map(|(node, _)| node),
+            W::Node(N::Keyword) => {
+                let W::Keyword(Some(keyword)) = words.next()? else {
+                    return Err(missing());
+                };
+                match keyword {
+                    Keyword::This => {
+                        if !matches!(words.next()?, W::Node(N::This)) {
+                            return Err(missing());
+                        }
+                        words.next()?;
+                        Node::ThisParam
+                    }
+                    _ => return Err(missing()),
+                }
+            }
             W::Node(N::Paren) => return self.operand_expression(words, depth + 1),
             W::Node(N::PackExpansion) => {
                 return self.operand_operation(words, O::PackExpansion, 1, depth);

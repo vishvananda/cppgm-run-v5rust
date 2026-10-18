@@ -75,6 +75,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) static_initializers:
         Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
+    pub(super) signature_object: Option<super::types::TypeId>,
     pub(super) default_argument_scope: Option<ScopeId>,
     pub(super) unevaluated: u32,
     pub(super) template_arguments: u32,
@@ -236,6 +237,7 @@ impl<'tree> Analyzer<'tree> {
             parenthesized_elements: std::collections::HashSet::new(),
             static_initializers: Vec::new(),
             body_context: None,
+            signature_object: None,
             binary_spine: Vec::new(),
             operator_scratch: super::operator_resolution::OperatorScratch::default(),
             operator_lookup: super::operator_candidates::OperatorLookup::default(),

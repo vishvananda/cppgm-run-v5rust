@@ -401,7 +401,14 @@ impl Analyzer<'_> {
         } else {
             self.graph.types.scalar(Scalar::Void)?
         };
-        let (ty, _) = self.function_type(result, parameters, qualifiers, scope, location, false)?;
+        let (ty, _) = self.function_type(
+            result,
+            parameters,
+            qualifiers,
+            scope,
+            location,
+            super::declarators::FunctionContext::default(),
+        )?;
         let special = SpecialName::Operator {
             token: crate::lex::vocabulary::SimpleToken::punctuator(Punctuator::LeftParen)
                 .ok_or(Error::Invariant("call token"))?,

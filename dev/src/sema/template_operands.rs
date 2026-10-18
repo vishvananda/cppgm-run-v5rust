@@ -25,6 +25,7 @@ pub(super) struct Pattern {
     fixed_value: Option<FixedValue>,
     pub expression: ast::ExprId,
     pub scope: ScopeId,
+    object: Option<TypeId>,
     pub key_dependent: bool,
     pub pack_names: super::pack_names::PackNames,
     home: ScopeId,
@@ -243,6 +244,7 @@ impl Analyzer<'_> {
         )?;
         self.graph.entity_mut(entity).ty = Some(ty);
         let head_depth = self.operand_head_depth(scope);
+        let object = self.current_object_type()?;
         self.graph.template_operands.patterns.insert(
             entity,
             Pattern {
@@ -252,6 +254,7 @@ impl Analyzer<'_> {
                 fixed_value: None,
                 expression,
                 scope,
+                object,
                 key_dependent,
                 pack_names,
                 home,
@@ -671,7 +674,8 @@ impl Analyzer<'_> {
             .pattern(entity)
             .ok_or(Error::Invariant("equivalent operand without pattern"))?;
         // C++ only re-keys operands with at most one head depth and no `this`.
-        if matches!(pattern.head_depth, HeadDepth::Several)
+        if pattern.object.is_some()
+            || matches!(pattern.head_depth, HeadDepth::Several)
             || self
                 .graph
                 .template_operands
@@ -1058,6 +1062,16 @@ impl Analyzer<'_> {
             earlier = next.and_then(|id| self.graph.template_operands.pending.get(&id));
         }
         let scope = self.operand_scope(scope, environment, parameters)?;
+        let object = pattern
+            .object
+            .map(|ty| self.substitute_signature_type(ty, environment))
+            .transpose()?;
+        if object == Some(None) {
+            return Err(environment.failure.map_or(
+                Error::Invariant("object substitution without failure reason"),
+                |message| Error::at(environment.failure_location, message),
+            ));
+        }
         let open = self.operand_open_depth(entity, environment.depth);
         let copy = self.copy_selected_operand(pattern.expression, scope, environment)?;
         let access = environment
@@ -1071,6 +1085,7 @@ impl Analyzer<'_> {
         let saved_function = self.declaration_access.function.take();
         let saved_access_class = self.declaration_access.class.take();
         let saved_body = self.body_context.take();
+        let saved_object = std::mem::replace(&mut self.signature_object, object.flatten());
         let saved_limit = self.graph.lookup_limit.replace(pattern.limit);
         let saved_depth = std::mem::replace(&mut self.template_depth, usize::from(open));
         // A substituted value/bound is potentially evaluated even when the
@@ -1122,6 +1137,7 @@ impl Analyzer<'_> {
         self.declaration_access.function = saved_function;
         self.declaration_access.class = saved_access_class;
         self.body_context = saved_body;
+        self.signature_object = saved_object;
         self.graph.lookup_limit = saved_limit;
         self.template_depth = saved_depth;
         self.unevaluated = saved_unevaluated;
@@ -1315,6 +1331,78 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn trailing_objects_keep_cv_identity_without_body_or_layout_demand() {
+        let source = SourceBuffer::new(
+            b"template<class X>struct A{\
+              template<class T>auto f(T)->decltype(this){return T::missing;}\
+              template<class T>auto f(T)const->decltype(this){return T::missing;}};\
+              using I=A<int>;\
+              static_assert(sizeof(((I*)0)->f(0))==8,\"\");\
+              static_assert(sizeof(((const I*)0)->f(0))==8,\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"trailing-object").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let name = cursor.intern_name(b"I").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert!(analyzer.signature_object.is_none());
+        assert!(analyzer.body_context.is_none());
+        assert!(analyzer.graph.template_operands.active.is_empty());
+        let mut objects = Vec::new();
+        for pattern in analyzer.graph.template_operands.patterns.values() {
+            if let Some(object) = pattern.object {
+                objects.push(object);
+            }
+        }
+        assert!(
+            objects
+                .iter()
+                .any(|&ty| analyzer.graph.types.get(ty).cv == Cv::CONST)
+        );
+        assert!(
+            objects
+                .iter()
+                .any(|&ty| analyzer.graph.types.get(ty).cv == Cv::default())
+        );
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        let binding = analyzer
+            .graph
+            .own(global, name, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let class = analyzer
+            .graph
+            .class_of(analyzer.graph.binding(binding).ty.unwrap())
+            .unwrap();
+        assert!(matches!(
+            analyzer.graph.entity(class).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+        let home = analyzer.graph.entity(class).scope.unwrap();
+        for binding in analyzer.graph.functions_at(home, f.into()) {
+            assert!(
+                !analyzer
+                    .graph
+                    .function_templates
+                    .body_demanded(analyzer.graph.binding(binding).entity)
+            );
+        }
+        let syntax = analyzer.tree.expressions.mark();
+        let count = analyzer.graph.template_operands.substitutions.len();
+        assert!(analyzer.complete_class(class).unwrap());
+        assert_eq!(analyzer.tree.expressions.mark(), syntax);
+        assert_eq!(analyzer.graph.template_operands.substitutions.len(), count);
+    }
 
     #[test]
     fn specialized_member_head_forms_types_at_its_own_parameter_depth() {
@@ -1648,6 +1736,7 @@ mod tests {
         analyzer.default_argument_scope = Some(scope);
         analyzer.initializing = Some(entity);
         analyzer.base_object = Some(entity);
+        analyzer.signature_object = Some(argument);
         analyzer.dependent_uses.set(17);
         let args = [Some(argument)];
         let mut environment = Substitution::new(0, &args);
@@ -1672,6 +1761,7 @@ mod tests {
         assert_eq!(analyzer.default_argument_scope, Some(scope));
         assert_eq!(analyzer.initializing, Some(entity));
         assert_eq!(analyzer.base_object, Some(entity));
+        assert_eq!(analyzer.signature_object, Some(argument));
         assert_eq!(analyzer.graph.lookup_limit, None);
     }
 

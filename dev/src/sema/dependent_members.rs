@@ -90,9 +90,14 @@ impl Analyzer<'_> {
             return Ok(scope);
         }
         let home = self.graph.entity(entity).home.unwrap_or(self.graph.global);
-        let scope = self
-            .graph
-            .add_scope(ScopeKind::Function, home, None, None)?;
+        let kind = if self.graph.entity(entity).ty.is_some_and(
+            |ty| matches!(self.graph.types.get(ty).kind, TypeKind::Class(class) if class == entity),
+        ) {
+            ScopeKind::Class
+        } else {
+            ScopeKind::Function
+        };
+        let scope = self.graph.add_scope(kind, home, None, None)?;
         self.graph.scope_mut(scope).owner = Some(entity);
         self.graph.dependent_members.contexts.insert(entity, scope);
         Ok(scope)

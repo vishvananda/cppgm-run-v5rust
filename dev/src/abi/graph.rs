@@ -161,6 +161,7 @@ pub enum Node {
         index: u32,
         level: u32,
     },
+    ThisParam,
     Operation(Operation),
     Call,
     ConversionList(NodeId),

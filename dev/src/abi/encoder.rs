@@ -744,6 +744,7 @@ impl<'a> Encoder<'a> {
                 }
                 self.put(b"_");
             }
+            Node::ThisParam => self.put(b"fpT"),
             Node::Literal { .. } | Node::FloatingLiteral { .. } => self.argument(id)?,
             Node::Operation(operation) => {
                 self.put(operation.code());
