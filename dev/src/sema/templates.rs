@@ -83,6 +83,7 @@ pub(super) struct Templates {
     positions: HashMap<Position, EntityId>,
     synthesized_values: Vec<TypeId>,
     unique_names: Vec<TypeId>,
+    unique_types: Vec<TypeId>,
     partial_orderings: HashMap<(EntityId, EntityId), bool>,
 }
 impl Templates {
@@ -147,6 +148,45 @@ impl Templates {
     }
 }
 impl Analyzer<'_> {
+    /// Unique dependent types for ordering belong to no source template depth.
+    /// Keeping them dependent prevents ordering trials from demanding class
+    /// definitions, member lookup, or emission through a concrete stand-in.
+    fn unique_template_types(&mut self, count: usize) -> Result<Vec<Option<TypeId>>, Error> {
+        while self.graph.templates.unique_types.len() < count {
+            // Match the frozen parameter record's explicit low-16-bit index.
+            let index = u16::try_from(self.graph.templates.unique_types.len() & 0xffff)
+                .map_err(|_| Error::Invariant("truncated synthesized type index"))?;
+            let entity = self.graph.add_entity(None, None, Keyword::Class)?;
+            self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+                position: Position {
+                    depth: 0x7fff,
+                    index,
+                    shape: ParameterShape {
+                        non_type: false,
+                        pack: false,
+                        inner: None,
+                    },
+                },
+                inner: None,
+                value_type: None,
+            });
+            let ty = self.graph.types.intern(
+                TypeKind::TemplateParameter {
+                    entity,
+                    template: false,
+                },
+                Cv::default(),
+            )?;
+            self.graph.entity_mut(entity).ty = Some(ty);
+            self.graph.templates.unique_types.push(ty);
+        }
+        Ok(self.graph.templates.unique_types[..count]
+            .iter()
+            .copied()
+            .map(Some)
+            .collect())
+    }
+
     /// Ordering's unique value placeholders are positional and remain dependent.
     /// Their descriptor records the argument kind; a substitution frame retains
     /// the target parameter's own declared value type.

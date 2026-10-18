@@ -182,6 +182,44 @@ mod tests {
     };
 
     #[test]
+    fn elaborated_qualifiers_defer_lookup_and_reject_in_the_immediate_context() {
+        let source = SourceBuffer::new(
+            b"struct Good{struct marker;};\
+              struct Alias{typedef int marker;};\
+              struct L{struct marker;};struct R{struct marker;};struct D:L,R{};\
+              struct Hidden{struct marker;static int marker;};\
+              template<class T>char probe(decltype((struct T::marker*)0));\
+              template<class T>long probe(...);\
+              static_assert(sizeof(probe<Good>(0))==1,\"\");\
+              static_assert(sizeof(probe<Hidden>(0))==1,\"\");\
+              static_assert(sizeof(probe<Alias>(0))==sizeof(long),\"\");\
+              static_assert(sizeof(probe<D>(0))==sizeof(long),\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"elaborated-qualifiers").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert!(!graph.dependent_members.facts.is_empty());
+        for &entity in graph.dependent_members.facts.keys() {
+            assert!(graph.entity(entity).scope.is_none());
+        }
+        let probe = cursor.intern_name(b"probe").unwrap();
+        for binding in graph.functions_at(graph.global, probe.into()) {
+            assert!(
+                !graph
+                    .function_templates
+                    .body_demanded(graph.binding(binding).entity)
+            );
+        }
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
     fn renamed_qualifiers_share_canonical_identity_without_member_demand() {
         let source = SourceBuffer::new(
             b"template<class T>typename T::inner::type f(T);\

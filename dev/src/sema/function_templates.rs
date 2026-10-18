@@ -51,7 +51,6 @@ pub(super) struct FunctionTemplates {
     pub(super) arguments: HashMap<EntityId, Vec<TypeId>>,
     explicit: HashMap<BindingId, Vec<Option<TypeId>>>,
     defaults: HashMap<(HeadId, usize, Vec<TypeId>), TypeId>,
-    unique_types: Vec<TypeId>,
     demanded_bodies: HashSet<EntityId>,
     trailing_results: HashSet<EntityId>,
 }
@@ -1880,27 +1879,6 @@ impl Analyzer<'_> {
         self.deduce_pack_types(pattern, &packed, depth, arguments)
     }
 
-    pub(super) fn unique_template_types(
-        &mut self,
-        count: usize,
-    ) -> Result<Vec<Option<TypeId>>, Error> {
-        while self.graph.function_templates.unique_types.len() < count {
-            let entity =
-                self.graph
-                    .add_entity(None, None, crate::lex::vocabulary::Keyword::Struct)?;
-            let ty = self
-                .graph
-                .types
-                .intern(TypeKind::Class(entity), Cv::default())?;
-            self.graph.function_templates.unique_types.push(ty);
-        }
-        Ok(self.graph.function_templates.unique_types[..count]
-            .iter()
-            .copied()
-            .map(Some)
-            .collect())
-    }
-
     fn order_function_types(
         &mut self,
         from: TypeId,
@@ -2250,6 +2228,112 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert!(analyzer.graph.function_templates.signatures.is_empty());
+        assert!(analyzer.graph.function_templates.demanded_bodies.is_empty());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
+    }
+
+    #[test]
+    fn ordering_keeps_unique_types_and_qualified_members_dependent() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct Id{typedef T type;};\
+              template<class T>int f(T,typename Id<T>::type){return T::bad;}\
+              template<class T>int f(T,T){return T::bad;}\
+              template<class T>struct Cache{virtual int fill(){return T::bad;}};\
+              template<class T>struct Holder{Cache<T> stored;};\
+              template<class T>int g(Holder<T>&){return T::bad;}\
+              template<class T>int g(Holder<const T>&){return T::bad;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"dependent-ordering").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax = (tree.expressions.mark(), tree.declarations.mark());
+        let f = cursor.intern_name(b"f").unwrap();
+        let g = cursor.intern_name(b"g").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let f = analyzer
+            .graph
+            .functions_at(global, f.into())
+            .collect::<Vec<_>>();
+        let g = analyzer
+            .graph
+            .functions_at(global, g.into())
+            .collect::<Vec<_>>();
+        let head = analyzer.function_template_head(f[0]).unwrap().unwrap();
+        let unique = analyzer.unique_partial_arguments(head).unwrap();
+        let ty = unique[0].unwrap();
+        let TypeKind::TemplateParameter {
+            entity,
+            template: false,
+        } = analyzer.graph.types.get(ty).kind
+        else {
+            panic!("ordering's unique type must stay dependent")
+        };
+        let info = analyzer.graph.entity(entity).template_parameter.unwrap();
+        assert_eq!(info.depth(), 0x7fff);
+        assert_eq!(info.argument_index(), 0);
+        assert!(info.value_type.is_none());
+        assert!(analyzer.graph.entity(entity).scope.is_none());
+        assert!(analyzer.graph.dependent_type(ty));
+        let parameter = analyzer
+            .graph
+            .types
+            .function_parameter(analyzer.graph.binding(f[0]).ty.unwrap(), 1)
+            .unwrap();
+        let mut environment = Substitution::new(analyzer.graph.templates.depth(head), &unique);
+        let substituted = analyzer
+            .substitute_signature_type(parameter, &mut environment)
+            .unwrap()
+            .unwrap();
+        let TypeKind::TemplateParameter { entity: member, .. } =
+            analyzer.graph.types.get(substituted).kind
+        else {
+            panic!("qualified member must stay dependent")
+        };
+        let qualifier = analyzer
+            .graph
+            .dependent_members
+            .get(member)
+            .unwrap()
+            .qualifier;
+        let TypeKind::Class(shell) = analyzer.graph.types.get(qualifier).kind else {
+            panic!("member qualifier must be a class shell")
+        };
+        assert!(analyzer.graph.entity(shell).scope.is_none());
+        for _ in 0..3 {
+            for form in [TemplateOrdering::Call(2), TemplateOrdering::FunctionType] {
+                assert!(
+                    !analyzer
+                        .template_at_least_as_specialized(f[0], f[1], form)
+                        .unwrap()
+                );
+                assert!(
+                    analyzer
+                        .template_at_least_as_specialized(f[1], f[0], form)
+                        .unwrap()
+                );
+            }
+            assert!(
+                !analyzer
+                    .template_at_least_as_specialized(g[0], g[1], TemplateOrdering::Call(1))
+                    .unwrap()
+            );
+            assert!(
+                analyzer
+                    .template_at_least_as_specialized(g[1], g[0], TemplateOrdering::Call(1))
+                    .unwrap()
+            );
+            assert_eq!(analyzer.unique_partial_arguments(head).unwrap(), unique);
+        }
         assert!(analyzer.graph.function_templates.signatures.is_empty());
         assert!(analyzer.graph.function_templates.demanded_bodies.is_empty());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());

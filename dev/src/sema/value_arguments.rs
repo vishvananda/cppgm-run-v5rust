@@ -315,10 +315,8 @@ impl Analyzer<'_> {
                 }
                 Some("a narrowing conversion of a template argument")
             } else {
-                // Partial ordering substitutes unique class types for type
-                // parameters. A value whose target becomes one of those
-                // classes fails conversion, just like an incomplete enum;
-                // it is a rejected substitution, not an unimplemented address.
+                // A concrete target without an integral representation fails
+                // conversion. Still-dependent synthesized targets returned above.
                 Some("a non-type template parameter of incomplete enumeration type")
             };
         Err(Error::at(
@@ -615,7 +613,7 @@ mod tests {
     };
 
     #[test]
-    fn invented_nonintegral_targets_fail_substitution_without_completing_classes() {
+    fn synthesized_targets_remain_dependent_without_completing_classes() {
         let source = SourceBuffer::new(
             b"template<class T,T V>struct A;template<class T>using Pattern=A<T,0>;".to_vec(),
         )
@@ -639,20 +637,33 @@ mod tests {
             analyzer.graph.templates.depth(head),
             &unique,
         );
-        assert!(
-            analyzer
-                .substitute_signature_type(pattern, &mut substitution)
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(
-            substitution.failure,
-            Some("a non-type template parameter of incomplete enumeration type")
-        );
-        let TypeKind::Class(invented) = analyzer.graph.types.get(unique[0].unwrap()).kind else {
-            panic!("unique class argument")
+        let substituted = analyzer
+            .substitute_signature_type(pattern, &mut substitution)
+            .unwrap()
+            .unwrap();
+        assert!(substitution.failure.is_none());
+        let TypeKind::TemplateParameter {
+            entity: invented,
+            template: false,
+        } = analyzer.graph.types.get(unique[0].unwrap()).kind
+        else {
+            panic!("unique dependent type argument")
         };
+        assert_eq!(
+            analyzer
+                .graph
+                .entity(invented)
+                .template_parameter
+                .unwrap()
+                .depth(),
+            0x7fff
+        );
         assert!(analyzer.graph.entity(invented).scope.is_none());
+        assert!(analyzer.graph.dependent_type(substituted));
+        let TypeKind::Class(shell) = analyzer.graph.types.get(substituted).kind else {
+            panic!("substituted class shell")
+        };
+        assert!(analyzer.graph.entity(shell).scope.is_none());
         assert_eq!(analyzer.graph.entity(alias).ty, Some(pattern));
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }

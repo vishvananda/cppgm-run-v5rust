@@ -1566,7 +1566,33 @@ impl Analyzer<'_> {
             }
             return self.elaborated_specialization(key, name, scope);
         }
-        let prefix = self.prefix(name, scope)?;
+        let count = self
+            .tree
+            .name_lists
+            .get(node.components)
+            .len()
+            .saturating_sub(1);
+        let prefix = match self.name_prefix(name, scope, count, false)? {
+            Some(Prefix::Dependent(qualifier)) => {
+                // The elaborated specifier is checked when its retained syntax
+                // sees a concrete qualifier. No dependent qualifier has a scope.
+                let last = self
+                    .tree
+                    .name_lists
+                    .get(node.components)
+                    .last()
+                    .ok_or(Error::Invariant("empty class name"))?;
+                let key_name = Self::component_name(last.kind)?;
+                let binding = self.dependent_member_binding(qualifier, key_name)?;
+                return self
+                    .graph
+                    .binding(binding)
+                    .ty
+                    .ok_or(Error::Invariant("dependent class name without type"));
+            }
+            Some(Prefix::Scope(prefix)) => Some(prefix),
+            None => None,
+        };
         let last = self
             .tree
             .name_lists
