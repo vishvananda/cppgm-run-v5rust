@@ -585,7 +585,14 @@ impl Function<'_, '_, '_, '_> {
         &self,
         target: crate::sema::lowering::CallTarget,
     ) -> Result<bool, Error> {
-        self.call_throws_in_context(target, false)
+        // call_may_throw brackets ordinary functions in a hidden temporary
+        // segment even when their declaration is noexcept. The declaration's
+        // unwind fact remains unchanged; this decides the segment's regions
+        // and scalar result staging, including converted class receivers.
+        self.call_throws_in_context(
+            target,
+            self.lifetime.temporary_segment.allows_eager_arguments(),
+        )
     }
     pub(super) fn call_throws_in_context(
         &self,

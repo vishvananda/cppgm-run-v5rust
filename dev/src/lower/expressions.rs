@@ -30,7 +30,7 @@ impl Function<'_, '_, '_, '_> {
         let value = self.expression(id, context)?;
         self.apply_conversion(id, value, context)
     }
-    fn apply_conversion(
+    pub(super) fn apply_conversion(
         &mut self,
         id: ast::ExprId,
         mut value: RValue,
@@ -335,7 +335,7 @@ impl Function<'_, '_, '_, '_> {
                 condition,
                 then_expr,
                 else_expr,
-            } => self.conditional(id, condition, then_expr, else_expr),
+            } => self.conditional_value(id, condition, then_expr, else_expr),
             ExprKind::Braced { elements, .. } => {
                 if let Some(&id) = self.tree.expr_lists.get(elements).first() {
                     let value = self.operand(id, Context::Initialization)?;
@@ -794,100 +794,5 @@ impl Function<'_, '_, '_, '_> {
         });
         self.before_lifetime_call(throws)?;
         self.finish_result_call(call, source, destination, throws)
-    }
-
-    fn conditional(
-        &mut self,
-        id: ast::ExprId,
-        condition: ast::ExprId,
-        then_expr: ast::ExprId,
-        else_expr: ast::ExprId,
-    ) -> Result<RValue, Error> {
-        let source = self.graph.lower_expression(id)?.ty;
-        let ty = types::storage(self.graph, source)?;
-
-        if ty == Type::Void {
-            self.discard(id)?;
-            return self.zero(source);
-        }
-        if let Some(selected) = self.graph.lower_constant_conversion(self.tree, condition)? {
-            let value = self.operand(
-                if selected { then_expr } else { else_expr },
-                Context::Operand,
-            )?;
-            return self.fit(value, source);
-        }
-        let slot = self.generated_slot("cond", ty)?;
-        let then_name = self.block_name("cond_then")?;
-        let else_name = self.block_name("cond_else")?;
-        let end_name = self.block_name("cond_end")?;
-        let then_block = self.builder.block_id(&then_name)?;
-        let else_block = self.builder.block_id(&else_name)?;
-        let end_block = self.builder.block_id(&end_name)?;
-        let guard_start = self.lifetime.guard_start;
-        if guard_start.is_none() {
-            self.lifetime.guard_start = Some(self.builder.position()?);
-        }
-        let condition = self.truth(condition)?;
-        let condition = if condition.ty.float_rank() != 0 {
-            let zero = self.zero(condition.source)?;
-            self.emit(
-                I::Compare(Compare::Ne, condition.ty, condition.value, zero.value),
-                condition.source,
-            )?
-        } else {
-            condition
-        };
-        self.effect(I::Branch(condition.value, then_block, else_block))?;
-        let local = self.branch_local(id);
-        let opened = self.lifetime.regions_opened;
-        for (index, (name, expression)) in [(&then_name, then_expr), (&else_name, else_expr)]
-            .into_iter()
-            .enumerate()
-        {
-            self.builder.block(name)?;
-            let reopened = index != 0
-                && self.lifetime.full_expression
-                && !self.lifetime.region
-                && self.lifetime.regions_opened != opened
-                && !self.lifetime.tracking.active
-                && (!self.lifetime.temporary_segment.allows_eager_arguments()
-                    || self.expression_throws(expression)?
-                    || self.expression_temporaries(expression)?.made);
-            if reopened {
-                let position = self.builder.position()?;
-                self.open_temporary_region_at(Some(position))?;
-            }
-            let first = self.lifetime.cleanups.len();
-            self.lifetime.guarded_operands += u32::from(!local);
-            let outer_choice = self.lifetime.choice_region;
-            if reopened {
-                self.lifetime.choice_region = super::lifetime::ChoiceRegion::Reopened;
-            }
-            let value = self.operand(expression, Context::Operand);
-            self.lifetime.choice_region = outer_choice;
-            self.lifetime.guarded_operands -= u32::from(!local);
-            let value = value?;
-            let value = self.fit(value, source)?;
-            self.effect(I::Store(
-                types::memory(self.graph, source)?,
-                ty,
-                value.value,
-                slot,
-            ))?;
-            if local {
-                self.destroy_temporaries(first)?;
-            }
-            self.effect(I::Jump(end_block))?;
-        }
-        self.builder.block(&end_name)?;
-        if guard_start.is_none() {
-            self.lifetime.guard_start = None;
-        }
-        self.conditional_slot = Some(slot);
-        self.emit(
-            I::Load(types::memory(self.graph, source)?, ty, slot),
-            source,
-        )
     }
 }
