@@ -143,9 +143,9 @@ impl Analyzer<'_> {
                         .template_head
                         .is_none()
                 {
-                    node.location
+                    Some(node.location)
                 } else {
-                    self.tree.expressions.get(id).location
+                    None
                 },
             },
         )?;
@@ -352,7 +352,6 @@ impl Analyzer<'_> {
                 "use of a deleted function",
             ));
         }
-        self.demand_specialization_body(binding);
         let ty = self
             .graph
             .binding(binding)
@@ -374,10 +373,13 @@ impl Analyzer<'_> {
                     naming,
                     naming,
                     address.scope,
-                    address.location,
+                    address
+                        .location
+                        .unwrap_or(self.tree.expressions.get(id).location),
                 )?;
             }
         }
+        self.demand_specialization_body(binding);
         // Ordinary unary designations are already typed, including their
         // function-to-pointer operand conversions. Only unresolved overload
         // designations use the oracle's immediate-unary rewrite below.

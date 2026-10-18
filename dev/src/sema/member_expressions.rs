@@ -602,6 +602,52 @@ mod tests {
     };
 
     #[test]
+    fn rejected_address_selection_keeps_use_location_without_body_demand() {
+        for (declaration, expression, at) in [
+            ("template<class T>static int f(T);", "((&B::f))", "((&"),
+            ("template<class T>static int f(T);", "((&B::f<int>))", "&B"),
+            ("static int f(int);static int f(long);", "((&B::f))", "((&"),
+            ("static int f(int);", "((&B::f))", "B::f"),
+        ] {
+            let text = format!("struct B{{private:{declaration}}};int(*p)(int)={expression};");
+            let expected = text.find(at).unwrap();
+            let source = SourceBuffer::new(text.into_bytes()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"address-access").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let class_name = cursor.intern_name(b"B").unwrap();
+            let function_name = cursor.intern_name(b"f").unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let result = analyzer.declarations(declarations, analyzer.graph.global);
+            assert!(
+                matches!(result, Err(Error::Diagnostic { location, message })
+                if location.index() == expected && message == "inaccessible member")
+            );
+            let binding = analyzer
+                .graph
+                .own(analyzer.graph.global, class_name, Filter::Elaborated)
+                .unwrap();
+            let class = analyzer.graph.binding(binding).entity;
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let function = analyzer
+                .graph
+                .own(scope, function_name, Filter::Ordinary)
+                .unwrap();
+            assert!(
+                !analyzer
+                    .graph
+                    .function_templates
+                    .body_demanded(analyzer.graph.binding(function).entity)
+            );
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        }
+    }
+
+    #[test]
     fn shared_specialization_keeps_lookup_local_using_access_and_receiver_owner() {
         let source = SourceBuffer::new(
             b"struct Base { template<class T> int f(T); };\

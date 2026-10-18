@@ -10,7 +10,9 @@ pub(super) struct MemberAddress {
     pub naming: Option<super::graph::EntityId>,
     pub scope: super::graph::ScopeId,
     pub functions: super::function_resolution::OverloadId,
-    pub location: crate::support::source::SourceOffset,
+    // Sole ordinary declarations check at the name. Overload selection checks
+    // at its use expression, which may surround the address with parentheses.
+    pub location: Option<crate::support::source::SourceOffset>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
