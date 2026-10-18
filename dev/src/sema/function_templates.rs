@@ -1192,7 +1192,15 @@ impl Analyzer<'_> {
             .cloned()
             .unwrap_or_else(|| vec![None; self.graph.templates.parameters(head).len()])
     }
-    pub(super) fn needs_deduction(&self, ty: TypeId, depth: u32) -> bool {
+    pub(super) fn needs_deduction(&mut self, ty: TypeId, depth: u32) -> Result<bool, Error> {
+        // deduce_for_call tests the aliased type. A shell retains discarded
+        // arguments for substitution/SFINAE, but those arguments cannot make
+        // its nondependent target participate in call deduction (CWG 1558).
+        let ty = self.aliased_type(ty)?;
+        if !self.graph.dependent_type(ty) {
+            return Ok(false);
+        }
+        let ty = self.graph.types.canonical_function(ty)?;
         let mut work = vec![ty];
         let mut seen = HashSet::new();
         while let Some(ty) = work.pop() {
@@ -1200,7 +1208,7 @@ impl Analyzer<'_> {
                 continue;
             }
             if self.template_parameter_index(ty, depth).is_some() {
-                return true;
+                return Ok(true);
             }
             match &self.graph.types.get(ty).kind {
                 TypeKind::Class(entity) => {
@@ -1228,7 +1236,7 @@ impl Analyzer<'_> {
                     if operand
                         .is_some_and(|bound| self.named_bound_parameter(bound, depth).is_some())
                     {
-                        return true;
+                        return Ok(true);
                     }
                     work.push(*element);
                 }
@@ -1243,7 +1251,7 @@ impl Analyzer<'_> {
                 _ => (),
             }
         }
-        false
+        Ok(false)
     }
     pub(super) fn deduce_function_call(
         &mut self,
@@ -1333,7 +1341,7 @@ impl Analyzer<'_> {
             let Some(pattern) = self.substitute_signature_type(pattern, &mut environment)? else {
                 return Ok(None);
             };
-            if !self.needs_deduction(pattern, depth) {
+            if !self.needs_deduction(pattern, depth)? {
                 continue;
             }
             // A braced argument has no ordinary expression facts. It is a

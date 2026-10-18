@@ -133,7 +133,7 @@ impl Analyzer<'_> {
         let fixed = parameters.len() - usize::from(trailing.is_some());
         for (index, &pattern) in parameters.iter().take(fixed.min(supplied)).enumerate() {
             if matches!(self.graph.types.get(pattern).kind, TypeKind::Expansion(_))
-                || !self.needs_deduction(pattern, depth)
+                || !self.needs_deduction(pattern, depth)?
             {
                 continue;
             }

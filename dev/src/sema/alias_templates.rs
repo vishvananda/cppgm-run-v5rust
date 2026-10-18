@@ -484,6 +484,78 @@ mod tests {
     };
 
     #[test]
+    fn call_deduction_uses_alias_targets_without_discarding_substitution_obligations() {
+        let source = SourceBuffer::new(
+            b"template<class>using discard=long;template<class T>using keep=T;\
+              template<class T>void f(discard<T>,keep<T>,discard<typename T::bad>);\
+              struct X{using bad=int;};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"alias-deduction").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let x = cursor.intern_name(b"X").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let binding = analyzer
+            .graph
+            .functions_at(global, f.into())
+            .next()
+            .unwrap();
+        let head = analyzer.function_template_head(binding).unwrap().unwrap();
+        let depth = analyzer.graph.templates.depth(head);
+        let ty = analyzer.graph.binding(binding).ty.unwrap();
+        let parameters: Vec<_> = (0..3)
+            .map(|index| analyzer.graph.types.function_parameter(ty, index).unwrap())
+            .collect();
+        assert!(analyzer.graph.dependent_type(parameters[0]));
+        assert!(analyzer.graph.dependent_type(parameters[2]));
+        let syntax_mark = analyzer.tree.expressions.mark();
+        let binding_mark = analyzer.graph.binding_limit();
+        for _ in 0..4 {
+            assert!(!analyzer.needs_deduction(parameters[0], depth).unwrap());
+            assert!(analyzer.needs_deduction(parameters[1], depth).unwrap());
+            assert!(!analyzer.needs_deduction(parameters[2], depth).unwrap());
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), syntax_mark);
+        assert_eq!(analyzer.graph.binding_limit(), binding_mark);
+        let int = analyzer
+            .graph
+            .types
+            .scalar(super::super::types::Scalar::Basic(
+                crate::types::FundamentalType::Int,
+            ))
+            .unwrap();
+        let invalid = [Some(int)];
+        let mut environment = Substitution::new(depth, &invalid);
+        assert!(
+            analyzer
+                .substitute_signature_type(parameters[2], &mut environment)
+                .unwrap()
+                .is_none()
+        );
+        let x = analyzer
+            .graph
+            .own(global, x, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let valid = [analyzer.graph.binding(x).ty];
+        let mut environment = Substitution::new(depth, &valid);
+        assert!(
+            analyzer
+                .substitute_signature_type(parameters[2], &mut environment)
+                .unwrap()
+                .is_some()
+        );
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
     fn partial_alias_access_uses_primary_friendship_and_keeps_failed_queries_uncached() {
         let source = SourceBuffer::new(
             b"template<class...>using V=void;\
