@@ -348,12 +348,19 @@ impl Function<'_, '_, '_, '_> {
             return self.materialize_class(source, use_.target, object);
         }
         // The frozen allocation_initializer starts with an ordinary Place;
-        // scalar initialization stores are typed even for a volatile target.
+        // scalar initialization stores ignore the target's volatile qualifier;
+        // byte-sized stores still follow typed_access's character exclusion.
         self.initialize_scalar_memory(
             use_.target,
             object,
             initializer,
-            crate::lowir::model::Facts::memory(false, true),
+            crate::lowir::model::Facts::memory(
+                false,
+                !matches!(
+                    types::storage(self.graph, use_.target)?,
+                    Type::I8 | Type::U8
+                ),
+            ),
         )
     }
 

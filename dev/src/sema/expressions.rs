@@ -195,12 +195,32 @@ impl Analyzer<'_> {
                             .map(|&id| (id, unevaluated)),
                     );
                 }
-                let (ty, bound) = self.allocation_type(ty, scope)?;
+                // Allocation's typed query deduces the placeholder. This walk
+                // checks names without forming its declarator or initializer.
+                let (ty, bound) = if self.type_syntax_holds_auto(ty) {
+                    let bound = self.tree.types.get(ty).declarator.and_then(|id| {
+                        self.tree
+                            .suffixes
+                            .get(self.tree.declarators.get(id).suffixes)
+                            .first()
+                            .and_then(|suffix| match suffix {
+                                ast::Suffix::Array(bound) => *bound,
+                                ast::Suffix::Function { .. } => None,
+                            })
+                    });
+                    (None, bound)
+                } else {
+                    let (ty, bound) = self.allocation_type(ty, scope)?;
+                    (Some(ty), bound)
+                };
                 if let Some(bound) = bound {
                     self.expression_work.push((bound, unevaluated));
                 }
                 let empty = initializer.is_none_or(|init| matches!(init.kind, InitializerKind::Parenthesized(arguments) if arguments.is_empty()));
-                if empty && !unevaluated {
+                if empty
+                    && !unevaluated
+                    && let Some(ty) = ty
+                {
                     self.value_initialized_class(ty)?;
                 }
                 if let Some(initializer) = initializer {

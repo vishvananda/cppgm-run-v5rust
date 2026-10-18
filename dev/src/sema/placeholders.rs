@@ -20,6 +20,70 @@ pub(super) struct PlaceholderScratch {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn type_syntax_holds_auto(&self, syntax: ast::TypeId) -> bool {
+        self.tree
+            .specs
+            .get(self.tree.types.get(syntax).specifiers)
+            .iter()
+            .any(|specifier| {
+                matches!(
+                    specifier.kind,
+                    ast::SpecifierKind::Keyword(crate::lex::vocabulary::Keyword::Auto)
+                )
+            })
+    }
+
+    pub(super) fn allocated_placeholder(
+        &mut self,
+        syntax: ast::TypeId,
+        initializer: Option<ast::Initializer>,
+        array: bool,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<Option<TypeId>, Error> {
+        if !self.type_syntax_holds_auto(syntax) {
+            return Ok(None);
+        }
+        let syntax = *self.tree.types.get(syntax);
+        let valid = initializer.is_some_and(|initializer| {
+            if let InitializerKind::Parenthesized(arguments) = initializer.kind {
+                let arguments = self.tree.expr_lists.get(arguments);
+                arguments.len() == 1
+                    && !matches!(
+                        self.tree.expressions.get(arguments[0]).kind,
+                        ExprKind::Braced { .. }
+                    )
+            } else {
+                false
+            }
+        });
+        if array || !valid {
+            return Err(Error::at(
+                location,
+                "auto in a new-expression without a new-initializer ( assignment-expression ) (5.3.4p2)",
+            ));
+        }
+        let specs = self.specifiers(syntax.specifiers, scope, false)?;
+        let mut environment = self.declarator_environment(syntax.declarator, scope)?;
+        environment.auto_operators = matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto);
+        let info = self.declarator_in(syntax.declarator, specs.ty, environment)?;
+        if !self.holds_auto(info.ty) {
+            return Err(Error::at(
+                syntax.location,
+                "auto in a new-type-id that is no placeholder for the allocated type",
+            ));
+        }
+        self.deduce_object_type(
+            info.ty,
+            specs.auto_cv,
+            initializer,
+            scope,
+            location,
+            &mut None,
+        )
+        .map(Some)
+    }
+
     pub(super) fn holds_auto(&self, mut ty: TypeId) -> bool {
         loop {
             match self.graph.types.get(ty).kind {
@@ -300,6 +364,75 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn allocated_placeholders_retain_concrete_targets_and_original_initializer_facts() {
+        let source = SourceBuffer::new(
+            b"int n;int*q=&n;auto p=new const auto(n);auto r=new auto*(q);\
+            auto c=new auto([]{return 7;});"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"allocated-placeholder-ownership").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let declaration_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert!(analyzer.deduced_initializer.is_none());
+        let mut targets = Vec::new();
+        for &declaration in &analyzer.tree.decl_lists.get(declarations)[2..] {
+            let ast::DeclKind::Simple { declarators, .. } =
+                analyzer.tree.declarations.get(declaration).kind
+            else {
+                panic!("variable syntax");
+            };
+            let init = analyzer.tree.init_declarators.get(declarators)[0];
+            let InitializerKind::Assign(expression) = init.initializer.unwrap().kind else {
+                panic!("allocation initializer");
+            };
+            let allocation = analyzer
+                .graph
+                .expression_facts
+                .allocation(expression)
+                .unwrap();
+            assert!(!analyzer.holds_auto(allocation.target));
+            let facts = analyzer.graph.expression_facts.get(expression).unwrap();
+            assert!(matches!(analyzer.graph.types.get(facts.ty).kind,
+                TypeKind::Pointer(target) if target == allocation.target));
+            let ExprKind::New {
+                initializer: Some(initializer),
+                ..
+            } = analyzer.tree.expressions.get(expression).kind
+            else {
+                panic!("allocation syntax");
+            };
+            let InitializerKind::Parenthesized(arguments) = initializer.kind else {
+                panic!("allocated initializer");
+            };
+            let argument = analyzer.tree.expr_lists.get(arguments)[0];
+            assert!(analyzer.graph.expression_facts.get(argument).is_ok());
+            targets.push(allocation.target);
+        }
+        assert_eq!(analyzer.graph.types.get(targets[0]).cv, Cv::CONST);
+        assert!(matches!(
+            analyzer.graph.types.get(targets[1]).kind,
+            TypeKind::Pointer(_)
+        ));
+        assert!(matches!(
+            analyzer.graph.types.get(targets[2]).kind,
+            TypeKind::Class(_)
+        ));
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.tree.declarations.mark(), declaration_count);
+    }
     #[test]
     fn placeholder_deduction_publishes_concrete_types_and_consumes_initializer_facts() {
         use crate::syntax::ast::{DeclKind, InitializerKind};

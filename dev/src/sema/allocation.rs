@@ -335,7 +335,13 @@ impl Analyzer<'_> {
             .map(|count| self.check_allocation_count(count, scope))
             .transpose()?
             .flatten();
-        let (target, count) = self.allocation_type(ty, scope)?;
+        let (target, count) = if let Some(target) =
+            self.allocated_placeholder(ty, initializer, count.is_some(), scope, location)?
+        {
+            (target, count)
+        } else {
+            self.allocation_type(ty, scope)?
+        };
         if count.is_none() && matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
             return Err(Error::at(
                 location,

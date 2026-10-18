@@ -100,7 +100,7 @@ impl Analyzer<'_> {
                 sequence.result = target;
             }
             TypeKind::Class(class) => {
-                if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
+                if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
                     return Ok(None);
                 }
                 sequence.rank = ConversionRank::UserDefined;
@@ -294,6 +294,89 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn list_ranking_completes_only_the_required_class_definition() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct C{C(T);void unused(){T::missing();}};\
+            C<int>*p;int x={3};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"list-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let pointer = cursor.intern_name(b"p").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let binding = analyzer
+            .graph
+            .own(global, pointer, Filter::Ordinary)
+            .unwrap();
+        let TypeKind::Pointer(target) = analyzer
+            .graph
+            .types
+            .get(analyzer.graph.binding(binding).ty.unwrap())
+            .kind
+        else {
+            panic!("pointer type");
+        };
+        let class = analyzer.graph.class_of(target).unwrap();
+        assert!(!analyzer.graph.entity(class).complete);
+        let ast::DeclKind::Simple { declarators, .. } = analyzer
+            .tree
+            .declarations
+            .get(analyzer.tree.decl_lists.get(declarations)[2])
+            .kind
+        else {
+            panic!("variable syntax");
+        };
+        let ast::InitializerKind::Assign(list) = analyzer.tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap()
+            .kind
+        else {
+            panic!("list syntax");
+        };
+        let demands = analyzer.graph.root_demands.as_slice().len();
+        let selected = analyzer.list_sequence(list, target).unwrap().unwrap();
+        assert!(analyzer.graph.entity(class).complete);
+        assert!(matches!(
+            selected.user_conversion,
+            Some(UserConversion::Constructor(_))
+        ));
+        assert!(
+            analyzer
+                .graph
+                .expression_facts
+                .get(list)
+                .unwrap()
+                .constructor
+                .is_none()
+        );
+        for &binding in &analyzer.graph.entity(class).declared_constructors {
+            assert!(
+                analyzer
+                    .graph
+                    .entity(analyzer.graph.binding(binding).entity)
+                    .constructor
+                    .is_none()
+            );
+        }
+        let constructors = analyzer.graph.entity(class).declared_constructors.clone();
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer.list_sequence(list, target).unwrap().unwrap();
+        assert_eq!(
+            analyzer.graph.entity(class).declared_constructors,
+            constructors
+        );
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
+    }
 
     #[test]
     fn ranking_lists_preserves_original_facts_and_does_not_publish_construction() {
