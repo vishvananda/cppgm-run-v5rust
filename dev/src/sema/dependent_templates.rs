@@ -268,7 +268,7 @@ mod tests {
         let q = analyzer.graph.binding(binding).ty.unwrap();
         let arguments = [Some(q)];
         let mut environment = Substitution::new(0, &arguments);
-        analyzer.instantiation_depth = 1024;
+        analyzer.instantiation_depth = 2048;
         assert!(matches!(
             analyzer.substitute_signature_type(shells[0], &mut environment),
             Err(Error::InstantiationDiagnostic {
@@ -276,7 +276,7 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(analyzer.instantiation_depth, 1024);
+        assert_eq!(analyzer.instantiation_depth, 2048);
         analyzer.instantiation_depth = 0;
         let syntax_mark = analyzer.tree.expressions.mark();
         let result = analyzer

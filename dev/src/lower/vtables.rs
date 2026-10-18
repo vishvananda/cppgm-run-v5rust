@@ -167,13 +167,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         class: EntityId,
     ) -> Result<(), Error> {
-        if self.graph.lower_polymorphic(class)
-            && self
-                .graph
-                .lower_virtual_class(class)?
-                .key
-                .is_none_or(|key| self.graph.lower_function_defined(key))
-        {
+        if self.graph.lower_polymorphic(class) && self.graph.lower_emits_vtable(class)? {
             self.vtable_symbol(program, class)?;
         }
         Ok(())
@@ -191,9 +185,7 @@ impl Symbols<'_, '_> {
         let key = facts.key;
         let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Table)?;
         self.vtables.objects.insert(class, symbol);
-        if defined(program, symbol)
-            || key.is_some_and(|key| !self.graph.lower_function_defined(key))
-        {
+        if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
             return Ok(symbol);
         }
         if let Some(key) = key
@@ -302,7 +294,7 @@ impl Symbols<'_, '_> {
         }
         let (symbol, metadata) = self.class_global(program, class, ClassObject::Typeinfo)?;
         self.vtables.typeinfos.insert(class, symbol);
-        if defined(program, symbol) {
+        if defined(program, symbol) || self.graph.lower_class_instantiated_elsewhere(class) {
             return Ok(symbol);
         }
         let bases = self

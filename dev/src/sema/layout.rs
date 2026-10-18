@@ -295,6 +295,12 @@ impl Analyzer<'_> {
                 {
                     self.prepare_destruction(class)?;
                     self.virtual_table_boundaries(class, seen_tables, &mut work)?;
+                    // A reached virtual destructor emits a deleting entry. Its
+                    // recorded call target has an independent body/signature
+                    // boundary, even when it is a copied static class member.
+                    if let Some(deallocator) = self.graph.virtual_deallocator(class) {
+                        work.push(deallocator);
+                    }
                 }
             }
             let ty = self.graph.lower_entity_type(entity)?;
@@ -320,27 +326,7 @@ impl Analyzer<'_> {
                         work.push(self.graph.binding(binding).entity);
                     }
                 }
-                if let TypeKind::Reference { element, .. } = self.graph.types.get(parameter).kind {
-                    if matches!(self.graph.types.get(element).kind, TypeKind::Array { bound, .. } if bound != 0)
-                    {
-                        self.type_size(element, SourceOffset(0))?;
-                        continue;
-                    }
-                    let mut object = element;
-                    let mut bounded = true;
-                    while let TypeKind::Array { element, bound, .. } =
-                        self.graph.types.get(object).kind
-                    {
-                        bounded &= bound != 0;
-                        object = element;
-                    }
-                    if bounded
-                        && let TypeKind::Class(class) = self.graph.types.get(object).kind
-                        && self.graph.entity(class).complete
-                    {
-                        self.class_layout(class, SourceOffset(0))?;
-                    }
-                }
+                self.prepare_reference_boundary(parameter, SourceOffset(0))?;
             }
             // Destruction preparation can publish containment edges while this
             // demand closure is running. Activate only edges of reached owners.
@@ -401,17 +387,35 @@ impl Analyzer<'_> {
             {
                 self.class_layout(class, location)?;
                 self.prepare_class_parameter(class)?;
-            } else if let TypeKind::Reference { element, .. } = self.graph.types.get(object).kind {
-                if matches!(self.graph.types.get(element).kind, TypeKind::Array { bound, .. } if bound != 0)
-                {
-                    self.type_size(element, location)?;
-                } else if let TypeKind::Class(class) = self.graph.types.get(element).kind
-                    && self.graph.entity(class).complete
-                {
-                    self.class_layout(class, location)?;
-                }
+            } else if index < count {
+                self.prepare_reference_boundary(object, location)?;
             }
         }
+        Ok(())
+    }
+    fn prepare_reference_boundary(
+        &mut self,
+        ty: super::types::TypeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind else {
+            return Ok(());
+        };
+        // symbol_lowering.cpp::parameter_for asks object_layout, which may
+        // complete a referenced specialization. This is signature layout demand,
+        // independent of object construction, member bodies and emission.
+        match self.graph.types.get(element).kind {
+            TypeKind::Function { .. }
+            | TypeKind::Scalar(super::types::Scalar::Void)
+            | TypeKind::Array { bound: 0, .. } => return Ok(()),
+            _ => (),
+        }
+        if let TypeKind::Class(class) = self.graph.types.get(element).kind
+            && !self.complete_class(class)?
+        {
+            return Ok(());
+        }
+        self.type_size(element, location)?;
         Ok(())
     }
     pub(super) fn class_layout(
@@ -777,6 +781,107 @@ mod tests {
                 LayoutState::NotStarted
             ));
             assert!(graph.entity(class).implicit_copies.is_none());
+        }
+    }
+
+    #[test]
+    fn reference_boundaries_complete_only_reached_parameter_specializations() {
+        let source = SourceBuffer::new(
+            br"
+            template<class T> struct Box { T n; void unused(){T::missing();} };
+            template<class T> struct Missing;
+            using Named = Box<int>;
+            using Indirect = Box<long>;
+            using Dormant = Box<char>;
+            using Result = Box<short>;
+            using Incomplete = Missing<int>;
+            void named(const Named&) {}
+            void indirect(void(*p)(const Indirect&), Indirect* q) {p(*q);p(*q);}
+            inline void dormant(Dormant&) {}
+            void result(Result&(*p)()) {p();}
+            void incomplete(Incomplete&) {}
+            "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"reference-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [
+            b"Named".as_slice(),
+            b"Indirect",
+            b"Dormant",
+            b"Result",
+            b"Incomplete",
+        ]
+        .into_iter()
+        .map(|spelling| cursor.intern_name(spelling).unwrap())
+        .collect();
+        let unused = cursor.intern_name(b"unused").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let classes: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let alias = analyzer
+                    .graph
+                    .own(analyzer.graph.global, name, Filter::Prefix)
+                    .unwrap();
+                analyzer
+                    .graph
+                    .class_of(analyzer.graph.binding(alias).ty.unwrap())
+                    .unwrap()
+            })
+            .collect();
+        for &class in &classes {
+            assert!(matches!(
+                analyzer.graph.entity(class).layout,
+                LayoutState::NotStarted
+            ));
+        }
+        let complete: Vec<_> = classes
+            .iter()
+            .map(|&class| analyzer.graph.entity(class).complete)
+            .collect();
+        analyzer.finish_lowering_boundaries().unwrap();
+        for ((&class, &was_complete), size) in
+            classes
+                .iter()
+                .zip(&complete)
+                .zip([Some(4), Some(8), None, None, None])
+        {
+            if let Some(expected) = size {
+                assert!(matches!(analyzer.graph.entity(class).layout,
+                    LayoutState::Value { size, .. } if size == expected));
+                assert!(analyzer.graph.entity(class).complete);
+            } else {
+                assert_eq!(analyzer.graph.entity(class).complete, was_complete);
+                assert!(matches!(
+                    analyzer.graph.entity(class).layout,
+                    LayoutState::NotStarted
+                ));
+            }
+            assert!(analyzer.graph.entity(class).implicit_copies.is_none());
+        }
+        // Repeating the closure neither copies instantiated syntax nor starts
+        // an unused member body, and retains the canonical layout facts.
+        let expressions = analyzer.tree.expressions.mark();
+        let nodes = analyzer.tree.declarations.mark();
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.tree.declarations.mark(), nodes);
+        for &class in &classes[..2] {
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let binding = analyzer.graph.own(scope, unused, Filter::Ordinary).unwrap();
+            let member = analyzer.graph.binding(binding).entity;
+            assert!(!analyzer.graph.function_templates.bodies.started(member));
+            assert!(!analyzer.graph.function_templates.body_demanded(member));
         }
     }
 }

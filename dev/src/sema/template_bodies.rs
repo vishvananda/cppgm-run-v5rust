@@ -609,7 +609,8 @@ impl Analyzer<'_> {
                         parent,
                         print: parent,
                         ..pattern
-                    })
+                    })?;
+                    analyzer.virtual_definition(entity, location)
                 },
             )?;
             Ok(body)

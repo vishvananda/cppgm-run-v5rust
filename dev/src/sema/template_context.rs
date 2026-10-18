@@ -11,6 +11,10 @@ use super::{
 use crate::support::source::SourceOffset;
 use std::collections::HashMap;
 
+// analyzer.h::kInstantiationDepthLimit. This logical limit is independent of
+// the genuine native stack-byte budget (Annex B requires at least 1024).
+const MAX_INSTANTIATION_DEPTH: u32 = 2048;
+
 #[derive(Default)]
 pub(super) struct Levels(HashMap<EntityId, u32>);
 impl Levels {
@@ -122,7 +126,7 @@ impl Analyzer<'_> {
         self.check_stack()?;
         // The oracle's logical Annex B limit is separate from the native
         // byte-budget guard. A pre-existing shell retains its formation level.
-        if formation_depth >= 1024 {
+        if formation_depth >= MAX_INSTANTIATION_DEPTH {
             return Err(
                 Error::at(location, "template instantiation nested too deeply")
                     .required_instantiation(),
@@ -161,8 +165,8 @@ mod tests {
         analyzer.dependent_uses.set(11);
         analyzer.operand_home = Some(analyzer.graph.global);
         analyzer.declaration_access.before_owner_declarator = true;
-        let result = analyzer.instantiation_context(1023, SourceOffset(0), 0, |inner| {
-            assert_eq!(inner.instantiation_depth, 1024);
+        let result = analyzer.instantiation_context(2047, SourceOffset(0), 0, |inner| {
+            assert_eq!(inner.instantiation_depth, 2048);
             assert!(inner.operand_home.is_none());
             assert!(!inner.declaration_access.before_owner_declarator);
             inner.note_dependent_use();
@@ -180,7 +184,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(analyzer.dependent_uses.get(), 11);
         let result =
-            analyzer.instantiation_context(1024, SourceOffset(0), 0, |_| -> Result<(), Error> {
+            analyzer.instantiation_context(2048, SourceOffset(0), 0, |_| -> Result<(), Error> {
                 panic!("logical limit must precede instantiation");
             });
         assert!(matches!(

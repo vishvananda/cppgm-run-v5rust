@@ -403,7 +403,13 @@ fn emit_pending<'a>(
                 && graph.lower_function_body(entity).is_none()
                 && !graph.lower_has_synthesized_body(entity)
             {
-                function::declare(output.program, symbols, graph, entry)?;
+                // program_lowering.cpp::demand_entry declines unavailable or
+                // suppressed bodies without creating a symbol. A use still
+                // publishes its declaration; ancillary destructor entry demand
+                // alone does not (notably an extern-instantiated class's D2).
+                if symbols.has_entry_symbol(entry) {
+                    function::declare(output.program, symbols, graph, entry)?;
+                }
                 continue;
             }
             if facts.emission == crate::sema::lowering::Emission::Demanded {
@@ -420,7 +426,9 @@ fn emit_pending<'a>(
             if let Some(entity) = graph.lower_constructor_entity(id)
                 && !graph.lower_function_defined(entity)
             {
-                function::declare(output.program, symbols, graph, entry)?;
+                if symbols.has_entry_symbol(entry) {
+                    function::declare(output.program, symbols, graph, entry)?;
+                }
                 continue;
             }
             let facts = entry.facts(graph)?;

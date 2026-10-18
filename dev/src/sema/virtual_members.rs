@@ -612,6 +612,12 @@ impl Analyzer<'_> {
                 key = Some(function);
             }
         }
+        // analyzer_virtual.cpp::complete_virtual: instantiated members have
+        // vague linkage. Each unit needing the table defines its slot targets;
+        // an explicit specialization owns its members and keeps an ordinary key.
+        if self.graph.instance_class(scope) {
+            key = None;
+        }
         self.graph.virtuals.classes.insert(
             class,
             ClassVirtuals {
@@ -794,12 +800,7 @@ impl Analyzer<'_> {
         if !self.graph.lower_polymorphic(class) || seen.contains(&class) {
             return Ok(());
         }
-        if self
-            .graph
-            .lower_virtual_class(class)?
-            .key
-            .is_some_and(|key| !self.graph.entity(key).defined)
-        {
+        if !self.graph.lower_emits_vtable(class)? {
             return Ok(());
         }
         seen.insert(class);
@@ -811,6 +812,21 @@ impl Analyzer<'_> {
             if !self.graph.lower_virtual_pure(entry.function) {
                 work.push(entry.function);
             }
+        }
+        Ok(())
+    }
+
+    pub(super) fn virtual_definition(
+        &mut self,
+        function: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if let Some(member) = self.graph.entity(function).member_function
+            && member.kind == MemberKind::Destructor
+            && self.graph.virtuals.function(function).is_virtual
+            && !self.graph.virtuals.deallocators.contains_key(&member.class)
+        {
+            self.complete_virtual_deallocation(member.class, function, location)?;
         }
         Ok(())
     }
@@ -961,6 +977,14 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
+    pub(crate) fn lower_emits_vtable(&self, class: EntityId) -> Result<bool, Error> {
+        Ok(self
+            .lower_virtual_class(class)?
+            .key
+            .is_none_or(|key| self.entity(key).defined)
+            && !self.lower_class_instantiated_elsewhere(class))
+    }
+
     fn demand_virtual_slots(&mut self, root: EntityId) -> Result<(), Error> {
         let mut chain = Vec::new();
         let mut next = Some(root);
@@ -1038,13 +1062,12 @@ impl super::graph::Graph {
             .copied())
     }
     pub(crate) fn lower_virtual_deallocator(&self, class: EntityId) -> Result<EntityId, Error> {
-        self.virtuals
-            .deallocators
-            .get(&class)
-            .copied()
-            .ok_or(Error::Invariant(
-                "virtual destructor without deallocation fact",
-            ))
+        self.virtual_deallocator(class).ok_or(Error::Invariant(
+            "virtual destructor without deallocation fact",
+        ))
+    }
+    pub(super) fn virtual_deallocator(&self, class: EntityId) -> Option<EntityId> {
+        self.virtuals.deallocators.get(&class).copied()
     }
     pub(crate) fn lower_polymorphic(&self, class: EntityId) -> bool {
         self.entity(class).polymorphism.is_dynamic()
@@ -1108,6 +1131,125 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn deleting_entry_prepares_only_its_selected_deallocator_body() {
+        let source = SourceBuffer::new(
+            br#"
+            template<class T>struct Box{
+                virtual ~Box();
+                static void operator delete(void*p){::operator delete(p);}
+            };
+            template<class T>Box<T>::~Box(){}
+            using Unused=Box<char>;using Used=Box<int>;
+            static_assert(sizeof(Unused)>0,"");
+            int main(){Used b;return 0;}
+        "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"deleting-entry-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [
+            cursor.intern_name(b"Unused").unwrap(),
+            cursor.intern_name(b"Used").unwrap(),
+        ];
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        for (index, name) in names.into_iter().enumerate() {
+            let alias = graph
+                .own(graph.global, name, super::super::lookup::Filter::Prefix)
+                .unwrap();
+            let class = graph.class_of(graph.binding(alias).ty.unwrap()).unwrap();
+            let scope = graph.entity(class).scope.unwrap();
+            let binding = graph
+                .functions_at(scope, super::super::allocation::key(Keyword::Delete, false))
+                .next()
+                .unwrap();
+            let deallocator = graph.binding(binding).entity;
+            assert_eq!(
+                graph.function_templates.bodies.started(deallocator),
+                index == 1
+            );
+            assert_eq!(
+                graph.virtual_deallocator(class),
+                (index == 1).then_some(deallocator)
+            );
+            assert_eq!(graph.virtuals.layouts.contains_key(&class), index == 1);
+            if index == 1 {
+                let parameters: Vec<_> = graph
+                    .lower_parameters(graph.entity(deallocator).scope)
+                    .collect();
+                assert_eq!(parameters.len(), 1);
+                assert!(parameters[0].1.is_some());
+                assert!(matches!(
+                    graph.types.get(parameters[0].2).kind,
+                    TypeKind::Pointer(_)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn instantiated_virtual_classes_have_no_key_without_demanding_slot_bodies() {
+        let source = SourceBuffer::new(
+            br#"
+            template<class T>struct Box{virtual int f();void unused(){T::missing();}};
+            template<class T>int Box<T>::f(){return sizeof(T);}
+            template<>struct Box<double>{virtual int f();};
+            struct Ordinary{virtual int f();};
+            template<class T>struct Outer{struct Member{virtual int f();};};
+            template<class T>int Outer<T>::Member::f(){return 3;}
+            template<>struct Outer<double>{struct Member{virtual int f();};};
+            using I=Box<int>;using E=Box<double>;
+            using M=Outer<int>::Member;using EM=Outer<double>::Member;
+            static_assert(sizeof(I)>0,"");static_assert(sizeof(E)>0,"");
+            static_assert(sizeof(M)>0,"");static_assert(sizeof(EM)>0,"");
+            static_assert(sizeof(Ordinary)>0,"");
+        "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"virtual-instance-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"I".as_slice(), b"M", b"E", b"EM", b"Ordinary"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        for (index, name) in names.into_iter().enumerate() {
+            let binding = graph
+                .own(graph.global, name, super::super::lookup::Filter::Prefix)
+                .unwrap();
+            let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
+            let facts = graph.lower_virtual_class(class).unwrap();
+            assert_eq!(facts.key.is_none(), index < 2);
+            assert_eq!(
+                graph.instance_class(graph.entity(class).scope.unwrap()),
+                index < 2
+            );
+            assert_eq!(facts.size, 1);
+            for entry in &facts.entries {
+                assert!(!graph.function_templates.bodies.started(entry.function));
+                assert!(!graph.function_templates.body_demanded(entry.function));
+            }
+        }
+        assert!(graph.root_demands.as_slice().is_empty());
+        assert!(graph.virtuals.layouts.is_empty());
+    }
 
     #[test]
     fn implicit_virtual_assignment_owns_selected_actions_without_output_demand() {

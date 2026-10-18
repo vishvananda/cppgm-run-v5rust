@@ -2292,6 +2292,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.pending.function(entry);
         }
     }
+    pub(super) fn has_entry_symbol(&self, entry: super::construction::Entry) -> bool {
+        use super::construction::{Entry, Variant};
+        self.entries.contains_key(&entry)
+            || match entry {
+                Entry::Function(entity) => self
+                    .callees
+                    .contains_key(&self.graph.lower_function_entity(entity)),
+                Entry::Constructor(id, Variant::Complete) => self
+                    .graph
+                    .lower_constructor_entity(id)
+                    .is_some_and(|entity| self.callees.contains_key(&entity)),
+                _ => false,
+            }
+    }
     pub(super) fn entry_symbol(
         &mut self,
         program: &mut Program,

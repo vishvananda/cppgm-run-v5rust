@@ -576,6 +576,49 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
+    pub(crate) fn lower_class_instantiated_elsewhere(&self, mut class: EntityId) -> bool {
+        // vtable_lowering.cpp::instantiated_elsewhere walks only the lexical
+        // class owners carrying template facts. A nearer explicit definition
+        // wins over an enclosing extern declaration.
+        loop {
+            let definitions = &self.class_templates.definitions;
+            if self.class_templates.instance(class).is_none()
+                && !definitions.sources.contains_key(&class)
+                && !definitions.members.contains_key(&class)
+                && !definitions.patterns.contains_key(&class)
+            {
+                return false;
+            }
+            let instantiations = &self.function_templates.instantiations;
+            if instantiations.defined(class) {
+                return false;
+            }
+            if instantiations.declared(class) {
+                return true;
+            }
+            let Some(parent) = self.entity(class).home else {
+                return false;
+            };
+            let scope = self.scope(parent);
+            let Some(owner) = scope.owner.filter(|_| scope.kind == ScopeKind::Class) else {
+                return false;
+            };
+            class = owner;
+        }
+    }
+
+    pub(super) fn instance_class(&self, scope: ScopeId) -> bool {
+        let node = self.scope(scope);
+        node.kind == ScopeKind::Class
+            && node.owner.is_some_and(|class| {
+                let definitions = &self.class_templates.definitions;
+                !definitions.explicit(class)
+                    && (self.class_templates.instance(class).is_some()
+                        || definitions.sources.contains_key(&class)
+                        || definitions.members.contains_key(&class))
+            })
+    }
+
     pub(super) fn within_class_instance(&self, mut scope: ScopeId) -> bool {
         loop {
             let node = self.scope(scope);
