@@ -643,6 +643,25 @@ impl<'a> Encoder<'a> {
                 }
                 self.put(b"E");
             }
+            Node::FloatingLiteral { ty, bits } => {
+                self.put(b"L");
+                self.encode_type(ty)?;
+                // Frozen <value float>: fixed-width lowercase IEEE bits,
+                // including leading zeroes, in most-significant-byte order.
+                let start = if matches!(
+                    self.graph.get(ty),
+                    Node::Builtin(super::vocabulary::Builtin::Float)
+                ) {
+                    4
+                } else {
+                    0
+                };
+                let hex = b"0123456789abcdef";
+                for byte in &bits.to_be_bytes()[start..] {
+                    self.put(&[hex[usize::from(byte >> 4)], hex[usize::from(byte & 15)]]);
+                }
+                self.put(b"E");
+            }
             Node::TypedArgument {
                 declaration,
                 argument,
@@ -725,7 +744,7 @@ impl<'a> Encoder<'a> {
                 }
                 self.put(b"_");
             }
-            Node::Literal { .. } => self.argument(id)?,
+            Node::Literal { .. } | Node::FloatingLiteral { .. } => self.argument(id)?,
             Node::Operation(operation) => {
                 self.put(operation.code());
                 for item in self.graph.items(id) {

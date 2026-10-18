@@ -6,6 +6,56 @@ use super::{
 use crate::support::stack::StackBudget;
 
 #[test]
+fn floating_expression_literals_preserve_ieee_width_and_bits() {
+    let mut graph = Graph::default();
+    for (builtin, bits, expected) in [
+        (Builtin::Float, 0x3f80_0000, "DTLf3f800000EE"),
+        (Builtin::Float, 1, "DTLf00000001EE"),
+        (Builtin::Float, 0x8000_0000, "DTLf80000000EE"),
+        (
+            Builtin::Double,
+            0x3ff0_0000_0000_0000,
+            "DTLd3ff0000000000000EE",
+        ),
+        (Builtin::Double, 1, "DTLd0000000000000001EE"),
+        (
+            Builtin::Double,
+            0x7ff8_0000_0000_1234,
+            "DTLd7ff8000000001234EE",
+        ),
+    ] {
+        let ty = graph.intern(Node::Builtin(builtin), &[]).unwrap();
+        let literal = graph
+            .intern(Node::FloatingLiteral { ty, bits }, &[])
+            .unwrap();
+        assert_eq!(
+            literal,
+            graph
+                .intern(Node::FloatingLiteral { ty, bits }, &[])
+                .unwrap()
+        );
+        let decltype = graph
+            .intern(
+                Node::Decltype {
+                    expression: literal,
+                    id_expression: false,
+                },
+                &[],
+            )
+            .unwrap();
+        let mut output = Vec::new();
+        Encoder::encode(
+            &graph,
+            Target::Type(decltype),
+            &mut output,
+            StackBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(output, expected.as_bytes());
+    }
+}
+
+#[test]
 fn parameter_identity_retains_kind_level_and_substitution_role() {
     use super::graph::ParameterKind;
     let mut graph = Graph::default();

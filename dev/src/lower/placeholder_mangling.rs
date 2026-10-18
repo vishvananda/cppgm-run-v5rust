@@ -160,12 +160,23 @@ impl Symbols<'_, '_> {
             return Err(missing());
         }
         let node = match words.next()? {
+            W::FloatingLiteral { ty, bits, .. } => Node::FloatingLiteral {
+                ty: self.abi_type(*ty)?,
+                bits: *bits,
+            },
             W::Constant(ty, bits) => Node::Literal {
                 ty: self.abi_type(*ty)?,
                 bits: *bits,
             },
             W::Node(N::Id) => return self.operand_name(words).map(|(node, _)| node),
             W::Node(N::Paren) => return self.operand_expression(words, depth + 1),
+            W::Node(N::PackExpansion) => {
+                return self.operand_operation(words, O::PackExpansion, 1, depth);
+            }
+            W::Node(N::Braced) => {
+                let count = words.count()?;
+                return self.operand_list(words, Node::BracedList(None), count, depth);
+            }
             W::Node(N::Binary | N::Assign) => {
                 let W::Operator(operator) = words.next()? else {
                     return Err(missing());
@@ -425,13 +436,21 @@ impl Symbols<'_, '_> {
             return Err(missing());
         }
         let count = words.count()?;
+        self.operand_list(words, Node::BracedList(ty), count, depth)
+    }
+
+    fn operand_list(
+        &mut self,
+        words: &mut Words<'_>,
+        node: Node,
+        count: usize,
+        depth: u8,
+    ) -> Result<NodeId, Error> {
         let mut arguments = Vec::with_capacity(count);
         for _ in 0..count {
             arguments.push(self.operand_expression(words, depth + 1)?);
         }
-        self.abi
-            .intern(Node::BracedList(ty), &arguments)
-            .map_err(Error::from)
+        self.abi.intern(node, &arguments).map_err(Error::from)
     }
 
     fn operand_operation(

@@ -95,7 +95,8 @@ impl Analyzer<'_> {
         if node.global || components.len() != 1 {
             return Ok(());
         }
-        let NameKind::Identifier(name) = components[0].kind else {
+        let component = components[0];
+        let NameKind::Identifier(name) = component.kind else {
             return Ok(());
         };
         let found = self.unqualified_result(scope, name.into(), Filter::Ordinary)?;
@@ -113,20 +114,76 @@ impl Analyzer<'_> {
                 break;
             }
         }
-        let Some(word @ KeyWord::Entity(_)) = key.words.get_mut(start + 4) else {
+        if !matches!(key.words.get(start + 4), Some(KeyWord::Entity(_))) {
             return Ok(());
-        };
+        }
         let entity = self.graph.binding(binding).entity;
+        let sole = self.semantic() && found.functions.as_slice().len() == 1;
+        let class_member = self
+            .graph
+            .entity(entity)
+            .home
+            .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class);
+        let through_this = class_member
+            && self.body_context.is_some()
+            && self
+                .graph
+                .entity(entity)
+                .function
+                .is_some_and(|function| !function.is_static);
         if dependent {
-            *word = KeyWord::DependentCallee(entity, name);
             key.dependent = true;
-        } else if self.semantic()
-            && found.functions.as_slice().len() == 1
+        }
+        let resolved = if sole
+            && !through_this
+            && component.arguments.is_none()
             && self.graph.entity(entity).template_head.is_none()
+            && (!dependent || class_member)
         {
-            *word = KeyWord::ResolvedFunction(entity);
+            Some(entity)
+        } else if sole && !through_this && !dependent && component.arguments.is_some() {
+            let mut given = Vec::new();
+            // These are the canonical arguments already retained by key_name.
+            // Resolve only a complete explicit head, never deduce call arguments.
+            for word in key.words.get(start + 7..).unwrap_or_default() {
+                let KeyWord::Type(ty) = word else {
+                    return Err(Error::Invariant("callee key without argument type"));
+                };
+                given.push(*ty);
+            }
+            self.key_explicit_specialization(binding, &given, component.location)?
+        } else {
+            None
+        };
+        if let Some(resolved) = resolved {
+            key.words[start + 4] = KeyWord::ResolvedFunction(resolved);
+        } else if dependent {
+            key.words[start + 4] = KeyWord::DependentCallee(entity, name);
         }
         Ok(())
+    }
+
+    pub(super) fn key_explicit_specialization(
+        &mut self,
+        binding: super::graph::BindingId,
+        given: &[TypeId],
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Option<super::graph::EntityId>, Error> {
+        if given.iter().any(|&ty| self.exception_dependent_type(ty)) {
+            return Ok(None);
+        }
+        let Some(head) = self.function_template_head(binding)? else {
+            return Ok(None);
+        };
+        let Some(converted) = self.match_explicit_template_arguments(head, given, location)? else {
+            return Ok(None);
+        };
+        if converted.len() != self.graph.templates.parameters(head).len() {
+            return Ok(None);
+        }
+        let mut arguments = converted.into_iter().map(Some).collect::<Vec<_>>();
+        self.complete_signature(binding, &mut arguments)
+            .map(|binding| binding.map(|binding| self.graph.binding(binding).entity))
     }
 
     pub(super) fn type_dependent_expression(
@@ -527,6 +584,79 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn explicit_callee_keys_reuse_signatures_without_body_or_emission_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>T make(){return T::missing;} \
+              void probe(){make<int>();make<int>();make<>();make<int,long>();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"callee-keys").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declarations = tree.decl_lists.get(declarations).to_vec();
+        let ast::DeclKind::Function { body, .. } = tree.declarations.get(declarations[1]).kind
+        else {
+            unreachable!()
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            unreachable!()
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            unreachable!()
+        };
+        let expressions = tree
+            .stmt_lists
+            .get(statements)
+            .iter()
+            .map(|&statement| {
+                let ast::StmtKind::Expression(Some(expression)) =
+                    tree.statements.get(statement).kind
+                else {
+                    unreachable!()
+                };
+                expression
+            })
+            .collect::<Vec<_>>();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declaration(declarations[0], scope).unwrap();
+        let mut resolved = Vec::new();
+        for (index, expression) in expressions.into_iter().enumerate() {
+            let key = analyzer.operand_key(expression, scope).unwrap().unwrap();
+            let entity = key.words.iter().find_map(|word| {
+                if let KeyWord::ResolvedFunction(entity) = word {
+                    Some(*entity)
+                } else {
+                    None
+                }
+            });
+            assert_eq!(entity.is_some(), index < 2);
+            if let Some(entity) = entity {
+                resolved.push(entity);
+            }
+        }
+        assert_eq!(resolved[0], resolved[1]);
+        let primary = analyzer
+            .graph
+            .function_templates
+            .primary(resolved[0])
+            .unwrap();
+        assert!(
+            !analyzer
+                .graph
+                .function_templates
+                .body_demanded(analyzer.graph.binding(primary).entity)
+        );
+        assert!(analyzer.graph.lower_function_body(resolved[0]).is_none());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert!(analyzer.body_context.is_none());
+    }
 
     #[test]
     fn fixed_decltype_checks_restore_context_without_function_use() {

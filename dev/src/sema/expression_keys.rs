@@ -29,12 +29,20 @@ pub(crate) enum KeyWord {
     Keyword(Option<Keyword>),
     Type(TypeId),
     Entity(EntityId),
-    Parameter { index: usize, level: u32 },
+    Parameter {
+        index: usize,
+        level: u32,
+    },
     Identifier(NameId),
     FreeName(NameId),
     DependentCallee(EntityId, NameId),
     ResolvedFunction(EntityId),
     Constant(TypeId, u64),
+    FloatingLiteral {
+        spelling: Vec<u8>,
+        ty: TypeId,
+        bits: u64,
+    },
     Spelling(Vec<u8>),
     Absent,
 }
@@ -419,6 +427,19 @@ impl Analyzer<'_> {
                 self.graph.types.scalar(Scalar::Basic(ty))?,
                 u64::from_le_bytes(bytes),
             ));
+        } else if let Some((
+            ty @ (crate::types::FundamentalType::Float | crate::types::FundamentalType::Double),
+            data,
+        )) = typed
+        {
+            let mut bytes = [0u8; 8];
+            let count = data.as_slice().len().min(8);
+            bytes[..count].copy_from_slice(&data.as_slice()[..count]);
+            key.words.push(KeyWord::FloatingLiteral {
+                spelling: self.literal_bytes.get(literal.spelling).to_vec(),
+                ty: self.graph.types.scalar(Scalar::Basic(ty))?,
+                bits: u64::from_le_bytes(bytes),
+            });
         } else {
             key.words.push(KeyWord::Spelling(
                 self.literal_bytes.get(literal.spelling).to_vec(),

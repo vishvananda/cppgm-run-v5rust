@@ -198,6 +198,10 @@ pub enum Node {
         ty: NodeId,
         bits: u64,
     },
+    FloatingLiteral {
+        ty: NodeId,
+        bits: u64,
+    },
     NonTypeParameter(NodeId),
     TypeParameter,
     TemplateParameter,
