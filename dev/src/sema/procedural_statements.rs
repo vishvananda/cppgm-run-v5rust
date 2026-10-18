@@ -12,7 +12,8 @@ use crate::{
     syntax::ast::{self, Condition},
 };
 pub(super) struct BodyContext {
-    pub return_deduction: super::lambdas::ReturnDeduction,
+    pub return_deduction: super::return_deduction::ReturnDeduction,
+    pub placeholder: Option<TypeId>,
     pub entity: super::graph::EntityId,
     pub result: TypeId,
     pub loops: usize,
@@ -33,7 +34,8 @@ pub(super) enum Control {
 impl BodyContext {
     pub(super) fn new(result: TypeId, entity: super::graph::EntityId) -> Self {
         Self {
-            return_deduction: super::lambdas::ReturnDeduction::Fixed,
+            return_deduction: super::return_deduction::ReturnDeduction::Fixed,
+            placeholder: None,
             entity,
             result,
             loops: 0,
@@ -83,7 +85,7 @@ impl Analyzer<'_> {
         operand: Option<ast::ExprId>,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        let typed = self.deduce_closure_return(stmt, operand, scope)?;
+        let typed = self.deduce_return(stmt, operand, scope)?;
         let result = self
             .body_context
             .as_ref()

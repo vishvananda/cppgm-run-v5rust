@@ -219,7 +219,10 @@ impl Analyzer<'_> {
                 self.publish_named_callee(callee, named, facts, scope)?;
                 facts
             } else {
-                let facts = self.typed_expression(callee, scope)?;
+                let saved_callee = self.callee_name.replace(named);
+                let result = self.typed_expression(callee, scope);
+                self.callee_name = saved_callee;
+                let facts = result?;
                 for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
                     let argument = self.tree.expr_lists.get(arguments)[syntax_index];
                     self.type_call_argument(argument, scope)?;
@@ -298,6 +301,7 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
+        self.require_deduced_result(self.graph.binding(binding).entity, location)?;
         let callable = facts.call_form == super::expression_facts::CallForm::CallableObject;
         if let Some(receiver) =
             self.record_call_receiver(callee, binding, &facts, scope, location)?
@@ -315,7 +319,7 @@ impl Analyzer<'_> {
         self.demand_function(binding, true);
         let ty = self.graph.types.canonical_function(
             self.graph
-                .binding(binding)
+                .entity(self.graph.binding(binding).entity)
                 .ty
                 .ok_or(Error::Invariant("function without type"))?,
         )?;

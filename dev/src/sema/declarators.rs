@@ -653,7 +653,9 @@ impl Analyzer<'_> {
                     });
                 }
                 ast::QualifierKind::Trailing(result) => {
-                    if !matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+                    if !matches!(self.graph.types.get(ty).kind, TypeKind::Auto)
+                        || self.graph.types.get(ty).cv != Cv::default()
+                    {
                         return Err(Error::at(location, "a trailing return type needs auto"));
                     }
                     let prototype = self.graph.add_scope(
@@ -694,12 +696,11 @@ impl Analyzer<'_> {
                 | ast::QualifierKind::Virt(_) => (),
             }
         }
-        if self.holds_auto(ty) {
-            return Err(if placeholder_result {
-                Error::Missing("deduced function return types")
-            } else {
-                Error::at(location, "auto return type without a trailing return type")
-            });
+        if self.holds_auto(ty) && !placeholder_result {
+            return Err(Error::at(
+                location,
+                "auto return type without a trailing return type",
+            ));
         }
         if matches!(
             self.graph.types.get(ty).kind,

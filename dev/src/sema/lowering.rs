@@ -786,6 +786,17 @@ impl Graph {
                 .is_some_and(|pattern| pattern.value)
     }
     pub(crate) fn lower_parameter_level(&self, ty: TypeId) -> Option<TemplateParameterView> {
+        // The frozen analyzer represents auto by an artificial type parameter
+        // with zero-initialized position and depth. Its ABI spelling is T_.
+        if matches!(self.types.get(ty).kind, TypeKind::Auto) {
+            return Some(TemplateParameterView {
+                index: 0,
+                level: 0,
+                value: false,
+                pack: false,
+                template: false,
+            });
+        }
         let (entity, level) = match self.types.get(ty).kind {
             TypeKind::TemplateParameter { entity, .. } => (entity, None),
             TypeKind::BoundPack {

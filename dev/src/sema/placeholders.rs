@@ -41,7 +41,12 @@ impl Analyzer<'_> {
         let mut environment = self.declarator_environment(id, scope)?;
         self.friend_environment(specs, scope, &mut environment);
         self.placeholder_environment(id, specs, &mut environment);
-        self.declarator_in(id, specs.ty, environment)
+        let declared = if environment.placeholder_function.is_some() {
+            self.graph.types.qualify(specs.ty, specs.auto_cv)?
+        } else {
+            specs.ty
+        };
+        self.declarator_in(id, declared, environment)
     }
 
     pub(super) fn placeholder_environment(

@@ -71,6 +71,7 @@ impl Analyzer<'_> {
             }
             ExprKind::Id(name) => {
                 let found = self.lookup_result(name, scope, Filter::Ordinary)?;
+                self.require_named_result(id, found.functions.as_slice())?;
                 self.named_expression(id, &found, scope)?
             }
             ExprKind::Literal(literal) => self.literal_expression(id, literal, scope)?,

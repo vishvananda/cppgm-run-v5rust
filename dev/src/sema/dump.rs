@@ -399,7 +399,7 @@ impl Graph {
                         write!(output, "{bits}")?;
                     }
                 }
-                TypeKind::Auto => output.write_all(b"auto")?,
+                TypeKind::Auto => output.write_all(b"typename auto")?,
                 TypeKind::Scalar(scalar) => output.write_all(scalar.name().as_bytes())?,
                 TypeKind::Class(entity) => {
                     write!(output, "{} ", class_key(self.entity(*entity).key))?;

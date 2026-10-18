@@ -83,6 +83,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) decltype_call: Option<ast::ExprId>,
     pub(super) builtin_names: super::builtin_calls::BuiltinNames,
     pub(super) pretyped_callable: Option<ast::ExprId>,
+    pub(super) callee_name: Option<ast::ExprId>,
     pub(super) operator_scratch: super::operator_resolution::OperatorScratch,
     pub(super) operator_lookup: super::operator_candidates::OperatorLookup,
     pub(super) association_scratch: super::call_lookup::AssociationScratch,
@@ -254,6 +255,7 @@ impl<'tree> Analyzer<'tree> {
             assignment_scratch: super::assignment::Scratch::default(),
             builtin_names,
             pretyped_callable: None,
+            callee_name: None,
             default_argument_scope: None,
             unevaluated: 0,
             template_arguments: 0,
@@ -622,7 +624,12 @@ impl<'tree> Analyzer<'tree> {
         environment.declaration_location = Some(location);
         self.friend_environment(specs, scope, &mut environment);
         self.placeholder_environment(Some(declarator), specs, &mut environment);
-        let mut info = self.declarator_in(Some(declarator), specs.ty, environment)?;
+        let declared = if environment.placeholder_function.is_some() {
+            self.graph.types.qualify(specs.ty, specs.auto_cv)?
+        } else {
+            specs.ty
+        };
+        let mut info = self.declarator_in(Some(declarator), declared, environment)?;
         if let Some((class, kind)) = self.declared_member(&info, scope)? {
             return self.complete_special_member(
                 class,
@@ -779,10 +786,13 @@ impl<'tree> Analyzer<'tree> {
                 result,
                 body.entity,
             ));
-            if self.graph.closure_deduces_result(body.entity)
+            let placeholder = self.holds_auto(result).then_some(result);
+            if (placeholder.is_some() || self.graph.closure_deduces_result(body.entity))
+                && self.template_depth == 0
                 && let Some(context) = self.body_context.as_mut()
             {
-                context.return_deduction = super::lambdas::ReturnDeduction::Pending;
+                context.placeholder = placeholder;
+                context.return_deduction = super::return_deduction::ReturnDeduction::Pending;
             }
         }
         let result = self.function_body_scopes(body);
@@ -930,6 +940,7 @@ impl<'tree> Analyzer<'tree> {
         }
         if self.semantic() {
             self.check_gotos()?;
+            self.finish_return_deduction(self.tree.statements.get(parsed.compound).location)?;
         }
         Ok(())
     }

@@ -308,7 +308,7 @@ pub(crate) struct Graph {
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
-    pub(super) fn set_closure_binding_type(&mut self, binding: BindingId, ty: TypeId) {
+    pub(super) fn set_function_binding_type(&mut self, binding: BindingId, ty: TypeId) {
         self.bindings[binding.0 as usize].ty = Some(ty);
     }
     pub(super) fn note_no_inline(

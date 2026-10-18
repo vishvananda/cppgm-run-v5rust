@@ -200,7 +200,7 @@ impl Analyzer<'_> {
         }
         let ty = self
             .graph
-            .binding(binding)
+            .entity(self.graph.binding(binding).entity)
             .ty
             .ok_or(Error::Invariant("function without type"))?;
         let mut facts = self.new_expression_facts(ty, V::Lvalue)?;
@@ -352,9 +352,13 @@ impl Analyzer<'_> {
                 "use of a deleted function",
             ));
         }
+        self.require_deduced_result(
+            self.graph.binding(binding).entity,
+            self.tree.expressions.get(id).location,
+        )?;
         let ty = self
             .graph
-            .binding(binding)
+            .entity(self.graph.binding(binding).entity)
             .ty
             .ok_or(Error::Invariant("function without type"))?;
         let ty = self.graph.types.canonical_function(ty)?;

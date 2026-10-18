@@ -105,6 +105,7 @@ mod procedural_calls;
 mod procedural_statements;
 mod qualifier_prefixes;
 mod queries;
+mod return_deduction;
 mod scalar_casts;
 mod scalar_conversions;
 mod scalar_expressions;

@@ -305,6 +305,7 @@ impl Analyzer<'_> {
             }
         }
         if self.graph.binding(binding).kind == BindingKind::Function {
+            self.require_named_result(id, found.functions.as_slice())?;
             let mut facts = self.function_designation(binding, found.functions.as_slice())?;
             facts.category = if found.functions.as_slice().len() == 1
                 && self.member_function_owner(binding).is_none()

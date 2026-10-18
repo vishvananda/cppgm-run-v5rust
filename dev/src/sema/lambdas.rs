@@ -15,12 +15,6 @@ use crate::{
 use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
-pub(super) enum ReturnDeduction {
-    Fixed,
-    Pending,
-    Ready(TypeId),
-}
-#[derive(Clone, Copy)]
 pub(crate) struct Closure {
     pub call: EntityId,
     pub invoker: Option<EntityId>,
@@ -64,89 +58,8 @@ impl Graph {
     pub(super) fn closure_call(&self, class: EntityId) -> Option<EntityId> {
         self.lower_closure(class).map(|facts| facts.call)
     }
-    pub(super) fn set_closure_result(
-        &mut self,
-        call: EntityId,
-        result: TypeId,
-    ) -> Result<(), Error> {
-        let old = self
-            .entity(call)
-            .ty
-            .ok_or(Error::Invariant("closure call type"))?;
-        let TypeKind::Function {
-            parameters,
-            variadic,
-            cv,
-            reference,
-            ..
-        } = self.types.get(old).kind.clone()
-        else {
-            return Err(Error::Invariant("closure call signature"));
-        };
-        let ty = self.types.intern(
-            TypeKind::Function {
-                result,
-                parameters,
-                variadic,
-                cv,
-                reference,
-            },
-            Cv::default(),
-        )?;
-        self.entity_mut(call).ty = Some(ty);
-        let binding = self.function_origin(call)?;
-        self.set_closure_binding_type(binding, ty);
-        Ok(())
-    }
 }
 impl Analyzer<'_> {
-    pub(super) fn deduce_closure_return(
-        &mut self,
-        stmt: ast::StmtId,
-        operand: Option<ast::ExprId>,
-        scope: ScopeId,
-    ) -> Result<Option<ExprFacts>, Error> {
-        let deducing = self
-            .body_context
-            .as_ref()
-            .is_some_and(|body| !matches!(body.return_deduction, ReturnDeduction::Fixed));
-        let mut typed = None;
-        if deducing {
-            let ty = if let Some(operand) = operand {
-                if matches!(
-                    self.tree.expressions.get(operand).kind,
-                    ast::ExprKind::Braced { .. }
-                ) {
-                    return Err(Error::at(
-                        self.tree.statements.get(stmt).location,
-                        "returning a braced-init-list for this result",
-                    ));
-                }
-                let facts = self.typed_expression(operand, scope)?;
-                typed = Some(facts);
-                self.decayed_type(facts.ty)?
-            } else {
-                self.graph.types.scalar(Scalar::Void)?
-            };
-            let body = self
-                .body_context
-                .as_mut()
-                .ok_or(Error::Invariant("lambda return context"))?;
-            if matches!(body.return_deduction, ReturnDeduction::Ready(earlier) if earlier != ty) {
-                return Err(Error::at(
-                    self.tree.statements.get(stmt).location,
-                    "return statements deduce different return types (7.1.6.4p9)",
-                ));
-            }
-            if matches!(body.return_deduction, ReturnDeduction::Pending) {
-                body.return_deduction = ReturnDeduction::Ready(ty);
-                body.result = ty;
-                let call = body.entity;
-                self.graph.set_closure_result(call, ty)?;
-            }
-        }
-        Ok(typed)
-    }
     pub(super) fn note_closure_invocation(
         &mut self,
         id: ast::ExprId,
