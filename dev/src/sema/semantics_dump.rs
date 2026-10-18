@@ -504,6 +504,8 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 token.spelling(),
                 if array { "[]" } else { "" }
             )?;
+        } else if self.graph.lower_closure_converter(binding.entity).is_some() {
+            self.output.write_all(b"operator <function pointer>")?;
         } else if let Some(name) = entity.special_name {
             crate::syntax::write_member_label(self.tree, self.cursor, name, self.output)?;
         } else if let Some(key) = entity.member_function
@@ -1492,7 +1494,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .graph
                 .expression_facts
                 .function_conversion(id)
-                .is_none()
+                .is_none_or(|conversion| {
+                    conversion.usage == super::conversion_functions::ConversionUse::Scalar
+                })
             && let Some(call) = facts.call
         {
             let function = match call {
@@ -1723,6 +1727,65 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn scalar_conversion_keeps_the_receivers_declared_reference_call_view() {
+        let source = SourceBuffer::new(
+            b"struct A{operator int();};A& effect();int f(){return effect();}".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"reference-call-view").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let declaration = *tree.decl_lists.get(declarations).last().unwrap();
+        let crate::syntax::ast::DeclKind::Function { body, .. } =
+            tree.declarations.get(declaration).kind
+        else {
+            panic!("function")
+        };
+        let crate::syntax::ast::Body::Parsed(body) = *tree.bodies.get(body) else {
+            panic!("parsed body")
+        };
+        let crate::syntax::ast::StmtKind::Compound(items) = tree.statements.get(body.compound).kind
+        else {
+            panic!("compound")
+        };
+        let crate::syntax::ast::StmtKind::Return(Some(call)) =
+            tree.statements.get(tree.stmt_lists.get(items)[0]).kind
+        else {
+            panic!("return")
+        };
+        let facts = graph.expression_facts.get(call).unwrap();
+        assert!(graph.class_of(facts.ty).is_some());
+        assert!(
+            graph
+                .expression_facts
+                .function_conversion(call)
+                .unwrap()
+                .usage
+                == ConversionUse::Scalar
+        );
+        let mut output = Vec::new();
+        graph
+            .print_semantics(tree, cursor, declarations, &mut output)
+            .unwrap();
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("call-expression lvalue lvalue-reference to struct A")
+        );
+        assert_eq!(graph.expression_facts.get(call).unwrap().ty, facts.ty);
+    }
 
     #[test]
     fn builtin_conversion_view_preserves_receiver_facts_and_selected_demand() {

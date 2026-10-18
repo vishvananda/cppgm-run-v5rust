@@ -1,15 +1,64 @@
 // Translated from lower/{function,expression,object}_lowering.cpp. See NOTICE.
-//! Captures project through the current closure on each use, never a cached load.
-use super::{Error, function::Function};
+//! Closure conversions preserve receiver effects; captures project on each use.
+use super::{
+    Error,
+    function::{Function, RValue},
+};
 use crate::{
     lowir::{
         model::{Facts, InstructionKind as I, Value},
         vocabulary::{Projection, Type},
     },
     sema::lowering::{EntityId, TypeId, TypeView},
+    syntax::ast::{self, ExprKind},
 };
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn closure_function_address(
+        &mut self,
+        invoker: EntityId,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
+        self.symbols.demand(invoker);
+        let symbol = self
+            .symbols
+            .function_symbol(self.builder.program(), invoker)?;
+        self.emit(I::Addr(Value::Symbol(symbol)), source)
+    }
+    pub(super) fn convert_closure(
+        &mut self,
+        id: ast::ExprId,
+        invoker: EntityId,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
+        let id = self.without_parentheses(id);
+        if !matches!(self.tree.expressions.get(id).kind, ExprKind::Lambda(_))
+            && !self.side_effect_free(id, false, 0)?
+        {
+            let place = self.original_scalar_place(id)?;
+            self.storage_address(place, self.graph.lower_expression(id)?.ty)?;
+        }
+        self.closure_function_address(invoker, source)
+    }
+    pub(super) fn explicit_closure_conversion(
+        &mut self,
+        callee: ast::ExprId,
+        invoker: EntityId,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
+        let root = self.without_parentheses(callee);
+        if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(root).kind
+            && !matches!(self.tree.expressions.get(base).kind, ExprKind::Lambda(_))
+            && !self.side_effect_free(base, false, 0)?
+        {
+            if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Arrow) {
+                self.arrow_operand(base)?;
+            } else {
+                self.address(base)?;
+            }
+        }
+        self.closure_function_address(invoker, source)
+    }
     pub(super) fn closure_field(
         &mut self,
         object: Value,

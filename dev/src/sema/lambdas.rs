@@ -18,6 +18,7 @@ use std::collections::HashMap;
 pub(crate) struct Closure {
     pub call: EntityId,
     pub invoker: Option<EntityId>,
+    pub conversion: Option<EntityId>,
     pub enclosing: Option<EntityId>,
     pub ordinal: u32,
     pub course_number: u16,
@@ -66,6 +67,25 @@ impl Graph {
             .and_then(|class| self.lower_closure(class))
             .is_some_and(|facts| facts.invoker == Some(function))
     }
+    pub(crate) fn lower_closure_converter(&self, function: EntityId) -> Option<EntityId> {
+        let facts = self
+            .entity(function)
+            .home
+            .and_then(|home| self.scope(home).owner)
+            .and_then(|class| self.lower_closure(class))?;
+        (facts.conversion == Some(function))
+            .then_some(facts.invoker)
+            .flatten()
+    }
+    /// The invoker executes the operator's syntax in its original lexical scope.
+    pub(crate) fn lower_closure_body_owner(&self, function: EntityId) -> EntityId {
+        self.entity(function)
+            .home
+            .and_then(|home| self.scope(home).owner)
+            .and_then(|class| self.lower_closure(class))
+            .filter(|facts| facts.invoker == Some(function))
+            .map_or(function, |facts| facts.call)
+    }
     pub(crate) fn lower_closure(&self, class: EntityId) -> Option<Closure> {
         self.closures.records.get(&class).copied()
     }
@@ -94,12 +114,20 @@ impl Analyzer<'_> {
         ) {
             return Ok(());
         }
-        let Some(closure) = self.graph.lower_closure(class) else {
+        let Some(invoker) = self.closure_conversion(class, false)? else {
             return Ok(());
         };
-        if !closure.convertible {
-            return Ok(());
-        }
+        self.graph.closures.invocations.insert(id, invoker);
+        Ok(())
+    }
+    pub(super) fn closure_conversion(
+        &mut self,
+        class: EntityId,
+        conversion_function: bool,
+    ) -> Result<Option<EntityId>, Error> {
+        let Some(closure) = self.graph.lower_closure(class).filter(|c| c.convertible) else {
+            return Ok(None);
+        };
         let invoker = if let Some(invoker) = closure.invoker {
             invoker
         } else {
@@ -160,8 +188,77 @@ impl Analyzer<'_> {
                 .invoker = Some(invoker);
             invoker
         };
-        self.graph.closures.invocations.insert(id, invoker);
-        Ok(())
+        if conversion_function && closure.conversion.is_none() {
+            let home = self
+                .graph
+                .entity(invoker)
+                .home
+                .ok_or(Error::Invariant("closure conversion home"))?;
+            let function_type = self
+                .graph
+                .entity(invoker)
+                .ty
+                .ok_or(Error::Invariant("closure conversion target"))?;
+            let pointer = self
+                .graph
+                .types
+                .intern(TypeKind::Pointer(function_type), Cv::default())?;
+            let ty = self.graph.types.intern(
+                TypeKind::Function {
+                    result: pointer,
+                    parameters: Vec::new(),
+                    variadic: false,
+                    cv: Cv::CONST,
+                    reference: None,
+                },
+                Cv::default(),
+            )?;
+            let conversion = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
+            let function = self.graph.entity_mut(conversion);
+            function.home = Some(home);
+            function.function = Some(FunctionProperties {
+                no_inline: false,
+                internal_linkage: false,
+                language: super::linkage::Language::Cpp,
+                denotes: None,
+                is_static: false,
+                special: None,
+                allocation: None,
+            });
+            function.member_function = Some(super::graph::MemberKey {
+                class,
+                kind: super::graph::MemberKind::Conversion,
+                signature: ty,
+                shape: None,
+            });
+            function.inline = super::specifiers::InlinePreference::Inline;
+            function.exceptions =
+                super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
+            let binding = self.graph.add_binding(
+                home,
+                Some(home),
+                Binding {
+                    kind: BindingKind::Function,
+                    name: None,
+                    entity: conversion,
+                    ty: Some(ty),
+                    key: Keyword::Int,
+                },
+            )?;
+            self.graph
+                .record_special_value(home, SpecialName::Conversion, binding)?;
+            self.graph
+                .entity_mut(class)
+                .declared_conversions
+                .push(binding);
+            self.graph
+                .closures
+                .records
+                .get_mut(&class)
+                .ok_or(Error::Invariant("closure conversion owner"))?
+                .conversion = Some(conversion);
+        }
+        Ok(Some(invoker))
     }
     pub(super) fn lambda_expression(
         &mut self,
@@ -241,6 +338,7 @@ impl Analyzer<'_> {
             Closure {
                 call,
                 invoker: None,
+                conversion: None,
                 enclosing,
                 ordinal,
                 course_number: u16::try_from(earlier).unwrap_or(u16::MAX),
@@ -482,5 +580,100 @@ mod tests {
         );
         assert!(graph.entity(invoker).function.unwrap().is_static);
         assert!(!graph.entity(closure.call).function.unwrap().is_static);
+    }
+
+    #[test]
+    fn pointer_conversion_reuses_signature_body_and_scope_without_eager_unused_helpers() {
+        let source = SourceBuffer::new(
+            br"using F=int&(*)(int&);
+            int main(){auto unused=[]{return 0;};
+            auto f=[](int& x)noexcept->int&{static int n;return x;};
+            F p=f;F q=f.operator F();return p==q;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"closure-conversion-ownership").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let statements = tree.statements.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.statements.mark(), statements);
+        assert_eq!(graph.closures.records.len(), 2);
+        let closure = graph
+            .closures
+            .records
+            .values()
+            .find(|c| c.conversion.is_some())
+            .copied()
+            .unwrap();
+        let unused = graph
+            .closures
+            .records
+            .values()
+            .find(|c| c.conversion.is_none())
+            .unwrap();
+        assert!(unused.invoker.is_none());
+        let call = graph.entity(closure.call);
+        let invoker = closure.invoker.unwrap();
+        let function = graph.entity(invoker);
+        assert_eq!(function.analyzed_body, call.analyzed_body);
+        assert_eq!(function.scope, call.scope);
+        assert!(matches!((&function.exceptions, &call.exceptions),
+            (super::super::exceptions::ExceptionState::Value(first),
+             super::super::exceptions::ExceptionState::Value(second)) if first == second));
+        let TypeKind::Function {
+            result,
+            parameters: ref invocation_parameters,
+            cv,
+            reference,
+            ..
+        } = graph.types.get(function.ty.unwrap()).kind
+        else {
+            panic!("function type")
+        };
+        assert_eq!(cv, Cv::default());
+        assert!(reference.is_none());
+        assert!(matches!(
+            graph.types.get(result).kind,
+            TypeKind::Reference { .. }
+        ));
+        assert_eq!(invocation_parameters.len(), 1);
+        assert!(matches!(
+            graph.types.get(invocation_parameters[0]).kind,
+            TypeKind::Reference { .. }
+        ));
+        let converter = closure.conversion.unwrap();
+        assert_eq!(graph.lower_closure_converter(converter), Some(invoker));
+        let TypeKind::Function {
+            result: pointer,
+            ref parameters,
+            cv,
+            ..
+        } = graph.types.get(graph.entity(converter).ty.unwrap()).kind
+        else {
+            panic!("conversion type")
+        };
+        assert_eq!(cv, Cv::CONST);
+        assert!(parameters.is_empty());
+        assert!(
+            matches!(graph.types.get(pointer).kind, TypeKind::Pointer(ty) if Some(ty)==function.ty)
+        );
+        let TypeKind::Function {
+            result: call_result,
+            parameters: ref call_parameters,
+            ..
+        } = graph.types.get(call.ty.unwrap()).kind
+        else {
+            panic!("operator signature")
+        };
+        assert_eq!(call_result, result);
+        assert_eq!(call_parameters, invocation_parameters);
+        assert_eq!(graph.lower_closure_body_owner(invoker), closure.call);
     }
 }

@@ -201,6 +201,22 @@ impl Analyzer<'_> {
     ) -> Result<Option<Value>, Error> {
         self.check_stack()?;
         let source = self.graph.expression_facts.get(id)?.ty;
+        // global_lowering.cpp::static_converted: only a bare lambda's
+        // conversion is an effect-free static function address.
+        if matches!(
+            self.tree
+                .expressions
+                .get(self.graph.expression_facts.root(id))
+                .kind,
+            ExprKind::Lambda(_)
+        ) && matches!(self.graph.types.get(target).kind, TypeKind::Pointer(_))
+            && let Some(conversion) = self.graph.expression_facts.function_conversion(id)
+            && let Some(invoker) = self
+                .graph
+                .lower_closure_converter(self.graph.binding(conversion.binding).entity)
+        {
+            return Ok(Some(Value::Address(invoker, 0)));
+        }
         // constant_lowering.cpp::initialization_value: initialization includes
         // the selected conversion even though the operand retains its class type.
         if self.graph.class_of(source).is_some()

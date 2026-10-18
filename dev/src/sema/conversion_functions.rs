@@ -65,6 +65,9 @@ impl Analyzer<'_> {
         let key = super::function_names::ValueKey::Special(
             super::function_names::SpecialName::Conversion,
         );
+        if let Some(class) = self.graph.scope(prefix).owner {
+            self.closure_conversion(class, true)?;
+        }
         let found = self.using_lookup(prefix, key, location)?;
         let target = self.type_syntax(target, scope)?;
         let mut selected = super::lookup::FunctionCandidates::default();
@@ -355,6 +358,7 @@ impl Analyzer<'_> {
                         continue;
                     }
                     *visits += 1;
+                    self.closure_conversion(current, true)?;
                 }
                 for index in (0..self.graph.entity(current).declared_conversions.len()).rev() {
                     let binding = self.graph.entity(current).declared_conversions[index];

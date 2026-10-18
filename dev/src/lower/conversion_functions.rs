@@ -349,6 +349,9 @@ impl Function<'_, '_, '_, '_> {
         call: MemberCall,
         qualified: bool,
     ) -> Result<RValue, Error> {
+        if let Some(invoker) = self.graph.lower_closure_converter(call.function) {
+            return self.convert_closure(id, invoker, call.result);
+        }
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
         self.begin_lifetime_call(throws)?;
         let receiver = self.conversion_receiver(id)?;

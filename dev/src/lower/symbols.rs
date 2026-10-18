@@ -2053,7 +2053,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             format!("__local_static__{owner_name}__decl{ordinal}__{name}")
         };
-        let encoding = self.function_encoding(function)?;
+        let lexical = self.graph.lower_closure_body_owner(function);
+        let encoding = self.function_encoding(lexical)?;
         let parent = self.abi.intern(
             Node::FunctionScope {
                 encoding,
@@ -2064,7 +2065,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let terminal = self.abi.string(self.cursor.name(facts.named()?))?;
         let count = self
             .local_counts
-            .entry((function, facts.named()?))
+            .entry((lexical, facts.named()?))
             .or_default();
         let occurrence = *count;
         *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;

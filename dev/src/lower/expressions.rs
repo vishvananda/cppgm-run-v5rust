@@ -633,6 +633,11 @@ impl Function<'_, '_, '_, '_> {
             return self.zero(source);
         }
         let target = self.graph.lower_call(id)?;
+        if let CallTarget::Direct(entity) = target
+            && let Some(invoker) = self.graph.lower_closure_converter(entity)
+        {
+            return self.explicit_closure_conversion(callee_expression, invoker, source);
+        }
         let invoker = self.graph.lower_closure_invocation(id);
         if let CallTarget::Direct(entity) = target
             && matches!(
