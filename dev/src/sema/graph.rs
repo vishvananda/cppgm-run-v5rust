@@ -222,6 +222,7 @@ struct FunctionSignature {
 }
 
 pub(crate) struct Graph {
+    pub(super) hosted: bool,
     pub(super) closures: Box<super::lambdas::Closures>,
     pub(super) virtuals: super::virtual_members::Virtuals,
     pub(super) local_classes: super::local_classes::LocalClasses,
@@ -414,6 +415,7 @@ impl Graph {
     }
     pub(super) fn new() -> Self {
         Self {
+            hosted: false,
             closures: Box::default(),
             virtuals: super::virtual_members::Virtuals::default(),
             member_initializers: super::member_initializers::Initializers::default(),

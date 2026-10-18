@@ -14,6 +14,31 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 
 impl Analyzer<'_> {
+    pub(super) fn typed_variable_initialization(
+        &self,
+        specs: Specifiers,
+        info: &DeclaratorInfo,
+        home: ScopeId,
+        initialized: bool,
+    ) -> bool {
+        self.semantic()
+            && self.template_depth == 0
+            && (self.graph.scope(home).kind != ScopeKind::Class
+                || info.home.is_some()
+                || specs.is_static && initialized)
+    }
+    pub(super) fn inline_static_member(
+        &self,
+        specs: Specifiers,
+        info: &DeclaratorInfo,
+        home: ScopeId,
+    ) -> bool {
+        self.hosted()
+            && specs.inline == super::specifiers::InlinePreference::Inline
+            && specs.is_static
+            && self.graph.scope(home).kind == ScopeKind::Class
+            && info.home.is_none()
+    }
     pub(super) fn request_in_class_initializer(
         &mut self,
         entity: super::graph::EntityId,
@@ -31,21 +56,37 @@ impl Analyzer<'_> {
     pub(super) fn record_declared_constant(
         &mut self,
         entity: super::graph::EntityId,
-        initializer: ast::Initializer,
+        declaration: ast::InitDeclarator,
         info: &DeclaratorInfo,
-        location: SourceOffset,
     ) -> Result<(), Error> {
+        let initializer = declaration
+            .initializer
+            .ok_or(Error::Invariant("declared constant without initializer"))?;
         self.record_constant_initializer(entity, initializer, info.lookup)?;
         let variable = self.graph.entity(entity);
+        let ty = variable
+            .ty
+            .ok_or(Error::Invariant("static constant without type"))?;
+        // C++ leaves ConstantState::Unknown for an ordinary nonconst object;
+        // None diagnoses only a failed eligible constant-initialization query.
+        // Reference values live in the address store rather than ConstantState.
+        let failed_constant = if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+        {
+            self.graph.constant_addresses.value(entity).is_none()
+        } else {
+            self.graph.integral_kind(ty).is_some()
+                && self.graph.types.get(ty).cv.0 == 1
+                && matches!(variable.constant, ConstantState::None)
+        };
         if self.semantic()
             && self.template_depth == 0
             && info.home.is_none()
             && variable.data_member == Some(DataMemberKind::Static)
             && !variable.constexpr
-            && matches!(variable.constant, ConstantState::None)
+            && failed_constant
         {
             return Err(Error::at(
-                location,
+                self.tree.declarators.get(declaration.declarator).location,
                 "a static data member's in-class initializer is not a constant expression",
             ));
         }
@@ -327,6 +368,7 @@ impl Analyzer<'_> {
             && initializer.is_some()
             && self.graph.scope(home).kind == ScopeKind::Class
             && !specs.constexpr
+            && !self.inline_static_member(specs, info, home)
             && self.template_depth == 0
             && (self.graph.types.get(info.ty).cv.0 & 1 == 0
                 || (self.graph.integral_kind(info.ty).is_none()

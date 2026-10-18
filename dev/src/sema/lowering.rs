@@ -1409,7 +1409,9 @@ impl Graph {
             } else {
                 entity.variable_definition
             },
-            emission: if self.variable_instances.instance(id) {
+            emission: if self.variable_instances.instance(id)
+                || entity.inline == super::specifiers::InlinePreference::Inline
+            {
                 Emission::Demanded
             } else {
                 Emission::Always
@@ -1424,8 +1426,20 @@ impl Graph {
     }
     pub(crate) fn lower_omitted_variable_initialization(&self, entity: EntityId) -> bool {
         self.variable_instances.omitted_initialization(entity)
+            // declare_variable does not default-initialize an unqualified
+            // in-class declaration without an initializer. An inline ordinary
+            // member still defines zero storage on use; a template instance
+            // instead performs default initialization in instantiate_variable.
+            || self.ordinary_inline_member(entity)
+                && self.entity(entity).member_initializer.is_none()
     }
-    pub(crate) fn lower_instance_initializer(
+    pub(super) fn ordinary_inline_member(&self, entity: EntityId) -> bool {
+        !self.variable_instances.instance(entity)
+            && self.entity(entity).defined
+            && self.entity(entity).inline == super::specifiers::InlinePreference::Inline
+            && self.entity(entity).data_member == Some(super::graph::DataMemberKind::Static)
+    }
+    pub(crate) fn lower_demanded_initializer(
         &self,
         entity: EntityId,
     ) -> Option<super::variable_instances::Definition> {

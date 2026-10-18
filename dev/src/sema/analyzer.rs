@@ -284,6 +284,12 @@ impl<'tree> Analyzer<'tree> {
     pub(super) fn lowering(&self) -> bool {
         self.mode == AnalysisMode::Lowering
     }
+    pub(super) fn hosted(&self) -> bool {
+        self.graph.hosted
+    }
+    pub(super) fn set_hosted(&mut self, hosted: bool) {
+        self.graph.hosted = hosted;
+    }
     pub(super) fn semantic(&self) -> bool {
         self.mode != AnalysisMode::Types
     }

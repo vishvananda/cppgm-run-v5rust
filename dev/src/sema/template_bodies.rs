@@ -206,6 +206,10 @@ pub(crate) fn analyze_unit(
     lowering: bool,
 ) -> Result<Graph, Error> {
     let mut analyzer = Analyzer::new(tree, cursor, budget)?;
+    // The supported LowIR invocation selects the host environment. Dump
+    // invocations use the course environment. Retain this independently of
+    // analysis mode when demanded bodies borrow the graph again.
+    analyzer.set_hosted(lowering);
     analyzer.set_semantics(semantics);
     if lowering {
         analyzer.set_lowering();

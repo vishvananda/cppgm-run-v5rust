@@ -349,7 +349,7 @@ mod tests {
             graph
                 .lower_demanded_variables()
                 .iter()
-                .all(|&id| graph.lower_instance_initializer(id).is_some())
+                .all(|&id| graph.lower_demanded_initializer(id).is_some())
         );
     }
 }

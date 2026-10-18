@@ -192,7 +192,7 @@ impl Function<'_, '_, '_, '_> {
         if self.initialization_output.is_some() {
             let program = self.builder.program();
             if program.global(program.symbol(symbol)).is_none()
-                && self.graph.lower_instance_initializer(entity).is_some()
+                && self.graph.lower_demanded_initializer(entity).is_some()
             {
                 self.symbols.instance_variables.push_front(entity);
             }

@@ -222,7 +222,7 @@ pub(super) fn emit_instance_variables<'a>(
         }
         let initializer =
             graph
-                .lower_instance_initializer(entity)
+                .lower_demanded_initializer(entity)
                 .ok_or(crate::sema::Error::Invariant(
                     "instance storage without definition",
                 ))?;

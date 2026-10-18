@@ -81,11 +81,19 @@ impl Analyzer<'_> {
         } = declaration;
         if kind == BindingKind::Variable {
             let namespace = self.graph.scope(home).kind == ScopeKind::Namespace;
+            let inline = self.hosted()
+                && specs.inline == super::specifiers::InlinePreference::Inline
+                && (namespace
+                    || self.graph.scope(home).kind == ScopeKind::Class && specs.is_static);
+            if inline {
+                self.graph.entity_mut(entity).inline = specs.inline;
+            }
             let internal = namespace
                 && (specs.is_static
                     || !self.c_language && self.internal_namespace(home)
                     || self.type_cv(ty).0 & 1 != 0
                         && !specs.is_extern
+                        && !inline
                         && !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }));
             let language = super::linkage::Language::from_c(
                 self.c_language && self.graph.scope(home).kind != ScopeKind::Class,

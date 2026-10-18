@@ -771,7 +771,8 @@ impl Analyzer<'_> {
         }
         let definition = specialization.unwrap_or(
             (self.graph.scope(home).kind != ScopeKind::Class || info.home.is_some())
-                && (!specs.is_extern || init.initializer.is_some()),
+                && (!specs.is_extern || init.initializer.is_some())
+                || self.inline_static_member(specs, &info, home),
         );
         let member = self.graph.scope(home).kind == ScopeKind::Class && !specs.is_static;
         let binding = self.declare_value(
@@ -815,6 +816,8 @@ impl Analyzer<'_> {
         self.declare_variable_template(binding, init, &info, scope, location, automatic)?;
         self.check_constexpr_variable(specs.constexpr, ty, location)?;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
+        let typed_initialization =
+            self.typed_variable_initialization(specs, &info, home, init.initializer.is_some());
         if let Some(initializer) = init.initializer {
             if self.semantic() {
                 if self.graph.scope(home).kind == ScopeKind::Block
@@ -839,23 +842,24 @@ impl Analyzer<'_> {
                 self.initializer_names(initializer, info.lookup, ty)?;
             }
             if !member && self.template_depth == 0 {
-                self.record_declared_constant(entity, initializer, &info, location)?;
+                self.record_declared_constant(entity, init, &info)?;
             }
-        } else if self.semantic() && self.template_depth == 0 && definition {
+        } else if typed_initialization && definition {
             self.default_initialize_declaration(binding, location)?;
         }
         self.record_variable_pattern(binding, init, &info, definition, ty, location);
-        if self.lowering() && self.template_depth == 0 && definition && !member {
+        let storage_root = self.lowering()
+            && self.template_depth == 0
+            && definition
+            && !member
+            && !self.inline_static_member(specs, &info, home);
+        if storage_root {
             self.request_static_initializer(entity, init.initializer, info.lookup, home)?;
         }
-        if self.semantic()
-            && self.template_depth == 0
-            && !member
-            && (definition || init.initializer.is_some())
-        {
+        if typed_initialization && !member && (definition || init.initializer.is_some()) {
             self.variable_destruction(binding, info.lookup, location, init.initializer.is_some())?;
         }
-        if self.lowering() && self.template_depth == 0 && definition && !member {
+        if storage_root {
             self.request_storage_layout(entity, location)?;
         }
         Ok(())

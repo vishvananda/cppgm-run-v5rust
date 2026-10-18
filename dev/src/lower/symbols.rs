@@ -1618,7 +1618,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.objects.insert(entity, local_object);
         self.globals.push(entity);
         if facts.emission == crate::sema::lowering::Emission::Demanded
-            && self.graph.lower_instance_initializer(entity).is_some()
+            && self.graph.lower_demanded_initializer(entity).is_some()
         {
             self.instance_variables.push_back(entity);
             let request = self.pending.variable();

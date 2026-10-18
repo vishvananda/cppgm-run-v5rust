@@ -286,6 +286,8 @@ impl Analyzer<'_> {
         if self.template_depth == 0
             || !definition
             || info.home.is_none()
+                && (self.graph.entity(entity).inline != super::specifiers::InlinePreference::Inline
+                    || self.graph.entity(entity).template_head.is_some())
             || self.graph.entity(entity).data_member != Some(super::graph::DataMemberKind::Static)
         {
             return;
@@ -294,9 +296,11 @@ impl Analyzer<'_> {
             entity,
             Pattern {
                 declarator: init.declarator,
-                initializer: init.initializer,
+                // An inline definition reuses the instance's already typed
+                // in-class initializer instead of copying the pattern again.
+                initializer: info.home.and(init.initializer),
                 ty,
-                head: self.template_head,
+                head: info.home.and(self.template_head),
                 scope: info.lookup,
                 location,
                 limit: self.graph.binding_limit(),
@@ -307,9 +311,18 @@ impl Analyzer<'_> {
         );
     }
     pub(super) fn use_instance_variable(&mut self, entity: EntityId) -> Result<(), Error> {
-        if self.template_depth != 0 && !self.graph.variable_instances.templates.concrete(entity)
-            || !self.graph.variable_instances.instance(entity)
-        {
+        if self.template_depth != 0 && !self.graph.variable_instances.templates.concrete(entity) {
+            return Ok(());
+        }
+        if !self.graph.variable_instances.instance(entity) {
+            if self.graph.ordinary_inline_member(entity)
+                && self.lowering()
+                && self.unevaluated == 0
+                && self.template_arguments == 0
+            {
+                self.instantiate_variable(entity)?;
+                self.record_variable_storage_use(entity);
+            }
             return Ok(());
         }
         if self.graph.variable_instances.templates.contains(entity) {
@@ -382,6 +395,7 @@ impl Analyzer<'_> {
             // A template initializer is not a storage root. Its final static
             // image (or dynamic dependencies) is followed only if it is used.
             if !self.graph.variable_instances.instance(initializing)
+                && !self.graph.ordinary_inline_member(initializing)
                 && self.graph.entity(initializing).template_head.is_none()
                 && self.graph.entity(initializing).data_member
                     != Some(super::graph::DataMemberKind::Instance)
@@ -416,13 +430,23 @@ impl Analyzer<'_> {
             .get(self.graph.variable_instances.next_layout)
         {
             self.graph.variable_instances.next_layout += 1;
-            if self.graph.variable_instances.omitted_initialization(entity) {
-                let location = self
-                    .graph
-                    .variable_instances
-                    .templates
-                    .location(entity)
-                    .ok_or(Error::Invariant("specialization storage without location"))?;
+            if self.graph.lower_omitted_variable_initialization(entity)
+                || self.graph.ordinary_inline_member(entity)
+            {
+                let location = if self.graph.ordinary_inline_member(entity) {
+                    let declarator = self
+                        .graph
+                        .entity(entity)
+                        .variable_definition
+                        .ok_or(Error::Invariant("inline storage without declaration"))?;
+                    self.tree.declarators.get(declarator).location
+                } else {
+                    self.graph
+                        .variable_instances
+                        .templates
+                        .location(entity)
+                        .ok_or(Error::Invariant("specialization storage without location"))?
+                };
                 let ty = self.graph.lower_entity_type(entity)?;
                 self.request_object_layout_for(ty, location, owner);
             }
@@ -610,6 +634,20 @@ impl Analyzer<'_> {
         if self.graph.variable_instances.templates.contains(entity) {
             return self.instantiate_variable_specialization(entity);
         }
+        if self.graph.ordinary_inline_member(entity) {
+            let node = self.graph.entity(entity);
+            let initializer = node.member_initializer;
+            let home = node
+                .home
+                .ok_or(Error::Invariant("inline member without owner"))?;
+            self.graph.variable_instances.begin(entity);
+            // The declaration already typed its initializer. In particular,
+            // no initializer here must not select a default constructor.
+            let result = self
+                .request_static_initializer(entity, initializer, home, home)
+                .map(|()| Definition { initializer });
+            return self.graph.variable_instances.finish(entity, result);
+        }
         let Some(pattern) = self.graph.variable_instances.outside_definition(entity) else {
             return Ok(());
         };
@@ -618,7 +656,11 @@ impl Analyzer<'_> {
             .entity(entity)
             .home
             .ok_or(Error::Invariant("instance variable without owner"))?;
-        let frame = self.outside_class_frame(owner, pattern.head, pattern.scope)?;
+        let frame = if pattern.qualified {
+            self.outside_class_frame(owner, pattern.head, pattern.scope)?
+        } else {
+            owner
+        };
         self.graph
             .variable_instances
             .states
@@ -705,6 +747,147 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn inline_member_storage_reuses_the_instances_typed_initializer_once() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{static inline constexpr int n=sizeof(T);\
+              static inline constexpr int unused=sizeof(T)*2;};using X=A<int>;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"inline-storage").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names =
+            [b"X".as_slice(), b"n", b"unused"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_hosted(true);
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let alias = analyzer
+            .graph
+            .own(global, names[0], Filter::Ordinary)
+            .unwrap();
+        let class = analyzer
+            .graph
+            .class_of(analyzer.graph.binding(alias).ty.unwrap())
+            .unwrap();
+        assert!(analyzer.complete_class(class).unwrap());
+        let home = analyzer.graph.entity(class).scope.unwrap();
+        let members = [names[1], names[2]].map(|name| {
+            let binding = analyzer.graph.own(home, name, Filter::Ordinary).unwrap();
+            analyzer.graph.binding(binding).entity
+        });
+        assert!(analyzer.graph.variable_instances.states.is_empty());
+        assert!(analyzer.graph.variable_instances.demands.is_empty());
+        let [entity, unused] = members;
+        let source = analyzer.graph.variable_instances.links[&entity];
+        let pattern = analyzer.graph.variable_instances.patterns[&source];
+        assert!(pattern.initializer.is_none());
+        assert!(pattern.head.is_none());
+        assert!(!pattern.qualified);
+        let initializer = analyzer.graph.entity(entity).member_initializer.unwrap();
+        let ast::InitializerKind::Assign(expression) = initializer.kind else {
+            panic!("assigned initializer");
+        };
+        assert!(analyzer.graph.expression_facts.get(expression).is_ok());
+        assert!(analyzer.graph.entity(entity).defined);
+        assert!(analyzer.graph.entity(entity).variable_definition.is_some());
+        assert!(
+            analyzer
+                .graph
+                .variable_instances
+                .initializer(entity)
+                .is_none()
+        );
+        let expressions = analyzer.tree.expressions.mark();
+        for _ in 0..2 {
+            analyzer.instantiate_variable(entity).unwrap();
+            let definition = analyzer
+                .graph
+                .variable_instances
+                .initializer(entity)
+                .unwrap();
+            assert!(matches!(definition.initializer.unwrap().kind,
+                ast::InitializerKind::Assign(id) if id == expression));
+            assert_eq!(analyzer.graph.variable_instances.states.len(), 1);
+            assert!(
+                analyzer
+                    .graph
+                    .variable_instances
+                    .initializer(unused)
+                    .is_none()
+            );
+            assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        }
+    }
+
+    #[test]
+    fn hosted_inline_storage_and_linkage_belong_to_the_first_declaration() {
+        use super::super::specifiers::InlinePreference;
+        for lowering in [false, true] {
+            let source = SourceBuffer::new(
+                b"inline const int a=1;extern const int b;inline const int b=2;\
+                  struct A{static inline constexpr int n=3;};\
+                  struct Deleted{Deleted()=delete;};struct Unused{static inline Deleted value;};"
+                    .to_vec(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"inline-linkage").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let names = [b"a".as_slice(), b"b", b"A", b"n", b"Unused", b"value"]
+                .map(|name| cursor.intern_name(name).unwrap());
+            let graph = super::super::analyze_unit(
+                tree,
+                cursor,
+                declarations,
+                StackBudget::default(),
+                true,
+                lowering,
+            )
+            .unwrap();
+            let entities = [names[0], names[1], names[2]].map(|name| {
+                let binding = graph.own(graph.global, name, Filter::Ordinary).unwrap();
+                graph.binding(binding).entity
+            });
+            let [a, b, class] = entities;
+            assert_eq!(graph.entity(a).inline == InlinePreference::Inline, lowering);
+            assert_eq!(
+                graph.entity(a).variable.unwrap().internal_linkage,
+                !lowering
+            );
+            assert!(graph.entity(b).inline == InlinePreference::Unspecified);
+            assert!(!graph.entity(b).variable.unwrap().internal_linkage);
+            let binding = graph
+                .own(
+                    graph.entity(class).scope.unwrap(),
+                    names[3],
+                    Filter::Ordinary,
+                )
+                .unwrap();
+            let member = graph.binding(binding).entity;
+            assert_eq!(graph.entity(member).defined, lowering);
+            assert!(graph.lower_demanded_initializer(member).is_none());
+            let class = graph.own(graph.global, names[4], Filter::Ordinary).unwrap();
+            let home = graph.entity(graph.binding(class).entity).scope.unwrap();
+            let binding = graph.own(home, names[5], Filter::Ordinary).unwrap();
+            let unused = graph.binding(binding).entity;
+            assert_eq!(graph.entity(unused).defined, lowering);
+            assert!(graph.entity(unused).constructor.is_none());
+            assert_eq!(
+                graph.lower_omitted_variable_initialization(unused),
+                lowering
+            );
+            assert!(graph.variable_instances.states.is_empty());
+        }
+    }
 
     #[test]
     fn outside_pack_initializer_owns_element_facts_in_its_bound_frame() {
