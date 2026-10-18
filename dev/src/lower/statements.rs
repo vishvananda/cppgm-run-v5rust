@@ -153,6 +153,7 @@ impl Function<'_, '_, '_, '_> {
             } => {
                 self.for_statement(declaration, init, condition, iteration, body)?;
             }
+            StmtKind::RangeFor { body, .. } => self.range_for_statement(id, body)?,
             StmtKind::Break => {
                 let target =
                     self.jumps
@@ -450,6 +451,7 @@ impl Function<'_, '_, '_, '_> {
             }
             | StmtKind::Do { body, .. }
             | StmtKind::For { body, .. }
+            | StmtKind::RangeFor { body, .. }
             | StmtKind::Label { body, .. } => self.scan_switch(body, labels)?,
             StmtKind::Ambiguous { .. } => {
                 self.scan_switch(self.graph.lower_statement(id)?, labels)?;
@@ -489,7 +491,8 @@ impl Function<'_, '_, '_, '_> {
             }
             StmtKind::ConditionalLoop { body, .. }
             | StmtKind::Do { body, .. }
-            | StmtKind::For { body, .. } => self.reachable_label(body)?,
+            | StmtKind::For { body, .. }
+            | StmtKind::RangeFor { body, .. } => self.reachable_label(body)?,
             StmtKind::Ambiguous { .. } => self.reachable_label(self.graph.lower_statement(id)?)?,
             _ => false,
         };

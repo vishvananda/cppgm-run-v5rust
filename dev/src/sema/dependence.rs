@@ -194,7 +194,7 @@ impl Analyzer<'_> {
         self.expression_type_dependence(id, scope, false)
     }
 
-    fn expression_type_dependence(
+    pub(super) fn expression_type_dependence(
         &mut self,
         id: ast::ExprId,
         scope: ScopeId,

@@ -490,9 +490,7 @@ impl Analyzer<'_> {
         if self.semantic()
             && matches!(
                 self.tree.statements.get(id).kind,
-                ast::StmtKind::RangeFor { .. }
-                    | ast::StmtKind::Try { .. }
-                    | ast::StmtKind::Throw(_)
+                ast::StmtKind::Try { .. } | ast::StmtKind::Throw(_)
             )
         {
             return Err(Error::Missing("extended semantic statements"));

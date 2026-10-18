@@ -182,7 +182,7 @@ impl Function<'_, '_, '_, '_> {
                 }
                 let entity = self.graph.lower_name(name)?;
                 if let Some(&place) = self.locals.get(&entity) {
-                    self.reference_holder(place, self.graph.lower_entity_type(entity)?)
+                    self.reference_holder(place, self.local_object_type(entity)?)
                 } else if !self.graph.lower_is_variable(entity) {
                     self.symbols.demand(entity);
                     self.symbols

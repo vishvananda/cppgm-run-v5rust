@@ -224,6 +224,7 @@ struct FunctionSignature {
 pub(crate) struct Graph {
     pub(super) hosted: bool,
     pub(super) closures: Box<super::lambdas::Closures>,
+    pub(super) range_loops: Box<super::range_for::RangeLoops>,
     pub(super) virtuals: super::virtual_members::Virtuals,
     pub(super) local_classes: super::local_classes::LocalClasses,
     pub(super) bit_fields: super::bit_fields::BitFields,
@@ -417,6 +418,7 @@ impl Graph {
         Self {
             hosted: false,
             closures: Box::default(),
+            range_loops: Box::default(),
             virtuals: super::virtual_members::Virtuals::default(),
             member_initializers: super::member_initializers::Initializers::default(),
             variable_instances: Box::default(),

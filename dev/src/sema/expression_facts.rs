@@ -165,8 +165,14 @@ impl ExpressionDependence {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpressionOrigin {
+    Written,
+    Implicit,
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ExprFacts {
+    pub origin: ExpressionOrigin,
     pub dependence: ExpressionDependence,
     pub ty: TypeId,
     pub category: ValueCategory,
@@ -227,6 +233,7 @@ impl ExprFacts {
 
     pub(super) fn new(ty: TypeId, category: ValueCategory) -> Self {
         Self {
+            origin: ExpressionOrigin::Written,
             dependence: ExpressionDependence::Fixed,
             ty,
             category,

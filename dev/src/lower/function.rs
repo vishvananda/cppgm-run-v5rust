@@ -592,7 +592,7 @@ impl Function<'_, '_, '_, '_> {
         tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
         let reachable = !self.terminated;
-        let ty = self.graph.lower_entity_type(entity)?;
+        let ty = self.local_object_type(entity)?;
         let object = matches!(
             self.graph.lower_type(ty)?,
             TypeView::Class(_) | TypeView::Array { .. }
@@ -729,7 +729,7 @@ impl Function<'_, '_, '_, '_> {
             }
             return self.local_static(entity, initializer, tokens);
         }
-        let ty = self.graph.lower_entity_type(entity)?;
+        let ty = self.local_object_type(entity)?;
         let storage = types::local_storage(self.graph, entity, ty)?;
         let slot = if self.returned_local == Some(entity) {
             self.result_destination

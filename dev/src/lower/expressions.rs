@@ -93,6 +93,13 @@ impl Function<'_, '_, '_, '_> {
         Ok(match self.tree.expressions.get(id).kind {
             ExprKind::Literal(_) => integral && self.graph.lower_literal_call(id)?.is_none(),
             ExprKind::Keyword(Keyword::True | Keyword::False) => true,
+            ExprKind::Id(_)
+                if integral
+                    && facts.folded.is_some()
+                    && facts.origin == crate::sema::lowering::ExpressionOrigin::Implicit =>
+            {
+                true
+            }
             ExprKind::Id(name) if integral && facts.folded.is_some() => {
                 let entity = self.graph.lower_name(name)?;
                 self.graph.lower_static_member(entity)

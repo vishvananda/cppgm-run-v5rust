@@ -701,6 +701,52 @@ pub(crate) struct TreeMark {
     attributes: ListMark,
 }
 impl Tree {
+    /// Semantic equivalents use the same flat syntax storage without parsing text.
+    pub(crate) fn implicit_name(
+        &mut self,
+        identifier: NameId,
+        location: SourceOffset,
+    ) -> Result<Name, super::ParseError> {
+        let start = self.name_lists.begin();
+        self.name_lists.push(NameComponent {
+            location,
+            kind: NameKind::Identifier(identifier),
+            template_keyword: false,
+            expanded: false,
+            arguments: None,
+        });
+        let components = self.name_lists.finish(start)?;
+        self.names.add(QualifiedName {
+            location,
+            global: false,
+            typename_keyword: false,
+            components,
+            prefix_scope: None,
+            prefix_state: PrefixState::Unqualified,
+            prefix_template: TemplatePrefix::Ordinary,
+            prefix_guesses: Guesses::default(),
+            mentions_parameters: false,
+            binding: None,
+        })
+    }
+    pub(crate) fn implicit_declarator(
+        &mut self,
+        name: Name,
+        location: SourceOffset,
+    ) -> Result<DeclaratorId, super::ParseError> {
+        self.declarators.add(Declarator {
+            member_scope: None,
+            attributes: List::default(),
+            location,
+            abstract_form: false,
+            pointers: List::default(),
+            pack: false,
+            name: Some(name),
+            nested: None,
+            suffixes: List::default(),
+        })
+    }
+
     pub(crate) fn complete_body(
         &mut self,
         id: BodyId,

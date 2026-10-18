@@ -53,6 +53,7 @@ mod mutations;
 mod object_arrays;
 mod operator_calls;
 mod pointers;
+mod range_for;
 mod reference_lifetimes;
 mod references;
 mod runtime_roles;

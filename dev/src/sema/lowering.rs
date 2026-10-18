@@ -8,6 +8,7 @@ pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::copy_construction::{CopyTarget, SubobjectCopy};
 pub(crate) use super::copy_initialization::CopyAction;
 pub(crate) use super::expression_facts::ClassInitialization;
+pub(crate) use super::expression_facts::ExpressionOrigin;
 pub(crate) use super::expression_keys::{KeyNode, KeyWord};
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::literal_calls::LiteralCall;
@@ -216,6 +217,7 @@ pub(crate) struct InitializerDemands {
 }
 #[derive(Clone, Copy)]
 pub(crate) struct Expression {
+    pub origin: super::expression_facts::ExpressionOrigin,
     pub ty: TypeId,
     pub target: Option<TypeId>,
     pub folded: Option<u64>,
@@ -1847,6 +1849,7 @@ impl Graph {
     pub(crate) fn lower_expression(&self, id: ast::ExprId) -> Result<Expression, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(Expression {
+            origin: facts.origin,
             ty: facts.ty,
             glvalue: facts.glvalue,
             target: facts.conversion.map(|c| c.result),

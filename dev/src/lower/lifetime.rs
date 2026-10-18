@@ -301,7 +301,7 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         entity: EntityId,
     ) -> Result<Option<EntityId>, Error> {
-        let ty = self.graph.lower_entity_type(entity)?;
+        let ty = self.local_object_type(entity)?;
         let Some(destructor) = self.symbols.storage_destructor(ty)? else {
             return Ok(None);
         };
@@ -313,7 +313,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(Some(destructor))
     }
     pub(super) fn register_local_destruction(&mut self, entity: EntityId) -> Result<(), Error> {
-        let ty = self.graph.lower_entity_type(entity)?;
+        let ty = self.local_object_type(entity)?;
         let Some(destructor) = self.symbols.storage_destructor(ty)? else {
             return Ok(());
         };

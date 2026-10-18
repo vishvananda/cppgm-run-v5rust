@@ -46,13 +46,30 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(id, facts);
         Ok(facts)
     }
-    fn typed_expression_form(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
+    fn expression_already_typed(&mut self, id: ast::ExprId) -> Result<bool, Error> {
+        if let Some(facts) = self.graph.expression_facts.known(id)
+            && facts.origin == super::expression_facts::ExpressionOrigin::Implicit
+        {
+            if self.deduced_initializer == Some(id) {
+                self.deduced_initializer = None;
+            }
+            if facts.dependence.is_dependent() {
+                self.note_dependent_use();
+            }
+            return Ok(true);
+        }
         if self.pretyped_callable == Some(id) {
-            return self.graph.expression_facts.get(id).map(|_| ());
+            return self.graph.expression_facts.get(id).map(|_| true);
         }
         if self.deduced_initializer == Some(id) {
             self.deduced_initializer = None;
-            return self.graph.expression_facts.get(id).map(|_| ());
+            return self.graph.expression_facts.get(id).map(|_| true);
+        }
+        Ok(false)
+    }
+    fn typed_expression_form(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
+        if self.expression_already_typed(id)? {
+            return Ok(());
         }
         super::record(&mut self.graph.expression_scopes, id.index(), scope);
         let node = *self.tree.expressions.get(id);

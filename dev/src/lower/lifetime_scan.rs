@@ -123,6 +123,26 @@ impl Function<'_, '_, '_, '_> {
                 }
                 self.count_live(body, inner)?;
             }
+            StmtKind::RangeFor { body, .. } => {
+                let facts = self.graph.lower_range_for(id)?;
+                let mut inner = live;
+                for declaration in [
+                    facts.range,
+                    Some(facts.begin),
+                    facts.end,
+                    Some(facts.declaration),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    inner = self.declared_live(
+                        self.graph.lower_declared(declaration.declarator)?,
+                        declaration.initializer,
+                        inner,
+                    )?;
+                }
+                self.count_live(body, inner)?;
+            }
             StmtKind::Label { name, body } => {
                 self.lifetime.labels.insert(name, live);
                 return self.count_live(body, live);

@@ -69,6 +69,27 @@ pub(super) struct Specifiers {
     pub explicit_condition: Option<crate::syntax::ast::ExprId>,
     pub thread_storage: ThreadStorage,
 }
+impl Specifiers {
+    pub(super) fn implicit(ty: TypeId, dependent_uses: u64) -> Self {
+        Self {
+            dependent_uses,
+            friendship: Friendship::Ordinary,
+            auto_cv: Cv::default(),
+            inline: InlinePreference::Unspecified,
+            ty,
+            declared: None,
+            role: DeclarationRole::Ordinary,
+            is_extern: false,
+            is_static: false,
+            mutability: Mutability::Ordinary,
+            virtuality: Virtuality::NonVirtual,
+            constexpr: false,
+            explicitness: Explicitness::Converting,
+            explicit_condition: None,
+            thread_storage: ThreadStorage::Ordinary,
+        }
+    }
+}
 impl Analyzer<'_> {
     // analyzer_declarations.cpp::declare_declarator: function-only specifiers
     // are checked before mutable and typedef restrictions, in source order.

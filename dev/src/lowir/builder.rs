@@ -167,9 +167,13 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
     pub(crate) fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {
+        let range_for = matches!(name, "__range" | "__begin" | "__end" | "__idx");
         let name = self.program.names.intern(name)?;
-        self.slot_names
-            .push(super::construction_names::SlotName::Source(name));
+        self.slot_names.push(if range_for {
+            super::construction_names::SlotName::RangeFor(name)
+        } else {
+            super::construction_names::SlotName::Source(name)
+        });
         self.body.constructed_slot(ty)
     }
     pub(crate) fn generated_slot(&mut self, stem: &'static str, ty: Type) -> Result<Value, Error> {

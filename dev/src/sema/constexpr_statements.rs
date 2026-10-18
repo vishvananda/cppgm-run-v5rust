@@ -130,12 +130,58 @@ impl Analyzer<'_> {
             StmtKind::Case { body, .. }
             | StmtKind::Default(body)
             | StmtKind::Label { body, .. } => self.execute_constant_statement(body),
-            StmtKind::RangeFor { .. } => Err(Error::Missing("constexpr range-for execution")),
+            StmtKind::RangeFor { body, .. } => self.constant_range_for(id, body),
             _ => Err(nonconstant(
                 stmt.location,
                 "a statement that is not allowed in a constexpr function",
             )),
         }
+    }
+    fn constant_range_for(&mut self, id: ast::StmtId, body: ast::StmtId) -> Result<Flow, Error> {
+        let facts = self.graph.lower_range_for(id)?;
+        let location = self.tree.statements.get(id).location;
+        let scope = self.constexpr_frames.current()?.scope;
+        let region = self.constexpr_frames.region();
+        let result = (|| {
+            for declaration in [facts.range, Some(facts.begin), facts.end]
+                .into_iter()
+                .flatten()
+            {
+                self.constant_range_declaration(declaration, location)?;
+            }
+            loop {
+                let iteration = self.constexpr_frames.region();
+                let result = (|| {
+                    self.constant_step(location)?;
+                    if !self.constant_truth(facts.condition, scope, false)? {
+                        return Ok(Flow::Break);
+                    }
+                    self.constant_range_declaration(facts.declaration, location)?;
+                    match self.execute_constant_statement(body)? {
+                        flow @ (Flow::Break | Flow::Return(_)) => return Ok(flow),
+                        Flow::Next | Flow::Continue => (),
+                    }
+                    self.discard_constant(facts.increment, scope)?;
+                    Ok(Flow::Next)
+                })();
+                self.constexpr_frames.release(iteration);
+                match result? {
+                    Flow::Break => return Ok(Flow::Next),
+                    flow @ Flow::Return(_) => return Ok(flow),
+                    Flow::Next | Flow::Continue => (),
+                }
+            }
+        })();
+        self.constexpr_frames.release(region);
+        result
+    }
+    fn constant_range_declaration(
+        &mut self,
+        declaration: ast::InitDeclarator,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let entity = self.graph.lower_declared(declaration.declarator)?;
+        self.constant_local_variable(entity, declaration.initializer, location)
     }
     pub(super) fn constant_compound(&mut self, id: ast::StmtId) -> Result<Flow, Error> {
         let StmtKind::Compound(items) = self.tree.statements.get(id).kind else {

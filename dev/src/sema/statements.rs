@@ -385,9 +385,26 @@ impl Analyzer<'_> {
             }
         }
         let block = self.block_scope(scope)?;
+        if self.semantic() && self.template_depth == 0 {
+            self.range_for_equivalent(id, specifiers, declarator, range, block)?;
+            return self.control_substatement(
+                body,
+                block,
+                Control::Loop,
+                self.tree.statements.get(id).location,
+            );
+        }
+        let uses = self.dependent_uses.get();
         self.expression(range, block)?;
         let specs = self.specifiers(specifiers, block, false)?;
-        let info = self.declarator(Some(declarator), specs.ty, block)?;
+        let info = self.range_declarator(
+            specs,
+            declarator,
+            range,
+            block,
+            self.dependent_uses.get() != uses,
+            self.tree.statements.get(id).location,
+        )?;
         let name = info.name.ok_or_else(|| {
             Error::at(
                 self.tree.statements.get(id).location,

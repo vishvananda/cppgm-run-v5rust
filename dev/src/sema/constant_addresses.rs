@@ -727,9 +727,12 @@ impl Analyzer<'_> {
                             return Ok(place);
                         }
                         if entity.data_member == Some(super::graph::DataMemberKind::Instance) {
-                            let storage = facts
-                                .anonymous_member
-                                .ok_or(Error::Missing("constant implicit object designation"))?;
+                            let storage = facts.anonymous_member.ok_or_else(|| {
+                                nonconstant(
+                                    location,
+                                    "`this` outside a constexpr member function call",
+                                )
+                            })?;
                             let object = self.graph.binding(storage).entity;
                             let owner = self
                                 .graph

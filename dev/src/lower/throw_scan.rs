@@ -338,6 +338,27 @@ impl Function<'_, '_, '_, '_> {
             StmtKind::Do { condition, body } => {
                 self.expression_throws(condition)? || self.statement_throws(body)?
             }
+            StmtKind::RangeFor { body, .. } => {
+                let facts = self.graph.lower_range_for(id)?;
+                for declaration in [facts.range, Some(facts.begin), facts.end]
+                    .into_iter()
+                    .flatten()
+                {
+                    if self.variable_throws(
+                        self.graph.lower_declared(declaration.declarator)?,
+                        declaration.initializer,
+                    )? {
+                        return Ok(true);
+                    }
+                }
+                self.expression_throws(facts.condition)?
+                    || self.expression_throws(facts.increment)?
+                    || self.variable_throws(
+                        self.graph.lower_declared(facts.declaration.declarator)?,
+                        facts.declaration.initializer,
+                    )?
+                    || self.statement_throws(body)?
+            }
             StmtKind::For {
                 declaration,
                 init,

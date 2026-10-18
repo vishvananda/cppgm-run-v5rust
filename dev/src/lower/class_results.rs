@@ -103,6 +103,7 @@ impl Function<'_, '_, '_, '_> {
             S::ConditionalLoop { body, .. }
             | S::Do { body, .. }
             | S::For { body, .. }
+            | S::RangeFor { body, .. }
             | S::Case { body, .. }
             | S::Default(body)
             | S::Label { body, .. } => {

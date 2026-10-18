@@ -7,6 +7,7 @@ use super::{
 use std::collections::{HashMap, HashSet};
 pub(super) enum SlotName {
     Source(NameId),
+    RangeFor(NameId),
     Generated(&'static str),
     Parameter(usize),
 }
@@ -22,6 +23,7 @@ pub(super) fn slots(
     }));
     let mut counts = HashMap::<NameId, u32>::new();
     let mut generated = 0_u32;
+    let mut range_for = 0_u32;
     let mut result = Vec::with_capacity(labels.len());
     for label in labels {
         let text = match label {
@@ -42,6 +44,10 @@ pub(super) fn slots(
                 }
             },
             SlotName::Parameter(index) => format!("__param{index}"),
+            SlotName::RangeFor(name) => {
+                range_for = range_for.checked_add(1).ok_or(Error::Limit)?;
+                format!("{}{range_for}", names.get(*name))
+            }
         };
         let mut text = text;
         while taken.contains(&names.intern(&text)?) {
