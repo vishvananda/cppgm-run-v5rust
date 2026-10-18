@@ -716,6 +716,129 @@ mod tests {
     };
 
     #[test]
+    fn conditional_references_keep_returned_storage_and_original_receivers() {
+        use crate::sema::{constant_addresses::Root, expression_facts::ValueCategory};
+
+        let source = SourceBuffer::new(
+            br"
+            struct Pad {int pad; constexpr Pad():pad(0){}};
+            struct Value {int n; constexpr Value(int n):n(n){}};
+            struct Derived:Pad,Value {constexpr Derived():Pad(),Value(17){}};
+            constexpr Derived storage;
+            struct Proxy {
+                constexpr Proxy(){}
+                constexpr operator const Derived&()const {return storage;}
+            };
+            constexpr Proxy receiver;
+            constexpr auto& first=true?Proxy():static_cast<const Value&>(storage);
+            constexpr auto& second=false?static_cast<const Value&>(storage):receiver;
+            struct Counter {
+                int* calls; int* value;
+                constexpr Counter(int& c,int& v):calls(&c),value(&v){}
+                constexpr operator int&(){++*calls;return *value;}
+            };
+            constexpr int count(){int calls=0,n=9;Counter c(calls,n);
+                const int& r=true?c:n;return 100*calls+r;}
+            constexpr int once=count();
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"conditional-storage").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"storage".as_slice(), b"first", b"second", b"once"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        analyzer.finish_static_initializers().unwrap();
+        let entities: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+                analyzer.graph.binding(binding).entity
+            })
+            .collect();
+        for reference in &entities[1..3] {
+            let place = analyzer.graph.constant_addresses.value(*reference).unwrap();
+            assert_eq!(place.root, Root::Variable(entities[0]));
+            // The frozen glvalue interpreter keeps the selected result's
+            // designation even when the conditional has a base result type.
+            assert_eq!(place.offset, 0);
+        }
+        assert_eq!(
+            analyzer
+                .graph
+                .lower_initializer_constructors(entities[1])
+                .len(),
+            1
+        );
+        assert!(
+            analyzer
+                .graph
+                .lower_initializer_constructors(entities[2])
+                .is_empty()
+        );
+        assert!(matches!(analyzer.graph.entity(entities[3]).constant,
+            ConstantState::Value(value) if value.bits == 109));
+        let expressions = analyzer.tree.expressions.mark();
+        for declaration in &analyzer.tree.decl_lists.get(declarations)[6..8].to_vec() {
+            let ast::DeclKind::Simple { declarators, .. } =
+                analyzer.tree.declarations.get(*declaration).kind
+            else {
+                panic!("reference declaration");
+            };
+            let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+                .initializer
+                .unwrap();
+            let expr = analyzer.single_initializer(initializer).unwrap();
+            let ast::ExprKind::Conditional {
+                then_expr,
+                else_expr,
+                ..
+            } = analyzer.tree.expressions.get(expr).kind
+            else {
+                panic!("conditional initializer");
+            };
+            let receiver = [then_expr, else_expr]
+                .into_iter()
+                .find(|&operand| {
+                    analyzer
+                        .graph
+                        .expression_facts
+                        .function_conversion(operand)
+                        .is_some()
+                })
+                .unwrap();
+            let original = analyzer.graph.expression_facts.get(receiver).unwrap();
+            for _ in 0..2 {
+                let place = analyzer.constant_place(expr, global).unwrap();
+                assert_eq!(place.root, Root::Variable(entities[0]));
+                assert_eq!(place.offset, 0);
+                let facts = analyzer.graph.expression_facts.get(receiver).unwrap();
+                assert_eq!(facts.ty, original.ty);
+                assert_eq!(facts.category, original.category);
+                assert_ne!(facts.ty, place.designated);
+                assert_eq!(
+                    analyzer.graph.expression_facts.get(expr).unwrap().category,
+                    ValueCategory::Lvalue
+                );
+            }
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert!(!analyzer.constexpr_frames.active());
+        assert!(analyzer.constant_evaluation.is_none());
+        assert!(analyzer.initializing_declarator.is_none());
+    }
+
+    #[test]
     fn base_cast_queries_keep_storage_identity_and_release_failed_probes() {
         let source = SourceBuffer::new(
             br"

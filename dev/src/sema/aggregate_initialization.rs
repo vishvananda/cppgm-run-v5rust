@@ -153,16 +153,7 @@ impl Analyzer<'_> {
                 // constructor, even for an anonymous member object. A written
                 // enclosing constructor instead executes the nested plan.
                 if self.unevaluated == 0 && self.graph.anonymous_member_storage(class).is_some() {
-                    if self.body_context.is_none()
-                        && self.graph.constructors.get(constructor).nontrivial()
-                        && let Some(entity) = self.initializing
-                        && self.graph.entity(entity).data_member
-                            != Some(super::graph::DataMemberKind::Instance)
-                    {
-                        self.graph
-                            .initializer_constructors
-                            .note(entity, constructor);
-                    }
+                    self.note_initializer_constructor(constructor);
                     self.record_demand(super::function_demands::Demand::Constructor(constructor));
                 }
                 Ok(())

@@ -809,14 +809,7 @@ impl Analyzer<'_> {
                 condition,
                 then_expr,
                 else_expr,
-            } => {
-                let selected = if self.constant_truth(condition, scope, false)? {
-                    then_expr
-                } else {
-                    else_expr
-                };
-                self.constant_place(selected, scope)
-            }
+            } => self.constant_conditional_place(condition, [then_expr, else_expr], scope),
             ExprKind::Cast {
                 operand, keyword, ..
             } if facts.reference_cast.is_some() => {
@@ -865,6 +858,34 @@ impl Analyzer<'_> {
                 nonconstant(location, "a glvalue outside constant evaluation"),
             ),
             _ => Err(Error::Missing("extended constant place evaluation")),
+        }
+    }
+    fn constant_conditional_place(
+        &mut self,
+        condition: ast::ExprId,
+        operands: [ast::ExprId; 2],
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        let selected = if self.constant_truth(condition, scope, false)? {
+            operands[0]
+        } else {
+            operands[1]
+        };
+        // Operand facts retain the original receiver. A selected conversion's
+        // reference result, rather than that receiver's temporary, designates
+        // the conditional's object. Keep the frozen result designation intact.
+        if self
+            .graph
+            .expression_facts
+            .function_conversion(selected)
+            .is_some()
+        {
+            match self.constant_conversion_result(selected, scope)? {
+                super::constexpr_calls::Returned::Place(place) => Ok(place),
+                _ => Err(Error::Invariant("glvalue conversion returned no place")),
+            }
+        } else {
+            self.constant_place(selected, scope)
         }
     }
     fn constant_explicit_member_place(

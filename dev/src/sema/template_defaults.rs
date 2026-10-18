@@ -464,6 +464,7 @@ impl Analyzer<'_> {
         let saved_class_depth = std::mem::replace(&mut self.class_depth, 0);
         let saved_head = self.template_head.take();
         let saved_initializing = self.initializing.take();
+        let saved_declarator = self.initializing_declarator.take();
         let saved_base = self.base_object.take();
         let saved_uses = self.dependent_uses.replace(0);
         let result = (|| {
@@ -492,6 +493,7 @@ impl Analyzer<'_> {
         self.class_depth = saved_class_depth;
         self.template_head = saved_head;
         self.initializing = saved_initializing;
+        self.initializing_declarator = saved_declarator;
         self.base_object = saved_base;
         self.dependent_uses.set(saved_uses);
         result

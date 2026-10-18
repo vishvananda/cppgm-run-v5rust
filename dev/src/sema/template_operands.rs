@@ -1099,6 +1099,7 @@ impl Analyzer<'_> {
         let saved_friend = self.namespace_friend_class.take();
         let saved_class = std::mem::replace(&mut self.class_depth, 0);
         let saved_initializing = self.initializing.take();
+        let saved_declarator = self.initializing_declarator.take();
         let saved_base = self.base_object.take();
         let saved_member = self.member_initializer_class.take();
         // Operand substitution is an independent instantiation query. Its
@@ -1147,6 +1148,7 @@ impl Analyzer<'_> {
         self.namespace_friend_class = saved_friend;
         self.class_depth = saved_class;
         self.initializing = saved_initializing;
+        self.initializing_declarator = saved_declarator;
         self.base_object = saved_base;
         self.member_initializer_class = saved_member;
         self.dependent_uses.set(saved_uses);

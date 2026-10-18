@@ -8,7 +8,7 @@ use super::{
     procedural_statements::BodyContext,
     templates::HeadId,
 };
-use crate::support::source::SourceOffset;
+use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::HashMap;
 
 // analyzer.h::kInstantiationDepthLimit. This logical limit is independent of
@@ -39,6 +39,7 @@ struct Context {
     default_scope: Option<ScopeId>,
     friend: Option<ScopeId>,
     initializing: Option<EntityId>,
+    initializing_declarator: Option<ast::DeclaratorId>,
     base: Option<EntityId>,
     member: Option<EntityId>,
     template_depth: usize,
@@ -71,6 +72,10 @@ impl Context {
         );
         swap(&mut self.friend, &mut analyzer.namespace_friend_class);
         swap(&mut self.initializing, &mut analyzer.initializing);
+        swap(
+            &mut self.initializing_declarator,
+            &mut analyzer.initializing_declarator,
+        );
         swap(&mut self.base, &mut analyzer.base_object);
         swap(&mut self.member, &mut analyzer.member_initializer_class);
         swap(&mut self.template_depth, &mut analyzer.template_depth);
@@ -157,17 +162,27 @@ mod tests {
         let source = SourceBuffer::new(b"int value;".to_vec()).unwrap();
         let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"logical-depth").unwrap());
         unit.parse().unwrap();
-        let (tree, cursor, _) = unit.semantic_inputs().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let ast::DeclKind::Simple { declarators, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[0])
+            .kind
+        else {
+            panic!("object declaration");
+        };
+        let declarator = tree.init_declarators.get(declarators)[0].declarator;
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         analyzer.instantiation_depth = 7;
         analyzer.dependent_uses.set(11);
         analyzer.operand_home = Some(analyzer.graph.global);
+        analyzer.initializing_declarator = Some(declarator);
         analyzer.declaration_access.before_owner_declarator = true;
         let result = analyzer.instantiation_context(2047, SourceOffset(0), 0, |inner| {
             assert_eq!(inner.instantiation_depth, 2048);
             assert!(inner.operand_home.is_none());
+            assert!(inner.initializing_declarator.is_none());
             assert!(!inner.declaration_access.before_owner_declarator);
             inner.note_dependent_use();
             Ok(())
@@ -176,13 +191,16 @@ mod tests {
         assert_eq!(analyzer.instantiation_depth, 7);
         assert_eq!(analyzer.dependent_uses.get(), 11);
         assert_eq!(analyzer.operand_home, Some(analyzer.graph.global));
+        assert_eq!(analyzer.initializing_declarator, Some(declarator));
         assert!(analyzer.declaration_access.before_owner_declarator);
         let result = analyzer.instantiation_context(0, SourceOffset(0), 0, |inner| {
+            assert!(inner.initializing_declarator.is_none());
             inner.note_dependent_use();
             Err::<(), _>(Error::Missing("test substitution"))
         });
         assert!(result.is_err());
         assert_eq!(analyzer.dependent_uses.get(), 11);
+        assert_eq!(analyzer.initializing_declarator, Some(declarator));
         let result =
             analyzer.instantiation_context(2048, SourceOffset(0), 0, |_| -> Result<(), Error> {
                 panic!("logical limit must precede instantiation");

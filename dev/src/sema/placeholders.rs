@@ -96,14 +96,27 @@ impl Analyzer<'_> {
                     "auto in a non-static data member's declaration",
                 ));
             }
-            info.ty = self.deduce_object_type(
+            // The variable has no entity until auto is deduced. Keep static
+            // initializer constructor uses on its syntax owner in the meantime.
+            let saved_initializing = self.initializing.take();
+            let saved_declarator = self.initializing_declarator;
+            self.initializing_declarator = Some(init.declarator);
+            let result = self.deduce_object_type(
                 info.ty,
                 specs.auto_cv,
                 init.initializer,
                 info.lookup,
                 self.tree.declarators.get(init.declarator).location,
                 deduced,
-            )?;
+            );
+            self.initializing = saved_initializing;
+            self.initializing_declarator = saved_declarator;
+            if result.is_err() {
+                self.graph
+                    .initializer_constructors
+                    .discard_deduction(init.declarator);
+            }
+            info.ty = result?;
             super::record(
                 &mut self.graph.declarator_types,
                 init.declarator.index(),

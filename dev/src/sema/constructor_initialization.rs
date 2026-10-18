@@ -34,6 +34,64 @@ mod tests {
     };
 
     #[test]
+    fn deduced_initializers_publish_constructor_order_and_release_failed_owners() {
+        for invalid in [false, true] {
+            let suffix = if invalid { "+missing" } else { "" };
+            let source = SourceBuffer::new(
+                format!(
+                    "struct A{{constexpr A(){{}}}};struct B{{constexpr B(){{}}}};
+                    constexpr int pick(A,B){{return 7;}}
+                    constexpr auto value=pick(A(),B()){suffix};"
+                )
+                .into_bytes(),
+            )
+            .unwrap();
+            let mut unit = SyntaxUnit::new(
+                Preprocessor::with_name(&source, b"deduced-initializer-demand").unwrap(),
+            );
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let names: Vec<_> = [b"A".as_slice(), b"B", b"value"]
+                .into_iter()
+                .map(|name| cursor.intern_name(name).unwrap())
+                .collect();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let expressions = analyzer.tree.expressions.mark();
+            let global = analyzer.graph.global;
+            let result = analyzer.declarations(declarations, global);
+            assert_eq!(result.is_err(), invalid);
+            assert!(analyzer.initializing.is_none());
+            assert!(analyzer.initializing_declarator.is_none());
+            assert!(
+                analyzer
+                    .graph
+                    .initializer_constructors
+                    .deductions
+                    .is_empty()
+            );
+            assert_eq!(analyzer.tree.expressions.mark(), expressions);
+            if !invalid {
+                let entities: Vec<_> = names
+                    .into_iter()
+                    .map(|name| {
+                        let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+                        analyzer.graph.binding(binding).entity
+                    })
+                    .collect();
+                let constructors = analyzer.graph.lower_initializer_constructors(entities[2]);
+                let classes: Vec<_> = constructors
+                    .iter()
+                    .map(|&id| analyzer.graph.constructors.get(id).class)
+                    .collect();
+                assert_eq!(classes, entities[..2]);
+            }
+        }
+    }
+
+    #[test]
     fn base_initializers_retain_original_operands_and_share_the_selected_copy() {
         let source = SourceBuffer::new(
             br"
@@ -131,6 +189,7 @@ pub(super) struct ClassInput {
 #[derive(Default)]
 pub(super) struct InitializerConstructors {
     values: std::collections::HashMap<EntityId, Vec<ConstructorId>>,
+    deductions: std::collections::HashMap<ast::DeclaratorId, Vec<ConstructorId>>,
     first: Option<ConstructorId>,
 }
 impl InitializerConstructors {
@@ -145,6 +204,27 @@ impl InitializerConstructors {
     }
     pub(super) fn get(&self, entity: EntityId) -> &[ConstructorId] {
         self.values.get(&entity).map_or(&[], Vec::as_slice)
+    }
+    pub(super) fn note_deduction(
+        &mut self,
+        declarator: ast::DeclaratorId,
+        constructor: ConstructorId,
+    ) {
+        self.first.get_or_insert(constructor);
+        let constructors = self.deductions.entry(declarator).or_default();
+        if constructors.last() != Some(&constructor) {
+            constructors.push(constructor);
+        }
+    }
+    pub(super) fn publish_deduction(&mut self, declarator: ast::DeclaratorId, entity: EntityId) {
+        if let Some(constructors) = self.deductions.remove(&declarator) {
+            for constructor in constructors {
+                self.note(entity, constructor);
+            }
+        }
+    }
+    pub(super) fn discard_deduction(&mut self, declarator: ast::DeclaratorId) {
+        self.deductions.remove(&declarator);
     }
     pub(super) fn absent_initializer(&self) -> Option<ConstructorId> {
         // The frozen PointerMap's null-key lookup observes the first chain
@@ -536,18 +616,27 @@ impl Analyzer<'_> {
         {
             return;
         }
-        if self.body_context.is_none()
-            && self.graph.constructors.get(id).nontrivial()
-            && let Some(entity) = self.initializing
-            && self.graph.entity(entity).data_member != Some(super::graph::DataMemberKind::Instance)
-        {
-            self.graph.initializer_constructors.note(entity, id);
-        }
+        self.note_initializer_constructor(id);
         if let Some(binding) = self.graph.constructors.get(id).binding {
             self.demand_specialization_body(binding);
             self.demand_function(binding, true);
         } else {
             self.record_demand(super::function_demands::Demand::Constructor(id));
+        }
+    }
+    pub(super) fn note_initializer_constructor(&mut self, id: ConstructorId) {
+        if self.body_context.is_some() || !self.graph.constructors.get(id).nontrivial() {
+            return;
+        }
+        if let Some(entity) = self.initializing {
+            if self.graph.entity(entity).data_member != Some(super::graph::DataMemberKind::Instance)
+            {
+                self.graph.initializer_constructors.note(entity, id);
+            }
+        } else if let Some(declarator) = self.initializing_declarator {
+            self.graph
+                .initializer_constructors
+                .note_deduction(declarator, id);
         }
     }
     fn publish_constructor_list(

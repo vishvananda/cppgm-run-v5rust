@@ -796,13 +796,7 @@ impl Analyzer<'_> {
             self.graph
                 .set_binding_dependence(binding, self.dependent_uses.get() != specs.dependent_uses);
         }
-        super::record(
-            &mut self.graph.declared_bindings,
-            init.declarator.index(),
-            binding,
-        );
-        self.settle_declaration_access(Some(binding))?;
-        let entity = self.graph.binding(binding).entity;
+        let entity = self.publish_object_declaration(init.declarator, binding)?;
         if self.semantic() {
             ty = self.graph.publish_variable_type(binding)?;
         }
@@ -865,6 +859,23 @@ impl Analyzer<'_> {
             self.request_storage_layout(entity, location)?;
         }
         Ok(())
+    }
+    fn publish_object_declaration(
+        &mut self,
+        declarator: ast::DeclaratorId,
+        binding: super::graph::BindingId,
+    ) -> Result<super::graph::EntityId, Error> {
+        super::record(
+            &mut self.graph.declared_bindings,
+            declarator.index(),
+            binding,
+        );
+        self.settle_declaration_access(Some(binding))?;
+        let entity = self.graph.binding(binding).entity;
+        self.graph
+            .initializer_constructors
+            .publish_deduction(declarator, entity);
+        Ok(entity)
     }
     fn declare_typedef_binding(
         &mut self,

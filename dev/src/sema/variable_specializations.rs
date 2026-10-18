@@ -356,8 +356,11 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("variable instance without type"))?;
         if self.holds_auto(ty) {
             let mut known = None;
-            let ty =
-                self.deduce_object_type(ty, auto_cv, initializer, scope, location, &mut known)?;
+            let saved_initializing = self.initializing.replace(entity);
+            let result =
+                self.deduce_object_type(ty, auto_cv, initializer, scope, location, &mut known);
+            self.initializing = saved_initializing;
+            let ty = result?;
             let ty = if self.graph.entity(entity).constexpr {
                 self.graph.types.qualify(ty, super::types::Cv::CONST)?
             } else {
