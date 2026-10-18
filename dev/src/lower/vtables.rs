@@ -294,7 +294,13 @@ impl Symbols<'_, '_> {
         }
         let (symbol, metadata) = self.class_global(program, class, ClassObject::Typeinfo)?;
         self.vtables.typeinfos.insert(class, symbol);
-        if defined(program, symbol) || self.graph.lower_class_instantiated_elsewhere(class) {
+        // Polymorphic RTTI follows explicit-instantiation ownership. A
+        // nonpolymorphic base's RTTI belongs to every unit referring to it,
+        // including through a derived class's table (Itanium 2.9.5).
+        if defined(program, symbol)
+            || (self.graph.lower_polymorphic(class)
+                && self.graph.lower_class_instantiated_elsewhere(class))
+        {
             return Ok(symbol);
         }
         let bases = self
