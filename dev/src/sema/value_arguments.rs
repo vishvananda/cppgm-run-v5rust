@@ -581,16 +581,26 @@ impl Analyzer<'_> {
         let mut packs = super::pack_frames::FramePacks::new(&self.graph, scope, self.identifiers);
         let mut cloner =
             Cloner::new(self.tree, self.stack_budget, self.stack_base).with_expander(&mut packs);
-        let kind = match syntax {
-            ast::TemplateArgumentKind::Type(ty) => {
-                cloner.ty(ty).map(ast::TemplateArgumentKind::Type)
-            }
-            ast::TemplateArgumentKind::Expression(expression) => cloner
-                .expression(expression)
-                .map(ast::TemplateArgumentKind::Expression),
-        }
-        .map_err(|error| super::template_bodies::copy_error(&error))?;
-        Ok(ast::TemplateArgument { kind, pack: false })
+        cloner
+            .argument(ast::TemplateArgument {
+                kind: syntax,
+                pack: false,
+            })
+            .map_err(|error| super::template_bodies::copy_error(&error))
+    }
+
+    /// Dependent default formation retains expansions until substitution knows
+    /// all participating packs. Only fact-bearing syntax is copied here.
+    pub(super) fn copy_template_pattern(
+        &mut self,
+        syntax: ast::TemplateArgumentKind,
+    ) -> Result<ast::TemplateArgument, Error> {
+        Cloner::new(self.tree, self.stack_budget, self.stack_base)
+            .argument(ast::TemplateArgument {
+                kind: syntax,
+                pack: false,
+            })
+            .map_err(|error| super::template_bodies::copy_error(&error))
     }
     pub(super) fn default_location(&self, default: DefaultArgument) -> SourceOffset {
         match default.syntax {

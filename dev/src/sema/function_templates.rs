@@ -720,7 +720,7 @@ impl Analyzer<'_> {
                     let pattern = if let Some(bound) = default.bound {
                         bound
                     } else {
-                        let copy = self.copy_template_argument(default.syntax, default.scope)?;
+                        let copy = self.copy_template_pattern(default.syntax)?;
                         // Form a dependent default's pattern in its declaration
                         // context before substituting this candidate's arguments.
                         self.template_depth += 1;
@@ -2166,6 +2166,63 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn default_pack_trials_reject_before_publication_and_reuse_complete_keys() {
+        let source = SourceBuffer::new(
+            b"template<class...>struct List;template<class,class>struct Pair;\
+              template<class...T>struct A{\
+                template<class...U,class=List<Pair<T,U>...>>static char f(int);\
+                template<class...>static long f(...);};\
+              static_assert(sizeof(A<>::f<int>(0))==8,\"\");\
+              static_assert(sizeof(A<int>::f<>(0))==8,\"\");\
+              static_assert(sizeof(A<int,long>::f<char>(0))==8,\"\");\
+              static_assert(sizeof(A<>::f<>(0))==1,\"\");\
+              static_assert(sizeof(A<int>::f<long>(0))==1,\"\");\
+              static_assert(sizeof(A<>::f<int>(0))==8,\"\");\
+              static_assert(sizeof(A<int>::f<long>(0))==1,\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"default-pack-trials").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut constrained = 0;
+        for (key, binding) in &graph.function_templates.signatures {
+            let primary = graph.entity(key.primary);
+            let head = primary.template_head.unwrap();
+            if primary.name != Some(f) || graph.templates.parameters(head).len() != 2 {
+                continue;
+            }
+            constrained += 1;
+            let owner = graph.scope(primary.home.unwrap()).owner.unwrap();
+            let outer = graph.class_templates.instance(owner).unwrap();
+            assert_eq!(
+                graph.types.pack_elements(outer.arguments[0]).unwrap().len(),
+                graph.types.pack_elements(key.arguments[0]).unwrap().len()
+            );
+            assert_eq!(
+                graph.function_templates.arguments[&graph.binding(*binding).entity],
+                key.arguments
+            );
+            let default = graph.templates.default_argument(head, 1).unwrap();
+            assert!(default.bound.is_none());
+            let ast::TemplateArgumentKind::Type(pattern) = default.syntax else {
+                panic!("type default")
+            };
+            assert!(graph.type_fact(pattern).is_none());
+        }
+        assert_eq!(constrained, 2);
+        assert_eq!(graph.function_templates.defaults.len(), 2);
+        assert!(graph.function_templates.active_signatures.is_empty());
+        assert!(graph.function_templates.demanded_bodies.is_empty());
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn inserted_object_ordering_preserves_signatures_syntax_and_body_demand() {

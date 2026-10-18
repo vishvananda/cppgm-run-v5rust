@@ -654,7 +654,7 @@ impl Analyzer<'_> {
         self.template_depth += 1;
         // Member-template heads share immutable syntax; formation facts are private.
         let result = (|| {
-            let copy = self.copy_template_argument(default, scope)?;
+            let copy = self.copy_template_pattern(default)?;
             match copy.kind {
                 ast::TemplateArgumentKind::Expression(expression) => {
                     self.expression(expression, scope).map(|()| None)

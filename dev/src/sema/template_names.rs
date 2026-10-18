@@ -82,13 +82,7 @@ impl Analyzer<'_> {
                 ast::TemplateArgumentKind::Type(ty) if self.tree.types.get(ty).declarator
                     .is_some_and(|d| self.tree.declarators.get(d).pack));
             if expanded && matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)) {
-                let location = match argument.kind {
-                    ast::TemplateArgumentKind::Type(ty) => self.tree.types.get(ty).location,
-                    ast::TemplateArgumentKind::Expression(expr) => {
-                        self.tree.expressions.get(expr).location
-                    }
-                };
-                arguments.extend(self.bound_argument_expansion(ty, location)?);
+                arguments.extend(self.bound_argument_expansion(ty)?);
             } else if expanded && let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind {
                 arguments.extend(elements.iter().copied());
             } else {

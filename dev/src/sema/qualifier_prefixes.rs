@@ -313,7 +313,7 @@ impl Analyzer<'_> {
                 pattern
             } else {
                 let target = self.argument_target(head, index, arguments)?.known();
-                let copy = self.copy_template_argument(default.syntax, default.scope)?;
+                let copy = self.copy_template_pattern(default.syntax)?;
                 let saved = self.graph.lookup_limit.replace(default.limit);
                 self.template_depth += 1;
                 let result = self.template_argument_at(

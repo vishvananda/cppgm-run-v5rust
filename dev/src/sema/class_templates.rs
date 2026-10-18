@@ -341,7 +341,7 @@ impl Analyzer<'_> {
         {
             // Copied member template heads share syntax, but their enclosing
             // argument frames differ. Pattern facts belong to this formation.
-            let copy = self.copy_template_argument(default.syntax, default.scope)?;
+            let copy = self.copy_template_pattern(default.syntax)?;
             let saved = self.graph.lookup_limit.replace(default.limit);
             let result = self.template_argument_at(
                 copy,

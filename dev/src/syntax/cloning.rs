@@ -118,7 +118,10 @@ impl<'a> Cloner<'a> {
         }
         Ok(node)
     }
-    fn argument(&mut self, mut node: TemplateArgument) -> Result<TemplateArgument, ParseError> {
+    pub(crate) fn argument(
+        &mut self,
+        mut node: TemplateArgument,
+    ) -> Result<TemplateArgument, ParseError> {
         node.kind = match node.kind {
             TemplateArgumentKind::Type(id) => TemplateArgumentKind::Type(self.ty(id)?),
             TemplateArgumentKind::Expression(id) => {

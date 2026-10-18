@@ -89,10 +89,9 @@ impl Analyzer<'_> {
                 length = Some(elements.len());
             }
             if mismatch {
-                return Err(Error::at(
-                    crate::support::source::SourceOffset(0),
-                    "a pack expansion of parameter packs of different lengths",
-                ));
+                return Ok(
+                    environment.reject("a pack expansion of parameter packs of different lengths")
+                );
             }
             if unknown || length.is_none() {
                 let mut whole = Substitution::new(environment.depth, environment.arguments);
@@ -147,7 +146,6 @@ impl Analyzer<'_> {
     pub(super) fn bound_argument_expansion(
         &mut self,
         expansion: TypeId,
-        location: crate::support::source::SourceOffset,
     ) -> Result<Vec<TypeId>, Error> {
         let TypeKind::Expansion(pattern) = self.graph.types.get(expansion).kind else {
             return Ok(vec![expansion]);
@@ -157,21 +155,15 @@ impl Analyzer<'_> {
             return Ok(vec![expansion]);
         }
         let mut environment = Substitution::new(u32::MAX, &[]);
-        // C++'s syntax copy reports a bound-argument length mismatch at the
-        // argument's parsed location; signature substitution uses location zero.
-        let result = self
-            .substitute_pack_list(&[expansion], &mut environment)
-            .map_err(|error| match error {
-                Error::Diagnostic {
-                    message: "a pack expansion of parameter packs of different lengths",
-                    ..
-                } => Error::at(
-                    location,
-                    "a pack expansion of parameter packs of different lengths",
-                ),
-                other => other,
-            })?;
-        result.ok_or(Error::Invariant("bound argument expansion failed"))
+        // This is semantic bound expansion, not a syntax-copy mismatch.
+        // Preserve substitute_list's location-zero failure at the hard boundary.
+        self.substitute_pack_list(&[expansion], &mut environment)?
+            .ok_or_else(|| {
+                environment.failure.map_or(
+                    Error::Invariant("bound argument expansion failed"),
+                    |message| Error::at(environment.failure_location, message),
+                )
+            })
     }
 }
 
