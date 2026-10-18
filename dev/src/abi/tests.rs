@@ -6,6 +6,75 @@ use super::{
 use crate::support::stack::StackBudget;
 
 #[test]
+fn standard_class_catalog_preserves_arguments_tags_and_explicit_fact_identity() {
+    use super::graph::Abbreviation;
+    let mut graph = Graph::default();
+    let std = graph.intern(Node::Std, &[]).unwrap();
+    let char = graph.intern(Node::Builtin(Builtin::Char), &[]).unwrap();
+    let int = graph.intern(Node::Builtin(Builtin::Int), &[]).unwrap();
+    let text = graph.string(b"char_traits").unwrap();
+    let traits = graph.name(Some(std), text, &[]).unwrap();
+    let traits_char = graph.intern(Node::Template(traits), &[char]).unwrap();
+    let text = graph.string(b"allocator").unwrap();
+    let allocator = graph.name(Some(std), text, &[]).unwrap();
+    let allocator_char = graph.abbreviated_template_id(allocator, &[char]).unwrap();
+    let explicit = graph.intern(Node::Template(allocator), &[char]).unwrap();
+    assert_ne!(explicit, allocator_char);
+    assert_eq!(graph.get(explicit), Node::Template(allocator));
+    let text = graph.string(b"tag").unwrap();
+    let cases: &[(&[u8], &[NodeId], &[u8])] = &[
+        (b"allocator", &[int], b"SaIiE"),
+        (b"basic_string", &[int], b"SbIiE"),
+        (b"basic_string", &[char, traits_char, allocator_char], b"Ss"),
+        (b"basic_istream", &[char, traits_char], b"Si"),
+        (b"basic_ostream", &[char, traits_char], b"So"),
+        (b"basic_iostream", &[char, traits_char], b"Sd"),
+    ];
+    for &(spelling, arguments, expected) in cases {
+        let terminal = graph.string(spelling).unwrap();
+        let name = graph.name(Some(std), terminal, &[]).unwrap();
+        let class = graph.abbreviated_template_id(name, arguments).unwrap();
+        assert_eq!(
+            class,
+            graph.abbreviated_template_id(name, arguments).unwrap()
+        );
+        let mut output = Vec::new();
+        Encoder::encode(
+            &graph,
+            Target::Type(class),
+            &mut output,
+            StackBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(output, expected);
+        let tagged = graph.tagged(name, &[text]).unwrap();
+        let tagged = graph.abbreviated_template_id(tagged, arguments).unwrap();
+        assert_ne!(tagged, class);
+        let abbreviation = match graph.get(tagged) {
+            Node::Template(templ) => templ,
+            Node::Abbreviation(_) => tagged,
+            _ => panic!("catalog did not abbreviate tagged name"),
+        };
+        assert_eq!(graph.items(abbreviation), &[text]);
+        let nested = graph.name(Some(name), terminal, &[]).unwrap();
+        let nested = graph.abbreviated_template_id(nested, arguments).unwrap();
+        assert!(matches!(graph.get(nested), Node::Template(parent)
+            if matches!(graph.get(parent), Node::Name { .. })));
+    }
+    let tagged_traits = graph.tagged(traits, &[text]).unwrap();
+    let tagged_traits = graph
+        .intern(Node::Template(tagged_traits), &[char])
+        .unwrap();
+    let terminal = graph.string(b"basic_string").unwrap();
+    let string = graph.name(Some(std), terminal, &[]).unwrap();
+    let expanded = graph
+        .abbreviated_template_id(string, &[char, tagged_traits, allocator_char])
+        .unwrap();
+    assert!(matches!(graph.get(expanded), Node::Template(templ)
+        if graph.get(templ) == Node::Abbreviation(Abbreviation::BasicString)));
+}
+
+#[test]
 fn floating_expression_literals_preserve_ieee_width_and_bits() {
     let mut graph = Graph::default();
     for (builtin, bits, expected) in [

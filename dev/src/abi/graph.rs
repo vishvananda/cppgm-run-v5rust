@@ -358,6 +358,76 @@ impl Graph {
             &sorted,
         )
     }
+    fn is_std_name(&self, name: NodeId, spelling: &[u8]) -> bool {
+        matches!(self.get(name), Node::Name {
+            parent: Some(parent), terminal, internal: false, occurrence: 0,
+        } if self.get(parent) == Node::Std
+            && self.get(terminal) == Node::Text
+            && self.text(terminal) == spelling)
+    }
+    fn is_char_argument_of(&self, ty: NodeId, abbreviation: Option<Abbreviation>) -> bool {
+        let Node::Template(template) = self.get(ty) else {
+            return false;
+        };
+        let [argument] = self.items(ty) else {
+            return false;
+        };
+        self.get(*argument) == Node::Builtin(Builtin::Char)
+            && self.items(template).is_empty()
+            && abbreviation.map_or_else(
+                || self.is_std_name(template, b"char_traits"),
+                |kind| self.get(template) == Node::Abbreviation(kind),
+            )
+    }
+    /// Compiler class names use the ABI's standard catalog. Explicit fact
+    /// producers keep using `intern(Template(..))` to choose their own form.
+    pub(crate) fn abbreviated_template_id(
+        &mut self,
+        template: NodeId,
+        arguments: &[NodeId],
+    ) -> Result<NodeId, Error> {
+        let char_traits = arguments.len() >= 2
+            && self.get(arguments[0]) == Node::Builtin(Builtin::Char)
+            && self.is_char_argument_of(arguments[1], None);
+        let (kind, whole) = if self.is_std_name(template, b"allocator") {
+            (Some(Abbreviation::Allocator), false)
+        } else if self.is_std_name(template, b"basic_string") {
+            let whole = arguments.len() == 3
+                && char_traits
+                && self.is_char_argument_of(arguments[2], Some(Abbreviation::Allocator));
+            (
+                Some(if whole {
+                    Abbreviation::String
+                } else {
+                    Abbreviation::BasicString
+                }),
+                whole,
+            )
+        } else if arguments.len() == 2 && char_traits {
+            let kind = if self.is_std_name(template, b"basic_istream") {
+                Some(Abbreviation::Istream)
+            } else if self.is_std_name(template, b"basic_ostream") {
+                Some(Abbreviation::Ostream)
+            } else if self.is_std_name(template, b"basic_iostream") {
+                Some(Abbreviation::Iostream)
+            } else {
+                None
+            };
+            (kind, true)
+        } else {
+            (None, false)
+        };
+        let Some(kind) = kind else {
+            return self.intern(Node::Template(template), arguments);
+        };
+        let tags = self.items(template).to_vec();
+        let abbreviation = self.intern(Node::Abbreviation(kind), &tags)?;
+        if whole {
+            Ok(abbreviation)
+        } else {
+            self.intern(Node::Template(abbreviation), arguments)
+        }
+    }
     pub(crate) fn tagged(&mut self, id: NodeId, tags: &[NodeId]) -> Result<NodeId, Error> {
         let node = self.get(id);
         if let Node::Template(template) = node {

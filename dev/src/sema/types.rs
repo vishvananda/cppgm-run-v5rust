@@ -240,6 +240,7 @@ impl Types {
         if !matches!(
             self.get(id).kind,
             TypeKind::Reference { .. }
+                | TypeKind::Function { .. }
                 | TypeKind::Value { .. }
                 | TypeKind::Address { .. }
                 | TypeKind::Pack(_)
@@ -550,6 +551,40 @@ impl Types {
 #[cfg(test)]
 mod collision_tests {
     use super::*;
+    #[test]
+    fn qualification_preserves_function_identity_and_member_qualifiers() {
+        let mut types = Types::default();
+        let int = types.scalar(Scalar::Basic(FundamentalType::Int)).unwrap();
+        for cv in [Cv::default(), Cv::CONST, Cv(2), Cv(3)] {
+            for reference in [None, Some(RefKind::Lvalue), Some(RefKind::Rvalue)] {
+                let function = types
+                    .intern(
+                        TypeKind::Function {
+                            result: int,
+                            parameters: vec![int],
+                            variadic: false,
+                            cv,
+                            reference,
+                        },
+                        Cv::default(),
+                    )
+                    .unwrap();
+                let canonical = types.canonical_function(function).unwrap();
+                let count = types.records.len();
+                for added in [Cv::CONST, Cv(2), Cv(3)] {
+                    assert_eq!(types.qualify(function, added).unwrap(), function);
+                    assert_eq!(types.qualify(canonical, added).unwrap(), canonical);
+                }
+                assert_eq!(types.records.len(), count);
+                let pointer = types.pointer(function).unwrap();
+                let qualified = types.qualify(pointer, Cv::CONST).unwrap();
+                assert_ne!(qualified, pointer);
+                assert_eq!(types.get(qualified).kind, TypeKind::Pointer(function));
+                assert_eq!(types.canonical_function(qualified).unwrap(), qualified);
+            }
+        }
+    }
+
     #[test]
     fn a_fingerprint_collision_keeps_exact_identity_and_reuses_each_record() {
         let mut types = Types::default();

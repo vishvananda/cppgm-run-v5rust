@@ -1281,7 +1281,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         for argument in arguments {
                             nodes.push(self.abi_type(argument)?);
                         }
-                        self.abi.intern(Node::Template(name), &nodes)?
+                        self.abi.abbreviated_template_id(name, &nodes)?
                     } else {
                         name
                     };
