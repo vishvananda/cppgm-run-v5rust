@@ -1692,9 +1692,9 @@ impl Analyzer<'_> {
                 .argument_defaults
                 .pattern(entity, index)
                 .is_some_and(|default| {
-                    self.graph
-                        .lookup_limit
-                        .is_none_or(|limit| default.introduced < limit)
+                    default.added_at.is_none_or(|ordinal| {
+                        self.graph.lookup_limit.is_none_or(|limit| ordinal < limit)
+                    })
                 })
     }
 

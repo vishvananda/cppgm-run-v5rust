@@ -251,6 +251,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("special member without parameters"))?,
                 info.lookup,
                 info.ty,
+                first,
             )?;
         }
         if kind != MemberKind::Constructor {

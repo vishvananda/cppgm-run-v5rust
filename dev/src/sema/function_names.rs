@@ -667,7 +667,13 @@ impl Analyzer<'_> {
             && self.template_depth == 0
             && let Some(clause) = info.parameters
         {
-            self.record_function_defaults(entity, clause, info.lookup, info.ty)?;
+            self.record_function_defaults(
+                entity,
+                clause,
+                info.lookup,
+                info.ty,
+                self.graph.function_origin(entity)? == binding,
+            )?;
         } else if self.semantic()
             && self.template_depth != 0
             && let Some(clause) = info.parameters

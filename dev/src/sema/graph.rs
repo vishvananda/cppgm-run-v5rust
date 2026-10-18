@@ -1058,8 +1058,9 @@ impl Graph {
             .copied()
             .flatten()
             .filter(|default| {
-                self.lookup_limit
-                    .is_none_or(|limit| default.introduced < limit)
+                default
+                    .added_at
+                    .is_none_or(|ordinal| self.lookup_limit.is_none_or(|limit| ordinal < limit))
             })
             .map(|default| default.expression)
     }

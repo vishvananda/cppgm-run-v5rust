@@ -11,7 +11,10 @@ use crate::syntax::ast;
 #[derive(Clone, Copy)]
 pub(super) struct DefaultArgument {
     pub expression: ast::ExprId,
-    pub introduced: usize,
+    /// Only a later declaration's defaults have a visibility ordinal. Defaults
+    /// on the first declaration remain visible when a class is instantiated
+    /// after the calling template's definition context.
+    pub added_at: Option<usize>,
     pub template: Option<super::template_defaults::Pattern>,
 }
 
@@ -101,11 +104,7 @@ impl Analyzer<'_> {
                             .ok_or(Error::Invariant("template default without primary head"))?,
                     ),
                 }),
-                introduced: self
-                    .graph
-                    .binding_limit()
-                    .checked_sub(1)
-                    .ok_or(Error::Invariant("template default without declaration"))?,
+                added_at: None,
             });
         }
         if any {
@@ -134,6 +133,7 @@ impl Analyzer<'_> {
         clause: ast::ParameterClause,
         scope: ScopeId,
         ty: TypeId,
+        first: bool,
     ) -> Result<(), Error> {
         let ty = self.graph.types.canonical_function(ty)?;
         let count = self.graph.types.function_parameter_count(ty)?;
@@ -165,16 +165,22 @@ impl Analyzer<'_> {
                     "a default argument without an expression",
                 ));
             };
-            // The visibility limit is the first excluded binding. A default
-            // belongs to the declaration just published, not the next one.
-            let introduced = self
-                .graph
-                .binding_limit()
-                .checked_sub(1)
-                .ok_or(Error::Invariant("default argument without declaration"))?;
+            // analyzer_calls.cpp::note_added_default_arguments records only
+            // redeclarations. The limit excludes the next binding; a later
+            // default belongs to the declaration just published.
+            let added_at = if first {
+                None
+            } else {
+                Some(
+                    self.graph
+                        .binding_limit()
+                        .checked_sub(1)
+                        .ok_or(Error::Invariant("default argument without declaration"))?,
+                )
+            };
             self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
                 expression,
-                introduced,
+                added_at,
                 template: None,
             });
         }
