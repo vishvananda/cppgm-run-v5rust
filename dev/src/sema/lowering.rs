@@ -608,7 +608,13 @@ impl Graph {
             return None;
         };
         let pattern = self.template_operands.pattern(entity)?;
-        Some((pattern.expression, self.template_operands.words(entity)?))
+        // An unkeyed pending operand still is an expression placeholder.
+        // Its empty key selects the frozen ABI_NONE fallback; it must not
+        // masquerade as an ordinary named type.
+        Some((
+            pattern.expression,
+            self.template_operands.words(entity).unwrap_or_default(),
+        ))
     }
     pub(crate) fn lower_dependent_member(&self, ty: TypeId) -> Option<(TypeId, NameId)> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {

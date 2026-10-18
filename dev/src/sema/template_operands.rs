@@ -637,11 +637,12 @@ impl Analyzer<'_> {
             }
             Some(key.words)
         } else {
-            self.graph
-                .template_operands
-                .words
-                .get(&placeholder)
-                .cloned()
+            // A pending substitution owns its recorded levels, not the
+            // original operand's structural key. C++ pending_value leaves
+            // key unset unless equivalent_placeholder produced a key for
+            // this first dependent level. Later levels cannot inherit it.
+            made_pattern.key_dependent = false;
+            None
         };
         self.graph
             .template_operands
@@ -1964,6 +1965,124 @@ mod pending_tests {
     };
 
     #[test]
+    fn bound_pack_size_keeps_formation_separate_from_structural_identity() {
+        let source = SourceBuffer::new(
+            b"template<bool>struct C;template<class...T>struct S{\
+              template<class...U>using Q=C<(sizeof...(U)==sizeof...(T))>;};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"bound-size-key").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        assert_eq!(analyzer.graph.template_operands.patterns.len(), 1);
+        let entity = *analyzer
+            .graph
+            .template_operands
+            .patterns
+            .keys()
+            .next()
+            .unwrap();
+        let pattern = analyzer.graph.template_operands.pattern(entity).unwrap();
+        let original_key = analyzer
+            .graph
+            .template_operands
+            .words(entity)
+            .unwrap()
+            .to_vec();
+        let int = analyzer
+            .graph
+            .types
+            .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        let pack = analyzer
+            .graph
+            .types
+            .intern(TypeKind::Pack(vec![int]), Cv::default())
+            .unwrap();
+        let outer = [Some(pack)];
+        let scope = analyzer
+            .operand_scope(
+                pattern.scope,
+                &mut Substitution::new(0, &outer),
+                pattern.parameters,
+            )
+            .unwrap();
+        assert!(
+            analyzer
+                .operand_key(pattern.expression, scope)
+                .unwrap()
+                .is_none()
+        );
+        let unknown = analyzer
+            .dependent_value_operand(pattern.expression, scope, None, false)
+            .unwrap();
+        let TypeKind::TemplateParameter {
+            entity: unknown_entity,
+            ..
+        } = analyzer.graph.types.get(unknown).kind
+        else {
+            panic!("expected an unkeyed operand");
+        };
+        assert_ne!(unknown_entity, entity);
+        assert!(
+            analyzer
+                .graph
+                .template_operands
+                .words(unknown_entity)
+                .is_none()
+        );
+        assert_eq!(
+            analyzer.graph.lower_operand_key_dependent(unknown),
+            Some(false)
+        );
+        assert!(
+            analyzer
+                .graph
+                .lower_template_operand(unknown)
+                .unwrap()
+                .1
+                .is_empty()
+        );
+        let inner = [Some(pack)];
+        let result = analyzer
+            .substitute_operand(unknown, unknown_entity, &mut Substitution::new(1, &inner))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            analyzer.graph.types.get(result).kind,
+            TypeKind::Value { bits: 1, .. }
+        ));
+        let expressions = analyzer.tree.expressions.mark();
+        assert_eq!(
+            analyzer
+                .substitute_operand(unknown, unknown_entity, &mut Substitution::new(1, &inner),)
+                .unwrap(),
+            Some(result)
+        );
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(
+            analyzer.graph.template_operands.words(entity),
+            Some(original_key.as_slice())
+        );
+        assert!(
+            analyzer
+                .graph
+                .expression_facts
+                .get(pattern.expression)
+                .is_err()
+        );
+        assert!(analyzer.graph.template_operands.active.is_empty());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
     fn pending_arguments_rebind_and_memoize_without_mutating_the_pattern() {
         let source = SourceBuffer::new(b"template<int>struct I;template<int A,int B>using sub=I<A-B>;template<int N>struct Other;".to_vec()).unwrap();
         let mut unit =
@@ -2025,6 +2144,13 @@ mod pending_tests {
             .clone();
         assert_eq!(analyzer.graph.template_operands.count(), formed);
         assert_eq!(saved, [parameter, one]);
+        // This first dependent level has one head and can be re-keyed as
+        // N-1. It owns that key rather than inheriting the A-B pattern.
+        assert!(analyzer.graph.lower_operand_key_dependent(pending).unwrap());
+        assert_ne!(
+            analyzer.graph.template_operands.words(pending_entity),
+            analyzer.graph.template_operands.words(entity)
+        );
         for value in [3, 4, 3] {
             let argument = analyzer
                 .graph
@@ -2080,5 +2206,135 @@ mod pending_tests {
         );
         assert!(analyzer.graph.template_operands.active.is_empty());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
+    fn open_heads_keep_unkeyed_pending_operands_and_evaluate_each_level_once() {
+        for value in [true, false] {
+            let source = if value {
+                b"template<int>struct I;template<int A>struct Outer{\
+                  template<int B>using sub=I<A-B>;};"
+                    .as_slice()
+            } else {
+                b"template<class A>struct Outer{\
+                  template<class B>using sub=decltype(A()+B());};"
+                    .as_slice()
+            };
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"open-heads").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let global = analyzer.graph.global;
+            analyzer.declarations(declarations, global).unwrap();
+            assert_eq!(analyzer.graph.template_operands.patterns.len(), 1);
+            let entity = *analyzer
+                .graph
+                .template_operands
+                .patterns
+                .keys()
+                .next()
+                .unwrap();
+            let ty = analyzer.graph.entity(entity).ty.unwrap();
+            let pattern = analyzer.graph.template_operands.pattern(entity).unwrap();
+            let words = analyzer
+                .graph
+                .template_operands
+                .words(entity)
+                .unwrap()
+                .to_vec();
+            assert!(matches!(pattern.head_depth, HeadDepth::Several));
+            let int = analyzer
+                .graph
+                .types
+                .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
+                .unwrap();
+            let long = analyzer
+                .graph
+                .types
+                .scalar(super::super::types::Scalar::Basic(FundamentalType::LongInt))
+                .unwrap();
+            let mut arguments = [int, long];
+            if value {
+                for (argument, bits) in arguments.iter_mut().zip([7, 3]) {
+                    *argument = analyzer
+                        .graph
+                        .types
+                        .intern(TypeKind::Value { ty: int, bits }, Cv::default())
+                        .unwrap();
+                }
+            }
+            let outer = [Some(arguments[0])];
+            let pending = analyzer
+                .substitute_operand(ty, entity, &mut Substitution::new(0, &outer))
+                .unwrap()
+                .unwrap();
+            let TypeKind::TemplateParameter {
+                entity: pending_entity,
+                ..
+            } = analyzer.graph.types.get(pending).kind
+            else {
+                panic!("expected an open pending operand");
+            };
+            assert!(
+                analyzer
+                    .graph
+                    .template_operands
+                    .words(pending_entity)
+                    .is_none()
+            );
+            assert_eq!(
+                analyzer.graph.lower_operand_key_dependent(pending),
+                Some(false)
+            );
+            let (expression, key) = analyzer.graph.lower_template_operand(pending).unwrap();
+            assert_eq!(expression, pattern.expression);
+            assert!(key.is_empty());
+            let recorded = &analyzer.graph.template_operands.pending[&pending_entity];
+            assert_eq!(recorded.placeholder, entity);
+            assert_eq!(recorded.arguments, [arguments[0]]);
+            assert!(recorded.earlier.is_none());
+            let inner = [Some(arguments[1])];
+            let result = analyzer
+                .substitute_operand(pending, pending_entity, &mut Substitution::new(1, &inner))
+                .unwrap()
+                .unwrap();
+            if value {
+                assert!(matches!(analyzer.graph.types.get(result).kind,
+                    TypeKind::Value { ty, bits: 4 } if ty == int));
+            } else {
+                assert_eq!(result, long);
+            }
+            let expressions = analyzer.tree.expressions.mark();
+            for _ in 0..3 {
+                assert_eq!(
+                    analyzer
+                        .substitute_operand(
+                            pending,
+                            pending_entity,
+                            &mut Substitution::new(1, &inner),
+                        )
+                        .unwrap(),
+                    Some(result)
+                );
+                assert_eq!(analyzer.tree.expressions.mark(), expressions);
+            }
+            assert_eq!(
+                analyzer.graph.template_operands.words(entity),
+                Some(words.as_slice())
+            );
+            assert!(
+                analyzer
+                    .graph
+                    .expression_facts
+                    .get(pattern.expression)
+                    .is_err()
+            );
+            assert!(analyzer.graph.template_operands.active.is_empty());
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        }
     }
 }

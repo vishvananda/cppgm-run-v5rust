@@ -286,6 +286,18 @@ impl Analyzer<'_> {
                 };
                 let id = binding;
                 let binding = self.graph.binding(id);
+                // C++ bind_pack gives a whole-pack frame alias no entity.
+                // Its sizeof... is evaluable, but is not the declaration's
+                // positional pack key. Rust retains the parameter identity
+                // on that alias, so distinguish the typed binding here.
+                if binding.ty.is_some_and(|ty| {
+                    matches!(
+                        self.graph.types.get(ty).kind,
+                        super::types::TypeKind::BoundPack { .. }
+                    )
+                }) {
+                    return Ok(false);
+                }
                 if binding.kind == super::graph::BindingKind::Parameter
                     && binding.ty.is_some()
                     && self.graph.prototype_parameter(binding.entity).is_some()
