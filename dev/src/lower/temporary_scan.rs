@@ -365,13 +365,12 @@ impl Function<'_, '_, '_, '_> {
             while let Some(call) = self.graph.lower_arrow_call(id, step)? {
                 if !call.place && self.temporary_type_destroyed(call.result)? {
                     summary.made = true;
-                    summary
-                        .call_result
-                        .include(self.temporary_destructor_throws(call.result)?, false);
+                    let member_template = matches!(self.graph.lower_type(call.result)?,
+                        TypeView::Class(class) if self.graph.lower_member_class_specialization(class));
+                    let throws = self.temporary_destructor_throws(call.result)?;
+                    summary.call_result.include(throws, member_template);
                     if id != root {
-                        summary
-                            .operand_call_result
-                            .include(self.temporary_destructor_throws(call.result)?, false);
+                        summary.operand_call_result.include(throws, member_template);
                     }
                 }
                 step += 1;
