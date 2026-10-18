@@ -429,11 +429,11 @@ impl ExpressionFacts {
             .unwrap_or(id)
     }
     pub(super) fn get(&self, id: ast::ExprId) -> Result<ExprFacts, Error> {
-        self.records
-            .get(self.root(id).index())
-            .copied()
-            .flatten()
+        self.known(id)
             .ok_or(Error::Invariant("expression without semantic facts"))
+    }
+    pub(super) fn known(&self, id: ast::ExprId) -> Option<ExprFacts> {
+        self.records.get(self.root(id).index()).copied().flatten()
     }
     pub(super) fn set(&mut self, id: ast::ExprId, facts: ExprFacts) {
         let id = self.root(id);

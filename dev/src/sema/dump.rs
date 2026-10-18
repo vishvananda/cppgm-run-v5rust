@@ -37,7 +37,9 @@ impl Graph {
         if qualified {
             self.write_class_qualifier(entity.home, cursor, output, true)?;
         }
-        if let Some(ordinal) = entity.local_type_ordinal {
+        if let Some(closure) = self.lower_closure(class) {
+            write!(output, "__lambda{}", closure.ordinal)?;
+        } else if let Some(ordinal) = entity.local_type_ordinal {
             write!(output, "__local_type{ordinal}")?;
         } else if let Some(name) = entity.name {
             write_name(cursor, name, output)?;
@@ -294,7 +296,11 @@ impl Graph {
         }
         for scope in parts.into_iter().rev() {
             let node = self.scope(scope);
-            if let Some(ordinal) = node.owner.and_then(|id| self.entity(id).local_type_ordinal) {
+            if let Some(closure) = node.owner.and_then(|id| self.lower_closure(id)) {
+                write!(output, "__lambda{}", closure.ordinal)?;
+            } else if let Some(ordinal) =
+                node.owner.and_then(|id| self.entity(id).local_type_ordinal)
+            {
                 write!(output, "__local_type{ordinal}")?;
             } else if let Some(name) = node.name {
                 write_name(cursor, name, output)?;

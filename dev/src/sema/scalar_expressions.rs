@@ -60,6 +60,7 @@ impl Analyzer<'_> {
             other => other,
         })?;
         let mut facts = match node.kind {
+            ExprKind::Lambda(lambda) => self.lambda_expression(id, lambda, scope)?,
             ExprKind::Paren(inner) => {
                 self.typed_expression(inner, scope)?;
                 self.graph.expression_facts.share(id, inner);

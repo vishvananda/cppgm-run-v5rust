@@ -76,6 +76,7 @@ mod initialization;
 mod instance_definitions;
 mod integral;
 mod jumps;
+mod lambdas;
 mod layout;
 mod layout_attributes;
 mod linkage;

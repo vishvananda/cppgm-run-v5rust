@@ -400,14 +400,37 @@ impl<'a> Cloner<'a> {
                 operand: self.expression(operand)?,
             },
             ExprKind::Throw(id) => ExprKind::Throw(self.optional(id, Self::expression)?),
-            ExprKind::Lambda(_) => {
-                return Err(ParseError::NotImplemented("lambda template body copying"));
-            }
+            ExprKind::Lambda(id) => ExprKind::Lambda(self.lambda(id)?),
             other @ (ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::SizeofPack(_)) => {
                 other
             }
         };
         self.tree.expressions.add(node)
+    }
+    fn lambda(&mut self, id: super::ast::LambdaId) -> Result<super::ast::LambdaId, ParseError> {
+        let mut node = *self.tree.lambdas.get(id);
+        let mark = self.shadow_mark();
+        node.parameters = self.optional(node.parameters, Self::parameters)?;
+        if let Some(parameters) = node.parameters {
+            for index in 0..self.tree.parameters.get(parameters.parameters).len() {
+                self.shadow_declarator(
+                    self.tree.parameters.get(parameters.parameters)[index].declarator,
+                );
+            }
+        }
+        node.exception = self.optional(node.exception, Self::qualifier)?;
+        node.trailing = self.optional(node.trailing, Self::ty)?;
+        node.attributes = self.attributes(node.attributes)?;
+        node.body = match node.body {
+            super::ast::LambdaBody::Parsed(body) => {
+                super::ast::LambdaBody::Parsed(self.statement(body)?)
+            }
+            super::ast::LambdaBody::Deferred => {
+                return Err(ParseError::Invariant("unparsed lambda copy"));
+            }
+        };
+        self.restore_shadows(mark);
+        self.tree.lambdas.add(node)
     }
     fn condition(&mut self, node: Condition) -> Result<Condition, ParseError> {
         let node = match node {

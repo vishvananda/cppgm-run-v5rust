@@ -309,8 +309,8 @@ impl Analyzer<'_> {
         });
         self.declare_assignments(
             class,
-            has_copy || has_move || destructor,
-            has_move || move_assignment,
+            has_copy || has_move || destructor || self.graph.closure_call(class).is_some(),
+            has_move || move_assignment || self.graph.closure_call(class).is_some(),
         )?;
         Ok(())
     }

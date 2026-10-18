@@ -112,7 +112,9 @@ impl Graph {
     pub(super) fn lower_shared_local(&self, mut class: EntityId) -> bool {
         loop {
             let node = self.entity(class);
-            if node.name.is_none() || node.template_head.is_some() {
+            if node.name.is_none() && self.closure_call(class).is_none()
+                || node.template_head.is_some()
+            {
                 return false;
             }
             let Some(home) = node.home else {
@@ -327,6 +329,23 @@ impl Graph {
     pub(crate) fn lower_function_visible_locals(&self, function: EntityId) -> bool {
         let outer = self.outermost_function(function);
         self.lower_inline_function(outer)
+    }
+    pub(crate) fn lower_numbered_closure(&self, class: EntityId) -> bool {
+        let mut function = self
+            .lower_closure(class)
+            .and_then(|closure| closure.enclosing);
+        while let Some(current) = function {
+            if self.lower_inline_function(current)
+                || self.function_templates.primary(current).is_some()
+            {
+                return true;
+            }
+            function = self
+                .entity(current)
+                .home
+                .and_then(|home| self.lower_scope_function(home));
+        }
+        false
     }
     pub(crate) fn lower_deferred_local_classes(&self, function: EntityId) -> &[EntityId] {
         self.local_classes

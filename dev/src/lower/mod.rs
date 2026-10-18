@@ -396,7 +396,10 @@ fn emit_pending<'a>(
                 continue;
             }
             let facts = graph.lower_function(entity)?;
-            if facts.definition.is_none() && !graph.lower_has_synthesized_body(entity) {
+            if facts.definition.is_none()
+                && graph.lower_function_body(entity).is_none()
+                && !graph.lower_has_synthesized_body(entity)
+            {
                 function::declare(output.program, symbols, graph, entry)?;
                 continue;
             }

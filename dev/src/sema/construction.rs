@@ -506,7 +506,7 @@ impl Analyzer<'_> {
         binding: Option<BindingId>,
     ) -> Result<ConstructorId, Error> {
         let union = self.graph.entity(class).key == Keyword::Union;
-        let mut deleted = false;
+        let mut deleted = self.graph.closure_call(class).is_some();
         let mut bases_const_default = true;
         let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
         let inherited = binding.and_then(|binding| {

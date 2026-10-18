@@ -40,6 +40,7 @@ impl Analyzer<'_> {
             .class_of(facts.ty)
             .ok_or(Error::Invariant("callable class"))?;
         let location = self.tree.expressions.get(id).location;
+        self.note_closure_invocation(id, callee, class)?;
         if !self.graph.entity(class).complete {
             return Err(Error::at(
                 location,

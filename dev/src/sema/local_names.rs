@@ -63,9 +63,19 @@ impl Analyzer<'_> {
                 return Ok(());
             }
         }
+        let lambda = self
+            .body_context
+            .as_ref()
+            .and_then(|body| self.graph.entity(body.entity).home)
+            .and_then(|home| self.graph.scope(home).owner)
+            .is_some_and(|class| self.graph.closure_call(class).is_some());
         Err(Error::at(
             location,
-            "a local class odr-uses an automatic variable of an enclosing function (9.8p1)",
+            if lambda {
+                "a lambda odr-uses an automatic variable it does not capture (5.1.2p11)"
+            } else {
+                "a local class odr-uses an automatic variable of an enclosing function (9.8p1)"
+            },
         ))
     }
 

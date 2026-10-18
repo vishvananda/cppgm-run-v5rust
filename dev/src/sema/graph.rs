@@ -222,6 +222,7 @@ struct FunctionSignature {
 }
 
 pub(crate) struct Graph {
+    pub(super) closures: Box<super::lambdas::Closures>,
     pub(super) virtuals: super::virtual_members::Virtuals,
     pub(super) local_classes: super::local_classes::LocalClasses,
     pub(super) bit_fields: super::bit_fields::BitFields,
@@ -306,6 +307,9 @@ pub(crate) struct Graph {
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
+    pub(super) fn set_closure_binding_type(&mut self, binding: BindingId, ty: TypeId) {
+        self.bindings[binding.0 as usize].ty = Some(ty);
+    }
     pub(super) fn note_no_inline(
         &mut self,
         entity: EntityId,
@@ -410,6 +414,7 @@ impl Graph {
     }
     pub(super) fn new() -> Self {
         Self {
+            closures: Box::default(),
             virtuals: super::virtual_members::Virtuals::default(),
             member_initializers: super::member_initializers::Initializers::default(),
             variable_instances: Box::default(),

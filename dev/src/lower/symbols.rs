@@ -626,6 +626,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
     fn class_label(&self, label: crate::sema::lowering::ClassSpelling) -> Result<String, Error> {
         use crate::sema::lowering::ClassSpelling;
         Ok(match label {
+            ClassSpelling::Closure(ordinal) => format!("__lambda{ordinal}"),
             ClassSpelling::Name(name) => self.identifier(name)?.to_owned(),
             ClassSpelling::Local(ordinal) => format!("__local_type{ordinal}"),
             ClassSpelling::Anonymous(tokens) => {
@@ -657,6 +658,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 FunctionName::Operator { token, array } => {
                     bytes.extend_from_slice(b"operator");
                     bytes.extend_from_slice(token.spelling().as_bytes());
+                    if token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::LeftParen) {
+                        bytes.push(b')');
+                    }
                     if array {
                         bytes.extend_from_slice(b"[]");
                     }
@@ -1211,13 +1215,37 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         } else {
                             self.scope(home)?
                         };
-                    let terminal = if let Some(name) = name {
+                    let terminal = if let Some(closure) = self.graph.lower_closure(entity)
+                        && self.graph.lower_numbered_closure(entity)
+                    {
+                        let facts = self.graph.lower_function(closure.call)?;
+                        let TypeView::Function { parameters, .. } =
+                            self.graph.lower_type(facts.ty)?
+                        else {
+                            return Err(
+                                crate::sema::Error::Invariant("closure ABI signature").into()
+                            );
+                        };
+                        let mut nodes = Vec::with_capacity(parameters.len());
+                        for &parameter in parameters {
+                            nodes.push(self.abi_type(parameter)?);
+                        }
+                        self.abi.intern(
+                            Node::ClosureName {
+                                number: u32::from(closure.course_number),
+                                variadic: false,
+                            },
+                            &nodes,
+                        )?
+                    } else if let Some(name) = name {
                         self.abi.string(self.cursor.name(name))?
                     } else {
                         self.anonymous_names
                             .terminal(self.graph, &mut self.abi, entity)?
                     };
-                    let occurrence = if let TypeView::Class(class) = self.graph.lower_type(ty)?
+                    let occurrence = if self.graph.lower_closure(entity).is_some() {
+                        0
+                    } else if let TypeView::Class(class) = self.graph.lower_type(ty)?
                         && let Some((function, declared)) = self.graph.lower_local_type(class)
                     {
                         self.local_discriminator(class, function, name, declared)?
@@ -1461,6 +1489,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         let facts = self.graph.lower_function(entity)?;
         let own = match facts.builtin {
+            _ if self.graph.lower_is_closure_invoker(entity) => "_FUN".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memcmp) => "memcmp".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memset) => "memset".to_owned(),
             _ if facts.c_linkage && !facts.internal => self.source_function_spelling(facts.name)?,
@@ -2164,6 +2193,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             metadata.flags |= 32;
         }
         if self.rooted_destructors.contains(&entity) {
+            metadata.flags |= 4;
+        }
+        if self.graph.lower_is_closure_invoker(entity) {
             metadata.flags |= 4;
         }
         if self.graph.lower_function_local_class(entity) {

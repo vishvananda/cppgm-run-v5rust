@@ -34,6 +34,7 @@ impl AnonymousClass {
 
 #[derive(Clone, Copy)]
 pub(crate) enum ClassSpelling {
+    Closure(u32),
     Name(NameId),
     Local(u32),
     Anonymous(ast::TokenSpan),
@@ -168,6 +169,9 @@ impl Graph {
     }
     pub(crate) fn lower_class_spelling(&self, class: EntityId) -> Result<ClassSpelling, Error> {
         let entity = self.entity(class);
+        if let Some(closure) = self.lower_closure(class) {
+            return Ok(ClassSpelling::Closure(closure.ordinal));
+        }
         if let Some(name) = entity.name {
             return Ok(ClassSpelling::Name(name));
         }

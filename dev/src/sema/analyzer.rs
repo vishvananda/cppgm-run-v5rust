@@ -761,6 +761,11 @@ impl<'tree> Analyzer<'tree> {
                 result,
                 body.entity,
             ));
+            if self.graph.closure_deduces_result(body.entity)
+                && let Some(context) = self.body_context.as_mut()
+            {
+                context.return_deduction = super::lambdas::ReturnDeduction::Pending;
+            }
         }
         let result = self.function_body_scopes(body);
         self.body_context = saved_context;

@@ -613,6 +613,7 @@ impl Function<'_, '_, '_, '_> {
             return self.zero(source);
         }
         let target = self.graph.lower_call(id)?;
+        let invoker = self.graph.lower_closure_invocation(id);
         if let CallTarget::Direct(entity) = target
             && matches!(
                 self.graph.lower_function(entity)?.builtin,
@@ -674,7 +675,7 @@ impl Function<'_, '_, '_, '_> {
                 callee_expression
             };
             let object = self.graph.lower_object_source(receiver)?;
-            if self.graph.lower_function(entity)?.object.is_some() {
+            if self.graph.lower_function(entity)?.object.is_some() && invoker.is_none() {
                 let value = match object.ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "member call without receiver",
                 )))? {
@@ -699,10 +700,9 @@ impl Function<'_, '_, '_, '_> {
                     value = self.base_projection(value, source, offset)?;
                 }
                 values.push(value);
-            } else if let Some(crate::sema::lowering::ObjectSource::Explicit {
-                expression,
-                arrow,
-            }) = object
+            } else if invoker.is_none()
+                && let Some(crate::sema::lowering::ObjectSource::Explicit { expression, arrow }) =
+                    object
             {
                 self.member_object(expression, arrow)?;
             }
@@ -739,7 +739,21 @@ impl Function<'_, '_, '_, '_> {
         let (callee, signature) = match target {
             CallTarget::Direct(entity) => {
                 let dispatch = self.graph.lower_virtual_dispatch(id)?;
-                if dispatch {
+                if let Some(invoker) = invoker {
+                    self.symbols.demand(invoker);
+                    let symbol = self
+                        .symbols
+                        .function_symbol(self.builder.program(), invoker)?;
+                    let value = self
+                        .emit(I::Addr(crate::lowir::model::Value::Symbol(symbol)), source)?
+                        .value;
+                    let signature = self.symbols.call_signature(
+                        self.builder.program(),
+                        self.graph.lower_function(invoker)?.ty,
+                        self.graph.lower_function(invoker)?.nothrow,
+                    )?;
+                    (value, Some(signature))
+                } else if dispatch {
                     let receiver = *values.get(usize::from(boundary.indirect)).ok_or(
                         crate::sema::Error::Invariant("virtual call without receiver"),
                     )?;

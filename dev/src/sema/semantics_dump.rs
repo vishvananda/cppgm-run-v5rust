@@ -121,6 +121,21 @@ impl Graph {
                         printer.function_definition(binding, Some(body), depth)?;
                     } else if let Some(body) = printer
                         .graph
+                        .entity(printer.graph.binding(binding).entity)
+                        .analyzed_body
+                        && printer
+                            .graph
+                            .entity(printer.graph.binding(binding).entity)
+                            .home
+                            .and_then(|home| printer.graph.scope(home).owner)
+                            .is_some_and(|class| {
+                                printer.graph.closure_call(class)
+                                    == Some(printer.graph.binding(binding).entity)
+                            })
+                    {
+                        printer.function_definition(binding, Some(body), depth)?;
+                    } else if let Some(body) = printer
+                        .graph
                         .function_templates
                         .bodies
                         .body(printer.graph.binding(binding).entity)
@@ -449,8 +464,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             if !matches!(node.kind, ScopeKind::Namespace | ScopeKind::Class) {
                 break;
             }
-            if let Some(name) = node.name {
-                parts.push(name);
+            if node.name.is_some()
+                || node
+                    .owner
+                    .is_some_and(|class| self.graph.lower_closure(class).is_some())
+            {
+                parts.push(id);
             }
             scope = if node.kind == ScopeKind::Class {
                 node.owner.and_then(|owner| self.graph.entity(owner).home)
@@ -458,8 +477,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 node.parent
             };
         }
-        for name in parts.into_iter().rev() {
-            self.name(Some(name))?;
+        for scope in parts.into_iter().rev() {
+            let node = self.graph.scope(scope);
+            if let Some(closure) = node.owner.and_then(|class| self.graph.lower_closure(class)) {
+                write!(self.output, "__lambda{}", closure.ordinal)?;
+            } else {
+                self.name(node.name)?;
+            }
             self.output.write_all(b"::")?;
         }
         if let Some(super::function_names::SpecialName::Operator { token, array }) = entity
@@ -489,6 +513,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 token.spelling(),
                 if array { "[]" } else { "" }
             )?;
+            if token.as_punctuator() == Some(P::LeftParen) {
+                self.output.write_all(b")")?;
+            }
         } else {
             self.name(binding.name)?;
         }
@@ -1487,9 +1514,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. } => "sizeof-expression",
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
             ExprKind::Braced { .. } => "braced-init-list",
-            ExprKind::New { .. } | ExprKind::Delete { .. } | ExprKind::SizeofPack(_) => {
-                "expression"
-            }
+            ExprKind::New { .. }
+            | ExprKind::Delete { .. }
+            | ExprKind::SizeofPack(_)
+            | ExprKind::Lambda(_) => "expression",
             ExprKind::Call { .. } => {
                 if facts.functional_call || facts.intrinsic.is_some() {
                     "cast-expression"

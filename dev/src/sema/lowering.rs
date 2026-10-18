@@ -1104,7 +1104,12 @@ impl Graph {
         match scope.kind {
             super::graph::ScopeKind::Namespace => (scope.parent, scope.name),
             super::graph::ScopeKind::Class => (
-                scope.owner.and_then(|class| self.entity(class).home),
+                scope.owner.and_then(|class| {
+                    self.lower_closure(class)
+                        .and_then(|closure| closure.enclosing)
+                        .and_then(|function| self.entity(function).home)
+                        .or(self.entity(class).home)
+                }),
                 scope.name,
             ),
             _ => (None, None),

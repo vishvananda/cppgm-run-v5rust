@@ -536,7 +536,7 @@ impl Analyzer<'_> {
             .ty;
         Ok((ty, bound))
     }
-    fn function_type(
+    pub(super) fn function_type(
         &mut self,
         mut ty: TypeId,
         clause: ast::ParameterClause,

@@ -22,7 +22,39 @@ impl Symbols<'_, '_> {
         if let Some(outer) = self.graph.lower_scope_class(home) {
             self.specialized_class_label(outer)?;
         }
-        let base = self.class_label(self.graph.lower_class_spelling(class)?)?;
+        let base = if let Some(closure) = self.graph.lower_closure(class)
+            && let Some(function) = closure.enclosing
+        {
+            let facts = self.graph.lower_function(function)?;
+            let outer = self.graph.lower_scope_class(facts.home);
+            let enclosing = if outer.is_some_and(|outer| {
+                self.graph
+                    .lower_closure(outer)
+                    .is_some_and(|c| c.call == function)
+            }) {
+                "nested".to_owned()
+            } else {
+                let mut components = vec![self.function_label(facts.name, facts.label)?];
+                let mut scope = facts.home;
+                while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
+                    components.push(self.presentation_scope_label(scope, name)?);
+                    scope = parent;
+                }
+                components.reverse();
+                components.join("__")
+            };
+            let mut label = format!(
+                "__lambda_{enclosing}_t{}_{}",
+                closure.clause_token, closure.body_token
+            );
+            if closure.course_number != 0 {
+                write!(label, "_n{}", closure.course_number)
+                    .map_err(|_| Error::Missing("closure label formatting"))?;
+            }
+            label
+        } else {
+            self.class_label(self.graph.lower_class_spelling(class)?)?
+        };
         let mut label = base.clone();
         if self.graph.lower_class_specialization(class) {
             label.push('<');
