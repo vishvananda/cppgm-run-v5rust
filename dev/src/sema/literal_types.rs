@@ -76,6 +76,9 @@ impl Analyzer<'_> {
             return Ok(false);
         }
         for index in 0..self.graph.entity(class).bases.len() {
+            if self.graph.entity(class).bases[index].is_virtual {
+                return Ok(false);
+            }
             let base = self.graph.entity(class).bases[index].class;
             if !self.constant_literal_type(self.graph.lower_entity_type(base)?)? {
                 return Ok(false);
@@ -168,6 +171,15 @@ impl Analyzer<'_> {
             }
         }
         let class = plan.class;
+        if self
+            .graph
+            .entity(class)
+            .bases
+            .iter()
+            .any(|edge| edge.is_virtual)
+        {
+            return Ok(false);
+        }
         if let Some(copy) = plan.copy.as_ref() {
             let count = copy.len();
             for index in 0..count {
@@ -470,6 +482,18 @@ impl Analyzer<'_> {
                 ));
             }
             return Ok(());
+        }
+        if self
+            .graph
+            .entity(self.graph.constructors.get(id).class)
+            .bases
+            .iter()
+            .any(|edge| edge.is_virtual)
+        {
+            return Err(Error::at(
+                location,
+                "a constexpr constructor of a class with a virtual base",
+            ));
         }
         for index in 0..self.graph.constructors.get(id).bases.len() {
             let base = self.graph.constructors.get(id).bases[index];

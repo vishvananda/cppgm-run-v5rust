@@ -93,14 +93,9 @@ impl Analyzer<'_> {
             let keeps_const = !self.cast_constness(from_pointer, to_pointer);
             let mut allowed = glvalue && constness && self.const_castable(from_pointer, to_pointer);
             if !allowed && static_kind {
-                let hierarchy = self
-                    .graph
-                    .class_of(source.ty)
-                    .zip(self.graph.class_of(element));
                 let related = self.bare_type(element)? == self.bare_type(source.ty)?
-                    || hierarchy.is_some_and(|(from, to)| {
-                        self.graph.is_base_of(from, to) || self.graph.is_base_of(to, from)
-                    });
+                    || self.derived_class_conversion(source.ty, element)?
+                    || self.derived_class_conversion(element, source.ty)?;
                 allowed = glvalue && related && (keeps_const || constness);
                 if allowed
                     && let Some(facts) = self.reference_hierarchy_cast(
@@ -393,15 +388,16 @@ impl Analyzer<'_> {
         ) else {
             return Ok(None);
         };
-        let (Some(from_class), Some(to_class)) = (self.graph.class_of(*a), self.graph.class_of(*b))
+        let (a, b) = (*a, *b);
+        let (Some(from_class), Some(to_class)) = (self.graph.class_of(a), self.graph.class_of(b))
         else {
             return Ok(None);
         };
         if !c_style && self.cast_constness(from, goal) {
             return Ok(None);
         }
-        let downcast = self.graph.is_base_of(from_class, to_class);
-        if !(downcast || c_style && self.graph.is_base_of(to_class, from_class)) {
+        let downcast = self.derived_class_conversion(a, b)?;
+        if !(downcast || c_style && self.derived_class_conversion(b, a)?) {
             return Ok(None);
         }
         let (derived, base) = if downcast {

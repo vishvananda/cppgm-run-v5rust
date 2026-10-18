@@ -1,6 +1,6 @@
 // Translated from analyzer_classes.cpp::base_classes, lookup.cpp::class_members,
 // conversions.cpp::is_base_of and analyzer_member_pointers.cpp. See NOTICE.
-//! Nonvirtual base edges, query-local graph walks and retained conversion paths.
+//! Base edges, shared virtual subobjects and retained conversion paths.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -21,9 +21,35 @@ pub(super) enum Derivation {
 #[derive(Clone, Copy)]
 pub(super) struct BaseClass {
     pub class: EntityId,
+    pub is_virtual: bool,
     pub access: Access,
     pub offset: Option<u64>,
     pub dependency: ast::BaseDependency,
+}
+
+#[derive(Clone, Copy, Default)]
+struct BaseReachability {
+    // Distinct subobjects reached without crossing a virtual base-specifier.
+    non_virtual: u8,
+    through_virtual: bool,
+}
+impl BaseReachability {
+    fn reachable(self) -> bool {
+        self.non_virtual != 0 || self.through_virtual
+    }
+}
+
+struct BaseQuery {
+    paths: HashMap<EntityId, BaseReachability>,
+    shared: u8,
+}
+impl BaseQuery {
+    fn count(&self, derived: EntityId) -> u8 {
+        self.paths[&derived]
+            .non_virtual
+            .saturating_add(self.shared)
+            .min(2)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,9 +98,17 @@ impl Graph {
 
     // Each graph edge is visited once, even for exponentially many subobjects.
     // Saturation at two preserves the only distinction needed by ambiguity checks.
-    fn base_counts(&self, derived: EntityId, base: EntityId) -> HashMap<EntityId, u8> {
+    fn base_query(&self, derived: EntityId, base: EntityId) -> BaseQuery {
         let mut counts = HashMap::new();
-        counts.insert(base, 1u8);
+        counts.insert(
+            base,
+            BaseReachability {
+                non_virtual: 1,
+                through_virtual: false,
+            },
+        );
+        let mut shared = 0u8;
+        let mut counted = HashSet::new();
         let mut work = vec![(derived, 0usize)];
         while let Some((class, next)) = work.last_mut() {
             if counts.contains_key(class) {
@@ -88,19 +122,35 @@ impl Graph {
                     work.push((edge.class, 0));
                 }
             } else {
-                let mut count = 0u8;
+                let mut result = BaseReachability::default();
                 for edge in &self.entity(*class).bases {
-                    count = count.saturating_add(counts[&edge.class]).min(2);
+                    let below = counts[&edge.class];
+                    if !edge.is_virtual {
+                        result.non_virtual =
+                            result.non_virtual.saturating_add(below.non_virtual).min(2);
+                        result.through_virtual |= below.through_virtual;
+                        continue;
+                    }
+                    if !below.reachable() {
+                        continue;
+                    }
+                    result.through_virtual = true;
+                    if counted.insert(edge.class) {
+                        shared = shared.saturating_add(below.non_virtual).min(2);
+                    }
                 }
-                counts.insert(*class, count);
+                counts.insert(*class, result);
                 work.pop();
             }
         }
-        counts
+        BaseQuery {
+            paths: counts,
+            shared,
+        }
     }
 
     pub(super) fn base_count(&self, derived: EntityId, base: EntityId) -> u8 {
-        self.base_counts(derived, base)[&derived]
+        self.base_query(derived, base).count(derived)
     }
 
     pub(super) fn retain_base_path(
@@ -111,8 +161,8 @@ impl Graph {
         if let Some(&id) = self.base_paths.index.get(&(derived, base)) {
             return Ok(id);
         }
-        let counts = self.base_counts(derived, base);
-        if counts[&derived] != 1 {
+        let query = self.base_query(derived, base);
+        if query.count(derived) != 1 {
             return Err(Error::Invariant("retaining a nonunique base path"));
         }
         let mut class = derived;
@@ -123,7 +173,12 @@ impl Graph {
                 .bases
                 .iter()
                 .enumerate()
-                .find(|(_, edge)| counts.get(&edge.class).copied().unwrap_or(0) != 0)
+                .find(|(_, edge)| {
+                    query
+                        .paths
+                        .get(&edge.class)
+                        .is_some_and(|facts| facts.reachable())
+                })
                 .ok_or(Error::Invariant("base path without an edge"))?;
             path.push((class, index));
             class = edge.class;
@@ -197,7 +252,14 @@ impl Analyzer<'_> {
         access: bool,
         downcast: bool,
     ) -> Result<BasePathId, Error> {
-        if self.graph.base_count(derived, base) > 1 {
+        let query = self.graph.base_query(derived, base);
+        if downcast && query.paths[&derived].through_virtual {
+            return Err(Error::at(
+                location,
+                "a cast from a virtual base class to its derived class",
+            ));
+        }
+        if query.count(derived) > 1 {
             return Err(Error::at(
                 location,
                 if downcast {
@@ -328,9 +390,6 @@ impl Analyzer<'_> {
             if self.graph.entity(parent).key == Keyword::Union || node.key == Keyword::Union {
                 return Err(Error::at(base.location, "unions have no base classes"));
             }
-            if base.is_virtual {
-                return Err(Error::Missing("virtual base class formation"));
-            }
             let access = match base.access {
                 Some(Keyword::Private) => Access::Private,
                 Some(Keyword::Protected) => Access::Protected,
@@ -343,6 +402,7 @@ impl Analyzer<'_> {
             }
             self.graph.entity_mut(class).bases.push(BaseClass {
                 class: parent,
+                is_virtual: base.is_virtual,
                 access,
                 offset: None,
                 dependency: base.dependency,
@@ -412,7 +472,29 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        for &(class, index) in self.graph.base_paths.get(path) {
+        let edges = self.graph.base_paths.get(path);
+        // A retained path selects a subobject for lowering. Access to a shared
+        // virtual subobject can instead use another route to that same object.
+        if edges
+            .iter()
+            .any(|&(class, index)| self.graph.entity(class).bases[index].is_virtual)
+        {
+            let &(derived, _) = edges
+                .first()
+                .ok_or(Error::Invariant("empty virtual base path"))?;
+            let &(last, index) = edges
+                .last()
+                .ok_or(Error::Invariant("empty virtual base path"))?;
+            let base = self.graph.entity(last).bases[index].class;
+            if self.accessible_base_name(derived, base, scope) {
+                return Ok(());
+            }
+            return Err(Error::at(
+                location,
+                "conversion to an inaccessible base class",
+            ));
+        }
+        for &(class, index) in edges {
             let edge = self.graph.entity(class).bases[index];
             if edge.access != Access::Public
                 && !self.member_or_friend(scope, class)
@@ -436,6 +518,105 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn virtual_subobjects_share_identity_without_layout_or_body_demand() {
+        let source = SourceBuffer::new(
+            br"
+            struct B {};
+            struct N : B {};
+            struct L : private virtual B {};
+            struct R : virtual B {};
+            struct Diamond : L, R {};
+            struct Mixed : L, N {};
+            struct V : virtual N {};
+            struct W : virtual N {};
+            struct Shared : V, W {};
+            struct Other : B {};
+            struct Split : virtual N, virtual Other {};
+            struct Indirect : V {};
+            template<class T> struct Pack : virtual T { void idle(){ T::missing(); } };
+            using Instance = Pack<B>;
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"virtual-path-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let names = [
+            b"B".as_slice(),
+            b"N",
+            b"Diamond",
+            b"Mixed",
+            b"Shared",
+            b"Split",
+            b"Indirect",
+            b"Instance",
+        ];
+        let classes = names.map(|name| {
+            let name = analyzer.identifiers.intern(name).unwrap();
+            let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
+            analyzer
+                .graph
+                .class_of(analyzer.graph.binding(binding).ty.unwrap())
+                .unwrap()
+        });
+        let [
+            base,
+            nonvirtual,
+            diamond,
+            mixed,
+            shared,
+            split,
+            indirect,
+            instance,
+        ] = classes;
+        assert!(analyzer.complete_class(instance).unwrap());
+        for (derived, count, virtual_path) in [
+            (nonvirtual, 1, false),
+            (diamond, 1, true),
+            (mixed, 2, true),
+            (shared, 1, true),
+            (split, 2, true),
+            (indirect, 1, true),
+            (instance, 1, true),
+        ] {
+            let query = analyzer.graph.base_query(derived, base);
+            assert_eq!(query.count(derived), count);
+            assert_eq!(query.paths[&derived].through_virtual, virtual_path);
+        }
+        let path = analyzer.graph.retain_base_path(diamond, base).unwrap();
+        assert_eq!(
+            analyzer.graph.retain_base_path(diamond, base).unwrap(),
+            path
+        );
+        // The stored first route crosses L's private edge; access may use R.
+        analyzer
+            .check_base_path_access(path, global, SourceOffset(0))
+            .unwrap();
+        assert!(analyzer.graph.retain_base_path(mixed, base).is_err());
+        assert!(analyzer.graph.retain_base_path(split, base).is_err());
+        for class in classes {
+            assert!(matches!(
+                analyzer.graph.entity(class).layout,
+                super::super::layout::LayoutState::NotStarted
+            ));
+        }
+        assert!(analyzer.graph.entity(instance).bases[0].is_virtual);
+        assert!(
+            analyzer.graph.entity(instance).polymorphism
+                == super::super::virtual_members::Polymorphism::Static
+        );
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn bound_base_packs_copy_once_and_keep_pattern_and_body_demand_separate() {

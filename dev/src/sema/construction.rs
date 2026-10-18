@@ -90,6 +90,11 @@ impl Constructor {
     }
     fn own_action(&self, graph: &super::graph::Graph) -> bool {
         graph.entity(self.class).polymorphism.is_dynamic()
+            || graph
+                .entity(self.class)
+                .bases
+                .iter()
+                .any(|edge| edge.is_virtual)
             || self.initialized_members() != 0
             || self.binding.is_some_and(|binding| {
                 !matches!(

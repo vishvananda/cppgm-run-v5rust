@@ -633,7 +633,13 @@ impl Analyzer<'_> {
     ) -> Result<Properties, Error> {
         let mut properties = Properties {
             deleted: false,
-            trivial: !self.graph.lower_polymorphic(class),
+            trivial: !self.graph.lower_polymorphic(class)
+                && !self
+                    .graph
+                    .entity(class)
+                    .bases
+                    .iter()
+                    .any(|edge| edge.is_virtual),
             nothrow: true,
             actions: Vec::new(),
         };

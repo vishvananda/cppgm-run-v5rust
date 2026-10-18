@@ -437,6 +437,17 @@ impl Analyzer<'_> {
         if !self.complete_class(entity)? {
             return Err(Error::at(location, "size of an incomplete class"));
         }
+        // Virtual-base formation and unevaluated path queries do not demand
+        // storage. Its ABI placement/construction tables are a separate group.
+        if self
+            .graph
+            .entity(entity)
+            .bases
+            .iter()
+            .any(|edge| edge.is_virtual)
+        {
+            return Err(Error::Missing("virtual base class layout"));
+        }
         match self.graph.entity(entity).layout {
             LayoutState::Value { .. } => Ok(false),
             LayoutState::InProgress => Err(Error::at(location, "class contains itself")),
