@@ -1069,7 +1069,7 @@ impl super::graph::Graph {
         let entity = self.entity(class);
         let home = entity.home.ok_or(Error::Invariant("class without home"))?;
         Ok((
-            self.lower_entity_unit_local(class),
+            self.lower_entity_unit_local(class)?,
             self.scope(home).kind != ScopeKind::Namespace,
             entity.key,
             entity

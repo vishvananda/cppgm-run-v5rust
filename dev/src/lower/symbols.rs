@@ -616,7 +616,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(class) = self.graph.lower_scope_class(scope) {
             return self.specialized_class_label(class);
         }
-        if let Some((class, _, _)) = self.graph.lower_anonymous_scope(scope) {
+        if let Some((class, _, _)) = self.graph.lower_anonymous_scope(scope)? {
             return self.class_label(self.graph.lower_class_spelling(class)?);
         }
         Ok(name
@@ -1984,21 +1984,21 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let owner_name = program.names.get(program.symbol(owner).name).to_owned();
         let weak = self.metadata(program, function, &owner_name)?.binding == Some(Binding::Weak);
         let instantiated = self.graph.lower_function_instantiated(function);
-        let owner_name = if instantiated || weak && self.graph.lower_function_local_class(function)
-        {
-            let metadata = self.metadata(program, function, &owner_name)?;
-            let object = metadata.object.ok_or(crate::sema::Error::Invariant(
-                "instantiated function without object name",
-            ))?;
-            let mut name = String::from("function_symbol_");
-            for byte in program.names.get(object).bytes() {
-                write!(name, "{byte:02x}")
-                    .map_err(|_| Error::Missing("static owner formatting"))?;
-            }
-            name
-        } else {
-            owner_name
-        };
+        let owner_name =
+            if instantiated || weak && self.graph.lower_function_local_class(function)? {
+                let metadata = self.metadata(program, function, &owner_name)?;
+                let object = metadata.object.ok_or(crate::sema::Error::Invariant(
+                    "instantiated function without object name",
+                ))?;
+                let mut name = String::from("function_symbol_");
+                for byte in program.names.get(object).bytes() {
+                    write!(name, "{byte:02x}")
+                        .map_err(|_| Error::Missing("static owner formatting"))?;
+                }
+                name
+            } else {
+                owner_name
+            };
         if facts.name.is_none() {
             let spelling = format!("__local_static__{owner_name}__decl{ordinal}__object");
             let object = self.table.allocate(program, &spelling, None, !weak)?;
@@ -2199,7 +2199,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if self.graph.lower_is_closure_invoker(entity) {
             metadata.flags |= 4;
         }
-        if self.graph.lower_function_local_class(entity) {
+        if self.graph.lower_function_local_class(entity)? {
             metadata.flags |= 2;
         }
         if let Some(builtin) = facts.builtin {
@@ -2429,7 +2429,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 0
             } | if facts
                 .object
-                .is_some_and(|class| self.graph.lower_class_no_linkage(class))
+                .map(|class| self.graph.lower_class_no_linkage(class))
+                .transpose()?
+                .unwrap_or(false)
             {
                 2
             } else {

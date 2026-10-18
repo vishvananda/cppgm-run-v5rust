@@ -24,7 +24,7 @@ impl Names {
         abi: &mut AbiGraph,
         scope: ScopeId,
     ) -> Result<Option<NodeId>, Error> {
-        let Some((class, _, _)) = graph.lower_anonymous_scope(scope) else {
+        let Some((class, _, _)) = graph.lower_anonymous_scope(scope)? else {
             return Ok(None);
         };
         Ok(Some(self.terminal(graph, abi, class)?))
@@ -35,7 +35,7 @@ impl Names {
         abi: &mut AbiGraph,
         entity: EntityId,
     ) -> Result<NodeId, Error> {
-        let context = match graph.lower_unnamed_numbering(entity) {
+        let context = match graph.lower_unnamed_numbering(entity)? {
             UnnamedNumbering::Members(home) => {
                 if !self.numbered.contains_key(&entity) {
                     let mut next = 0u32;

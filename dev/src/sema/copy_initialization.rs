@@ -79,7 +79,7 @@ impl super::graph::Graph {
             class,
             moving: kind == RefKind::Rvalue,
             assignment: entity.assignment_kind.is_some(),
-            locality: if self.lower_entity_unit_local(class) {
+            locality: if self.lower_entity_unit_local(class)? {
                 super::lowering::Locality::Unit
             } else {
                 super::lowering::Locality::External

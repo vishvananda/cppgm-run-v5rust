@@ -99,42 +99,42 @@ impl Graph {
                     .is_some_and(|home| self.scope(home).kind == ScopeKind::Class)
     }
 
-    pub(crate) fn lower_visible_type(&self, class: EntityId) -> bool {
+    pub(crate) fn lower_visible_type(&self, class: EntityId) -> Result<bool, Error> {
         if let Some(function) = self
             .entity(class)
             .home
             .and_then(|home| self.lower_scope_function(home))
         {
-            return self.lower_inline_function(self.outermost_function(function));
+            return Ok(self.lower_inline_function(self.outermost_function(function)));
         }
-        !self.lower_entity_unit_local(class)
+        Ok(!self.lower_entity_unit_local(class)?)
     }
-    pub(super) fn lower_shared_local(&self, mut class: EntityId) -> bool {
+    pub(super) fn lower_shared_local(&self, mut class: EntityId) -> Result<bool, Error> {
         loop {
             let node = self.entity(class);
             if node.name.is_none() && self.closure_call(class).is_none()
                 || node.template_head.is_some()
             {
-                return false;
+                return Ok(false);
             }
             let Some(home) = node.home else {
-                return false;
+                return Ok(false);
             };
             if self.scope(home).kind == ScopeKind::Class {
                 let Some(owner) = self.scope(home).owner else {
-                    return false;
+                    return Ok(false);
                 };
                 class = owner;
                 continue;
             }
             let Some(function) = self.lower_local_scope(home) else {
-                return false;
+                return Ok(false);
             };
             let node = self.entity(function);
             if !self.lower_inline_function(function)
                 || node.function.is_none_or(|facts| facts.internal_linkage)
             {
-                return false;
+                return Ok(false);
             }
             if node
                 .function
@@ -142,19 +142,19 @@ impl Graph {
                 && let Some(ty) = node.ty
                 && let super::types::TypeKind::Function { ref parameters, .. } =
                     self.types.get(ty).kind
-                && parameters.iter().any(|&ty| self.lower_type_unit_local(ty))
+                && self.lower_types_unit_local(parameters)?
             {
-                return false;
+                return Ok(false);
             }
             let Some(owner) = node
                 .home
                 .filter(|&home| self.scope(home).kind == ScopeKind::Class)
                 .and_then(|home| self.scope(home).owner)
             else {
-                return true;
+                return Ok(true);
             };
-            if !self.lower_entity_unit_local(owner) {
-                return true;
+            if !self.lower_entity_unit_local(owner)? {
+                return Ok(true);
             }
             class = owner;
         }
@@ -166,14 +166,16 @@ impl Graph {
             .function
             .ok_or(Error::Invariant("function locality without function"))?;
         if facts.internal_linkage
-            || self.lower_function_arguments_unit_local(function)
+            || self.lower_function_arguments_unit_local(function)?
             || node
                 .home
                 .filter(|&home| self.scope(home).kind == ScopeKind::Class)
                 .and_then(|home| self.scope(home).owner)
-                .is_some_and(|class| {
-                    self.lower_entity_unit_local(class) && !self.lower_shared_local(class)
+                .map(|class| {
+                    Ok(self.lower_entity_unit_local(class)? && !self.lower_shared_local(class)?)
                 })
+                .transpose()?
+                .unwrap_or(false)
         {
             return Ok(true);
         }
@@ -191,7 +193,7 @@ impl Graph {
         else {
             return Err(Error::Invariant("function locality without signature"));
         };
-        if parameters.iter().any(|&ty| self.lower_type_unit_local(ty)) {
+        if self.lower_types_unit_local(parameters)? {
             return Ok(true);
         }
         let mut bare = result;
@@ -203,7 +205,7 @@ impl Graph {
         }
         if let super::types::TypeKind::Class(class) | super::types::TypeKind::Enum(class) =
             self.types.get(bare).kind
-            && (self.lower_shared_local(class)
+            && (self.lower_shared_local(class)?
                 || self
                     .entity(class)
                     .home
@@ -212,26 +214,44 @@ impl Graph {
         {
             return Ok(false);
         }
-        Ok(self.lower_type_unit_local(result))
+        self.lower_type_unit_local(result)
     }
 
-    pub(super) fn lower_function_arguments_unit_local(&self, function: EntityId) -> bool {
+    fn lower_types_unit_local(&self, types: &[super::types::TypeId]) -> Result<bool, Error> {
+        for &ty in types {
+            if self.lower_type_unit_local(ty)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    pub(super) fn lower_function_arguments_unit_local(
+        &self,
+        function: EntityId,
+    ) -> Result<bool, Error> {
         // symbol_lowering.cpp::argument_locality: only this specialization's
         // canonical arguments determine its argument locality.
         self.function_templates
             .arguments
             .get(&function)
-            .is_some_and(|arguments| arguments.iter().any(|&ty| self.lower_type_unit_local(ty)))
+            .map(|arguments| self.lower_types_unit_local(arguments))
+            .transpose()
+            .map(|local| local.unwrap_or(false))
     }
 
-    pub(crate) fn lower_class_no_linkage(&self, class: EntityId) -> bool {
-        self.entity(class).ty.is_some_and(|ty| {
-            self.lower_type_entity_locality(
-                ty,
-                Self::lower_entity_scope_no_linkage,
-                Self::lower_entity_scope_no_linkage,
-            )
-        })
+    pub(crate) fn lower_class_no_linkage(&self, class: EntityId) -> Result<bool, Error> {
+        self.entity(class)
+            .ty
+            .map(|ty| {
+                self.lower_type_entity_locality(
+                    ty,
+                    Self::lower_entity_scope_no_linkage,
+                    |graph, entity| Ok(graph.lower_entity_scope_no_linkage(entity)),
+                )
+            })
+            .transpose()
+            .map(|local| local.unwrap_or(false))
     }
     pub(super) fn lower_entity_scope_no_linkage(&self, mut class: EntityId) -> bool {
         loop {
@@ -250,14 +270,14 @@ impl Graph {
             class = owner;
         }
     }
-    pub(crate) fn lower_function_local_class(&self, function: EntityId) -> bool {
-        self.entity(function).home.is_some_and(|home| {
-            self.scope(home).kind == ScopeKind::Class
-                && self
-                    .scope(home)
-                    .owner
-                    .is_some_and(|owner| self.lower_class_no_linkage(owner))
-        })
+    pub(crate) fn lower_function_local_class(&self, function: EntityId) -> Result<bool, Error> {
+        self.entity(function)
+            .home
+            .filter(|&home| self.scope(home).kind == ScopeKind::Class)
+            .and_then(|home| self.scope(home).owner)
+            .map(|owner| self.lower_class_no_linkage(owner))
+            .transpose()
+            .map(|local| local.unwrap_or(false))
     }
     pub(crate) fn lower_unnamed_member_owner(&self, function: EntityId) -> Option<ScopeId> {
         let home = self.entity(function).home?;

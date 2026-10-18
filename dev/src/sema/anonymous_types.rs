@@ -137,35 +137,46 @@ impl Graph {
     pub(crate) fn lower_anonymous_scope(
         &self,
         scope: ScopeId,
-    ) -> Option<(EntityId, ast::TokenSpan, UnnamedNumbering)> {
+    ) -> Result<Option<(EntityId, ast::TokenSpan, UnnamedNumbering)>, Error> {
         let node = self.scope(scope);
         if node.kind != ScopeKind::Class || node.name.is_some() {
-            return None;
+            return Ok(None);
         }
-        let class = node.owner?;
-        let tokens = self.entity(class).anonymous_class?.label()?;
-        Some((class, tokens, self.lower_unnamed_numbering(class)))
+        let Some((class, tokens)) = node.owner.and_then(|class| {
+            self.entity(class)
+                .anonymous_class?
+                .label()
+                .map(|tokens| (class, tokens))
+        }) else {
+            return Ok(None);
+        };
+        Ok(Some((class, tokens, self.lower_unnamed_numbering(class)?)))
     }
-    pub(crate) fn lower_unnamed_numbering(&self, entity: EntityId) -> UnnamedNumbering {
+    pub(crate) fn lower_unnamed_numbering(
+        &self,
+        entity: EntityId,
+    ) -> Result<UnnamedNumbering, Error> {
         if let Some(home) = self.entity(entity).home {
             if self.scope(home).kind == ScopeKind::Class {
                 if self
                     .scope(home)
                     .owner
-                    .is_some_and(|owner| self.lower_visible_type(owner))
+                    .map(|owner| self.lower_visible_type(owner))
+                    .transpose()?
+                    .unwrap_or(false)
                 {
-                    return UnnamedNumbering::Members(home);
+                    return Ok(UnnamedNumbering::Members(home));
                 }
-                return UnnamedNumbering::Private(None);
+                return Ok(UnnamedNumbering::Private(None));
             }
-            if self.lower_visible_type(entity)
+            if self.lower_visible_type(entity)?
                 && let Some(ordinal) = self.unnamed_local_ordinal(entity)
             {
-                return UnnamedNumbering::Local(ordinal);
+                return Ok(UnnamedNumbering::Local(ordinal));
             }
-            return UnnamedNumbering::Private(self.lower_local_scope(home));
+            return Ok(UnnamedNumbering::Private(self.lower_local_scope(home)));
         }
-        UnnamedNumbering::Private(None)
+        Ok(UnnamedNumbering::Private(None))
     }
     pub(crate) fn lower_class_spelling(&self, class: EntityId) -> Result<ClassSpelling, Error> {
         let entity = self.entity(class);

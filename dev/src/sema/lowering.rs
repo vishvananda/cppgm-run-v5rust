@@ -507,8 +507,8 @@ impl Graph {
                 .ok_or(Error::Invariant("constructor without class scope"))?,
             ty: plan.callable_type,
             scope: None,
-            internal: self.lower_entity_unit_local(plan.class)
-                && !self.lower_shared_local(plan.class),
+            internal: self.lower_entity_unit_local(plan.class)?
+                && !self.lower_shared_local(plan.class)?,
             declared_linkage: DeclaredLinkage::External,
             c_linkage: false,
             emission: Emission::Demanded,
@@ -1016,13 +1016,13 @@ impl Graph {
             .function
             .map(|binding| self.binding(binding).entity))
     }
-    pub(super) fn lower_entity_unit_local(&self, entity: EntityId) -> bool {
+    pub(super) fn lower_entity_unit_local(&self, entity: EntityId) -> Result<bool, Error> {
         self.entity(entity).ty.map_or_else(
-            || self.lower_entity_scope_unit_local(entity),
+            || Ok(self.lower_entity_scope_unit_local(entity)),
             |ty| self.lower_type_unit_local(ty),
         )
     }
-    pub(super) fn lower_type_unit_local(&self, ty: TypeId) -> bool {
+    pub(super) fn lower_type_unit_local(&self, ty: TypeId) -> Result<bool, Error> {
         self.lower_type_entity_locality(
             ty,
             Self::lower_entity_scope_unit_local,
@@ -1033,8 +1033,8 @@ impl Graph {
         &self,
         mut ty: TypeId,
         is_local: fn(&Self, EntityId) -> bool,
-        address_is_local: fn(&Self, EntityId) -> bool,
-    ) -> bool {
+        address_is_local: fn(&Self, EntityId) -> Result<bool, Error>,
+    ) -> Result<bool, Error> {
         // Scalar/object and linear pointer shells need no scratch allocation.
         // Function components and class-template arguments share a DAG worklist.
         loop {
@@ -1050,18 +1050,18 @@ impl Graph {
                         }) =>
                 {
                     if is_local(self, entity) {
-                        return true;
+                        return Ok(true);
                     }
                     break;
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
-                    return is_local(self, entity);
+                    return Ok(is_local(self, entity));
                 }
                 TypeKind::Address { entity, .. } => {
                     return address_is_local(self, entity);
                 }
                 TypeKind::Function { .. } | TypeKind::Pack(_) => break,
-                _ => return false,
+                _ => return Ok(false),
             }
         }
         let mut work = vec![ty];
@@ -1082,11 +1082,11 @@ impl Graph {
                     work.extend(parameters);
                 }
                 TypeKind::Pack(elements) => work.extend(elements),
-                TypeKind::Address { entity, .. } if address_is_local(self, *entity) => {
-                    return true;
+                TypeKind::Address { entity, .. } if address_is_local(self, *entity)? => {
+                    return Ok(true);
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) if is_local(self, *entity) => {
-                    return true;
+                    return Ok(true);
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
                     if let Some(instance) = self.class_templates.instance(*entity) {
@@ -1103,7 +1103,7 @@ impl Graph {
                 _ => {}
             }
         }
-        false
+        Ok(false)
     }
     pub(super) fn lower_entity_scope_unit_local(&self, mut entity: EntityId) -> bool {
         use super::graph::ScopeKind;
@@ -1328,17 +1328,17 @@ impl Graph {
             ty: entity.ty.ok_or(Error::Invariant("variable without type"))?,
             internal: variable.internal_linkage,
             locality: if variable.internal_linkage
-                || entity.home.is_some_and(|home| {
-                    self.scope(home).kind == super::graph::ScopeKind::Class
-                        && self
-                            .scope(home)
-                            .owner
-                            .is_some_and(|class| self.lower_entity_unit_local(class))
-                })
+                || entity
+                    .home
+                    .filter(|&home| self.scope(home).kind == super::graph::ScopeKind::Class)
+                    .and_then(|home| self.scope(home).owner)
+                    .map(|class| self.lower_entity_unit_local(class))
+                    .transpose()?
+                    .unwrap_or(false)
                 || variable.language != super::linkage::Language::C
                     && self.lower_type_unit_local(
                         entity.ty.ok_or(Error::Invariant("variable without type"))?,
-                    ) {
+                    )? {
                 Locality::Unit
             } else {
                 Locality::External

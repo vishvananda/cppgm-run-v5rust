@@ -45,14 +45,12 @@ impl Graph {
         }
     }
 
-    pub(super) fn address_argument_unit_local(&self, entity: EntityId) -> bool {
+    pub(super) fn address_argument_unit_local(&self, entity: EntityId) -> Result<bool, Error> {
         let node = self.entity(entity);
-        node.function.is_some_and(|function| {
-            function.internal_linkage || self.lower_function_arguments_unit_local(entity)
-        }) || node
-            .variable
-            .is_some_and(|variable| variable.internal_linkage)
-            || self.lower_entity_unit_local(entity)
+        if node.function.is_some() {
+            return self.lower_function_unit_local(entity);
+        }
+        Ok(self.lower_variable(entity)?.locality == super::lowering::Locality::Unit)
     }
     pub(super) fn reference_argument_entity(&self, binding: EntityId) -> Option<EntityId> {
         let argument = self.constant_addresses.argument(binding)?;
@@ -242,8 +240,11 @@ impl Analyzer<'_> {
         while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
             named = inner;
         }
-        let address = matches!(self.tree.expressions.get(named).kind, ast::ExprKind::Unary { op, .. }
-            if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd));
+        // Only built-in & designates its operand. An overloaded operator is a
+        // call whose result must satisfy the constant null-pointer rule.
+        let address = self.graph.expression_facts.get(named)?.call.is_none()
+            && matches!(self.tree.expressions.get(named).kind, ast::ExprKind::Unary { op, .. }
+                if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd));
         if address
             && let ast::ExprKind::Unary { operand, .. } = self.tree.expressions.get(named).kind
         {
@@ -549,9 +550,9 @@ mod tests {
             .iter()
             .find(|(entity, _)| graph.entity(**entity).name == Some(f))
             .unwrap();
-        assert!(graph.lower_type_unit_local(arguments[0]));
+        assert!(graph.lower_type_unit_local(arguments[0]).unwrap());
         assert!(graph.lower_function_unit_local(instance).unwrap());
-        assert!(graph.address_argument_unit_local(instance));
+        assert!(graph.address_argument_unit_local(instance).unwrap());
     }
 
     #[test]
@@ -693,8 +694,8 @@ mod tests {
         let TypeKind::Class(class) = graph.types.get(alias(b"A")).kind else {
             panic!("class argument")
         };
-        assert!(graph.lower_entity_unit_local(class));
-        assert!(!graph.lower_class_no_linkage(class));
+        assert!(graph.lower_entity_unit_local(class).unwrap());
+        assert!(!graph.lower_class_no_linkage(class).unwrap());
         assert_ne!(alias(b"A"), alias(b"D"));
         let mut values = Vec::new();
         for name in [b"A", b"D", b"E", b"F"] {
