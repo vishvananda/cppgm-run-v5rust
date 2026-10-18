@@ -1218,8 +1218,20 @@ impl Analyzer<'_> {
                 }
                 TypeKind::Pointer(element)
                 | TypeKind::Expansion(element)
-                | TypeKind::Reference { element, .. }
-                | TypeKind::Array { element, .. } => work.push(*element),
+                | TypeKind::Reference { element, .. } => work.push(*element),
+                TypeKind::Array {
+                    element, operand, ..
+                } => {
+                    // Deducible includes a bound that directly names a
+                    // non-type parameter, even for a fixed element type.
+                    // Other bound expressions remain non-deduced contexts.
+                    if operand
+                        .is_some_and(|bound| self.named_bound_parameter(bound, depth).is_some())
+                    {
+                        return true;
+                    }
+                    work.push(*element);
+                }
                 TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
                 TypeKind::MemberPointer { owner, element } => work.extend([*owner, *element]),
                 TypeKind::Function {
