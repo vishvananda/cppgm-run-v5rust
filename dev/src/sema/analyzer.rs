@@ -76,6 +76,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) static_initializers:
         Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
+    pub(super) enclosing_bodies: Vec<super::graph::EntityId>,
+    pub(super) capture_frames: Box<super::captures::Frames>,
     pub(super) signature_object: Option<super::types::TypeId>,
     pub(super) default_argument_scope: Option<ScopeId>,
     pub(super) unevaluated: u32,
@@ -244,6 +246,8 @@ impl<'tree> Analyzer<'tree> {
             parenthesized_elements: std::collections::HashSet::new(),
             static_initializers: Vec::new(),
             body_context: None,
+            enclosing_bodies: Vec::new(),
+            capture_frames: Box::default(),
             signature_object: None,
             binary_spine: Vec::new(),
             operator_scratch: super::operator_resolution::OperatorScratch::default(),
@@ -776,6 +780,9 @@ impl<'tree> Analyzer<'tree> {
         self.template_depth = body.template_depth;
         self.class_depth = 0;
         let saved_context = self.body_context.take();
+        if let Some(context) = &saved_context {
+            self.enclosing_bodies.push(context.entity);
+        }
         if self.semantic() {
             let super::types::TypeKind::Function { result, .. } =
                 self.graph.types.get(body.ty).kind
@@ -796,6 +803,9 @@ impl<'tree> Analyzer<'tree> {
             }
         }
         let result = self.function_body_scopes(body);
+        if saved_context.is_some() {
+            self.enclosing_bodies.pop();
+        }
         self.body_context = saved_context;
         self.template_depth = saved;
         self.class_depth = saved_class_depth;

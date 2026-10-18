@@ -48,6 +48,8 @@ pub(crate) struct Lambda {
     pub capture_default: Option<CaptureDefault>,
     pub captures: List<LambdaCapture>,
     pub parameters: Option<ParameterClause>,
+    pub pattern_parameters: Option<ParameterClause>,
+    pub parameter_packs: List<(Option<NameId>, usize)>,
     pub is_mutable: bool,
     pub exception: Option<Qualifier>,
     pub trailing: Option<TypeId>,
@@ -636,6 +638,7 @@ pub(crate) struct StatementReading {
 pub(crate) struct Tree {
     pub lambdas: Store<Lambda>,
     pub captures: Lists<LambdaCapture>,
+    pub lambda_parameter_packs: Lists<(Option<NameId>, usize)>,
     pub declarations: Store<Declaration>,
     pub expressions: Store<Expression>,
     pub declarators: Store<Declarator>,
@@ -670,6 +673,7 @@ pub(crate) struct Tree {
 pub(crate) struct TreeMark {
     lambdas: usize,
     captures: ListMark,
+    lambda_parameter_packs: ListMark,
     declarations: usize,
     expressions: usize,
     declarators: usize,
@@ -763,6 +767,7 @@ impl Tree {
         TreeMark {
             lambdas: self.lambdas.mark(),
             captures: self.captures.mark(),
+            lambda_parameter_packs: self.lambda_parameter_packs.mark(),
             declarations: self.declarations.mark(),
             expressions: self.expressions.mark(),
             declarators: self.declarators.mark(),
@@ -797,6 +802,8 @@ impl Tree {
     pub(crate) fn rewind(&mut self, mark: &TreeMark) {
         self.lambdas.rewind(mark.lambdas);
         self.captures.rewind(mark.captures);
+        self.lambda_parameter_packs
+            .rewind(mark.lambda_parameter_packs);
         self.declarations.rewind(mark.declarations);
         self.expressions.rewind(mark.expressions);
         self.declarators.rewind(mark.declarators);

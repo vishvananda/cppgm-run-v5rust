@@ -104,13 +104,8 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let entity = self.graph.entity(body.entity);
-        // A captureless lambda has no enclosing `this` (5.1.2p7, p10).
-        if entity
-            .home
-            .and_then(|home| self.graph.scope(home).owner)
-            .is_some_and(|class| self.graph.closure_call(class) == Some(body.entity))
-        {
-            return Ok(None);
+        if let Some(frame) = self.capture_frames.get(body.entity) {
+            return Ok(frame.object_type());
         }
         if entity.function.is_some_and(|function| function.is_static) {
             return Ok(None);

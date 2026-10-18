@@ -73,6 +73,8 @@ impl Parser<'_> {
         captures: List<LambdaCapture>,
     ) -> Result<LambdaId, ParseError> {
         let mut lambda = Lambda {
+            pattern_parameters: None,
+            parameter_packs: List::default(),
             capture_default,
             captures,
             parameters: None,

@@ -70,6 +70,76 @@ enum Pattern {
 }
 
 impl Cloner<'_> {
+    pub(super) fn closure_captures(
+        &mut self,
+        list: List<ast::LambdaCapture>,
+    ) -> Result<List<ast::LambdaCapture>, ParseError> {
+        if self.expansion.is_none() {
+            return Ok(list);
+        }
+        let mut changes = false;
+        for index in 0..self.tree.captures.get(list).len() {
+            let capture = self.tree.captures.get(list)[index];
+            let (ast::CaptureKind::Copy(name) | ast::CaptureKind::Reference(name)) = capture.kind
+            else {
+                continue;
+            };
+            if self.collecting() {
+                if !capture.pack {
+                    self.pack_name(name);
+                }
+            } else if let Some(state) = &self.expansion {
+                changes |= if capture.pack {
+                    matches!(state.length(name), Some(Length::Bound(_)))
+                } else {
+                    state.renames.contains_key(&name)
+                };
+            }
+        }
+        if !changes {
+            return Ok(list);
+        }
+        let start = self.tree.captures.begin();
+        for index in 0..self.tree.captures.get(list).len() {
+            let capture = self.tree.captures.get(list)[index];
+            let (ast::CaptureKind::Copy(name) | ast::CaptureKind::Reference(name)) = capture.kind
+            else {
+                self.tree.captures.push(capture);
+                continue;
+            };
+            let state = self
+                .expansion
+                .as_mut()
+                .ok_or(ParseError::Invariant("capture copy context"))?;
+            let length = if capture.pack {
+                state.length(name)
+            } else {
+                None
+            };
+            let make = |name, pack| ast::LambdaCapture {
+                kind: if matches!(capture.kind, ast::CaptureKind::Reference(_)) {
+                    ast::CaptureKind::Reference(name)
+                } else {
+                    ast::CaptureKind::Copy(name)
+                },
+                pack,
+            };
+            if let Some(Length::Bound(count)) = length {
+                for element in 0..count {
+                    let name = state.expander.element_name(name, element)?;
+                    self.tree.captures.push(make(name, false));
+                }
+            } else {
+                let name = if capture.pack {
+                    name
+                } else {
+                    state.renames.get(&name).copied().unwrap_or(name)
+                };
+                self.tree.captures.push(make(name, capture.pack));
+            }
+        }
+        self.tree.captures.finish(start)
+    }
     pub(crate) fn select_pack(&mut self, name: NameId, index: usize) -> Result<(), ParseError> {
         if let Some(state) = self.expansion.as_mut() {
             state

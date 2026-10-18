@@ -33,6 +33,7 @@ enum Item {
     ObjectReceiver(ast::ExprId, BindingId, Option<ast::ExprId>),
     ArrowCall(ast::ExprId, usize),
     This(TypeId),
+    QualifiedThis(TypeId, super::types::Cv),
     Constructor(super::construction::ConstructorId),
     DemandedFunction(BindingId),
     Line(&'static str),
@@ -94,6 +95,12 @@ impl Graph {
                 }
                 Item::ArrowCall(base, index) => printer.arrow_call(base, index, depth)?,
                 Item::This(ty) => printer.this_pointer(ty, depth)?,
+                Item::QualifiedThis(ty, cv) => {
+                    printer.indent(depth)?;
+                    printer.output.write_all(b"id-expression prvalue ")?;
+                    printer.object_pointer(ty, cv)?;
+                    writeln!(printer.output, " this")?;
+                }
                 Item::Constructor(id) => printer.constructor_definition(id, depth)?,
                 Item::DemandedFunction(binding) => {
                     let binding = printer
@@ -657,7 +664,14 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         match object.source {
             super::expression_facts::ObjectSource::Implicit => {
-                self.this_pointer(object.ty, at)?;
+                if let Item::QualifiedThis(ty, cv) = self.implicit_this(callee, object.ty) {
+                    self.indent(at)?;
+                    self.output.write_all(b"id-expression prvalue ")?;
+                    self.object_pointer(ty, cv)?;
+                    writeln!(self.output, " this")?;
+                } else {
+                    self.this_pointer(object.ty, at)?;
+                }
             }
             super::expression_facts::ObjectSource::Explicit { expression, arrow } => {
                 if !arrow {
@@ -682,6 +696,18 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .write_all(b"id-expression prvalue pointer to ")?;
         self.ty(object)?;
         writeln!(self.output, " this")
+    }
+    fn implicit_this(&self, id: ast::ExprId, object: TypeId) -> Item {
+        let qualified = self
+            .graph
+            .expression_scopes
+            .get(self.graph.expression_facts.root(id).index())
+            .copied()
+            .flatten()
+            .and_then(|scope| self.graph.lower_scope_function(scope))
+            .and_then(|function| self.graph.function_origin(function).ok())
+            .and_then(|binding| self.function_object(binding));
+        qualified.map_or(Item::This(object), |(ty, cv)| Item::QualifiedThis(ty, cv))
     }
     fn function_type(&mut self, id: BindingId) -> io::Result<()> {
         let ty = self
@@ -1181,6 +1207,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     }
     fn id_node(
         &mut self,
+        id: ast::ExprId,
         name: ast::Name,
         facts: super::expression_facts::ExprFacts,
         depth: usize,
@@ -1206,7 +1233,8 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .member
                 .ok_or_else(|| io::Error::other("implicit member without designation"))?;
             self.name(self.graph.binding(binding).name)?;
-            self.work.push((Item::This(object.ty), depth + 1));
+            self.work
+                .push((self.implicit_this(id, object.ty), depth + 1));
         } else {
             crate::syntax::write_expression_name(self.tree, self.cursor, name, self.output)?;
         }
@@ -1539,7 +1567,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.ty(ty)?;
         }
         match node.kind {
-            ExprKind::Id(name) => self.id_node(name, facts, depth)?,
+            ExprKind::Id(name) => self.id_node(id, name, facts, depth)?,
             ExprKind::Literal(literal) => {
                 self.output.write_all(b" ")?;
                 self.output

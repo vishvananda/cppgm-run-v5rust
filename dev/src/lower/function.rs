@@ -36,6 +36,8 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub aggregation: super::aggregate_cleanup::State,
     pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
+    pub captured_members: HashMap<EntityId, EntityId>,
+    pub closure_this: Option<EntityId>,
     pub persistent_references: bool,
     pub static_temporaries: Option<Vec<super::shutdown::Finalizer>>,
     pub static_initializer: bool,
@@ -354,6 +356,20 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             aggregation: super::aggregate_cleanup::State::default(),
             entity,
             this_slot: None,
+            captured_members: entity
+                .and_then(|function| graph.lower_call_closure(function))
+                .map(|class| {
+                    graph
+                        .lower_closure_captures(class)
+                        .iter()
+                        .map(|capture| (capture.entity, capture.member))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            closure_this: entity
+                .and_then(|function| graph.lower_call_closure(function))
+                .and_then(|class| graph.lower_closure(class))
+                .and_then(|closure| closure.this_member),
             persistent_references: false,
             static_temporaries: None,
             static_initializer: false,
@@ -466,6 +482,21 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn object_pointer(&mut self, source: TypeId) -> Result<RValue, Error> {
+        let value = self.this_pointer(source)?;
+        if let Some(member) = self.closure_this {
+            let place = self.closure_field(value.value, member, source)?;
+            return self.emit(
+                I::Load(
+                    crate::lowir::model::Facts::memory(false, true),
+                    Type::Ptr,
+                    place,
+                ),
+                source,
+            );
+        }
+        Ok(value)
+    }
+    pub(super) fn this_pointer(&mut self, source: TypeId) -> Result<RValue, Error> {
         let slot = self
             .this_slot
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(

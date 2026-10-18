@@ -63,19 +63,12 @@ impl Analyzer<'_> {
                 return Ok(());
             }
         }
-        let lambda = self
-            .body_context
-            .as_ref()
-            .and_then(|body| self.graph.entity(body.entity).home)
-            .and_then(|home| self.graph.scope(home).owner)
-            .is_some_and(|class| self.graph.closure_call(class).is_some());
+        if self.capture_variable(binding.entity, location)? {
+            return Ok(());
+        }
         Err(Error::at(
             location,
-            if lambda {
-                "a lambda odr-uses an automatic variable it does not capture (5.1.2p11)"
-            } else {
-                "a local class odr-uses an automatic variable of an enclosing function (9.8p1)"
-            },
+            "a local class odr-uses an automatic variable of an enclosing function (9.8p1)",
         ))
     }
 
@@ -95,7 +88,7 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn odr_use_constants(
-        &self,
+        &mut self,
         id: ast::ExprId,
         conversion: Option<Conversion>,
     ) -> Result<(), Error> {
@@ -113,7 +106,7 @@ impl Analyzer<'_> {
         self.odr_use_constant_operand(id)
     }
 
-    fn odr_use_constant_operand(&self, id: ast::ExprId) -> Result<(), Error> {
+    fn odr_use_constant_operand(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(id)?;
@@ -134,10 +127,23 @@ impl Analyzer<'_> {
             {
                 self.odr_use_constant_operand(right)
             }
-            ExprKind::Id(_) if facts.fold_style == FoldStyle::EnclosingLocal => Err(Error::at(
-                self.tree.expressions.get(id).location,
-                "a local class odr-uses an automatic variable of an enclosing function (9.8p1)",
-            )),
+            ExprKind::Id(name) if facts.fold_style == FoldStyle::EnclosingLocal => {
+                let binding = self
+                    .graph
+                    .resolved_name(name)
+                    .ok_or(Error::Invariant("constant local binding"))?;
+                if self.capture_variable(
+                    self.graph.binding(binding).entity,
+                    self.tree.expressions.get(id).location,
+                )? {
+                    Ok(())
+                } else {
+                    Err(Error::at(
+                        self.tree.expressions.get(id).location,
+                        "a local class odr-uses an automatic variable of an enclosing function (9.8p1)",
+                    ))
+                }
+            }
             _ => Ok(()),
         }
     }

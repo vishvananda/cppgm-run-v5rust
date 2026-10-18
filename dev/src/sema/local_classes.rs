@@ -132,6 +132,7 @@ impl Graph {
             };
             let node = self.entity(function);
             if !self.lower_inline_function(function)
+                || self.lower_function_instantiated(function)
                 || node.function.is_none_or(|facts| facts.internal_linkage)
             {
                 return Ok(false);

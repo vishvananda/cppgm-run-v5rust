@@ -388,6 +388,12 @@ impl Analyzer<'_> {
                 self.check_named_member_access(declaration, naming, class, scope, location)?;
             }
             if let Some(home_type) = self.member_function_owner(binding) {
+                if matches!(
+                    object.source,
+                    super::expression_facts::ObjectSource::Implicit
+                ) {
+                    self.capture_this(location)?;
+                }
                 let home = self
                     .graph
                     .class_of(home_type)

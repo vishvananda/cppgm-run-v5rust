@@ -15,6 +15,7 @@ mod builtin_operators;
 mod call_arguments;
 mod call_lookup;
 mod callable_objects;
+mod captures;
 mod class_casts;
 mod class_conditionals;
 mod class_templates;

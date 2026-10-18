@@ -19,6 +19,7 @@ mod bit_fields;
 mod class_conditionals;
 mod class_parameters;
 mod class_results;
+mod closures;
 mod conditional_values;
 mod conditions;
 mod constant_demands;

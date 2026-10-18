@@ -412,8 +412,20 @@ impl<'a> Cloner<'a> {
     }
     fn lambda(&mut self, id: super::ast::LambdaId) -> Result<super::ast::LambdaId, ParseError> {
         let mut node = *self.tree.lambdas.get(id);
+        node.captures = self.closure_captures(node.captures)?;
         let mark = self.shadow_mark();
+        let pack_mark = self.parameter_packs().len();
+        let pattern = node.parameters;
         node.parameters = self.optional(node.parameters, Self::parameters)?;
+        if self.parameter_packs().len() > pack_mark {
+            let packs = self.parameter_packs()[pack_mark..].to_vec();
+            node.pattern_parameters = pattern;
+            let start = self.tree.lambda_parameter_packs.begin();
+            for pack in packs {
+                self.tree.lambda_parameter_packs.push(pack);
+            }
+            node.parameter_packs = self.tree.lambda_parameter_packs.finish(start)?;
+        }
         if let Some(parameters) = node.parameters {
             for index in 0..self.tree.parameters.get(parameters.parameters).len() {
                 self.shadow_declarator(
@@ -433,6 +445,7 @@ impl<'a> Cloner<'a> {
             }
         };
         self.restore_shadows(mark);
+        self.restore_parameter_packs(pack_mark);
         self.tree.lambdas.add(node)
     }
     fn condition(&mut self, node: Condition) -> Result<Condition, ParseError> {

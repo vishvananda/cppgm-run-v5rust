@@ -156,6 +156,11 @@ impl Function<'_, '_, '_, '_> {
                     let (entity, offset) = self.graph.lower_member(id)?;
                     let source = self.graph.lower_expression(id)?.ty;
                     let root = self.object_pointer(source)?.value;
+                    let root = if self.closure_this.is_some() {
+                        self.base_projection(root, source, 0)?
+                    } else {
+                        root
+                    };
                     let root = self.member_base_projection(id, root, source)?;
                     let offset =
                         self.builder
@@ -181,7 +186,9 @@ impl Function<'_, '_, '_, '_> {
                     return self.reference_holder(place, self.graph.lower_entity_type(entity)?);
                 }
                 let entity = self.graph.lower_name(name)?;
-                if let Some(&place) = self.locals.get(&entity) {
+                if let Some(place) = self.captured_place(entity)? {
+                    Ok(place)
+                } else if let Some(&place) = self.locals.get(&entity) {
                     self.reference_holder(place, self.local_object_type(entity)?)
                 } else if !self.graph.lower_is_variable(entity) {
                     self.symbols.demand(entity);

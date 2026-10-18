@@ -24,14 +24,35 @@ pub(crate) struct Closure {
     deduces: bool,
     pub clause_token: u32,
     pub body_token: u32,
+    pub this_member: Option<EntityId>,
+    pub convertible: bool,
+}
+#[derive(Clone, Copy)]
+pub(crate) struct Capture {
+    pub entity: EntityId,
+    pub member: EntityId,
 }
 #[derive(Default)]
 pub(super) struct Closures {
-    records: HashMap<EntityId, Closure>,
+    pub(super) records: HashMap<EntityId, Closure>,
     numbers: HashMap<(Option<EntityId>, TypeId), u32>,
     invocations: HashMap<ast::ExprId, EntityId>,
+    pub(super) captures: HashMap<EntityId, Vec<Capture>>,
 }
 impl Graph {
+    pub(crate) fn lower_closure_captures(&self, class: EntityId) -> &[Capture] {
+        self.closures
+            .captures
+            .get(&class)
+            .map_or(&[], Vec::as_slice)
+    }
+    pub(crate) fn lower_call_closure(&self, function: EntityId) -> Option<EntityId> {
+        let class = self
+            .entity(function)
+            .home
+            .and_then(|home| self.scope(home).owner)?;
+        (self.closure_call(class) == Some(function)).then_some(class)
+    }
     pub(crate) fn lower_closure_invocation(&self, id: ast::ExprId) -> Option<EntityId> {
         self.closures
             .invocations
@@ -76,6 +97,9 @@ impl Analyzer<'_> {
         let Some(closure) = self.graph.lower_closure(class) else {
             return Ok(());
         };
+        if !closure.convertible {
+            return Ok(());
+        }
         let invoker = if let Some(invoker) = closure.invoker {
             invoker
         } else {
@@ -161,9 +185,6 @@ impl Analyzer<'_> {
             return self.new_expression_facts(facts.ty, ValueCategory::Prvalue);
         }
         let lambda = *self.tree.lambdas.get(lambda);
-        if lambda.capture_default.is_some() || !lambda.captures.is_empty() {
-            return Err(Error::Missing("lambda captures"));
-        }
         let ast::LambdaBody::Parsed(compound) = lambda.body else {
             return Err(Error::Invariant("unparsed lambda body"));
         };
@@ -226,6 +247,8 @@ impl Analyzer<'_> {
                 deduces: lambda.trailing.is_none(),
                 clause_token: lambda.clause_token,
                 body_token: lambda.body_token,
+                this_member: None,
+                convertible: lambda.capture_default.is_none() && lambda.captures.is_empty(),
             },
         );
         let mut info = super::declarators::DeclaratorInfo {
@@ -259,17 +282,45 @@ impl Analyzer<'_> {
                 handlers: None,
             }))
             .map_err(|_| Error::Limit("closure body limit"))?;
-        self.function_body(DeferredBody {
+        let frame = self.explicit_captures(class, call, lambda, scope, location)?;
+        let parent = if let Some(pattern) = lambda.pattern_parameters {
+            let packs = self
+                .tree
+                .lambda_parameter_packs
+                .get(lambda.parameter_packs)
+                .to_vec();
+            self.function_pack_scope(
+                scope,
+                pattern,
+                &packs,
+                self.graph
+                    .entity(call)
+                    .ty
+                    .ok_or(Error::Invariant("closure pack signature"))?,
+            )?
+        } else {
+            scope
+        };
+        self.capture_frames.push(frame)?;
+        let saved_unevaluated = self.unevaluated;
+        let saved_callee = self.callee_name.take();
+        self.unevaluated = 0;
+        let analyzed = self.function_body(DeferredBody {
             entity: call,
             name: None,
             ty,
             parameters,
             body,
-            parent: scope,
+            parent,
             print: class_scope,
             template_depth: 0,
             definition_head: None,
-        })?;
+        });
+        self.unevaluated = saved_unevaluated;
+        self.callee_name = saved_callee;
+        let frame = self.capture_frames.pop()?;
+        analyzed?;
+        self.finish_captures(frame)?;
         self.classify_class_copies(class)?;
         self.complete_destructor(class)?;
         let ty = self

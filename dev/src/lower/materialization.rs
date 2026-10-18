@@ -583,8 +583,7 @@ impl Function<'_, '_, '_, '_> {
                 self.materialize_class_qualified(source, ty, object, volatile)
             }
             None => match self.tree.expressions.get(id).kind {
-                // A captureless closure has no members to initialize (5.1.2p21).
-                ExprKind::Lambda(_) => Ok(()),
+                ExprKind::Lambda(_) => self.closure_object(ty, object),
                 _ if self.graph.lower_operator_call(id)? => {
                     self.operator_call_into(id, Some(object))?;
                     Ok(())

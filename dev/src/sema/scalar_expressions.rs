@@ -107,6 +107,7 @@ impl Analyzer<'_> {
                     Error::at(node.location, "`this` outside a non-static member function")
                 })?;
                 let pointer = self.graph.types.pointer(object)?;
+                self.capture_this(node.location)?;
                 self.new_expression_facts(pointer, V::Prvalue)?
             }
             ExprKind::Unary { op, operand } | ExprKind::Postfix { op, operand } => {
@@ -466,6 +467,7 @@ impl Analyzer<'_> {
                 .binding
                 .ok_or(Error::Invariant("implicit member without binding"))?;
             if let Some(object) = self.implicit_member_object(selected)? {
+                self.capture_this(self.tree.expressions.get(id).location)?;
                 facts.object = Some(object);
                 facts.member = Some(selected);
                 facts.member_naming = self.graph.class_of(object.ty);
