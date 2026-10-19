@@ -169,6 +169,50 @@ impl Analyzer<'_> {
         )
     }
 
+    pub(super) fn implicit_data_member(
+        &mut self,
+        id: ast::ExprId,
+        facts: &mut ExprFacts,
+        binding: BindingId,
+        qualifier: Option<ScopeId>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let location = self.tree.expressions.get(id).location;
+        let Some(object) = self.implicit_member_object(binding)? else {
+            return self.evaluated_error(location, "non-static data member used without an object");
+        };
+        self.capture_this(location)?;
+        facts.object = Some(object);
+        facts.member = Some(binding);
+        let class = self
+            .graph
+            .class_of(object.ty)
+            .ok_or(Error::Invariant("implicit object without class"))?;
+        let naming = qualifier
+            .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+            .and_then(|home| self.graph.scope(home).owner)
+            .unwrap_or(class);
+        self.check_member_subobject(binding, class, naming, scope, location)?;
+        facts.member_naming = Some(naming);
+        facts.member_path = self.data_member_path(binding, naming, location)?;
+        if class != naming {
+            facts.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
+        }
+        let member = self.graph.entity(self.graph.binding(binding).entity);
+        let ty = member.ty.ok_or(Error::Invariant("member without type"))?;
+        if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
+            let cv = self.graph.types.get(object.ty).cv;
+            let cv = Cv(cv.0
+                & if member.mutability == Mutability::Mutable {
+                    !Cv::CONST.0
+                } else {
+                    u8::MAX
+                });
+            facts.ty = self.graph.types.qualify(facts.ty, cv)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn data_member_expression(
         &mut self,
         id: ast::ExprId,
@@ -284,20 +328,7 @@ impl Analyzer<'_> {
             && (entity.data_member == Some(DataMemberKind::Instance)
                 || self.member_function_owner(binding).is_some())
         {
-            let home = entity
-                .home
-                .and_then(|home| self.graph.scope(home).owner)
-                .ok_or(Error::Invariant("member without class"))?;
-            if self.graph.base_count(class, naming) > 1 || self.graph.base_count(naming, home) > 1 {
-                return Err(Error::at(
-                    node.location,
-                    "a non-static member of an ambiguous base class subobject",
-                ));
-            }
-            if class != naming {
-                let path = self.graph.retain_base_path(class, naming)?;
-                self.check_base_path_access(path, scope, node.location)?;
-            }
+            self.check_member_subobject(binding, class, naming, scope, node.location)?;
         }
         if self.graph.binding(binding).kind == BindingKind::Function {
             self.require_named_result(id, found.functions.as_slice())?;
@@ -413,6 +444,38 @@ impl Analyzer<'_> {
             self.request_storage_layout(class, location)?;
         }
         Ok(Some(path))
+    }
+
+    // analyzer_member_pointers.cpp::member_subobject: uniqueness is required
+    // on each side of the naming class, not directly from object to member.
+    // A qualified name can select one of several copies of the member's home.
+    pub(super) fn check_member_subobject(
+        &mut self,
+        binding: BindingId,
+        class: EntityId,
+        naming: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let member = self.graph.binding(binding).entity;
+        let home = if self.graph.entity(member).data_member == Some(DataMemberKind::Instance) {
+            self.graph.member_holder(member, Some(naming))?
+        } else {
+            self.member_function_owner(binding)
+                .and_then(|ty| self.graph.class_of(ty))
+                .ok_or(Error::Invariant("nonstatic member without class"))?
+        };
+        if self.graph.base_count(class, naming) > 1 || self.graph.base_count(naming, home) > 1 {
+            return Err(Error::at(
+                location,
+                "a non-static member of an ambiguous base class subobject",
+            ));
+        }
+        if class != naming {
+            let path = self.graph.retain_base_path(class, naming)?;
+            self.check_base_path_access(path, scope, location)?;
+        }
+        Ok(())
     }
 
     pub(super) fn data_member_qualifier(

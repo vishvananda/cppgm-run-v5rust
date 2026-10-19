@@ -142,19 +142,35 @@ impl Analyzer<'_> {
                         return Ok(facts);
                     }
                 }
-                let named_value = if found.binding.is_some_and(|binding| {
-                    self.graph.binding(binding).kind != super::graph::BindingKind::Function
-                }) {
-                    Some(self.named_expression(named, &found, scope)?)
-                } else {
-                    None
-                };
                 let component = *self
                     .tree
                     .name_lists
                     .get(syntax_name.components)
                     .last()
                     .ok_or(Error::Invariant("empty call name"))?;
+                // Ordinary member callees cannot acquire ADL candidates. Form
+                // their implicit object before arguments, as binding_expression
+                // does; template-id calls keep their later selection boundary.
+                let member_callee = component.arguments.is_none()
+                    && found.binding.is_some_and(|binding| {
+                        let binding = self.graph.binding(binding);
+                        binding.kind == super::graph::BindingKind::Function
+                            && self.graph.entity(binding.entity).home.is_some_and(|home| {
+                                self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                            })
+                    });
+                let named_value = if member_callee {
+                    let saved = self.callee_name.replace(named);
+                    let result = self.named_expression(named, &found, scope);
+                    self.callee_name = saved;
+                    Some(result?)
+                } else if found.binding.is_some_and(|binding| {
+                    self.graph.binding(binding).kind != super::graph::BindingKind::Function
+                }) {
+                    Some(self.named_expression(named, &found, scope)?)
+                } else {
+                    None
+                };
                 let explicit = component
                     .arguments
                     .filter(|_| named_value.is_none())
@@ -216,7 +232,10 @@ impl Analyzer<'_> {
                 let facts = if let Some(facts) = named_value {
                     facts
                 } else {
-                    self.named_expression(named, &found, scope)?
+                    let saved = self.callee_name.replace(named);
+                    let result = self.named_expression(named, &found, scope);
+                    self.callee_name = saved;
+                    result?
                 };
                 self.publish_named_callee(callee, named, facts, scope)?;
                 facts
@@ -409,28 +428,26 @@ impl Analyzer<'_> {
                 } else {
                     location
                 };
-                if self.graph.base_count(class, naming) > 1
-                    || self.graph.base_count(naming, home) > 1
-                {
-                    return Err(Error::at(
-                        access_location,
-                        "a non-static member of an ambiguous base class subobject",
-                    ));
-                }
-                if class != naming {
-                    self.checked_base_path(class, naming, scope, access_location, true, false)?;
-                }
+                self.check_member_subobject(binding, class, naming, scope, access_location)?;
                 let conversion = self
                     .object_sequence(object, binding, false)?
                     .ok_or(Error::Invariant("chosen object conversion missing"))?;
                 let object_facts = ExprFacts::new(object.ty, object.category);
-                let path =
-                    self.conversion_base_path(object_facts, conversion, scope, location, false)?;
+                let path = if naming != class && naming != home {
+                    // The conversion describes the function's object parameter,
+                    // but its physical route goes through the written qualifier.
+                    None
+                } else {
+                    self.conversion_base_path(object_facts, conversion, scope, location, false)?
+                };
                 receiver.conversion = Some(conversion);
                 receiver.base_path = path;
                 if naming != class && naming != home {
                     receiver.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
                     receiver.member_path = Some(self.graph.retain_base_path(naming, home)?);
+                    if self.lowering() && self.unevaluated == 0 {
+                        self.request_storage_layout(class, location)?;
+                    }
                 }
             }
         } else {

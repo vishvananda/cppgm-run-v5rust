@@ -6,7 +6,7 @@ use super::{
     expression_facts::{ExprFacts, ValueCategory as V},
     graph::{BindingKind, ScopeId},
     lookup::Filter,
-    types::{Cv, Scalar, TypeId, TypeKind},
+    types::{Scalar, TypeId, TypeKind},
 };
 use crate::{
     lex::vocabulary::Keyword,
@@ -339,6 +339,7 @@ impl Analyzer<'_> {
                 ));
             }
             if found.functions.as_slice().len() == 1
+                && self.callee_name != Some(id)
                 && self
                     .graph
                     .entity(self.graph.binding(binding).entity)
@@ -371,6 +372,26 @@ impl Analyzer<'_> {
                         })
                         .and_then(|home| self.graph.scope(home).owner)
                         .or_else(|| self.graph.class_of(object.ty));
+                    // template_callee does not bind an implicit receiver until
+                    // template_id_call resolves it. A static specialization can
+                    // win even if lookup's first declaration is nonstatic.
+                    let template_callee = self.callee_name == Some(id)
+                        && matches!(self.tree.expressions.get(id).kind, ExprKind::Id(name)
+                            if self.tree.name_lists.get(self.tree.names.get(name).components)
+                                .last().is_some_and(|component| component.arguments.is_some()));
+                    if let (Some(class), Some(naming)) =
+                        (self.graph.class_of(object.ty), facts.member_naming)
+                        && self.member_function_owner(binding).is_some()
+                        && !template_callee
+                    {
+                        self.check_member_subobject(
+                            binding,
+                            class,
+                            naming,
+                            scope,
+                            self.tree.expressions.get(id).location,
+                        )?;
+                    }
                     facts.category = V::Prvalue;
                 }
             }
@@ -472,47 +493,7 @@ impl Analyzer<'_> {
             let selected = found
                 .binding
                 .ok_or(Error::Invariant("implicit member without binding"))?;
-            if let Some(object) = self.implicit_member_object(selected)? {
-                self.capture_this(self.tree.expressions.get(id).location)?;
-                facts.object = Some(object);
-                facts.member = Some(selected);
-                facts.member_naming = self.graph.class_of(object.ty);
-                if let Some(class) = facts.member_naming {
-                    facts.member_path = self.data_member_path(
-                        selected,
-                        class,
-                        self.tree.expressions.get(id).location,
-                    )?;
-                }
-                if !matches!(
-                    self.graph
-                        .types
-                        .get(
-                            self.graph
-                                .entity(binding.entity)
-                                .ty
-                                .ok_or(Error::Invariant("member without type"))?
-                        )
-                        .kind,
-                    TypeKind::Reference { .. }
-                ) {
-                    let cv = self.graph.types.get(object.ty).cv;
-                    let cv = Cv(cv.0
-                        & if self.graph.entity(binding.entity).mutability
-                            == super::graph::Mutability::Mutable
-                        {
-                            !Cv::CONST.0
-                        } else {
-                            u8::MAX
-                        });
-                    facts.ty = self.graph.types.qualify(ty, cv)?;
-                }
-            } else {
-                self.evaluated_error(
-                    self.tree.expressions.get(id).location,
-                    "non-static data member used without an object",
-                )?;
-            }
+            self.implicit_data_member(id, &mut facts, selected, found.qualifier, scope)?;
         }
         if facts.object.is_some() || facts.anonymous_member.is_some() {
             facts.field_identity = self.graph.entity(binding.entity).bit_field;

@@ -49,6 +49,9 @@ impl FunctionSets {
 }
 impl Analyzer<'_> {
     pub(super) fn member_function_owner(&self, binding: BindingId) -> Option<TypeId> {
+        if self.graph.binding(binding).kind != BindingKind::Function {
+            return None;
+        }
         let entity = self.graph.entity(self.graph.binding(binding).entity);
         let home = entity.home?;
         if self.graph.scope(home).kind != ScopeKind::Class
