@@ -585,11 +585,13 @@ impl Analyzer<'_> {
             return Ok(Some(Constant { bits: 0, ty }));
         }
         let bits = if let Some((right, equality)) = right {
-            let common = if self.member_pointer_expression(left) {
-                self.graph.expression_facts.get(left)?.ty
-            } else {
-                self.graph.expression_facts.get(right)?.ty
-            };
+            let common = self
+                .graph
+                .expression_facts
+                .get(left)?
+                .conversion
+                .ok_or(Error::Invariant("member comparison without conversion"))?
+                .result;
             let a = self.member_pointer_operand(left, common, scope)?;
             let b = self.member_pointer_operand(right, common, scope)?;
             if a.member.is_some()
