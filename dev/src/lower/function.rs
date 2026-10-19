@@ -568,18 +568,24 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn zero(&mut self, source: TypeId) -> Result<RValue, Error> {
         let ty = types::storage(self.graph, source)?;
+        let bits = if self.data_member_pointer(source) {
+            u64::MAX
+        } else {
+            0
+        };
         let value = if let Some(kind) = crate::lowir::literals::FloatKind::from_type(ty) {
             self.builder
                 .constant(crate::lowir::literals::Constant::Float(kind, 0))?
         } else {
-            self.builder.integer(0)?
+            self.builder
+                .integer(if bits == u64::MAX { u128::MAX } else { 0 })?
         };
         Ok(RValue {
             value,
             ty,
             source,
             literal: false,
-            bits: Some(0),
+            bits: Some(bits),
         })
     }
     pub(super) fn block_name(&mut self, prefix: &str) -> Result<String, Error> {

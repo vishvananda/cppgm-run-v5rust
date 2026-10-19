@@ -166,6 +166,27 @@ impl Analyzer<'_> {
                 || facts.null_literal && matches!(gk, TypeKind::Scalar(Scalar::Nullptr)))
         {
             C::NullPointer
+        } else if let (
+            TypeKind::MemberPointer {
+                owner: a,
+                element: ae,
+            },
+            TypeKind::MemberPointer {
+                owner: b,
+                element: _,
+            },
+        ) = (sk, gk)
+        {
+            let (a, b, ae) = (*a, *b, *ae);
+            let adjusted = self.graph.types.member_pointer(b, ae)?;
+            if self.derived_class_conversion(a, b)?
+                && (adjusted == goal || self.pointer_qualification(adjusted, goal)?)
+            {
+                qualification = adjusted != goal;
+                C::MemberToDerived
+            } else {
+                return Ok(None);
+            }
         } else if let (TypeKind::Pointer(a), TypeKind::Pointer(b)) = (sk, gk) {
             if derived_pointer && self.type_cv(*a).0 & !self.type_cv(*b).0 == 0 {
                 qualification = self.type_cv(*a) != self.type_cv(*b);
@@ -425,7 +446,7 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let mut facts = facts;
-        if conversion.second == C::DerivedToBase {
+        if matches!(conversion.second, C::DerivedToBase | C::MemberToDerived) {
             let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
                 .ok_or(Error::Invariant("base conversion without expression scope"))?;
             facts.base_path = self.conversion_base_path(

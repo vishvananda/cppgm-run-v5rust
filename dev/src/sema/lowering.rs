@@ -2134,6 +2134,9 @@ impl Graph {
         ))
     }
     pub(crate) fn lower_complete_object(&self, ty: TypeId) -> Result<bool, Error> {
+        if self.lower_member_pointer_type(ty).is_some() {
+            return Ok(true);
+        }
         Ok(match self.lower_type(ty)? {
             TypeView::Array { bound, .. } => bound != 0,
             TypeView::Class(entity) => self.entity(entity).complete,

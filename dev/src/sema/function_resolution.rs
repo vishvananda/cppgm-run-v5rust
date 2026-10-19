@@ -114,6 +114,12 @@ impl Analyzer<'_> {
             .binding
             .ok_or_else(|| Error::at(location, "undeclared name"))?;
         super::record(&mut self.graph.resolved_names, name.index(), binding);
+        if self.graph.scope(prefix).kind == ScopeKind::Class
+            && let Some(naming) = self.graph.scope(prefix).owner
+            && let Some(facts) = self.qualified_data_address(operand, binding, naming, scope)?
+        {
+            return Ok(Some(facts));
+        }
         if self.graph.binding(binding).kind != BindingKind::Function
             && let Some(naming) = self.graph.scope(prefix).owner
             && self.graph.scope(prefix).kind == ScopeKind::Class
@@ -477,6 +483,20 @@ impl Analyzer<'_> {
                     return Ok(Ordering::Greater);
                 }
                 if self.graph.is_base_of(a, b) {
+                    return Ok(Ordering::Less);
+                }
+            }
+        }
+        if a.second == C::MemberToDerived && b.second == C::MemberToDerived {
+            let owner = |ty| match self.graph.types.get(ty).kind {
+                TypeKind::MemberPointer { owner, .. } => self.graph.class_of(owner),
+                _ => None,
+            };
+            if let (Some(a), Some(b)) = (owner(a.result), owner(b.result)) {
+                if self.graph.is_base_of(a, b) {
+                    return Ok(Ordering::Greater);
+                }
+                if self.graph.is_base_of(b, a) {
                     return Ok(Ordering::Less);
                 }
             }

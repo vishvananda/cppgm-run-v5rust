@@ -57,6 +57,7 @@ mod literal_calls;
 mod local_storage;
 mod materialization;
 mod member_initialization;
+mod member_pointers;
 mod mutations;
 mod object_arrays;
 mod operator_calls;

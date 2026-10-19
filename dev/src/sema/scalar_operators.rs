@@ -210,6 +210,9 @@ impl Analyzer<'_> {
         right: ast::ExprId,
         scope: super::graph::ScopeId,
     ) -> Result<ExprFacts, Error> {
+        if matches!(op, P::DotStar | P::ArrowStar) {
+            return self.member_pointer_access(id, op, left, right, scope);
+        }
         self.check_resolved_function(left)?;
         if matches!(op, P::LogicalAnd | P::LogicalOr) {
             self.convert_bool(left)?;
@@ -340,8 +343,8 @@ impl Analyzer<'_> {
         b: ExprFacts,
         comparison: bool,
     ) -> Result<Option<TypeId>, Error> {
-        let at = self.decayed_type(a.ty)?;
-        let bt = self.decayed_type(b.ty)?;
+        let mut at = self.decayed_type(a.ty)?;
+        let mut bt = self.decayed_type(b.ty)?;
         let a_null = a.null_literal
             || matches!(
                 self.graph.types.get(at).kind,
@@ -394,6 +397,32 @@ impl Analyzer<'_> {
             self.graph.types.get(bt).kind,
             TypeKind::MemberPointer { .. }
         ) {
+            let TypeKind::MemberPointer {
+                owner: a,
+                element: ae,
+            } = self.graph.types.get(at).kind
+            else {
+                return Err(Error::Invariant("member composite source"));
+            };
+            let TypeKind::MemberPointer {
+                owner: b,
+                element: be,
+            } = self.graph.types.get(bt).kind
+            else {
+                return Err(Error::Invariant("member composite target"));
+            };
+            if a != b {
+                if self.derived_class_conversion(a, b)? {
+                    at = self.graph.types.member_pointer(b, ae)?;
+                } else if self.derived_class_conversion(b, a)? {
+                    bt = self.graph.types.member_pointer(a, be)?;
+                } else {
+                    return Ok(None);
+                }
+                if at == bt {
+                    return Ok(Some(at));
+                }
+            }
             if self.pointer_qualification(at, bt)? {
                 return Ok(Some(bt));
             }

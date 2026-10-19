@@ -15,6 +15,15 @@ pub(super) struct ClassStorage {
     pub value_zero: bool,
 }
 pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
+    if let Some((_, element)) = graph.lower_member_pointer_type(ty) {
+        return Ok(
+            if matches!(graph.lower_type(element)?, TypeView::Function { .. }) {
+                Type::I128
+            } else {
+                Type::I64
+            },
+        );
+    }
     Ok(match graph.lower_type(ty)? {
         TypeView::Scalar(scalar) => match scalar {
             Scalar::Void => Type::Void,

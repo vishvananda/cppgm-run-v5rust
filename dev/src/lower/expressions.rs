@@ -27,6 +27,9 @@ impl Function<'_, '_, '_, '_> {
             }
             return self.convert(value, target, context);
         }
+        if let Some(value) = self.converted_member_address(id)? {
+            return Ok(value);
+        }
         let value = self.expression(id, context)?;
         self.apply_conversion(id, value, context)
     }
@@ -40,6 +43,12 @@ impl Function<'_, '_, '_, '_> {
         // A converted immediate is not necessarily a literal written at this
         // use. C++ tests the original expression when deciding widening folds.
         value.literal = self.written_literal(id)?;
+        if facts.null_pointer
+            && let Some(target) = facts.target
+            && self.graph.lower_member_pointer_type(target).is_some()
+        {
+            return self.zero(target);
+        }
         if facts.null_pointer
             && value.bits.is_some()
             && !matches!(
@@ -61,6 +70,9 @@ impl Function<'_, '_, '_, '_> {
             });
         }
         if let Some(target) = facts.target {
+            if let Some(adjustment) = self.graph.lower_member_pointer_conversion(id)? {
+                return self.convert_member_pointer(value, target, adjustment);
+            }
             if context != Context::Cast
                 && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
             {
@@ -326,6 +338,9 @@ impl Function<'_, '_, '_, '_> {
                     return self.zero(source);
                 }
                 let value = self.operand(operand, Context::Cast)?;
+                if let Some(adjustment) = self.graph.lower_member_pointer_cast(id)? {
+                    return self.convert_member_pointer(value, source, adjustment);
+                }
                 if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)?
                     && (delta != 0 || project_zero)
                 {
@@ -383,6 +398,10 @@ impl Function<'_, '_, '_, '_> {
         if matches!(op, P::LogicalAnd | P::LogicalOr) {
             return self.logical_value(id);
         }
+        if matches!(op, P::DotStar | P::ArrowStar) {
+            let place = self.member_pointer_place(id, left, right, op == P::ArrowStar)?;
+            return self.read_place(place, source);
+        }
         if matches!(op, P::Add | P::Subtract)
             && (self
                 .pointer_element(self.graph.lower_builtin_operand_type(left)?)?
@@ -406,7 +425,9 @@ impl Function<'_, '_, '_, '_> {
         };
         // The frozen comparison owner adjusts a base pointer before evaluating
         // the right operand; ordinary scalar conversions follow both evaluations.
-        let early_base = comparison && self.graph.lower_base_conversion_offset(left)?.is_some();
+        let early_base = comparison
+            && (self.graph.lower_base_conversion_offset(left)?.is_some()
+                || self.graph.lower_member_pointer_conversion(left)?.is_some());
         let a = self.expression(left, context)?;
         let a = if early_base {
             self.apply_conversion(left, a, context)?
@@ -531,6 +552,10 @@ impl Function<'_, '_, '_, '_> {
                 return self.read_place(place, source);
             }
             Some(P::BitAnd) => {
+                if let Some(offset) = self.graph.lower_data_member_address(id)? {
+                    let offset = self.builder.integer(u128::from(offset))?;
+                    return self.emit(I::Const(Type::I64, offset), source);
+                }
                 let place = self.scalar_place(operand)?;
                 if matches!(
                     place,
@@ -566,11 +591,17 @@ impl Function<'_, '_, '_, '_> {
                 self.emit(I::Unary(Unary::BitNot, value.ty, value.value), source)
             }
             Some(P::LogicalNot) => {
-                let zero = self.zero(value.source)?;
-                self.emit(
-                    I::Compare(Compare::Eq, value.ty, value.value, zero.value),
-                    source,
-                )
+                let value = if self.data_member_pointer(value.source) {
+                    self.member_pointer_truth(value)?
+                } else {
+                    value
+                };
+                let zero = if self.data_member_pointer(value.source) {
+                    self.builder.integer(0)?
+                } else {
+                    self.zero(value.source)?.value
+                };
+                self.emit(I::Compare(Compare::Eq, value.ty, value.value, zero), source)
             }
             _ => Err(Error::Missing("address and increment expression lowering")),
         }

@@ -220,6 +220,28 @@ impl Analyzer<'_> {
         location: SourceOffset,
         access: bool,
     ) -> Result<Option<BasePathId>, Error> {
+        if conversion.second == super::expression_facts::ValueConversion::MemberToDerived {
+            let TypeKind::MemberPointer { owner: base, .. } = self.graph.types.get(facts.ty).kind
+            else {
+                return Err(Error::Invariant("member conversion source"));
+            };
+            let TypeKind::MemberPointer { owner: derived, .. } =
+                self.graph.types.get(conversion.result).kind
+            else {
+                return Err(Error::Invariant("member conversion result"));
+            };
+            let base = self
+                .graph
+                .class_of(base)
+                .ok_or(Error::Invariant("member conversion base"))?;
+            let derived = self
+                .graph
+                .class_of(derived)
+                .ok_or(Error::Invariant("member conversion derived"))?;
+            return self
+                .checked_member_pointer_path(derived, base, scope, location, access, false)
+                .map(Some);
+        }
         if conversion.second != super::expression_facts::ValueConversion::DerivedToBase {
             return Ok(None);
         }
@@ -266,6 +288,40 @@ impl Analyzer<'_> {
                     "a cast from an ambiguous base class to its derived class"
                 } else {
                     "conversion to an ambiguous base class"
+                },
+            ));
+        }
+        let path = self.graph.retain_base_path(derived, base)?;
+        if access {
+            self.check_base_path_access(path, scope, location)?;
+        }
+        if self.lowering() && self.unevaluated == 0 {
+            self.request_storage_layout(derived, location)?;
+        }
+        Ok(path)
+    }
+
+    pub(super) fn checked_member_pointer_path(
+        &mut self,
+        derived: EntityId,
+        base: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+        access: bool,
+        reverse: bool,
+    ) -> Result<BasePathId, Error> {
+        let query = self.graph.base_query(derived, base);
+        let ambiguous = query.count(derived) > 1;
+        let virtual_base = query.paths[&derived].through_virtual;
+        if ambiguous || virtual_base {
+            return Err(Error::at(
+                location,
+                if reverse {
+                    "a cast to a pointer to member of an ambiguous or virtual base class"
+                } else if ambiguous {
+                    "conversion to an ambiguous base class"
+                } else {
+                    "a pointer to member of a virtual base class converted to a derived class's"
                 },
             ));
         }

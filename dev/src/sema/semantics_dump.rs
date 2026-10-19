@@ -1237,6 +1237,16 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.name(self.graph.binding(binding).name)?;
             self.work
                 .push((self.implicit_this(id, object.ty), depth + 1));
+        } else if let Some(binding) = facts.member
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .data_member
+                == Some(super::graph::DataMemberKind::Instance)
+        {
+            // A qualified data-member address retains its selected declaration
+            // without an object; the oracle prints that declaration's own name.
+            self.name(self.graph.binding(binding).name)?;
         } else {
             crate::syntax::write_expression_name(self.tree, self.cursor, name, self.output)?;
         }

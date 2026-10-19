@@ -57,6 +57,18 @@ impl Function<'_, '_, '_, '_> {
                 false,
             );
         }
+        if let ExprKind::Binary {
+            op, left, right, ..
+        } = self.tree.expressions.get(id).kind
+            && matches!(op.token.as_punctuator(), Some(P::DotStar | P::ArrowStar))
+        {
+            return self.member_pointer_place(
+                id,
+                left,
+                right,
+                op.token.as_punctuator() == Some(P::ArrowStar),
+            );
+        }
         self.designated_place(id)
     }
     pub(super) fn designated_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {

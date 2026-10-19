@@ -48,6 +48,7 @@ pub(super) enum ValueConversion {
     NullPointer,
     Pointer,
     DerivedToBase,
+    MemberToDerived,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ConversionRank {

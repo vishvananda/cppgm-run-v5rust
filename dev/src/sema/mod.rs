@@ -38,6 +38,7 @@ mod conversion_templates;
 mod copy_construction;
 mod copy_initialization;
 mod copy_properties;
+mod data_member_pointers;
 mod data_members;
 mod declaration_access;
 mod declarations;

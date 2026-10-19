@@ -64,6 +64,11 @@ impl Function<'_, '_, '_, '_> {
             return Ok(value);
         }
         if types::boolean(self.graph, target)? {
+            if self.data_member_pointer(value.source) {
+                let truth = self.member_pointer_truth(value)?;
+                let zero = self.builder.integer(0)?;
+                return self.emit(I::Compare(Compare::Ne, truth.ty, truth.value, zero), target);
+            }
             if types::boolean(self.graph, value.source)? {
                 return Ok(value);
             }

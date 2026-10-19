@@ -194,28 +194,12 @@ impl Analyzer<'_> {
                 self.graph.types.get(goal).kind,
                 TypeKind::MemberPointer { .. }
             )
+            && let Some(facts) =
+                self.member_pointer_cast(id, operand, source, goal, scope, c_style)?
         {
-            if let Some(mut conversion) = self.standard_conversion(source, goal, true)? {
-                conversion.initialization = false;
-                let mut facts = source;
-                facts.conversion = Some(conversion);
-                self.graph.expression_facts.set(operand, facts);
-                let mut result = self.new_expression_facts(goal, V::Prvalue)?;
-                result.reference_cast = Some(goal);
-                return Ok(result);
-            }
-            if !c_style
-                || !matches!(
-                    self.graph.types.get(from).kind,
-                    TypeKind::MemberPointer { .. }
-                )
-            {
-                return Err(Error::at(
-                    self.tree.expressions.get(id).location,
-                    "invalid conversion to a pointer to member",
-                ));
-            }
+            return Ok(facts);
         }
+
         if static_kind && let Some(mut conversion) = self.standard_conversion(source, goal, true)? {
             conversion.initialization = false;
             let mut facts = source;
