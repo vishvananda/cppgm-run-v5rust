@@ -84,6 +84,15 @@ impl Analyzer<'_> {
                 g -= 1;
                 l -= 1;
             }
+            if label_chain[..l]
+                .iter()
+                .any(|&scope| self.graph.scope(scope).entry == super::graph::ScopeEntry::Exception)
+            {
+                return Err(Error::at(
+                    jump.location,
+                    "goto into a try block, handler (15p2) or statement expression",
+                ));
+            }
             for i in (0..label_chain.len()).rev() {
                 let at_label = if i == 0 {
                     label.initialized

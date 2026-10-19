@@ -42,16 +42,29 @@ impl Analyzer<'_> {
         let element = self
             .object_pointer(ty)
             .ok_or(Error::Invariant("nonobject pointer"))?;
+        self.complete_pointee(element, self.tree.expressions.get(id).location)
+    }
+    pub(super) fn complete_pointee(
+        &mut self,
+        element: TypeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
         if matches!(
             self.graph.types.get(element).kind,
             TypeKind::Scalar(Scalar::Void) | TypeKind::Array { bound: 0, .. }
         ) {
-            return Err(self.operator_error(id, "arithmetic on a pointer to an incomplete type"));
+            return Err(Error::at(
+                location,
+                "arithmetic on a pointer to an incomplete type",
+            ));
         }
         if let Some(class) = self.graph.class_of(element)
             && !self.complete_class(class)?
         {
-            return Err(self.operator_error(id, "arithmetic on a pointer to an incomplete class"));
+            return Err(Error::at(
+                location,
+                "arithmetic on a pointer to an incomplete class",
+            ));
         }
         Ok(())
     }
@@ -639,6 +652,43 @@ impl Analyzer<'_> {
             TypeKind::Scalar(Scalar::Void)
         );
         if va || vb {
+            let throws = operands.map(|operand| {
+                matches!(
+                    self.tree
+                        .expressions
+                        .get(self.graph.expression_facts.root(operand))
+                        .kind,
+                    ast::ExprKind::Throw(_)
+                )
+            });
+            if throws[0] != throws[1] && !(if throws[0] { vb } else { va }) {
+                let other = usize::from(throws[0]);
+                let operand = operands[other];
+                let facts = facts[other];
+                if facts.category != V::Prvalue
+                    && !matches!(
+                        self.graph.types.get(facts.ty).kind,
+                        TypeKind::Array { .. } | TypeKind::Function { .. }
+                    )
+                {
+                    let mut result = self.new_expression_facts(facts.ty, facts.category)?;
+                    result.set_bit_field(facts.is_bit_field());
+                    return Ok(result);
+                }
+                let ty = self.decayed_type(facts.ty)?;
+                if matches!(self.graph.types.get(ty).kind, TypeKind::Class(_)) {
+                    self.record_class_copy(
+                        operand,
+                        ty,
+                        scope,
+                        super::copy_initialization::CopyUse::Value { in_place: true },
+                        self.tree.expressions.get(operand).location,
+                    )?;
+                } else {
+                    self.convert_operand_scalar(operand, ty, false)?;
+                }
+                return self.new_expression_facts(ty, V::Prvalue);
+            }
             if va && vb {
                 return self.new_expression_facts(at, V::Prvalue);
             }

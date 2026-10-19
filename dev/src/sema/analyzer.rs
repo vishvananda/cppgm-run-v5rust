@@ -948,7 +948,19 @@ impl<'tree> Analyzer<'tree> {
         }
         self.substatement(parsed.compound, scope)?;
         if let Some(handlers) = parsed.handlers {
-            self.handlers(handlers, scope)?;
+            let constructor = self
+                .graph
+                .entity(body.entity)
+                .member_function
+                .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor);
+            if let Some(context) = self.body_context.as_mut() {
+                context.constructor_handlers = constructor;
+            }
+            let result = self.handlers(handlers, scope);
+            if let Some(context) = self.body_context.as_mut() {
+                context.constructor_handlers = false;
+            }
+            result?;
         }
         if self.semantic() {
             self.check_gotos()?;

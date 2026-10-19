@@ -57,7 +57,6 @@ impl Analyzer<'_> {
     }
     fn statement_scoped(&mut self, id: ast::StmtId, scope: ScopeId) -> Result<(), Error> {
         self.check_stack()?;
-        self.reject_extended_statement(id)?;
         if self.semantic()
             && matches!(
                 self.tree.statements.get(id).kind,
@@ -71,6 +70,12 @@ impl Analyzer<'_> {
             StmtKind::Declaration(decl) => self.declaration(decl, scope),
             StmtKind::Return(operand) if self.semantic() && self.template_depth == 0 => {
                 self.semantic_return(id, operand, scope)
+            }
+            StmtKind::Throw(operand) if self.semantic() && self.template_depth == 0 => {
+                if let Some(operand) = operand {
+                    self.throw_operand(operand, scope, self.tree.statements.get(id).location)?;
+                }
+                Ok(())
             }
             StmtKind::Expression(operand)
             | StmtKind::Return(operand)
@@ -170,10 +175,7 @@ impl Analyzer<'_> {
                 range,
                 body,
             } => self.range_for(id, specifiers, declarator, range, body, scope),
-            StmtKind::Try { body, handlers } => {
-                self.statement(body, scope)?;
-                self.handlers(handlers, scope)
-            }
+            StmtKind::Try { body, handlers } => self.try_statement(body, handlers, scope),
             StmtKind::Ambiguous {
                 name,
                 component,
@@ -256,9 +258,24 @@ impl Analyzer<'_> {
         scope: ScopeId,
         guarded: bool,
     ) -> Result<(), Error> {
+        self.compound_region(list, scope, guarded, false)
+    }
+
+    pub(super) fn compound_region(
+        &mut self,
+        list: List<ast::StmtId>,
+        scope: ScopeId,
+        guarded: bool,
+        handles: bool,
+    ) -> Result<(), Error> {
         self.check_stack()?;
         let block = self.block_scope(scope)?;
         self.graph.scope_mut(block).guarded = guarded;
+        self.graph.scope_mut(block).entry = if handles {
+            super::graph::ScopeEntry::Exception
+        } else {
+            super::graph::ScopeEntry::Ordinary
+        };
         let initialized = self.switch_initialized();
         let result = (|| {
             for syntax_index in 0..self.tree.stmt_lists.get(list).len() {
@@ -313,14 +330,23 @@ impl Analyzer<'_> {
             }
             catch_all = matches!(handler.exception, ast::ExceptionDeclaration::Ellipsis);
             let block = self.block_scope(scope)?;
+            self.graph.scope_mut(block).entry = super::graph::ScopeEntry::Exception;
             if let ast::ExceptionDeclaration::Typed {
                 specifiers,
                 declarator,
             } = handler.exception
             {
                 let specs = self.specifiers(specifiers, block, false)?;
+                if matches!(
+                    self.graph.types.get(specs.ty).kind,
+                    super::types::TypeKind::Auto
+                ) {
+                    return Err(Error::at(location, "exception declaration without a type"));
+                }
                 let info = self.declarator(declarator, specs.ty, block)?;
-                if let Some(name) = info.name {
+                if self.semantic() && self.template_depth == 0 && self.body_context.is_some() {
+                    self.exception_declaration(handler.body, &info, declarator, block, location)?;
+                } else if let Some(name) = info.name {
                     let entity = self
                         .graph
                         .add_entity(Some(info.ty), Some(name), Keyword::Int)?;

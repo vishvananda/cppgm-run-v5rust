@@ -115,6 +115,7 @@ mod scalar_conversions;
 mod scalar_expressions;
 mod scalar_operators;
 mod semantics_dump;
+mod source_exceptions;
 mod special_members;
 mod specialized_classes;
 mod specifiers;

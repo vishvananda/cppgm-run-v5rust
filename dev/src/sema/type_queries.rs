@@ -119,7 +119,7 @@ impl Analyzer<'_> {
             "typeid without a declaration of std::type_info (5.2.8p6)",
         ))
     }
-    fn prepare_type_information(&mut self, ty: TypeId) -> Result<(), Error> {
+    pub(super) fn prepare_type_information(&mut self, ty: TypeId) -> Result<(), Error> {
         self.check_stack()?;
         if self.graph.rtti_types.contains_key(&ty) {
             return Ok(());

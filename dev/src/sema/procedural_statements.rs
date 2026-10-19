@@ -19,12 +19,16 @@ pub(super) struct BodyContext {
     pub loops: usize,
     pub switches: Vec<SwitchContext>,
     pub transfers: super::jumps::Transfers,
+    pub try_parent: Option<ScopeId>,
+    pub handled: u32,
+    pub constructor_handlers: bool,
 }
 pub(super) struct SwitchContext {
     ty: Option<TypeId>,
     values: Vec<u64>,
     has_default: bool,
     initialized: u32,
+    handled: u32,
 }
 #[derive(Clone, Copy)]
 pub(super) enum Control {
@@ -41,6 +45,9 @@ impl BodyContext {
             loops: 0,
             switches: Vec::new(),
             transfers: super::jumps::Transfers::default(),
+            try_parent: None,
+            handled: 0,
+            constructor_handlers: false,
         }
     }
 }
@@ -85,6 +92,16 @@ impl Analyzer<'_> {
         operand: Option<ast::ExprId>,
         scope: ScopeId,
     ) -> Result<(), Error> {
+        if self
+            .body_context
+            .as_ref()
+            .is_some_and(|body| body.constructor_handlers)
+        {
+            return Err(Error::at(
+                self.tree.statements.get(stmt).location,
+                "a return statement in a handler of a constructor's function-try-block (15.3p14)",
+            ));
+        }
         let typed = self.deduce_return(stmt, operand, scope)?;
         let result = self
             .body_context
@@ -160,7 +177,7 @@ impl Analyzer<'_> {
             )
         }
     }
-    fn names_automatic_object(&self, id: ast::ExprId) -> Result<bool, Error> {
+    pub(super) fn names_automatic_object(&self, id: ast::ExprId) -> Result<bool, Error> {
         let root = self.graph.expression_facts.root(id);
         let ast::ExprKind::Id(name) = self.tree.expressions.get(root).kind else {
             return Ok(false);
@@ -226,6 +243,12 @@ impl Analyzer<'_> {
                         "default label bypasses a variable's initialization",
                     ));
                 }
+                if context.handled != body.handled {
+                    return Err(Error::at(
+                        stmt.location,
+                        "default label inside a try block, handler (15p2) or statement expression the switch encloses",
+                    ));
+                }
                 context.has_default = true;
                 Ok(())
             }
@@ -253,6 +276,20 @@ impl Analyzer<'_> {
             return Err(Error::at(
                 self.tree.statements.get(id).location,
                 "case label bypasses a variable's initialization",
+            ));
+        }
+        let body = self
+            .body_context
+            .as_ref()
+            .ok_or(Error::Invariant("case without body"))?;
+        if body
+            .switches
+            .last()
+            .is_some_and(|context| context.handled != body.handled)
+        {
+            return Err(Error::at(
+                self.tree.statements.get(id).location,
+                "case label inside a try block, handler (15p2) or statement expression the switch encloses",
             ));
         }
         let Some(ty) = ty else {
@@ -307,6 +344,7 @@ impl Analyzer<'_> {
                 values: Vec::new(),
                 has_default: false,
                 initialized: 0,
+                handled: body.handled,
             });
         } else {
             body.loops += 1;
@@ -485,17 +523,6 @@ impl Analyzer<'_> {
             }
         }
         Ok(target)
-    }
-    pub(super) fn reject_extended_statement(&self, id: ast::StmtId) -> Result<(), Error> {
-        if self.semantic()
-            && matches!(
-                self.tree.statements.get(id).kind,
-                ast::StmtKind::Try { .. } | ast::StmtKind::Throw(_)
-            )
-        {
-            return Err(Error::Missing("extended semantic statements"));
-        }
-        Ok(())
     }
     pub(super) fn is_switch(keyword: Keyword) -> bool {
         keyword == Keyword::Switch

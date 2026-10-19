@@ -295,6 +295,7 @@ impl Analyzer<'_> {
             }
             ExprKind::New { .. } => self.allocation_expression(id, scope)?,
             ExprKind::Delete { .. } => self.deletion_expression(id, scope)?,
+            ExprKind::Throw(operand) => self.throw_expression(id, operand, scope)?,
             // A concrete list copy expands every bound pattern. An ellipsis
             // still present here (for example, `(sizeof...(N))...`, which
             // names no unexpanded pack) reaches the frozen expression

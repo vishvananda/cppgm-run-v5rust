@@ -44,6 +44,12 @@ pub(super) struct Entry {
     pub value: Option<BindingId>,
     pub tag: Option<BindingId>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScopeEntry {
+    Ordinary,
+    Exception,
+}
+
 pub(super) struct Scope {
     pub kind: ScopeKind,
     pub parent: Option<ScopeId>,
@@ -57,6 +63,7 @@ pub(super) struct Scope {
     pub inline_members: Vec<ScopeEdge>,
     pub is_inline: bool,
     pub guarded: bool,
+    pub entry: ScopeEntry,
     pub template_bridge: bool,
     /// Syntactic template lists introduced here; argument frames introduce none.
     pub template_lists: u32,
@@ -283,6 +290,7 @@ pub(crate) struct Graph {
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
     pub(super) expression_facts: super::expression_facts::ExpressionFacts,
+    pub(super) source_exceptions: Box<super::source_exceptions::SourceExceptions>,
     pub(super) expression_scopes: Vec<Option<ScopeId>>,
     pub(super) copy_properties: super::copy_properties::CopyPropertiesStore,
     pub(super) constructors: super::construction::Constructors,
@@ -445,6 +453,7 @@ impl Graph {
                 inline_members: Vec::new(),
                 is_inline: false,
                 guarded: false,
+                entry: ScopeEntry::Ordinary,
                 template_bridge: false,
                 template_lists: 0,
                 initialized: 0,
@@ -491,6 +500,7 @@ impl Graph {
             static_constructions: super::static_construction::Images::default(),
             expression_types: Vec::new(),
             expression_facts: super::expression_facts::ExpressionFacts::default(),
+            source_exceptions: Box::default(),
             expression_scopes: Vec::new(),
             copy_properties: super::copy_properties::CopyPropertiesStore::default(),
             constructors: super::construction::Constructors::default(),
@@ -586,6 +596,7 @@ impl Graph {
             inline_members: Vec::new(),
             is_inline: false,
             guarded: false,
+            entry: ScopeEntry::Ordinary,
             template_bridge: false,
             template_lists: 0,
             initialized: 0,
