@@ -49,6 +49,7 @@ mod dependent_templates;
 mod destruction;
 mod destructor_expressions;
 mod dump;
+mod dynamic_casts;
 mod empty_layout;
 mod enum_instances;
 mod enumerations;

@@ -41,6 +41,7 @@ pub(super) struct Boundaries {
     destruction_edges: std::collections::HashMap<EntityId, Vec<EntityId>>,
     constructor_edges: std::collections::HashMap<EntityId, Vec<super::construction::ConstructorId>>,
     layouts: std::collections::HashMap<EntityId, Vec<(StorageDemand, SourceOffset)>>,
+    class_informations: std::collections::HashMap<EntityId, Vec<EntityId>>,
 }
 pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
@@ -173,9 +174,18 @@ impl Analyzer<'_> {
             destruction_edges,
             constructor_edges,
             layouts,
+            class_informations,
         } = state;
         self.prepare_constructor_defaults(None)?;
         let mut work = std::mem::take(&mut self.graph.boundary_roots);
+        for (owner, class) in std::mem::take(&mut self.graph.class_information_uses) {
+            if owner.is_none_or(|owner| seen.contains(&owner)) {
+                self.class_layout(class, SourceOffset(0))?;
+                self.virtual_table_boundaries(class, seen_tables, &mut work)?;
+            } else if let Some(owner) = owner {
+                class_informations.entry(owner).or_default().push(class);
+            }
+        }
         // Explicit definitions are emitted even without a calling expression.
         // Prepare only those named roots' ordinary class ABI boundaries.
         if !*explicit_roots {
@@ -254,6 +264,12 @@ impl Analyzer<'_> {
                 &mut constructors,
             )?;
             seen.insert(entity);
+            if let Some(classes) = class_informations.remove(&entity) {
+                for class in classes {
+                    self.class_layout(class, SourceOffset(0))?;
+                    self.virtual_table_boundaries(class, seen_tables, &mut work)?;
+                }
+            }
             if let Some(invoker) = self.graph.lower_closure_converter(entity) {
                 work.push(invoker);
             }

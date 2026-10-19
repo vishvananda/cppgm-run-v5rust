@@ -248,7 +248,9 @@ pub(crate) struct Graph {
     pub(super) block_linkages: super::linkage::BlockLinkages,
     pub(super) conversion_sets: HashMap<EntityId, Vec<BindingId>>,
     pub(super) boundary_roots: Vec<super::graph::EntityId>,
-    pub(super) boundaries: super::layout::Boundaries,
+    // One unit-owned scheduler; keep its growing indexes off native call frames.
+    pub(super) boundaries: Box<super::layout::Boundaries>,
+    pub(super) class_information_uses: Vec<(Option<EntityId>, EntityId)>,
     pub(super) instantiation_levels: super::template_context::Levels,
     pub(super) storage_layouts: Vec<(
         Option<super::graph::EntityId>,
@@ -461,7 +463,8 @@ impl Graph {
             block_linkages: super::linkage::BlockLinkages::default(),
             conversion_sets: HashMap::new(),
             boundary_roots: Vec::new(),
-            boundaries: super::layout::Boundaries::default(),
+            boundaries: Box::default(),
+            class_information_uses: Vec::new(),
             instantiation_levels: super::template_context::Levels::default(),
             storage_layouts: Vec::new(),
             constructor_boundaries: Vec::new(),

@@ -59,7 +59,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.designated_place(id)
     }
-    fn designated_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
+    pub(super) fn designated_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
         self.check_stack()?;
         if self.graph.lower_literal_call(id)?.is_some() {
             return Ok(self.literal_call(id)?.value);
@@ -277,20 +277,19 @@ impl Function<'_, '_, '_, '_> {
                 ) {
                     return self.array_temporary(id, "arraytmp");
                 }
-                let operand = braced
-                    .or_else(|| self.tree.expr_lists.get(arguments).first().copied())
-                    .ok_or(Error::Missing("empty functional place"))?;
-                self.scalar_place(operand)
+                let arguments = self.tree.expr_lists.get(arguments);
+                if braced.is_none()
+                    && let [operand] = arguments
+                {
+                    return self.designated_place(self.without_parentheses(*operand));
+                }
+                Err(self.field_diagnostic(id, "a glvalue outside the procedural lowering slice"))
             }
             ExprKind::Call { arguments, .. } if self.graph.lower_functional_call(id)? => {
-                let operand = self
-                    .tree
-                    .expr_lists
-                    .get(arguments)
-                    .first()
-                    .copied()
-                    .ok_or(Error::Missing("empty functional place"))?;
-                self.scalar_place(operand)
+                if let [operand] = self.tree.expr_lists.get(arguments) {
+                    return self.designated_place(self.without_parentheses(*operand));
+                }
+                Err(self.field_diagnostic(id, "a glvalue outside the procedural lowering slice"))
             }
             ExprKind::Call { callee, arguments } => Ok(self.call(id, callee, arguments)?.value),
             _ => Err(Error::Missing("reference and aggregate place lowering")),

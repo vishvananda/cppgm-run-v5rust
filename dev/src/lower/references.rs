@@ -204,6 +204,9 @@ impl Function<'_, '_, '_, '_> {
         operand: ast::ExprId,
     ) -> Result<Value, Error> {
         let facts = self.graph.lower_expression(id)?;
+        if self.graph.lower_runtime_cast(id)?.is_some() {
+            return Ok(self.dynamic_cast_value(id, operand)?.value);
+        }
         if let Some(reference) = facts.reference_cast
             && (self.graph.lower_expression(operand)?.temporary.is_some()
                 || self.class_conversion(operand).is_some()

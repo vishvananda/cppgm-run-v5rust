@@ -23,7 +23,47 @@ pub(super) struct ResultBoundary {
     pub indirect: bool,
     pub classes: Option<ObjectClasses>,
 }
+pub(super) struct FallbackReturn {
+    position: crate::lowir::builder::Position,
+    ty: Type,
+    end_guard: bool,
+}
 impl Function<'_, '_, '_, '_> {
+    // exception_lowering.cpp::zero_return/patch_fallback_slots: a runtime
+    // no-return continuation's object holder follows every ordinary slot.
+    pub(super) fn fallback_return(&mut self, source: TypeId, ty: Type) -> Result<(), Error> {
+        if matches!(ty, Type::Object { .. }) {
+            if self.lifetime.full_expression {
+                self.close_lifetime_region()?;
+            }
+            self.fallback_returns.push(FallbackReturn {
+                position: self.builder.position()?,
+                ty,
+                end_guard: self.lifetime.function_guard.is_some(),
+            });
+        } else {
+            let value = self.zero_return(source)?;
+            self.effect(I::Return(ty, value))?;
+        }
+        self.terminated = true;
+        Ok(())
+    }
+    pub(super) fn finish_fallback_returns(&mut self) -> Result<(), Error> {
+        for fallback in std::mem::take(&mut self.fallback_returns) {
+            let Type::Object { bytes, align } = fallback.ty else {
+                return Err(crate::sema::Error::Invariant("scalar fallback object slot").into());
+            };
+            let slot = self.generated_slot("retobj", fallback.ty)?;
+            let mut effects = vec![I::ZeroInit(bytes, align, slot)];
+            if fallback.end_guard {
+                effects.push(I::Runtime(crate::lowir::model::RuntimeInstruction::EhEnd));
+            }
+            effects.push(I::Return(fallback.ty, Some(slot)));
+            self.builder
+                .insert_effects(fallback.position, effects.into_iter())?;
+        }
+        Ok(())
+    }
     pub(super) fn zero_return(&mut self, source: TypeId) -> Result<Option<Value>, Error> {
         match self.symbols.result_boundary(source)?.ty {
             Type::Void => Ok(None),

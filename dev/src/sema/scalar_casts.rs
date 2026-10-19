@@ -15,7 +15,7 @@ use crate::{
     syntax::{ast, storage::List},
 };
 impl Analyzer<'_> {
-    fn cast_constness(&self, mut from: TypeId, mut to: TypeId) -> bool {
+    pub(super) fn cast_constness(&self, mut from: TypeId, mut to: TypeId) -> bool {
         let mut const_so_far = true;
         loop {
             let (Some((_, a)), Some((_, b))) = (
@@ -79,8 +79,19 @@ impl Analyzer<'_> {
         self.resolve_cast_function(id, operand, source, target)?;
         let source = self.graph.expression_facts.get(operand)?;
         if cast == Some(K::DynamicCast) {
-            return Err(Error::Missing("class explicit conversions"));
+            return self.dynamic_class_cast(id, target, operand, source, scope);
         }
+        self.explicit_conversion_from(id, target, operand, source, cast, scope)
+    }
+    pub(super) fn explicit_conversion_from(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        operand: ast::ExprId,
+        source: ExprFacts,
+        cast: Option<K>,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
         let c_style = cast.is_none();
         let reinterpret = c_style || cast == Some(K::ReinterpretCast);
         let constness = c_style || cast == Some(K::ConstCast);

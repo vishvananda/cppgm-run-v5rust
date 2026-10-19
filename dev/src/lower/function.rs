@@ -66,6 +66,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub result: Option<TypeId>,
     pub result_destination: Option<Value>,
     pub result_storage: Option<Value>,
+    pub fallback_returns: Vec<super::class_results::FallbackReturn>,
     pub returned_local: Option<EntityId>,
     pub budget: StackBudget,
     pub stack_base: usize,
@@ -327,6 +328,7 @@ pub(super) fn lower<'a>(
     function.place_lexical_cleanups()?;
     function.place_cleanup_chains(true)?;
     function.place_destructor_terminates()?;
+    function.finish_fallback_returns()?;
     function.place_function_guard(entry)?;
     function.builder.finish()?;
     super::definition_demands::finish_function_definition(symbols, graph, program, entry, symbol)?;
@@ -396,6 +398,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             result,
             result_destination: None,
             result_storage: None,
+            fallback_returns: Vec::new(),
             returned_local: None,
             budget,
             stack_base: std::ptr::from_ref(&marker).addr(),

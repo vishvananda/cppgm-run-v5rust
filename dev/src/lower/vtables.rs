@@ -283,7 +283,7 @@ impl Symbols<'_, '_> {
         }
         Ok(symbol)
     }
-    fn typeinfo_symbol(
+    pub(in crate::lower) fn typeinfo_symbol(
         &mut self,
         program: &mut Program,
         class: EntityId,

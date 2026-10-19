@@ -279,6 +279,7 @@ struct ClassConversion {
 }
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    runtime_casts: std::collections::HashMap<ast::ExprId, super::dynamic_casts::RuntimeCast>,
     records: Vec<Option<ExprFacts>>,
     // Qualified addresses keep their original lookup independently of the
     // specialization set. The dense use fact carries only a compact identity.
@@ -305,6 +306,19 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn runtime_cast(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::dynamic_casts::RuntimeCast> {
+        self.runtime_casts.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_runtime_cast(
+        &mut self,
+        id: ast::ExprId,
+        cast: super::dynamic_casts::RuntimeCast,
+    ) {
+        self.runtime_casts.insert(self.root(id), cast);
+    }
     pub(super) fn add_member_address(
         &mut self,
         address: MemberAddress,

@@ -4,6 +4,8 @@ use super::Error;
 mod argument_declarations;
 #[path = "placeholder_mangling.rs"]
 mod placeholder_mangling;
+#[path = "runtime_types.rs"]
+mod runtime_types;
 #[path = "specialization_labels.rs"]
 mod specialization_labels;
 #[path = "vtables.rs"]
@@ -38,6 +40,8 @@ pub(super) struct SymbolTable {
     bad_array_length: Option<SymbolId>,
     atexit: Option<SymbolId>,
     runtime_roles: Vec<super::runtime_roles::RoleSymbol>,
+    dynamic_cast: Option<SymbolId>,
+    bad_cast: Option<SymbolId>,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
 impl SymbolTable {
@@ -148,6 +152,7 @@ pub(super) struct Symbols<'a, 'source> {
     numeric_scanner: crate::types::floating::FloatingScanner,
     pub data: super::data::Objects,
     vtables: vtables::Tables,
+    cast_hints: runtime_types::CastHints,
     temporary_owner: Option<(EntityId, u32)>,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
     local_discriminators: HashMap<EntityId, u32>,
@@ -219,6 +224,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             objects: HashMap::new(),
             data: super::data::Objects::default(),
             vtables: vtables::Tables::default(),
+            cast_hints: runtime_types::CastHints::default(),
             temporary_owner: None,
             local_counts: HashMap::new(),
             local_discriminators: HashMap::new(),

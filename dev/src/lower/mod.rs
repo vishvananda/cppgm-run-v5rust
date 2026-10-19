@@ -35,6 +35,7 @@ mod definition_demands;
 mod definition_order;
 mod destruction;
 mod dispatch;
+mod dynamic_casts;
 mod element_temporaries;
 mod exception_helpers;
 mod expressions;

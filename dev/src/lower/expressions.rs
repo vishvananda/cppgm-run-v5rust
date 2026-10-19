@@ -314,6 +314,9 @@ impl Function<'_, '_, '_, '_> {
                 )?
                 .1),
             ExprKind::Cast { operand, .. } => {
+                if self.graph.lower_runtime_cast(id)?.is_some() {
+                    return self.dynamic_cast_value(id, operand);
+                }
                 if ty == Type::Void {
                     self.discard_to_void(operand)?;
                     return self.zero(source);
