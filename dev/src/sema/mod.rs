@@ -74,6 +74,7 @@ mod graph;
 mod inheritance;
 mod inherited_constructors;
 mod initialization;
+mod initializer_lists;
 mod instance_definitions;
 mod integral;
 mod jumps;

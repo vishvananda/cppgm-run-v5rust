@@ -270,11 +270,8 @@ impl Analyzer<'_> {
                     "auto without an initializer of one expression (7.1.6.4p3)",
                 )
             })?;
-        if matches!(
-            self.tree.expressions.get(expression).kind,
-            ExprKind::Braced { .. }
-        ) {
-            return Err(Error::Missing("auto initializer-list deduction"));
+        if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expression).kind {
+            return self.deduce_list_object(declared, cv, elements, scope, location, known);
         }
         let placeholder = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
         let pattern = self.replace_auto(declared, placeholder, cv)?;

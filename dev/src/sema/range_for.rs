@@ -318,20 +318,34 @@ impl Analyzer<'_> {
         if !self.holds_auto(info.ty) {
             return Ok(info);
         }
-        let mut range_type = self.decltype_type(range, block)?;
-        if let TypeKind::Reference { element, .. } = self.graph.types.get(range_type).kind {
-            range_type = element;
+        let list_element =
+            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(range).kind {
+                Some(self.deduce_list_range(elements, block, location)?)
+            } else {
+                None
+            };
+        if let Some(super::initializer_lists::RangeElement::Dependent(ty)) = list_element {
+            info.ty = ty;
+            return Ok(info);
         }
-        let element = if let TypeKind::Array { element, .. } = self.graph.types.get(range_type).kind
-        {
-            Some((element, V::Lvalue))
-        } else if self.template_depth == 0 {
-            return Err(Error::at(location, "unsupported range-based for deduction"));
-        } else if self.semantic() && self.body_context.is_some() {
-            self.known_range_element(range, block, dependent, location)?
-        } else {
-            None
-        };
+        let element =
+            if let Some(super::initializer_lists::RangeElement::Concrete(ty)) = list_element {
+                Some((ty, V::Lvalue))
+            } else {
+                let mut range_type = self.decltype_type(range, block)?;
+                if let TypeKind::Reference { element, .. } = self.graph.types.get(range_type).kind {
+                    range_type = element;
+                }
+                if let TypeKind::Array { element, .. } = self.graph.types.get(range_type).kind {
+                    Some((element, V::Lvalue))
+                } else if self.template_depth == 0 {
+                    return Err(Error::at(location, "unsupported range-based for deduction"));
+                } else if self.semantic() && self.body_context.is_some() {
+                    self.known_range_element(range, block, dependent, location)?
+                } else {
+                    None
+                }
+            };
         if let Some((element, category)) = element {
             let auto = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
             let pattern = self.replace_auto(info.ty, auto, specs.auto_cv)?;
@@ -543,11 +557,20 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let location = self.tree.statements.get(id).location;
         let uses = self.dependent_uses.get();
-        if matches!(
-            self.tree.expressions.get(source).kind,
-            ExprKind::Braced { .. }
-        ) {
-            return Err(Error::Missing("auto initializer-list deduction"));
+        if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(source).kind {
+            let auto = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
+            let reference = self.graph.types.reference(auto, RefKind::Rvalue)?;
+            self.deduce_list_object(
+                reference,
+                Cv::default(),
+                elements,
+                block,
+                location,
+                &mut None,
+            )?;
+            return Err(Error::Missing(
+                "std::initializer_list object materialization",
+            ));
         }
         let typed = self.typed_expression(source, block)?;
         self.mark_range_expression(source)?;

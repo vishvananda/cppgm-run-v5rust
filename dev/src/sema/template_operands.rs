@@ -153,7 +153,14 @@ impl Analyzer<'_> {
         };
         let value_target = target.filter(|&ty| self.graph.address_parameter_type(ty));
         self.expression(expression, scope)?;
-        let key = self.operand_key(expression, scope)?;
+        // placeholder_words leaves a function body's operands private, even
+        // when their written form is nondependent. Each demanded body copy
+        // analyzes them in its own environment; they are never signature keys.
+        let key = if self.operand_in_body(scope) {
+            None
+        } else {
+            self.operand_key(expression, scope)?
+        };
         let is_fixed = (fixed || value && self.semantic())
             && key.as_ref().is_some_and(|key| !key.dependent)
             && !self.type_dependent_expression(expression, scope)?;
@@ -300,6 +307,24 @@ impl Analyzer<'_> {
             self.fixed_value_operand(entity, expression, scope, target, unknown)
         } else {
             Ok(ty)
+        }
+    }
+
+    fn operand_in_body(&self, mut scope: ScopeId) -> bool {
+        loop {
+            let node = self.graph.scope(scope);
+            if node.kind == ScopeKind::TemplateParameters {
+                return false;
+            }
+            if node.kind == ScopeKind::Block
+                || node.kind == ScopeKind::Function && node.owner.is_some()
+            {
+                return true;
+            }
+            let Some(parent) = node.parent else {
+                return false;
+            };
+            scope = parent;
         }
     }
 
@@ -1334,6 +1359,33 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn body_decltypes_are_private_until_each_specialization_is_demanded() {
+        let source = SourceBuffer::new(
+            b"template<class T>void f(){\
+            decltype(1)a;decltype(1)b;for(auto n:{1,2L}){}}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"body-operands").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let operands = &analyzer.graph.template_operands;
+        assert_eq!(operands.patterns.len(), 4);
+        assert!(operands.patterns.values().all(|pattern| !pattern.fixed));
+        assert!(operands.words.is_empty());
+        assert!(operands.substitutions.is_empty());
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn trailing_objects_keep_cv_identity_without_body_or_layout_demand() {
