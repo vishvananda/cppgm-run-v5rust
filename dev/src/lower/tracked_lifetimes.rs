@@ -393,6 +393,19 @@ impl Function<'_, '_, '_, '_> {
                 .rev()
                 .map(|flag| I::Store(Facts::default(), Type::U8, zero, flag)),
         )?;
-        self.place_tracked_chain()
+        self.place_tracked_chain()?;
+        // The shared chain owns slot-based addresses. An unconditionally
+        // extended object is already complete here, so later initializer
+        // destruction uses its original address, even before tracking ends.
+        for cleanup in &mut self.lifetime.cleanups[self.lifetime.tracking.floor..] {
+            if cleanup.guard.is_some()
+                && !cleanup.branched
+                && matches!(cleanup.place, super::lifetime::CleanupPlace::Extended(_))
+                && let Some(object) = cleanup.made_at
+            {
+                cleanup.place = super::lifetime::CleanupPlace::Extended(object);
+            }
+        }
+        Ok(())
     }
 }

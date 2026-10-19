@@ -202,6 +202,7 @@ pub(super) struct Lifetime {
     pub storage_split: Option<crate::lowir::builder::Position>,
     pub temporary_split: Option<crate::lowir::builder::Position>,
     pub call_marks: Vec<CallMark>,
+    pub call_start: Option<crate::lowir::builder::Position>,
     pub declared_object: Option<Value>,
     pub guard_start: Option<crate::lowir::builder::Position>,
     pub function_guard: Option<BlockId>,
@@ -1334,6 +1335,7 @@ impl Function<'_, '_, '_, '_> {
                 cleanup.conditional = None;
                 cleanup.shared_return = None;
                 cleanup.exception = super::exception_chains::ObjectMemo::default();
+                cleanup.lexical = None;
             }
         }
     }

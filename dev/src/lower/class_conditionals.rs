@@ -24,8 +24,25 @@ impl Function<'_, '_, '_, '_> {
         if guard_start.is_none() {
             self.lifetime.guard_start = Some(self.builder.position()?);
         }
-        let condition = self.truth(condition)?;
+        // A detached body's local retains the segment cursor before its
+        // source storage. The condition's throwing call opens there; merely
+        // testing a value does not open a region. Member construction and
+        // reference binding own different cursors.
+        let call_start = self.lifetime.call_start;
+        if self.constructor_unwind_target().is_some()
+            && self.aggregation.floor.is_none()
+            && !self.reference_lifetimes.has_scope()
+            && self.lifetime.full_expression
+            && self.lifetime.region_start.is_pending()
+            && !self.lifetime.region
+        {
+            self.lifetime.call_start = self.lifetime.expression_start;
+        }
+        let condition = self.truth(condition);
+        self.lifetime.call_start = call_start;
+        let condition = condition?;
         self.effect(I::Branch(condition.value, then_block, else_block))?;
+        self.terminated = true;
         let opened = self.lifetime.regions_opened;
         for (index, (block, operand)) in [then_block, else_block]
             .into_iter()

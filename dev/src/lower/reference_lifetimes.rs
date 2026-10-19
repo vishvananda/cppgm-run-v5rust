@@ -16,6 +16,11 @@ pub(super) struct Extensions {
     pub root: Option<ast::ExprId>,
     path: Vec<ast::ExprId>,
 }
+impl Extensions {
+    pub(super) fn has_scope(&self) -> bool {
+        self.owner.is_some()
+    }
+}
 
 impl Function<'_, '_, '_, '_> {
     pub(super) fn persistent_alive(&mut self, ty: TypeId, storage: Value) -> Result<(), Error> {

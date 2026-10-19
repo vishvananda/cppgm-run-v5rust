@@ -410,15 +410,24 @@ impl Function<'_, '_, '_, '_> {
                         || self.aggregation.call_scope
                             == super::aggregate_cleanup::CallScope::OmittedValue
                 });
-        let deferred_region = opens
+        let deferred_region = (opens
             && !branched
             && !self.lifetime.cleanups.is_empty()
-            && !self.lifetime.tracking.active
+            && (!self.lifetime.tracking.active || self.reference_lifetimes.has_scope())
             && !self
                 .lifetime
                 .call_marks
                 .iter()
-                .any(|mark| !mark.declared && self.builder.same_block(mark.position));
+                .any(|mark| !mark.declared && self.builder.same_block(mark.position)))
+            || branched
+                && matches!(use_, TemporaryUse::Discard)
+                && !persistent
+                && !staged
+                && self.lifetime.full_expression
+                && self.lifetime.region_start.is_pending()
+                && !self.lifetime.region
+                && !self.lifetime.tracking.active
+                && !self.lifetime.cleanups.is_empty();
         if opens
             && !deferred_region
             && (!self.storage_region_pending()

@@ -812,7 +812,7 @@ impl Function<'_, '_, '_, '_> {
             self.aggregation.call_scope = saved_scope;
         }
         if destroyed {
-            let object = if let Some(object) = object {
+            let object = if let Some(object) = object.filter(|_| !aggregate) {
                 object
             } else {
                 self.named_address(path, ty)?

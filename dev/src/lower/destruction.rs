@@ -280,6 +280,14 @@ impl Function<'_, '_, '_, '_> {
             self.symbols.demand_entry(entry);
             let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
             let arguments = self.builder.arguments(&[object])?;
+            // A deferred subobject cleanup can be emitted while a source
+            // initializer's segment is pending. Its nonthrowing destructor
+            // is still that segment's next region event (emit_call).
+            // A tracked source segment also covers a subobject call here;
+            // only an explicit terminate guard already owns this call.
+            if guard.is_none() {
+                self.before_lifetime_call(false)?;
+            }
             self.effect(I::Call(crate::lowir::model::Call {
                 result: Type::Void,
                 callee: Value::Symbol(symbol),

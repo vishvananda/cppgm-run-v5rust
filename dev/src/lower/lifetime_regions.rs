@@ -112,7 +112,7 @@ impl Function<'_, '_, '_, '_> {
         self.register_temporary(ty, object);
         self.track_temporary()?;
         self.close_lifetime_region()?;
-        if split {
+        if split || self.lifetime.tracking.active && self.handlers.explicit == 0 {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         }
@@ -232,7 +232,11 @@ impl Function<'_, '_, '_, '_> {
         if throws && self.lifetime.full_expression {
             self.ensure_insertion()?;
             self.lifetime.call_marks.push(super::lifetime::CallMark {
-                position: self.builder.position()?,
+                position: self
+                    .lifetime
+                    .call_start
+                    .filter(|&position| self.builder.same_block(position))
+                    .unwrap_or(self.builder.position()?),
                 declared: false,
                 depth: self.lifetime.cleanups.len(),
                 regioned: false,

@@ -18,6 +18,7 @@ struct Deferred {
     previous: Option<BlockId>,
     entry: Option<BlockId>,
     attempt: Option<super::handlers::Context>,
+    contexts: usize,
 }
 enum CompletedObject {
     Subobject(Subobject),
@@ -75,6 +76,7 @@ impl Function<'_, '_, '_, '_> {
             previous,
             entry,
             attempt: self.innermost_try(),
+            contexts: self.handlers.contexts.len(),
         });
         self.effect(I::Runtime(R::EhCleanup(Some(block))))?;
         self.construction.active = entry.or(Some(block));
@@ -134,54 +136,68 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         self.construction.placing = true;
-        for Deferred {
+        for deferred in pending {
+            // A body's inner try/handler is not part of the context in which
+            // this subobject completed. Restore that context for its calls
+            // and any pending-segment event, then restore the body on errors too.
+            let contexts = if deferred.entry.is_some() {
+                deferred.contexts.min(self.handlers.contexts.len())
+            } else {
+                self.handlers.contexts.len()
+            };
+            self.with_handler_contexts(contexts, |this| this.place_constructor_cleanup(deferred))?;
+        }
+        self.construction.placing = false;
+        Ok(())
+    }
+    fn place_constructor_cleanup(
+        &mut self,
+        Deferred {
             landing,
             object,
             previous,
             entry,
             attempt,
-        } in pending
-        {
-            // A deferred batch places its landings directly. Nested entry
-            // placement, rather than the next landing, flushes terminate guards.
-            self.builder.place_block(landing)?;
-            self.terminated = false;
-            if let Some(entry) = entry {
-                if let Some(attempt) = attempt {
-                    self.emit_try_clauses(attempt)?;
-                }
-                self.effect(I::Runtime(R::EhEnd))?;
-                self.jump(entry)?;
-                self.place(entry)?;
+            contexts: _,
+        }: Deferred,
+    ) -> Result<(), Error> {
+        // A deferred batch places its landings directly. Nested entry
+        // placement, rather than the next landing, flushes terminate guards.
+        self.builder.place_block(landing)?;
+        self.terminated = false;
+        if let Some(entry) = entry {
+            if let Some(attempt) = attempt {
+                self.emit_try_clauses(attempt)?;
             }
-            match object {
-                CompletedObject::Subobject(subobject) => self.destroy_subobject(subobject, true)?,
-                CompletedObject::Whole { ty, variant } => {
-                    self.destroy_delegated_object(ty, variant)?;
-                }
-            }
-            if let Some(previous) = previous {
-                self.jump(previous)?;
-            } else {
-                if entry.is_none() {
-                    self.effect(I::Runtime(R::EhEnd))?;
-                }
-                if entry.is_some()
-                    && let Some(attempt) = attempt
-                {
-                    self.effect(I::Runtime(R::EhEnd))?;
-                    self.jump(attempt.entry)?;
-                } else if self.lifetime.function_guard.is_some()
-                    && self.handlers.function_try.is_none()
-                {
-                    self.terminate_unwinding()?;
-                } else {
-                    self.effect(I::Runtime(R::Resume))?;
-                    self.terminated = true;
-                }
+            self.effect(I::Runtime(R::EhEnd))?;
+            self.jump(entry)?;
+            self.place(entry)?;
+        }
+        match object {
+            CompletedObject::Subobject(subobject) => self.destroy_subobject(subobject, true)?,
+            CompletedObject::Whole { ty, variant } => {
+                self.destroy_delegated_object(ty, variant)?;
             }
         }
-        self.construction.placing = false;
+        if let Some(previous) = previous {
+            self.jump(previous)?;
+        } else {
+            if entry.is_none() {
+                self.effect(I::Runtime(R::EhEnd))?;
+            }
+            if entry.is_some()
+                && let Some(attempt) = attempt
+            {
+                self.effect(I::Runtime(R::EhEnd))?;
+                self.jump(attempt.entry)?;
+            } else if self.lifetime.function_guard.is_some() && self.handlers.function_try.is_none()
+            {
+                self.terminate_unwinding()?;
+            } else {
+                self.effect(I::Runtime(R::Resume))?;
+                self.terminated = true;
+            }
+        }
         Ok(())
     }
     fn destroy_delegated_object(&mut self, ty: TypeId, variant: Variant) -> Result<(), Error> {
