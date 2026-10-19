@@ -264,6 +264,7 @@ impl Function<'_, '_, '_, '_> {
         if !self.lifetime.full_expression
             || self.lifetime.region
             || self.element_temporaries.depth != 0
+            || self.handlers.explicit != 0
             || self.static_initializer
             || self.has_tracked_region()
             || self.terminated
@@ -485,6 +486,13 @@ impl Function<'_, '_, '_, '_> {
                 .filter(|&position| self.builder.same_block(position))
         {
             self.builder.insert_marker(position, R::EhTry(entry))?;
+        } else if self.lifetime.construction
+            && !self.lifetime.full_expression
+            && let Some((position, depth)) = self.lifetime.construction_start
+            && !self.builder.same_block(position)
+            && depth == self.lifetime.cleanups.len()
+        {
+            self.builder.insert_marker(position, R::EhTry(entry))?;
         } else {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         }
@@ -592,6 +600,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.lifetime.region = false;
         if self.drop_empty_lifetime_region()? {
+            self.advance_construction_start()?;
             return Ok(());
         }
         self.effect(I::Runtime(R::EhEnd))?;
@@ -631,6 +640,16 @@ impl Function<'_, '_, '_, '_> {
                     mark.position = position;
                 }
             }
+        }
+        self.advance_construction_start()
+    }
+    fn advance_construction_start(&mut self) -> Result<(), Error> {
+        if self.lifetime.construction
+            && !self.lifetime.full_expression
+            && !self.terminated
+            && let Some((position, _)) = &mut self.lifetime.construction_start
+        {
+            *position = self.builder.position()?;
         }
         Ok(())
     }

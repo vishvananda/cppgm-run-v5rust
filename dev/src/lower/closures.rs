@@ -108,6 +108,19 @@ impl Function<'_, '_, '_, '_> {
         self.storage_address(place, self.local_object_type(entity)?)
     }
     pub(super) fn closure_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
+        // A declared closure's copy defaults can branch without making a
+        // full-expression segment. Every path still passes this construction
+        // entry; open_region may insert its first guard back at that entry.
+        let saved = self.lifetime.construction_start;
+        if self.lifetime.construction && !self.lifetime.full_expression {
+            self.lifetime.construction_start =
+                Some((self.builder.position()?, self.lifetime.cleanups.len()));
+        }
+        let result = self.initialize_closure(ty, object);
+        self.lifetime.construction_start = saved;
+        result
+    }
+    fn initialize_closure(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
         let TypeView::Class(class) = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("closure object type").into());
         };

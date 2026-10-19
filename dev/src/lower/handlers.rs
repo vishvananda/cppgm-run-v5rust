@@ -45,6 +45,17 @@ pub(super) struct Handlers {
     pub unwind: super::exception_chains::Chains,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn with_explicit_region<T>(
+        &mut self,
+        active: bool,
+        operation: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let explicit = self.handlers.explicit;
+        self.handlers.explicit += usize::from(active);
+        let result = operation(self);
+        self.handlers.explicit = explicit;
+        result
+    }
     pub(super) fn next_context_stack(&mut self) -> Result<ContextId, Error> {
         self.handlers.next_stack = self
             .handlers

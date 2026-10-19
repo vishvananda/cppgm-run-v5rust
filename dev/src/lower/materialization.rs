@@ -240,10 +240,13 @@ impl Function<'_, '_, '_, '_> {
                 self.open_temporary_region()?;
             }
         }
-        let slot = self.generated_slot(
-            if direct { "argobj" } else { "arg" },
-            types::storage(self.graph, ty)?,
-        )?;
+        let storage = types::storage(self.graph, ty)?;
+        let stem = if direct { "argobj" } else { "arg" };
+        let slot = if destroyed {
+            self.element_argument_slot(storage, stem)?
+        } else {
+            self.generated_slot(stem, storage)?
+        };
         let object = self.emit(I::Addr(slot), ty)?.value;
         self.storage_region_event()?;
         let source = self.without_parentheses(id);
@@ -267,7 +270,12 @@ impl Function<'_, '_, '_, '_> {
             result?;
         }
         if destroyed {
-            self.temporary_alive(ty, object)?;
+            let cleanup = if self.sharing_element_arguments() {
+                slot
+            } else {
+                object
+            };
+            self.temporary_alive(ty, cleanup)?;
         }
         Ok(if direct { slot } else { object })
     }

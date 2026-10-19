@@ -200,6 +200,7 @@ pub(super) struct Lifetime {
     pub temporary_segment: TemporarySegment,
     pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
+    pub construction_start: Option<(crate::lowir::builder::Position, usize)>,
     pub region: bool,
     pub flow_region: FlowRegion,
     pub region_entry: Option<BlockId>,
@@ -322,6 +323,11 @@ impl Function<'_, '_, '_, '_> {
             if mark.position == removed {
                 mark.position = previous;
             }
+        }
+        if let Some((position, _)) = &mut self.lifetime.construction_start
+            && *position == removed
+        {
+            *position = previous;
         }
         self.lifetime.dropped_chains = self.lifetime.pending.len();
         Ok(true)

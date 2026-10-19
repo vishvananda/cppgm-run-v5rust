@@ -138,7 +138,7 @@ impl Function<'_, '_, '_, '_> {
             && self.lifetime.full_expression
             && self.lifetime.region_start.is_pending()
             && !self.lifetime.region
-            && !self.lifetime.cleanups.is_empty()
+            && self.lifetime.cleanups.len() > self.handler_floor()
             && !self.lifetime.tracking.active
         {
             self.open_temporary_region_at(self.lifetime.expression_start)?;
@@ -314,7 +314,7 @@ impl Function<'_, '_, '_, '_> {
                 if self.lifetime.full_expression
                     && self.lifetime.region_start.is_pending()
                     && !self.lifetime.region
-                    && !self.lifetime.cleanups.is_empty()
+                    && self.lifetime.cleanups.len() > self.handler_floor()
                     && !self.lifetime.tracking.active
                 {
                     self.open_temporary_region_at(self.lifetime.expression_start)?;

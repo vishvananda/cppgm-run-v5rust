@@ -123,11 +123,13 @@ impl Function<'_, '_, '_, '_> {
                 None
             };
             // A manually nested element region owns the call's unwind edge.
-            let scope = self.begin_copy_temporaries(temporaries || guard.is_some());
-            let from = self.element_address(source, index, size, element)?;
-            let to = self.element_address(destination, index, size, element)?;
-            self.construct_from(constructor, to, from)?;
-            self.end_copy_temporaries(scope)?;
+            self.with_explicit_region(guard.is_some(), |this| {
+                let scope = this.begin_element_temporaries(temporaries, guard.is_none());
+                let from = this.element_address(source, index, size, element)?;
+                let to = this.element_address(destination, index, size, element)?;
+                this.construct_from(constructor, to, from)?;
+                this.end_copy_temporaries(scope)
+            })?;
             if let Some((dispatch, next)) = guard {
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.with_enclosing_region(true, |this| {
@@ -206,11 +208,13 @@ impl Function<'_, '_, '_, '_> {
             };
             let size = types::layout(this.graph, element)?.0;
             let offset = this.capture_element_offset(element, current, size)?;
-            let scope = this.begin_copy_temporaries(temporaries || guarded);
-            let from = this.capture_element_address(element, source, offset)?;
-            let to = this.capture_element_address(element, destination, offset)?;
-            this.construct_from(constructor, to, from)?;
-            this.end_copy_temporaries(scope)?;
+            this.with_explicit_region(guarded, |this| {
+                let scope = this.begin_copy_temporaries(temporaries);
+                let from = this.capture_element_address(element, source, offset)?;
+                let to = this.capture_element_address(element, destination, offset)?;
+                this.construct_from(constructor, to, from)?;
+                this.end_copy_temporaries(scope)
+            })?;
             if guarded {
                 this.effect(I::Runtime(R::EhEnd))?;
             }

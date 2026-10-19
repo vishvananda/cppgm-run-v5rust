@@ -536,6 +536,7 @@ impl Function<'_, '_, '_, '_> {
         if kind.terminator()
             && self.lifetime.full_expression
             && self.lifetime.flow_region == super::lifetime::FlowRegion::Local
+            && self.handlers.explicit == 0
         {
             self.close_lifetime_region()?;
         }
@@ -545,9 +546,22 @@ impl Function<'_, '_, '_, '_> {
         if matches!(kind, I::Return(..)) && self.lifetime.function_guard.is_some() {
             self.builder
                 .effect(I::Runtime(crate::lowir::model::RuntimeInstruction::EhEnd))?;
+            self.note_element_marker()?;
         }
         self.ensure_insertion()?;
-        Ok(self.builder.effect(kind)?)
+        let marker = matches!(
+            kind,
+            I::Runtime(
+                crate::lowir::model::RuntimeInstruction::EhTry(_)
+                    | crate::lowir::model::RuntimeInstruction::EhEnd
+                    | crate::lowir::model::RuntimeInstruction::EhCleanup(_)
+            )
+        );
+        self.builder.effect(kind)?;
+        if marker {
+            self.note_element_marker()?;
+        }
+        Ok(())
     }
     pub(super) fn zero(&mut self, source: TypeId) -> Result<RValue, Error> {
         let ty = types::storage(self.graph, source)?;
