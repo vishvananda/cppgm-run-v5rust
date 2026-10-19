@@ -401,7 +401,7 @@ impl Function<'_, '_, '_, '_> {
                     ))?;
             values.push(self.constructor_default_value(expression, parameter)?);
         }
-        let result = self.emit_constructor_call(entry, facts.nothrow, &values);
+        let result = self.emit_address_constructor_call(entry, facts.nothrow, &values);
         if !facts.nothrow && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }

@@ -167,7 +167,7 @@ pub(super) struct Symbols<'a, 'source> {
     class_parameters: super::class_parameters::Classes,
     class_labels: specialization_labels::Labels,
     rooted_destructors: std::collections::HashSet<EntityId>,
-    inert_destructors: HashMap<EntityId, bool>,
+    inert_destructors: HashMap<(EntityId, bool), bool>,
     anonymous_names: super::anonymous_names::Names,
     // A source declaration is shared by every ABI entry running its body.
     local_statics: HashMap<EntityId, super::local_storage::StorageSymbols>,
@@ -2855,8 +2855,15 @@ impl Symbols<'_, '_> {
         Ok(true)
     }
     pub(super) fn destructor_inert(&mut self, entity: EntityId) -> Result<bool, Error> {
+        self.destructor_inert_in_context(entity, false)
+    }
+    fn destructor_inert_in_context(
+        &mut self,
+        entity: EntityId,
+        contained: bool,
+    ) -> Result<bool, Error> {
         self.check_stack()?;
-        if let Some(&inert) = self.inert_destructors.get(&entity) {
+        if let Some(&inert) = self.inert_destructors.get(&(entity, contained)) {
             return Ok(inert);
         }
         let graph = self.graph;
@@ -2864,11 +2871,11 @@ impl Symbols<'_, '_> {
             && graph
                 .lower_function(entity)?
                 .object
-                .is_none_or(|class| !graph.lower_polymorphic(class));
+                .is_none_or(|class| contained || !graph.lower_polymorphic(class));
         if inert && let Some(class) = graph.lower_function(entity)?.object {
             for base in graph.lower_class_bases(class) {
                 if let Some(child) = graph.lower_destructor_entity(base) {
-                    inert &= self.destructor_inert(child)?;
+                    inert &= self.destructor_inert_in_context(child, true)?;
                 }
             }
             for &member in graph.lower_class_member_entities(class) {
@@ -2879,11 +2886,11 @@ impl Symbols<'_, '_> {
                 if let TypeView::Class(child) = graph.lower_type(ty)?
                     && let Some(child) = graph.lower_destructor_entity(child)
                 {
-                    inert &= self.destructor_inert(child)?;
+                    inert &= self.destructor_inert_in_context(child, true)?;
                 }
             }
         }
-        self.inert_destructors.insert(entity, inert);
+        self.inert_destructors.insert((entity, contained), inert);
         Ok(inert)
     }
     fn destructor_body_inert(&self, entity: EntityId) -> Result<bool, Error> {

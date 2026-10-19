@@ -146,7 +146,7 @@ impl Analyzer<'_> {
                     .graph
                     .constant_addresses
                     .value(entity)
-                    .map_or_else(|| self.constant_place(expr, scope), Ok);
+                    .map_or_else(|| self.static_place(expr, scope), Ok);
                 let value = match address {
                     Ok(address) => match address.root {
                         Root::Variable(root)
@@ -340,7 +340,7 @@ impl Analyzer<'_> {
             self.graph.types.get(source).kind,
             TypeKind::Pointer(_) | TypeKind::Array { .. } | TypeKind::Function { .. }
         ) {
-            let value = match self.address_operand(id, scope) {
+            let value = match self.static_address_operand(id, scope) {
                 Ok(address) => match address.root {
                     Root::Null => Some(Value::Integer(0)),
                     Root::Variable(entity)

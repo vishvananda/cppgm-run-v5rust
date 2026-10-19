@@ -119,6 +119,7 @@ mod special_members;
 mod specialized_classes;
 mod specifiers;
 mod statements;
+mod static_addresses;
 mod static_arrays;
 mod static_construction;
 mod static_initialization;

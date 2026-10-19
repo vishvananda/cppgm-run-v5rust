@@ -249,8 +249,13 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        let result =
-            self.emit_constructor_call_with_elision(entry, facts.nothrow, &values, copy_elision);
+        let result = self.emit_constructor_call_with_elision(
+            entry,
+            facts.nothrow,
+            &values,
+            copy_elision,
+            true,
+        );
         if !facts.nothrow && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
@@ -262,7 +267,17 @@ impl Function<'_, '_, '_, '_> {
         nothrow: bool,
         values: &[Value],
     ) -> Result<(), Error> {
-        self.emit_constructor_call_with_elision(entry, nothrow, values, false)
+        self.emit_constructor_call_with_elision(entry, nothrow, values, false, true)
+    }
+    pub(super) fn emit_address_constructor_call(
+        &mut self,
+        entry: Entry,
+        nothrow: bool,
+        values: &[Value],
+    ) -> Result<(), Error> {
+        // object_lowering.cpp::construct_from demands only the constructor.
+        // Its body publishes any vtable it needs when that body is lowered.
+        self.emit_constructor_call_with_elision(entry, nothrow, values, false, false)
     }
     fn emit_constructor_call_with_elision(
         &mut self,
@@ -270,6 +285,7 @@ impl Function<'_, '_, '_, '_> {
         nothrow: bool,
         values: &[Value],
         copy_elision: bool,
+        publish_table: bool,
     ) -> Result<(), Error> {
         // An aggregate construction's active segment also brackets a
         // nonthrowing call once prior subobjects need destruction.
@@ -289,7 +305,7 @@ impl Function<'_, '_, '_, '_> {
                         == super::aggregate_cleanup::CallScope::FullExpression,
         )?;
         self.symbols.demand_entry(entry);
-        if let Entry::Constructor(id, _) = entry {
+        if publish_table && let Entry::Constructor(id, _) = entry {
             self.symbols.construction_table(
                 self.builder.program(),
                 self.graph.lower_constructor(id).class,
