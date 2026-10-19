@@ -326,12 +326,46 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<TemporarySummary, Error> {
         self.scan_temporaries(root, false, true, None)
     }
-    pub(super) fn conditional_operand_temporaries(
+    pub(super) fn conditional_operand_makes_temporaries(
         &mut self,
         root: ast::ExprId,
         object: TypeId,
-    ) -> Result<TemporarySummary, Error> {
-        self.scan_temporaries(root, false, true, Some(object))
+    ) -> Result<bool, Error> {
+        let root = self.without_parentheses(root);
+        let list = match self.tree.expressions.get(root).kind {
+            ExprKind::Braced { elements, .. } => Some(elements),
+            ExprKind::FunctionalCast {
+                braced: Some(list), ..
+            } => match self.tree.expressions.get(list).kind {
+                ExprKind::Braced { elements, .. } => Some(elements),
+                _ => None,
+            },
+            _ => None,
+        };
+        // operand_temporaries: the aggregate's clauses initialize its
+        // members in place. Only their operands make separate temporaries.
+        if let Some(list) = list
+            && matches!(self.graph.lower_type(object)?, TypeView::Class(class)
+                if self.graph.lower_aggregate_class(class))
+        {
+            for &element in self.tree.expr_lists.get(list) {
+                let element = self.without_parentheses(element);
+                let made = if matches!(
+                    self.tree.expressions.get(element).kind,
+                    ExprKind::Braced { .. }
+                ) {
+                    self.expression_temporaries(element)?.made
+                } else {
+                    let ty = self.graph.lower_expression(element)?.ty;
+                    self.scan_temporaries(element, false, true, Some(ty))?.made
+                };
+                if made {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+        Ok(self.scan_temporaries(root, false, true, Some(object))?.made)
     }
     fn scan_temporaries(
         &mut self,

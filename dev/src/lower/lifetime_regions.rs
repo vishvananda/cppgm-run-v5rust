@@ -367,6 +367,31 @@ impl Function<'_, '_, '_, '_> {
         if self.has_tracked_region() && !self.lifetime.region {
             return self.open_temporary_region();
         }
+        // region_event: a temporary-making throwing segment also opens at
+        // its first nonthrowing call while earlier objects are alive. A
+        // pending operand call owns the start; otherwise it opens here,
+        // after this call's operands (including a noexcept member copy).
+        if !throws
+            && self.lifetime.full_expression
+            && !self.lifetime.region
+            && !self.lifetime.tracking.active
+            && self.lifetime.guarded_operands == 0
+            && self.lifetime.choice_region != super::lifetime::ChoiceRegion::Reopened
+            && self.handlers.explicit == 0
+            && !self.static_initializer
+            && self.lifetime.region_start.is_pending()
+            && self.lifetime.temporary_segment.is_present()
+            && !self.lifetime.temporary_segment.is_nothrow()
+            && !self.lifetime.cleanups.is_empty()
+        {
+            let position = self
+                .lifetime
+                .call_marks
+                .iter()
+                .find(|mark| !mark.declared && self.builder.same_block(mark.position))
+                .map_or(self.builder.position()?, |mark| mark.position);
+            return self.open_temporary_region_at(Some(position));
+        }
         if !throws
             && self.lifetime.full_expression
             && self.lifetime.guarded_operands == 0
@@ -467,6 +492,7 @@ impl Function<'_, '_, '_, '_> {
             return self.tracked_region(position);
         }
         let entry = self.unwind_entry()?;
+        self.note_aggregate_landing();
         if let Some(position) = start
             .filter(|&position| self.builder.same_block(position))
             .or_else(|| {

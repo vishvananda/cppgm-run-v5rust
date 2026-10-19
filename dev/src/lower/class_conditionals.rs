@@ -3,7 +3,7 @@
 //! Selected branches initialize one destination from their recorded copy actions.
 use super::{Error, function::Function};
 use crate::{
-    lowir::model::{InstructionKind as I, Value},
+    lowir::model::{InstructionKind as I, RuntimeInstruction as R, Value},
     sema::lowering::TypeId,
     syntax::ast,
 };
@@ -26,8 +26,31 @@ impl Function<'_, '_, '_, '_> {
         }
         let condition = self.truth(condition)?;
         self.effect(I::Branch(condition.value, then_block, else_block))?;
-        for (block, operand) in [then_block, else_block].into_iter().zip(operands) {
+        let opened = self.lifetime.regions_opened;
+        for (index, (block, operand)) in [then_block, else_block]
+            .into_iter()
+            .zip(operands)
+            .enumerate()
+        {
             self.place(block)?;
+            let reopened = index == 1
+                && self.lifetime.tracking.active
+                && self.lifetime.tracking.construction.active()
+                && self.lifetime.full_expression
+                && !self.lifetime.region
+                && self.handlers.explicit == 0
+                && self.lifetime.regions_opened != opened;
+            if reopened {
+                // materialize_prvalue's second arm protects only the objects
+                // below the tracked expression, before its member addresses.
+                let floor = self.lifetime.tracking.floor;
+                let entry = self.cleanup_prefix(true, floor)?;
+                self.effect(I::Runtime(R::EhTry(entry)))?;
+                self.lifetime.region = true;
+                self.lifetime.region_depth = floor;
+                self.lifetime.region_entry = Some(entry);
+                self.aggregation.reopened = true;
+            }
             self.lifetime.guarded_operands += 1;
             let result = if matches!(
                 self.tree
@@ -41,6 +64,7 @@ impl Function<'_, '_, '_, '_> {
                 self.materialize_class_qualified(operand, ty, object, volatile)
             };
             self.lifetime.guarded_operands -= 1;
+            self.aggregation.reopened = false;
             result?;
             if !self.terminated {
                 // A segment ends at this branch edge. Tracked regions own

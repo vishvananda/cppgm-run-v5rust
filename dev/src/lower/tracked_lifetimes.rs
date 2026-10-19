@@ -81,7 +81,7 @@ impl Function<'_, '_, '_, '_> {
                     .then_some(facts.ty);
                     for operand in [then_expr, else_expr] {
                         let made = if let Some(object) = object {
-                            self.conditional_operand_temporaries(operand, object)?.made
+                            self.conditional_operand_makes_temporaries(operand, object)?
                         } else {
                             self.expression_temporaries(operand)?.made
                         };
@@ -219,11 +219,9 @@ impl Function<'_, '_, '_, '_> {
                     }
                     if facts.is_place || class || !at_root {
                         let made = if class {
-                            self.conditional_operand_temporaries(then_expr, facts.ty)?
-                                .made
+                            self.conditional_operand_makes_temporaries(then_expr, facts.ty)?
                                 || self
-                                    .conditional_operand_temporaries(else_expr, facts.ty)?
-                                    .made
+                                    .conditional_operand_makes_temporaries(else_expr, facts.ty)?
                         } else {
                             self.expression_temporaries(then_expr)?.made
                                 || self.expression_temporaries(else_expr)?.made

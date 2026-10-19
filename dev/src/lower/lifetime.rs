@@ -25,6 +25,10 @@ pub(super) struct Cleanup {
     pub branched: bool,
     pub made_at: Option<Value>,
 }
+struct Completion {
+    cleanup: Cleanup,
+    aggregate: bool,
+}
 #[derive(Clone, Copy)]
 pub(super) enum CleanupPlace {
     Storage(Value),
@@ -42,6 +46,12 @@ pub(super) enum CleanupPlace {
     },
 }
 impl Cleanup {
+    pub(super) fn clear_unwind_memos(&mut self) {
+        self.unwind = None;
+        self.shared_return = None;
+        self.conditional = None;
+        self.exception.clear_unwind();
+    }
     pub(super) fn temporary(ty: TypeId, object: Value) -> Self {
         Self {
             place: CleanupPlace::Temporary(object),
@@ -443,6 +453,7 @@ impl Function<'_, '_, '_, '_> {
         first: usize,
         entity: EntityId,
     ) -> Result<(), Error> {
+        let address = self.aggregation.completion.take();
         let completed =
             if self.graph.lower_automatic(entity) && self.automatic_destructor(entity)?.is_some() {
                 let storage = *self
@@ -451,29 +462,32 @@ impl Function<'_, '_, '_, '_> {
                     .ok_or(crate::sema::Error::Invariant(
                         "completed object without storage",
                     ))?;
-                Some(Cleanup {
-                    place: CleanupPlace::Storage(storage),
-                    ty: self.graph.lower_entity_type(entity)?,
-                    variable: Some(entity),
-                    unwind: None,
-                    conditional: None,
-                    shared_return: None,
-                    lexical: None,
-                    guard: None,
-                    branched: false,
-                    made_at: None,
-                    exception: super::exception_chains::ObjectMemo::default(),
+                Some(Completion {
+                    cleanup: Cleanup {
+                        place: CleanupPlace::Storage(address.unwrap_or(storage)),
+                        ty: self.graph.lower_entity_type(entity)?,
+                        variable: Some(entity),
+                        unwind: None,
+                        conditional: None,
+                        shared_return: None,
+                        lexical: None,
+                        guard: None,
+                        branched: false,
+                        made_at: None,
+                        exception: super::exception_chains::ObjectMemo::default(),
+                    },
+                    aggregate: address.is_some(),
                 })
             } else {
                 None
             };
-        self.destroy_temporaries_with_completion(first, true, completed)
+        self.destroy_temporaries_with_completion(first, true, completed.as_ref())
     }
     fn destroy_temporaries_with_completion(
         &mut self,
         first: usize,
         pop: bool,
-        completed: Option<Cleanup>,
+        completed: Option<&Completion>,
     ) -> Result<(), Error> {
         if first <= self.lifetime.tracking.floor {
             self.finish_tracking()?;
@@ -481,13 +495,16 @@ impl Function<'_, '_, '_, '_> {
         let constructed = self.lifetime.tracking.active
             && self.lifetime.tracking.construction.active()
             && first <= self.lifetime.tracking.floor;
+        let aggregate = completed
+            .as_ref()
+            .is_some_and(|completed| completed.aggregate);
         let mut throwing = false;
         let mut guarded = false;
         let guarded_region = self.lifetime.region;
         for index in first..self.lifetime.cleanups.len() {
             let cleanup = self.lifetime.cleanups[index];
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
-                throwing |= constructed || self.destructor_throws(cleanup.ty)?;
+                throwing |= constructed || aggregate || self.destructor_throws(cleanup.ty)?;
                 guarded |= cleanup.guard.is_some();
             }
         }
@@ -500,33 +517,39 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.full_expression = false;
         }
         let pending = self.lifetime.pending.len();
+        // Retain the suffix once while walking its live prefix backwards.
+        // Completion actions use the ordinary context-aware chain builder;
+        // no remaining suffix is copied again for each temporary.
+        let suffix = self.lifetime.cleanups[first..].to_vec();
         // Objects completed after a temporary (notably a conversion result
         // whose reference extends it) must also unwind if its destructor
         // throws. Retain only these actions while walking backwards, rather
         // than repeatedly scanning or copying the complete cleanup suffix.
         let mut extended = Vec::new();
-        for index in (first..self.lifetime.cleanups.len()).rev() {
-            let cleanup = self.lifetime.cleanups[index];
+        for (offset, &cleanup) in suffix.iter().enumerate().rev() {
+            let index = first + offset;
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
+                if throwing {
+                    self.lifetime.cleanups.truncate(index);
+                }
                 let destroys_completed = self.destructor_throws(cleanup.ty)?;
                 let below = if throwing
-                    && destroys_completed
+                    && (destroys_completed || aggregate)
                     && (completed.is_some() || !extended.is_empty())
                 {
-                    let mut tail = self.cleanup_prefix(true, index)?;
-                    for &action in extended.iter().rev().chain(completed.iter()) {
-                        let block = self.new_block("cleanup_action")?;
-                        self.lifetime.pending.push(ChainBlock {
-                            block,
-                            action: ChainAction::Destroy(action),
-                            tail: Some(tail),
-                            unwinding: true,
-                            constructor_tail: self.constructor_unwind_target(),
-                            below: None,
-                        });
-                        tail = block;
+                    for &action in extended
+                        .iter()
+                        .rev()
+                        .chain(completed.iter().map(|c| &c.cleanup))
+                    {
+                        let mut action = action;
+                        action.clear_unwind_memos();
+                        self.lifetime.cleanups.push(action);
                     }
-                    Some(tail)
+                    let count = self.lifetime.cleanups.len();
+                    let handler = self.cleanup_prefix(true, count)?;
+                    self.lifetime.cleanups.truncate(index);
+                    Some(handler)
                 } else if constructed || throwing && destroys_completed && index != 0 {
                     Some(self.cleanup_prefix(true, index)?)
                 } else {
@@ -536,6 +559,10 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 extended.push(cleanup);
             }
+        }
+        if throwing {
+            self.lifetime.cleanups.truncate(first);
+            self.lifetime.cleanups.extend_from_slice(&suffix);
         }
         self.lifetime.full_expression = full_expression;
         if self.lifetime.pending.len() > pending

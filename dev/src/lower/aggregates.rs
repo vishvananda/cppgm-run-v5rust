@@ -91,7 +91,7 @@ impl Function<'_, '_, '_, '_> {
             steps: std::mem::take(&mut self.named_path),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
-        let scope = self.begin_aggregate(ty, input.values)?;
+        let scope = self.begin_aggregate(ty, input.values, true)?;
         let result = self.named_contents(ty, &mut input, &mut path, false);
         path.steps.clear();
         self.named_path = path.steps;
@@ -260,7 +260,7 @@ impl Function<'_, '_, '_, '_> {
             steps: std::mem::take(&mut self.named_path),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
-        let scope = self.begin_aggregate(ty, input.values)?;
+        let scope = self.begin_aggregate(ty, input.values, false)?;
         self.named_members(class, &mut input, &mut path)?;
         path.steps.clear();
         self.named_path = path.steps;
@@ -343,7 +343,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             false
         };
-        let scope = self.begin_aggregate(ty, values)?;
+        let scope = self.begin_aggregate(ty, values, false)?;
         let result = if string {
             self.named_item(ty, &mut input, &mut path, Item::ArrayElement)
         } else {
@@ -400,7 +400,7 @@ impl Function<'_, '_, '_, '_> {
             steps: Vec::new(),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
-        let scope = self.begin_aggregate(ty, values)?;
+        let scope = self.begin_aggregate(ty, values, true)?;
         self.named_contents(ty, &mut input, &mut path, false)?;
         self.end_aggregate(scope, None)
     }
@@ -762,6 +762,7 @@ impl Function<'_, '_, '_, '_> {
                 )) {
             input.next += 1;
             let object = self.named_address(path, ty)?;
+            self.open_aggregate_member(ty, expr)?;
             if let Some((constructor, arguments)) = self.graph.lower_class_conversion(id) {
                 self.call_converting_constructor(id, constructor, object, arguments)?;
             } else {
@@ -770,6 +771,7 @@ impl Function<'_, '_, '_, '_> {
             Some(object)
         } else if !aggregate {
             let object = self.named_address(path, ty)?;
+            self.open_aggregate_member(ty, expr)?;
             if let Some(id) = expr {
                 input.next += 1;
                 self.materialize_class_qualified(id, ty, object, path.volatile)?;

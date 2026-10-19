@@ -714,7 +714,7 @@ impl Function<'_, '_, '_, '_> {
                 ast::ExprKind::Conditional { .. }
             ) && !self.graph.lower_expression(root)?.is_place
             {
-                self.open_temporary_region()?;
+                self.open_storage_completion_region(temporary_floor)?;
             }
         }
         self.destroy_local_temporaries(temporary_floor, entity)?;
