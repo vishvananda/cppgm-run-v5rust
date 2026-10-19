@@ -40,12 +40,12 @@ pub(super) fn static_nulls(
                         work.push((element, at.wrapping_add(index.wrapping_mul(stride))));
                     }
                 }
-                TypeView::Class(class) => work.extend(
-                    graph
-                        .lower_null_subobjects(class)?
-                        .into_iter()
-                        .map(|(ty, offset)| (ty, at.wrapping_add(offset))),
-                ),
+                TypeView::Class(class) => {
+                    for child in graph.lower_null_subobjects(class) {
+                        let (ty, offset) = child?;
+                        work.push((ty, at.wrapping_add(offset)));
+                    }
+                }
                 _ => return Err(crate::sema::Error::Invariant("null image type").into()),
             }
         }
@@ -148,7 +148,9 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
             TypeView::Class(class) => {
-                for (child, offset) in self.graph.lower_null_subobjects(class)? {
+                let graph = self.graph;
+                for child in graph.lower_null_subobjects(class) {
+                    let (child, offset) = child?;
                     self.null_data_members(child, object, at.wrapping_add(offset))?;
                 }
                 Ok(())

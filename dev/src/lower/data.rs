@@ -188,7 +188,7 @@ pub(super) fn items<'a>(
     let mut out = Vec::with_capacity(image.len());
     for &item in image {
         if let StaticItem::Scalar(_, value @ StaticValue::MemberPointer(_)) = item {
-            out.extend(member_items(output, symbols, graph, value)?);
+            append_member_items(output, symbols, graph, value, &mut out)?;
             continue;
         }
         out.push(match item {
@@ -230,6 +230,17 @@ pub(super) fn member_items(
     graph: &Graph,
     value: StaticValue,
 ) -> Result<Vec<DataItem>, Error> {
+    let mut items = Vec::with_capacity(2);
+    append_member_items(output, symbols, graph, value, &mut items)?;
+    Ok(items)
+}
+fn append_member_items(
+    output: &mut (impl Output + ?Sized),
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    value: StaticValue,
+    out: &mut Vec<DataItem>,
+) -> Result<(), Error> {
     use crate::lowir::vocabulary::Type;
     let StaticValue::MemberPointer(value) = value else {
         return Err(crate::sema::Error::Invariant("member static image value").into());
@@ -243,18 +254,19 @@ pub(super) fn member_items(
     );
     let scalar = |bits| DataItem::Constant(Type::I64, integer(bits));
     let Some(member) = value.member else {
-        return Ok(if function {
-            vec![scalar(0), scalar(0)]
-        } else {
-            vec![scalar(u64::MAX)]
-        });
+        out.push(scalar(if function { 0 } else { u64::MAX }));
+        if function {
+            out.push(scalar(0));
+        }
+        return Ok(());
     };
     if !function {
         let offset = graph
             .lower_member_offset(member)?
             .wrapping_add(graph.lower_anonymous_member_offset(member, None)?)
             .wrapping_add(value.adjustment.cast_unsigned());
-        return Ok(vec![scalar(offset)]);
+        out.push(scalar(offset));
+        return Ok(());
     }
     let low = if let Some(slot) = graph.lower_virtual_slot(member) {
         scalar(slot.byte_offset().wrapping_add(1))
@@ -266,7 +278,8 @@ pub(super) fn member_items(
             0,
         )
     };
-    Ok(vec![low, scalar(value.adjustment.cast_unsigned())])
+    out.extend([low, scalar(value.adjustment.cast_unsigned())]);
+    Ok(())
 }
 pub(super) fn literal_object(
     program: &mut Program,

@@ -337,30 +337,43 @@ impl super::graph::Graph {
     pub(crate) fn lower_null_subobjects(
         &self,
         class: super::graph::EntityId,
-    ) -> Result<Vec<(super::types::TypeId, u64)>, Error> {
-        let mut children = Vec::new();
-        for edge in &self.entity(class).bases {
-            let ty = self.lower_entity_type(edge.class)?;
-            if self.lower_holds_data_member_pointer(ty)? {
-                children.push((
-                    ty,
-                    edge.offset
-                        .ok_or(Error::Invariant("null base without layout"))?,
-                ));
-            }
-        }
-        for &member in &self.entity(class).members {
-            let ty = self.lower_entity_type(member)?;
-            if self.entity(member).bit_field.is_none()
-                && self.lower_holds_data_member_pointer(ty)?
-            {
-                children.push((ty, self.lower_member_offset(member)?));
-            }
-            if self.entity(class).key == crate::lex::vocabulary::Keyword::Union {
-                break;
-            }
-        }
-        Ok(children)
+    ) -> impl Iterator<Item = Result<(super::types::TypeId, u64), Error>> + '_ {
+        let bases = self.entity(class).bases.iter().filter_map(|edge| {
+            (|| -> Result<_, Error> {
+                let ty = self.lower_entity_type(edge.class)?;
+                if !self.lower_holds_data_member_pointer(ty)? {
+                    return Ok(None);
+                }
+                let offset = edge
+                    .offset
+                    .ok_or(Error::Invariant("null base without layout"))?;
+                Ok(Some((ty, offset)))
+            })()
+            .transpose()
+        });
+        let count = if self.entity(class).key == crate::lex::vocabulary::Keyword::Union {
+            1
+        } else {
+            self.entity(class).members.len()
+        };
+        let members = self
+            .entity(class)
+            .members
+            .iter()
+            .take(count)
+            .filter_map(|&member| {
+                (|| -> Result<_, Error> {
+                    let ty = self.lower_entity_type(member)?;
+                    if self.entity(member).bit_field.is_some()
+                        || !self.lower_holds_data_member_pointer(ty)?
+                    {
+                        return Ok(None);
+                    }
+                    Ok(Some((ty, self.lower_member_offset(member)?)))
+                })()
+                .transpose()
+            });
+        bases.chain(members)
     }
 
     pub(crate) fn lower_bound_member_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {
