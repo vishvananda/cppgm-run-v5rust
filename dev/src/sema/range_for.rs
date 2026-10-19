@@ -609,8 +609,12 @@ impl Analyzer<'_> {
                 .graph
                 .types
                 .scalar(Scalar::Basic(crate::types::FundamentalType::Int))?;
+            let [first, second] = self.graph.entity(class).members.as_slice() else {
+                return Err(Error::Invariant("builtin list member count"));
+            };
+            let member_entities = [*first, *second];
             let mut members = Vec::with_capacity(2);
-            for member in self.graph.entity(class).members.clone() {
+            for member in member_entities {
                 let base = self.range_use(range, named, dependent, location)?;
                 let name = self
                     .graph

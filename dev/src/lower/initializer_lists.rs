@@ -146,7 +146,8 @@ impl Function<'_, '_, '_, '_> {
                 _ => Some(item),
             };
             let value = if let Some(source) = source {
-                self.operand(source, Context::ArrayElement)?.value
+                let value = self.operand(source, Context::ArrayElement)?;
+                self.fit(value, element)?.value
             } else {
                 self.zero(element)?.value
             };

@@ -155,17 +155,11 @@ impl Function<'_, '_, '_, '_> {
         let mut throwing_destructor = false;
         let mut member_template_result = false;
         if let Some(root) = root {
-            // A class prvalue with no outer transfer constructs the member
-            // itself. Only its operands can create expression temporaries.
-            let facts = self.graph.lower_expression(root)?;
-            let in_place = !facts.is_place
-                && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_))
-                && self.graph.lower_class_copy(root)?.is_none();
-            let summary = if in_place {
-                self.operand_temporaries(root)?
-            } else {
-                self.expression_temporaries(root)?
-            };
+            // The segment query includes the source prvalue even when it
+            // constructs the subobject itself. Its scalar operands still use
+            // full-expression call spills; only real argument temporaries
+            // make the pending construction region eager.
+            let summary = self.expression_temporaries(root)?;
             made |= summary.made;
             calls |= summary.operand_call_result.present() || summary.caller_destroyed;
             throwing_destructor |= summary.operand_call_result.destructor_throws();
@@ -206,8 +200,10 @@ impl Function<'_, '_, '_, '_> {
         }
         self.lifetime.full_expression = true;
         self.lifetime.region_start = super::lifetime::RegionStart::Pending;
-        self.lifetime.temporary_segment = if caller || made && throwing {
+        self.lifetime.temporary_segment = if caller {
             super::lifetime::TemporarySegment::Eager
+        } else if made && throwing {
+            super::lifetime::TemporarySegment::Hidden
         } else if made {
             super::lifetime::TemporarySegment::Nothrow {
                 floor: if member_template_result {
