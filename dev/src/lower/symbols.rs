@@ -380,12 +380,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(helpers.helper);
         }
         let helpers = super::exception_helpers::Helpers {
-            begin_catch: self.table.allocate(
-                program,
-                "__external_runtime____cxa_begin_catch",
-                None,
-                true,
-            )?,
+            begin_catch: self
+                .runtime_function(program, crate::lowir::vocabulary::Role::EhBeginCatch)?,
             terminate: self.table.allocate(program, "std_terminate", None, true)?,
             helper: self
                 .table

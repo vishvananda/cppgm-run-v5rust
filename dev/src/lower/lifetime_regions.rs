@@ -247,7 +247,12 @@ impl Function<'_, '_, '_, '_> {
             || self.static_initializer
             || self.has_tracked_region()
             || self.terminated
-            || self.lifetime.cleanups.len() <= self.lifetime.temporary_segment.floor()
+            || self.lifetime.cleanups.len()
+                <= self
+                    .lifetime
+                    .temporary_segment
+                    .floor()
+                    .max(self.handler_floor())
         {
             return Ok(());
         }
@@ -375,10 +380,13 @@ impl Function<'_, '_, '_, '_> {
             };
             return self.open_temporary_region_at(position);
         }
+        if self.handlers.explicit != 0 {
+            return Ok(());
+        }
         if self.static_initializer
             || !throws
             || self.lifetime.region
-            || self.lifetime.cleanups.is_empty()
+            || self.lifetime.cleanups.len() <= self.handler_floor()
         {
             return Ok(());
         }
@@ -550,7 +558,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn begin_lifetime_expression(&mut self) -> bool {
-        if self.lifetime.full_expression || self.lifetime.cleanups.is_empty() {
+        if self.lifetime.full_expression || self.lifetime.cleanups.len() <= self.handler_floor() {
             return false;
         }
         self.lifetime.full_expression = true;

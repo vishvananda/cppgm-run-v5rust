@@ -11,6 +11,7 @@ pub(super) struct JumpTargets {
     pub end: BlockId,
     pub continuation: Option<BlockId>,
     pub cleanup_depth: usize,
+    pub context_depth: usize,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn new_block(&mut self, prefix: &str) -> Result<BlockId, Error> {
@@ -126,6 +127,7 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
             StmtKind::Throw(operand) => self.throw_object(operand, true)?,
+            StmtKind::Try { body, handlers } => self.try_statement(body, handlers)?,
             StmtKind::Declaration(id) => self.declaration(id)?,
             StmtKind::Ambiguous { .. } => self.statement(self.graph.lower_statement(id)?)?,
             StmtKind::If {
@@ -167,8 +169,9 @@ impl Function<'_, '_, '_, '_> {
                         .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                             "break without target",
                         )))?;
-                let (end, depth) = (target.end, target.cleanup_depth);
-                self.destroy_cleanups(depth)?;
+                let (end, depth, contexts) =
+                    (target.end, target.cleanup_depth, target.context_depth);
+                self.destroy_context_exit(depth, contexts, false)?;
                 self.jump(end)?;
             }
             StmtKind::Continue => {
@@ -176,11 +179,14 @@ impl Function<'_, '_, '_, '_> {
                     .jumps
                     .iter()
                     .rev()
-                    .find_map(|t| t.continuation.map(|target| (target, t.cleanup_depth)))
+                    .find_map(|t| {
+                        t.continuation
+                            .map(|target| (target, t.cleanup_depth, t.context_depth))
+                    })
                     .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                         "continue without target",
                     )))?;
-                self.destroy_cleanups(target.1)?;
+                self.destroy_context_exit(target.1, target.2, false)?;
                 self.jump(target.0)?;
             }
             StmtKind::Case { body, .. } | StmtKind::Default(body) => {
@@ -206,7 +212,9 @@ impl Function<'_, '_, '_, '_> {
                 self.place(target)?;
                 self.statement(body)?;
             }
-            _ => return Err(Error::Missing("extended procedural statement lowering")),
+            StmtKind::ConditionalLoop { .. } => {
+                return Err(Error::Missing("extended procedural statement lowering"));
+            }
         }
         Ok(())
     }
@@ -288,6 +296,7 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: Some(test),
+            context_depth: self.handlers.contexts.len(),
             cleanup_depth: depth,
         });
         self.scoped_statement(body)?;
@@ -313,6 +322,7 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: Some(test),
+            context_depth: self.handlers.contexts.len(),
             cleanup_depth: self.lifetime.cleanups.len(),
         });
         self.scoped_statement(body)?;
@@ -355,6 +365,7 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end: exit,
             continuation: Some(step),
+            context_depth: self.handlers.contexts.len(),
             cleanup_depth: self.lifetime.cleanups.len(),
         });
         self.scoped_statement(body)?;
@@ -408,6 +419,7 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: None,
+            context_depth: self.handlers.contexts.len(),
             cleanup_depth: self.lifetime.cleanups.len(),
         });
         self.scoped_statement(body)?;

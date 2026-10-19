@@ -329,6 +329,13 @@ impl Function<'_, '_, '_, '_> {
                 .transpose()?
                 .unwrap_or(false),
             StmtKind::Throw(_) => true,
+            StmtKind::Try { body, handlers } => {
+                let mut throws = self.statement_throws(body)?;
+                for handler in self.tree.handlers.get(handlers) {
+                    throws |= self.statement_throws(handler.body)?;
+                }
+                throws
+            }
             StmtKind::Declaration(decl) => self.declaration_throws(decl)?,
             StmtKind::Ambiguous { .. } => self.statement_throws(self.graph.lower_statement(id)?)?,
             StmtKind::If {

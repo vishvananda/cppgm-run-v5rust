@@ -25,7 +25,12 @@ impl Function<'_, '_, '_, '_> {
         let staged = statement
             && !self.lifetime.full_expression
             && !self.lifetime.region
-            && self.lifetime.cleanups.len() > self.lifetime.temporary_segment.floor();
+            && self.lifetime.cleanups.len()
+                > self
+                    .lifetime
+                    .temporary_segment
+                    .floor()
+                    .max(self.handler_floor());
         let Some(operand) = operand else {
             if staged {
                 self.generated_slot("throw_alloc", Type::Ptr)?;
@@ -196,6 +201,20 @@ impl Function<'_, '_, '_, '_> {
         // A statement closes its call region in place. A nested throw's dead
         // continuation keeps the full-expression record until the block ends.
         if statement && std::mem::take(&mut self.lifetime.region) {
+            self.effect(I::Runtime(R::EhEnd))?;
+        }
+        if statement {
+            let count = self
+                .handlers
+                .contexts
+                .iter()
+                .rev()
+                .take_while(|c| c.attempt)
+                .count();
+            for _ in 0..count {
+                self.effect(I::Runtime(R::EhEnd))?;
+            }
+        } else if self.handlers.contexts.last().is_some_and(|c| c.attempt) {
             self.effect(I::Runtime(R::EhEnd))?;
         }
         let expression = std::mem::replace(&mut self.lifetime.full_expression, false);

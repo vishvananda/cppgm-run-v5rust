@@ -79,6 +79,12 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn constructor_unwind_target(&self) -> Option<BlockId> {
+        if self.handlers.innermost.is_some() {
+            return None;
+        }
+        self.detached_body_target()
+    }
+    pub(super) fn detached_body_target(&self) -> Option<BlockId> {
         self.construction
             .detached
             .then_some(self.construction.active)

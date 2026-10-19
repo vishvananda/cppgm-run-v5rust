@@ -145,6 +145,8 @@ impl Symbols<'_, '_> {
                 true,
             ),
             Role::EhRethrow => ("__cxa_rethrow", &[], Type::Void, true),
+            Role::EhBeginCatch => ("__cxa_begin_catch", &[Type::Ptr], Type::Ptr, false),
+            Role::EhEndCatch => ("__cxa_end_catch", &[], Type::Void, false),
             _ => {
                 return Err(
                     crate::sema::Error::Invariant("unsupported exception runtime entry").into(),

@@ -48,6 +48,7 @@ impl Function<'_, '_, '_, '_> {
         self.jumps.push(JumpTargets {
             end,
             continuation: Some(step),
+            context_depth: self.handlers.contexts.len(),
             cleanup_depth: scope,
         });
         self.local_variable(

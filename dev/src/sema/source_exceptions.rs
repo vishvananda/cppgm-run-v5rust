@@ -292,6 +292,18 @@ impl Analyzer<'_> {
 }
 
 impl super::Graph {
+    pub(crate) fn lower_handler(
+        &self,
+        body: ast::StmtId,
+    ) -> Result<(TypeId, Option<EntityId>), Error> {
+        let &(ty, binding) = self
+            .source_exceptions
+            .handlers
+            .get(&body)
+            .ok_or(Error::Invariant("handler without retained declaration"))?;
+        Ok((ty, binding.map(|id| self.binding(id).entity)))
+    }
+
     pub(crate) fn lower_thrown_type(&self, operand: ast::ExprId) -> Result<TypeId, Error> {
         self.source_exceptions
             .thrown

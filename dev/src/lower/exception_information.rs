@@ -81,7 +81,7 @@ impl Symbols<'_, '_> {
         self.exception_information.external.insert(ty, symbol);
         Ok(symbol)
     }
-    pub(super) fn defined_exception_information(
+    pub(in crate::lower) fn defined_exception_information(
         &mut self,
         program: &mut Program,
         ty: TypeId,

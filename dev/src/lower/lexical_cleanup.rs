@@ -8,6 +8,10 @@ use crate::{
 };
 
 enum Block {
+    Context {
+        block: BlockId,
+        action: super::exception_chains::Action,
+    },
     Resume {
         block: BlockId,
         target: Option<BlockId>,
@@ -23,11 +27,12 @@ enum Block {
         returned: Option<Cleanup>,
     },
 }
+pub(super) type ResumeMemo = Option<(Option<BlockId>, BlockId)>;
 #[derive(Default)]
 pub(super) struct Lexical {
     pub returned: Option<Cleanup>,
     pending: Vec<Block>,
-    resume: Option<(Option<BlockId>, BlockId)>,
+    pub resume: ResumeMemo,
     placing: bool,
     terminate: Option<BlockId>,
 }
@@ -57,6 +62,9 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn lexical_handler(&mut self, depth: usize) -> Result<Option<BlockId>, Error> {
         if !self.destructor_throws(self.lifetime.cleanups[depth].ty)? {
             return Ok(None);
+        }
+        if !self.handlers.contexts.is_empty() {
+            return self.context_lexical_handler(depth);
         }
         let target = self.constructor_unwind_target();
         if depth == 0 && target.is_none() && self.lexical.returned.is_none() {
@@ -100,11 +108,22 @@ impl Function<'_, '_, '_, '_> {
         });
         Ok(Some(block))
     }
+    pub(super) fn queue_lexical_context(
+        &mut self,
+        block: BlockId,
+        action: super::exception_chains::Action,
+    ) {
+        self.lexical.pending.push(Block::Context { block, action });
+    }
     pub(super) fn place_lexical_cleanups(&mut self) -> Result<(), Error> {
         let mut pending = std::mem::take(&mut self.lexical.pending);
         let saved = std::mem::replace(&mut self.lexical.placing, true);
         for item in &pending {
             match *item {
+                Block::Context { block, action } => {
+                    self.place(block)?;
+                    self.place_context_action(action)?;
+                }
                 Block::Resume { block, target } => {
                     self.place(block)?;
                     if let Some(target) = target {

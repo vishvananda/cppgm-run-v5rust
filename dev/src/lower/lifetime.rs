@@ -20,6 +20,7 @@ pub(super) struct Cleanup {
     conditional: Option<BlockId>,
     shared_return: Option<BlockId>,
     pub lexical: Option<BlockId>,
+    pub exception: super::exception_chains::ObjectMemo,
     pub guard: Option<Value>,
     pub branched: bool,
     pub made_at: Option<Value>,
@@ -53,6 +54,7 @@ impl Cleanup {
             guard: None,
             branched: false,
             made_at: None,
+            exception: super::exception_chains::ObjectMemo::default(),
         }
     }
     pub(super) fn member(self) -> bool {
@@ -65,13 +67,23 @@ impl Cleanup {
     }
 }
 #[derive(Clone, Copy)]
+enum ChainAction {
+    Destroy(Cleanup),
+    Context(super::exception_chains::Action),
+    Terminal,
+}
+#[derive(Clone, Copy)]
 struct ChainBlock {
     block: BlockId,
-    action: Option<Cleanup>,
+    action: ChainAction,
     tail: Option<BlockId>,
     unwinding: bool,
     constructor_tail: Option<BlockId>,
     below: Option<BlockId>,
+}
+enum ReturnElement {
+    Object(usize),
+    Context(usize),
 }
 #[derive(Clone, Copy)]
 pub(super) struct LiveId(u32);
@@ -158,6 +170,7 @@ pub(super) struct Lifetime {
     resume: Option<BlockId>,
     conditional_resume: Option<BlockId>,
     return_terminal: Option<BlockId>,
+    return_work: Vec<ReturnElement>,
     return_slot: Option<Value>,
     pub body: Option<ast::StmtId>,
     pub scan: ScanState,
@@ -243,6 +256,7 @@ impl Function<'_, '_, '_, '_> {
             guard: None,
             branched: false,
             made_at: None,
+            exception: super::exception_chains::ObjectMemo::default(),
         });
         let split = self.lifetime.region;
         self.close_lifetime_region()?;
@@ -253,6 +267,9 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.storage_split = Some(self.builder.position()?);
         }
         Ok(())
+    }
+    pub(super) fn lifetime_pending_count(&self) -> usize {
+        self.lifetime.pending.len()
     }
     pub(super) fn lifetime_has_pending_chains(&self) -> bool {
         !self.lifetime.pending.is_empty()
@@ -342,6 +359,7 @@ impl Function<'_, '_, '_, '_> {
             guard: None,
             branched: false,
             made_at: None,
+            exception: super::exception_chains::ObjectMemo::default(),
         });
         self.lifetime
             .depths
@@ -360,6 +378,7 @@ impl Function<'_, '_, '_, '_> {
             guard: None,
             branched: false,
             made_at: None,
+            exception: super::exception_chains::ObjectMemo::default(),
         });
     }
     pub(super) fn register_extended_temporary(
@@ -379,6 +398,7 @@ impl Function<'_, '_, '_, '_> {
             guard: None,
             branched: false,
             made_at: None,
+            exception: super::exception_chains::ObjectMemo::default(),
         });
         self.lifetime
             .depths
@@ -442,6 +462,7 @@ impl Function<'_, '_, '_, '_> {
                     guard: None,
                     branched: false,
                     made_at: None,
+                    exception: super::exception_chains::ObjectMemo::default(),
                 })
             } else {
                 None
@@ -497,7 +518,7 @@ impl Function<'_, '_, '_, '_> {
                         let block = self.new_block("cleanup_action")?;
                         self.lifetime.pending.push(ChainBlock {
                             block,
-                            action: Some(action),
+                            action: ChainAction::Destroy(action),
                             tail: Some(tail),
                             unwinding: true,
                             constructor_tail: self.constructor_unwind_target(),
@@ -538,6 +559,7 @@ impl Function<'_, '_, '_, '_> {
                 cleanup.unwind = None;
                 cleanup.conditional = None;
                 cleanup.shared_return = None;
+                cleanup.exception.clear_unwind();
             }
             self.lifetime.cleanups[kept] = cleanup;
             if let Some(variable) = cleanup.variable {
@@ -564,6 +586,7 @@ impl Function<'_, '_, '_, '_> {
                 cleanup.unwind = None;
                 cleanup.conditional = None;
                 cleanup.shared_return = None;
+                cleanup.exception.clear_unwind();
             }
             self.lifetime.cleanups[kept] = cleanup;
             kept += 1;
@@ -877,6 +900,9 @@ impl Function<'_, '_, '_, '_> {
         unwinding: bool,
         count: usize,
     ) -> Result<BlockId, Error> {
+        if unwinding && !self.handlers.contexts.is_empty() {
+            return self.context_landing(count);
+        }
         // finish_tracking explicitly builds its conditional dispatch chain.
         // Ordinary destruction below that segment uses unwind_entry's own
         // chain, even while the full-expression still owns tracked flags.
@@ -900,7 +926,7 @@ impl Function<'_, '_, '_, '_> {
             })?;
             let record = ChainBlock {
                 block,
-                action: None,
+                action: ChainAction::Terminal,
                 tail: None,
                 unwinding,
                 constructor_tail: self.constructor_unwind_target(),
@@ -970,7 +996,7 @@ impl Function<'_, '_, '_, '_> {
             };
             let record = ChainBlock {
                 block,
-                action: Some(self.lifetime.cleanups[index]),
+                action: ChainAction::Destroy(self.lifetime.cleanups[index]),
                 tail: Some(tail),
                 unwinding,
                 constructor_tail: self.constructor_unwind_target(),
@@ -1002,6 +1028,7 @@ impl Function<'_, '_, '_, '_> {
             cleanup.unwind = None;
             cleanup.conditional = None;
             cleanup.lexical = None;
+            cleanup.exception = super::exception_chains::ObjectMemo::default();
         }
     }
     pub(super) fn unwind_entry(&mut self) -> Result<BlockId, Error> {
@@ -1016,7 +1043,11 @@ impl Function<'_, '_, '_, '_> {
         self.destroy_temporaries(0)?;
         if self.destruction.cleanup.is_some() {
             self.end_lifetime_expression(expression)?;
-            self.destroy_cleanups(0)?;
+            if self.handlers.contexts.is_empty() {
+                self.destroy_cleanups(0)?;
+            } else {
+                self.destroy_context_return()?;
+            }
             self.effect(I::Runtime(R::EhEnd))?;
             let target = if let Some(target) = self.destruction.epilogue {
                 target
@@ -1032,22 +1063,36 @@ impl Function<'_, '_, '_, '_> {
             && self.lifetime.cleanups.last().is_some_and(|cleanup| {
                 cleanup
                     .variable
-                    .and_then(|variable| self.lifetime.returns.get(&variable))
+                    .and_then(|variable| {
+                        if let Some(context) = self.handlers.contexts.last() {
+                            if matches!(ty, Type::Object { .. }) {
+                                None
+                            } else {
+                                self.handlers.returns.get(&(variable, context.key))
+                            }
+                        } else {
+                            self.lifetime.returns.get(&variable)
+                        }
+                    })
                     .is_some_and(|&count| count > 1)
             });
         if !shared {
             self.end_lifetime_expression(expression)?;
-            for index in (0..self.lifetime.cleanups.len()).rev() {
-                let cleanup = self.lifetime.cleanups[index];
-                // The elided result transfers to the caller only on return.
-                // Its unwind and other scope-exit actions remain intact.
-                if cleanup.variable.is_none()
-                    || cleanup.variable != self.returned_local
-                    || !matches!(cleanup.place, CleanupPlace::Storage(_))
-                {
-                    let below = self.lexical_handler(index)?;
-                    self.destroy_cleanup_in(cleanup, below, false)?;
+            if self.handlers.contexts.is_empty() {
+                for index in (0..self.lifetime.cleanups.len()).rev() {
+                    let cleanup = self.lifetime.cleanups[index];
+                    // The elided result transfers to the caller only on return.
+                    // Its unwind and other scope-exit actions remain intact.
+                    if cleanup.variable.is_none()
+                        || cleanup.variable != self.returned_local
+                        || !matches!(cleanup.place, CleanupPlace::Storage(_))
+                    {
+                        let below = self.lexical_handler(index)?;
+                        self.destroy_cleanup_in(cleanup, below, false)?;
+                    }
                 }
+            } else {
+                self.destroy_context_return()?;
             }
             self.effect(I::Return(ty, value))?;
             self.terminated = true;
@@ -1072,32 +1117,143 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.return_slot = value;
         }
         self.end_lifetime_expression(expression)?;
-        let entry = self.cleanup_entry(false)?;
+        let entry = if self.handlers.contexts.is_empty() {
+            self.cleanup_entry(false)?
+        } else {
+            self.context_return_entry()?
+        };
         self.jump(entry)?;
         self.place_cleanup_chains(false)
+    }
+    fn context_return_entry(&mut self) -> Result<BlockId, Error> {
+        use super::exception_chains::Action;
+        let mut missing = std::mem::take(&mut self.lifetime.return_work);
+        missing.clear();
+        let mut context = self.handlers.contexts.len();
+        let mut tail = None;
+        for index in (0..=self.lifetime.cleanups.len()).rev() {
+            while context > 0
+                && self.handlers.contexts[context - 1].floor >= index
+                && tail.is_none()
+            {
+                context -= 1;
+                tail = self
+                    .handlers
+                    .return_exits
+                    .get(&self.handlers.contexts[context].stack)
+                    .copied();
+                if tail.is_none() {
+                    missing.push(ReturnElement::Context(context));
+                }
+            }
+            if tail.is_some() || index == 0 {
+                break;
+            }
+            tail = self.lifetime.cleanups[index - 1].shared_return;
+            if tail.is_none() {
+                missing.push(ReturnElement::Object(index - 1));
+            }
+        }
+        let mut tail = if let Some(tail) = tail {
+            tail
+        } else if let Some(tail) = self.lifetime.return_terminal {
+            tail
+        } else {
+            let block = self.new_block("return_cleanup_terminal")?;
+            self.lifetime.return_terminal = Some(block);
+            self.lifetime.pending.push(ChainBlock {
+                block,
+                action: ChainAction::Terminal,
+                tail: None,
+                unwinding: false,
+                constructor_tail: None,
+                below: None,
+            });
+            block
+        };
+        for element in missing.iter().rev() {
+            let (prefix, action) = match *element {
+                ReturnElement::Context(index) => {
+                    ("return_cleanup_exit", Action::ReturnExit { index, tail })
+                }
+                ReturnElement::Object(index) => {
+                    let cleanup = self.lifetime.cleanups[index];
+                    if cleanup.variable.is_some() && cleanup.variable == self.returned_local {
+                        self.lifetime.cleanups[index].shared_return = Some(tail);
+                        continue;
+                    }
+                    (
+                        "return_cleanup_action",
+                        Action::ReturnObject {
+                            index,
+                            cleanup,
+                            tail,
+                        },
+                    )
+                }
+            };
+            let block = self.new_block(prefix)?;
+            self.queue_context_action(block, action);
+            match *element {
+                ReturnElement::Context(index) => {
+                    self.handlers
+                        .return_exits
+                        .insert(self.handlers.contexts[index].stack, block);
+                }
+                ReturnElement::Object(index) => {
+                    self.lifetime.cleanups[index].shared_return = Some(block);
+                }
+            }
+            tail = block;
+        }
+        missing.clear();
+        self.lifetime.return_work = missing;
+        Ok(tail)
+    }
+    pub(super) fn queue_context_action(
+        &mut self,
+        block: BlockId,
+        action: super::exception_chains::Action,
+    ) {
+        self.lifetime.pending.push(ChainBlock {
+            block,
+            action: ChainAction::Context(action),
+            tail: None,
+            unwinding: true,
+            constructor_tail: None,
+            below: None,
+        });
     }
     pub(super) fn place_cleanup_chains(&mut self, late: bool) -> Result<(), Error> {
         if late {
             self.lifetime.late.append(&mut self.lifetime.omitted);
         }
-        let mut blocks = if late {
-            std::mem::take(&mut self.lifetime.late)
-        } else {
-            std::mem::take(&mut self.lifetime.pending)
-        };
-        self.place_chain_blocks(&blocks)?;
-        blocks.clear();
-        if late {
-            self.lifetime.late = blocks;
-        } else {
-            self.lifetime.pending = blocks;
+        let mut blocks = Vec::new();
+        loop {
+            if late {
+                std::mem::swap(&mut blocks, &mut self.lifetime.late);
+            } else {
+                std::mem::swap(&mut blocks, &mut self.lifetime.pending);
+            }
+            self.place_chain_blocks(&blocks)?;
+            blocks.clear();
+            if late {
+                self.lifetime.late = blocks;
+                break;
+            }
+            if self.lifetime.pending.is_empty() {
+                self.lifetime.pending = blocks;
+                break;
+            }
         }
         Ok(())
     }
     fn place_chain_blocks(&mut self, blocks: &[ChainBlock]) -> Result<(), Error> {
         for &block in blocks {
             self.place(block.block)?;
-            if let Some(action) = block.action {
+            if let ChainAction::Context(action) = block.action {
+                self.place_context_action(action)?;
+            } else if let ChainAction::Destroy(action) = block.action {
                 let tail = block
                     .tail
                     .ok_or(crate::sema::Error::Invariant("cleanup without tail"))?;
@@ -1147,6 +1303,7 @@ impl Function<'_, '_, '_, '_> {
                 cleanup.unwind = None;
                 cleanup.conditional = None;
                 cleanup.shared_return = None;
+                cleanup.exception = super::exception_chains::ObjectMemo::default();
             }
         }
     }

@@ -205,7 +205,7 @@ impl Function<'_, '_, '_, '_> {
             throwing_destructor |= summary.operand_call_result.destructor_throws();
             member_template_result |= summary.operand_call_result.member_template();
         }
-        if !made && self.lifetime.cleanups.is_empty() {
+        if !made && self.lifetime.cleanups.len() <= self.handler_floor() {
             return Ok(false);
         }
         // The braced list's root describes the destination, so it is not
@@ -262,7 +262,7 @@ impl Function<'_, '_, '_, '_> {
         // from the full-expression's segment query. A class call's scalar
         // operands (including an indirect callee) still use that segment.
         let summary = self.expression_temporaries(root)?;
-        if !summary.made && self.lifetime.cleanups.is_empty() {
+        if !summary.made && self.lifetime.cleanups.len() <= self.handler_floor() {
             return Ok(false);
         }
         // class_return supplies a hidden context: once its initialization
@@ -286,7 +286,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             summary.operand_call_result
         };
-        if (summary.made || !self.lifetime.cleanups.is_empty())
+        if (summary.made || self.lifetime.cleanups.len() > self.handler_floor())
             && (throwing
                 || (calls.present() || summary.caller_destroyed) && !calls.destructor_throws())
         {

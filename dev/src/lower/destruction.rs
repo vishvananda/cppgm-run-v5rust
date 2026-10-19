@@ -27,7 +27,6 @@ pub(super) struct Destruction {
     pub body_target: Option<BlockId>,
     progress: Option<Value>,
     terminates: Vec<(BlockId, i64)>,
-    pub selector: i64,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn destructor_prologue(
@@ -299,14 +298,8 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn new_cleanup_terminate(&mut self) -> Result<BlockId, Error> {
         let guard = self.new_block("lexical_cleanup_terminate")?;
-        self.destruction.selector = self
-            .destruction
-            .selector
-            .checked_add(1)
-            .ok_or(crate::lowir::Error::Limit)?;
-        self.destruction
-            .terminates
-            .push((guard, self.destruction.selector));
+        let selector = i64::from(self.next_handler_selector()?);
+        self.destruction.terminates.push((guard, selector));
         self.symbols.terminate_helper(self.builder.program())?;
         Ok(guard)
     }

@@ -6,13 +6,13 @@ use crate::syntax::ast::{self, Condition, StmtKind};
 impl Function<'_, '_, '_, '_> {
     pub(super) fn scan_lifetimes(&mut self) -> Result<(), Error> {
         if matches!(self.lifetime.scan, super::lifetime::ScanState::Complete)
-            || self.lifetime.cleanups.is_empty()
+            || self.lifetime.cleanups.is_empty() && self.handlers.contexts.is_empty()
         {
             return Ok(());
         }
         self.lifetime.scan = super::lifetime::ScanState::Complete;
         if let Some(body) = self.lifetime.body {
-            self.count_live(body, None)?;
+            self.count_live(body, None, 0, None)?;
         }
         Ok(())
     }
@@ -70,23 +70,32 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         id: ast::StmtId,
         live: Option<LiveId>,
+        contexts: usize,
+        context: Option<ast::StmtId>,
     ) -> Result<Option<LiveId>, Error> {
         self.check_stack()?;
         match self.tree.statements.get(id).kind {
             StmtKind::Compound(items) => {
                 let mut inner = live;
                 for &item in self.tree.stmt_lists.get(items) {
-                    inner = self.count_live(item, inner)?;
+                    inner = self.count_live(item, inner, contexts, context)?;
                 }
             }
             StmtKind::Ambiguous { .. } => {
-                return self.count_live(self.graph.lower_statement(id)?, live);
+                return self.count_live(self.graph.lower_statement(id)?, live, contexts, context);
             }
             StmtKind::Declaration(decl) => return self.declaration_live(decl, live),
             StmtKind::Return(_) => {
                 if let Some(live) = live {
                     let variable = self.lifetime.live_node(live).variable;
-                    let count = self.lifetime.returns.entry(variable).or_default();
+                    let count = if let Some(context) = context {
+                        self.handlers
+                            .returns
+                            .entry((variable, context))
+                            .or_default()
+                    } else {
+                        self.lifetime.returns.entry(variable).or_default()
+                    };
                     *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
                 }
             }
@@ -96,16 +105,16 @@ impl Function<'_, '_, '_, '_> {
                 else_branch,
             } => {
                 let inner = self.condition_live(condition, live)?;
-                self.count_live(then_branch, inner)?;
+                self.count_live(then_branch, inner, contexts, context)?;
                 if let Some(body) = else_branch {
-                    self.count_live(body, inner)?;
+                    self.count_live(body, inner, contexts, context)?;
                 }
             }
             StmtKind::ConditionalLoop {
                 condition, body, ..
             } => {
                 let inner = self.condition_live(condition, live)?;
-                self.count_live(body, inner)?;
+                self.count_live(body, inner, contexts, context)?;
             }
             StmtKind::For {
                 declaration,
@@ -121,7 +130,7 @@ impl Function<'_, '_, '_, '_> {
                 if let Some(condition) = condition {
                     inner = self.condition_live(condition, inner)?;
                 }
-                self.count_live(body, inner)?;
+                self.count_live(body, inner, contexts, context)?;
             }
             StmtKind::RangeFor { body, .. } => {
                 let facts = self.graph.lower_range_for(id)?;
@@ -141,17 +150,37 @@ impl Function<'_, '_, '_, '_> {
                         inner,
                     )?;
                 }
-                self.count_live(body, inner)?;
+                self.count_live(body, inner, contexts, context)?;
             }
             StmtKind::Label { name, body } => {
                 self.lifetime.labels.insert(name, live);
-                return self.count_live(body, live);
+                self.handlers.labels.insert(name, contexts);
+                return self.count_live(body, live, contexts, context);
             }
             StmtKind::Case { body, .. } | StmtKind::Default(body) => {
-                return self.count_live(body, live);
+                return self.count_live(body, live, contexts, context);
+            }
+            StmtKind::Try { body, handlers } => {
+                self.count_live(body, live, contexts + 1, Some(body))?;
+                for handler in self.tree.handlers.get(handlers) {
+                    let mut inner = live;
+                    if !matches!(handler.exception, ast::ExceptionDeclaration::Ellipsis) {
+                        let (ty, variable) = self.graph.lower_handler(handler.body)?;
+                        if let Some(variable) = variable
+                            && matches!(
+                                self.graph.lower_type(ty)?,
+                                crate::sema::lowering::TypeView::Class(_)
+                            )
+                            && self.automatic_destructor(variable)?.is_some()
+                        {
+                            inner = Some(self.lifetime.add_live(variable, live)?);
+                        }
+                    }
+                    self.count_live(handler.body, inner, contexts + 1, Some(handler.body))?;
+                }
             }
             StmtKind::Do { body, .. } => {
-                self.count_live(body, live)?;
+                self.count_live(body, live, contexts, context)?;
             }
             _ => {}
         }
@@ -178,7 +207,8 @@ impl Function<'_, '_, '_, '_> {
             }
             node = live.parent;
         }
-        self.destroy_cleanups(depth)
+        let contexts = self.handlers.labels.get(&name).copied().unwrap_or(0);
+        self.destroy_context_exit(depth, contexts, false)
     }
 }
 

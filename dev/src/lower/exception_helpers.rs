@@ -62,15 +62,6 @@ pub(super) fn declare(program: &mut Program, symbols: Helpers) -> Result<(), Err
         Ok(())
     };
     declaration(
-        symbols.begin_catch,
-        &[("arg0", Type::Ptr)],
-        Type::Ptr,
-        Role::EhBeginCatch,
-        "__cxa_begin_catch",
-        Linkage::C,
-        Boundary::default(),
-    )?;
-    declaration(
         symbols.terminate,
         &[],
         Type::Void,
@@ -83,7 +74,6 @@ pub(super) fn declare(program: &mut Program, symbols: Helpers) -> Result<(), Err
             ..Boundary::default()
         },
     )?;
-    program.publish_runtime_declaration(symbols.begin_catch);
     program.publish_runtime_declaration(symbols.terminate);
     Ok(())
 }
