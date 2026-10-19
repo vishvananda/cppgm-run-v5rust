@@ -187,8 +187,8 @@ impl Analyzer<'_> {
             .entity(holder)
             .ty
             .ok_or(Error::Invariant("data member without class"))?;
-        if self.lowering() && self.unevaluated == 0 {
-            self.request_object_layout(owner, location);
+        if self.lowering() {
+            self.demand_storage_layout(holder, location)?;
         }
         let mut inner = self.new_expression_facts(ty, V::Lvalue)?;
         inner.member = Some(binding);
@@ -285,14 +285,8 @@ impl Analyzer<'_> {
                 category,
             });
             facts.member_path = path;
-            if self.lowering() && self.unevaluated == 0 {
-                self.request_object_layout(
-                    self.graph
-                        .entity(owner)
-                        .ty
-                        .ok_or(Error::Invariant("member owner type"))?,
-                    location,
-                );
+            if self.lowering() {
+                self.demand_storage_layout(owner, location)?;
             }
             return Ok(facts);
         }
@@ -472,5 +466,72 @@ impl super::graph::Graph {
         };
         self.class_of(object)
             .is_some_and(|class| self.entity(class).key == crate::lex::vocabulary::Keyword::Union)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{Analyzer, layout::LayoutState, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn member_layouts_follow_evaluated_query_uses_without_retyping() {
+        let source = SourceBuffer::new(
+            br"namespace std { struct type_info {}; }
+            struct Result { virtual int get(); };
+            struct Holder { int pad; Result value; };
+            struct Prefix { int pad; }; struct Base { Result value; };
+            struct Derived : Prefix, Base {};
+            struct Receiver { int pad; };
+            struct Unused { Result value; };
+            struct UnusedDerived : Prefix, Base {};
+            struct UnusedReceiver { int pad; };
+            struct Dormant { Result value; };
+            void query(Holder* p, Derived* d, Receiver* r, Result& (Receiver::*f)(),
+                       Unused* u, UnusedDerived* v, UnusedReceiver* w,
+                       Result& (UnusedReceiver::*g)()) {
+                typeid((typeid(p->*(&Holder::value)), p->*(&Holder::value)));
+                typeid(d->*static_cast<Result Derived::*>(&Base::value));
+                typeid((r->*f)());
+                sizeof(u->*(&Unused::value));
+                typeid((v->*static_cast<Result UnusedDerived::*>(&Base::value), 0));
+                typeid(((w->*g)(), 0));
+            }
+            inline void dormant(Dormant* p) { typeid(p->*(&Dormant::value)); }"
+                .to_vec(),
+        )
+        .unwrap();
+        let input = Preprocessor::with_name(&source, b"member-query-layouts").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), count);
+        for (spelling, evaluated) in [
+            (b"Holder".as_slice(), true),
+            (b"Derived", true),
+            (b"Receiver", true),
+            (b"Unused", false),
+            (b"UnusedDerived", false),
+            (b"UnusedReceiver", false),
+            (b"Dormant", false),
+        ] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
+            assert_eq!(
+                matches!(
+                    graph.entity(graph.binding(binding).entity).layout,
+                    LayoutState::NotStarted
+                ),
+                !evaluated,
+            );
+        }
     }
 }
