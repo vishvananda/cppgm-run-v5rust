@@ -1889,6 +1889,16 @@ impl Analyzer<'_> {
             for body in bodies {
                 match body {
                     super::analyzer::DeferredMember::Initializer(_) => (),
+                    super::analyzer::DeferredMember::AggregateConstant(
+                        entity,
+                        initializer,
+                        scope,
+                    ) => {
+                        self.finish_deferred_aggregate_constant(entity, initializer, scope)?;
+                    }
+                    super::analyzer::DeferredMember::Constant(entity, initializer, scope) => {
+                        self.record_member_pointer_initializer(entity, initializer, scope)?;
+                    }
                     super::analyzer::DeferredMember::Body(body) => {
                         if self.graph.entity(body.entity).scope.is_none() {
                             self.function_body(body)?;

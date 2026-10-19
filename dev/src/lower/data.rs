@@ -187,6 +187,10 @@ pub(super) fn items<'a>(
 ) -> Result<Vec<DataItem>, Error> {
     let mut out = Vec::with_capacity(image.len());
     for &item in image {
+        if let StaticItem::Scalar(_, value @ StaticValue::MemberPointer(_)) = item {
+            out.extend(member_items(output, symbols, graph, value)?);
+            continue;
+        }
         out.push(match item {
             StaticItem::Table(class) => DataItem::Address(
                 crate::lowir::vocabulary::Type::Ptr,
@@ -218,6 +222,51 @@ pub(super) fn items<'a>(
         });
     }
     Ok(out)
+}
+/// Member functions use two i64 words, never an i128 item with 16-byte alignment.
+pub(super) fn member_items(
+    output: &mut (impl Output + ?Sized),
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    value: StaticValue,
+) -> Result<Vec<DataItem>, Error> {
+    use crate::lowir::vocabulary::Type;
+    let StaticValue::MemberPointer(value) = value else {
+        return Err(crate::sema::Error::Invariant("member static image value").into());
+    };
+    let (_, element) = graph
+        .lower_member_pointer_type(value.ty)
+        .ok_or(crate::sema::Error::Invariant("member static image type"))?;
+    let function = matches!(
+        graph.lower_type(element)?,
+        crate::sema::lowering::TypeView::Function { .. }
+    );
+    let scalar = |bits| DataItem::Constant(Type::I64, integer(bits));
+    let Some(member) = value.member else {
+        return Ok(if function {
+            vec![scalar(0), scalar(0)]
+        } else {
+            vec![scalar(u64::MAX)]
+        });
+    };
+    if !function {
+        let offset = graph
+            .lower_member_offset(member)?
+            .wrapping_add(graph.lower_anonymous_member_offset(member, None)?)
+            .wrapping_add(value.adjustment.cast_unsigned());
+        return Ok(vec![scalar(offset)]);
+    }
+    let low = if let Some(slot) = graph.lower_virtual_slot(member) {
+        scalar(slot.byte_offset().wrapping_add(1))
+    } else {
+        symbols.demand(member);
+        DataItem::Address(
+            Type::Ptr,
+            symbols.function_symbol(output.program(), member)?,
+            0,
+        )
+    };
+    Ok(vec![low, scalar(value.adjustment.cast_unsigned())])
 }
 pub(super) fn literal_object(
     program: &mut Program,
@@ -370,6 +419,9 @@ pub(super) fn reference_temporary<'a>(
     let (symbol, object) =
         symbols.reference_temporary_symbol(output.program(), entity, evaluated)?;
     let init = match value {
+        StaticValue::MemberPointer(_) => {
+            GlobalInit::Data(member_items(output, symbols, graph, value)?)
+        }
         StaticValue::Integer(0)
             if !evaluated
                 && matches!(
@@ -404,10 +456,16 @@ pub(super) fn reference_temporary<'a>(
         symbol,
         Global {
             name,
-            ty: Some(types::storage(graph, ty)?),
+            ty: if let GlobalInit::Data(items) = &init {
+                super::globals::structured_type(graph, ty, items)?
+            } else {
+                Some(types::storage(graph, ty)?)
+            },
             metadata: Metadata {
                 binding: Some(Binding::Internal),
-                storage: if graph.lower_cv(ty) == 1 && matches!(init, GlobalInit::Constant(_)) {
+                storage: if graph.lower_cv(ty) == 1
+                    && matches!(init, GlobalInit::Constant(_) | GlobalInit::Data(_))
+                {
                     Some(Storage::ReadOnly)
                 } else {
                     None

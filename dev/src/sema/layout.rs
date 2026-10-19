@@ -14,6 +14,7 @@ pub(super) enum LayoutState {
         empty: bool,
         contains_empty: bool,
         contains_volatile_or_union: bool,
+        contains_data_member_pointer: bool,
     },
     Unsupported,
 }
@@ -561,6 +562,7 @@ impl Analyzer<'_> {
         let mut size = 0u64;
         let mut data_size = 0u64;
         let mut contains_volatile_or_union = union;
+        let mut contains_data_member_pointer = false;
         let mut empty = self.graph.entity(entity).members.iter().all(|&member| {
             let member = self.graph.entity(member);
             member.name.is_none()
@@ -606,6 +608,7 @@ impl Analyzer<'_> {
                 empty: base_empty,
                 contains_empty: child_empty,
                 contains_volatile_or_union: child_volatile,
+                contains_data_member_pointer: child_member_pointer,
             } = self.graph.entity(base).layout
             else {
                 return Err(Error::Invariant("base without completed layout"));
@@ -613,6 +616,7 @@ impl Analyzer<'_> {
             empty &= base_empty;
             contains_empty |= child_empty;
             contains_volatile_or_union |= child_volatile;
+            contains_data_member_pointer |= child_member_pointer;
             let base_alignment = if base_empty || pack == 0 {
                 natural
             } else {
@@ -662,6 +666,11 @@ impl Analyzer<'_> {
                 scalar = element;
             }
             contains_volatile_or_union |= self.graph.types.get(scalar).cv.0 & 2 != 0;
+            if (!union || self.graph.entity(entity).members.first() == Some(&member))
+                && self.graph.entity(member).bit_field.is_none()
+            {
+                contains_data_member_pointer |= self.graph.lower_holds_data_member_pointer(ty)?;
+            }
             let mut packable = true;
             if let TypeKind::Class(child) = self.graph.types.get(scalar).kind {
                 let child = self.graph.entity(child);
@@ -771,6 +780,7 @@ impl Analyzer<'_> {
             location,
         )?;
         self.graph.entity_mut(entity).layout = LayoutState::Value {
+            contains_data_member_pointer,
             contains_volatile_or_union,
             empty,
             contains_empty,

@@ -15,6 +15,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(crate) enum Value {
     Integer(u64),
+    MemberPointer(super::symbolic_members::MemberPointer),
     Floating(F, u128),
     Address(EntityId, i64),
     TypeInformation(TypeId, i64),
@@ -133,7 +134,14 @@ impl Analyzer<'_> {
                     return Ok(());
                 }
                 let object = facts.conversion.map_or(element, |c| c.result);
-                let value = self.static_scalar(expr, object, scope)?;
+                let value = if matches!(
+                    self.graph.types.get(object).kind,
+                    TypeKind::MemberPointer { .. }
+                ) {
+                    None
+                } else {
+                    self.static_scalar(expr, object, scope)?
+                };
                 let value_type = self.bare_type(object)?;
                 let entity = self.graph.entity_mut(entity);
                 entity.reference_temporary = Some(ReferenceTemporary {
@@ -185,12 +193,22 @@ impl Analyzer<'_> {
         }
         if !matches!(
             self.graph.types.get(target).kind,
-            TypeKind::Scalar(_) | TypeKind::Enum(_) | TypeKind::Pointer(_)
+            TypeKind::Scalar(_)
+                | TypeKind::Enum(_)
+                | TypeKind::Pointer(_)
+                | TypeKind::MemberPointer { .. }
         ) {
             return Ok(());
         }
         let value = if let Some(expr) = self.single_initializer(initializer) {
             self.static_scalar(expr, target, scope)?
+        } else if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            Some(Value::MemberPointer(
+                super::symbolic_members::MemberPointer::null(self.bare_type(target)?),
+            ))
         } else {
             Some(Value::Integer(0))
         };
@@ -205,6 +223,18 @@ impl Analyzer<'_> {
     ) -> Result<Option<Value>, Error> {
         self.check_stack()?;
         let source = self.graph.expression_facts.get(id)?.ty;
+        if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            return match self
+                .in_constant_evaluation(|a| a.member_pointer_operand(id, target, scope))
+            {
+                Ok(value) => Ok(Some(Value::MemberPointer(value))),
+                Err(Error::NonConstant { .. } | Error::Missing(_)) => Ok(None),
+                Err(error) => Err(error),
+            };
+        }
         // global_lowering.cpp::static_converted: only a bare lambda's
         // conversion is an effect-free static function address.
         if matches!(
@@ -257,6 +287,9 @@ impl Analyzer<'_> {
             Err(error) => return Err(error),
         };
         Ok(match value {
+            super::constant_addresses::TemporaryValue::MemberPointer(value) => {
+                Some(Value::MemberPointer(value))
+            }
             super::constant_addresses::TemporaryValue::Integer(value) => {
                 Some(Value::Integer(value.bits))
             }
@@ -305,6 +338,13 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let source = self.graph.expression_facts.get(id)?.ty;
+        if self.member_pointer_expression(id) {
+            return match self.evaluate_member_pointer(id, scope) {
+                Ok(value) => Ok(Some(Value::MemberPointer(value))),
+                Err(Error::NonConstant { .. } | Error::Missing(_)) => Ok(None),
+                Err(error) => Err(error),
+            };
+        }
         if let Some(format) = self.float_format(source) {
             return match self.evaluate_floating(id, scope) {
                 Ok(value) => {
@@ -454,6 +494,8 @@ impl Analyzer<'_> {
         if let Some(kind) = self.integral_kind(target) {
             let bits = match value {
                 Value::Integer(bits) => bits,
+                Value::MemberPointer(value) if kind.bits == 1 => u64::from(value.member.is_some()),
+                Value::MemberPointer(_) => return Ok(None),
                 Value::Address(_, _)
                 | Value::Literal(_, _)
                 | Value::Temporary(_, _)
@@ -536,7 +578,8 @@ impl Analyzer<'_> {
                         negative,
                     )
                 }
-                Value::Address(_, _)
+                Value::MemberPointer(_)
+                | Value::Address(_, _)
                 | Value::Literal(_, _)
                 | Value::Temporary(_, _)
                 | Value::TypeInformation(_, _) => {

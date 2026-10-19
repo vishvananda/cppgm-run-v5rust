@@ -586,6 +586,9 @@ impl Analyzer<'_> {
             TypeKind::Scalar(Scalar::Basic(f @ (F::Float | F::Double | F::LongDouble))) => {
                 Some(Value::Floating(f, 0))
             }
+            TypeKind::MemberPointer { .. } => Some(Value::MemberPointer(
+                super::symbolic_members::MemberPointer::null(ty),
+            )),
             TypeKind::Scalar(_) | TypeKind::Enum(_) | TypeKind::Pointer(_) => {
                 Some(Value::Integer(0))
             }
@@ -746,6 +749,16 @@ impl Analyzer<'_> {
                     }
                 }
             }
+            TypeKind::MemberPointer { .. } => out.push((
+                origin,
+                self.type_size(target, SourceOffset(0))?.0,
+                Item::Scalar(
+                    target,
+                    Value::MemberPointer(super::symbolic_members::MemberPointer::null(
+                        self.bare_type(target)?,
+                    )),
+                ),
+            )),
             TypeKind::Pointer(_) | TypeKind::Scalar(Scalar::Nullptr) => {}
             TypeKind::Scalar(Scalar::Basic(ty @ (F::Float | F::Double | F::LongDouble))) => {
                 out.push((

@@ -270,6 +270,11 @@ impl Function<'_, '_, '_, '_> {
             GlobalInit::Address(self.static_reference_temporary(entity, false)?, 0)
         } else if let Some(value) = facts.initializer.filter(|_| initializer.is_some()) {
             match value {
+                StaticValue::MemberPointer(_) => self
+                    .static_data_items(&[crate::sema::lowering::StaticItem::Scalar(
+                        facts.ty, value,
+                    )])
+                    .map(GlobalInit::Data)?,
                 StaticValue::Address(..)
                 | StaticValue::Literal(..)
                 | StaticValue::Temporary(..)
@@ -282,6 +287,14 @@ impl Function<'_, '_, '_, '_> {
         } else {
             GlobalInit::Zero
         };
+        if let GlobalInit::Data(items) = &mut init {
+            super::null_initialization::static_nulls(self.graph, facts.ty, items)?;
+        } else if matches!(init, GlobalInit::Zero)
+            && self.graph.lower_member_pointer_type(facts.ty).is_some()
+            && self.graph.lower_holds_data_member_pointer(facts.ty)?
+        {
+            init = GlobalInit::Constant(crate::lowir::literals::Constant::Integer(u128::MAX));
+        }
         if !dynamic
             && matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. })
             && self.graph.lower_reference_reads_storage(entity)

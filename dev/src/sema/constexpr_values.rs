@@ -207,6 +207,10 @@ impl Analyzer<'_> {
         });
         match result {
             Ok(value) => {
+                if required && value.values().any(|(_, _, _, value)|
+                    matches!(value, Some(Value::MemberPointer(value)) if value.provisional())) {
+                    self.deferred.push(super::analyzer::DeferredMember::AggregateConstant(entity, initializer, scope));
+                }
                 self.graph
                     .aggregate_constants
                     .complete
@@ -219,6 +223,15 @@ impl Analyzer<'_> {
             Err(error) => return Err(error),
         }
         Ok(())
+    }
+    pub(super) fn finish_deferred_aggregate_constant(
+        &mut self,
+        entity: EntityId,
+        initializer: Option<ast::Initializer>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        self.graph.aggregate_constants.complete.remove(&entity);
+        self.record_aggregate_constant(entity, initializer, scope, true)
     }
     fn evaluate_aggregate_initializer(
         &mut self,

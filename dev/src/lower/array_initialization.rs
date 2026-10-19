@@ -146,6 +146,25 @@ impl Function<'_, '_, '_, '_> {
             let bytes = self.array_size_subtract(source, bytes, listed_bytes)?;
             self.zero_allocated_bytes(source, rest, bytes)?;
         }
+        if trailing
+            && value_init
+            && self.graph.lower_holds_data_member_pointer(shape.element)?
+            && constructor.is_none_or(|id| self.graph.lower_constructor(id).zero_before_value)
+        {
+            let all = if let Some(count) = array.constant {
+                self.array_count_constant(source, count.wrapping_mul(shape.per_element))?
+            } else if let Some(count) = count {
+                count
+            } else {
+                self.array_size_divide(source, storage.known_size, shape.element_size)?
+            };
+            let remaining = self.array_size_subtract(
+                source,
+                all,
+                shape.listed.wrapping_mul(shape.per_element),
+            )?;
+            self.null_member_elements(shape.element, rest, remaining)?;
+        }
         if constructs && (trailing || array.constant == Some(0)) {
             let count = if let Some(count) = array.constant {
                 self.array_count_constant(

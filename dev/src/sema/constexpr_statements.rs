@@ -294,6 +294,7 @@ impl Analyzer<'_> {
                     .local(entity)
                     .ok_or(Error::Invariant("condition local missing"))?;
                 match self.constexpr_frames.read(place, location)? {
+                    Value::MemberPointer(value) => Ok(value.member.is_some()),
                     Value::Integer(value) => Ok(value.bits != 0),
                     Value::Floating(value) => Ok(value.value.truth()),
                     Value::Pointer(value) => {

@@ -310,6 +310,9 @@ impl Analyzer<'_> {
                 TypeKind::Scalar(Scalar::Basic(ty @ (F::Float | F::Double | F::LongDouble))) => {
                     Value::Floating(ty, 0)
                 }
+                TypeKind::MemberPointer { .. } => Value::MemberPointer(
+                    super::symbolic_members::MemberPointer::null(self.bare_type(target)?),
+                ),
                 _ => Value::Integer(0),
             }
         };

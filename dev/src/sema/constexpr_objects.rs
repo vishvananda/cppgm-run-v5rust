@@ -572,7 +572,7 @@ impl Analyzer<'_> {
         place.designated = target;
         Ok(place)
     }
-    fn constant_type_holds(
+    pub(super) fn constant_type_holds(
         &mut self,
         root: TypeId,
         offset: i64,

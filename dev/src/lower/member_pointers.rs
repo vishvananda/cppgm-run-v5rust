@@ -16,6 +16,33 @@ use crate::{
 };
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn member_pointer_constant(
+        &mut self,
+        value: crate::sema::lowering::MemberPointerValue,
+    ) -> Result<RValue, Error> {
+        let Some(member) = value.member else {
+            return self.zero(value.ty);
+        };
+        if self.data_member_pointer(value.ty) {
+            let offset = self
+                .graph
+                .lower_member_offset(member)?
+                .wrapping_add(self.graph.lower_anonymous_member_offset(member, None)?)
+                .wrapping_add(value.adjustment.cast_unsigned());
+            let constant = self.builder.integer(u128::from_le_bytes(
+                i128::from(i64::from_le_bytes(offset.to_le_bytes())).to_le_bytes(),
+            ))?;
+            return Ok(RValue {
+                value: constant,
+                ty: Type::I64,
+                source: value.ty,
+                literal: false,
+                bits: Some(offset),
+            });
+        }
+        self.member_function_word(member, value.ty, value.adjustment.cast_unsigned())
+    }
+
     pub(super) fn bound_pointer_call(
         &mut self,
         access: ast::ExprId,

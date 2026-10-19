@@ -86,7 +86,24 @@ impl Analyzer<'_> {
                 value =
                     Value::Pointer(self.constant_base_pointer(pointer, element, path, location)?);
             }
+            if let Value::MemberPointer(member) = value
+                && matches!(
+                    self.graph.types.get(step.after.result).kind,
+                    TypeKind::MemberPointer { .. }
+                )
+            {
+                value = Value::MemberPointer(self.adjusted_member(
+                    member,
+                    step.after.result,
+                    location,
+                )?);
+            }
             return self.convert_constant_scalar(value, step.after.result, location);
+        }
+        if self.member_pointer_expression(id) {
+            return self
+                .evaluate_member_pointer(id, scope)
+                .map(Value::MemberPointer);
         }
         if self.floating_expression(id) {
             return Ok(Value::Floating(self.evaluate_floating(id, scope)?));
@@ -112,6 +129,14 @@ impl Analyzer<'_> {
         place: Address,
         location: SourceOffset,
     ) -> Result<Value, Error> {
+        if matches!(
+            self.graph.types.get(place.designated).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            return self
+                .read_constant_member_pointer(place, location)
+                .map(Value::MemberPointer);
+        }
         if self.float_format(place.designated).is_some() {
             self.read_constant_floating(place, location)
                 .map(Value::Floating)
@@ -142,7 +167,7 @@ impl Analyzer<'_> {
                         .ok_or(Error::Invariant("nonintegral scalar value"))?
                         .signed,
                 ),
-                Value::Pointer(_) => {
+                Value::Pointer(_) | Value::MemberPointer(_) => {
                     return Err(nonconstant(
                         location,
                         "a pointer converted to a floating type",
@@ -172,7 +197,8 @@ impl Analyzer<'_> {
                     }
                 }
                 Value::Pointer(value) if kind.bits == 1 => u64::from(value.root != Root::Null),
-                Value::Pointer(_) => {
+                Value::MemberPointer(value) if kind.bits == 1 => u64::from(value.member.is_some()),
+                Value::Pointer(_) | Value::MemberPointer(_) => {
                     return Err(nonconstant(
                         location,
                         "a pointer converted to an integer in a constant expression",
@@ -180,6 +206,12 @@ impl Analyzer<'_> {
                 }
             };
             return Ok(Value::Integer(Constant { bits, ty: target }));
+        }
+        if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            return Self::convert_member_scalar(value, target, location).map(Value::MemberPointer);
         }
         Ok(value)
     }
@@ -759,7 +791,7 @@ mod tests {
                         );
                     }
                     Value::Pointer(value) => assert!(matches!(value.root, Root::Variable(_))),
-                    Value::Integer(_) => panic!("conversion result"),
+                    Value::Integer(_) | Value::MemberPointer(_) => panic!("conversion result"),
                 }
                 assert!(!analyzer.constexpr_frames.active());
                 assert_eq!(analyzer.constexpr_frames.depth(), 0);

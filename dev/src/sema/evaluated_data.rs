@@ -87,6 +87,9 @@ impl Analyzer<'_> {
             }
             let size = self.type_size(ty, SourceOffset(0))?.0;
             let item = match value {
+                Some(TemporaryValue::MemberPointer(value)) => {
+                    Item::Scalar(ty, Value::MemberPointer(value))
+                }
                 Some(TemporaryValue::Integer(value)) => {
                     Item::Scalar(ty, Value::Integer(value.bits))
                 }

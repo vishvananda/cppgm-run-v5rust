@@ -601,7 +601,9 @@ fn constant_discards_use_places_and_restore_scratch_after_failure() {
             ConstantState::Value(value) => assert_eq!(Some(value.bits), expected),
             ConstantState::None => assert!(expected.is_none()),
             ConstantState::Evaluating => panic!("unfinished constant"),
-            ConstantState::Floating(_) => panic!("expected an integral constant"),
+            ConstantState::Floating(_) | ConstantState::MemberPointer(_) => {
+                panic!("expected an integral constant")
+            }
         }
         if index != 2 {
             continue;

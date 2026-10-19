@@ -349,6 +349,9 @@ fn define_storage<'a>(
         GlobalInit::Zero
     } else {
         match facts.initializer {
+            Some(value @ StaticValue::MemberPointer(_)) => {
+                GlobalInit::Data(data::member_items(output, symbols, graph, value)?)
+            }
             Some(StaticValue::Integer(bits)) => {
                 GlobalInit::Constant(Constant::Integer(u128::from(bits)))
             }
@@ -375,13 +378,21 @@ fn define_storage<'a>(
             }
         }
     };
+    if let GlobalInit::Data(items) = &mut init {
+        super::null_initialization::static_nulls(graph, facts.ty, items)?;
+    } else if matches!(init, GlobalInit::Zero)
+        && graph.lower_member_pointer_type(facts.ty).is_some()
+        && graph.lower_holds_data_member_pointer(facts.ty)?
+    {
+        init = GlobalInit::Constant(Constant::Integer(u128::MAX));
+    }
     if !dynamic
         && matches!(graph.lower_type(facts.ty)?, TypeView::Reference { .. })
         && graph.lower_reference_reads_storage(entity)
     {
         symbols.demand_reference_initializer_calls(graph, tree, initializer)?;
     }
-    if array && let GlobalInit::Data(items) = &init {
+    if let GlobalInit::Data(items) = &init {
         ty = structured_type(graph, facts.ty, items)?;
     }
     align_storage(graph, entity, &mut ty, &mut init)?;

@@ -14,6 +14,7 @@ pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::literal_calls::LiteralCall;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
+pub(crate) use super::symbolic_members::MemberPointer as MemberPointerValue;
 pub(crate) use super::virtual_members::{SlotId, SlotKind};
 use super::{
     Error,

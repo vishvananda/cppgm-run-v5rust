@@ -59,6 +59,7 @@ mod materialization;
 mod member_initialization;
 mod member_pointers;
 mod mutations;
+mod null_initialization;
 mod object_arrays;
 mod operator_calls;
 mod pointers;

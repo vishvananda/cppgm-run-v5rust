@@ -240,6 +240,14 @@ impl Function<'_, '_, '_, '_> {
         if let Some(pointer) = self.evaluated_pointer(id)? {
             return Ok(pointer);
         }
+        if let Some(value) = self.graph.lower_evaluated_member_pointer(self.tree, id)? {
+            if let ExprKind::Member { base, op, .. } =
+                self.tree.expressions.get(self.without_parentheses(id)).kind
+            {
+                self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
+            }
+            return self.member_pointer_constant(value);
+        }
         if let Some(value) = self.evaluated_floating(id)? {
             return Ok(value);
         }
@@ -351,7 +359,8 @@ impl Function<'_, '_, '_, '_> {
                         delta != 0 && !self.nonnull_pointer(operand),
                     );
                 }
-                self.convert(value, source, Context::Cast)
+                let value = self.convert(value, source, Context::Cast)?;
+                self.fit(value, source)
             }
             ExprKind::FunctionalCast {
                 arguments, braced, ..
@@ -636,7 +645,8 @@ impl Function<'_, '_, '_, '_> {
                 return self.zero(source);
             }
             let value = self.operand(operand, Context::Cast)?;
-            self.convert(value, source, Context::Cast)
+            let value = self.convert(value, source, Context::Cast)?;
+            self.fit(value, source)
         } else {
             self.zero(source)
         }

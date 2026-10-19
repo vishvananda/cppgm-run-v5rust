@@ -312,6 +312,57 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
+    pub(crate) fn lower_holds_data_member_pointer(
+        &self,
+        mut ty: super::types::TypeId,
+    ) -> Result<bool, Error> {
+        while let TypeKind::Array { element, .. } = self.types.get(ty).kind {
+            ty = element;
+        }
+        Ok(match self.types.get(ty).kind {
+            TypeKind::MemberPointer { element, .. } => {
+                !matches!(self.types.get(element).kind, TypeKind::Function { .. })
+            }
+            TypeKind::Class(class) => match self.entity(class).layout {
+                super::layout::LayoutState::Value {
+                    contains_data_member_pointer,
+                    ..
+                } => contains_data_member_pointer,
+                _ => return Err(Error::Invariant("null member query without class layout")),
+            },
+            _ => false,
+        })
+    }
+    /// Only the subobjects whose zero image contains the data-member null sentinel.
+    pub(crate) fn lower_null_subobjects(
+        &self,
+        class: super::graph::EntityId,
+    ) -> Result<Vec<(super::types::TypeId, u64)>, Error> {
+        let mut children = Vec::new();
+        for edge in &self.entity(class).bases {
+            let ty = self.lower_entity_type(edge.class)?;
+            if self.lower_holds_data_member_pointer(ty)? {
+                children.push((
+                    ty,
+                    edge.offset
+                        .ok_or(Error::Invariant("null base without layout"))?,
+                ));
+            }
+        }
+        for &member in &self.entity(class).members {
+            let ty = self.lower_entity_type(member)?;
+            if self.entity(member).bit_field.is_none()
+                && self.lower_holds_data_member_pointer(ty)?
+            {
+                children.push((ty, self.lower_member_offset(member)?));
+            }
+            if self.entity(class).key == crate::lex::vocabulary::Keyword::Union {
+                break;
+            }
+        }
+        Ok(children)
+    }
+
     pub(crate) fn lower_bound_member_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(facts.object.is_some()

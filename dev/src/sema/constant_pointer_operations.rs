@@ -45,6 +45,13 @@ impl Analyzer<'_> {
         scope: ScopeId,
         skipping: bool,
     ) -> Result<bool, Error> {
+        if self.semantic() && self.member_pointer_expression(id) {
+            return if skipping {
+                Ok(false)
+            } else {
+                Ok(self.evaluate_member_pointer(id, scope)?.member.is_some())
+            };
+        }
         if self.semantic() && self.floating_expression(id) {
             return if skipping {
                 Ok(false)

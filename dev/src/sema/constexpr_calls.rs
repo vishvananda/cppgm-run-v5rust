@@ -148,7 +148,18 @@ impl Analyzer<'_> {
         ) {
             return Ok(Value::Pointer(self.evaluate_address(id, scope)?));
         }
-        if self.float_format(target).is_some() || self.floating_expression(id) {
+        if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            return self
+                .member_pointer_operand(id, target, scope)
+                .map(Value::MemberPointer);
+        }
+        if self.float_format(target).is_some()
+            || self.floating_expression(id)
+            || self.member_pointer_expression(id)
+        {
             let value = self.scalar_value(id, scope)?;
             return self.convert_constant_scalar(
                 value,
@@ -177,6 +188,9 @@ impl Analyzer<'_> {
             }));
         }
         match self.graph.types.get(target).kind {
+            TypeKind::MemberPointer { .. } => Ok(Value::MemberPointer(
+                super::symbolic_members::MemberPointer::null(self.bare_type(target)?),
+            )),
             TypeKind::Pointer(element) => Ok(Value::Pointer(Address::new(Root::Null, element))),
             TypeKind::Scalar(Scalar::Nullptr) => {
                 Ok(Value::Pointer(Address::new(Root::Null, target)))
@@ -275,7 +289,7 @@ impl Analyzer<'_> {
                 bits: 0,
                 ty: self.graph.expression_facts.get(id)?.ty,
             }),
-            Returned::Value(Value::Pointer(_) | Value::Floating(_)) => {
+            Returned::Value(Value::Pointer(_) | Value::Floating(_) | Value::MemberPointer(_)) => {
                 Err(nonconstant(location, "not an integral constant expression"))
             }
         }
@@ -322,7 +336,24 @@ impl Analyzer<'_> {
                 "a virtual function call in a constant expression",
             ));
         }
-        let function = if let Some(CallTarget::Direct(binding)) = facts.call {
+        let bound = if self.graph.lower_bound_member_pointer(callee)? {
+            let (pointer, object) = self.constant_member_pointer_object(callee, scope)?;
+            let function = pointer
+                .member
+                .ok_or(Error::Invariant("bound null member constant"))?;
+            if self.graph.lower_virtual_slot(function).is_some() {
+                return Err(nonconstant(
+                    location,
+                    "a virtual function call in a constant expression",
+                ));
+            }
+            Some((function, object))
+        } else {
+            None
+        };
+        let function = if let Some((function, _)) = bound {
+            function
+        } else if let Some(CallTarget::Direct(binding)) = facts.call {
             self.graph.binding(binding).entity
         } else {
             let address = self.address_operand(callee, scope)?;
@@ -354,7 +385,9 @@ impl Analyzer<'_> {
                     .function
                     .is_some_and(|f| f.is_static)
             });
-        let object = if let Some(receiver) = receiver {
+        let object = if let Some((_, object)) = bound {
+            Some(object)
+        } else if let Some(receiver) = receiver {
             let place = self.constant_receiver_place(receiver.object.source, scope, location)?;
             Some(
                 self.constant_project_path(place, receiver.naming_path, location)

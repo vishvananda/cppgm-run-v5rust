@@ -20,6 +20,41 @@ fn without_parentheses(tree: &ast::Tree, mut id: ast::ExprId) -> ast::ExprId {
 }
 
 impl Graph {
+    pub(crate) fn lower_evaluated_member_pointer(
+        &self,
+        tree: &ast::Tree,
+        id: ast::ExprId,
+    ) -> Result<Option<super::symbolic_members::MemberPointer>, Error> {
+        let id = without_parentheses(tree, id);
+        let facts = self.expression_facts.get(id)?;
+        if !matches!(
+            self.types.get(facts.ty).kind,
+            TypeKind::MemberPointer { .. }
+        ) || facts.category == ValueCategory::Prvalue
+            || self.types.get(facts.ty).cv.0 & 2 != 0
+        {
+            return Ok(None);
+        }
+        let entity = match tree.expressions.get(id).kind {
+            ExprKind::Id(name) => self.lower_name(name)?,
+            ExprKind::Member { .. } => self.lower_member(id)?.0,
+            _ => return Ok(None),
+        };
+        let variable = self.entity(entity);
+        if !variable.constexpr
+            || !self.lower_static_member(entity)
+            || matches!(
+                self.types.get(self.lower_entity_type(entity)?).kind,
+                TypeKind::Reference { .. }
+            )
+        {
+            return Ok(None);
+        }
+        Ok(match variable.constant {
+            super::constants::ConstantState::MemberPointer(value) => Some(value),
+            _ => None,
+        })
+    }
     pub(crate) fn lower_evaluated_floating(
         &self,
         tree: &ast::Tree,
@@ -71,6 +106,12 @@ impl Graph {
                 self.types.get(self.lower_entity_type(entity)?).kind,
                 TypeKind::Reference { .. }
             )
+        {
+            return Ok(None);
+        }
+        if variable.reference_temporary.is_some()
+            && matches!(self.types.get(self.lower_entity_type(entity)?).kind,
+                TypeKind::Reference { element, .. } if matches!(self.types.get(element).kind, TypeKind::MemberPointer { .. }))
         {
             return Ok(None);
         }

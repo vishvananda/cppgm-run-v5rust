@@ -120,6 +120,8 @@ pub(super) struct DeferredBody {
 #[derive(Clone, Copy)]
 pub(super) enum DeferredMember {
     Initializer(super::graph::EntityId),
+    Constant(super::graph::EntityId, ast::Initializer, ScopeId),
+    AggregateConstant(super::graph::EntityId, Option<ast::Initializer>, ScopeId),
     Body(DeferredBody),
     Defaults(super::default_arguments::PendingDefaults),
 }

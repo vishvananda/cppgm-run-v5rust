@@ -223,7 +223,7 @@ impl Analyzer<'_> {
             Value::TypeInformation(ty, offset) => (Root::TypeInformation(ty), offset),
             Value::Literal(id, offset) => (Root::Literal(id), offset),
             Value::Temporary(id, offset) => (Root::Published(id), offset),
-            Value::Integer(_) | Value::Floating(..) => {
+            Value::Integer(_) | Value::Floating(..) | Value::MemberPointer(_) => {
                 return Err(nonconstant(location, "a static image without an address"));
             }
         };

@@ -24,6 +24,7 @@ pub(super) enum ConstantState {
     Evaluating,
     Value(Constant),
     Floating(super::constant_floats::FloatingId),
+    MemberPointer(super::symbolic_members::MemberPointer),
 }
 fn not_constant(location: SourceOffset, message: &'static str) -> Error {
     Error::NonConstant { location, message }
@@ -432,6 +433,12 @@ impl Analyzer<'_> {
         }
         if self.semantic()
             && self.graph.expression_facts.get(id).is_ok()
+            && let Some(value) = self.member_integral_value(id, scope, skipping)?
+        {
+            return Ok(Some(value));
+        }
+        if self.semantic()
+            && self.graph.expression_facts.get(id).is_ok()
             && let Some(value) = self.address_integral_value(id, scope, skipping)?
         {
             if !skipping && !self.constexpr_frames.active() {
@@ -828,6 +835,7 @@ impl Analyzer<'_> {
                         facts.call_form == super::expression_facts::CallForm::Operator
                     })
                     || self.consumes_address(id)
+                    || self.consumes_member_pointer(id)
                     || self.floating_binary(id)
                     || op.token.as_punctuator() == Some(P::Comma))
             {
@@ -1021,7 +1029,8 @@ impl Analyzer<'_> {
                 match old {
                     super::constant_addresses::TemporaryValue::Integer(old) => Ok(old),
                     super::constant_addresses::TemporaryValue::Pointer(_)
-                    | super::constant_addresses::TemporaryValue::Floating(_) => {
+                    | super::constant_addresses::TemporaryValue::Floating(_)
+                    | super::constant_addresses::TemporaryValue::MemberPointer(_) => {
                         Err(Error::Invariant("integer increment with pointer value"))
                     }
                 }
@@ -1179,6 +1188,15 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("constant object without type"))?;
         let reference = matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. });
+        if self.semantic()
+            && self.graph.entity(entity).constexpr
+            && matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::MemberPointer { .. }
+            )
+        {
+            return self.record_member_pointer_initializer(entity, initializer, scope);
+        }
         if self.semantic() && reference {
             return Ok(());
         }

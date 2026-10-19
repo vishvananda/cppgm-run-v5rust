@@ -441,7 +441,8 @@ impl Function<'_, '_, '_, '_> {
         let (size, alignment) = super::types::layout(self.graph, ty)?;
         let size = span.unwrap_or(size);
         if !volatile && self.graph.lower_contiguous_zero(ty)? {
-            return self.effect(I::ZeroInit(size, alignment, object));
+            self.effect(I::ZeroInit(size, alignment, object))?;
+            return self.null_data_members(ty, object, 0);
         }
         let mut offset = 0;
         while offset < size {
@@ -471,7 +472,7 @@ impl Function<'_, '_, '_, '_> {
             ))?;
             offset += bytes;
         }
-        Ok(())
+        self.null_data_members(ty, object, 0)
     }
     pub(super) fn initialize_class_member(
         &mut self,

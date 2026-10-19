@@ -92,6 +92,7 @@ pub(super) enum TemporaryValue {
     Integer(Constant),
     Floating(super::constant_floats::Floating),
     Pointer(Address),
+    MemberPointer(super::symbolic_members::MemberPointer),
 }
 #[derive(Default)]
 pub(super) struct Evaluation {
@@ -630,6 +631,22 @@ impl Analyzer<'_> {
     ) -> Result<Address, Error> {
         self.in_constant_evaluation(|analyzer| analyzer.constant_place_inner(id, scope))
     }
+    fn constant_operator_place(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        if self.graph.expression_facts.get(id)?.literal_call.is_some() {
+            return Err(nonconstant(
+                self.tree.expressions.get(id).location,
+                "a glvalue outside constant evaluation",
+            ));
+        }
+        match self.constant_call_result(id, scope)? {
+            super::constexpr_calls::Returned::Place(place) => Ok(place),
+            _ => Err(Error::Invariant("reference operator returned no place")),
+        }
+    }
     fn constant_place_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Address, Error> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
@@ -640,17 +657,10 @@ impl Analyzer<'_> {
         if self.graph.class_of(facts.ty).is_some() && facts.category == ValueCategory::Prvalue {
             return self.constant_object_place(id, scope);
         }
-        if facts.literal_call.is_some() {
-            return Err(nonconstant(
-                location,
-                "a glvalue outside constant evaluation",
-            ));
-        }
-        if facts.call_form == super::expression_facts::CallForm::Operator {
-            return match self.constant_call_result(id, scope)? {
-                super::constexpr_calls::Returned::Place(place) => Ok(place),
-                _ => Err(Error::Invariant("reference operator returned no place")),
-            };
+        if facts.literal_call.is_some()
+            || facts.call_form == super::expression_facts::CallForm::Operator
+        {
+            return self.constant_operator_place(id, scope);
         }
         match node.kind {
             ExprKind::Id(name) => {
@@ -753,6 +763,11 @@ impl Analyzer<'_> {
                     }
                     _ => Err(nonconstant(location, "a name that designates no object")),
                 }
+            }
+            ExprKind::Binary { op, .. }
+                if matches!(op.token.as_punctuator(), Some(P::DotStar | P::ArrowStar)) =>
+            {
+                self.constant_member_pointer_place(id, scope)
             }
             ExprKind::Binary {
                 op,
@@ -988,7 +1003,9 @@ impl Analyzer<'_> {
             if self.expression_temporary_value(id).is_none() {
                 let value = if self.is_address_expression(id) {
                     TemporaryValue::Pointer(self.address_operand(operand, scope)?)
-                } else if self.float_format(facts.ty).is_some() || self.floating_expression(operand)
+                } else if self.float_format(facts.ty).is_some()
+                    || self.floating_expression(operand)
+                    || self.member_pointer_expression(operand)
                 {
                     self.constant_operand_value(operand, facts.ty, scope)?
                 } else {
@@ -1034,7 +1051,9 @@ impl Analyzer<'_> {
                     self.constexpr_frames.valid_pointer(value, location)?;
                     Ok(value)
                 }
-                TemporaryValue::Integer(_) | TemporaryValue::Floating(_) => {
+                TemporaryValue::Integer(_)
+                | TemporaryValue::Floating(_)
+                | TemporaryValue::MemberPointer(_) => {
                     Err(Error::Invariant("integer object read as pointer"))
                 }
             };
@@ -1128,6 +1147,9 @@ impl Analyzer<'_> {
                     .expression_temporary_value(id)
                     .ok_or(Error::Invariant("write to an uncreated constant temporary"))?;
                 let matches = match old {
+                    TemporaryValue::MemberPointer(old) => {
+                        self.bare_type(place.designated)? == old.ty
+                    }
                     TemporaryValue::Integer(old) => self.bare_type(place.designated)? == old.ty,
                     TemporaryValue::Floating(old) => self.bare_type(place.designated)? == old.ty,
                     TemporaryValue::Pointer(_) => matches!(
@@ -1177,7 +1199,9 @@ impl Analyzer<'_> {
                 place.designated = self.bare_type(place.designated)?;
                 match self.constexpr_frames.read(place, location)? {
                     TemporaryValue::Integer(value) => Ok(value),
-                    TemporaryValue::Pointer(_) | TemporaryValue::Floating(_) => {
+                    TemporaryValue::Pointer(_)
+                    | TemporaryValue::Floating(_)
+                    | TemporaryValue::MemberPointer(_) => {
                         Err(Error::Invariant("pointer object read as integer"))
                     }
                 }
@@ -1226,7 +1250,8 @@ impl Analyzer<'_> {
                         "a read of an object that is not initialized",
                     )),
                     super::constants::ConstantState::None
-                    | super::constants::ConstantState::Floating(_) => Err(nonconstant(
+                    | super::constants::ConstantState::Floating(_)
+                    | super::constants::ConstantState::MemberPointer(_) => Err(nonconstant(
                         location,
                         "a variable is not usable in a constant expression",
                     )),
@@ -1495,6 +1520,7 @@ impl Analyzer<'_> {
                 }
                 let value = if analyzer.float_format(element).is_some()
                     || analyzer.floating_expression(expr)
+                    || analyzer.member_pointer_expression(expr)
                 {
                     analyzer.constant_operand_value(expr, element, scope)?
                 } else {
