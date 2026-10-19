@@ -93,7 +93,7 @@ impl Function<'_, '_, '_, '_> {
         });
         let first = self.lifetime.cleanups.len();
         let region = if let Some(written) = base.initializer {
-            self.begin_base_initializer(written, constructor)?
+            self.begin_subobject_initializer(written, constructor)?
         } else {
             false
         };

@@ -15,6 +15,10 @@ pub(super) struct StorageSymbols {
     pub metadata: crate::lowir::model::Metadata,
     pub guard: Option<(crate::lowir::model::SymbolId, crate::lowir::model::Metadata)>,
 }
+pub(super) struct StaticTemporaries {
+    pub reference: bool,
+    pub made: Vec<super::shutdown::Finalizer>,
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn local_static(
         &mut self,
@@ -143,9 +147,19 @@ impl Function<'_, '_, '_, '_> {
         let first = self.lifetime.cleanups.len();
         let persistent = self.persistent_references;
         self.persistent_references = true;
-        let previous = self.static_temporaries.replace(Vec::new());
+        let previous = self.static_temporaries.replace(StaticTemporaries {
+            reference: matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. }),
+            made: Vec::new(),
+        });
         let saved = self.symbols.replace_temporary_owner(Some((entity, 0)));
+        let mut region = false;
+        let construction = self.lifetime.construction;
+        self.lifetime.construction |= aggregate;
         let result = (|| {
+            if aggregate {
+                let temporaries = self.local_initializer_temporaries(initializer, facts.ty)?;
+                region = self.begin_local_initializer(entity, initializer, true, temporaries)?;
+            }
             match self.graph.lower_type(facts.ty)? {
                 TypeView::Array { .. } => {
                     self.local_array(entity, facts.ty, address, initializer)?;
@@ -158,6 +172,10 @@ impl Function<'_, '_, '_, '_> {
                         "static reference without initializer",
                     ))?;
                     let expr = self.initializer_expression(written)?;
+                    region = self.begin_full_expression(
+                        Some(expr),
+                        super::temporary_scan::ExpressionUse::Ordinary,
+                    )?;
                     let target = self.bind_static_reference(expr, facts.ty)?;
                     self.effect(I::Store(
                         Facts::memory(false, true),
@@ -166,10 +184,20 @@ impl Function<'_, '_, '_, '_> {
                         address,
                     ))?;
                 }
-                _ => self.initialize_scalar(facts.ty, address, initializer)?,
+                _ => {
+                    let expr = initializer
+                        .map(|written| self.initializer_expression(written))
+                        .transpose()?;
+                    region = self.begin_full_expression(
+                        expr,
+                        super::temporary_scan::ExpressionUse::Ordinary,
+                    )?;
+                    self.initialize_scalar(facts.ty, address, initializer)?;
+                }
             }
             Ok::<(), Error>(())
         })();
+        self.lifetime.construction = construction;
         self.persistent_references = persistent;
         self.symbols.replace_temporary_owner(saved);
         let temporaries = std::mem::replace(&mut self.static_temporaries, previous).ok_or(
@@ -177,8 +205,9 @@ impl Function<'_, '_, '_, '_> {
         )?;
         result?;
         self.destroy_temporaries(first)?;
-        if !temporaries.is_empty() {
-            self.register_static_finalizers(symbol, &temporaries, facts.ty)?;
+        self.end_lifetime_expression(region)?;
+        if !temporaries.made.is_empty() {
+            self.register_static_finalizers(symbol, &temporaries.made, facts.ty)?;
         }
         self.close_lifetime_region()?;
         if destroyed {
@@ -281,7 +310,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
 
-    fn register_static_destruction(
+    pub(super) fn register_static_destruction(
         &mut self,
         global: crate::lowir::model::SymbolId,
         ty: crate::sema::lowering::TypeId,
@@ -312,7 +341,8 @@ impl Function<'_, '_, '_, '_> {
         program.stream_last_definition(&mut self.symbols.generated_definitions)?;
         let registrar = self.symbols.atexit_function(program)?;
         let arguments = self.builder.arguments(&[Value::Symbol(destructor)])?;
-        self.emit(
+        self.before_lifetime_call(false)?;
+        let value = self.emit(
             I::Call(Call {
                 result: Type::I32,
                 callee: Value::Symbol(registrar),
@@ -322,6 +352,7 @@ impl Function<'_, '_, '_, '_> {
             }),
             ty,
         )?;
+        self.finish_lifetime_call(value, false)?;
         Ok(())
     }
 

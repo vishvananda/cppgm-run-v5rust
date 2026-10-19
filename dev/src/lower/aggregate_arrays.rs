@@ -112,7 +112,10 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         if self.lifetime.region {
             self.close_lifetime_region()?;
-            self.before_lifetime_call(true)?;
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        } else {
+            self.lifetime.temporary_split = Some(self.builder.position()?);
         }
         Ok(scope)
     }

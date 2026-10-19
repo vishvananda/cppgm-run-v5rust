@@ -27,11 +27,23 @@ impl Function<'_, '_, '_, '_> {
         let Value::Symbol(global) = storage else {
             return Ok(());
         };
+        // A static reference registers its successfully initialized temporaries
+        // together. A static object's reference-member temporary registers as
+        // soon as it completes, before later members can throw.
+        if self
+            .static_temporaries
+            .as_ref()
+            .is_some_and(|local| !local.reference)
+        {
+            return self.register_static_destruction(global, ty);
+        }
         if let Some(flag) = self.symbols.persistent_finalizer(
             self.builder.program(),
             global,
             ty,
-            self.static_temporaries.as_mut(),
+            self.static_temporaries
+                .as_mut()
+                .map(|local| &mut local.made),
         )? {
             let one = self.builder.integer(1)?;
             self.effect(crate::lowir::model::InstructionKind::Store(

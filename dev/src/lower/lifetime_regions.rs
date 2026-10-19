@@ -474,6 +474,10 @@ impl Function<'_, '_, '_, '_> {
         if std::mem::take(&mut self.lifetime.result_region)
             == super::class_results::ResultRegion::Construction
             || self.lifetime.temporary_segment.is_nothrow()
+            || self
+                .lifetime
+                .temporary_split
+                .is_some_and(|position| self.builder.same_block(position))
         {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         } else if let Some(position) = call_start {

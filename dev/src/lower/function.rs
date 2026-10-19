@@ -39,7 +39,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub captured_members: HashMap<EntityId, EntityId>,
     pub closure_this: Option<EntityId>,
     pub persistent_references: bool,
-    pub static_temporaries: Option<Vec<super::shutdown::Finalizer>>,
+    pub static_temporaries: Option<super::local_storage::StaticTemporaries>,
     pub static_initializer: bool,
     pub initialization_output: Option<super::startup::InitializationOutput<'symbols>>,
     // While a converting constructor consumes its source, its first standard
@@ -619,27 +619,14 @@ impl Function<'_, '_, '_, '_> {
         let entity = self.graph.lower_declared(declarator)?;
         self.local_entity(entity, initializer, tokens)
     }
-    fn local_entity(
+    pub(super) fn begin_local_initializer(
         &mut self,
         entity: EntityId,
         initializer: Option<ast::Initializer>,
-        tokens: Option<ast::TokenSpan<u32>>,
-    ) -> Result<(), Error> {
-        let reachable = !self.terminated;
-        let ty = self.local_object_type(entity)?;
-        let object = matches!(
-            self.graph.lower_type(ty)?,
-            TypeView::Class(_) | TypeView::Array { .. }
-        );
+        object: bool,
+        temporaries: bool,
+    ) -> Result<bool, Error> {
         let expression = self.lifetime.full_expression;
-        let temporary_floor = self.lifetime.cleanups.len();
-        // The selected local constructor owns the destination transfer. Its
-        // initializer query counts only the source's evaluation temporaries.
-        let temporaries = if object {
-            self.local_initializer_temporaries(initializer, ty)?
-        } else {
-            self.initializer_temporaries(initializer)?
-        };
         let began = if !expression
             && self.constructor_expression(entity, initializer, temporaries)?
         {
@@ -698,6 +685,33 @@ impl Function<'_, '_, '_, '_> {
                 _ => (),
             }
         }
+        Ok(began)
+    }
+    fn local_entity(
+        &mut self,
+        entity: EntityId,
+        initializer: Option<ast::Initializer>,
+        tokens: Option<ast::TokenSpan<u32>>,
+    ) -> Result<(), Error> {
+        if !self.graph.lower_automatic(entity) {
+            return self.initialize_local_variable(entity, initializer, tokens);
+        }
+        let reachable = !self.terminated;
+        let ty = self.local_object_type(entity)?;
+        let object = matches!(
+            self.graph.lower_type(ty)?,
+            TypeView::Class(_) | TypeView::Array { .. }
+        );
+        let expression = self.lifetime.full_expression;
+        let temporary_floor = self.lifetime.cleanups.len();
+        // The selected local constructor owns the destination transfer. Its
+        // initializer query counts only the source's evaluation temporaries.
+        let temporaries = if object {
+            self.local_initializer_temporaries(initializer, ty)?
+        } else {
+            self.initializer_temporaries(initializer)?
+        };
+        let began = self.begin_local_initializer(entity, initializer, object, temporaries)?;
         let construction = self.lifetime.construction;
         self.lifetime.construction |= object;
         let saved_owner = self.reference_lifetimes.aggregate;

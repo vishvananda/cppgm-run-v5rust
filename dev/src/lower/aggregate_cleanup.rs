@@ -100,7 +100,6 @@ impl Function<'_, '_, '_, '_> {
             self.aggregation.floor = Some(scope.first);
             self.aggregation.landing = false;
             self.aggregation.serial = self.lifetime.regions_opened;
-            self.lifetime.full_expression |= !values.is_empty();
         }
         Ok(scope)
     }

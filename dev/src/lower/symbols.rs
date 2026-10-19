@@ -1982,6 +1982,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
         )?;
         self.table.atexit = Some(symbol);
+        program.publish_runtime_declaration(symbol);
         Ok(symbol)
     }
     pub(super) fn existing_local_storage(&self, entity: EntityId) -> Option<Value> {

@@ -127,21 +127,6 @@ impl Function<'_, '_, '_, '_> {
         initializer: ast::Initializer,
         constructor: Option<ConstructorId>,
     ) -> Result<bool, Error> {
-        self.begin_initializer(initializer, constructor, false)
-    }
-    pub(super) fn begin_base_initializer(
-        &mut self,
-        initializer: ast::Initializer,
-        constructor: Option<ConstructorId>,
-    ) -> Result<bool, Error> {
-        self.begin_initializer(initializer, constructor, true)
-    }
-    fn begin_initializer(
-        &mut self,
-        initializer: ast::Initializer,
-        constructor: Option<ConstructorId>,
-        base: bool,
-    ) -> Result<bool, Error> {
         if self.lifetime.full_expression {
             return Ok(false);
         }
@@ -193,12 +178,10 @@ impl Function<'_, '_, '_, '_> {
                 // The selected copy takes the conversion function's result
                 // in place; only the receiver's operands make temporaries.
                 self.operand_temporaries(argument)?
-            } else if base {
-                // The base's selected transfer initializes the destination;
-                // it is not a conversion made while evaluating its argument.
-                self.scan_temporaries(argument, true, false, None)?
             } else {
-                self.expression_temporaries(argument)?
+                // The initializer's selected transfer builds its destination.
+                // It is not a separate argument temporary.
+                self.scan_temporaries(argument, true, false, None)?
             };
             made |= summary.made;
             calls |= summary.operand_call_result.present() || summary.caller_destroyed;
