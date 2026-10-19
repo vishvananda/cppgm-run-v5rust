@@ -166,14 +166,42 @@ impl Analyzer<'_> {
                 .allocation = Some(super::function_names::AllocationOrigin::Declared);
             return Ok(());
         }
-        if first
-            && qualifier.is_none()
+        // 15.4p15 applies to every omitted specification, including an
+        // out-of-class definition or another redeclaration. Compare that
+        // implicit value with the first declaration's retained facts.
+        if qualifier.is_none()
             && special.is_some_and(super::function_names::SpecialName::deallocation)
         {
             qualifier = Some(Qualifier {
                 location,
                 kind: QualifierKind::Noexcept(None),
             });
+        }
+        if !first
+            && self.template_depth != 0
+            && self.graph.entity(entity).template_head.is_none()
+            && matches!(
+                self.graph.entity(entity).exceptions,
+                ExceptionState::Template(_)
+            )
+        {
+            // pending_noexcept does not queue an ordinary member of a
+            // class-template pattern. Its expression is retained for the
+            // instance, but the pattern's first nothrow value stays false.
+            // A redeclaration with another operand waits for instantiation;
+            // one with no operand compares that retained pattern value.
+            let nothrow = qualifier.is_some_and(|q| {
+                matches!(q.kind, QualifierKind::Noexcept(None))
+                    || matches!(q.kind, QualifierKind::Throw(types) if types.is_empty())
+                    || matches!(q.kind, QualifierKind::Noexcept(Some(expr)) if self.true_operand(expr))
+            });
+            if nothrow {
+                return Err(Error::at(
+                    location,
+                    "redeclaration with an incompatible exception-specification",
+                ));
+            }
+            return Ok(());
         }
         if self.template_depth != 0 && qualifier.is_some_and(|q| {
             !matches!(q.kind, QualifierKind::Noexcept(None))
@@ -796,6 +824,70 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn member_pattern_comparison_preserves_the_instance_specification() {
+        for (specification, compatible) in [
+            ("", false),
+            ("noexcept", false),
+            ("noexcept(sizeof(T)==8)", true),
+        ] {
+            let source = SourceBuffer::new(
+                format!(
+                    "template<class T>struct X{{static void operator delete(void*)noexcept(sizeof(T)==4);}};\
+                     template<class T>void X<T>::operator delete(void*){specification}{{}}"
+                )
+                .into_bytes(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"member-pattern").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let name = cursor.intern_name(b"X").unwrap();
+            let expressions = tree.expressions.mark();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let global = analyzer.graph.global;
+            analyzer
+                .declaration(analyzer.tree.decl_lists.get(declarations)[0], global)
+                .unwrap();
+            let class = analyzer
+                .graph
+                .own(global, name, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            let class = analyzer.graph.binding(class).entity;
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let key = super::super::function_names::SpecialName::Operator {
+                token: crate::lex::vocabulary::SimpleToken::keyword(Keyword::Delete),
+                array: false,
+            };
+            let binding = analyzer
+                .graph
+                .functions_at(scope, super::super::function_names::ValueKey::Special(key))
+                .next()
+                .unwrap();
+            let function = analyzer.graph.binding(binding).entity;
+            let ExceptionState::Template(first) = analyzer.graph.entity(function).exceptions else {
+                panic!("class member lost its deferred specification");
+            };
+            let result =
+                analyzer.declaration(analyzer.tree.decl_lists.get(declarations)[1], global);
+            if compatible {
+                result.unwrap();
+            } else {
+                assert!(matches!(result, Err(Error::Diagnostic { message, .. })
+                    if message == "redeclaration with an incompatible exception-specification"));
+            }
+            assert!(matches!(analyzer.graph.entity(function).exceptions,
+                ExceptionState::Template(saved) if saved.operand == first.operand));
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            assert_eq!(analyzer.tree.expressions.mark(), expressions);
+            assert_eq!(analyzer.template_depth, 0);
+            assert!(analyzer.graph.lookup_limit.is_none());
+        }
+    }
     #[test]
     fn indirect_unwind_facts_are_independent_of_canonical_pointer_type() {
         let source = SourceBuffer::new(b"int f(int x)noexcept{return x;}int(*p)(int)noexcept=f;int(*q)(int)=f;extern int(*late)(int);int main(){return p(1)+q(2)+late(3);}extern int(*late)(int)noexcept;".to_vec()).unwrap();
