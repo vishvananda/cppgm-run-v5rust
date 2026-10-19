@@ -165,4 +165,14 @@ impl Function<'_, '_, '_, '_> {
         self.lexical.pending = pending;
         Ok(())
     }
+    pub(super) fn place_result_cleanup_chains(&mut self) -> Result<(), Error> {
+        if !self.lifetime_has_pending_chains() {
+            return Ok(());
+        }
+        let mut lexical = std::mem::take(&mut self.lexical.pending);
+        let result = self.place_cleanup_chains(false);
+        lexical.append(&mut self.lexical.pending);
+        self.lexical.pending = lexical;
+        result
+    }
 }

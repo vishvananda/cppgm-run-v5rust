@@ -104,12 +104,12 @@ impl Function<'_, '_, '_, '_> {
         }
         let split = self.lifetime.region;
         if self.has_tracked_region() {
-            self.register_temporary(ty, object);
+            self.register_temporary(ty, object)?;
             self.track_temporary()?;
             self.close_lifetime_region()?;
             return self.tracked_region(None);
         }
-        self.register_temporary(ty, object);
+        self.register_temporary(ty, object)?;
         self.track_temporary()?;
         self.close_lifetime_region()?;
         if split || self.lifetime.tracking.active && self.handlers.explicit == 0 {
@@ -440,7 +440,10 @@ impl Function<'_, '_, '_, '_> {
         if let Some(floor) = self.aggregation.floor {
             self.aggregation.landing |= self.lifetime.cleanups[floor..].iter().any(|c| c.member());
         }
-        if self.lifetime.temporary_segment.is_nothrow() {
+        if std::mem::take(&mut self.lifetime.result_region)
+            == super::class_results::ResultRegion::Construction
+            || self.lifetime.temporary_segment.is_nothrow()
+        {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         } else if let Some(position) = self
             .lifetime
@@ -497,6 +500,13 @@ impl Function<'_, '_, '_, '_> {
         }
         let entry = self.unwind_entry()?;
         self.note_aggregate_landing();
+        let start = if std::mem::take(&mut self.lifetime.result_region)
+            == super::class_results::ResultRegion::Construction
+        {
+            Some(self.builder.position()?)
+        } else {
+            start
+        };
         if let Some(position) = start
             .filter(|&position| self.builder.same_block(position))
             .or_else(|| {
@@ -588,7 +598,10 @@ impl Function<'_, '_, '_, '_> {
             self.defer_cleanup_chains();
             return Ok(());
         }
-        if self.lifetime_has_pending_chains() && !reused {
+        if self.lifetime_has_pending_chains()
+            && !reused
+            && self.lifetime.landing_placement == super::class_results::LandingPlacement::Immediate
+        {
             let next = self.new_block(continuation)?;
             self.jump(next)?;
             self.place_cleanup_chains(false)?;

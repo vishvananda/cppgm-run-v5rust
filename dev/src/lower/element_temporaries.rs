@@ -81,7 +81,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         address: Value,
     ) -> Result<(), Error> {
-        self.register_temporary(ty, address);
+        self.register_temporary(ty, address)?;
         let block = self.new_block("cleanup_action")?;
         self.effect(I::Runtime(R::EhTry(block)))?;
         self.element_temporaries

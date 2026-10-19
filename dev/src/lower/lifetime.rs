@@ -199,6 +199,9 @@ pub(super) struct Lifetime {
     pub region_start: RegionStart,
     pub region_depth: usize,
     pub regions_opened: usize,
+    pub temporaries_made: u32,
+    pub result_region: super::class_results::ResultRegion,
+    pub landing_placement: super::class_results::LandingPlacement,
     pub storage_split: Option<crate::lowir::builder::Position>,
     pub temporary_split: Option<crate::lowir::builder::Position>,
     pub call_marks: Vec<CallMark>,
@@ -415,8 +418,14 @@ impl Function<'_, '_, '_, '_> {
             .depths
             .insert(owner, self.lifetime.cleanups.len());
     }
-    pub(super) fn register_temporary(&mut self, ty: TypeId, object: Value) {
+    pub(super) fn register_temporary(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
+        self.lifetime.temporaries_made = self
+            .lifetime
+            .temporaries_made
+            .checked_add(1)
+            .ok_or(crate::lowir::Error::Limit)?;
         self.lifetime.cleanups.push(Cleanup::temporary(ty, object));
+        Ok(())
     }
     pub(super) fn extend_last_temporary(&mut self, owner: EntityId) -> Result<(), Error> {
         let cleanup = self

@@ -17,6 +17,18 @@ pub(super) enum InitializationContext {
     Ordinary,
     Return,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum ResultRegion {
+    #[default]
+    Operands,
+    Construction,
+}
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum LandingPlacement {
+    #[default]
+    Immediate,
+    Deferred,
+}
 #[derive(Clone, Copy)]
 pub(super) struct ResultBoundary {
     pub ty: Type,
@@ -68,12 +80,20 @@ impl Function<'_, '_, '_, '_> {
         match self.symbols.result_boundary(source)?.ty {
             Type::Void => Ok(None),
             ty @ Type::Object { bytes, align } => {
-                let slot = self.generated_slot("retobj", ty)?;
+                let slot = self.class_result_storage(ty)?;
                 self.effect(I::ZeroInit(bytes, align, slot))?;
                 Ok(Some(slot))
             }
             _ => Ok(Some(self.zero(source)?.value)),
         }
+    }
+    fn class_result_storage(&mut self, ty: Type) -> Result<Value, Error> {
+        if let Some(slot) = self.result_storage {
+            return Ok(slot);
+        }
+        let slot = self.generated_slot("retobj", ty)?;
+        self.result_storage = Some(slot);
+        Ok(slot)
     }
     pub(super) fn find_returned_local(
         &mut self,
@@ -199,26 +219,35 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn class_return(&mut self, id: ast::ExprId, result: TypeId) -> Result<(), Error> {
         let boundary = self.symbols.result_boundary(result)?;
+        let first = self.lifetime.cleanups.len();
         let began = self
             .begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::ClassResult)?;
+        let temporaries = self.lifetime.temporaries_made;
+        let mut throwing_local = false;
+        if self.result_destination.is_some() {
+            for index in self.handler_floor()..self.lifetime.cleanups.len() {
+                throwing_local |= self.destructor_throws(self.lifetime.cleanups[index].ty)?;
+            }
+        }
+        let source = self.without_parentheses(id);
+        let at_call = self.result_constructed_after_operands(source)?;
+        let saved_here = std::mem::replace(
+            &mut self.lifetime.result_region,
+            if began && throwing_local && at_call {
+                ResultRegion::Construction
+            } else {
+                ResultRegion::Operands
+            },
+        );
         let (object, value) = if let Some(object) = self.result_destination {
             (object, None)
         } else {
-            let slot = if let Some(slot) = self.result_storage {
-                slot
-            } else {
-                let slot = self.generated_slot("retobj", boundary.ty)?;
-                self.result_storage = Some(slot);
-                slot
-            };
+            let slot = self.class_result_storage(boundary.ty)?;
             (self.emit(I::Addr(slot), result)?.value, Some(slot))
         };
-        let source = self.without_parentheses(id);
-        if let ast::ExprKind::Id(name) = self.tree.expressions.get(source).kind
-            && self.returned_local == Some(self.graph.lower_name(name)?)
-        {
-            return self.cleanup_return(boundary.ty, value, began);
-        }
+        let elided = self.result_destination.is_some()
+            && matches!(self.tree.expressions.get(source).kind, ast::ExprKind::Id(name)
+                if self.returned_local == Some(self.graph.lower_name(name)?));
         let empty = matches!(self.graph.lower_type(result)?, TypeView::Class(class)
             if self.graph.lower_class_empty(class)? && self.graph.lower_class_bases(class).next().is_none());
         let empty_value = empty
@@ -237,25 +266,73 @@ impl Function<'_, '_, '_, '_> {
             &mut self.initialization_context,
             InitializationContext::Return,
         );
-        let initialized = self.initialize_class_result(
-            id,
-            result,
-            object,
-            self.graph.lower_class_copy(id)?,
-            None,
-        );
+        let initialized = if elided {
+            Ok(())
+        } else {
+            self.initialize_class_result(id, result, object, self.graph.lower_class_copy(id)?, None)
+        };
         self.empty_value_zeroing = saved;
         self.initialization_context = returning;
-        initialized?;
+        if let Err(error) = initialized {
+            self.lifetime.result_region = saved_here;
+            return Err(error);
+        }
+        self.destroy_temporaries(first)?;
+        let defer = throwing_local
+            && self.lifetime.temporaries_made == temporaries
+            && !matches!(
+                self.tree.expressions.get(source).kind,
+                ast::ExprKind::Conditional { .. } | ast::ExprKind::Call { .. }
+            );
+        let saved_defer = std::mem::replace(
+            &mut self.lifetime.landing_placement,
+            if defer {
+                LandingPlacement::Deferred
+            } else {
+                LandingPlacement::Immediate
+            },
+        );
+        let ended = self.end_lifetime_expression(began);
+        self.lifetime.landing_placement = saved_defer;
+        self.lifetime.result_region = saved_here;
+        ended?;
         // CWG 2176: once its own full-expression finishes, a completed
         // result is destroyed first if a local destructor throws on return.
         let returned = self.lexical.returned;
-        if self.symbols.storage_destructor(result)?.is_some() {
-            self.lexical.returned = Some(super::lifetime::Cleanup::temporary(result, object));
+        if !elided && self.symbols.storage_destructor(result)?.is_some() {
+            let mut cleanup = super::lifetime::Cleanup::temporary(result, object);
+            if let Some(slot) = value {
+                cleanup.place = super::lifetime::CleanupPlace::Storage(slot);
+            }
+            self.lexical.returned = Some(cleanup);
         }
-        let finished = self.cleanup_return(boundary.ty, value, began);
+        let finished = self.cleanup_return(boundary.ty, value, false);
         self.lexical.returned = returned;
-        finished
+        finished?;
+        // The result's pending landings precede lexical landings unless
+        // an enclosing return already deferred placement.
+        if self.terminated && saved_defer == LandingPlacement::Immediate {
+            self.place_result_cleanup_chains()?;
+        }
+        Ok(())
+    }
+    fn result_constructed_after_operands(&mut self, source: ast::ExprId) -> Result<bool, Error> {
+        match self.tree.expressions.get(source).kind {
+            ast::ExprKind::Id(_) => Ok(true),
+            ast::ExprKind::FunctionalCast {
+                arguments,
+                braced: None,
+                ..
+            } => {
+                for &argument in self.tree.expr_lists.get(arguments) {
+                    if self.expression_temporaries(argument)?.made {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
     fn initialize_class_result(
         &mut self,
