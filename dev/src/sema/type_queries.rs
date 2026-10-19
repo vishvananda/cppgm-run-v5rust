@@ -24,6 +24,7 @@ pub(super) enum DeferredUse {
     Function(BindingId, bool),
     Query(ast::ExprId),
     RuntimeCast(ast::ExprId),
+    Layout(EntityId, SourceOffset),
     Constructor(super::construction::ConstructorId),
     Local(ast::ExprId, BindingId, ScopeId),
     This(SourceOffset),
@@ -311,6 +312,9 @@ impl Analyzer<'_> {
                 }
                 DeferredUse::Query(id) => self.demand_type_query(id)?,
                 DeferredUse::RuntimeCast(id) => self.demand_runtime_cast(id)?,
+                DeferredUse::Layout(entity, location) => {
+                    self.demand_storage_layout(entity, location)?;
+                }
                 DeferredUse::Constructor(id) => {
                     self.demand_constructor_use(id);
                     let class = self.graph.constructors.get(id).class;

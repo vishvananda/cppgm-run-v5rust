@@ -354,14 +354,13 @@ impl Analyzer<'_> {
         }
         self.check_named_member_access(binding, naming, class, scope, node.location)?;
         if self.lowering()
-            && self.unevaluated == 0
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
                 .data_member
                 == Some(DataMemberKind::Instance)
         {
-            self.class_layout(class, location)?;
+            self.demand_storage_layout(class, location)?;
         }
         super::record(&mut self.graph.resolved_names, name.index(), binding);
         let member = self.graph.binding(binding);
@@ -441,7 +440,7 @@ impl Analyzer<'_> {
         }
         let path = self.graph.retain_base_path(class, holder)?;
         if self.lowering() {
-            self.request_storage_layout(class, location)?;
+            self.demand_storage_layout(class, location)?;
         }
         Ok(Some(path))
     }

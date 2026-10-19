@@ -445,8 +445,8 @@ impl Analyzer<'_> {
                 if naming != class && naming != home {
                     receiver.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
                     receiver.member_path = Some(self.graph.retain_base_path(naming, home)?);
-                    if self.lowering() && self.unevaluated == 0 {
-                        self.request_storage_layout(class, location)?;
+                    if self.lowering() {
+                        self.demand_storage_layout(class, location)?;
                     }
                 }
             }

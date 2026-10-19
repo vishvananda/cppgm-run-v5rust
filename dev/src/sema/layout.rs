@@ -49,6 +49,24 @@ pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
 }
 impl Analyzer<'_> {
+    pub(super) fn demand_storage_layout(
+        &mut self,
+        entity: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        // A typeid operand can become evaluated only after it is typed.
+        // Keep its receiver/conversion layout with the other ordered uses;
+        // replay in an enclosing query must defer it again rather than emit it.
+        if self.deferring_type_query() {
+            self.type_queries
+                .uses
+                .push(super::type_queries::DeferredUse::Layout(entity, location));
+        }
+        if self.unevaluated == 0 {
+            self.request_storage_layout(entity, location)?;
+        }
+        Ok(())
+    }
     pub(super) fn request_union_storage(&mut self, entity: EntityId, location: SourceOffset) {
         self.graph.storage_layouts.push((
             self.body_context.as_ref().map(|body| body.entity),
@@ -801,6 +819,54 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn query_receiver_layouts_follow_evaluated_reachable_uses() {
+        let source = SourceBuffer::new(
+            br"namespace std { struct type_info {}; }
+            struct Result { virtual int f(); };
+            struct A { int pad; Result& ref; Result& get(); };
+            struct L : A {}; struct R : A {};
+            struct Reached : L, R {};
+            struct Unevaluated : L, R {};
+            struct Dormant : L, R {};
+            struct Plain { int pad; Result& ref; };
+            void query(Reached* p, Unevaluated* q, Plain* r) {
+                typeid((typeid(p->R::get()), p->R::ref));
+                sizeof(q->R::get());
+                typeid((q->R::get(), 0));
+                typeid(r->ref);
+            }
+            inline void dormant(Dormant* p) { typeid(p->R::get()); }"
+                .to_vec(),
+        )
+        .unwrap();
+        let input = Preprocessor::with_name(&source, b"query-layouts").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), count);
+        for (spelling, evaluated) in [
+            (b"Reached".as_slice(), true),
+            (b"Plain", true),
+            (b"Unevaluated", false),
+            (b"Dormant", false),
+        ] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
+            assert_eq!(
+                matches!(
+                    graph.entity(graph.binding(binding).entity).layout,
+                    LayoutState::NotStarted
+                ),
+                !evaluated,
+            );
+        }
+    }
 
     #[test]
     fn result_boundaries_prepare_only_demanded_complete_class_facts() {
