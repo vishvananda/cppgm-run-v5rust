@@ -481,11 +481,26 @@ impl Graph {
     pub(crate) fn lower_argument_functions(
         &self,
         context: Option<EntityId>,
-    ) -> impl Iterator<Item = EntityId> + '_ {
+    ) -> impl DoubleEndedIterator<Item = EntityId> + '_ {
         self.constant_addresses
-            .argument_functions(context)
+            .argument_functions(context.map_or(
+                super::constant_addresses::ArgumentContext::Unit,
+                super::constant_addresses::ArgumentContext::Function,
+            ))
             .iter()
             .rev()
+            .copied()
+            .filter(|&entity| self.lower_function_defined(self.lower_function_entity(entity)))
+    }
+    pub(crate) fn lower_initializer_argument_functions(
+        &self,
+        entity: EntityId,
+    ) -> impl Iterator<Item = EntityId> + '_ {
+        self.constant_addresses
+            .argument_functions(super::constant_addresses::ArgumentContext::Initializer(
+                entity,
+            ))
+            .iter()
             .copied()
             .filter(|&entity| self.lower_function_defined(self.lower_function_entity(entity)))
     }

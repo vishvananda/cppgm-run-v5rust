@@ -130,6 +130,7 @@ pub(super) struct Symbols<'a, 'source> {
     budget: StackBudget,
     stack_base: usize,
     pub pending: super::definition_demands::Demands,
+    pub(super) root_arguments: super::definition_demands::RootArguments,
     pub initialization: Option<SymbolId>,
     pub aggregate_helpers: super::aggregate_helpers::Helpers,
     seen: std::collections::HashSet<super::construction::Entry>,
@@ -209,6 +210,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             scopes: HashMap::new(),
             budget,
             pending: super::definition_demands::Demands::default(),
+            root_arguments: super::definition_demands::RootArguments::new(
+                graph.lower_argument_functions(None).rev(),
+            ),
             initialization: None,
             aggregate_helpers: super::aggregate_helpers::Helpers::default(),
             seen: std::collections::HashSet::new(),

@@ -350,7 +350,7 @@ fn emit_source_definitions<'a>(
             construction::Variant::Complete,
         ));
     }
-    for function in graph.lower_argument_functions(None) {
+    for function in symbols.root_arguments.finish() {
         symbols.demand(function);
     }
     emit_pending(

@@ -5,6 +5,36 @@
 //! released its builder. Appending children never shifts unrelated requests.
 use super::{Error, construction::Entry, symbols::Symbols};
 use crate::lowir::model::{Program, SymbolId};
+use crate::sema::lowering::EntityId;
+
+// C++ note_argument_demand's namespace-context list grows while source
+// definitions are emitted. Its one reverse traversal precedes emit_demanded;
+// initializers reached by that later work do not retroactively join the roots.
+pub(super) struct RootArguments {
+    functions: Vec<EntityId>,
+    seen: Option<std::collections::HashSet<EntityId>>,
+}
+impl RootArguments {
+    pub(super) fn new(functions: impl Iterator<Item = EntityId>) -> Self {
+        let mut roots = Self {
+            functions: Vec::new(),
+            seen: Some(std::collections::HashSet::new()),
+        };
+        for function in functions {
+            roots.note(function);
+        }
+        roots
+    }
+    pub(super) fn note(&mut self, function: EntityId) {
+        if self.seen.as_mut().is_some_and(|seen| seen.insert(function)) {
+            self.functions.push(function);
+        }
+    }
+    pub(super) fn finish(&mut self) -> std::iter::Rev<std::vec::IntoIter<EntityId>> {
+        self.seen = None;
+        std::mem::take(&mut self.functions).into_iter().rev()
+    }
+}
 
 // Finalize the ABI entry before appending functions designated by this
 // definition's template arguments, matching emit_definition's demand order.

@@ -72,6 +72,9 @@ pub(crate) struct Analyzer<'tree> {
     mode: AnalysisMode,
     pub(super) initializing: Option<super::graph::EntityId>,
     pub(super) initializing_declarator: Option<ast::DeclaratorId>,
+    // Origin of storage-only initializer analysis. Unlike expression context,
+    // this survives nested instantiations until an actual body owns the use.
+    pub(super) initializer_demand_owner: Option<super::graph::EntityId>,
     pub(super) parenthesized_elements: std::collections::HashSet<ast::ExprId>,
     pub(super) static_initializers:
         Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
@@ -246,6 +249,7 @@ impl<'tree> Analyzer<'tree> {
             mode: AnalysisMode::Types,
             initializing: None,
             initializing_declarator: None,
+            initializer_demand_owner: None,
             parenthesized_elements: std::collections::HashSet::new(),
             static_initializers: Vec::new(),
             body_context: None,

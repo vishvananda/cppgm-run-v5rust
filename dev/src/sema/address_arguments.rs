@@ -100,10 +100,17 @@ impl Graph {
 
 impl Analyzer<'_> {
     fn note_argument_function(&mut self, function: EntityId) {
+        use super::constant_addresses::ArgumentContext;
         if self.unevaluated != 0 || self.template_depth != 0 {
             return;
         }
-        let context = self.body_context.as_ref().map(|body| body.entity);
+        let context = if let Some(body) = &self.body_context {
+            ArgumentContext::Function(body.entity)
+        } else if let Some(owner) = self.initializer_demand_owner {
+            ArgumentContext::Initializer(owner)
+        } else {
+            ArgumentContext::Unit
+        };
         self.graph
             .constant_addresses
             .note_argument_function(context, function);
@@ -796,6 +803,49 @@ mod tests {
             [f, g]
         );
         assert_eq!(graph.lower_argument_functions(Some(other)).count(), 0);
+    }
+
+    #[test]
+    fn storage_only_initializer_arguments_keep_their_origin_across_instantiations() {
+        let source = SourceBuffer::new(
+            b"inline int target(){return 1;}\
+              template<int(*F)()>struct Token{};\
+              template<class T>struct Box{static int value;};\
+              template<class T>int Box<T>::value=sizeof(Token<&T::f>);\
+              struct A{static int f(){return target();}};\
+              inline int unused(){return Box<A>::value;}\
+              int main(){return 0;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"initializer-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(graph.lower_argument_functions(None).count(), 0);
+        let variables = graph.lower_demanded_variables();
+        assert_eq!(variables.len(), 1);
+        let functions: Vec<_> = graph
+            .lower_initializer_argument_functions(variables[0])
+            .collect();
+        assert_eq!(functions.len(), 1);
+        let name = graph.entity(functions[0]).name.unwrap();
+        assert_eq!(cursor.name(name), b"f");
+        // The function's own calls remain body-owned; they are not promoted
+        // just because its address is an initializer's template argument.
+        assert_eq!(
+            graph.lower_argument_functions(Some(functions[0])).count(),
+            0
+        );
     }
 
     #[test]

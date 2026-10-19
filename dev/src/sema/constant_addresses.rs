@@ -108,11 +108,17 @@ impl Evaluation {
         self.values = saved.0;
     }
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum ArgumentContext {
+    Unit,
+    Function(EntityId),
+    Initializer(EntityId),
+}
 #[derive(Default)]
 pub(super) struct Addresses {
     arguments: HashMap<EntityId, TypeId>,
-    argument_functions: HashMap<Option<EntityId>, Vec<EntityId>>,
-    argument_function_set: std::collections::HashSet<(Option<EntityId>, EntityId)>,
+    argument_functions: HashMap<ArgumentContext, Vec<EntityId>>,
+    argument_function_set: std::collections::HashSet<(ArgumentContext, EntityId)>,
     values: HashMap<EntityId, State>,
     temporaries: HashMap<EntityId, TemporaryValue>,
     stored_references: std::collections::HashSet<EntityId>,
@@ -124,7 +130,7 @@ impl Addresses {
     pub(super) fn bind_argument(&mut self, binding: EntityId, argument: TypeId) {
         self.arguments.insert(binding, argument);
     }
-    pub(super) fn note_argument_function(&mut self, context: Option<EntityId>, function: EntityId) {
+    pub(super) fn note_argument_function(&mut self, context: ArgumentContext, function: EntityId) {
         if self.argument_function_set.insert((context, function)) {
             self.argument_functions
                 .entry(context)
@@ -132,7 +138,7 @@ impl Addresses {
                 .push(function);
         }
     }
-    pub(super) fn argument_functions(&self, context: Option<EntityId>) -> &[EntityId] {
+    pub(super) fn argument_functions(&self, context: ArgumentContext) -> &[EntityId] {
         self.argument_functions
             .get(&context)
             .map_or(&[], Vec::as_slice)

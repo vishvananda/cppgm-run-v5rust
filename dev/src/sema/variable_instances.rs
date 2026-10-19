@@ -508,7 +508,13 @@ impl Analyzer<'_> {
             .get(self.graph.variable_instances.next)
         {
             self.graph.variable_instances.next += 1;
-            self.instantiate_variable(entity)?;
+            // These facts are prepared for lowering, whereas the C++ owner
+            // instantiates them in variable_symbol. Keep their otherwise
+            // namespace-context argument uses off the unit's early root list.
+            let previous = self.initializer_demand_owner.replace(entity);
+            let result = self.instantiate_variable(entity);
+            self.initializer_demand_owner = previous;
+            result?;
         }
         Ok(())
     }

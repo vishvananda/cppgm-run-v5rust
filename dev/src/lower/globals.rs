@@ -116,6 +116,9 @@ pub(super) fn define_variable<'a>(
     symbols.check_stack()?;
     let pending = std::mem::take(&mut symbols.instance_variables);
     let previous_variable = symbols.begin_variable_definition(entity);
+    for function in graph.lower_initializer_argument_functions(entity) {
+        symbols.root_arguments.note(function);
+    }
     let request = symbols.variable_request(entity);
     let owner = symbols.pending.replace_owner(request);
     let result = define_variable_contents(
