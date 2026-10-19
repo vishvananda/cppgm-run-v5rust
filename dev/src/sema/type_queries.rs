@@ -23,6 +23,7 @@ pub(crate) struct TypeQuery {
 pub(super) enum DeferredUse {
     Function(BindingId, bool),
     Query(ast::ExprId),
+    RuntimeCast(ast::ExprId),
     Constructor(super::construction::ConstructorId),
     Local(ast::ExprId, BindingId, ScopeId),
     This(SourceOffset),
@@ -309,6 +310,7 @@ impl Analyzer<'_> {
                     self.graph.expression_facts.set(id, facts);
                 }
                 DeferredUse::Query(id) => self.demand_type_query(id)?,
+                DeferredUse::RuntimeCast(id) => self.demand_runtime_cast(id)?,
                 DeferredUse::Constructor(id) => {
                     self.demand_constructor_use(id);
                     let class = self.graph.constructors.get(id).class;

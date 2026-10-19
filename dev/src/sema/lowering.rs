@@ -7,6 +7,7 @@ pub(crate) use super::constexpr_values::TemporaryId;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::copy_construction::{CopyTarget, SubobjectCopy};
 pub(crate) use super::copy_initialization::CopyAction;
+pub(crate) use super::dynamic_casts::RuntimeCast;
 pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::expression_facts::ExpressionOrigin;
 pub(crate) use super::expression_keys::{KeyNode, KeyWord};

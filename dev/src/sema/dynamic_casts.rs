@@ -5,15 +5,21 @@ use super::{
     analyzer::Analyzer,
     expression_facts::{ExprFacts, ValueCategory as V},
     graph::{EntityId, Graph, ScopeId},
-    types::{RefKind, TypeId, TypeKind},
+    types::{RefKind, Scalar, TypeId, TypeKind},
 };
 use crate::{lex::vocabulary::Keyword, syntax::ast};
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RuntimeCast {
-    pub from: EntityId,
-    pub to: EntityId,
-    pub reference: bool,
+pub(crate) enum RuntimeCast {
+    Class {
+        from: EntityId,
+        to: EntityId,
+        reference: bool,
+    },
+    VoidPointer {
+        from: EntityId,
+        void: TypeId,
+    },
 }
 
 impl Graph {
@@ -81,11 +87,38 @@ impl Analyzer<'_> {
             && to.is_some_and(|ty| {
                 matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::Scalar(super::types::Scalar::Void)
+                    TypeKind::Scalar(Scalar::Void)
                 )
             })
         {
-            return Err(Error::Missing("dynamic_cast to void pointer"));
+            let Some(from_class) = origin.filter(|&class| self.graph.lower_polymorphic(class))
+            else {
+                return Err(Error::at(
+                    location,
+                    "a dynamic_cast to void* of no pointer to a polymorphic class",
+                ));
+            };
+            let from_pointer = self
+                .graph
+                .types
+                .pointer(from.ok_or(Error::Invariant("void cast without source pointee"))?)?;
+            let target = self.bare_type(target)?;
+            if self.cast_constness(from_pointer, target) {
+                return Err(Error::at(location, "a dynamic_cast casting away constness"));
+            }
+            let value = self.decayed_type(source.ty)?;
+            self.convert_scalar(operand, value, false)?;
+            let void = self.graph.types.scalar(Scalar::Void)?;
+            self.prepare_type_information(void)?;
+            self.graph.expression_facts.set_runtime_cast(
+                id,
+                RuntimeCast::VoidPointer {
+                    from: from_class,
+                    void,
+                },
+            );
+            self.demand_runtime_cast(id)?;
+            return self.new_expression_facts(target, V::Prvalue);
         }
         if goal.is_none()
             || origin.is_none()
@@ -149,20 +182,94 @@ impl Analyzer<'_> {
             facts.reference_cast = Some(target);
             facts
         };
-        if self.unevaluated == 0 {
-            let owner = self.body_context.as_ref().map(|body| body.entity);
-            self.graph
-                .class_information_uses
-                .extend([(owner, from_class), (owner, to_class)]);
-        }
         self.graph.expression_facts.set_runtime_cast(
             id,
-            RuntimeCast {
+            RuntimeCast::Class {
                 from: from_class,
                 to: to_class,
                 reference: !pointer,
             },
         );
+        self.demand_runtime_cast(id)?;
         Ok(facts)
+    }
+
+    pub(super) fn demand_runtime_cast(&mut self, id: ast::ExprId) -> Result<(), Error> {
+        if self.deferring_type_query() {
+            self.type_queries
+                .uses
+                .push(super::type_queries::DeferredUse::RuntimeCast(id));
+        }
+        if self.unevaluated != 0 {
+            return Ok(());
+        }
+        let cast = self
+            .graph
+            .expression_facts
+            .runtime_cast(id)
+            .ok_or(Error::Invariant("missing runtime cast demand"))?;
+        let (from, to) = match cast {
+            RuntimeCast::Class { from, to, .. } => (from, Some(to)),
+            RuntimeCast::VoidPointer { from, .. } => (from, None),
+        };
+        let owner = self.body_context.as_ref().map(|body| body.entity);
+        self.graph.class_information_uses.push((owner, from));
+        if let Some(to) = to {
+            self.graph.class_information_uses.push((owner, to));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        preprocess::unit::Preprocessor,
+        sema::{Analyzer, layout::LayoutState, lookup::Filter},
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn deferred_runtime_casts_prepare_only_evaluated_reached_class_layouts() {
+        let source = SourceBuffer::new(
+            br"namespace std { struct type_info {}; }
+            struct Source { virtual int f() { return 0; } };
+            struct Target { virtual int f() { return 1; } };
+            struct Unevaluated { virtual int f() { return 2; } };
+            struct Dormant { virtual int f() { return 3; } };
+            void query(Source* p, Unevaluated* q) {
+                const std::type_info& t =
+                    typeid(*reinterpret_cast<Target*>(dynamic_cast<void*>(p)));
+                sizeof(dynamic_cast<void*>(q));
+            }
+            inline void* dormant(Dormant* p) { return dynamic_cast<void*>(p); }"
+                .to_vec(),
+        )
+        .unwrap();
+        let input = Preprocessor::with_name(&source, b"runtime-cast-demand").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), count);
+        for (spelling, evaluated) in [
+            (b"Source".as_slice(), true),
+            (b"Target", true),
+            (b"Unevaluated", false),
+            (b"Dormant", false),
+        ] {
+            let name = cursor.intern_name(spelling).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            assert_eq!(
+                matches!(graph.entity(class).layout, LayoutState::NotStarted),
+                !evaluated
+            );
+        }
     }
 }
