@@ -46,6 +46,7 @@ mod floating_intrinsics;
 mod function;
 mod globals;
 mod handlers;
+mod initializer_lists;
 mod lexical_cleanup;
 mod lifetime;
 mod lifetime_regions;

@@ -557,22 +557,22 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let location = self.tree.statements.get(id).location;
         let uses = self.dependent_uses.get();
-        if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(source).kind {
+        let braced = matches!(
+            self.tree.expressions.get(source).kind,
+            ExprKind::Braced { .. }
+        );
+        let braced_range = if braced {
             let auto = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
             let reference = self.graph.types.reference(auto, RefKind::Rvalue)?;
-            self.deduce_list_object(
-                reference,
-                Cv::default(),
-                elements,
-                block,
-                location,
-                &mut None,
-            )?;
-            return Err(Error::Missing(
-                "std::initializer_list object materialization",
-            ));
-        }
-        let typed = self.typed_expression(source, block)?;
+            Some(self.range_variable(RangeVariable::Range, reference, source, block, location)?)
+        } else {
+            None
+        };
+        let typed = if braced {
+            self.graph.expression_facts.get(source)?
+        } else {
+            self.typed_expression(source, block)?
+        };
         self.mark_range_expression(source)?;
         let root = self.graph.expression_facts.root(source);
         let named = if let ExprKind::Id(name) = self.tree.expressions.get(root).kind {
@@ -590,7 +590,9 @@ impl Analyzer<'_> {
             None
         };
         let auto = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
-        let range = if named.is_none() {
+        let range = if braced_range.is_some() {
+            braced_range
+        } else if named.is_none() {
             let reference = self.graph.types.reference(auto, RefKind::Rvalue)?;
             Some(self.range_variable(RangeVariable::Range, reference, source, block, location)?)
         } else {
@@ -598,9 +600,50 @@ impl Analyzer<'_> {
         };
         let ty = typed.ty;
         let dependent = self.dependent_uses.get() != uses;
-        let (begin, end, condition, increment, element) = if let TypeKind::Array { bound, .. } =
-            self.graph.types.get(ty).kind
-        {
+        let builtin = self.graph.class_of(ty).filter(|&class| {
+            self.graph.entity(class).representation
+                == crate::sema::graph::ClassRepresentation::BuiltinInitializerList
+        });
+        let (begin, end, condition, increment, element) = if let Some(class) = builtin {
+            let index_type = self
+                .graph
+                .types
+                .scalar(Scalar::Basic(crate::types::FundamentalType::Int))?;
+            let mut members = Vec::with_capacity(2);
+            for member in self.graph.entity(class).members.clone() {
+                let base = self.range_use(range, named, dependent, location)?;
+                let name = self
+                    .graph
+                    .entity(member)
+                    .name
+                    .ok_or(Error::Invariant("builtin list member name"))?;
+                let name = self.range_name(self.identifiers.spelling(name).as_ref(), location)?;
+                members.push(self.range_expression(
+                    ExprKind::Member {
+                        base,
+                        op: Self::range_operator(P::Dot)?,
+                        member: name,
+                    },
+                    location,
+                )?);
+            }
+            let zero = self.range_constant(index_type, 0, location)?;
+            let begin =
+                self.range_variable(RangeVariable::Index, index_type, zero, block, location)?;
+            let left = self.range_use(Some(begin), None, false, location)?;
+            let condition = self.range_binary(P::Less, left, members[1], location)?;
+            let operand = self.range_use(Some(begin), None, false, location)?;
+            let increment = self.range_unary(P::Increment, operand, location)?;
+            let index = self.range_use(Some(begin), None, false, location)?;
+            let element = self.range_expression(
+                ExprKind::Subscript {
+                    base: members[0],
+                    index,
+                },
+                location,
+            )?;
+            (begin, None, condition, increment, element)
+        } else if let TypeKind::Array { bound, .. } = self.graph.types.get(ty).kind {
             if bound == 0 {
                 return Err(Error::at(
                     location,

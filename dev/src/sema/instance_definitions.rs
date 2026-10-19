@@ -405,7 +405,15 @@ impl Analyzer<'_> {
                     .definitions
                     .states
                     .remove(&entity);
-                return Ok(false);
+                let complete = source == primary && self.complete_builtin_list(entity)?;
+                if complete {
+                    self.graph
+                        .class_templates
+                        .definitions
+                        .states
+                        .insert(entity, State::Complete);
+                }
+                return Ok(complete);
             };
             if source != primary {
                 self.graph

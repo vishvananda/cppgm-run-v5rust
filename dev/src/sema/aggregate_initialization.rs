@@ -62,6 +62,12 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("aggregate without class"));
         };
+        if !self.complete_class(class)? {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "initialization of an incomplete class object",
+            ));
+        }
         let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("aggregate without list"));
         };

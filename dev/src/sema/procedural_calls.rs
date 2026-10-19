@@ -22,6 +22,7 @@ use std::cmp::Ordering;
 pub(super) enum Candidates {
     Functions(super::function_resolution::OverloadId),
     ConvertingMember(super::graph::EntityId),
+    ListConstructors(super::graph::EntityId),
     Constructors {
         class: super::graph::EntityId,
         converting: bool,
@@ -33,9 +34,9 @@ impl Candidates {
     fn bindings(self, graph: &super::graph::Graph) -> &[BindingId] {
         match self {
             Self::Functions(set) => graph.overloads.get(set),
-            Self::Constructors { class, .. } | Self::ConvertingMember(class) => {
-                &graph.entity(class).declared_constructors
-            }
+            Self::Constructors { class, .. }
+            | Self::ConvertingMember(class)
+            | Self::ListConstructors(class) => &graph.entity(class).declared_constructors,
         }
     }
     fn includes(self, graph: &super::graph::Graph, binding: BindingId) -> bool {
@@ -688,6 +689,8 @@ impl Analyzer<'_> {
                     rank: R::Exact,
                     qualification: false,
                     initialization: true,
+                    list_initialization:
+                        crate::sema::expression_facts::ListInitialization::Ordinary,
                     temporary: false,
                     reference_source: if matches!(
                         self.graph.types.get(target).kind,
@@ -883,6 +886,11 @@ impl Analyzer<'_> {
                 continue;
             };
             if !set.includes(&self.graph, binding) {
+                continue;
+            }
+            if matches!(set, Candidates::ListConstructors(_))
+                && !self.initializer_list_constructor(binding)?
+            {
                 continue;
             }
             let entity = self.graph.entity(self.graph.binding(binding).entity);
@@ -1450,6 +1458,7 @@ impl Analyzer<'_> {
                 rank: R::Exact,
                 qualification: false,
                 initialization: false,
+                list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
                 temporary: false,
                 reference_source: ReferenceSource::Other,
             });

@@ -143,6 +143,14 @@ impl Analyzer<'_> {
                     ast::ExprKind::Braced { .. }
                 )
             {
+                if !self.deduce_list_elements(
+                    pattern,
+                    args[index - offset],
+                    depth,
+                    &mut arguments,
+                )? {
+                    return Ok(None);
+                }
                 continue;
             }
             let facts = if index < offset {
@@ -172,7 +180,12 @@ impl Analyzer<'_> {
                             ast::ExprKind::Braced { .. }
                         )
                     {
-                        return Ok(true);
+                        return this.deduce_list_elements(
+                            pattern,
+                            args[index - offset],
+                            depth,
+                            trial,
+                        );
                     }
                     let facts = if index < offset {
                         prefix.ok_or(Error::Invariant("missing call prefix"))?

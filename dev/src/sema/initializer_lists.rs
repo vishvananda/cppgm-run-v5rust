@@ -1,11 +1,11 @@
 // Translated from sema/analyzer_initializer_lists.cpp and analyzer_range_for.cpp.
 // See NOTICE.
-//! List deduction retains element facts and demands only a declared template shell.
+//! Declared list identities, conversion ranking and backing-array facts share original syntax.
 use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{ExpressionOrigin, ValueCategory as V},
-    graph::{BindingKind, EntityId, ScopeId, ScopeKind},
+    graph::{Binding, BindingKind, DataMemberKind, EntityId, Graph, ScopeId, ScopeKind},
     lookup::Filter,
     types::{Cv, RefKind, TypeId, TypeKind},
 };
@@ -25,6 +25,266 @@ pub(super) enum RangeElement {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn initializer_list_constructor(
+        &self,
+        binding: super::graph::BindingId,
+    ) -> Result<bool, Error> {
+        let entity = self.graph.binding(binding).entity;
+        let ty = self.graph.lower_entity_type(entity)?;
+        let count = self.graph.types.function_parameter_count(ty)?;
+        if count == 0
+            || self
+                .initializer_list_element(self.graph.types.function_parameter(ty, 0)?)
+                .is_none()
+        {
+            return Ok(false);
+        }
+        Ok((1..count).all(|index| self.function_has_default(entity, index)))
+    }
+
+    pub(super) fn list_constructor_phase(
+        &mut self,
+        class: EntityId,
+        list: ast::ExprId,
+    ) -> Result<Option<super::graph::BindingId>, Error> {
+        let mut scratch = std::mem::take(&mut self.call_scratch);
+        let result = (|| {
+            self.rank_call(
+                super::procedural_calls::Candidates::ListConstructors(class),
+                &[list],
+                None,
+                &mut scratch,
+            )?;
+            if !scratch.has_candidates() {
+                return Ok(None);
+            }
+            self.unique_call(1, 0, &scratch)?
+                .map(|chosen| Some(chosen.binding))
+                .ok_or_else(|| {
+                    Error::at(
+                        self.tree.expressions.get(list).location,
+                        "an ambiguous initializer-list constructor (13.3.1.7)",
+                    )
+                })
+        })();
+        scratch.clear();
+        self.call_scratch = scratch;
+        result
+    }
+
+    pub(super) fn deduce_list_elements(
+        &mut self,
+        pattern: TypeId,
+        list: ast::ExprId,
+        depth: u32,
+        arguments: &mut [Option<TypeId>],
+    ) -> Result<bool, Error> {
+        self.check_stack()?;
+        let Some(element) = self.initializer_list_element(pattern) else {
+            return Ok(true);
+        };
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind else {
+            return Err(Error::Invariant("list deduction syntax"));
+        };
+        for index in 0..self.tree.expr_lists.get(elements).len() {
+            let item = self.tree.expr_lists.get(elements)[index];
+            if matches!(
+                self.tree.expressions.get(item).kind,
+                ExprKind::Braced { .. }
+            ) {
+                if !self.deduce_list_elements(element, item, depth, arguments)? {
+                    return Ok(false);
+                }
+                continue;
+            }
+            let facts = self.graph.expression_facts.get(item)?;
+            if facts.object.is_some()
+                && (facts.functions.is_some()
+                    || facts.function.is_some()
+                    || facts.destructor.is_some())
+            {
+                return Ok(false);
+            }
+            if let Some(set) = facts.functions {
+                self.deduce_overloaded_argument(element, set, depth, arguments)?;
+            } else if !self.deduce_call_argument(
+                element,
+                facts.ty,
+                facts.category,
+                depth,
+                arguments,
+            )? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub(super) fn initializer_list_element(&self, mut ty: TypeId) -> Option<TypeId> {
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+            return None;
+        };
+        let instance = self.graph.class_templates.instance(class)?;
+        let name = self.graph.entity(instance.primary).name?;
+        let std = self.identifiers.find(b"std")?;
+        (self.identifiers.bytes(name) == b"initializer_list"
+            && instance.arguments.len() == 1
+            && self.initializer_list_in_std(instance.primary, std))
+        .then(|| instance.arguments[0])
+    }
+
+    pub(super) fn complete_builtin_list(&mut self, class: EntityId) -> Result<bool, Error> {
+        let ty = self.graph.lower_entity_type(class)?;
+        let Some(element) = self.initializer_list_element(ty) else {
+            return Ok(false);
+        };
+        let parent = self
+            .graph
+            .entity(class)
+            .home
+            .ok_or(Error::Invariant("list home"))?;
+        let scope = self.graph.add_scope(
+            ScopeKind::Class,
+            parent,
+            None,
+            self.graph.entity(class).name,
+        )?;
+        self.graph.scope_mut(scope).owner = Some(class);
+        let entity = self.graph.entity_mut(class);
+        entity.scope = Some(scope);
+        entity.complete = true;
+        entity.representation = crate::sema::graph::ClassRepresentation::BuiltinInitializerList;
+        entity.defined = true;
+        entity.aggregation = super::aggregate_initialization::Aggregation::Ineligible;
+        let element = self.graph.types.qualify(element, Cv::CONST)?;
+        let pointer = self.graph.types.pointer(element)?;
+        let size = self.graph.types.scalar(super::types::Scalar::Basic(
+            crate::types::FundamentalType::LongInt,
+        ))?;
+        for (spelling, ty) in [
+            (b"<initializer_list __begin>".as_slice(), pointer),
+            (b"<initializer_list __size>".as_slice(), size),
+        ] {
+            let name = self
+                .identifiers
+                .intern(spelling)
+                .map_err(|_| Error::Limit("builtin list member"))?;
+            let member = self.graph.add_entity(
+                Some(ty),
+                Some(name),
+                crate::lex::vocabulary::Keyword::Int,
+            )?;
+            let entity = self.graph.entity_mut(member);
+            entity.home = Some(scope);
+            entity.data_member = Some(DataMemberKind::Instance);
+            self.graph.entity_mut(class).members.push(member);
+            self.graph.add_binding(
+                scope,
+                Some(scope),
+                Binding {
+                    kind: BindingKind::Variable,
+                    name: Some(name),
+                    entity: member,
+                    ty: Some(ty),
+                    key: crate::lex::vocabulary::Keyword::Int,
+                },
+            )?;
+        }
+        if self.semantic() {
+            self.classify_class_copies(class)?;
+            self.complete_destructor(class)?;
+            self.complete_virtual_members(class)?;
+            self.complete_virtual_layout(class)?;
+        }
+        Ok(true)
+    }
+
+    pub(super) fn initialize_list_object(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        scope: ScopeId,
+    ) -> Result<TypeId, Error> {
+        let element = self
+            .initializer_list_element(ty)
+            .ok_or(Error::Invariant("list object element"))?;
+        let class = self
+            .graph
+            .class_of(ty)
+            .ok_or(Error::Invariant("list object class"))?;
+        if !self.complete_class(class)? {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "std::initializer_list of an incomplete specialization",
+            ));
+        }
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("list object syntax"));
+        };
+        let mut next = 0;
+        while next < self.tree.expr_lists.get(elements).len() {
+            let item = self.tree.expr_lists.get(elements)[next];
+            if !matches!(
+                self.tree.expressions.get(item).kind,
+                ExprKind::Braced { .. }
+            ) {
+                self.ensure_typed(item, scope)?;
+                let subaggregate =
+                    matches!(self.graph.types.get(element).kind, TypeKind::Array { .. })
+                        || self
+                            .graph
+                            .class_of(element)
+                            .is_some_and(|class| self.graph.aggregate_class(class));
+                if subaggregate
+                    && self.bare_type(self.graph.expression_facts.get(item)?.ty)?
+                        != self.bare_type(element)?
+                {
+                    return Err(Error::at(
+                        self.tree.expressions.get(item).location,
+                        "an initializer_list element that does not convert to its element type",
+                    ));
+                }
+            }
+            self.aggregate_array_element(
+                elements,
+                &mut next,
+                element,
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
+        }
+        let element = self.graph.types.qualify(element, Cv::CONST)?;
+        let array = self.graph.types.intern(
+            TypeKind::Array {
+                element,
+                bound: u64::try_from(self.tree.expr_lists.get(elements).len())
+                    .map_err(|_| Error::Limit("list array size"))?,
+                operand: None,
+            },
+            Cv::default(),
+        )?;
+        let ty = self.bare_type(ty)?;
+        if self.lowering() && self.unevaluated == 0 && self.template_depth == 0 {
+            if !elements.is_empty() {
+                self.request_object_layout(array, self.tree.expressions.get(id).location);
+            }
+            self.request_object_layout(ty, self.tree.expressions.get(id).location);
+        }
+        self.publish_list(id, ty, V::Prvalue)?;
+        if self.graph.aggregate_class(class) {
+            let mut facts = self.graph.expression_facts.get(id)?;
+            facts.class_initialization = Some(
+                super::expression_facts::ClassInitialization::Aggregate(elements),
+            );
+            self.graph.expression_facts.set(id, facts);
+        }
+        self.graph.expression_facts.set_initializer_array(id, array);
+        Ok(ty)
+    }
+
     fn declared_initializer_list(&mut self, location: SourceOffset) -> Result<EntityId, Error> {
         let std = self
             .identifiers
@@ -197,13 +457,6 @@ impl Analyzer<'_> {
         }
         *known = Some(canonical);
         let ty = self.replace_auto(declared, replacing, cv)?;
-        // PA21 owns backing-array materialization, list conversions and lowering.
-        // Keep that missing implementation distinct from a language rejection.
-        if self.semantic() && self.template_depth == 0 {
-            return Err(Error::Missing(
-                "std::initializer_list object materialization",
-            ));
-        }
         Ok(ty)
     }
 
@@ -259,6 +512,12 @@ impl Analyzer<'_> {
     }
 }
 
+impl Graph {
+    pub(crate) fn lower_initializer_array(&self, id: ast::ExprId) -> Option<TypeId> {
+        self.expression_facts.initializer_array(id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +526,84 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn builtin_completion_and_backing_array_keep_original_syntax_and_demand() {
+        let source = SourceBuffer::new(
+            b"namespace std{template<class T>class initializer_list;}\
+            std::initializer_list<int>*p;std::initializer_list<int>a={1,2};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"list-completion").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let bodies = tree.bodies.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        for &id in &analyzer.tree.decl_lists.get(declarations)[..2].to_vec() {
+            analyzer.declaration(id, global).unwrap();
+        }
+        let ast::DeclKind::Simple { declarators, .. } = analyzer
+            .tree
+            .declarations
+            .get(analyzer.tree.decl_lists.get(declarations)[1])
+            .kind
+        else {
+            panic!("pointer declaration")
+        };
+        let pointer = analyzer.tree.init_declarators.get(declarators)[0].declarator;
+        let binding = analyzer.graph.declared_bindings[pointer.index()].unwrap();
+        let TypeKind::Pointer(ty) = analyzer
+            .graph
+            .types
+            .get(analyzer.graph.binding(binding).ty.unwrap())
+            .kind
+        else {
+            panic!("pointer type")
+        };
+        let class = analyzer.graph.class_of(ty).unwrap();
+        assert!(!analyzer.graph.entity(class).complete);
+        let object = analyzer.tree.decl_lists.get(declarations)[2];
+        analyzer.declaration(object, global).unwrap();
+        assert!(
+            analyzer.graph.entity(class).representation
+                == crate::sema::graph::ClassRepresentation::BuiltinInitializerList
+        );
+        let members = analyzer.graph.entity(class).members.clone();
+        assert_eq!(members.len(), 2);
+        let ast::DeclKind::Simple { declarators, .. } = analyzer.tree.declarations.get(object).kind
+        else {
+            panic!("object declaration")
+        };
+        let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let ast::InitializerKind::Assign(list) = initializer.kind else {
+            panic!("object list")
+        };
+        let array = analyzer
+            .graph
+            .expression_facts
+            .initializer_array(list)
+            .unwrap();
+        let TypeKind::Array { element, bound, .. } = analyzer.graph.types.get(array).kind else {
+            panic!("backing array")
+        };
+        assert_eq!(bound, 2);
+        assert_eq!(analyzer.type_cv(element), Cv::CONST);
+        let demands = analyzer.graph.root_demands.as_slice().len();
+        assert!(analyzer.complete_class(class).unwrap());
+        assert_eq!(analyzer.graph.entity(class).members, members);
+        assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.tree.bodies.mark(), bodies);
+    }
 
     #[test]
     fn list_deduction_reuses_shells_without_definition_or_syntax_demand() {

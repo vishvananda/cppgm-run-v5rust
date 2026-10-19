@@ -101,6 +101,7 @@ impl Analyzer<'_> {
                 },
                 qualification: false,
                 initialization: true,
+                list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
                 temporary: false,
                 reference_source: ReferenceSource::Other,
             }));
@@ -195,6 +196,7 @@ impl Analyzer<'_> {
             },
             qualification,
             initialization: true,
+            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
             temporary: false,
             reference_source: ReferenceSource::Other,
         }))
@@ -316,6 +318,8 @@ impl Analyzer<'_> {
                     rank: if derived { R::Conversion } else { R::Exact },
                     qualification: reference_qualification,
                     initialization: true,
+                    list_initialization:
+                        crate::sema::expression_facts::ListInitialization::Ordinary,
                     temporary: facts.category == V::Prvalue
                         && !function
                         && !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(_)),

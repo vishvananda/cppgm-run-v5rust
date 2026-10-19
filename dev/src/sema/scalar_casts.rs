@@ -301,6 +301,7 @@ impl Analyzer<'_> {
             rank: R::Conversion,
             qualification: false,
             initialization: false,
+            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
             temporary: false,
             reference_source: ReferenceSource::Other,
         });
@@ -434,6 +435,7 @@ impl Analyzer<'_> {
             rank: R::Conversion,
             qualification: false,
             initialization: false,
+            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
             temporary: false,
             reference_source: ReferenceSource::Other,
         });

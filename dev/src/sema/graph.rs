@@ -128,6 +128,12 @@ pub(super) struct MemberKey {
     pub signature: TypeId,
     pub shape: Option<super::templates::ShapeId>,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum ClassRepresentation {
+    #[default]
+    Program,
+    BuiltinInitializerList,
+}
 pub(super) struct Entity {
     pub inline: super::specifiers::InlinePreference,
     pub ty: Option<TypeId>,
@@ -139,6 +145,7 @@ pub(super) struct Entity {
     pub availability: FunctionAvailability,
     pub defaults: Vec<Option<super::default_arguments::DefaultArgument>>,
     pub complete: bool,
+    pub representation: ClassRepresentation,
     pub enumeration: Option<super::enumerations::EnumInfo>,
     pub constant: super::constants::ConstantState,
     pub implicit_default: Option<ScopeId>,
@@ -630,6 +637,7 @@ impl Graph {
             availability: FunctionAvailability::Callable,
             defaults: Vec::new(),
             complete: false,
+            representation: ClassRepresentation::Program,
             enumeration: None,
             constant: super::constants::ConstantState::None,
             implicit_default: None,

@@ -494,7 +494,13 @@ impl Function<'_, '_, '_, '_> {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         }
-        self.materialize_prvalue(id, ty, object, false)?;
+        if (owner.is_some() || persistent)
+            && let Some(list) = self.list_object(id)?
+        {
+            self.initialize_list_object(list, ty, object, persistent)?;
+        } else {
+            self.materialize_prvalue(id, ty, object, false)?;
+        }
         if persistent && !self.terminated {
             self.persistent_alive(ty, slot)?;
         } else if destructor.is_some() && !self.terminated {
@@ -615,6 +621,11 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
+        if let Some(list) = self.list_object(id)?
+            && !matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if self.graph.lower_aggregate_class(class))
+        {
+            return self.initialize_list_object(list, ty, object, self.persistent_references);
+        }
         match self.graph.lower_prvalue_initialization(id)? {
             Some(ClassInitialization::Constructed(arguments)) => {
                 let constructor = self

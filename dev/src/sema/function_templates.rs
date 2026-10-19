@@ -1344,14 +1344,21 @@ impl Analyzer<'_> {
             if !self.needs_deduction(pattern, depth)? {
                 continue;
             }
-            // A braced argument has no ordinary expression facts. It is a
-            // non-deduced context for this scalar/type parameter path.
+            // Only initializer-list parameters deduce from braced elements.
             if index >= offset
                 && matches!(
                     self.tree.expressions.get(args[index - offset]).kind,
                     ast::ExprKind::Braced { .. }
                 )
             {
+                if !self.deduce_list_elements(
+                    pattern,
+                    args[index - offset],
+                    depth,
+                    &mut arguments,
+                )? {
+                    return Ok(None);
+                }
                 continue;
             }
             let facts = if index < offset {

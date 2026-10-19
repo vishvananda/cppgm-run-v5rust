@@ -439,6 +439,9 @@ impl Analyzer<'_> {
         if (a.rank == R::UserDefined) != (b.rank == R::UserDefined) {
             return Ok(b.rank.cmp(&a.rank));
         }
+        if a.list_initialization != b.list_initialization {
+            return Ok(a.list_initialization.cmp(&b.list_initialization));
+        }
         let ai = a.second == C::None && !a.qualification;
         let bi = b.second == C::None && !b.qualification;
         if ai != bi {

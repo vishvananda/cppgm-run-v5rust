@@ -36,6 +36,11 @@ impl Analyzer<'_> {
             source.designated = self.bare_type(source.designated)?;
             return self.copy_constant_object(target, source, location);
         }
+        if facts.constructor.is_none()
+            && self.graph.expression_facts.initializer_array(id).is_some()
+        {
+            return self.constant_list_object(id, target, scope, location);
+        }
         if facts.literal_call.is_some()
             || facts.call_form == super::expression_facts::CallForm::Operator
         {
@@ -110,7 +115,12 @@ impl Analyzer<'_> {
                     self.discard_constant(left, scope)?;
                     return self.materialize_constant_object(right, target, scope);
                 }
-                _ => return Err(Error::Missing("constexpr class result materialization")),
+                _ => {
+                    return Err(nonconstant(
+                        location,
+                        "a class prvalue outside constant evaluation",
+                    ));
+                }
             },
         };
         self.construct_constant_object(
@@ -229,6 +239,15 @@ impl Analyzer<'_> {
         let values = match initializer.kind {
             InitializerKind::Assign(expr) | InitializerKind::Braced(expr) => {
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind {
+                    if constructor.is_none()
+                        && self
+                            .graph
+                            .expression_facts
+                            .initializer_array(expr)
+                            .is_some()
+                    {
+                        return self.constant_list_object(expr, target, scope, location);
+                    }
                     let values = Arguments::new(self.tree.expr_lists.get(elements));
                     if matches!(
                         self.graph.types.get(target.designated).kind,
@@ -384,6 +403,62 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    fn constant_list_object(
+        &mut self,
+        id: ast::ExprId,
+        target: Address,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let array = self
+            .graph
+            .expression_facts
+            .initializer_array(id)
+            .ok_or(Error::Invariant("constant list backing type"))?;
+        let TypeKind::Array { element, bound, .. } = self.graph.types.get(array).kind else {
+            return Err(Error::Invariant("constant list backing array"));
+        };
+        if bound == 0 {
+            return self.constant_zero_object(target, location);
+        }
+        let class = self
+            .graph
+            .class_of(target.designated)
+            .ok_or(Error::Invariant("constant list wrapper"))?;
+        let [first, second, ..] = self.graph.entity(class).members.as_slice() else {
+            return Err(nonconstant(
+                location,
+                "a std::initializer_list without its array's address and size members",
+            ));
+        };
+        let members = [*first, *second];
+        let mut elements = self.allocate_constant_object(array, None, location)?;
+        let ExprKind::Braced {
+            elements: values, ..
+        } = self.tree.expressions.get(id).kind
+        else {
+            return Err(Error::Invariant("constant list syntax"));
+        };
+        let values = Arguments::new(self.tree.expr_lists.get(values));
+        self.constant_aggregate(elements, values.as_slice(), &mut 0, scope, location)?;
+        elements.designated = element;
+        let first = self.constant_member_slot(target, members[0], location)?;
+        let second = self.constant_member_slot(target, members[1], location)?;
+        self.store_constant_value(
+            first,
+            super::constant_addresses::TemporaryValue::Pointer(elements.pointer()),
+            location,
+        )?;
+        self.store_constant_value(
+            second,
+            super::constant_addresses::TemporaryValue::Integer(super::constants::Constant {
+                bits: bound,
+                ty: second.designated,
+            }),
+            location,
+        )
+    }
+
     fn constant_aggregate(
         &mut self,
         target: Address,

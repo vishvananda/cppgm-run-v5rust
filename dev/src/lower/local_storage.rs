@@ -49,17 +49,25 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 initializer.is_some() && facts.initializer.is_none()
             };
-        let temporary = if let Some(initializer) = initializer {
-            if matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
-                let expr = self.initializer_expression(initializer)?;
-                !self.graph.lower_expression(expr)?.is_place
-                    || self.initializer_temporaries(Some(initializer))?
-            } else {
-                self.initializer_temporaries(Some(initializer))?
-            }
+        let listed = if self.graph.lower_construction(entity).is_none()
+            && !matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. })
+        {
+            self.list_variable(initializer)?
         } else {
-            false
+            None
         };
+        let temporary = listed.is_some()
+            || if let Some(initializer) = initializer {
+                if matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
+                    let expr = self.initializer_expression(initializer)?;
+                    !self.graph.lower_expression(expr)?.is_place
+                        || self.initializer_temporaries(Some(initializer))?
+                } else {
+                    self.initializer_temporaries(Some(initializer))?
+                }
+            } else {
+                false
+            };
         let ordinal = self.next_static;
         self.next_static = ordinal.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
         let StorageSymbols {
@@ -151,6 +159,12 @@ impl Function<'_, '_, '_, '_> {
             reference: matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. }),
             made: Vec::new(),
         });
+        if let Some(list) = listed
+            && let Some(array) = self.graph.lower_initializer_array(list)
+            && matches!(self.graph.lower_type(array)?, TypeView::Array { bound, .. } if bound != 0)
+        {
+            self.generated_slot("initlist", types::storage(self.graph, array)?)?;
+        }
         let saved = self.symbols.replace_temporary_owner(Some((entity, 0)));
         let mut region = false;
         let construction = self.lifetime.construction;

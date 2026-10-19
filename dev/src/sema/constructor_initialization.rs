@@ -284,6 +284,12 @@ impl Analyzer<'_> {
             self.class_list_initialize(id, target, scope)?;
             return Ok(None);
         }
+        if let Some(id) = list
+            && self.initializer_list_element(target).is_some()
+        {
+            self.initialize_list_object(id, target, scope)?;
+            return Ok(None);
+        }
         let (arguments, converting, copy_list) = match initializer.kind {
             ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id)
                 if list.is_some() =>
@@ -361,6 +367,21 @@ impl Analyzer<'_> {
             if self.graph.expression_facts.get(argument).is_err() {
                 self.type_call_argument(argument, scope)?;
             }
+        }
+        if selected.is_none()
+            && let Some(list) = list
+            && let Some(binding) = self.list_constructor_phase(class, list)?
+        {
+            return self.initialize_class_arguments(
+                target,
+                ClassInput {
+                    arguments: ConstructorArguments::Single(list),
+                    selected: Some(binding),
+                    ..input
+                },
+                scope,
+                location,
+            );
         }
         // Preserve the existing checked copy-elision path for same-class sources.
         if context != ClassContext::Delegation
@@ -657,13 +678,16 @@ impl Analyzer<'_> {
         let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("constructor list arguments"));
         };
-        facts.class_initialization = Some(
-            super::expression_facts::ClassInitialization::Constructed(if elements.is_empty() {
-                ConstructorArguments::Value
-            } else {
-                ConstructorArguments::Values(elements)
-            }),
-        );
+        facts.class_initialization =
+            Some(super::expression_facts::ClassInitialization::Constructed(
+                if self.graph.expression_facts.initializer_array(id).is_some() {
+                    ConstructorArguments::Single(id)
+                } else if elements.is_empty() {
+                    ConstructorArguments::Value
+                } else {
+                    ConstructorArguments::Values(elements)
+                },
+            ));
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }

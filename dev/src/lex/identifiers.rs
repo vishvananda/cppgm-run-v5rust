@@ -22,6 +22,9 @@ pub(crate) struct Identifiers {
 }
 
 impl Identifiers {
+    pub(crate) fn find(&self, text: &[u8]) -> Option<NameId> {
+        self.index.get(text).copied()
+    }
     pub(crate) fn len(&self) -> usize {
         self.spellings.len()
     }

@@ -149,6 +149,7 @@ impl Analyzer<'_> {
             rank: R::UserDefined,
             qualification: false,
             initialization: true,
+            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
             temporary: reference.is_some() && best.after.is_none_or(|after| after.temporary),
             reference_source: ReferenceSource::Other,
         };
@@ -299,6 +300,7 @@ impl Analyzer<'_> {
     ) -> Result<Ordering, Error> {
         if a.conversion.rank == R::UserDefined
             && b.conversion.rank == R::UserDefined
+            && a.conversion.list_initialization == b.conversion.list_initialization
             && a.user_conversion != b.user_conversion
         {
             return Ok(Ordering::Equal);

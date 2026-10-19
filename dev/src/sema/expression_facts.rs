@@ -68,6 +68,12 @@ impl ReferenceSource {
         matches!(self, Self::FunctionLvalue)
     }
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum ListInitialization {
+    #[default]
+    Ordinary,
+    InitializerList,
+}
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Conversion {
     pub target: TypeId,
@@ -77,6 +83,7 @@ pub(super) struct Conversion {
     pub rank: ConversionRank,
     pub qualification: bool,
     pub initialization: bool,
+    pub list_initialization: ListInitialization,
     pub temporary: bool,
     pub reference_source: ReferenceSource,
 }
@@ -279,6 +286,7 @@ struct ClassConversion {
 }
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    initializer_arrays: std::collections::HashMap<ast::ExprId, TypeId>,
     runtime_casts: std::collections::HashMap<ast::ExprId, super::dynamic_casts::RuntimeCast>,
     type_queries: std::collections::HashMap<ast::ExprId, super::type_queries::TypeQuery>,
     type_identities: std::collections::HashSet<ast::ExprId>,
@@ -308,6 +316,13 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn initializer_array(&self, id: ast::ExprId) -> Option<TypeId> {
+        self.initializer_arrays.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_initializer_array(&mut self, id: ast::ExprId, array: TypeId) {
+        self.initializer_arrays.insert(self.root(id), array);
+    }
+
     pub(super) fn type_query(&self, id: ast::ExprId) -> Option<super::type_queries::TypeQuery> {
         self.type_queries.get(&self.root(id)).copied()
     }
@@ -557,6 +572,7 @@ mod tests {
             rank: ConversionRank::Conversion,
             qualification: false,
             initialization: true,
+            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
             temporary: false,
             reference_source: ReferenceSource::Other,
         });

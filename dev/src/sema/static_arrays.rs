@@ -106,15 +106,21 @@ impl Analyzer<'_> {
             return Ok(());
         };
         let mut image = Vec::new();
-        let zeroed = matches!(self.tree.expressions.get(expr).kind,
-            ExprKind::Braced { elements, .. } if self.tree.expr_lists.get(elements).is_empty())
-            && self
+        let empty = matches!(self.tree.expressions.get(expr).kind,
+            ExprKind::Braced { elements, .. } if self.tree.expr_lists.get(elements).is_empty());
+        let zeroed = empty
+            && (self
                 .graph
-                .lower_construction(entity)
-                .is_some_and(|constructor| {
-                    self.graph.lower_constructor_trivial(constructor)
-                        && self.graph.lower_constructor(constructor).zero_before_value
-                });
+                .expression_facts
+                .initializer_array(expr)
+                .is_some()
+                || self
+                    .graph
+                    .lower_construction(entity)
+                    .is_some_and(|constructor| {
+                        self.graph.lower_constructor_trivial(constructor)
+                            && self.graph.lower_constructor(constructor).zero_before_value
+                    }));
         let complete = if zeroed && self.graph.lower_variable(entity)?.thread_local {
             // The frozen static-global path does not probe evaluated class
             // initialization for TLS; its first-use initializer retains the work.

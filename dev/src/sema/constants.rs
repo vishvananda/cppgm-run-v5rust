@@ -1139,6 +1139,9 @@ impl Analyzer<'_> {
     pub(super) fn single_initializer(&self, initializer: ast::Initializer) -> Option<ast::ExprId> {
         match initializer.kind {
             InitializerKind::Assign(id) | InitializerKind::Braced(id) => {
+                if self.graph.expression_facts.initializer_array(id).is_some() {
+                    return Some(id);
+                }
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
                     let elements = self.tree.expr_lists.get(elements);
                     if elements.len() == 1 {

@@ -241,7 +241,32 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "default constructor without argument",
                 )))?;
-            let value = if matches!(
+            let value = if index == 0
+                && matches!(arguments, Some(ConstructorArguments::Single(list)) if self.graph.lower_initializer_array(list).is_some() && self.graph.lower_list_constructor(list)? == Some(id))
+            {
+                let reference = if let TypeView::Reference { element, .. } =
+                    self.graph.lower_type(parameter)?
+                {
+                    Some(element)
+                } else {
+                    None
+                };
+                let ty = reference.unwrap_or(parameter);
+                let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+                    return Err(crate::sema::Error::Invariant("list constructor parameter").into());
+                };
+                let slot = self.generated_slot(
+                    if reference.is_some() { "arg" } else { "argobj" },
+                    super::types::storage(self.graph, ty)?,
+                )?;
+                let address = self.emit(I::Addr(slot), ty)?.value;
+                self.initialize_list_object(default, ty, address, false)?;
+                if reference.is_some() || !self.graph.lower_direct_class_parameter(class)? {
+                    address
+                } else {
+                    slot
+                }
+            } else if matches!(
                 self.graph.lower_type(parameter)?,
                 TypeView::Reference { .. }
             ) {

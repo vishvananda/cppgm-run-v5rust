@@ -117,6 +117,17 @@ impl Function<'_, '_, '_, '_> {
         storage: NamedStorage,
     ) -> Result<(), Error> {
         self.symbols.storage_destructor(ty)?;
+        if self.graph.lower_construction(entity).is_none()
+            && let Some(list) = self.list_variable(initializer)?
+        {
+            let object = self.storage_address(slot, ty)?;
+            return self.initialize_list_object(
+                list,
+                ty,
+                object,
+                storage == NamedStorage::Static || self.persistent_references,
+            );
+        }
         let elided = if storage == NamedStorage::Automatic {
             self.named_elided_list(initializer)?
         } else {

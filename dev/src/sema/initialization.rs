@@ -171,7 +171,9 @@ impl Analyzer<'_> {
             }
             _ => parameter,
         };
-        if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
+        if self.initializer_list_element(target).is_some() {
+            self.initialize_list_object(id, target, scope)?;
+        } else if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
             self.array_braced_list(id, target, scope)?;
         } else if matches!(self.graph.types.get(target).kind, TypeKind::Class(_))
             && let Some(super::procedural_calls::UserConversion::Constructor(binding)) = selected
@@ -182,9 +184,11 @@ impl Analyzer<'_> {
             self.initialize_class_arguments(
                 target,
                 super::constructor_initialization::ClassInput {
-                    arguments: super::constructor_initialization::ConstructorArguments::Values(
-                        elements,
-                    ),
+                    arguments: if self.initializer_list_constructor(binding)? {
+                        super::constructor_initialization::ConstructorArguments::Single(id)
+                    } else {
+                        super::constructor_initialization::ConstructorArguments::Values(elements)
+                    },
                     list: Some(id),
                     converting: false,
                     copy_list: true,
@@ -249,6 +253,10 @@ impl Analyzer<'_> {
                     "an lvalue reference to a type that is not const bound to a list's temporary",
                 ));
             }
+            if self.initializer_list_element(element).is_some() {
+                self.initialize_list_argument(id, target, scope, None)?;
+                return Ok(self.graph.expression_facts.get(id)?.ty);
+            }
             let object = if matches!(self.graph.types.get(element).kind, TypeKind::Array { .. }) {
                 element
             } else {
@@ -259,6 +267,9 @@ impl Analyzer<'_> {
             } else {
                 self.list_initialize(id, object, scope)?
             };
+            if self.graph.expression_facts.initializer_array(id).is_some() {
+                return Ok(object);
+            }
             return self.publish_list(id, object, V::Prvalue);
         }
         if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind {

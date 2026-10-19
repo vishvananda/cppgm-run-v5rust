@@ -61,6 +61,7 @@ impl Analyzer<'_> {
             rank: ConversionRank::Exact,
             qualification: false,
             initialization: true,
+            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
             temporary: false,
             reference_source: ReferenceSource::Other,
         };
@@ -68,6 +69,40 @@ impl Analyzer<'_> {
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(elements));
         let values = argument_buffer.as_slice();
+        if let Some(element) = self.initializer_list_element(parameter) {
+            for &item in values {
+                let step = if matches!(
+                    self.tree.expressions.get(item).kind,
+                    ExprKind::Braced { .. }
+                ) {
+                    self.list_sequence(item, element)?
+                } else {
+                    self.argument_sequence(item, element)?
+                };
+                let Some(step) = step else { return Ok(None) };
+                let current = ArgumentSequence {
+                    conversion: sequence,
+                    application: Some(sequence),
+                    function: None,
+                    user_conversion: constructor,
+                };
+                if self.compare_argument_sequences(step, current)? == std::cmp::Ordering::Less {
+                    sequence = step.conversion;
+                    constructor = step.user_conversion;
+                }
+            }
+            sequence.list_initialization =
+                crate::sema::expression_facts::ListInitialization::InitializerList;
+            sequence.target = parameter;
+            sequence.result = target;
+            sequence.temporary = reference.is_some();
+            return Ok(Some(ArgumentSequence {
+                conversion: sequence,
+                application: Some(sequence),
+                function: None,
+                user_conversion: None,
+            }));
+        }
         match self.graph.types.get(target).kind {
             TypeKind::Scalar(Scalar::Void) => return Ok(None),
             TypeKind::Array { element, bound, .. } => {
@@ -112,7 +147,14 @@ impl Analyzer<'_> {
                         return Ok(None);
                     }
                 } else {
-                    constructor = self.list_constructor_binding(elements, class)?;
+                    constructor =
+                        if elements.is_empty() && self.class_has_default_constructor(class)? {
+                            self.list_constructor_binding(elements, class)?
+                        } else if let Some(binding) = self.list_constructor_phase(class, id)? {
+                            Some(UserConversion::Constructor(binding))
+                        } else {
+                            self.list_constructor_binding(elements, class)?
+                        };
                     if constructor.is_none() {
                         return Ok(None);
                     }
