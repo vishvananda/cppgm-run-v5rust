@@ -350,7 +350,7 @@ impl Function<'_, '_, '_, '_> {
         qualified: bool,
     ) -> Result<RValue, Error> {
         if let Some(invoker) = self.graph.lower_closure_converter(call.function) {
-            return self.convert_closure(id, invoker, call.result);
+            return self.convert_closure(id, invoker, call);
         }
         let throws = self.lifetime_call_throws(CallTarget::Direct(call.function))?;
         self.begin_lifetime_call(throws)?;

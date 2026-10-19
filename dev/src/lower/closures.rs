@@ -9,7 +9,7 @@ use crate::{
         model::{Facts, InstructionKind as I, Value},
         vocabulary::{Projection, Type},
     },
-    sema::lowering::{EntityId, TypeId, TypeView},
+    sema::lowering::{EntityId, MemberCall, TypeId, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
@@ -29,16 +29,21 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         id: ast::ExprId,
         invoker: EntityId,
-        source: TypeId,
+        call: MemberCall,
     ) -> Result<RValue, Error> {
         let id = self.without_parentheses(id);
         if !matches!(self.tree.expressions.get(id).kind, ExprKind::Lambda(_))
             && !self.side_effect_free(id, false, 0)?
         {
             let place = self.original_scalar_place(id)?;
-            self.storage_address(place, self.graph.lower_expression(id)?.ty)?;
+            let object = self.storage_address(place, self.graph.lower_expression(id)?.ty)?;
+            // conversion_object projects the receiver into the converter's
+            // owning base, even when the address is unused and the offset is zero.
+            if let Some(offset) = call.offset {
+                self.base_projection(object, call.result, offset)?;
+            }
         }
-        self.closure_function_address(invoker, source)
+        self.closure_function_address(invoker, call.result)
     }
     pub(super) fn explicit_closure_conversion(
         &mut self,
