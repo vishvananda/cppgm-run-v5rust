@@ -131,7 +131,10 @@ impl Function<'_, '_, '_, '_> {
         let began = statement
             && self.begin_full_expression(
                 Some(operand),
-                super::temporary_scan::ExpressionUse::Value,
+                // exception_object opens an ordinary, non-discarded segment.
+                // Unlike a return/condition, it supplies no hidden EH context
+                // that could make a selected noexcept copy appear throwing.
+                super::temporary_scan::ExpressionUse::Initialization,
             )?;
         let initialize = |this: &mut Self| -> Result<(), Error> {
             if matches!(this.graph.lower_type(ty)?, TypeView::Class(_)) {

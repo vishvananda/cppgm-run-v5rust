@@ -314,10 +314,22 @@ impl Function<'_, '_, '_, '_> {
         }
         if throws && self.lifetime.temporary_segment.floor() != 0 {
             self.drop_segment_floor();
-            if self.lifetime.region {
+            if self.lifetime.region && self.handlers.explicit == 0 {
                 self.close_lifetime_region()?;
-                let position = self.builder.position()?;
-                return self.open_temporary_region_at(Some(position));
+                // before_throwing_call reopens through open_region(false,
+                // true): an enclosing try can own the unwind when the
+                // widened segment still has no objects above its floor.
+                let boundary = self.lifetime.full_expression
+                    && self.lifetime.temporary_segment.is_present()
+                    && self.handlers.contexts.last().is_some_and(|c| !c.attempt);
+                if self.lifetime.cleanups.len() > self.handler_floor()
+                    || boundary
+                    || self.lifetime.tracking.active
+                {
+                    let position = self.builder.position()?;
+                    return self.open_temporary_region_at(Some(position));
+                }
+                return Ok(());
             }
         }
         // A call closes only a region it opened, never an enclosing storage

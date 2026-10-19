@@ -488,7 +488,9 @@ impl Function<'_, '_, '_, '_> {
         } else {
             chained
         };
-        self.emit_constructor_call(entry, facts.nothrow, &values)?;
+        // copy_lowering.cpp::call_copy demands the selected entry only;
+        // the copy body publishes any vtable its own initialization uses.
+        self.emit_address_constructor_call(entry, facts.nothrow, &values)?;
         if self.element_temporaries.depth == 0 {
             let mut throwing_destructor = false;
             for index in first..self.lifetime.cleanups.len() {

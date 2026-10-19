@@ -143,7 +143,7 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         arguments: Option<ConstructorArguments>,
     ) -> Result<(), Error> {
-        self.call_constructor_with_elision(id, variant, object, arguments, false)
+        self.call_constructor_with_elision(id, variant, object, arguments, false, true)
     }
     pub(super) fn call_constructor_from_expression(
         &mut self,
@@ -152,12 +152,16 @@ impl Function<'_, '_, '_, '_> {
         source: ast::ExprId,
         elision: bool,
     ) -> Result<(), Error> {
+        // object_lowering.cpp::call_constructor demands the selected body.
+        // Only call_special publishes the class table at the call site;
+        // expression copies let the demanded constructor publish its tables.
         self.call_constructor_with_elision(
             id,
             Variant::Complete,
             object,
             Some(ConstructorArguments::Single(source)),
             elision,
+            false,
         )
     }
     fn call_constructor_with_elision(
@@ -167,6 +171,7 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         arguments: Option<ConstructorArguments>,
         copy_elision: bool,
+        publish_table: bool,
     ) -> Result<(), Error> {
         let single;
         let written = match arguments {
@@ -198,7 +203,7 @@ impl Function<'_, '_, '_, '_> {
                     .lower_class_conversion(source)
                     .is_some_and(|(selected, _)| selected == id)
         });
-        if !declared && !converting {
+        if publish_table && !declared && !converting {
             self.note_constructor_temporaries(id, written)?;
         }
         self.begin_lifetime_call(!facts.nothrow)?;
@@ -254,7 +259,7 @@ impl Function<'_, '_, '_, '_> {
             facts.nothrow,
             &values,
             copy_elision,
-            true,
+            publish_table,
         );
         if !facts.nothrow && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
