@@ -237,7 +237,13 @@ impl Analyzer<'_> {
     pub(super) fn check_bound_function(&self, id: ast::ExprId) -> Result<(), Error> {
         let facts = self.graph.expression_facts.get(id)?;
         if facts.object.is_some()
-            && (facts.functions.is_some() || facts.function.is_some() || facts.destructor.is_some())
+            && (facts.functions.is_some()
+                || facts.function.is_some()
+                || facts.destructor.is_some()
+                || matches!(
+                    self.graph.types.get(facts.ty).kind,
+                    TypeKind::Function { .. }
+                ))
         {
             return Err(Error::at(
                 self.tree.expressions.get(id).location,
@@ -262,6 +268,14 @@ impl Analyzer<'_> {
         facts: ExprFacts,
         target: TypeId,
     ) -> Result<Option<BindingId>, Error> {
+        self.matching_function_cast(facts, target, false)
+    }
+    pub(super) fn matching_function_cast(
+        &mut self,
+        facts: ExprFacts,
+        target: TypeId,
+        explicit: bool,
+    ) -> Result<Option<BindingId>, Error> {
         let Some(set) = facts.functions else {
             return Ok(None);
         };
@@ -282,10 +296,18 @@ impl Analyzer<'_> {
         let mut template = false;
         for index in 0..self.graph.overloads.get(set).len() {
             let binding = self.graph.overloads.get(set)[index];
-            let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if self.member_function_owner(binding) != owner {
-                continue;
+            let candidate_owner = self.member_function_owner(binding);
+            if candidate_owner != owner {
+                let Some((candidate, owner)) = candidate_owner.zip(owner) else {
+                    continue;
+                };
+                if !(self.derived_class_conversion(candidate, owner)?
+                    || explicit && self.derived_class_conversion(owner, candidate)?)
+                {
+                    continue;
+                }
             }
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.template_head.is_some() {
                 template = true;
                 continue;
@@ -302,7 +324,7 @@ impl Analyzer<'_> {
             let mut candidates = Vec::new();
             for index in 0..self.graph.overloads.get(set).len() {
                 let binding = self.graph.overloads.get(set)[index];
-                if self.member_function_owner(binding) != owner {
+                if self.member_function_owner(binding).is_some() != owner.is_some() {
                     continue;
                 }
                 if let Some(binding) = self.deduce_function_target(binding, target)?

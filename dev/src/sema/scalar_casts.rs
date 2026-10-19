@@ -76,7 +76,8 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         let target = self.graph.types.canonical_function(target)?;
         let source = self.typed_expression(operand, scope)?;
-        self.resolve_cast_function(id, operand, source, target)?;
+        self.resolve_cast_function(id, operand, source, target, cast)?;
+        self.check_bound_function(operand)?;
         let source = self.graph.expression_facts.get(operand)?;
         if cast == Some(K::DynamicCast) {
             return self.dynamic_class_cast(id, target, operand, source, scope);
@@ -307,6 +308,7 @@ impl Analyzer<'_> {
         operand: ast::ExprId,
         source: ExprFacts,
         target: TypeId,
+        cast: Option<K>,
     ) -> Result<(), Error> {
         if source.functions.is_none() {
             return Ok(());
@@ -314,7 +316,11 @@ impl Analyzer<'_> {
         let binding = if let Some(binding) = self.ordinary_function_operand(source) {
             Some(binding)
         } else {
-            self.matching_function(source, target)?
+            self.matching_function_cast(
+                source,
+                target,
+                !matches!(cast, Some(K::ConstCast | K::ReinterpretCast)),
+            )?
         };
         let binding = binding.ok_or_else(|| {
             Error::at(

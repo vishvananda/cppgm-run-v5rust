@@ -140,7 +140,8 @@ impl Function<'_, '_, '_, '_> {
             if matches!(
                 self.graph.lower_type(element)?,
                 TypeView::Array { .. } | TypeView::Class(_) | TypeView::Unsupported
-            ) {
+            ) && self.graph.lower_member_pointer_type(element).is_none()
+            {
                 return Err(Error::Missing("aggregate reference temporary lowering"));
             }
             self.conditional_slot = None;
@@ -154,7 +155,9 @@ impl Function<'_, '_, '_, '_> {
                     literal: false,
                     ..value
                 };
-                if context != Context::Cast
+                if let Some(adjustment) = self.graph.lower_member_pointer_conversion(id)? {
+                    self.convert_member_pointer(value, target, adjustment)?
+                } else if context != Context::Cast
                     && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
                 {
                     self.adjust_base_pointer(value, target, offset, offset != 0)?

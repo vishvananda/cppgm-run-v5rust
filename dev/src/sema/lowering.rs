@@ -1127,7 +1127,9 @@ impl Graph {
                 TypeKind::Address { entity, .. } => {
                     return address_is_local(self, entity);
                 }
-                TypeKind::Function { .. } | TypeKind::Pack(_) => break,
+                TypeKind::Function { .. } | TypeKind::MemberPointer { .. } | TypeKind::Pack(_) => {
+                    break;
+                }
                 _ => return Ok(false),
             }
         }
@@ -1142,6 +1144,7 @@ impl Graph {
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::Array { element, .. } => work.push(*element),
+                TypeKind::MemberPointer { owner, element } => work.extend([*owner, *element]),
                 TypeKind::Function {
                     result, parameters, ..
                 } => {

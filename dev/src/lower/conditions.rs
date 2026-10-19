@@ -194,7 +194,7 @@ impl Function<'_, '_, '_, '_> {
         self.scalar_truth(value)
     }
     fn scalar_truth(&mut self, value: RValue) -> Result<RValue, Error> {
-        if self.data_member_pointer(value.source) {
+        if self.graph.lower_member_pointer_type(value.source).is_some() {
             return self.member_pointer_truth(value);
         }
         if value.ty.float_rank() != 0 {

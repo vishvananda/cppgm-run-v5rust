@@ -507,7 +507,15 @@ impl Analyzer<'_> {
         source: TypeId,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        let target = self.decayed_type(source)?;
+        let bound = self.graph.lower_bound_member_pointer(callee)?;
+        if bound {
+            self.check_member_pointer_call(id, callee, arguments)?;
+        }
+        let target = if bound {
+            source
+        } else {
+            self.decayed_type(source)?
+        };
         let function = match self.graph.types.get(target).kind {
             TypeKind::Function { .. } => target,
             TypeKind::Pointer(element)

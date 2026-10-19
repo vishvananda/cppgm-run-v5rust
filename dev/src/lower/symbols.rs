@@ -2,6 +2,8 @@
 use super::Error;
 #[path = "argument_declarations.rs"]
 mod argument_declarations;
+#[path = "call_signatures.rs"]
+mod call_signatures;
 #[path = "exception_information.rs"]
 mod exception_information;
 #[path = "placeholder_mangling.rs"]
@@ -1538,19 +1540,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let name: std::sync::Arc<str> = name.into();
         self.names.insert(entity, std::sync::Arc::clone(&name));
         Ok(name)
-    }
-    pub(super) fn call_signature(
-        &mut self,
-        program: &mut Program,
-        ty: TypeId,
-        nothrow: bool,
-    ) -> Result<crate::lowir::model::SignatureId, Error> {
-        if let Some(&signature) = self.signatures.get(&(ty, nothrow)) {
-            return Ok(signature);
-        }
-        let signature = super::function::signature(program, self, self.graph, ty, nothrow)?;
-        self.signatures.insert((ty, nothrow), signature);
-        Ok(signature)
     }
     pub(super) fn variable_symbol(
         &mut self,

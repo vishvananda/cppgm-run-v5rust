@@ -100,6 +100,7 @@ pub(super) fn layout(graph: &Graph, ty: TypeId) -> Result<(u64, u8), Error> {
     Ok(match ty {
         Type::Object { bytes, align } => (bytes, align),
         Type::F80 => (16, 4),
+        Type::I128 => (16, 3),
         Type::F64 | Type::Ptr | Type::I64 => (8, 3),
         Type::F32 | Type::I32 | Type::U32 => (4, 2),
         Type::I16 | Type::U16 => (2, 1),

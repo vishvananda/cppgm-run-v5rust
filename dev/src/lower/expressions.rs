@@ -552,6 +552,9 @@ impl Function<'_, '_, '_, '_> {
                 return self.read_place(place, source);
             }
             Some(P::BitAnd) => {
+                if let Some(function) = self.graph.lower_member_function_address(id)? {
+                    return self.member_function_word(function, source, 0);
+                }
                 if let Some(offset) = self.graph.lower_data_member_address(id)? {
                     let offset = self.builder.integer(u128::from(offset))?;
                     return self.emit(I::Const(Type::I64, offset), source);
@@ -591,12 +594,13 @@ impl Function<'_, '_, '_, '_> {
                 self.emit(I::Unary(Unary::BitNot, value.ty, value.value), source)
             }
             Some(P::LogicalNot) => {
-                let value = if self.data_member_pointer(value.source) {
+                let member = self.graph.lower_member_pointer_type(value.source).is_some();
+                let value = if member {
                     self.member_pointer_truth(value)?
                 } else {
                     value
                 };
-                let zero = if self.data_member_pointer(value.source) {
+                let zero = if member {
                     self.builder.integer(0)?
                 } else {
                     self.zero(value.source)?.value
@@ -725,11 +729,25 @@ impl Function<'_, '_, '_, '_> {
         let boundary = self.symbols.result_boundary(result)?;
         let ty = boundary.ty;
         let supplied = self.tree.expr_lists.get(arguments);
+        let member_access = self
+            .graph
+            .lower_bound_member_pointer(callee_expression)?
+            .then(|| self.without_parentheses(callee_expression));
         let mut values = Vec::with_capacity(parameters.len() + 1);
         if boundary.indirect {
             values.push(destination.ok_or(crate::sema::Error::Invariant(
                 "class call without destination",
             ))?);
+        }
+        if let Some(access) = member_access {
+            let ExprKind::Binary { left, op, .. } = self.tree.expressions.get(access).kind else {
+                return Err(crate::sema::Error::Invariant("bound member access syntax").into());
+            };
+            values.push(self.member_pointer_object(
+                access,
+                left,
+                op.token.as_punctuator() == Some(P::ArrowStar),
+            )?);
         }
         if let CallTarget::Direct(entity) = target {
             let receiver = if self.graph.lower_callable_object_call(id)? {
@@ -789,7 +807,15 @@ impl Function<'_, '_, '_, '_> {
             } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
                 values.push(self.class_argument(argument, parameter)?);
             } else {
-                let value = self.operand(argument, Context::Argument)?;
+                // argument() applies its recorded standard sequence to the
+                // raw rvalue; operand()'s member-address folding belongs to
+                // expression operands, not this call boundary.
+                let value = if self.graph.lower_function_conversion(argument)?.is_some() {
+                    self.operand(argument, Context::Argument)?
+                } else {
+                    let value = self.expression(argument, Context::Argument)?;
+                    self.apply_conversion(argument, value, Context::Argument)?
+                };
                 let value = self.fit(value, parameter)?;
                 values.push(value.value);
             }
@@ -827,11 +853,21 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
             CallTarget::Indirect(function_type, nothrow) => {
-                let callee = self.operand(callee_expression, Context::Operand)?.value;
-                let signature =
-                    self.symbols
-                        .call_signature(self.builder.program(), function_type, nothrow)?;
-                (callee, Some(signature))
+                if let Some(access) = member_access {
+                    self.bound_pointer_call(
+                        access,
+                        &mut values[usize::from(boundary.indirect)],
+                        nothrow,
+                    )?
+                } else {
+                    let callee = self.operand(callee_expression, Context::Operand)?.value;
+                    let signature = self.symbols.call_signature(
+                        self.builder.program(),
+                        function_type,
+                        nothrow,
+                    )?;
+                    (callee, Some(signature))
+                }
             }
         };
         let arguments = self.builder.arguments(&values)?;

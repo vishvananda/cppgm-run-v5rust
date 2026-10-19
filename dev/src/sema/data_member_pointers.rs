@@ -1,5 +1,5 @@
 // Translated from analyzer_expressions.cpp and analyzer_member_pointers.cpp. See NOTICE.
-//! Qualified data-member addresses and typed object routes for pointer application.
+//! Qualified member addresses, typed object routes and bound-call qualification.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -10,6 +10,44 @@ use super::{
 use crate::{lex::pp_lexer::Punctuator as P, syntax::ast};
 
 impl Analyzer<'_> {
+    pub(super) fn check_member_pointer_call(
+        &self,
+        id: ast::ExprId,
+        callee: ast::ExprId,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+    ) -> Result<(), Error> {
+        let facts = self.graph.expression_facts.get(callee)?;
+        let object = facts
+            .object
+            .ok_or(Error::Invariant("bound member object"))?;
+        let TypeKind::Function {
+            cv,
+            reference,
+            ref parameters,
+            variadic,
+            ..
+        } = self.graph.types.get(facts.ty).kind
+        else {
+            return Err(Error::Invariant("bound member signature"));
+        };
+        let lvalue = object.category == V::Lvalue;
+        let count = self.tree.expr_lists.get(arguments).len();
+        let failure = if self.type_cv(object.ty).0 & !cv.0 & 3 != 0 {
+            Some("a call through a pointer to member function drops the object's cv-qualifiers")
+        } else if matches!(reference, Some(super::types::RefKind::Lvalue)) && !lvalue
+            || matches!(reference, Some(super::types::RefKind::Rvalue)) && lvalue
+        {
+            Some("the object's value category does not suit the member function's ref-qualifier")
+        } else if count < parameters.len() || count > parameters.len() && !variadic {
+            Some("wrong number of arguments in a call through a pointer to member function")
+        } else {
+            None
+        };
+        if let Some(message) = failure {
+            return Err(Error::at(self.tree.expressions.get(id).location, message));
+        }
+        Ok(())
+    }
     pub(super) fn member_pointer_cast(
         &mut self,
         id: ast::ExprId,
@@ -237,7 +275,26 @@ impl Analyzer<'_> {
             self.graph.types.get(element).kind,
             TypeKind::Function { .. }
         ) {
-            return Err(Error::Missing("member function pointer application"));
+            let mut facts = self.new_expression_facts(element, V::Prvalue)?;
+            facts.object = Some(super::expression_facts::ObjectArgument {
+                source: super::expression_facts::ObjectSource::Explicit {
+                    expression: left,
+                    arrow: op == P::ArrowStar,
+                },
+                ty: object,
+                category,
+            });
+            facts.member_path = path;
+            if self.lowering() && self.unevaluated == 0 {
+                self.request_object_layout(
+                    self.graph
+                        .entity(owner)
+                        .ty
+                        .ok_or(Error::Invariant("member owner type"))?,
+                    location,
+                );
+            }
+            return Ok(facts);
         }
         let cv = Cv(self.graph.types.get(element).cv.0 | self.type_cv(object).0);
         let ty = self.graph.types.qualify(element, cv)?;
@@ -255,6 +312,26 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
+    pub(crate) fn lower_bound_member_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {
+        let facts = self.expression_facts.get(id)?;
+        Ok(facts.object.is_some()
+            && facts.function.is_none()
+            && facts.functions.is_none()
+            && facts.destructor.is_none()
+            && matches!(self.types.get(facts.ty).kind, TypeKind::Function { .. }))
+    }
+
+    pub(crate) fn lower_member_function_address(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<super::graph::EntityId>, Error> {
+        let facts = self.expression_facts.get(id)?;
+        Ok(if self.lower_member_pointer_type(facts.ty).is_some() {
+            facts.function.map(|binding| self.binding(binding).entity)
+        } else {
+            None
+        })
+    }
     pub(crate) fn lower_member_pointer_conversion(
         &self,
         id: ast::ExprId,
@@ -287,7 +364,10 @@ impl super::graph::Graph {
         // Only the prvalue address formation carries an address constant.
         // An implicit member read can itself have member-pointer type and
         // a selected member, but its value must still be loaded from storage.
-        if facts.category != V::Prvalue || self.lower_member_pointer_type(facts.ty).is_none() {
+        if facts.category != V::Prvalue
+            || self.lower_member_pointer_type(facts.ty).is_none()
+            || facts.function.is_some()
+        {
             return Ok(None);
         }
         facts
