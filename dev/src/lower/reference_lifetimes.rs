@@ -13,6 +13,7 @@ use crate::{
 pub(super) struct Extensions {
     pub aggregate: Option<EntityId>,
     owner: Option<EntityId>,
+    pub root: Option<ast::ExprId>,
     path: Vec<ast::ExprId>,
 }
 
@@ -129,6 +130,10 @@ impl Function<'_, '_, '_, '_> {
             self.reference_extension_path(id)?;
         }
         let saved = self.reference_lifetimes.owner.replace(owner);
+        let saved_root = self
+            .reference_lifetimes
+            .root
+            .replace(self.without_parentheses(id));
         let expression = self.lifetime.full_expression;
         self.lifetime.full_expression |= self.expression_throws(id)?;
         let result = self.bind_reference(id, ty, Context::Initialization);
@@ -136,6 +141,7 @@ impl Function<'_, '_, '_, '_> {
             self.extend_last_temporary(owner)?;
         }
         self.reference_lifetimes.owner = saved;
+        self.reference_lifetimes.root = saved_root;
         self.reference_lifetimes.path.truncate(mark);
         // The declaration closes the region after it stores the bound address.
         // Keep a newly opened full-expression alive through that store.

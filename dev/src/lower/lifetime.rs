@@ -1285,6 +1285,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn end_tracked_cleanups(&mut self) {
+        if !self.lifetime.tracking.active {
+            return;
+        }
         for cleanup in self
             .lifetime
             .cleanups
@@ -1314,12 +1317,29 @@ impl Function<'_, '_, '_, '_> {
         let region = std::mem::replace(&mut self.lifetime.region, false);
         let full = std::mem::replace(&mut self.lifetime.full_expression, false);
         let pending = std::mem::take(&mut self.lifetime.pending);
-        let mark = self.lifetime.late.len();
-        self.lifetime.tracking.finishing = true;
-        let head = self.unwind_entry();
-        self.lifetime.tracking.finishing = false;
-        let head = head?;
-        let blocks = self.lifetime.late.split_off(mark);
+        let (head, blocks) = if self.handlers.contexts.is_empty() {
+            let mark = self.lifetime.late.len();
+            self.lifetime.tracking.finishing = true;
+            let head = self.unwind_entry();
+            self.lifetime.tracking.finishing = false;
+            (head?, self.lifetime.late.split_off(mark))
+        } else {
+            // A tracked segment inside a handler stack owns a fresh chain.
+            // Later lexical calls retain the original context's memos.
+            let index = self.handlers.contexts.len() - 1;
+            let stack = self.handlers.contexts[index].stack;
+            let fresh = self.next_context_stack()?;
+            self.save_exception_memos();
+            self.handlers.contexts[index].stack = fresh;
+            let head = self.context_landing(self.lifetime.cleanups.len());
+            let mut blocks = std::mem::take(&mut self.lifetime.pending);
+            self.handlers.contexts[index].stack = stack;
+            self.restore_exception_memos();
+            if !blocks.is_empty() {
+                blocks.rotate_right(1);
+            }
+            (head?, blocks)
+        };
         self.place_chain_blocks(&blocks)?;
         self.lifetime.pending = pending;
         self.lifetime.full_expression = full;

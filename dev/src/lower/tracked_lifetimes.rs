@@ -128,6 +128,8 @@ impl Function<'_, '_, '_, '_> {
         if !self.lifetime.full_expression
             || self.lifetime.tracking.active
             || self.static_initializer
+            || self.element_temporaries.depth != 0
+            || self.constructor_unwind_target().is_some()
         {
             return Ok(());
         }

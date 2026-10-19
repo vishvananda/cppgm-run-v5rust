@@ -45,6 +45,14 @@ pub(super) struct Handlers {
     pub unwind: super::exception_chains::Chains,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn next_context_stack(&mut self) -> Result<ContextId, Error> {
+        self.handlers.next_stack = self
+            .handlers
+            .next_stack
+            .checked_add(1)
+            .ok_or(crate::lowir::Error::Limit)?;
+        Ok(ContextId(self.handlers.next_stack))
+    }
     fn handler_selector(&mut self, body: ast::StmtId) -> Result<u32, Error> {
         if let Some(&selector) = self.handlers.selectors.get(&body) {
             return Ok(selector);
@@ -115,11 +123,7 @@ impl Function<'_, '_, '_, '_> {
         let dispatch = self.new_block("catch_dispatch")?;
         let entry = self.new_block("catch_entry")?;
         let end = self.new_block("try_end")?;
-        self.handlers.next_stack = self
-            .handlers
-            .next_stack
-            .checked_add(1)
-            .ok_or(crate::lowir::Error::Limit)?;
+        let stack = self.next_context_stack()?;
         let first = self.handlers.chains.len();
         if !self.catches_all(clauses) {
             for index in (0..self.handlers.contexts.len()).rev() {
@@ -141,7 +145,7 @@ impl Function<'_, '_, '_, '_> {
             entry,
             end,
             attempt: true,
-            stack: ContextId(self.handlers.next_stack),
+            stack,
             chains: (first, self.handlers.chains.len() - first),
             parent_try: self.handlers.innermost,
             end_throws: false,
@@ -253,11 +257,7 @@ impl Function<'_, '_, '_, '_> {
             None
         };
         self.effect(I::Runtime(R::EhCleanup(Some(landing))))?;
-        self.handlers.next_stack = self
-            .handlers
-            .next_stack
-            .checked_add(1)
-            .ok_or(crate::lowir::Error::Limit)?;
+        let stack = self.next_context_stack()?;
         let end_throws = if let Some((ty, _)) = declaration {
             let object = match self.graph.lower_type(ty)? {
                 TypeView::Reference { element, .. } => element,
@@ -272,7 +272,7 @@ impl Function<'_, '_, '_, '_> {
             key: written.body,
             attempt: false,
             floor: self.lifetime.cleanups.len(),
-            stack: ContextId(self.handlers.next_stack),
+            stack,
             ..attempt
         };
         self.save_exception_memos();

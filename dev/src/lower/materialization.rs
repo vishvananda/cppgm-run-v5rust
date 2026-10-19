@@ -322,6 +322,16 @@ impl Function<'_, '_, '_, '_> {
         let ty = self.graph.lower_expression(id)?.ty;
         let owner = self.extended_temporary_owner(id);
         let destructor = self.symbols.storage_destructor(ty)?;
+        // A scoped temporary with no earlier cleanup opens its region only
+        // after construction, covering the reference's address store.
+        let staged = owner.is_some()
+            && destructor.is_some()
+            && !self.lifetime.region
+            && self.lifetime.cleanups.len()
+                <= self
+                    .handler_floor()
+                    .max(self.lifetime.temporary_segment.floor())
+            && self.lifetime.full_expression;
         if destructor.is_some()
             && !persistent
             && self.lifetime.guarded_operands != 0
@@ -345,6 +355,7 @@ impl Function<'_, '_, '_, '_> {
         // object's address (and before a conditional's condition). Guarded
         // branch calls do not reopen that segment after its terminator.
         if !persistent
+            && !staged
             && self.lifetime.full_expression
             && self.lifetime.region_start.is_pending()
             && self.lifetime.temporary_segment.is_nothrow()
@@ -378,6 +389,7 @@ impl Function<'_, '_, '_, '_> {
                     && self.lifetime.region_start.is_pending()
                     && self.lifetime.guarded_operands == 0)
                 && !persistent
+                && !staged
                 && self.lifetime.full_expression
                 && !self.lifetime.temporary_segment.is_nothrow()
                 && !self.lifetime.region
@@ -386,7 +398,7 @@ impl Function<'_, '_, '_, '_> {
                 && (if branched {
                     self.lifetime.region_start.is_pending()
                         && self.lifetime.guarded_operands == 0
-                        && (!self.lifetime.tracking.active
+                        && (self.lifetime.cleanups.is_empty() && !self.lifetime.tracking.active
                             || self.lifetime.call_marks.iter().any(|mark| {
                                 !mark.declared && self.builder.same_block(mark.position)
                             }))
@@ -443,24 +455,24 @@ impl Function<'_, '_, '_, '_> {
         self.materialize_prvalue(id, ty, object, false)?;
         if persistent && !self.terminated {
             self.persistent_alive(ty, slot)?;
-        } else if destructor.is_some() && owner.is_none() && !self.terminated {
+        } else if destructor.is_some() && !self.terminated {
             self.temporary_alive(ty, object)?;
         } else if destructor.is_none() && !persistent && !self.terminated {
             self.finish_inert_temporary(owner.is_some())?;
         }
         if destructor.is_some()
             && !persistent
+            && !self.terminated
             && let Some(owner) = owner
         {
-            if self.lifetime.tracking.active {
-                self.temporary_alive(ty, object)?;
-                self.extend_last_temporary(owner)?;
-            } else {
-                self.close_lifetime_region()?;
-                self.register_extended_temporary(ty, object, owner);
-            }
-            if self.lifetime.full_expression {
-                self.before_lifetime_call(true)?;
+            self.extend_last_temporary(owner)?;
+            let subobject = self.reference_lifetimes.root != Some(root);
+            if (staged || branched && subobject)
+                && !self.lifetime.region
+                && self.lifetime.full_expression
+            {
+                let position = self.builder.position()?;
+                self.open_temporary_region_at(Some(position))?;
             }
         }
         Ok(object)

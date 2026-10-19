@@ -210,7 +210,8 @@ impl Function<'_, '_, '_, '_> {
         if let Some(reference) = facts.reference_cast
             && (self.graph.lower_expression(operand)?.temporary.is_some()
                 || self.class_conversion(operand).is_some()
-                || self.graph.lower_function_conversion(operand)?.is_some())
+                || self.graph.lower_function_conversion(operand)?.is_some()
+                || self.graph.lower_base_conversion_offset(operand)?.is_some())
         {
             return self.bind_reference(operand, reference, Context::Cast);
         }

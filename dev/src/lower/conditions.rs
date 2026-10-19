@@ -67,11 +67,16 @@ impl Function<'_, '_, '_, '_> {
         let then_block = self.new_block("condaddr_then")?;
         let else_block = self.new_block("condaddr_else")?;
         let end = self.new_block("condaddr_end")?;
+        let guard_start = self.lifetime.guard_start;
+        if guard_start.is_none() {
+            self.lifetime.guard_start = Some(self.builder.position()?);
+        }
         let condition = self.truth(condition)?;
         if self.lifetime.construction && !self.lifetime.full_expression {
             self.close_lifetime_region()?;
         }
         self.effect(I::Branch(condition.value, then_block, else_block))?;
+        self.terminated = true;
         let offsets = self.graph.lower_conditional_base_offsets(id)?;
         for ((block, expr), offset) in [(then_block, then_expr), (else_block, else_expr)]
             .into_iter()
@@ -79,28 +84,37 @@ impl Function<'_, '_, '_, '_> {
         {
             self.place(block)?;
             self.lifetime.guarded_operands += 1;
-            let place = self.scalar_place(expr)?;
-            self.lifetime.guarded_operands -= 1;
-            let mut address = if matches!(
-                place,
-                crate::lowir::model::Value::Slot(_) | crate::lowir::model::Value::Symbol(_)
+            let result = if matches!(
+                self.tree
+                    .expressions
+                    .get(self.without_parentheses(expr))
+                    .kind,
+                ExprKind::Throw(_)
             ) {
-                self.emit(I::Addr(place), source)?.value
+                self.discard(expr)
             } else {
-                place
+                self.address(expr).and_then(|mut address| {
+                    if let Some(offset) = offset {
+                        address = self.base_projection(address, source, offset)?;
+                    }
+                    self.effect(I::Store(
+                        Facts::memory(false, true),
+                        Type::Ptr,
+                        address,
+                        slot,
+                    ))
+                })
             };
-            if let Some(offset) = offset {
-                address = self.base_projection(address, source, offset)?;
+            self.lifetime.guarded_operands -= 1;
+            result?;
+            if !self.terminated {
+                self.jump(end)?;
             }
-            self.effect(I::Store(
-                Facts::memory(false, true),
-                Type::Ptr,
-                address,
-                slot,
-            ))?;
-            self.effect(I::Jump(end))?;
         }
         self.place(end)?;
+        if guard_start.is_none() {
+            self.lifetime.guard_start = None;
+        }
         Ok(self
             .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
             .value)

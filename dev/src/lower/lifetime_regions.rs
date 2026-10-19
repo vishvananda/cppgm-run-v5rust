@@ -395,10 +395,15 @@ impl Function<'_, '_, '_, '_> {
         if self.handlers.explicit != 0 {
             return Ok(());
         }
+        // Even without local objects, a temporary-making expression in an
+        // active handler must leave that handler if one of its calls throws.
+        let boundary = self.lifetime.full_expression
+            && self.lifetime.temporary_segment.is_present()
+            && self.handlers.contexts.last().is_some_and(|c| !c.attempt);
         if self.static_initializer
             || !throws
             || self.lifetime.region
-            || self.lifetime.cleanups.len() <= self.handler_floor()
+            || self.lifetime.cleanups.len() <= self.handler_floor() && !boundary
         {
             return Ok(());
         }
