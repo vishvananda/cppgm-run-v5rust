@@ -805,6 +805,7 @@ impl Analyzer<'_> {
         self.record_data_member(binding, specs, &info, init, home)?;
         if definition {
             if self.graph.entity(entity).defined {
+                let location = self.tree.declarators.get(init.declarator).location;
                 return Err(Error::at(location, "redefinition of a variable"));
             }
             self.graph.entity_mut(entity).defined = true;

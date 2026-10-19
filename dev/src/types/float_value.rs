@@ -54,7 +54,7 @@ impl BinaryFloat {
     pub(crate) fn is_nan(self) -> bool {
         self.0 & !SIGN > INFINITY
     }
-    fn is_infinite(self) -> bool {
+    pub(crate) fn is_infinite(self) -> bool {
         self.0 & !SIGN == INFINITY
     }
     pub(crate) fn truth(self) -> bool {

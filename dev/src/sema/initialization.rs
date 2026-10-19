@@ -4,6 +4,8 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    constant_addresses::TemporaryValue,
+    constants::Constant,
     expression_facts::ValueCategory as V,
     graph::{BindingId, ScopeId},
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
@@ -543,7 +545,13 @@ impl Analyzer<'_> {
         target: TypeId,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        let source = self.graph.expression_facts.get(id)?.ty;
+        // A conversion function's result precedes the second standard
+        // conversion. Narrow that value, not the original class operand.
+        let source = self
+            .graph
+            .expression_facts
+            .function_conversion(id)
+            .map_or(self.graph.expression_facts.get(id)?.ty, |step| step.result);
         let target = if let TypeKind::Reference { element, .. } = self.graph.types.get(target).kind
         {
             element
@@ -567,13 +575,13 @@ impl Analyzer<'_> {
                 || to.bits == from.bits && to.signed != from.signed
                 || !to.signed && from.signed
             {
-                self.constant_value(id, scope, false)?
+                self.narrowing_integer(id, scope)?
                     .is_none_or(|value| !to.represents(value.bits, from))
             } else {
                 false
             }
         } else if let Some(precision) = tf.filter(|_| self.integral_kind(source).is_some()) {
-            self.constant_value(id, scope, false)?.is_none_or(|value| {
+            self.narrowing_integer(id, scope)?.is_none_or(|value| {
                 let negative = self.integral_kind(value.ty).is_some_and(|kind| kind.signed)
                     && super::integral::signed(value.bits) < 0;
                 let magnitude = if negative {
@@ -586,7 +594,7 @@ impl Analyzer<'_> {
             })
         } else if let (Some(from), Some(to)) = (sf, tf) {
             if to < from {
-                self.floating_list_out_of_range(id, to)?
+                self.floating_list_out_of_range(id, target, scope)?
             } else {
                 false
             }
@@ -602,88 +610,56 @@ impl Analyzer<'_> {
             Ok(())
         }
     }
-    fn floating_list_out_of_range(
-        &self,
-        mut id: ast::ExprId,
-        precision: u32,
-    ) -> Result<bool, Error> {
-        loop {
-            match self.tree.expressions.get(id).kind {
-                ExprKind::Paren(inner) => id = inner,
-                ExprKind::Unary { op, operand }
-                    if matches!(
-                        op.token.as_punctuator(),
-                        Some(
-                            crate::lex::pp_lexer::Punctuator::Add
-                                | crate::lex::pp_lexer::Punctuator::Subtract
-                        )
-                    ) =>
-                {
-                    id = operand;
-                }
-                ExprKind::Literal(ast::Literal {
-                    kind: PostTokenKind::Literal { ty, data, .. },
-                    ..
-                }) => {
-                    let bytes = data.as_slice();
-                    let (significand, exponent, infinite) = match ty {
-                        F::Double => {
-                            let bits = u64::from_le_bytes(
-                                bytes
-                                    .try_into()
-                                    .map_err(|_| Error::Invariant("double literal size"))?,
-                            );
-                            let exponent = i32::try_from((bits >> 52) & 2047)
-                                .map_err(|_| Error::Invariant("double exponent"))?;
-                            (
-                                (bits & ((1u64 << 52) - 1)) | (u64::from(exponent != 0) << 52),
-                                exponent.max(1) - 1023 - 52,
-                                exponent == 2047 && bits & ((1u64 << 52) - 1) == 0,
-                            )
-                        }
-                        F::LongDouble => {
-                            let significand = u64::from_le_bytes(
-                                bytes[..8]
-                                    .try_into()
-                                    .map_err(|_| Error::Invariant("extended significand"))?,
-                            );
-                            let exponent =
-                                i32::from(u16::from_le_bytes([bytes[8], bytes[9]]) & 32767);
-                            (
-                                significand,
-                                exponent.max(1) - 16383 - 63,
-                                exponent == 32767 && significand == 1u64 << 63,
-                            )
-                        }
-                        _ => return Err(Error::Invariant("nonnarrowing floating literal")),
-                    };
-                    // The overflow midpoint rounds to infinity (ties to even).
-                    // NaNs remain NaNs, hence do not overflow as the oracle's isinf check.
-                    if infinite {
-                        return Ok(true);
-                    }
-                    let nan = match ty {
-                        F::Double => (bytes[7] & 0x7f) == 0x7f && bytes[6] & 0xf0 == 0xf0,
-                        _ => (bytes[9] & 0x7f) == 0x7f && bytes[8] == 0xff,
-                    };
-                    if nan || significand == 0 {
-                        return Ok(false);
-                    }
-                    let width = 64 - significand.leading_zeros();
-                    let top = exponent
-                        + i32::try_from(width).map_err(|_| Error::Invariant("floating width"))?;
-                    let max_top = if precision == 24 { 128 } else { 1024 };
-                    let threshold = u64::MAX << (63 - precision);
-                    return Ok(
-                        top > max_top || top == max_top && significand << (64 - width) >= threshold
-                    );
-                }
-                _ => {
-                    return Err(Error::Missing(
-                        "nonliteral floating list constant evaluation",
-                    ));
-                }
+    fn narrowing_value(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<TemporaryValue>, Error> {
+        // Evaluate the already selected conversion only up to its returned
+        // scalar. Applying the second conversion first would hide truncation.
+        let result = self.in_constant_evaluation(|analyzer| {
+            if analyzer
+                .graph
+                .expression_facts
+                .function_conversion(id)
+                .is_some()
+            {
+                let returned = analyzer.constant_conversion_result(id, scope)?;
+                analyzer.returned_scalar(returned, analyzer.tree.expressions.get(id).location)
+            } else {
+                analyzer.scalar_value(id, scope)
             }
+        });
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(Error::NonConstant { .. }) => Ok(None),
+            Err(error) => Err(error),
         }
+    }
+    fn narrowing_integer(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<Constant>, Error> {
+        Ok(match self.narrowing_value(id, scope)? {
+            Some(TemporaryValue::Integer(value)) => Some(value),
+            _ => None,
+        })
+    }
+    fn floating_list_out_of_range(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let Some(TemporaryValue::Floating(value)) = self.narrowing_value(id, scope)? else {
+            return Ok(true);
+        };
+        let format = self
+            .float_format(target)
+            .ok_or(Error::Invariant("floating list target"))?;
+        // The oracle checks isinf after target rounding. NaNs stay in range;
+        // finite overflow and an already infinite source both narrow.
+        Ok(value.value.is_infinite() || value.value.rounded(format).is_none())
     }
 }
