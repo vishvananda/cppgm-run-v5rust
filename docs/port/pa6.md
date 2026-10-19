@@ -2260,3 +2260,26 @@ Primary audit and resource/ownership evidence are in the latest section of
 `evidence-audit.json` and `handoff-commit.json` retain the results. This is an
 earlier-stage shared-declarator correction within the PA17 partial audit;
 PA6's historical stage base/audit records above are unchanged.
+
+
+## Declarator-owned redefinition diagnostics — PA20 acceptance audit (2026-10-19)
+
+Reviewed implementation `0138e4951d569a0b3960aa35f9168222352357f5` and new-fixture outcome correction
+`196dc78dd3a6313719289c193cd8bdd7578d5b90`. Historical stage base/audit records above
+remain intact; this is the supplemental review of shared owners during PA20.
+
+`analyzer_types.cpp::declarator` and `analyzer_declarations.cpp::declare_variable` map to `sema/declarations.rs`: a repeated definition reports the original declarator location, including pointers and nested parentheses, independently of its name. The executed `tests/general/200-pointer-variable-redefinition-location-bad.t` and newly authored rejection sidecars retain this boundary. Its course outcome is the required named `EXIT_FAILURE`; the initial numeric-sidecar authoring error and full corrected rerun are retained in the PA20 evidence.
+
+Final protected `clone_check.py prior pa20` passes **743/743**
+current PA6 identities and the original full course (743/743), with no
+failure marker and all exact invocation receipts matching. All 5,492 earlier
+cases and nineteen courses remain green. `make build`, strict `make lint`
+(511 workspace tests in each profile), and the 332-file/zero-finding
+`make audit-rust` pass. No frozen input/reference or acceptance policy changed.
+
+Full source/architecture review, exact failure and byte evidence, measured
+floating/conversion costs at 64/128/256 declarations, and the protected
+successful 16 MiB stack receipt are recorded in `docs/port/pa20.md` and
+`/home/vishvananda/work/private/v5rust/artifacts/pa20-full-audit-20261019/final/completion-evidence.json`.
+There are no remaining failing IDs from this correction. This does not change
+the stage's next dependency or Ralph's state/advancement ownership.
