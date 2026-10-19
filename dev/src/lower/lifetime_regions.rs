@@ -38,6 +38,7 @@ impl Function<'_, '_, '_, '_> {
             && self.lifetime.full_expression
             && self.has_tracked_region()
             && self.element_temporaries.depth == 0
+            && self.handlers.explicit == 0
         {
             self.close_lifetime_region()?;
             let position = self.builder.position()?;
@@ -49,6 +50,7 @@ impl Function<'_, '_, '_, '_> {
             || self.lifetime.choice_region == super::lifetime::ChoiceRegion::Reopened
             || self.lifetime.tracking.active
             || self.element_temporaries.depth != 0
+            || self.handlers.explicit != 0
             || !force
                 && self
                     .lifetime
@@ -119,7 +121,7 @@ impl Function<'_, '_, '_, '_> {
             return self.element_temporary_alive(ty, object);
         }
         let split = self.lifetime.region;
-        if self.has_tracked_region() {
+        if self.has_tracked_region() && self.handlers.explicit == 0 {
             self.register_temporary(ty, object)?;
             self.track_temporary()?;
             self.close_lifetime_region()?;
@@ -127,6 +129,9 @@ impl Function<'_, '_, '_, '_> {
         }
         self.register_temporary(ty, object)?;
         self.track_temporary()?;
+        if self.handlers.explicit != 0 {
+            return Ok(());
+        }
         self.close_lifetime_region()?;
         if split || self.lifetime.tracking.active && self.handlers.explicit == 0 {
             let position = self.builder.position()?;

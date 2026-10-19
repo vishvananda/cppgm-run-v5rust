@@ -8,10 +8,18 @@ use crate::{
     syntax::ast,
 };
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum MemberRegions {
+    #[default]
+    Absent,
+    Opened,
+}
+
 #[derive(Default)]
 pub(super) struct State {
     pub floor: Option<usize>,
     pub landing: bool,
+    pub regions: MemberRegions,
     pub count: Option<super::aggregate_arrays::Count>,
     pub counted_item: bool,
     pub call_scope: CallScope,
@@ -28,6 +36,7 @@ pub(super) enum CallScope {
 pub(super) struct Scope {
     floor: Option<usize>,
     landing: bool,
+    regions: MemberRegions,
     first: usize,
     tracking: bool,
     expression: bool,
@@ -70,6 +79,7 @@ impl Function<'_, '_, '_, '_> {
         let scope = Scope {
             floor: self.aggregation.floor,
             landing: self.aggregation.landing,
+            regions: self.aggregation.regions,
             first: self.lifetime.cleanups.len(),
             tracking: throws,
             expression: self.lifetime.full_expression,
@@ -99,6 +109,7 @@ impl Function<'_, '_, '_, '_> {
             }
             self.aggregation.floor = Some(scope.first);
             self.aggregation.landing = false;
+            self.aggregation.regions = MemberRegions::Absent;
             self.aggregation.serial = self.lifetime.regions_opened;
         }
         Ok(scope)
@@ -127,6 +138,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.aggregation.floor = scope.floor;
         self.aggregation.landing = scope.landing;
+        self.aggregation.regions = scope.regions;
         self.aggregation.serial = scope.serial;
         self.lifetime.full_expression = scope.expression;
         Ok(())
@@ -203,6 +215,9 @@ impl Function<'_, '_, '_, '_> {
         {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
+            if self.lifetime.region {
+                self.aggregation.regions = MemberRegions::Opened;
+            }
         }
         Ok(())
     }

@@ -77,6 +77,8 @@ impl Function<'_, '_, '_, '_> {
                 ast::ExprKind::Throw(_)
             ) {
                 self.discard(operand)
+            } else if self.materialize_list_choice(operand, ty, object)? {
+                Ok(())
             } else {
                 self.materialize_class_qualified(operand, ty, object, volatile)
             };

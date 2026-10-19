@@ -182,6 +182,7 @@ pub(super) enum FlowRegion {
 #[derive(Default)]
 pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
+    pub list_elements: super::list_elements::SavedElements,
     pending: Vec<ChainBlock>,
     omitted: Vec<ChainBlock>,
     late: Vec<ChainBlock>,
@@ -595,7 +596,7 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.cleanups.extend_from_slice(&suffix);
         }
         self.lifetime.full_expression = full_expression;
-        if self.lifetime.pending.len() > pending
+        if self.lifetime.pending.len() != pending
             || guarded_region && guarded && !throwing && !self.lifetime.tracking.active
         {
             let next = self.new_block("call_unwind_end")?;
@@ -745,7 +746,24 @@ impl Function<'_, '_, '_, '_> {
             | CleanupPlace::Extended(object)
             | CleanupPlace::Temporary(object) => {
                 let object = self.storage_address(object, cleanup.ty)?;
-                self.destroy_completed_object(cleanup.ty, object)
+                if !unwinding
+                    && let TypeView::Array { mut element, bound } =
+                        self.graph.lower_type(cleanup.ty)?
+                    && self.destructor_throws(element)?
+                {
+                    let mut count = bound;
+                    while let TypeView::Array {
+                        element: child,
+                        bound,
+                    } = self.graph.lower_type(element)?
+                    {
+                        count = count.wrapping_mul(bound);
+                        element = child;
+                    }
+                    self.destroy_member_array_guarded(element, object, count)
+                } else {
+                    self.destroy_completed_object(cleanup.ty, object, cleanup.made_at)
+                }
             }
             CleanupPlace::Counted { root, counter } => {
                 self.destroy_counted_elements(cleanup.ty, root, counter)
@@ -776,7 +794,33 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    fn destroy_completed_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
+    fn destroy_completed_object(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        original: Option<Value>,
+    ) -> Result<(), Error> {
+        let original = original.unwrap_or(object);
+        if let Some(count) = self.lifetime.list_elements.len(original) {
+            let TypeView::Array { element, .. } = self.graph.lower_type(ty)? else {
+                return Err(crate::sema::Error::Invariant("saved list element type").into());
+            };
+            for index in (0..count).rev() {
+                let address = if original == object {
+                    self.lifetime.list_elements.address(original, index)?
+                } else {
+                    let size = types::layout(self.graph, element)?.0;
+                    self.list_element_address(
+                        object,
+                        usize::try_from(index).map_err(|_| crate::lowir::Error::Limit)?,
+                        size,
+                        element,
+                    )?
+                };
+                self.call_destructor(element, address)?;
+            }
+            return Ok(());
+        }
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)? {
             if bound > 8 && !matches!(self.graph.lower_type(element)?, TypeView::Array { .. }) {
                 return self.destroy_array_loop(element, object, bound);

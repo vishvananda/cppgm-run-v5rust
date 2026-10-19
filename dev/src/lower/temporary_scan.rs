@@ -346,7 +346,7 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(self.scan_temporaries(root, false, true, Some(object))?.made)
     }
-    fn scan_temporaries(
+    pub(super) fn scan_temporaries(
         &mut self,
         root: ast::ExprId,
         include_root: bool,
@@ -380,6 +380,12 @@ impl Function<'_, '_, '_, '_> {
                 continue;
             }
             let facts = self.graph.lower_expression(id)?;
+            if let Some(array) = self.graph.lower_initializer_array(id)
+                && matches!(self.graph.lower_type(array)?, TypeView::Array { bound, .. } if bound != 0)
+                && self.temporary_type_destroyed(array)?
+            {
+                summary.made = true;
+            }
             let mut step = 0;
             while let Some(call) = self.graph.lower_arrow_call(id, step)? {
                 if !call.place && self.temporary_type_destroyed(call.result)? {
@@ -608,7 +614,7 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(false)
     }
-    fn temporary_type_destroyed(&self, mut ty: TypeId) -> Result<bool, Error> {
+    pub(super) fn temporary_type_destroyed(&self, mut ty: TypeId) -> Result<bool, Error> {
         while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
             ty = element;
         }

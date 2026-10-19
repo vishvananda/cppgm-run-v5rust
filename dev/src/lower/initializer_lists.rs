@@ -6,7 +6,7 @@ use crate::{
         model::{Facts, InstructionKind as I, Value},
         vocabulary::{Projection, Type},
     },
-    sema::lowering::{TypeId, TypeView},
+    sema::lowering::{EntityId, TypeId, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
@@ -24,6 +24,31 @@ impl Function<'_, '_, '_, '_> {
             return Ok(None);
         }
         Ok(self.graph.lower_initializer_array(list).map(|_| list))
+    }
+
+    pub(super) fn destroyed_list_array(&self, id: ast::ExprId) -> Result<bool, Error> {
+        self.check_stack()?;
+        let Some(list) = self.list_object(id)? else {
+            return Ok(false);
+        };
+        let array = self
+            .graph
+            .lower_initializer_array(list)
+            .ok_or(crate::sema::Error::Invariant("list backing type"))?;
+        if matches!(self.graph.lower_type(array)?, TypeView::Array { bound, .. } if bound != 0)
+            && self.temporary_type_destroyed(array)?
+        {
+            return Ok(true);
+        }
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind else {
+            return Err(crate::sema::Error::Invariant("list backing syntax").into());
+        };
+        for &element in self.tree.expr_lists.get(elements) {
+            if self.destroyed_list_array(element)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub(super) fn list_variable(
@@ -51,6 +76,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
         persistent: bool,
+        owner: Option<EntityId>,
     ) -> Result<(), Error> {
         let array = self
             .graph
@@ -77,7 +103,7 @@ impl Function<'_, '_, '_, '_> {
         let elements = if bound == 0 {
             self.builder.integer(0)?
         } else {
-            self.list_backing_array(list, array, element, persistent)?
+            self.list_backing_array(list, array, element, persistent, owner)?
         };
         let size = self.builder.integer(u128::from(bound))?;
         for (offset, value, storage) in [
@@ -101,43 +127,118 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
 
+    pub(super) fn materialize_list_choice(
+        &mut self,
+        operand: ast::ExprId,
+        ty: TypeId,
+        object: Value,
+    ) -> Result<bool, Error> {
+        let Some(list) = self.list_object(operand)? else {
+            return Ok(false);
+        };
+        let array =
+            self.graph
+                .lower_initializer_array(list)
+                .ok_or(crate::sema::Error::Invariant(
+                    "conditional list backing type",
+                ))?;
+        if !matches!(self.graph.lower_type(array)?, TypeView::Array { bound, .. } if bound != 0) {
+            return Ok(false);
+        }
+        if self.lifetime.tracking.active
+            && self.lifetime.full_expression
+            && !self.lifetime.region
+            && self.handlers.explicit == 0
+        {
+            self.open_temporary_region()?;
+        }
+        let slot = self.generated_slot("argobj", types::storage(self.graph, ty)?)?;
+        let address = self.emit(I::Addr(slot), ty)?.value;
+        self.initialize_list_object(list, ty, address, false, None)?;
+        let (size, alignment) = types::layout(self.graph, ty)?;
+        self.effect(I::CopyObject(size, alignment, slot, object))?;
+        Ok(true)
+    }
+
+    fn finish_persistent_list(
+        &mut self,
+        array: TypeId,
+        storage: Value,
+        owner: Option<EntityId>,
+    ) -> Result<(), Error> {
+        if owner.is_none()
+            || self
+                .static_temporaries
+                .as_ref()
+                .is_some_and(|local| local.reference)
+        {
+            return self.persistent_alive(array, storage);
+        }
+        let Value::Symbol(global) = storage else {
+            return Err(crate::sema::Error::Invariant("persistent list storage").into());
+        };
+        if let Some(finalizer) = super::shutdown::for_type(
+            self.builder.program(),
+            self.symbols,
+            self.graph,
+            global,
+            array,
+            None,
+        )? {
+            if let Some(local) = self.static_temporaries.as_mut() {
+                local.made.push(finalizer);
+            } else if let Some(output) = self.initialization_output.as_mut() {
+                output.finalizers.push(finalizer);
+            } else {
+                return Err(crate::sema::Error::Invariant(
+                    "persistent list without finalization owner",
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+
     fn list_backing_array(
         &mut self,
         list: ast::ExprId,
         array: TypeId,
         element: TypeId,
         persistent: bool,
+        owner: Option<EntityId>,
     ) -> Result<Value, Error> {
         let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind else {
             return Err(crate::sema::Error::Invariant("list backing syntax").into());
         };
         let class = matches!(self.graph.lower_type(element)?, TypeView::Class(_));
-        if class && self.symbols.storage_destructor(element)?.is_some() {
-            return Err(Error::Missing(
-                "initializer-list class backing array lifetime",
-            ));
+        let guarded = class && self.symbols.storage_destructor(element)?.is_some();
+        let destroyed = guarded && !persistent && self.temporary_type_destroyed(element)?;
+        if owner.is_none() && destroyed && self.lifetime.full_expression && !self.lifetime.region {
+            self.open_temporary_region()?;
         }
         let slot = self.temporary_storage(array, persistent, "initlist")?;
         let base = self.emit(I::Addr(slot), array)?.value;
         self.storage_region_event()?;
         let stride = types::layout(self.graph, element)?.0;
+        if class {
+            let made = self.initialize_list_elements(
+                list,
+                super::list_elements::Backing {
+                    array,
+                    element,
+                    base,
+                    persistent,
+                    owner,
+                    storage: slot,
+                },
+            )?;
+            if destroyed && !self.destructor_throws(element)? {
+                self.lifetime.list_elements.insert(base, &made)?;
+            }
+        }
         for (index, &item) in self.tree.expr_lists.get(elements).iter().enumerate() {
             if class {
-                let address = if index == 0 {
-                    base
-                } else {
-                    let offset = u64::try_from(index)
-                        .map_err(|_| crate::lowir::Error::Limit)?
-                        .wrapping_mul(stride);
-                    let offset = self.builder.integer(u128::from(offset))?;
-                    self.emit(
-                        I::Index(Type::I8, Some(Projection::ArrayElement), base, offset),
-                        element,
-                    )?
-                    .value
-                };
-                self.materialize_class(item, element, address)?;
-                continue;
+                break;
             }
             let source = match self.tree.expressions.get(item).kind {
                 ExprKind::Braced { elements, .. } => {
@@ -171,7 +272,18 @@ impl Function<'_, '_, '_, '_> {
                 address,
             ))?;
         }
-        if !persistent {
+        if persistent && guarded {
+            self.finish_persistent_list(array, slot, owner)?;
+        } else if destroyed {
+            self.temporary_alive(array, base)?;
+            if let Some(owner) = owner {
+                self.extend_last_temporary(owner)?;
+            }
+            if self.lifetime.full_expression && !self.lifetime.region {
+                let position = self.builder.position()?;
+                self.open_temporary_region_at(Some(position))?;
+            }
+        } else if !persistent {
             self.finish_inert_temporary(false)?;
         }
         Ok(base)

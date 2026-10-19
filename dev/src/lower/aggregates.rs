@@ -126,6 +126,7 @@ impl Function<'_, '_, '_, '_> {
                 ty,
                 object,
                 storage == NamedStorage::Static || self.persistent_references,
+                Some(entity),
             );
         }
         let elided = if storage == NamedStorage::Automatic {
@@ -764,13 +765,29 @@ impl Function<'_, '_, '_, '_> {
         } else {
             super::aggregate_cleanup::CallScope::FullExpression
         };
-        let object = if let Some(id) = expr
+        let listed = expr.map(|id| self.list_object(id)).transpose()?.flatten();
+        let object = if let Some(list) = listed {
+            input.next += 1;
+            let object = self.named_address(path, ty)?;
+            self.open_aggregate_member(ty, expr)?;
+            self.initialize_list_object(
+                list,
+                ty,
+                object,
+                self.persistent_references || self.reference_lifetimes.static_object,
+                self.reference_lifetimes
+                    .aggregate
+                    .or(self.reference_lifetimes.list_owner),
+            )?;
+            Some(object)
+        } else if let Some(id) = expr
             && !matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
             && (self.graph.lower_class_conversion(id).is_some()
                 || matches!(
                     self.graph.lower_type(self.graph.lower_expression(id)?.ty)?,
                     TypeView::Class(_)
-                )) {
+                ))
+        {
             input.next += 1;
             let object = self.named_address(path, ty)?;
             self.open_aggregate_member(ty, expr)?;
@@ -895,6 +912,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+            && !(field && matches!(path.root, Root::Address(_)))
             && self.counts_aggregate_elements(ty, &input.values[input.next..])?
         {
             let root = self.named_address(path, ty)?;

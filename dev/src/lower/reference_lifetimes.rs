@@ -12,6 +12,8 @@ use crate::{
 #[derive(Default)]
 pub(super) struct Extensions {
     pub aggregate: Option<EntityId>,
+    pub static_object: bool,
+    pub list_owner: Option<EntityId>,
     owner: Option<EntityId>,
     pub root: Option<ast::ExprId>,
     path: Vec<ast::ExprId>,
@@ -129,7 +131,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Value, Error> {
         if let Some(owner) = self.reference_lifetimes.aggregate {
             self.bind_extended_reference(id, ty, owner)
-        } else if self.persistent_references {
+        } else if self.persistent_references || self.reference_lifetimes.static_object {
             self.bind_static_reference(id, ty)
         } else {
             self.bind_reference(id, ty, Context::Initialization)
@@ -249,6 +251,9 @@ impl Function<'_, '_, '_, '_> {
         };
         while let Some(expr) = work.pop() {
             let expr = self.without_parentheses(expr);
+            if self.list_object(expr)?.is_some() && self.destroyed_list_array(expr)? {
+                return Ok(true);
+            }
             if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind {
                 work.extend(self.tree.expr_lists.get(elements));
             } else if self.graph.lower_reference_binding(expr)? {
@@ -260,6 +265,7 @@ impl Function<'_, '_, '_, '_> {
                 let mut destroyed = false;
                 for index in mark..self.reference_lifetimes.path.len() {
                     let temporary = self.reference_lifetimes.path[index];
+                    destroyed |= self.destroyed_list_array(temporary)?;
                     destroyed |= self
                         .symbols
                         .class_destructor(self.graph.lower_expression(temporary)?.ty)?

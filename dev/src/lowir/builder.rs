@@ -538,6 +538,31 @@ mod tests {
     }
 
     #[test]
+    fn tracked_element_jump_retargets_to_completed_cleanup_chain() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "tracked_element", &[], Type::Void)?;
+        builder.block("entry")?;
+        let placeholder = builder.block_id("placeholder")?;
+        let completed = builder.block_id("completed")?;
+        builder.effect(I::Jump(placeholder))?;
+        let marker = builder.position()?;
+        builder.retarget_region(marker, completed)?;
+        builder.place_block(placeholder)?;
+        builder.effect(I::Unreachable)?;
+        builder.place_block(completed)?;
+        builder.effect(I::Return(Type::Void, None))?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
+        assert!(
+            body.instructions().iter().any(
+                |instruction| matches!(instruction.kind, I::Jump(target) if target == completed)
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
     fn empty_region_removal_preserves_definitions_and_rebased_insertion() -> Result<(), Error> {
         use crate::lowir::model::RuntimeInstruction as R;
         let mut program = Program::default();

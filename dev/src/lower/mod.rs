@@ -51,6 +51,8 @@ mod lexical_cleanup;
 mod lifetime;
 mod lifetime_regions;
 mod lifetime_scan;
+mod list_construction;
+mod list_elements;
 mod literal_calls;
 mod local_storage;
 mod materialization;

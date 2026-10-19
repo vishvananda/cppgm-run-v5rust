@@ -165,9 +165,10 @@ impl Function<'_, '_, '_, '_> {
         mut count: Count,
         first: usize,
     ) -> Result<Count, Error> {
-        if self.lifetime.cleanups[first..]
-            .iter()
-            .any(|cleanup| cleanup.member())
+        if self.aggregation.regions == super::aggregate_cleanup::MemberRegions::Opened
+            || self.lifetime.cleanups[first..]
+                .iter()
+                .any(|cleanup| cleanup.member())
         {
             self.close_lifetime_region()?;
             self.release_aggregate_members(first);
@@ -185,13 +186,17 @@ impl Function<'_, '_, '_, '_> {
         Ok(count)
     }
     pub(super) fn end_counted_elements(&mut self, scope: Scope) -> Result<(), Error> {
+        self.end_counted_backing(scope)?;
+        if scope.floor.is_some() {
+            self.register_aggregate_member(scope.ty, scope.root);
+        }
+        Ok(())
+    }
+    pub(super) fn end_counted_backing(&mut self, scope: Scope) -> Result<(), Error> {
         self.close_lifetime_region()?;
         self.aggregation.count = None;
         self.release_aggregate_members(scope.first);
         self.aggregation.floor = scope.floor;
-        if scope.floor.is_some() {
-            self.register_aggregate_member(scope.ty, scope.root);
-        }
         Ok(())
     }
     pub(super) fn destroy_counted_elements(

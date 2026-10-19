@@ -494,10 +494,13 @@ impl Function<'_, '_, '_, '_> {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         }
-        if (owner.is_some() || persistent)
-            && let Some(list) = self.list_object(id)?
-        {
-            self.initialize_list_object(list, ty, object, persistent)?;
+        let owned_list = if owner.is_some() || persistent {
+            self.list_object(id)?
+        } else {
+            None
+        };
+        if let Some(list) = owned_list {
+            self.initialize_list_object(list, ty, object, persistent, owner)?;
         } else {
             self.materialize_prvalue(id, ty, object, false)?;
         }
@@ -505,8 +508,8 @@ impl Function<'_, '_, '_, '_> {
             self.persistent_alive(ty, slot)?;
         } else if destructor.is_some() && !self.terminated {
             self.temporary_alive(ty, object)?;
-        } else if destructor.is_none() && !persistent && !self.terminated {
-            self.finish_inert_temporary(owner.is_some())?;
+        } else if destructor.is_none() && !persistent && !self.terminated && owned_list.is_none() {
+            self.finish_inert_temporary(owner.is_some() || self.list_object(id)?.is_some())?;
         }
         if destructor.is_some()
             && !persistent
@@ -624,7 +627,7 @@ impl Function<'_, '_, '_, '_> {
         if let Some(list) = self.list_object(id)?
             && !matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if self.graph.lower_aggregate_class(class))
         {
-            return self.initialize_list_object(list, ty, object, self.persistent_references);
+            return self.initialize_list_object(list, ty, object, self.persistent_references, None);
         }
         match self.graph.lower_prvalue_initialization(id)? {
             Some(ClassInitialization::Constructed(arguments)) => {

@@ -260,7 +260,7 @@ impl Function<'_, '_, '_, '_> {
                     super::types::storage(self.graph, ty)?,
                 )?;
                 let address = self.emit(I::Addr(slot), ty)?.value;
-                self.initialize_list_object(default, ty, address, false)?;
+                self.initialize_list_object(default, ty, address, false, None)?;
                 if reference.is_some() || !self.graph.lower_direct_class_parameter(class)? {
                     address
                 } else {

@@ -571,12 +571,11 @@ impl Body {
         &self.instructions[id.0 as usize]
     }
     pub(super) fn retarget_region(&mut self, id: InstId, target: BlockId) -> Result<(), Error> {
-        let InstructionKind::Runtime(RuntimeInstruction::EhTry(current)) =
-            &mut self.instructions[id.0 as usize].kind
-        else {
-            return Err(Error::Limit);
-        };
-        *current = target;
+        match &mut self.instructions[id.0 as usize].kind {
+            InstructionKind::Runtime(RuntimeInstruction::EhTry(current))
+            | InstructionKind::Jump(current) => *current = target,
+            _ => return Err(Error::Limit),
+        }
         Ok(())
     }
     pub(crate) fn set_location(

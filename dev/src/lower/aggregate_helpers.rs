@@ -376,7 +376,13 @@ impl Function<'_, '_, '_, '_> {
                             "empty helper reference list",
                         )))?;
                 }
-                self.bind_aggregate_reference(id, ty)?
+                if self.reference_lifetimes.static_object
+                    && self.reference_lifetimes.aggregate.is_none()
+                {
+                    self.bind_reference(id, ty, Context::Initialization)?
+                } else {
+                    self.bind_aggregate_reference(id, ty)?
+                }
             } else if let Some(id) = expr {
                 let value = self.operand(id, Context::Argument)?;
                 self.fit(value, ty)?.value
