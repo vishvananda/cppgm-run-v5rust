@@ -5,7 +5,7 @@ use super::{
     analyzer::Analyzer,
     graph::{BindingKind, DataMemberKind, EntityId, ScopeId, ScopeKind},
     lambdas::Capture,
-    types::{RefKind, TypeId, TypeKind},
+    types::{Cv, RefKind, TypeId, TypeKind},
 };
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
 
@@ -15,7 +15,9 @@ pub(super) struct Frame {
     object: Option<TypeId>,
     default: Option<ast::CaptureDefault>,
     captures: Vec<EntityId>,
-    captured: std::collections::HashSet<EntityId>,
+    captured: std::collections::HashMap<EntityId, bool>,
+    mutable: bool,
+    location: SourceOffset,
     this_captured: bool,
 }
 
@@ -80,9 +82,11 @@ impl Frame {
         &mut self,
         entity: EntityId,
         written: bool,
+        copy: bool,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        if self.captured.insert(entity) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.captured.entry(entity) {
+            entry.insert(copy);
             self.captures.push(entity);
         } else if written {
             return Err(Error::at(location, "an entity captured twice (5.1.2p8)"));
@@ -105,7 +109,9 @@ impl Analyzer<'_> {
             object: self.current_object_type()?,
             default: lambda.capture_default,
             captures: Vec::new(),
-            captured: std::collections::HashSet::new(),
+            captured: std::collections::HashMap::new(),
+            mutable: lambda.is_mutable,
+            location,
             this_captured: false,
         };
         for index in 0..self.tree.captures.get(lambda.captures).len() {
@@ -183,10 +189,7 @@ impl Analyzer<'_> {
                     "a capture of a variable a local class cannot use (5.1.2p10)",
                 ));
             }
-            frame.add(entity, true, location)?;
-            if !reference {
-                return Err(Error::Missing("lambda copy capture"));
-            }
+            frame.add(entity, true, !reference, location)?;
         }
         Ok(frame)
     }
@@ -243,7 +246,7 @@ impl Analyzer<'_> {
         }
         for &index in crossed.iter().rev() {
             let frame = self.capture_frames.frame_mut(index);
-            if frame.captured.contains(&entity) {
+            if frame.captured.contains_key(&entity) {
                 continue;
             }
             match frame.default {
@@ -253,10 +256,14 @@ impl Analyzer<'_> {
                         "a lambda odr-uses an automatic variable it does not capture (5.1.2p11)",
                     ));
                 }
-                Some(ast::CaptureDefault::Copy) => {
-                    return Err(Error::Missing("lambda copy capture"));
+                Some(default) => {
+                    frame.add(
+                        entity,
+                        false,
+                        matches!(default, ast::CaptureDefault::Copy),
+                        location,
+                    )?;
                 }
-                Some(ast::CaptureDefault::Reference) => frame.add(entity, false, location)?,
             }
         }
         Ok(true)
@@ -312,15 +319,141 @@ impl Analyzer<'_> {
             if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
                 ty = element;
             }
-            let ty = self.graph.types.reference(ty, RefKind::Lvalue)?;
+            let copy = frame.captured.get(&entity).copied().unwrap_or(false)
+                && !matches!(self.graph.types.get(ty).kind, TypeKind::Function { .. });
+            let constructor = if copy {
+                self.capture_constructor(class, ty, frame.location)?
+            } else {
+                ty = self.graph.types.reference(ty, RefKind::Lvalue)?;
+                None
+            };
             let member = self.capture_member(class, ty)?;
-            captures.push(Capture { entity, member });
+            captures.push(Capture {
+                entity,
+                member,
+                constructor,
+            });
         }
         if frame.this_captured || !captures.is_empty() {
             self.graph.entity_mut(class).layout_category = super::layout::LayoutCategory::NonPod;
         }
         self.graph.closures.captures.insert(class, captures);
         Ok(())
+    }
+    fn capture_constructor(
+        &mut self,
+        closure: EntityId,
+        mut ty: TypeId,
+        location: SourceOffset,
+    ) -> Result<Option<super::construction::ConstructorId>, Error> {
+        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        let Some(class) = self.graph.class_of(ty) else {
+            return Ok(None);
+        };
+        self.complete_class(class)?;
+        if !self.graph.entity(class).complete {
+            return Err(Error::at(
+                location,
+                "a capture by copy of an object of incomplete class type",
+            ));
+        }
+        self.prepare_copy_properties(class)?;
+        let source = super::expression_facts::ExprFacts::new(
+            ty,
+            super::expression_facts::ValueCategory::Lvalue,
+        );
+        let selected = self.select_subobject_copy(class, source, true);
+        let selected = match selected {
+            Ok(selected) if !self.selected_copy_properties(class, selected)?.deleted => selected,
+            Ok(_) | Err(Error::Diagnostic { .. }) => {
+                return Err(Error::at(
+                    location,
+                    "a capture by copy of a class object without an accessible copy constructor (5.1.2p21)",
+                ));
+            }
+            Err(error) => return Err(error),
+        };
+        let scope = self
+            .graph
+            .entity(closure)
+            .scope
+            .ok_or(Error::Invariant("capture context"))?;
+        if let super::copy_initialization::CopyOrigin::Declared(binding) = selected.origin {
+            self.check_special_member_access(binding, class, scope, location).map_err(|error| {
+                if matches!(error, Error::Diagnostic { .. }) {
+                    Error::at(location, "a capture by copy of a class object without an accessible copy constructor (5.1.2p21)")
+                } else { error }
+            })?;
+        }
+        let constructor = self.copy_constructor_plan(class, selected, location)?;
+        self.demand_constructor_use(constructor);
+        Ok(Some(constructor))
+    }
+
+    /// A potentially captured name designates the nearest copied member.
+    /// Unevaluated decltype queries may consult a default without capturing it.
+    pub(super) fn captured_type(
+        &mut self,
+        entity: EntityId,
+        ty: TypeId,
+        potential: bool,
+    ) -> Result<TypeId, Error> {
+        let record = self.graph.entity(entity);
+        let Some(owner) = record.home else {
+            return Ok(ty);
+        };
+        if !matches!(
+            self.graph.scope(owner).kind,
+            ScopeKind::Block | ScopeKind::Function
+        ) || record.variable.is_some_and(|variable| !variable.automatic)
+            || record.data_member.is_some()
+        {
+            return Ok(ty);
+        }
+        for function in self
+            .body_context
+            .iter()
+            .map(|body| body.entity)
+            .chain(self.enclosing_bodies.iter().rev().copied())
+        {
+            let Some(frame) = self.capture_frames.get(function) else {
+                break;
+            };
+            if self
+                .graph
+                .entity(function)
+                .scope
+                .is_some_and(|scope| self.graph.encloses(scope, owner))
+            {
+                break;
+            }
+            let copy = frame.captured.get(&entity).copied();
+            if potential && copy.is_none() && frame.default.is_none() {
+                break;
+            }
+            if !copy
+                .unwrap_or(potential && matches!(frame.default, Some(ast::CaptureDefault::Copy)))
+            {
+                continue;
+            }
+            let member = match self.graph.types.get(ty).kind {
+                TypeKind::Reference { element, .. } => element,
+                _ => ty,
+            };
+            if matches!(self.graph.types.get(member).kind, TypeKind::Function { .. }) {
+                break;
+            }
+            return if frame.mutable {
+                Ok(member)
+            } else {
+                self.graph
+                    .types
+                    .qualify(member, Cv(self.graph.types.get(member).cv.0 | Cv::CONST.0))
+            };
+        }
+        Ok(ty)
     }
     fn capture_member(&mut self, class: EntityId, ty: TypeId) -> Result<EntityId, Error> {
         let scope = self
@@ -455,5 +588,61 @@ mod tests {
         }
         counts.sort_unstable();
         assert_eq!(counts, [0, 1]);
+    }
+    #[test]
+    fn copy_capture_facts_keep_order_types_and_constructor_selection_without_new_expressions() {
+        let source = SourceBuffer::new(b"struct A{A(){}A(const A&){}~A(){}};int f(){return 1;}int main(){int x=1;int ar[2]={2,3};int(&fn)()=f;A obj;auto l=[x,ar,fn,obj]{return x+ar[0]+fn();};return l();}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"copy-capture-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let graph = super::super::template_bodies::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(graph.closures.records.len(), 1);
+        let (&class, closure) = graph.closures.records.iter().next().unwrap();
+        assert!(!closure.convertible);
+        let captures = graph.lower_closure_captures(class);
+        assert_eq!(captures.len(), 4);
+        assert_eq!(
+            graph.entity(class).members,
+            captures.iter().map(|c| c.member).collect::<Vec<_>>()
+        );
+        for (capture, name) in captures.iter().zip([b"x".as_slice(), b"ar", b"fn", b"obj"]) {
+            assert_eq!(
+                cursor.name(graph.entity(capture.entity).name.unwrap()),
+                name
+            );
+        }
+        assert!(matches!(
+            graph
+                .types
+                .get(graph.entity(captures[1].member).ty.unwrap())
+                .kind,
+            TypeKind::Array { .. }
+        ));
+        assert!(
+            matches!(graph.types.get(graph.entity(captures[2].member).ty.unwrap()).kind, TypeKind::Reference { element, .. }
+            if matches!(graph.types.get(element).kind, TypeKind::Function { .. }))
+        );
+        assert!(
+            captures[..3]
+                .iter()
+                .all(|capture| capture.constructor.is_none())
+        );
+        let constructor = captures[3].constructor.unwrap();
+        assert_eq!(
+            Some(graph.lower_constructor(constructor).class),
+            graph.class_of(graph.entity(captures[3].member).ty.unwrap())
+        );
+        assert!(!graph.lower_constructor_trivial(constructor));
     }
 }

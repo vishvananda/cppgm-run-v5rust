@@ -39,6 +39,7 @@ pub(crate) struct Closure {
 pub(crate) struct Capture {
     pub entity: EntityId,
     pub member: EntityId,
+    pub constructor: Option<super::construction::ConstructorId>,
 }
 #[derive(Default)]
 pub(super) struct Closures {
@@ -441,6 +442,9 @@ impl Analyzer<'_> {
         self.finish_captures(frame)?;
         self.classify_class_copies(class)?;
         self.complete_destructor(class)?;
+        // Class completion declares the implicit destructor; its body and
+        // emission stay demanded by the lifetime that materializes the closure.
+        let _destructor = self.destructor_callable(class)?;
         let ty = self
             .graph
             .entity(class)

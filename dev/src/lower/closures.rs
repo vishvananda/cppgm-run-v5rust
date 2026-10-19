@@ -3,6 +3,7 @@
 use super::{
     Error,
     function::{Function, RValue},
+    types,
 };
 use crate::{
     lowir::{
@@ -88,7 +89,7 @@ impl Function<'_, '_, '_, '_> {
         let place = self.closure_field(object, member, ty)?;
         self.reference_holder(place, ty).map(Some)
     }
-    fn capture_address(&mut self, entity: EntityId) -> Result<Value, Error> {
+    fn capture_place(&mut self, entity: EntityId) -> Result<Value, Error> {
         if let Some(place) = self.captured_place(entity)? {
             return Ok(place);
         }
@@ -100,12 +101,11 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(crate::sema::Error::Invariant(
                 "automatic capture without local or enclosing member",
             ))?;
-        let place = self.reference_holder(place, ty)?;
-        if matches!(place, Value::Slot(_) | Value::Symbol(_)) {
-            Ok(self.emit(I::Addr(place), ty)?.value)
-        } else {
-            Ok(place)
-        }
+        self.reference_holder(place, ty)
+    }
+    fn capture_address(&mut self, entity: EntityId) -> Result<Value, Error> {
+        let place = self.capture_place(entity)?;
+        self.storage_address(place, self.local_object_type(entity)?)
     }
     pub(super) fn closure_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
         let TypeView::Class(class) = self.graph.lower_type(ty)? else {
@@ -129,20 +129,114 @@ impl Function<'_, '_, '_, '_> {
                 place,
             ))?;
         }
-        for capture in self.graph.lower_closure_captures(class) {
+        let captures = self.graph.lower_closure_captures(class);
+        let mut last_throwing = None;
+        for (index, capture) in captures.iter().enumerate() {
+            if self.capture_copy_throws(
+                capture.constructor,
+                self.graph.lower_entity_type(capture.member)?,
+            )? {
+                last_throwing = Some(index);
+            }
+        }
+        let first = self.lifetime.cleanups.len();
+        let mut tracked = false;
+        let mut pending = false;
+        for (index, capture) in captures.iter().enumerate() {
+            // Project this member before opening the region for its copy.
             let place = if self.graph.lower_member_offset(capture.member)? == 0 {
                 object
             } else {
                 self.closure_field(object, capture.member, ty)?
             };
-            let value = self.capture_address(capture.entity)?;
-            self.effect(I::Store(
-                Facts::memory(false, true),
-                Type::Ptr,
-                value,
-                place,
-            ))?;
+            let member_type = self.graph.lower_entity_type(capture.member)?;
+            if pending && self.capture_copy_throws(capture.constructor, member_type)? {
+                self.closure_member_region()?;
+                pending = false;
+            }
+            if matches!(
+                self.graph.lower_type(member_type)?,
+                TypeView::Reference { .. }
+            ) {
+                let value = self.capture_address(capture.entity)?;
+                self.effect(I::Store(
+                    Facts::memory(false, true),
+                    Type::Ptr,
+                    value,
+                    place,
+                ))?;
+            } else if let Some(constructor) = capture.constructor {
+                let source = self.capture_address(capture.entity)?;
+                if matches!(self.graph.lower_type(member_type)?, TypeView::Array { .. }) {
+                    if self.graph.lower_constructor_copies_storage(constructor) {
+                        let (size, align) = types::layout(self.graph, member_type)?;
+                        self.effect(I::CopyObject(size, align, source, place))?;
+                    } else {
+                        self.copy_captured_elements(member_type, constructor, place, source)?;
+                    }
+                } else {
+                    self.construct_from(constructor, place, source)?;
+                }
+            } else if matches!(self.graph.lower_type(member_type)?, TypeView::Array { .. }) {
+                let source = self.capture_address(capture.entity)?;
+                let (size, align) = types::layout(self.graph, member_type)?;
+                self.effect(I::CopyObject(size, align, source, place))?;
+            } else {
+                let source = self.capture_place(capture.entity)?;
+                let storage = types::storage(self.graph, member_type)?;
+                let value = self
+                    .emit(
+                        I::Load(self.place_memory(source, member_type)?, storage, source),
+                        member_type,
+                    )?
+                    .value;
+                self.effect(I::Store(
+                    Facts::memory(false, storage.bits() != 8),
+                    storage,
+                    value,
+                    place,
+                ))?;
+            }
+            if !self.static_initializer
+                && last_throwing.is_some_and(|last| index < last)
+                && self.symbols.class_destructor(member_type)?.is_some()
+            {
+                self.register_aggregate_member(member_type, place);
+                tracked = true;
+                pending = true;
+            }
+        }
+        if tracked {
+            self.close_lifetime_region()?;
+            self.release_aggregate_members(first);
         }
         Ok(())
+    }
+    fn capture_copy_throws(
+        &mut self,
+        constructor: Option<crate::sema::lowering::ConstructorId>,
+        ty: TypeId,
+    ) -> Result<bool, Error> {
+        let Some(id) = constructor else {
+            return Ok(false);
+        };
+        let storage = self.graph.lower_constructor_copies_storage(id);
+        let array = matches!(self.graph.lower_type(ty)?, TypeView::Array { .. });
+        let called = !array
+            && self.graph.lower_constructor_trivial(id)
+            && self
+                .graph
+                .lower_class_empty(self.graph.lower_constructor(id).class)?
+            && self.symbols.class_destructor(ty)?.is_some();
+        Ok(!(storage && (array || !called)) && !self.graph.lower_constructor_function(id)?.nothrow)
+    }
+    fn closure_member_region(&mut self) -> Result<(), Error> {
+        self.close_lifetime_region()?;
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
+        let construction = std::mem::replace(&mut self.lifetime.construction, false);
+        let position = self.builder.position()?;
+        let result = self.open_temporary_region_at(Some(position));
+        self.lifetime.construction = construction;
+        result
     }
 }

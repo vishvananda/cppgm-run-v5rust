@@ -640,6 +640,11 @@ impl Analyzer<'_> {
                 return self.dependent_operand(operand, scope, false);
             }
             return if parenthesized {
+                let ty = if matches!(binding.kind, BindingKind::Variable | BindingKind::Parameter) {
+                    self.captured_type(binding.entity, ty, true)?
+                } else {
+                    ty
+                };
                 self.graph.types.reference(ty, RefKind::Lvalue)
             } else {
                 Ok(ty)

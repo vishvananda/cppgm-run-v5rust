@@ -361,6 +361,69 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(true)
     }
+    // object_lowering.cpp::construct_from: an address-bound first argument.
+    pub(super) fn construct_from(
+        &mut self,
+        id: ConstructorId,
+        destination: Value,
+        source: Value,
+    ) -> Result<(), Error> {
+        let class = self.graph.lower_constructor(id).class;
+        let ty = self.graph.lower_entity_type(class)?;
+        let empty_lifetime = self.graph.lower_constructor_trivial(id)
+            && self.graph.lower_class_empty(class)?
+            && self.symbols.class_destructor(ty)?.is_some();
+        if self.graph.lower_constructor_copies_storage(id) && !empty_lifetime {
+            if !self.graph.lower_class_empty(class)? {
+                let (size, alignment) = types::layout(self.graph, ty)?;
+                self.effect(I::CopyObject(size, alignment, source, destination))?;
+            }
+            return Ok(());
+        }
+        let entry = Entry::Constructor(id, Variant::Complete);
+        let facts = entry.facts(self.graph)?;
+        let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
+            return Err(
+                crate::sema::Error::Invariant("address-bound constructor signature").into(),
+            );
+        };
+        self.begin_lifetime_call(!facts.nothrow)?;
+        let mut values = vec![destination, source];
+        for (index, &parameter) in parameters.iter().enumerate().skip(1) {
+            let function = entry
+                .entity(self.graph)
+                .ok_or(crate::sema::Error::Invariant("capture copy defaults owner"))?;
+            let expression =
+                self.graph
+                    .lower_default(function, index)
+                    .ok_or(crate::sema::Error::Invariant(
+                        "capture copy default argument",
+                    ))?;
+            values.push(self.constructor_default_value(expression, parameter)?);
+        }
+        let result = self.emit_constructor_call(entry, facts.nothrow, &values);
+        if !facts.nothrow && self.lifetime.full_expression {
+            self.lifetime.call_marks.pop();
+        }
+        result
+    }
+    pub(super) fn constructor_default_value(
+        &mut self,
+        expression: crate::syntax::ast::ExprId,
+        parameter: TypeId,
+    ) -> Result<Value, Error> {
+        use super::conversions::Context;
+        match self.graph.lower_type(parameter)? {
+            TypeView::Reference { .. } => {
+                self.bind_reference(expression, parameter, Context::Argument)
+            }
+            TypeView::Class(_) => self.class_argument(expression, parameter),
+            _ => {
+                let value = self.operand(expression, Context::Argument)?;
+                Ok(self.fit(value, parameter)?.value)
+            }
+        }
+    }
     pub(super) fn call_copy_constructor(
         &mut self,
         id: ConstructorId,

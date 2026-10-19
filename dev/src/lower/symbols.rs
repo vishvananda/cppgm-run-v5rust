@@ -643,7 +643,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let FunctionName::Destructor(name) = name {
             bytes.push(b'~');
             if let Some(name) = name {
-                bytes.extend_from_slice(self.cursor.name(name));
+                bytes.extend_from_slice(self.class_label(name)?.as_bytes());
             }
         } else if let FunctionName::Identifier(name) = name {
             bytes.extend_from_slice(self.cursor.name(name));

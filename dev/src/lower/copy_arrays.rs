@@ -74,6 +74,213 @@ impl Function<'_, '_, '_, '_> {
         self.copy_truncate(mark);
         Ok(())
     }
+    /// `object_lowering.cpp::copy_captured_elements`: source is a retained
+    /// variable address, rather than a synthesized constructor parameter.
+    pub(super) fn copy_captured_elements(
+        &mut self,
+        ty: TypeId,
+        constructor: ConstructorId,
+        destination: Value,
+        source: Value,
+    ) -> Result<(), Error> {
+        let mut element = ty;
+        let mut count = 1u64;
+        while let TypeView::Array {
+            element: child,
+            bound,
+        } = self.graph.lower_type(element)?
+        {
+            count = count.wrapping_mul(bound);
+            element = child;
+        }
+        let guarded = self.symbols.class_destructor(element)?.is_some()
+            && self.default_constructor_throws(constructor)?;
+        let elements = Elements {
+            element,
+            count,
+            destination,
+            source,
+            constructor,
+            guarded,
+        };
+        let temporaries = self.copy_defaults_temporaries(constructor)?;
+        if count > 8 {
+            return self.copy_capture_loop(elements, temporaries);
+        }
+        if temporaries && self.default_constructor_throws(constructor)? {
+            self.before_lifetime_call(true)?;
+        }
+        let size = types::layout(self.graph, element)?.0;
+        let mut covered = None;
+        for index in 0..count {
+            let guard = if index != 0 && guarded {
+                self.enclose_capture_elements(&mut covered)?;
+                let dispatch = self.new_block("call_unwind_dispatch")?;
+                let next = self.new_block("call_unwind_end")?;
+                self.effect(I::Runtime(R::EhTry(dispatch)))?;
+                Some((dispatch, next))
+            } else {
+                None
+            };
+            // A manually nested element region owns the call's unwind edge.
+            let scope = self.begin_copy_temporaries(temporaries || guard.is_some());
+            let from = self.element_address(source, index, size, element)?;
+            let to = self.element_address(destination, index, size, element)?;
+            self.construct_from(constructor, to, from)?;
+            self.end_copy_temporaries(scope)?;
+            if let Some((dispatch, next)) = guard {
+                self.effect(I::Runtime(R::EhEnd))?;
+                self.jump(next)?;
+                self.place(dispatch)?;
+                for previous in (0..index).rev() {
+                    let object = self.element_address(destination, previous, size, element)?;
+                    self.call_destructor(element, object)?;
+                }
+                self.finish_array_unwind()?;
+                self.place(next)?;
+            }
+        }
+        Ok(())
+    }
+    fn enclose_capture_elements(&mut self, covered: &mut Option<usize>) -> Result<(), Error> {
+        if self.lifetime.cleanups.is_empty() {
+            return self.close_lifetime_region();
+        }
+        if !self.lifetime.full_expression && !self.lifetime.region {
+            return Ok(());
+        }
+        if covered.is_none() && self.lifetime.region {
+            *covered = Some(self.lifetime.cleanups.len());
+        }
+        if !self.lifetime.region || *covered != Some(self.lifetime.cleanups.len()) {
+            self.close_lifetime_region()?;
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+            *covered = Some(self.lifetime.cleanups.len());
+        }
+        Ok(())
+    }
+    fn copy_capture_loop(&mut self, elements: Elements, temporaries: bool) -> Result<(), Error> {
+        let Elements {
+            element,
+            count,
+            destination,
+            source,
+            constructor,
+            guarded,
+        } = elements;
+        let slot = self.generated_slot("copy_array_index", Type::I64)?;
+        let zero = self.builder.integer(0)?;
+        self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;
+        let throws = self.default_constructor_throws(constructor)?;
+        self.before_lifetime_call(throws)?;
+        if guarded {
+            self.enclose_capture_elements(&mut None)?;
+        }
+        let condition = self.new_block("copy_array_cond")?;
+        let body = self.new_block("copy_array_body")?;
+        let end = self.new_block("copy_array_end")?;
+        self.jump(condition)?;
+        self.place(condition)?;
+        let current = self
+            .emit(
+                I::Load(Facts::memory(false, true), Type::I64, slot),
+                element,
+            )?
+            .value;
+        let bound = self.builder.integer(u128::from(count))?;
+        let test = self
+            .emit(I::Compare(Compare::Ult, Type::I64, current, bound), element)?
+            .value;
+        self.effect(I::Branch(test, body, end))?;
+        self.place(body)?;
+        let cleanup = if guarded {
+            let block = self.new_block("copy_array_cleanup")?;
+            self.effect(I::Runtime(R::EhTry(block)))?;
+            Some(block)
+        } else {
+            None
+        };
+        let size = types::layout(self.graph, element)?.0;
+        let offset = self.capture_element_offset(element, current, size)?;
+        let scope = self.begin_copy_temporaries(temporaries || guarded);
+        let from = self.capture_element_address(element, source, offset)?;
+        let to = self.capture_element_address(element, destination, offset)?;
+        self.construct_from(constructor, to, from)?;
+        self.end_copy_temporaries(scope)?;
+        if guarded {
+            self.effect(I::Runtime(R::EhEnd))?;
+        }
+        let one = self.builder.integer(1)?;
+        let next = self
+            .emit(
+                I::Binary(Binary::Add, Facts::default(), Type::I64, current, one),
+                element,
+            )?
+            .value;
+        self.effect(I::Store(Facts::memory(false, true), Type::I64, next, slot))?;
+        self.jump(condition)?;
+        if let Some(cleanup) = cleanup {
+            let body = self.new_block("constructor_array_cleanup_body")?;
+            let resume = self.new_block("constructor_array_resume")?;
+            self.place(cleanup)?;
+            let made = self
+                .emit(
+                    I::Load(Facts::memory(false, true), Type::I64, slot),
+                    element,
+                )?
+                .value;
+            let nonempty = self
+                .emit(I::Compare(Compare::Ne, Type::I64, made, zero), element)?
+                .value;
+            self.effect(I::Branch(nonempty, body, resume))?;
+            self.place(body)?;
+            let last = self
+                .emit(
+                    I::Binary(Binary::Sub, Facts::default(), Type::I64, made, one),
+                    element,
+                )?
+                .value;
+            self.effect(I::Store(Facts::memory(false, true), Type::I64, last, slot))?;
+            let offset = self.capture_element_offset(element, last, size)?;
+            let object = self.capture_element_address(element, destination, offset)?;
+            self.call_destructor(element, object)?;
+            self.jump(cleanup)?;
+            self.place(resume)?;
+            self.finish_array_unwind()?;
+        }
+        self.place(end)
+    }
+    fn capture_element_offset(
+        &mut self,
+        ty: TypeId,
+        index: Value,
+        size: u64,
+    ) -> Result<Value, Error> {
+        if size == 1 {
+            return Ok(index);
+        }
+        let size = self.builder.integer(u128::from(size))?;
+        Ok(self
+            .emit(
+                I::Binary(Binary::Mul, Facts::default(), Type::I64, index, size),
+                ty,
+            )?
+            .value)
+    }
+    fn capture_element_address(
+        &mut self,
+        ty: TypeId,
+        base: Value,
+        offset: Value,
+    ) -> Result<Value, Error> {
+        Ok(self
+            .emit(
+                I::Index(Type::I8, Some(Projection::ArrayElement), base, offset),
+                ty,
+            )?
+            .value)
+    }
     fn copy_elements_loop(&mut self, elements: Elements) -> Result<(), Error> {
         let Elements {
             element,

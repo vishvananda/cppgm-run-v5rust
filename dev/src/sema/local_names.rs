@@ -64,6 +64,7 @@ impl Analyzer<'_> {
             }
         }
         if self.capture_variable(binding.entity, location)? {
+            facts.ty = self.captured_type(binding.entity, facts.ty, false)?;
             return Ok(());
         }
         Err(Error::at(

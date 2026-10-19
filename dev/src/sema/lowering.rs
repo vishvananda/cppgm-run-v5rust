@@ -156,7 +156,7 @@ pub(crate) use super::construction::ConstructorId;
 pub(crate) enum FunctionName {
     Identifier(NameId),
     Constructor(ClassSpelling),
-    Destructor(Option<NameId>),
+    Destructor(Option<ClassSpelling>),
     Operator {
         token: crate::lex::vocabulary::SimpleToken,
         array: bool,
@@ -1616,7 +1616,12 @@ impl Graph {
                         self.entity(object.ok_or(Error::Invariant("destructor without class"))?)
                             .destruction
                             .ok_or(Error::Invariant("destructor without completed facts"))?
-                            .declared_name,
+                            .declared_name
+                            .map(ClassSpelling::Name)
+                            .or_else(|| {
+                                self.lower_closure(object?)
+                                    .map(|closure| ClassSpelling::Closure(closure.ordinal))
+                            }),
                     )
                 }
                 None if entity
