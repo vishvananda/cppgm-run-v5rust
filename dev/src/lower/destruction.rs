@@ -25,6 +25,7 @@ pub(super) struct Destruction {
     pub cleanup: Option<BlockId>,
     pub epilogue: Option<BlockId>,
     pub body_target: Option<BlockId>,
+    pub body_depth: usize,
     progress: Option<Value>,
     terminates: Vec<(BlockId, i64)>,
 }
@@ -156,6 +157,7 @@ impl Function<'_, '_, '_, '_> {
                 .unwrap_or(false)
         {
             self.destruction.body_target = Some(self.new_block("destructor_cleanup_entry")?);
+            self.destruction.body_depth = self.handlers.contexts.len();
         }
         Ok(())
     }
@@ -410,13 +412,22 @@ impl Function<'_, '_, '_, '_> {
         self.continue_destructor_unwind()
     }
     fn continue_destructor_unwind(&mut self) -> Result<(), Error> {
-        if self.lifetime.function_guard.is_some() {
+        if self.lifetime.function_guard.is_some() && self.innermost_try().is_none() {
             self.terminate_unwinding()?;
         } else {
             self.effect(I::Runtime(R::Resume))?;
             self.terminated = true;
         }
         self.place_destructor_terminates()
+    }
+    fn close_destructor_body_cleanup(&mut self) -> Result<(), Error> {
+        if let Some(attempt) = self.innermost_try() {
+            self.effect(I::Runtime(R::EhEnd))?;
+            self.jump(attempt.entry)?;
+            self.place_destructor_terminates()
+        } else {
+            self.continue_destructor_unwind()
+        }
     }
     pub(super) fn finish_destructor(&mut self) -> Result<(), Error> {
         let Some(cleanup) = self.destruction.cleanup else {
@@ -470,6 +481,9 @@ impl Function<'_, '_, '_, '_> {
         self.jump(end)?;
         self.place(cleanup)?;
         if let Some(entry) = body_entry {
+            if let Some(attempt) = self.innermost_try() {
+                self.emit_try_clauses(attempt)?;
+            }
             self.effect(I::Runtime(R::EhEnd))?;
             self.jump(entry)?;
             self.place(entry)?;
@@ -502,7 +516,7 @@ impl Function<'_, '_, '_, '_> {
                 if let Some(&next) = chain.get(index + 1) {
                     self.jump(next)?;
                 } else if body_entry.is_some() {
-                    self.continue_destructor_unwind()?;
+                    self.close_destructor_body_cleanup()?;
                 } else {
                     self.destruction_resume()?;
                 }
@@ -512,7 +526,7 @@ impl Function<'_, '_, '_, '_> {
                 self.destructor_action(index, true)?;
             }
             if body_entry.is_some() {
-                self.continue_destructor_unwind()?;
+                self.close_destructor_body_cleanup()?;
             } else {
                 self.destruction_resume()?;
             }

@@ -56,6 +56,9 @@ pub(super) enum Action {
         tail: BlockId,
     },
     Resume,
+    Subobjects {
+        pops: u8,
+    },
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Marker {
@@ -88,7 +91,8 @@ struct SnapshotMark {
 #[derive(Default)]
 pub(super) struct Chains {
     contexts: HashMap<(ContextId, ContextId, Marker), BlockId>,
-    resumes: HashMap<(ContextId, bool, Option<BlockId>), BlockId>,
+    bodies: HashMap<(ContextId, Marker, BlockId), BlockId>,
+    resumes: HashMap<(ContextId, bool), BlockId>,
     landings: HashMap<BlockId, BlockId>,
     snapshots: Vec<Snapshot>,
     marks: Vec<SnapshotMark>,
@@ -193,9 +197,8 @@ impl Function<'_, '_, '_, '_> {
         let body = self.constructor_unwind_target();
         let mut tail = if let Some(tail) = tail {
             tail
-        } else if let Some(attempt) = attempt {
-            let key = (stack, attempt.stack, marked);
-            if let Some(&block) = self.handlers.unwind.contexts.get(&key) {
+        } else if let Some(body) = body {
+            if let Some(&block) = self.handlers.unwind.bodies.get(&(stack, marked, body)) {
                 block
             } else {
                 let block = self.new_block(if lexical {
@@ -211,14 +214,48 @@ impl Function<'_, '_, '_, '_> {
                         } else {
                             u8::from(marked == Marker::Pushed) + 1
                         },
-                        tail: attempt.entry,
+                        tail: body,
+                    },
+                    lexical,
+                );
+                self.handlers
+                    .unwind
+                    .bodies
+                    .insert((stack, marked, body), block);
+                block
+            }
+        } else if let Some(attempt) = attempt {
+            let key = (stack, attempt.stack, marked);
+            if let Some(&block) = self.handlers.unwind.contexts.get(&key) {
+                block
+            } else {
+                let block = self.new_block(if lexical {
+                    "lexical_unwind"
+                } else {
+                    "cleanup_resume"
+                })?;
+                self.queue_exception_block(
+                    block,
+                    if !lexical && self.function_try_subobjects(self.handlers.innermost) {
+                        Action::Subobjects {
+                            pops: u8::from(marked == Marker::Pushed),
+                        }
+                    } else {
+                        Action::Entry {
+                            pops: if lexical {
+                                1
+                            } else {
+                                u8::from(marked == Marker::Pushed) + 1
+                            },
+                            tail: attempt.entry,
+                        }
                     },
                     lexical,
                 );
                 self.handlers.unwind.contexts.insert(key, block);
                 block
             }
-        } else if let Some(&block) = self.handlers.unwind.resumes.get(&(stack, lexical, body)) {
+        } else if let Some(&block) = self.handlers.unwind.resumes.get(&(stack, lexical)) {
             block
         } else {
             let block = self.new_block(if lexical {
@@ -226,26 +263,8 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 "cleanup_resume"
             })?;
-            self.queue_exception_block(
-                block,
-                if let Some(tail) = body {
-                    Action::Entry {
-                        pops: if lexical {
-                            1
-                        } else {
-                            u8::from(marked == Marker::Pushed) + 1
-                        },
-                        tail,
-                    }
-                } else {
-                    Action::Resume
-                },
-                lexical,
-            );
-            self.handlers
-                .unwind
-                .resumes
-                .insert((stack, lexical, body), block);
+            self.queue_exception_block(block, Action::Resume, lexical);
+            self.handlers.unwind.resumes.insert((stack, lexical), block);
             block
         };
         for &element in missing.iter().rev() {
@@ -309,6 +328,7 @@ impl Function<'_, '_, '_, '_> {
         if count <= floor
             && self.handlers.contexts.last().is_none_or(|c| c.attempt)
             && self.lexical.returned.is_none()
+            && self.constructor_unwind_target().is_none()
         {
             return Ok(None);
         }
@@ -408,6 +428,14 @@ impl Function<'_, '_, '_, '_> {
                 self.jump(tail)
             }
             Action::Resume => self.handler_resume(),
+            Action::Subobjects { pops } => {
+                for _ in 0..pops {
+                    self.effect(I::Runtime(R::EhEnd))?;
+                }
+                self.effect(I::Runtime(R::Resume))?;
+                self.terminated = true;
+                Ok(())
+            }
         }
     }
 }

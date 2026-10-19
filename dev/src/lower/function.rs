@@ -242,7 +242,7 @@ pub(super) fn lower<'a>(
         .transpose()?;
     function.lifetime.body = body.map(|body| body.compound);
     if result_boundary.indirect
-        && let Some(body) = body
+        && let Some(body) = body.filter(|body| body.handlers.is_none())
     {
         function.find_returned_local(body.compound, result)?;
     }
@@ -286,28 +286,7 @@ pub(super) fn lower<'a>(
     {
         function.assign_members(entity)?;
     }
-    if let super::construction::Entry::Constructor(id, variant) = entry {
-        let location = body.map_or(crate::support::source::SourceOffset(0), |body| {
-            tree.statements.get(body.compound).location
-        });
-        function.initialize_constructor(id, variant, location)?;
-    }
-    let destructor = entity.filter(|_| {
-        matches!(
-            facts.name,
-            crate::sema::lowering::FunctionName::Destructor(_)
-        )
-    });
-    if let Some(entity) = destructor {
-        function.destructor_prologue(entity, deleting, calls_complete)?;
-    }
-    if let Some(body) = body.filter(|_| !calls_complete) {
-        if body.handlers.is_some() {
-            return Err(Error::Missing("exception lowering"));
-        }
-        function.statement(body.compound)?;
-    }
-    function.finish_destructor()?;
+    function.source_body(entry, body, calls_complete)?;
     if !function.terminated {
         let ty = result_boundary.ty;
         if ty != Type::Void

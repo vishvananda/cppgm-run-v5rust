@@ -33,6 +33,7 @@ mod copy_construction;
 mod data;
 mod definition_demands;
 mod definition_order;
+mod definition_regions;
 mod destruction;
 mod dispatch;
 mod dynamic_casts;

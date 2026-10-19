@@ -17,6 +17,7 @@ struct Deferred {
     object: CompletedObject,
     previous: Option<BlockId>,
     entry: Option<BlockId>,
+    attempt: Option<super::handlers::Context>,
 }
 enum CompletedObject {
     Subobject(Subobject),
@@ -25,8 +26,9 @@ enum CompletedObject {
 #[derive(Default)]
 pub(super) struct Construction {
     pending: Vec<Deferred>,
-    active: Option<BlockId>,
+    pub active: Option<BlockId>,
     pub detached: bool,
+    pub depth: usize,
     pub placing: bool,
 }
 impl Function<'_, '_, '_, '_> {
@@ -72,14 +74,25 @@ impl Function<'_, '_, '_, '_> {
             object,
             previous,
             entry,
+            attempt: self.innermost_try(),
         });
         self.effect(I::Runtime(R::EhCleanup(Some(block))))?;
         self.construction.active = entry.or(Some(block));
+        self.construction.depth = self.handlers.contexts.len();
         self.constructor_unwind_changed();
         Ok(())
     }
     pub(super) fn constructor_unwind_target(&self) -> Option<BlockId> {
-        if self.handlers.innermost.is_some() {
+        let depth = if self.construction.detached {
+            self.construction.depth
+        } else {
+            self.destruction.body_depth
+        };
+        if self
+            .handlers
+            .innermost
+            .is_some_and(|index| depth == 0 || index >= depth)
+        {
             return None;
         }
         self.detached_body_target()
@@ -126,6 +139,7 @@ impl Function<'_, '_, '_, '_> {
             object,
             previous,
             entry,
+            attempt,
         } in pending
         {
             // A deferred batch places its landings directly. Nested entry
@@ -133,6 +147,9 @@ impl Function<'_, '_, '_, '_> {
             self.builder.place_block(landing)?;
             self.terminated = false;
             if let Some(entry) = entry {
+                if let Some(attempt) = attempt {
+                    self.emit_try_clauses(attempt)?;
+                }
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(entry)?;
                 self.place(entry)?;
@@ -149,7 +166,14 @@ impl Function<'_, '_, '_, '_> {
                 if entry.is_none() {
                     self.effect(I::Runtime(R::EhEnd))?;
                 }
-                if self.lifetime.function_guard.is_some() {
+                if entry.is_some()
+                    && let Some(attempt) = attempt
+                {
+                    self.effect(I::Runtime(R::EhEnd))?;
+                    self.jump(attempt.entry)?;
+                } else if self.lifetime.function_guard.is_some()
+                    && self.handlers.function_try.is_none()
+                {
                     self.terminate_unwinding()?;
                 } else {
                     self.effect(I::Runtime(R::Resume))?;

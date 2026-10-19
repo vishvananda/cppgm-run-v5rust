@@ -31,6 +31,7 @@ pub(super) struct Context {
 }
 #[derive(Default)]
 pub(super) struct Handlers {
+    pub function_try: Option<super::definition_regions::FunctionTry>,
     pub contexts: Vec<Context>,
     pub innermost: Option<usize>,
     selectors: HashMap<ast::StmtId, u32>,
@@ -289,6 +290,14 @@ impl Function<'_, '_, '_, '_> {
         }
         self.statement(written.body)?;
         self.leave_scope(context.floor)?;
+        if !self.terminated
+            && self
+                .handlers
+                .function_try
+                .is_some_and(|function| function.rethrow && function.body == attempt.key)
+        {
+            self.throw_object(None, true)?;
+        }
         if !self.terminated {
             self.exit_handler_context(self.handlers.contexts.len() - 1)?;
             self.jump(attempt.end)?;
@@ -424,6 +433,15 @@ impl Function<'_, '_, '_, '_> {
             }
             top = context.floor;
             if context.attempt {
+                if let Some(target) = self.constructor_unwind_target() {
+                    self.effect(I::Runtime(R::EhEnd))?;
+                    return self.jump(target);
+                }
+                if self.function_try_subobjects(Some(index)) {
+                    self.effect(I::Runtime(R::Resume))?;
+                    self.terminated = true;
+                    return Ok(());
+                }
                 self.effect(I::Runtime(R::EhEnd))?;
                 return self.jump(context.entry);
             }
@@ -479,7 +497,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn destroy_context_return(&mut self) -> Result<(), Error> {
-        self.destroy_context_exit(0, 0, true)
+        let floor =
+            usize::from(self.destruction.cleanup.is_some() && self.handlers.function_try.is_some());
+        self.destroy_context_exit(0, floor, true)
     }
     pub(super) fn destroy_context_exit(
         &mut self,
