@@ -171,6 +171,14 @@ pub(super) enum ChoiceRegion {
     Ordinary,
     Reopened,
 }
+/// Explicit element regions can branch while the enclosing live-object
+/// region stays open. Its owner closes it after the element sequence joins.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum FlowRegion {
+    #[default]
+    Local,
+    Enclosing,
+}
 #[derive(Default)]
 pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
@@ -193,6 +201,7 @@ pub(super) struct Lifetime {
     pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
     pub region: bool,
+    pub flow_region: FlowRegion,
     pub region_entry: Option<BlockId>,
     pub dropped_chains: usize,
     pub call_region: CallRegion,

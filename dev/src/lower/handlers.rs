@@ -74,6 +74,28 @@ impl Function<'_, '_, '_, '_> {
             .innermost
             .map(|index| self.handlers.contexts[index])
     }
+    /// An explicit landing forwards clauses only when the source try is its
+    /// immediate enclosing region. Otherwise it resumes into the live chain.
+    pub(super) fn landing_try(&self) -> Option<Context> {
+        if self.lifetime.region {
+            return None;
+        }
+        self.handlers.contexts.last().copied().filter(|c| c.attempt)
+    }
+    pub(super) fn landing_dispatch(&mut self, attempt: Context) -> Result<(), Error> {
+        self.emit_try_clauses(attempt)?;
+        self.effect(I::Runtime(R::EhCleanup(None)))
+    }
+    pub(super) fn landing_exit(&mut self, attempt: Context) -> Result<(), Error> {
+        self.effect(I::Runtime(R::EhEnd))?;
+        if self.function_try_subobjects(self.handlers.innermost) {
+            self.effect(I::Runtime(R::Resume))?;
+            self.terminated = true;
+            return Ok(());
+        }
+        self.effect(I::Runtime(R::EhEnd))?;
+        self.jump(attempt.entry)
+    }
     pub(super) fn handler_floor(&self) -> usize {
         self.innermost_try().map_or(0, |c| c.floor)
     }

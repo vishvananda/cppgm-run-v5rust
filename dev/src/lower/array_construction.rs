@@ -102,8 +102,10 @@ impl Function<'_, '_, '_, '_> {
             && !self.lifetime.full_expression
             && !self.lifetime.construction
             && !self.lifetime.region;
+        let mut attempt = None;
         if let Some(cleanup) = cleanup {
             self.before_lifetime_call(true)?;
+            attempt = self.landing_try();
             self.effect(I::Runtime(R::EhTry(cleanup)))?;
         }
         let scope = self.begin_copy_temporaries(temporaries);
@@ -128,6 +130,9 @@ impl Function<'_, '_, '_, '_> {
         self.jump(after)?;
         if let Some(cleanup) = cleanup {
             self.place(cleanup)?;
+            if let Some(attempt) = attempt {
+                self.landing_dispatch(attempt)?;
+            }
             let constructed = self
                 .emit(
                     I::Load(Facts::memory(false, true), Type::I64, slot),
@@ -142,8 +147,11 @@ impl Function<'_, '_, '_, '_> {
                     self.array_deallocation_arguments(deallocator, raw, size, placement)?;
                 self.deallocate_storage(deallocator, raw, size, Some(arguments), false)?;
             }
-            self.effect(I::Runtime(R::Resume))?;
-            self.terminated = true;
+            if let Some(attempt) = attempt {
+                self.landing_exit(attempt)?;
+            } else {
+                self.handler_resume()?;
+            }
         }
         self.place(after)
     }
@@ -196,7 +204,7 @@ impl Function<'_, '_, '_, '_> {
             element,
             elements,
             slot,
-            super::array_deletion::Destruction::Unwinding,
+            super::array_deletion::Destruction::ConstructionPrefix,
         )
     }
 }

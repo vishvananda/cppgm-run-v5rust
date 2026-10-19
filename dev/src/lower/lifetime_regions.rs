@@ -14,6 +14,22 @@ use crate::{
     sema::lowering::TypeId,
 };
 impl Function<'_, '_, '_, '_> {
+    /// Captured-array elements branch inside an enclosing live-object region.
+    /// Restore its ordinary control-flow policy on both success and failure.
+    pub(super) fn with_enclosing_region<T>(
+        &mut self,
+        guarded: bool,
+        operation: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let flow = self.lifetime.flow_region;
+        if guarded && self.lifetime.region {
+            self.lifetime.flow_region = super::lifetime::FlowRegion::Enclosing;
+        }
+        let result = operation(self);
+        self.lifetime.flow_region = flow;
+        result
+    }
+
     // cleanup_lowering.cpp::temporary_done's ordinary object path. A completed
     // inert temporary ends its construction segment, even though it adds no
     // cleanup action. A local reference forces its own completion boundary.

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     lowir::{
-        model::{Facts, InstructionKind as I, RuntimeInstruction as R, Value},
+        model::{Facts, InstructionKind as I, Value},
         vocabulary::{Binary, Compare, Type},
     },
     sema::lowering::{CallTarget, DeletionView, TypeId, TypeView},
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(super) enum Destruction {
     Deleted,
-    Unwinding,
+    ConstructionPrefix,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn delete_array(
@@ -155,7 +155,9 @@ impl Function<'_, '_, '_, '_> {
                 "array_delete_dtor_body",
                 "array_delete_dtor_end",
             ),
-            Destruction::Unwinding => ("array_dtor_cond", "array_dtor_body", "array_dtor_end"),
+            Destruction::ConstructionPrefix => {
+                ("array_dtor_cond", "array_dtor_body", "array_dtor_end")
+            }
         };
         let condition = self.new_block(condition)?;
         let body = self.new_block(body)?;
@@ -190,16 +192,9 @@ impl Function<'_, '_, '_, '_> {
         let object = self.allocated_element_address(element, elements, previous)?;
         match mode {
             Destruction::Deleted => self.destroy_deleted_element(element, object)?,
-            Destruction::Unwinding => {
-                let throws = self.destructor_throws(element)?;
-                if throws {
-                    self.open_destructor_unwind_guard()?;
-                }
-                self.call_destructor(element, object)?;
-                if throws {
-                    self.effect(I::Runtime(R::EhEnd))?;
-                }
-            }
+            // construct_new_elements emits plain destroy calls in its
+            // allocation landing, including potentially throwing destructors.
+            Destruction::ConstructionPrefix => self.call_destructor(element, object)?,
         }
         self.jump(condition)?;
         self.place(end)

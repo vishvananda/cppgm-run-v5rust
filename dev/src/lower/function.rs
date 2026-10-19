@@ -528,10 +528,15 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn effect(&mut self, kind: I) -> Result<(), Error> {
-        if matches!(kind, I::Branch(..) | I::Jump(_)) {
+        if matches!(kind, I::Branch(..) | I::Jump(_))
+            && self.lifetime.flow_region == super::lifetime::FlowRegion::Local
+        {
             self.pause_call_region()?;
         }
-        if kind.terminator() && self.lifetime.full_expression {
+        if kind.terminator()
+            && self.lifetime.full_expression
+            && self.lifetime.flow_region == super::lifetime::FlowRegion::Local
+        {
             self.close_lifetime_region()?;
         }
         if matches!(kind, I::Return(..)) && !self.construction.placing {

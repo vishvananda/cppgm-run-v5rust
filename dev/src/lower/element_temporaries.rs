@@ -25,6 +25,7 @@ pub(super) struct Scope {
     full_expression: bool,
     segment: TemporarySegment,
     region: bool,
+    flow_region: super::lifetime::FlowRegion,
     region_start: super::lifetime::RegionStart,
     start: Option<Position>,
     storage_split: Option<Position>,
@@ -61,6 +62,7 @@ impl Function<'_, '_, '_, '_> {
             full_expression: self.lifetime.full_expression,
             segment: self.lifetime.temporary_segment,
             region: self.lifetime.region,
+            flow_region: self.lifetime.flow_region,
             region_start: self.lifetime.region_start,
             start: self.lifetime.expression_start,
             storage_split: self.lifetime.storage_split.take(),
@@ -70,6 +72,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.full_expression = false;
         self.lifetime.temporary_segment = TemporarySegment::Empty;
         self.lifetime.region = false;
+        self.lifetime.flow_region = super::lifetime::FlowRegion::Local;
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         self.lifetime.expression_start = None;
         self.lifetime.tracking.active = false;
@@ -120,6 +123,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.full_expression = scope.full_expression;
         self.lifetime.temporary_segment = scope.segment;
         self.lifetime.region = scope.region;
+        self.lifetime.flow_region = scope.flow_region;
         self.lifetime.region_start = scope.region_start;
         self.lifetime.expression_start = scope.start;
         self.lifetime.storage_split = scope.storage_split;

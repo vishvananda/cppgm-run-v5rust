@@ -111,12 +111,8 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Runtime(R::EhEnd))?;
             self.effect(I::Runtime(R::EhEnd))?;
             self.jump(target)
-        } else if self.lifetime.function_guard.is_some() {
-            self.terminate_unwinding()
         } else {
-            self.effect(I::Runtime(R::Resume))?;
-            self.terminated = true;
-            Ok(())
+            self.handler_resume()
         }
     }
     pub(super) fn finish_constructor_cleanups(&mut self) -> Result<(), Error> {
