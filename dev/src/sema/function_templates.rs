@@ -536,6 +536,7 @@ impl Analyzer<'_> {
                 let Some(owner) = self.substitute_signature_type(owner, environment)? else {
                     return Ok(None);
                 };
+                let owner = self.bare_type(owner)?;
                 let Some(element) = self.substitute_signature_type(element, environment)? else {
                     return Ok(None);
                 };

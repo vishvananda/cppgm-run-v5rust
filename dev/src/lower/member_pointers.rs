@@ -332,6 +332,15 @@ impl Function<'_, '_, '_, '_> {
             self.symbols.demand(function);
             return self.symbols.callee(function, &mut self.builder);
         }
+        if self.graph.lower_member_pointer_conversion(right)?.is_none()
+            && let Some(value) = self.graph.lower_member_argument(self.tree, named)
+            && let Some(function) = value.member
+            && self.graph.lower_virtual_slot(function).is_none()
+        {
+            self.symbols.demand(function);
+            let callee = self.symbols.callee(function, &mut self.builder)?;
+            return Ok(self.emit(I::Addr(callee), source)?.value);
+        }
         let bits = self.operand(right, Context::Operand)?;
         let shift = self.builder.integer(64)?;
         let high = self.emit(

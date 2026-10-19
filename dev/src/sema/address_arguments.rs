@@ -262,6 +262,30 @@ impl Analyzer<'_> {
                 .or_else(|| self.graph.resolved_name(name))
         {
             let binding = self.graph.binding(binding);
+            if address
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::MemberPointer { .. }
+                )
+            {
+                if !matches!(binding.kind, BindingKind::Variable | BindingKind::Function) {
+                    return Err(Error::at(
+                        self.tree.expressions.get(expression).location,
+                        "a pointer to member template argument designates no member",
+                    ));
+                }
+                if binding.kind == BindingKind::Function {
+                    self.note_argument_function(binding.entity);
+                }
+                let ty = self.bare_type(ty)?;
+                return self.graph.types.intern(
+                    TypeKind::Address {
+                        ty,
+                        entity: binding.entity,
+                    },
+                    Cv::default(),
+                );
+            }
             if let Some(argument) = self.graph.constant_addresses.argument(binding.entity) {
                 if !address {
                     return Ok(argument);
@@ -356,8 +380,17 @@ impl Analyzer<'_> {
                 Cv::default(),
             );
         }
-        let value = self.evaluate_address(expression, scope)?;
-        if value.root != Root::Null {
+        let null = if matches!(
+            self.graph.types.get(ty).kind,
+            TypeKind::MemberPointer { .. }
+        ) {
+            self.evaluate_member_pointer(expression, scope)?
+                .member
+                .is_none()
+        } else {
+            self.evaluate_address(expression, scope)?.root == Root::Null
+        };
+        if !null {
             return Err(Error::at(
                 self.tree.expressions.get(expression).location,
                 "a template argument that designates no named object or function",

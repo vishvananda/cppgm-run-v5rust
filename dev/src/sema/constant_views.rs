@@ -20,6 +20,19 @@ fn without_parentheses(tree: &ast::Tree, mut id: ast::ExprId) -> ast::ExprId {
 }
 
 impl Graph {
+    pub(crate) fn lower_member_argument(
+        &self,
+        tree: &ast::Tree,
+        id: ast::ExprId,
+    ) -> Option<super::symbolic_members::MemberPointer> {
+        let id = without_parentheses(tree, id);
+        let ExprKind::Id(name) = tree.expressions.get(id).kind else {
+            return None;
+        };
+        let binding = self.resolved_name(name)?;
+        self.argument_member_pointer(self.binding(binding).entity)
+    }
+
     pub(crate) fn lower_evaluated_member_pointer(
         &self,
         tree: &ast::Tree,
@@ -27,6 +40,9 @@ impl Graph {
     ) -> Result<Option<super::symbolic_members::MemberPointer>, Error> {
         let id = without_parentheses(tree, id);
         let facts = self.expression_facts.get(id)?;
+        if let Some(value) = self.lower_member_argument(tree, id) {
+            return Ok(Some(value));
+        }
         if !matches!(
             self.types.get(facts.ty).kind,
             TypeKind::MemberPointer { .. }

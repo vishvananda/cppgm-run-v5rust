@@ -6,7 +6,7 @@ use super::{
     constant_addresses::{Address, Root, TemporaryValue as Value, nonconstant},
     constants::{Constant, ConstantState},
     expression_facts::ValueCategory,
-    graph::{EntityId, ScopeId},
+    graph::{EntityId, Graph, ScopeId},
     types::{TypeId, TypeKind},
 };
 use crate::{
@@ -34,6 +34,18 @@ impl MemberPointer {
             adjustment: 0,
             provisional: false,
         }
+    }
+}
+impl Graph {
+    pub(super) fn argument_member_pointer(&self, binding: EntityId) -> Option<MemberPointer> {
+        let argument = self.constant_addresses.argument(binding)?;
+        let TypeKind::Address { ty, entity } = self.types.get(argument).kind else {
+            return None;
+        };
+        matches!(self.types.get(ty).kind, TypeKind::MemberPointer { .. }).then_some(MemberPointer {
+            member: Some(entity),
+            ..MemberPointer::null(ty)
+        })
     }
 }
 impl Analyzer<'_> {
@@ -192,6 +204,17 @@ impl Analyzer<'_> {
         self.constant_step(node.location)?;
         let facts = self.graph.expression_facts.get(id)?;
         let ty = self.bare_type(facts.ty)?;
+        if let ExprKind::Id(name) = node.kind
+            && let Some(binding) = self.graph.resolved_name(name)
+            && let Some(value) = self
+                .graph
+                .argument_member_pointer(self.graph.binding(binding).entity)
+        {
+            return Ok(value);
+        }
+        if facts.category == ValueCategory::Prvalue && facts.folded == Some(0) {
+            return Ok(MemberPointer::null(ty));
+        }
         if facts.category != ValueCategory::Prvalue
             && !matches!(node.kind, ExprKind::Conditional { .. })
         {

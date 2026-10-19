@@ -144,6 +144,27 @@ impl Function<'_, '_, '_, '_> {
             bits: None,
         }))
     }
+    fn folded_value(
+        &mut self,
+        id: ast::ExprId,
+        ty: Type,
+        source: crate::sema::lowering::TypeId,
+        bits: u64,
+    ) -> Result<RValue, Error> {
+        if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
+            self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
+        }
+        if self.graph.lower_member_pointer_type(source).is_some() {
+            return self.zero(source);
+        }
+        Ok(RValue {
+            value: self.builder.integer(u128::from(bits))?,
+            ty,
+            source,
+            literal: false,
+            bits: Some(bits),
+        })
+    }
     fn expression_value(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
         self.check_stack()?;
         let facts = self.graph.lower_expression(id)?;
@@ -226,16 +247,7 @@ impl Function<'_, '_, '_, '_> {
             return self.emit(I::Const(ty, value), source);
         }
         if let Some(bits) = facts.folded {
-            if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
-                self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
-            }
-            return Ok(RValue {
-                value: self.builder.integer(u128::from(bits))?,
-                ty,
-                source,
-                literal: false,
-                bits: Some(bits),
-            });
+            return self.folded_value(id, ty, source, bits);
         }
         if let Some(pointer) = self.evaluated_pointer(id)? {
             return Ok(pointer);
