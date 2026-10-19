@@ -1148,10 +1148,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 return self.finish_abi_type(ty, node);
             }
         } else if let Some((owner, member)) = self.graph.lower_member_pointer_type(ty) {
-            Node::MemberPointer {
-                owner: self.abi_type(owner)?,
-                member: self.abi_type(member)?,
-            }
+            let owner = self.abi_type(owner)?;
+            let member = self.abi_type(member)?;
+            let node = self.abi.member_pointer(owner, member)?;
+            return self.finish_abi_type(ty, node);
         } else if let Some((qualifier, name)) = self.graph.lower_dependent_member(ty) {
             Node::Name {
                 parent: Some(self.abi_type(qualifier)?),

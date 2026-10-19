@@ -102,12 +102,7 @@ impl Analyzer<'_> {
                 ));
             }
             if inverse {
-                let home = self
-                    .graph
-                    .entity(member)
-                    .home
-                    .and_then(|s| self.graph.scope(s).owner)
-                    .ok_or(Error::Invariant("member constant declaring class"))?;
+                let home = self.graph.member_holder(member, None)?;
                 if home != destination
                     && !self.graph.is_base_of(home, destination)
                     && !self.graph.is_base_of(destination, home)
@@ -228,7 +223,12 @@ impl Analyzer<'_> {
                         "a reinterpret_cast or dynamic_cast in a constant expression",
                     ));
                 }
-                self.member_pointer_operand(operand, ty, scope)
+                let value = self.scalar_value(operand, scope)?;
+                if let Value::MemberPointer(value) = value {
+                    self.adjusted_member(value, ty, node.location)
+                } else {
+                    Self::convert_member_scalar(value, ty, node.location)
+                }
             }
             ExprKind::FunctionalCast {
                 arguments, braced, ..
@@ -447,21 +447,13 @@ impl Analyzer<'_> {
             let path = self.graph.retain_base_path(from, class)?;
             object = self.constant_project_path(object, Some(path), node.location)?;
         }
-        let home = self
-            .graph
-            .entity(member)
-            .member_function
-            .map(|f| f.class)
-            .or_else(|| {
-                self.graph
-                    .entity(member)
-                    .home
-                    .and_then(|s| self.graph.scope(s).owner)
-            })
-            .ok_or(Error::Invariant("applied member declaring class"))?;
+        let home = self.graph.member_holder(member, None)?;
         if pointer.adjustment != 0 || home != class {
             object.offset = object.offset.wrapping_add(pointer.adjustment);
-            object.designated = self.graph.lower_entity_type(home)?;
+            object.designated = self.graph.types.qualify(
+                self.graph.lower_entity_type(home)?,
+                self.type_cv(object.designated),
+            )?;
             let root = self.address_root_type(object, node.location)?;
             if !self.constant_type_holds(root, object.offset, object.designated, node.location)? {
                 return Err(nonconstant(

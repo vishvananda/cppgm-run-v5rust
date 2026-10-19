@@ -452,6 +452,7 @@ impl Analyzer<'_> {
         } = self.tree.expressions.get(next).kind
         {
             if self.consumes_address(next)
+                || self.consumes_member_pointer(next)
                 || matches!(
                     op.token.as_punctuator(),
                     Some(P::Comma | P::LogicalAnd | P::LogicalOr)

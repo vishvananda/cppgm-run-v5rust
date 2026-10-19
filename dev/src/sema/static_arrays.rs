@@ -297,6 +297,15 @@ impl Analyzer<'_> {
                     out,
                 );
             }
+            // The frozen static_element leaves explicit member values to the
+            // evaluated aggregate path. That path also spells omitted scalar
+            // members, rather than merging them with padding as zero bytes.
+            if matches!(
+                self.graph.types.get(target).kind,
+                TypeKind::MemberPointer { .. }
+            ) {
+                return Ok(false);
+            }
             let Some(value) = self.static_scalar(expr, target, scope)? else {
                 return Ok(false);
             };
@@ -310,9 +319,14 @@ impl Analyzer<'_> {
                 TypeKind::Scalar(Scalar::Basic(ty @ (F::Float | F::Double | F::LongDouble))) => {
                     Value::Floating(ty, 0)
                 }
-                TypeKind::MemberPointer { .. } => Value::MemberPointer(
-                    super::symbolic_members::MemberPointer::null(self.bare_type(target)?),
-                ),
+                TypeKind::MemberPointer { .. } => {
+                    append_zero(
+                        out,
+                        self.type_size(target, crate::support::source::SourceOffset(0))?
+                            .0,
+                    )?;
+                    return Ok(true);
+                }
                 _ => Value::Integer(0),
             }
         };

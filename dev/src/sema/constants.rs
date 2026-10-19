@@ -1109,7 +1109,11 @@ impl Analyzer<'_> {
             .graph
             .types
             .intern(self.graph.types.get(ty).kind.clone(), Cv::default())?;
-        if self.semantic() && operand.is_some_and(|id| self.floating_expression(id)) {
+        if self.semantic()
+            && operand.is_some_and(|id| {
+                self.floating_expression(id) || self.member_pointer_expression(id)
+            })
+        {
             if skipping {
                 return Ok(Constant { bits: 0, ty });
             }

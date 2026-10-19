@@ -151,18 +151,21 @@ impl Function<'_, '_, '_, '_> {
             && self.graph.lower_holds_data_member_pointer(shape.element)?
             && constructor.is_none_or(|id| self.graph.lower_constructor(id).zero_before_value)
         {
-            let all = if let Some(count) = array.constant {
-                self.array_count_constant(source, count.wrapping_mul(shape.per_element))?
-            } else if let Some(count) = count {
-                count
+            let remaining = if let Some(count) = array.constant {
+                self.array_count_constant(
+                    source,
+                    count
+                        .wrapping_sub(shape.listed)
+                        .wrapping_mul(shape.per_element),
+                )?
             } else {
-                self.array_size_divide(source, storage.known_size, shape.element_size)?
+                let all = if let Some(count) = count {
+                    count
+                } else {
+                    self.array_size_divide(source, storage.known_size, shape.element_size)?
+                };
+                self.array_size_subtract(source, all, shape.listed.wrapping_mul(shape.per_element))?
             };
-            let remaining = self.array_size_subtract(
-                source,
-                all,
-                shape.listed.wrapping_mul(shape.per_element),
-            )?;
             self.null_member_elements(shape.element, rest, remaining)?;
         }
         if constructs && (trailing || array.constant == Some(0)) {

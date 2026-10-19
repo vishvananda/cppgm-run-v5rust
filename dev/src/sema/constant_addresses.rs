@@ -344,6 +344,10 @@ impl Analyzer<'_> {
                 right,
                 assignment: false,
             } => match op.token.as_punctuator() {
+                Some(P::DotStar | P::ArrowStar) => {
+                    let place = self.constant_place(id, scope)?;
+                    self.read_constant_address(place, location)?
+                }
                 Some(P::Add | P::Subtract) => self.address_arithmetic(id, scope)?,
                 Some(P::Comma) => {
                     self.discard_constant(left, scope)?;
