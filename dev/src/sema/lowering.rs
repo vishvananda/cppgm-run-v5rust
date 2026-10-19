@@ -1089,7 +1089,7 @@ impl Graph {
             |ty| self.lower_type_unit_local(ty),
         )
     }
-    pub(super) fn lower_type_unit_local(&self, ty: TypeId) -> Result<bool, Error> {
+    pub(crate) fn lower_type_unit_local(&self, ty: TypeId) -> Result<bool, Error> {
         self.lower_type_entity_locality(
             ty,
             Self::lower_entity_scope_unit_local,

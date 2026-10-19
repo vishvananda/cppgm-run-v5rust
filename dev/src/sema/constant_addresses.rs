@@ -20,6 +20,7 @@ pub(super) enum Root {
     Null,
     Variable(EntityId),
     Function(EntityId),
+    TypeInformation(TypeId),
     Literal(ast::ExprId),
     Temporary(EntityId),
     Published(super::constexpr_values::TemporaryId),
@@ -860,6 +861,10 @@ impl Analyzer<'_> {
             ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::Unary { .. } => Err(
                 nonconstant(location, "a glvalue outside constant evaluation"),
             ),
+            ExprKind::TypeTrait {
+                keyword: Keyword::Typeid,
+                ..
+            } => self.constant_typeid_place(id),
             _ => Err(Error::Missing("extended constant place evaluation")),
         }
     }
@@ -1115,6 +1120,7 @@ impl Analyzer<'_> {
             Root::Temporary(_) | Root::Published(_) => {
                 "an access to a temporary that is not const, bound outside the evaluation"
             }
+            Root::TypeInformation(_) => "an access to a std::type_info object",
             Root::Function(_) => "a function is not an object",
             Root::Null => "an indirection through a null pointer",
             Root::Ephemeral(id) => {
@@ -1297,6 +1303,10 @@ impl Analyzer<'_> {
             Root::Null => Err(nonconstant(
                 location,
                 "an indirection through a null pointer",
+            )),
+            Root::TypeInformation(_) => Err(nonconstant(
+                location,
+                "an access to a std::type_info object",
             )),
             Root::Function(_) => Err(nonconstant(location, "a function is not an object")),
         }

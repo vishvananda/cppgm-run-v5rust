@@ -17,6 +17,7 @@ pub(crate) enum Value {
     Integer(u64),
     Floating(F, u128),
     Address(EntityId, i64),
+    TypeInformation(TypeId, i64),
     Literal(ast::ExprId, i64),
     Temporary(super::constexpr_values::TemporaryId, i64),
 }
@@ -164,6 +165,9 @@ impl Analyzer<'_> {
                             self.graph.static_temporary_value(root, address.offset)
                         }
                         Root::Literal(root) => Some(Value::Literal(root, address.offset)),
+                        Root::TypeInformation(ty) => {
+                            Some(Value::TypeInformation(ty, address.offset))
+                        }
                         _ => None,
                     },
                     Err(Error::NonConstant { .. } | Error::Missing(_)) => None,
@@ -288,6 +292,7 @@ impl Analyzer<'_> {
                 }
                 Root::Published(id) => self.graph.static_temporary_value(id, value.offset),
                 Root::Literal(expr) => Some(Value::Literal(expr, value.offset)),
+                Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, value.offset)),
                 _ => None,
             },
         })
@@ -352,6 +357,7 @@ impl Analyzer<'_> {
                     }
                     Root::Published(id) => self.graph.static_temporary_value(id, address.offset),
                     Root::Literal(expr) => Some(Value::Literal(expr, address.offset)),
+                    Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, address.offset)),
                     _ => None,
                 },
                 Err(Error::NonConstant { .. } | Error::Missing(_)) => None,
@@ -448,17 +454,26 @@ impl Analyzer<'_> {
         if let Some(kind) = self.integral_kind(target) {
             let bits = match value {
                 Value::Integer(bits) => bits,
-                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _)
+                Value::Address(_, _)
+                | Value::Literal(_, _)
+                | Value::Temporary(_, _)
+                | Value::TypeInformation(_, _)
                     if kind.bits == 1 =>
                 {
                     1
                 }
-                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _)
+                Value::Address(_, _)
+                | Value::Literal(_, _)
+                | Value::Temporary(_, _)
+                | Value::TypeInformation(_, _)
                     if kind.bits >= 64 =>
                 {
                     return Ok(Some(value));
                 }
-                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _) => {
+                Value::Address(_, _)
+                | Value::Literal(_, _)
+                | Value::Temporary(_, _)
+                | Value::TypeInformation(_, _) => {
                     return Ok(None);
                 }
                 Value::Floating(ty, bits) => {
@@ -521,7 +536,10 @@ impl Analyzer<'_> {
                         negative,
                     )
                 }
-                Value::Address(_, _) | Value::Literal(_, _) | Value::Temporary(_, _) => {
+                Value::Address(_, _)
+                | Value::Literal(_, _)
+                | Value::Temporary(_, _)
+                | Value::TypeInformation(_, _) => {
                     return Ok(None);
                 }
             };

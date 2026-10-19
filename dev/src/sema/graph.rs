@@ -250,6 +250,7 @@ pub(crate) struct Graph {
     pub(super) boundary_roots: Vec<super::graph::EntityId>,
     // One unit-owned scheduler; keep its growing indexes off native call frames.
     pub(super) boundaries: Box<super::layout::Boundaries>,
+    pub(super) rtti_types: std::collections::HashMap<TypeId, TypeId>,
     pub(super) class_information_uses: Vec<(Option<EntityId>, EntityId)>,
     pub(super) instantiation_levels: super::template_context::Levels,
     pub(super) storage_layouts: Vec<(
@@ -465,6 +466,7 @@ impl Graph {
             boundary_roots: Vec::new(),
             boundaries: Box::default(),
             class_information_uses: Vec::new(),
+            rtti_types: std::collections::HashMap::new(),
             instantiation_levels: super::template_context::Levels::default(),
             storage_layouts: Vec::new(),
             constructor_boundaries: Vec::new(),

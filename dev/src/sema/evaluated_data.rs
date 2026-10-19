@@ -117,6 +117,9 @@ impl Analyzer<'_> {
                         Item::Scalar(ty, value)
                     }
                     Root::Literal(root) => Item::Scalar(ty, Value::Literal(root, pointer.offset)),
+                    Root::TypeInformation(target) => {
+                        Item::Scalar(ty, Value::TypeInformation(target, pointer.offset))
+                    }
                     _ => return Ok(None),
                 },
                 None => Item::Zero(size),

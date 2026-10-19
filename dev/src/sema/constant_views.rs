@@ -86,6 +86,7 @@ impl Graph {
                 }
                 Root::Published(root) => self.static_temporary_value(root, address.offset),
                 Root::Literal(root) => Some(Value::Literal(root, address.offset)),
+                Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, address.offset)),
                 _ => None,
             }))
     }
@@ -138,6 +139,7 @@ impl Graph {
             Root::Null => Some(Value::Integer(0)),
             Root::Published(root) => self.static_temporary_value(root, address.offset),
             Root::Literal(root) => Some(Value::Literal(root, address.offset)),
+            Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, address.offset)),
             Root::Function(root) => Some(Value::Address(root, address.offset)),
             Root::Temporary(root) if self.entity(root).reference_temporary.is_some() => {
                 Some(Value::Address(root, address.offset))

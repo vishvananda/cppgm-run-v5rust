@@ -136,6 +136,9 @@ impl Function<'_, '_, '_, '_> {
         self.check_stack()?;
         let facts = self.graph.lower_expression(id)?;
         let source = facts.ty;
+        if self.graph.lower_type_identity(id) {
+            return self.type_identity_value(id);
+        }
         if self.graph.lower_builtin_operand(id)
             && let Some((call, _)) = self.graph.lower_function_conversion(id)?
         {

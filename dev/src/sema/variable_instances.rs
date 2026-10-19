@@ -325,6 +325,11 @@ impl Analyzer<'_> {
         );
     }
     pub(super) fn use_instance_variable(&mut self, entity: EntityId) -> Result<(), Error> {
+        if self.deferring_type_query() {
+            self.type_queries
+                .uses
+                .push(super::type_queries::DeferredUse::Variable(entity));
+        }
         if self.template_depth != 0 && !self.graph.variable_instances.templates.concrete(entity) {
             return Ok(());
         }

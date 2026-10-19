@@ -21,7 +21,7 @@ pub(crate) enum Scalar {
     Nullptr,
 }
 impl Scalar {
-    pub(super) fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Basic(ty) => ty.name(),
             Self::Void => "void",

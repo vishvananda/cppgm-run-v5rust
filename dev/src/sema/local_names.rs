@@ -21,6 +21,11 @@ impl Analyzer<'_> {
         binding: BindingId,
         scope: ScopeId,
     ) -> Result<(), Error> {
+        if self.deferring_type_query() {
+            self.type_queries
+                .uses
+                .push(super::type_queries::DeferredUse::Local(id, binding, scope));
+        }
         let owner = self.graph.binding_scope(binding);
         let binding = self.graph.binding(binding);
         if !matches!(binding.kind, BindingKind::Variable | BindingKind::Parameter)

@@ -67,6 +67,7 @@ mod temporary_scan;
 mod thread_local;
 mod throw_scan;
 mod tracked_lifetimes;
+mod type_queries;
 mod types;
 use crate::{
     lowir::model::Program,
@@ -133,6 +134,7 @@ fn finish_unit(
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     definitions.release_held();
     globals::finish(program, symbols, graph)?;
+    symbols.finish_class_declarations(program, None)?;
     symbols.resolve_runtime_roles(program, definitions)?;
     symbols.publish_finalizers(finalizers);
     Ok(symbols.initialization)

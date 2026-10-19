@@ -280,6 +280,8 @@ struct ClassConversion {
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
     runtime_casts: std::collections::HashMap<ast::ExprId, super::dynamic_casts::RuntimeCast>,
+    type_queries: std::collections::HashMap<ast::ExprId, super::type_queries::TypeQuery>,
+    type_identities: std::collections::HashSet<ast::ExprId>,
     records: Vec<Option<ExprFacts>>,
     // Qualified addresses keep their original lookup independently of the
     // specialization set. The dense use fact carries only a compact identity.
@@ -306,6 +308,22 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn type_query(&self, id: ast::ExprId) -> Option<super::type_queries::TypeQuery> {
+        self.type_queries.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_type_query(
+        &mut self,
+        id: ast::ExprId,
+        query: super::type_queries::TypeQuery,
+    ) {
+        self.type_queries.insert(self.root(id), query);
+    }
+    pub(super) fn type_identity(&self, id: ast::ExprId) -> bool {
+        self.type_identities.contains(&self.root(id))
+    }
+    pub(super) fn set_type_identity(&mut self, id: ast::ExprId) {
+        self.type_identities.insert(self.root(id));
+    }
     pub(super) fn runtime_cast(
         &self,
         id: ast::ExprId,

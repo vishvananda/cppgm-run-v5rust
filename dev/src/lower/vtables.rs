@@ -16,10 +16,23 @@ use crate::{
 };
 use std::collections::HashMap;
 
+#[derive(Clone, Copy)]
+pub(super) enum InformationKind {
+    Class,
+    SingleInheritance,
+    MultipleInheritance,
+    Fundamental,
+    Pointer,
+    MemberPointer,
+    Function,
+    Array,
+    Enum,
+}
 #[derive(Default)]
 pub(super) struct Tables {
     objects: HashMap<EntityId, SymbolId>,
-    typeinfos: HashMap<EntityId, SymbolId>,
+    typeinfos: HashMap<EntityId, (SymbolId, Metadata)>,
+    pending: std::collections::VecDeque<(SymbolId, Metadata)>,
     names: HashMap<EntityId, SymbolId>,
     signatures: HashMap<EntityId, SignatureId>,
     pure_virtual: Option<SymbolId>,
@@ -30,10 +43,10 @@ enum ClassObject {
     Typeinfo,
     Name,
 }
-fn integer(ty: Type, value: u64) -> DataItem {
+pub(super) fn integer(ty: Type, value: u64) -> DataItem {
     DataItem::Constant(ty, Constant::Integer(u128::from(value)))
 }
-fn address(symbol: SymbolId, offset: i64) -> DataItem {
+pub(super) fn address(symbol: SymbolId, offset: i64) -> DataItem {
     DataItem::Address(Type::Ptr, symbol, offset)
 }
 fn defined(program: &Program, symbol: SymbolId) -> bool {
@@ -41,7 +54,7 @@ fn defined(program: &Program, symbol: SymbolId) -> bool {
         .global(program.symbol(symbol))
         .is_some_and(|global| matches!(global.init, GlobalInit::Data(_)))
 }
-fn define(
+pub(super) fn define(
     program: &mut Program,
     symbol: SymbolId,
     mut metadata: Metadata,
@@ -60,6 +73,44 @@ fn define(
     Ok(())
 }
 impl Symbols<'_, '_> {
+    pub(in crate::lower) fn finish_class_declarations(
+        &mut self,
+        program: &mut Program,
+        before: Option<SymbolId>,
+    ) -> Result<(), Error> {
+        while self
+            .vtables
+            .pending
+            .front()
+            .is_some_and(|(symbol, _)| before.is_none_or(|limit| symbol.index() < limit.index()))
+        {
+            let (symbol, metadata) = self
+                .vtables
+                .pending
+                .pop_front()
+                .ok_or(crate::sema::Error::Invariant("pending RTTI declaration"))?;
+            if program.symbol(symbol).declared() {
+                continue;
+            }
+            program.add_global(
+                symbol,
+                Global {
+                    name: program.symbol(symbol).name,
+                    ty: None,
+                    metadata: Metadata {
+                        binding: Some(if metadata.binding == Some(Binding::Internal) {
+                            Binding::Internal
+                        } else {
+                            Binding::Strong
+                        }),
+                        ..metadata
+                    },
+                    init: GlobalInit::Declaration,
+                },
+            )?;
+        }
+        Ok(())
+    }
     fn class_encoding(
         &mut self,
         class: EntityId,
@@ -104,6 +155,9 @@ impl Symbols<'_, '_> {
             format!("{prefix}type_{encoding}")
         } else {
             let mut components = Vec::new();
+            if self.graph.lower_scope_class(scope) != Some(class) {
+                components.push(self.specialized_class_label(class)?);
+            }
             let mut current = scope;
             while let (Some(parent), name) = self.graph.lower_presentation_scope(current) {
                 components.push(self.presentation_scope_label(current, name)?);
@@ -143,22 +197,7 @@ impl Symbols<'_, '_> {
             ..Metadata::default()
         };
         if !program.symbol(symbol).declared() {
-            program.add_global(
-                symbol,
-                Global {
-                    name: program.symbol(symbol).name,
-                    ty: None,
-                    metadata: Metadata {
-                        binding: Some(if internal {
-                            Binding::Internal
-                        } else {
-                            Binding::Strong
-                        }),
-                        ..metadata
-                    },
-                    init: GlobalInit::Declaration,
-                },
-            )?;
+            self.vtables.pending.push_back((symbol, metadata));
         }
         Ok((symbol, metadata))
     }
@@ -223,22 +262,57 @@ impl Symbols<'_, '_> {
         define(program, symbol, metadata, items)?;
         Ok(symbol)
     }
-    fn rtti_vtable(&mut self, program: &mut Program, kind: usize) -> Result<SymbolId, Error> {
+    pub(super) fn rtti_vtable(
+        &mut self,
+        program: &mut Program,
+        kind: InformationKind,
+    ) -> Result<SymbolId, Error> {
+        use InformationKind as K;
         let (name, object, role) = match kind {
-            0 => (
+            K::Class => (
                 "__class_type_info",
                 "_ZTVN10__cxxabiv117__class_type_infoE",
                 Role::RttiClass,
             ),
-            1 => (
+            K::SingleInheritance => (
                 "__si_class_type_info",
                 "_ZTVN10__cxxabiv120__si_class_type_infoE",
                 Role::RttiSi,
             ),
-            _ => (
+            K::MultipleInheritance => (
                 "__vmi_class_type_info",
                 "_ZTVN10__cxxabiv121__vmi_class_type_infoE",
                 Role::RttiVmi,
+            ),
+            K::Fundamental => (
+                "__fundamental_type_info",
+                "_ZTVN10__cxxabiv123__fundamental_type_infoE",
+                Role::RttiData,
+            ),
+            K::Pointer => (
+                "__pointer_type_info",
+                "_ZTVN10__cxxabiv119__pointer_type_infoE",
+                Role::RttiPointer,
+            ),
+            K::MemberPointer => (
+                "__pointer_to_member_type_info",
+                "_ZTVN10__cxxabiv129__pointer_to_member_type_infoE",
+                Role::RttiData,
+            ),
+            K::Function => (
+                "__function_type_info",
+                "_ZTVN10__cxxabiv120__function_type_infoE",
+                Role::RttiData,
+            ),
+            K::Array => (
+                "__array_type_info",
+                "_ZTVN10__cxxabiv117__array_type_infoE",
+                Role::RttiData,
+            ),
+            K::Enum => (
+                "__enum_type_info",
+                "_ZTVN10__cxxabiv116__enum_type_infoE",
+                Role::RttiData,
             ),
         };
         let object = program.names.intern(object)?;
@@ -288,18 +362,28 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         class: EntityId,
     ) -> Result<SymbolId, Error> {
+        self.class_typeinfo(program, class, false)
+    }
+    fn class_typeinfo(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        derived: bool,
+    ) -> Result<SymbolId, Error> {
         self.check_stack()?;
-        if let Some(&symbol) = self.vtables.typeinfos.get(&class) {
-            return Ok(symbol);
-        }
-        let (symbol, metadata) = self.class_global(program, class, ClassObject::Typeinfo)?;
-        self.vtables.typeinfos.insert(class, symbol);
-        // Polymorphic RTTI follows explicit-instantiation ownership. A
-        // nonpolymorphic base's RTTI belongs to every unit referring to it,
-        // including through a derived class's table (Itanium 2.9.5).
+        let (symbol, metadata) = if let Some(&known) = self.vtables.typeinfos.get(&class) {
+            known
+        } else {
+            let result = self.class_global(program, class, ClassObject::Typeinfo)?;
+            self.vtables.typeinfos.insert(class, result);
+            result
+        };
+        // A primary class object's information follows its vtable owner;
+        // a derived descriptor may also define an otherwise external base.
         if defined(program, symbol)
-            || (self.graph.lower_polymorphic(class)
-                && self.graph.lower_class_instantiated_elsewhere(class))
+            || self.graph.lower_polymorphic(class)
+                && !(derived && !self.graph.lower_class_instantiated_elsewhere(class)
+                    || self.graph.lower_emits_vtable(class)?)
         {
             return Ok(symbol);
         }
@@ -311,17 +395,17 @@ impl Symbols<'_, '_> {
         let kind = self.rtti_vtable(
             program,
             if bases.is_empty() {
-                0
+                InformationKind::Class
             } else if single {
-                1
+                InformationKind::SingleInheritance
             } else {
-                2
+                InformationKind::MultipleInheritance
             },
         )?;
         let name = self.typeinfo_name(program, class)?;
         let mut targets = Vec::with_capacity(bases.len());
         for &(base, _, _) in &bases {
-            targets.push(self.typeinfo_symbol(program, base)?);
+            targets.push(self.class_typeinfo(program, base, true)?);
         }
         let mut items = vec![address(kind, 16), address(name, 0)];
         if single {

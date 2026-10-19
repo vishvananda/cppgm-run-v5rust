@@ -103,7 +103,13 @@ impl Function<'_, '_, '_, '_> {
     }
 
     fn bad_cast_return(&mut self) -> Result<(), Error> {
-        let runtime = self.symbols.cast_runtime(self.builder.program(), true)?;
+        self.rtti_failure_return(crate::lowir::vocabulary::Role::BadCast)
+    }
+    pub(super) fn rtti_failure_return(
+        &mut self,
+        role: crate::lowir::vocabulary::Role,
+    ) -> Result<(), Error> {
+        let runtime = self.symbols.rtti_runtime(self.builder.program(), role)?;
         let arguments = self.builder.arguments(&[])?;
         self.effect(I::Call(Call {
             result: Type::Void,

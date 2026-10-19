@@ -235,6 +235,11 @@ impl Analyzer<'_> {
                 }
             }
             ExprKind::TypeTrait {
+                keyword: Keyword::Typeid,
+                ty,
+                operand,
+            } => self.typeid_expression(id, ty, operand, scope)?,
+            ExprKind::TypeTrait {
                 keyword: Keyword::Noexcept,
                 operand: Some(operand),
                 ..
@@ -501,11 +506,11 @@ impl Analyzer<'_> {
                         });
                     facts.ty = self.graph.types.qualify(ty, cv)?;
                 }
-            } else if self.unevaluated == 0 {
-                return Err(Error::at(
+            } else {
+                self.evaluated_error(
                     self.tree.expressions.get(id).location,
                     "non-static data member used without an object",
-                ));
+                )?;
             }
         }
         if facts.object.is_some() || facts.anonymous_member.is_some() {

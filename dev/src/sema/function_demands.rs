@@ -55,6 +55,11 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn demand_function(&mut self, binding: BindingId, call: bool) {
+        if self.deferring_type_query() {
+            self.type_queries
+                .uses
+                .push(super::type_queries::DeferredUse::Function(binding, call));
+        }
         if self.unevaluated != 0 || self.template_depth != 0 {
             return;
         }

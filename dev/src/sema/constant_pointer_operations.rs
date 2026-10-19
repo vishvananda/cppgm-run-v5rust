@@ -306,6 +306,10 @@ impl Analyzer<'_> {
             Root::Published(id) => Ok(self.graph.aggregate_constants.temporary(id).ty),
             Root::Ephemeral(expr) => Ok(self.graph.expression_facts.get(expr)?.ty),
             Root::Literal(id) => self.graph.lower_literal_storage(id),
+            Root::TypeInformation(_) => Err(nonconstant(
+                location,
+                "an access to a std::type_info object",
+            )),
             Root::Function(_) => Err(nonconstant(location, "a function is not an object")),
             Root::Null => Err(nonconstant(
                 location,

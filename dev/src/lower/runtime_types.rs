@@ -109,7 +109,24 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         failure: bool,
     ) -> Result<SymbolId, Error> {
-        let known = if failure {
+        self.rtti_runtime(
+            program,
+            if failure {
+                Role::BadCast
+            } else {
+                Role::DynamicCast
+            },
+        )
+    }
+    pub(in crate::lower) fn rtti_runtime(
+        &mut self,
+        program: &mut Program,
+        requested: Role,
+    ) -> Result<SymbolId, Error> {
+        let failure = requested != Role::DynamicCast;
+        let known = if requested == Role::BadTypeId {
+            self.table.bad_typeid
+        } else if failure {
             self.table.bad_cast
         } else {
             self.table.dynamic_cast
@@ -117,7 +134,9 @@ impl Symbols<'_, '_> {
         if let Some(symbol) = known {
             return Ok(symbol);
         }
-        let (object, role, types, result): (_, _, &[Type], _) = if failure {
+        let (object, role, types, result): (_, _, &[Type], _) = if requested == Role::BadTypeId {
+            ("__cxa_bad_typeid", Role::BadTypeId, &[], Type::Void)
+        } else if failure {
             ("__cxa_bad_cast", Role::BadCast, &[], Type::Void)
         } else {
             (
@@ -184,7 +203,9 @@ impl Symbols<'_, '_> {
                 role,
                 origin: crate::lower::runtime_roles::Origin::Runtime,
             });
-        if failure {
+        if requested == Role::BadTypeId {
+            self.table.bad_typeid = Some(symbol);
+        } else if failure {
             self.table.bad_cast = Some(symbol);
         } else {
             self.table.dynamic_cast = Some(symbol);

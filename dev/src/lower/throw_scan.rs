@@ -193,6 +193,16 @@ impl Function<'_, '_, '_, '_> {
                     work.push(index);
                     work.push(base);
                 }
+                ExprKind::TypeTrait {
+                    operand: Some(operand),
+                    ..
+                } if self
+                    .graph
+                    .lower_type_query(id)
+                    .is_some_and(|query| query.dynamic) =>
+                {
+                    work.push(operand);
+                }
                 ExprKind::Member { base, .. } => work.push(base),
                 ExprKind::FunctionalCast {
                     arguments, braced, ..

@@ -1098,9 +1098,7 @@ impl super::graph::Graph {
             self.lower_entity_unit_local(class)?,
             self.scope(home).kind != ScopeKind::Namespace,
             entity.key,
-            entity
-                .scope
-                .ok_or(Error::Invariant("class without scope"))?,
+            entity.scope.unwrap_or(home),
         ))
     }
     pub(crate) fn lower_rtti_bases(

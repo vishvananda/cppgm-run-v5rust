@@ -8,6 +8,8 @@ mod placeholder_mangling;
 mod runtime_types;
 #[path = "specialization_labels.rs"]
 mod specialization_labels;
+#[path = "type_information.rs"]
+mod type_information;
 #[path = "vtables.rs"]
 mod vtables;
 use crate::{
@@ -42,6 +44,7 @@ pub(super) struct SymbolTable {
     runtime_roles: Vec<super::runtime_roles::RoleSymbol>,
     dynamic_cast: Option<SymbolId>,
     bad_cast: Option<SymbolId>,
+    bad_typeid: Option<SymbolId>,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
 impl SymbolTable {
@@ -153,6 +156,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub data: super::data::Objects,
     vtables: vtables::Tables,
     cast_hints: runtime_types::CastHints,
+    type_information: type_information::Information,
     temporary_owner: Option<(EntityId, u32)>,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
     local_discriminators: HashMap<EntityId, u32>,
@@ -225,6 +229,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             data: super::data::Objects::default(),
             vtables: vtables::Tables::default(),
             cast_hints: runtime_types::CastHints::default(),
+            type_information: type_information::Information::default(),
             temporary_owner: None,
             local_counts: HashMap::new(),
             local_discriminators: HashMap::new(),

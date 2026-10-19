@@ -245,6 +245,7 @@ impl Analyzer<'_> {
                     value
                 }
                 Root::Literal(expr) => Value::Literal(expr, address.offset),
+                Root::TypeInformation(ty) => Value::TypeInformation(ty, address.offset),
                 _ => return Ok(false),
             };
             out.push(Item::Scalar(target, value));

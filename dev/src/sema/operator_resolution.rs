@@ -359,7 +359,6 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("operator receiver without class"))?;
             self.check_named_member_access(declaration, class, class, scope, location)?;
         }
-        self.demand_specialization_body(binding);
         self.operator_conversions(
             id,
             operands,
@@ -367,9 +366,11 @@ impl Analyzer<'_> {
             &scratch.sequences[first..first + operands.len()],
             scope,
         )?;
-        if self.unevaluated == 0 {
-            self.demand_function(binding, true);
+        if let Some(facts) = self.type_identity(id, op, operands, binding)? {
+            return Ok(Some(facts));
         }
+        self.demand_specialization_body(binding);
+        self.demand_function(binding, true);
         let ty = self
             .graph
             .binding(binding)

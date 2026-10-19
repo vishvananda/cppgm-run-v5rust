@@ -94,6 +94,9 @@ pub(super) fn address<'a>(
 ) -> Result<(SymbolId, i64), Error> {
     symbols.check_stack()?;
     match value {
+        StaticValue::TypeInformation(ty, offset) => {
+            Ok((symbols.type_information(output.program(), ty)?, offset))
+        }
         StaticValue::Temporary(id, offset) => Ok((
             constant_temporary(output, symbols, graph, tree, id)?,
             offset,
@@ -205,7 +208,8 @@ pub(super) fn items<'a>(
             StaticItem::Scalar(ty, value) => match value {
                 StaticValue::Address(..)
                 | StaticValue::Literal(..)
-                | StaticValue::Temporary(..) => {
+                | StaticValue::Temporary(..)
+                | StaticValue::TypeInformation(..) => {
                     let (symbol, offset) = address(output, symbols, graph, tree, value)?;
                     DataItem::Address(types::storage(graph, ty)?, symbol, offset)
                 }
@@ -357,9 +361,10 @@ pub(super) fn reference_temporary<'a>(
     };
     // Resolve nested backing objects before allocating/naming their owner.
     let target = match value {
-        StaticValue::Address(..) | StaticValue::Literal(..) | StaticValue::Temporary(..) => {
-            Some(address(output, symbols, graph, tree, value)?)
-        }
+        StaticValue::Address(..)
+        | StaticValue::Literal(..)
+        | StaticValue::Temporary(..)
+        | StaticValue::TypeInformation(..) => Some(address(output, symbols, graph, tree, value)?),
         _ => None,
     };
     let (symbol, object) =
@@ -377,7 +382,10 @@ pub(super) fn reference_temporary<'a>(
         {
             GlobalInit::Zero
         }
-        StaticValue::Address(..) | StaticValue::Literal(..) | StaticValue::Temporary(..)
+        StaticValue::Address(..)
+        | StaticValue::Literal(..)
+        | StaticValue::Temporary(..)
+        | StaticValue::TypeInformation(..)
             if evaluated =>
         {
             let (target, offset) = target.ok_or(Error::Semantic(crate::sema::Error::Invariant(
@@ -385,9 +393,10 @@ pub(super) fn reference_temporary<'a>(
             )))?;
             GlobalInit::Address(target, offset)
         }
-        StaticValue::Address(..) | StaticValue::Literal(..) | StaticValue::Temporary(..) => {
-            GlobalInit::Zero
-        }
+        StaticValue::Address(..)
+        | StaticValue::Literal(..)
+        | StaticValue::Temporary(..)
+        | StaticValue::TypeInformation(..) => GlobalInit::Zero,
         _ => GlobalInit::Constant(constant(value)?),
     };
     let name = output.program().symbol(symbol).name;

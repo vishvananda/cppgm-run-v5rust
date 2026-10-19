@@ -127,6 +127,7 @@ mod template_bodies;
 mod template_context;
 mod template_defaults;
 mod template_exceptions;
+mod type_queries;
 pub(crate) use template_bodies::analyze_unit;
 mod named_templates;
 mod partial_classes;

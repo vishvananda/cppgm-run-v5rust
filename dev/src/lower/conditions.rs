@@ -731,6 +731,19 @@ impl Function<'_, '_, '_, '_> {
             {
                 Ok(())
             }
+            ExprKind::TypeTrait {
+                keyword: Keyword::Typeid,
+                ..
+            } => {
+                if self
+                    .graph
+                    .lower_type_query(id)
+                    .is_some_and(|query| query.dynamic)
+                {
+                    self.scalar_place(id)?;
+                }
+                Ok(())
+            }
             ExprKind::Literal(_)
             | ExprKind::Keyword(_)
             | ExprKind::TypeTrait {

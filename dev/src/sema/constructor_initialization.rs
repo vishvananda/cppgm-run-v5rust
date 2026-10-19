@@ -608,6 +608,11 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn demand_constructor_use(&mut self, id: ConstructorId) {
+        if self.deferring_type_query() {
+            self.type_queries
+                .uses
+                .push(super::type_queries::DeferredUse::Constructor(id));
+        }
         if self.unevaluated != 0
             || self
                 .graph

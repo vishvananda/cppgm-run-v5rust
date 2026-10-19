@@ -26,6 +26,7 @@ pub(super) enum StorageDemand {
     Object(super::types::TypeId),
     AnonymousUnion(EntityId),
     CallBoundary(super::types::TypeId),
+    TypeInformation(super::types::TypeId),
 }
 /// Incremental unit-tail reachability. A vtable can demand a template member
 /// body; resume only its suspended boundary and newly published edges after
@@ -366,6 +367,9 @@ impl Analyzer<'_> {
         for (owner, demand, location) in std::mem::take(&mut self.graph.storage_layouts) {
             if owner.is_none_or(|owner| seen.contains(&owner)) {
                 match demand {
+                    StorageDemand::TypeInformation(ty) => {
+                        self.prepare_rtti_layouts(ty, location)?;
+                    }
                     StorageDemand::Object(ty) => {
                         self.type_size(ty, location)?;
                     }

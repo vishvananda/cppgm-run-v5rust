@@ -605,7 +605,15 @@ impl Analyzer<'_> {
                     "an indirection through a null pointer",
                 ));
             }
-            Root::Function(_) => return Err(nonconstant(location, "a function is not an object")),
+            Root::TypeInformation(_) => {
+                return Err(nonconstant(
+                    location,
+                    "an access to a std::type_info object",
+                ));
+            }
+            Root::Function(_) => {
+                return Err(nonconstant(location, "a function is not an object"));
+            }
             Root::Literal(_) => {
                 return Err(nonconstant(
                     location,

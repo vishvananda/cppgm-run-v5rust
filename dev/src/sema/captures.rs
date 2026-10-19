@@ -270,6 +270,11 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn capture_this(&mut self, location: SourceOffset) -> Result<(), Error> {
+        if self.deferring_type_query() {
+            self.type_queries
+                .uses
+                .push(super::type_queries::DeferredUse::This(location));
+        }
         if self.unevaluated != 0 {
             return Ok(());
         }

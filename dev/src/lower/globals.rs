@@ -363,7 +363,8 @@ fn define_storage<'a>(
             Some(
                 value @ (StaticValue::Literal(..)
                 | StaticValue::Address(..)
-                | StaticValue::Temporary(..)),
+                | StaticValue::Temporary(..)
+                | StaticValue::TypeInformation(..)),
             ) => {
                 let (symbol, offset) = data::address(output, symbols, graph, tree, value)?;
                 GlobalInit::Address(symbol, offset)
@@ -541,6 +542,7 @@ pub(super) fn finish(
         } else {
             None
         };
+        symbols.finish_class_declarations(program, Some(symbol))?;
         program.add_global(
             symbol,
             Global {

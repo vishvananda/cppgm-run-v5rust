@@ -229,7 +229,8 @@ impl Function<'_, '_, '_, '_> {
             match value {
                 StaticValue::Address(..)
                 | StaticValue::Literal(..)
-                | StaticValue::Temporary(..) => {
+                | StaticValue::Temporary(..)
+                | StaticValue::TypeInformation(..) => {
                     let (target, offset) = self.static_data_address(value)?;
                     GlobalInit::Address(target, offset)
                 }
