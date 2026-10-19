@@ -530,14 +530,19 @@ impl Function<'_, '_, '_, '_> {
         // Retain the suffix once while walking its live prefix backwards.
         // Completion actions use the ordinary context-aware chain builder;
         // no remaining suffix is copied again for each temporary.
-        let suffix = self.lifetime.cleanups[first..].to_vec();
+        let mut suffix = self.lifetime.cleanups[first..].to_vec();
         // Objects completed after a temporary (notably a conversion result
         // whose reference extends it) must also unwind if its destructor
         // throws. Retain only these actions while walking backwards, rather
         // than repeatedly scanning or copying the complete cleanup suffix.
         let mut extended = Vec::new();
-        for (offset, &cleanup) in suffix.iter().enumerate().rev() {
+        for (offset, saved) in suffix.iter_mut().enumerate().rev() {
             let index = first + offset;
+            // Building the upper temporary's handler memoizes this prefix.
+            // Retain those memos when restoring the suffix: another condition
+            // edge destroys the same objects and must share that handler.
+            let cleanup = self.lifetime.cleanups[index];
+            *saved = cleanup;
             if matches!(cleanup.place, CleanupPlace::Temporary(_)) {
                 if throwing {
                     self.lifetime.cleanups.truncate(index);

@@ -440,25 +440,26 @@ impl Function<'_, '_, '_, '_> {
         if let Some(floor) = self.aggregation.floor {
             self.aggregation.landing |= self.lifetime.cleanups[floor..].iter().any(|c| c.member());
         }
+        let call_start = if self.lifetime.region_start.is_pending() {
+            self.lifetime
+                .call_marks
+                .iter()
+                .find(|mark| self.builder.same_block(mark.position))
+        } else {
+            // open_region can reuse the innermost call's operand start only
+            // while its live prefix is unchanged. A newly completed by-value
+            // argument belongs in the call's handler, not its construction's.
+            self.lifetime.call_marks.last().filter(|mark| {
+                self.builder.same_block(mark.position) && mark.depth == self.lifetime.cleanups.len()
+            })
+        }
+        .map(|mark| mark.position);
         if std::mem::take(&mut self.lifetime.result_region)
             == super::class_results::ResultRegion::Construction
             || self.lifetime.temporary_segment.is_nothrow()
         {
             self.effect(I::Runtime(R::EhTry(entry)))?;
-        } else if let Some(position) = self
-            .lifetime
-            .call_marks
-            .iter()
-            .map(|mark| mark.position)
-            .filter(|&position| self.builder.same_block(position))
-            .reduce(|first, last| {
-                if self.lifetime.region_start.is_pending() {
-                    first
-                } else {
-                    last
-                }
-            })
-        {
+        } else if let Some(position) = call_start {
             self.builder.insert_marker(position, R::EhTry(entry))?;
         } else if self.lifetime.full_expression
             && self.lifetime.region_start.is_pending()

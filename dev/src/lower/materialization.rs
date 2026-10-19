@@ -351,6 +351,28 @@ impl Function<'_, '_, '_, '_> {
             self.tree.expressions.get(root).kind,
             ExprKind::Conditional { .. }
         );
+        // temporary_region(zeroed): hidden segments open a fresh construction
+        // region for a functional cast with no selected nontrivial constructor,
+        // even after a previous temporary consumed the segment's pending start.
+        let zeroed = !matches!(use_, TemporaryUse::Discard)
+            && self.lifetime.temporary_segment.allows_eager_arguments()
+            && (matches!(
+                self.tree.expressions.get(root).kind,
+                ExprKind::FunctionalCast { .. }
+            ) || self.graph.lower_functional_call(root)?)
+            && self
+                .graph
+                .lower_list_constructor(root)?
+                .is_none_or(|constructor| self.graph.lower_constructor_trivial(constructor))
+            && !self
+                .lifetime
+                .temporary_split
+                .is_some_and(|position| self.builder.same_block(position));
+        // discard_lowering leaves tracked construction to its call, after the
+        // discarded object's address. It does not use temporary_object's
+        // eager construction region in that case.
+        let tracked_discard =
+            matches!(use_, TemporaryUse::Discard) && self.lifetime.tracking.active;
         // temporary_region opens a pending nonthrowing segment before the
         // object's address (and before a conditional's condition). Guarded
         // branch calls do not reopen that segment after its terminator.
@@ -362,6 +384,7 @@ impl Function<'_, '_, '_, '_> {
             && !self.lifetime.region
             && self.lifetime.guarded_operands == 0
             && self.lifetime.choice_region != super::lifetime::ChoiceRegion::Reopened
+            && !tracked_discard
             && (destructor.is_some() || !branched)
             && (owner.is_none() || !self.lifetime.cleanups.is_empty())
         {
@@ -394,6 +417,7 @@ impl Function<'_, '_, '_, '_> {
                 && !self.lifetime.temporary_segment.is_nothrow()
                 && !self.lifetime.region
                 && !deferred
+                && !tracked_discard
                 && (owner.is_none() || self.operand_temporaries(id)?.made)
                 && (if branched {
                     self.lifetime.region_start.is_pending()
@@ -405,6 +429,7 @@ impl Function<'_, '_, '_, '_> {
                 } else {
                     self.lifetime.region_start.is_pending()
                         || self.lifetime.cleanups.is_empty()
+                        || zeroed
                         || self.aggregate_has_members()
                         || self.lifetime.tracking.active
                         || self.aggregation.call_scope
