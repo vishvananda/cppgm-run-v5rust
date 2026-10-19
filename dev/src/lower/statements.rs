@@ -51,6 +51,7 @@ impl Function<'_, '_, '_, '_> {
                 result,
             );
         }
+        let first = self.lifetime.cleanups.len();
         let began =
             self.begin_full_expression(operand, super::temporary_scan::ExpressionUse::Value)?;
         let value = if let Some(id) = operand {
@@ -70,6 +71,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             None
         };
+        self.destroy_temporaries(first)?;
         self.cleanup_return(ty, value, began)
     }
     pub(super) fn statement(&mut self, id: ast::StmtId) -> Result<(), Error> {

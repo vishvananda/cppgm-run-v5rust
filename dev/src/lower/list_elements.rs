@@ -135,7 +135,7 @@ impl Function<'_, '_, '_, '_> {
             let first = self.lifetime.cleanups.len();
             if region.is_some() {
                 inside |= self.lifetime.region;
-                self.enclose_list_element(&mut covered)?;
+                self.enclose_element_region(&mut covered)?;
             }
             let split =
                 region.is_some() && (inside || !persistent && self.lifetime.full_expression);
@@ -229,28 +229,6 @@ impl Function<'_, '_, '_, '_> {
                 ty,
             )?
             .value)
-    }
-    pub(super) fn enclose_list_element(
-        &mut self,
-        covered: &mut Option<usize>,
-    ) -> Result<(), Error> {
-        if self.lifetime.cleanups.is_empty() {
-            return self.close_lifetime_region();
-        }
-        if !self.lifetime.full_expression && !self.lifetime.region {
-            return Ok(());
-        }
-        if covered.is_none() && self.lifetime.region {
-            *covered = Some(self.lifetime.cleanups.len());
-        }
-        if self.lifetime.region && *covered == Some(self.lifetime.cleanups.len()) {
-            return Ok(());
-        }
-        self.close_lifetime_region()?;
-        let position = self.builder.position()?;
-        self.open_temporary_region_at(Some(position))?;
-        *covered = Some(self.lifetime.cleanups.len());
-        Ok(())
     }
     pub(super) fn resume_list_element(&mut self, enclosing: Option<BlockId>) -> Result<(), Error> {
         if let Some(enclosing) = enclosing {

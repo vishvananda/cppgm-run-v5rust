@@ -240,6 +240,10 @@ impl Analyzer<'_> {
             InitializerKind::Assign(expr) | InitializerKind::Braced(expr) => {
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind {
                     if constructor.is_none()
+                        && matches!(
+                            self.graph.types.get(target.designated).kind,
+                            TypeKind::Class(_)
+                        )
                         && self
                             .graph
                             .expression_facts

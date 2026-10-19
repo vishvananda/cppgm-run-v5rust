@@ -44,6 +44,17 @@ impl Function<'_, '_, '_, '_> {
     // exception_lowering.cpp::zero_return/patch_fallback_slots: a runtime
     // no-return continuation's object holder follows every ordinary slot.
     pub(super) fn fallback_return(&mut self, source: TypeId, ty: Type) -> Result<(), Error> {
+        self.fallback_return_with_guard(source, ty, self.lifetime.function_guard.is_some())
+    }
+    pub(super) fn termination_return(&mut self, source: TypeId, ty: Type) -> Result<(), Error> {
+        self.fallback_return_with_guard(source, ty, false)
+    }
+    fn fallback_return_with_guard(
+        &mut self,
+        source: TypeId,
+        ty: Type,
+        end_guard: bool,
+    ) -> Result<(), Error> {
         if matches!(ty, Type::Object { .. }) {
             if self.lifetime.full_expression {
                 self.close_lifetime_region()?;
@@ -51,7 +62,7 @@ impl Function<'_, '_, '_, '_> {
             self.fallback_returns.push(FallbackReturn {
                 position: self.builder.position()?,
                 ty,
-                end_guard: self.lifetime.function_guard.is_some(),
+                end_guard,
             });
         } else {
             let value = self.zero_return(source)?;

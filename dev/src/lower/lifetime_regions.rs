@@ -30,6 +30,40 @@ impl Function<'_, '_, '_, '_> {
         result
     }
 
+    pub(super) fn enclose_element_region(
+        &mut self,
+        covered: &mut Option<usize>,
+    ) -> Result<(), Error> {
+        if self.lifetime.cleanups.is_empty() {
+            return self.close_lifetime_region();
+        }
+        if !self.lifetime.full_expression && !self.lifetime.region {
+            return Ok(());
+        }
+        if covered.is_none() && self.lifetime.region {
+            *covered = Some(self.lifetime.cleanups.len());
+        }
+        if self.lifetime.region && *covered == Some(self.lifetime.cleanups.len()) {
+            return Ok(());
+        }
+        self.close_lifetime_region()?;
+        // open_region(false, true) leaves objects outside the current try
+        // to that try's continuation. Only an active handler's temporary
+        // segment requires an otherwise empty enclosing region.
+        let boundary = self.lifetime.temporary_segment.is_present()
+            && self.lifetime.full_expression
+            && self.handlers.contexts.last().is_some_and(|c| !c.attempt);
+        if (self.lifetime.cleanups.len() > self.handler_floor() || boundary)
+            && self.handlers.explicit == 0
+            && !self.static_initializer
+        {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        }
+        *covered = Some(self.lifetime.cleanups.len());
+        Ok(())
+    }
+
     // cleanup_lowering.cpp::temporary_done's ordinary object path. A completed
     // inert temporary ends its construction segment, even though it adds no
     // cleanup action. A local reference forces its own completion boundary.
@@ -193,10 +227,7 @@ impl Function<'_, '_, '_, '_> {
             .value;
         self.terminate_exception(exception)?;
         let ty = self.symbols.result_boundary(source)?.ty;
-        let value = self.zero_return(source)?;
-        self.effect(I::Return(ty, value))?;
-        self.terminated = true;
-        Ok(())
+        self.termination_return(source, ty)
     }
     pub(super) fn terminate_exception(
         &mut self,
@@ -242,12 +273,10 @@ impl Function<'_, '_, '_, '_> {
             .value;
         self.terminate_exception(exception)?;
         let ty = self.symbols.result_boundary(source)?.ty;
-        let value = self.zero_return(source)?;
         let guard = self.lifetime.function_guard.take();
-        self.effect(I::Return(ty, value))?;
+        let result = self.termination_return(source, ty);
         self.lifetime.function_guard = guard;
-        self.terminated = true;
-        Ok(())
+        result
     }
     pub(super) fn begin_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
         if throws && self.lifetime.full_expression {

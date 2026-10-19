@@ -270,7 +270,24 @@ impl Analyzer<'_> {
             if self.graph.expression_facts.initializer_array(id).is_some() {
                 return Ok(object);
             }
-            return self.publish_list(id, object, V::Prvalue);
+            if matches!(self.graph.types.get(object).kind, TypeKind::Array { .. }) {
+                // Array list typing publishes element facts; the binding
+                // still needs the whole array's prvalue category.
+                return self.publish_list(id, object, V::Prvalue);
+            }
+            let mut facts = self.graph.expression_facts.get(id)?;
+            if matches!(self.graph.types.get(element).kind, TypeKind::Class(_)) {
+                // list_argument keeps the referenced class's cv on the
+                // materialized object, including its aggregate helper key.
+                facts.ty = element;
+                self.graph.expression_facts.set(id, facts);
+                super::record(&mut self.graph.expression_types, id.index(), element);
+            }
+            self.check_temporary_destruction(facts, scope, node.location)?;
+            // Recursive object initialization already published the selected
+            // aggregate/constructor facts. The reference binds that object;
+            // publishing a fresh scalar fact here would erase its plan.
+            return Ok(facts.ty);
         }
         if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind {
             if values.len() == 1

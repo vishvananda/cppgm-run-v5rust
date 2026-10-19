@@ -43,7 +43,7 @@ impl Function<'_, '_, '_, '_> {
         for (index, &item) in values.iter().enumerate() {
             let mut target = base;
             if index != 0 {
-                self.enclose_list_element(&mut covered)?;
+                self.enclose_element_region(&mut covered)?;
                 let made = self
                     .builder
                     .integer(u128::try_from(index).map_err(|_| crate::lowir::Error::Limit)?)?;

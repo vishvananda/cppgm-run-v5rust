@@ -213,12 +213,36 @@ impl Function<'_, '_, '_, '_> {
         let class = matches!(self.graph.lower_type(element)?, TypeView::Class(_));
         let guarded = class && self.symbols.storage_destructor(element)?.is_some();
         let destroyed = guarded && !persistent && self.temporary_type_destroyed(element)?;
-        if owner.is_none() && destroyed && self.lifetime.full_expression && !self.lifetime.region {
+        let opens = owner.is_none()
+            && (destroyed
+                || !persistent
+                    && self.lifetime.region_start.is_pending()
+                    && self.lifetime.guarded_operands == 0
+                    && self.lifetime.choice_region != super::lifetime::ChoiceRegion::Reopened)
+            && self.lifetime.full_expression
+            && !self.lifetime.region;
+        // With live objects, a pending segment opens after this array's
+        // address unless a throwing call already owns its operand boundary.
+        let deferred = opens
+            && self.lifetime.region_start.is_pending()
+            && !self.lifetime.temporary_segment.is_nothrow()
+            && !self.lifetime.cleanups.is_empty()
+            && (!self.lifetime.tracking.active || self.reference_lifetimes.has_scope())
+            && !self
+                .lifetime
+                .call_marks
+                .iter()
+                .any(|mark| !mark.declared && self.builder.same_block(mark.position));
+        if opens && !deferred {
             self.open_temporary_region()?;
         }
         let slot = self.temporary_storage(array, persistent, "initlist")?;
         let base = self.emit(I::Addr(slot), array)?.value;
         self.storage_region_event()?;
+        if deferred {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        }
         let stride = types::layout(self.graph, element)?.0;
         if class {
             let made = self.initialize_list_elements(

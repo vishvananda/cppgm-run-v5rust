@@ -184,8 +184,13 @@ impl Function<'_, '_, '_, '_> {
         };
         let entry = Entry::Constructor(id, variant);
         let facts = entry.facts(self.graph)?;
-        let declared = self.lifetime.declared_object == Some(object);
-        if declared {
+        let list_call = matches!(arguments, Some(ConstructorArguments::Single(list))
+            if self.graph.lower_initializer_array(list).is_some()
+                && self.graph.lower_list_constructor(list)? == Some(id));
+        // The first-phase list call uses begin_call directly; only
+        // call_special marks a declared object's construction boundary.
+        let declared = self.lifetime.declared_object == Some(object) && !list_call;
+        if self.lifetime.declared_object == Some(object) {
             self.lifetime.declared_object = None;
         }
         if let [source] = written
@@ -203,7 +208,7 @@ impl Function<'_, '_, '_, '_> {
                     .lower_class_conversion(source)
                     .is_some_and(|(selected, _)| selected == id)
         });
-        if publish_table && !declared && !converting {
+        if publish_table && !declared && !converting && !list_call {
             self.note_constructor_temporaries(id, written)?;
         }
         self.begin_lifetime_call(!facts.nothrow)?;
@@ -241,9 +246,7 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "default constructor without argument",
                 )))?;
-            let value = if index == 0
-                && matches!(arguments, Some(ConstructorArguments::Single(list)) if self.graph.lower_initializer_array(list).is_some() && self.graph.lower_list_constructor(list)? == Some(id))
-            {
+            let value = if index == 0 && list_call {
                 let reference = if let TypeView::Reference { element, .. } =
                     self.graph.lower_type(parameter)?
                 {

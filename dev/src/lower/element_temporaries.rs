@@ -214,8 +214,7 @@ impl Function<'_, '_, '_, '_> {
                 if throws {
                     self.effect(I::Runtime(R::EhEnd))?;
                 }
-                self.effect(I::Runtime(R::Resume))?;
-                self.terminated = true;
+                self.handler_resume()?;
             }
             self.place(next)?;
         }

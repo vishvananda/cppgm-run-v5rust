@@ -114,7 +114,7 @@ impl Function<'_, '_, '_, '_> {
         let mut covered = None;
         for index in 0..count {
             let guard = if index != 0 && guarded {
-                self.enclose_capture_elements(&mut covered)?;
+                self.enclose_element_region(&mut covered)?;
                 let dispatch = self.new_block("call_unwind_dispatch")?;
                 let next = self.new_block("call_unwind_end")?;
                 self.effect(I::Runtime(R::EhTry(dispatch)))?;
@@ -146,24 +146,6 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    fn enclose_capture_elements(&mut self, covered: &mut Option<usize>) -> Result<(), Error> {
-        if self.lifetime.cleanups.is_empty() {
-            return self.close_lifetime_region();
-        }
-        if !self.lifetime.full_expression && !self.lifetime.region {
-            return Ok(());
-        }
-        if covered.is_none() && self.lifetime.region {
-            *covered = Some(self.lifetime.cleanups.len());
-        }
-        if !self.lifetime.region || *covered != Some(self.lifetime.cleanups.len()) {
-            self.close_lifetime_region()?;
-            let position = self.builder.position()?;
-            self.open_temporary_region_at(Some(position))?;
-            *covered = Some(self.lifetime.cleanups.len());
-        }
-        Ok(())
-    }
     fn copy_capture_loop(&mut self, elements: Elements, temporaries: bool) -> Result<(), Error> {
         let Elements {
             element,
@@ -179,7 +161,7 @@ impl Function<'_, '_, '_, '_> {
         let throws = self.default_constructor_throws(constructor)?;
         self.before_lifetime_call(throws)?;
         if guarded {
-            self.enclose_capture_elements(&mut None)?;
+            self.enclose_element_region(&mut None)?;
         }
         let end = self.with_enclosing_region(guarded, |this| {
             let condition = this.new_block("copy_array_cond")?;

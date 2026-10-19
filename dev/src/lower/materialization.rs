@@ -627,7 +627,11 @@ impl Function<'_, '_, '_, '_> {
         if let Some(list) = self.list_object(id)?
             && !matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if self.graph.lower_aggregate_class(class))
         {
-            return self.initialize_list_object(list, ty, object, self.persistent_references, None);
+            // A directly materialized list expression owns its backing only
+            // for this full expression. Extended bindings use the explicit
+            // owner path in class_temporary; a surrounding static object
+            // must not extend a copied member's functional-cast array.
+            return self.initialize_list_object(list, ty, object, false, None);
         }
         match self.graph.lower_prvalue_initialization(id)? {
             Some(ClassInitialization::Constructed(arguments)) => {

@@ -682,6 +682,19 @@ impl Function<'_, '_, '_, '_> {
         below: Option<BlockId>,
         unwinding: bool,
     ) -> Result<(), Error> {
+        // A tracked segment encloses the entire guarded action, including
+        // an array destructor's loop and its join, not just the flag test.
+        self.with_enclosing_region(
+            self.lifetime.tracking.active && cleanup.guard.is_some(),
+            |this| this.destroy_cleanup_action(cleanup, below, unwinding),
+        )
+    }
+    fn destroy_cleanup_action(
+        &mut self,
+        cleanup: Cleanup,
+        below: Option<BlockId>,
+        unwinding: bool,
+    ) -> Result<(), Error> {
         // Automatic storage owns the entry family; temporaries, members and
         // delete[] demand only the complete entry their direct calls name.
         if let Some(variable) = cleanup.variable
@@ -745,8 +758,17 @@ impl Function<'_, '_, '_, '_> {
             CleanupPlace::Subobject(object)
             | CleanupPlace::Extended(object)
             | CleanupPlace::Temporary(object) => {
-                let object = self.storage_address(object, cleanup.ty)?;
-                if !unwinding
+                if matches!(object, Value::Slot(_))
+                    && self
+                        .lifetime
+                        .list_elements
+                        .len(cleanup.made_at.unwrap_or(object))
+                        .is_none()
+                {
+                    // Without saved element addresses, destroy_at takes a
+                    // slot's address again for every small-array element.
+                    self.destroy_storage_guarded(cleanup.ty, object, !unwinding)
+                } else if !unwinding
                     && let TypeView::Array { mut element, bound } =
                         self.graph.lower_type(cleanup.ty)?
                     && self.destructor_throws(element)?
@@ -760,8 +782,10 @@ impl Function<'_, '_, '_, '_> {
                         count = count.wrapping_mul(bound);
                         element = child;
                     }
+                    let object = self.storage_address(object, cleanup.ty)?;
                     self.destroy_member_array_guarded(element, object, count)
                 } else {
+                    let object = self.storage_address(object, cleanup.ty)?;
                     self.destroy_completed_object(cleanup.ty, object, cleanup.made_at)
                 }
             }
@@ -1141,7 +1165,6 @@ impl Function<'_, '_, '_, '_> {
         value: Option<Value>,
         expression: bool,
     ) -> Result<(), Error> {
-        self.destroy_temporaries(0)?;
         if self.destruction.cleanup.is_some() {
             self.end_lifetime_expression(expression)?;
             if self.handlers.contexts.is_empty() {

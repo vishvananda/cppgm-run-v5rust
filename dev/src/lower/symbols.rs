@@ -2375,6 +2375,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .allocate(program, &name, metadata.object, facts.internal)?;
         self.entry_objects.insert(entry, object);
         self.entries.insert(entry, symbol);
+        // An ancillary entry request may already have passed through the
+        // worklist before this first actual use. Publish unavailable entries
+        // here so a later synthesized body still gets its declaration.
+        if facts.definition.is_none()
+            && entity.is_some_and(|entity| {
+                self.graph.lower_function_body(entity).is_none()
+                    && !self.graph.lower_has_synthesized_body(entity)
+            })
+        {
+            super::function::declare(program, self, self.graph, entry)?;
+        }
         Ok(symbol)
     }
     pub(super) fn definition_metadata(

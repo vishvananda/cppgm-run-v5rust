@@ -310,6 +310,9 @@ pub(super) fn lower<'a>(
     function.place_destructor_terminates()?;
     function.finish_fallback_returns()?;
     function.place_function_guard(entry)?;
+    // The terminate landing itself has a no-return continuation. Its
+    // fallback slot follows the guard's exception slot and earlier patches.
+    function.finish_fallback_returns()?;
     function.builder.finish()?;
     super::definition_demands::finish_function_definition(symbols, graph, program, entry, symbol)?;
     Ok(())

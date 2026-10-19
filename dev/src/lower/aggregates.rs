@@ -765,7 +765,11 @@ impl Function<'_, '_, '_, '_> {
         } else {
             super::aggregate_cleanup::CallScope::FullExpression
         };
-        let listed = expr.map(|id| self.list_object(id)).transpose()?.flatten();
+        let listed = expr
+            .filter(|&id| matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. }))
+            .map(|id| self.list_object(id))
+            .transpose()?
+            .flatten();
         let object = if let Some(list) = listed {
             input.next += 1;
             let object = self.named_address(path, ty)?;
