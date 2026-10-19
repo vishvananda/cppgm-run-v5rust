@@ -210,8 +210,10 @@ unknown tail prevented the preservation gate from accepting an otherwise valid
 partial checkpoint audit. This is a checker inventory defect, independent of
 Scratch's reference-lowering corrections.
 
-Ralph `1004cf7` retains all frozen anchors, including missing files as required
-cases, and adds every discovered `paN/tests/**/*.t` once. Stage, prior/through,
+Ralph `1004cf7` and `cf38097` retain all frozen anchors, including missing files as required
+cases, and add every discovered ordinary `paN/tests/**/*.t` once. Debug
+fixtures retain their separate debug/release targets, matching the scaffold.
+The primary stage summary overrides unrelated directory-count hints. Stage, prior/through,
 focused-case and oracle-self checks share the inventory; added cases use the
 same exact comparator and passing-identity preservation. Both script/test copies
 are synchronized; only their two reviewed protected hashes changed. The oracle,
