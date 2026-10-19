@@ -232,6 +232,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(value);
         }
         match self.tree.expressions.get(id).kind {
+            ExprKind::Throw(operand) => self.throw_value(id, operand),
             ExprKind::Paren(inner) => self.expression(inner, context),
             ExprKind::Literal(literal) => {
                 let (PostTokenKind::Literal { data, .. } | PostTokenKind::Character { data, .. }) =

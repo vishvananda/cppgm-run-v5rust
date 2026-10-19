@@ -2,6 +2,8 @@
 use super::Error;
 #[path = "argument_declarations.rs"]
 mod argument_declarations;
+#[path = "exception_information.rs"]
+mod exception_information;
 #[path = "placeholder_mangling.rs"]
 mod placeholder_mangling;
 #[path = "runtime_types.rs"]
@@ -42,9 +44,7 @@ pub(super) struct SymbolTable {
     bad_array_length: Option<SymbolId>,
     atexit: Option<SymbolId>,
     runtime_roles: Vec<super::runtime_roles::RoleSymbol>,
-    dynamic_cast: Option<SymbolId>,
-    bad_cast: Option<SymbolId>,
-    bad_typeid: Option<SymbolId>,
+    runtime_entries: HashMap<crate::lowir::vocabulary::Role, SymbolId>,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
 }
 impl SymbolTable {
@@ -157,6 +157,7 @@ pub(super) struct Symbols<'a, 'source> {
     vtables: vtables::Tables,
     cast_hints: runtime_types::CastHints,
     type_information: type_information::Information,
+    exception_information: exception_information::Information,
     temporary_owner: Option<(EntityId, u32)>,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
     local_discriminators: HashMap<EntityId, u32>,
@@ -230,6 +231,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             vtables: vtables::Tables::default(),
             cast_hints: runtime_types::CastHints::default(),
             type_information: type_information::Information::default(),
+            exception_information: exception_information::Information::default(),
             temporary_owner: None,
             local_counts: HashMap::new(),
             local_discriminators: HashMap::new(),

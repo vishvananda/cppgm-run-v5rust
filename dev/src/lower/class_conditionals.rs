@@ -29,7 +29,17 @@ impl Function<'_, '_, '_, '_> {
         for (block, operand) in [then_block, else_block].into_iter().zip(operands) {
             self.place(block)?;
             self.lifetime.guarded_operands += 1;
-            let result = self.materialize_class_qualified(operand, ty, object, volatile);
+            let result = if matches!(
+                self.tree
+                    .expressions
+                    .get(self.without_parentheses(operand))
+                    .kind,
+                ast::ExprKind::Throw(_)
+            ) {
+                self.discard(operand)
+            } else {
+                self.materialize_class_qualified(operand, ty, object, volatile)
+            };
             self.lifetime.guarded_operands -= 1;
             result?;
             if !self.terminated {

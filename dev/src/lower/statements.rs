@@ -117,9 +117,15 @@ impl Function<'_, '_, '_, '_> {
             }
             StmtKind::Expression(expression) => {
                 if let Some(id) = expression {
-                    self.discard_full_expression(id)?;
+                    let root = self.without_parentheses(id);
+                    if let ast::ExprKind::Throw(operand) = self.tree.expressions.get(root).kind {
+                        self.throw_object(operand, true)?;
+                    } else {
+                        self.discard_full_expression(id)?;
+                    }
                 }
             }
+            StmtKind::Throw(operand) => self.throw_object(operand, true)?,
             StmtKind::Declaration(id) => self.declaration(id)?,
             StmtKind::Ambiguous { .. } => self.statement(self.graph.lower_statement(id)?)?,
             StmtKind::If {

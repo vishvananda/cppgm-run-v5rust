@@ -328,6 +328,7 @@ impl Function<'_, '_, '_, '_> {
                 .map(|id| self.expression_throws(id))
                 .transpose()?
                 .unwrap_or(false),
+            StmtKind::Throw(_) => true,
             StmtKind::Declaration(decl) => self.declaration_throws(decl)?,
             StmtKind::Ambiguous { .. } => self.statement_throws(self.graph.lower_statement(id)?)?,
             StmtKind::If {

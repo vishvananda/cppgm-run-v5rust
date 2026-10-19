@@ -680,9 +680,7 @@ impl Function<'_, '_, '_, '_> {
                     if local {
                         self.destroy_temporaries(first)?;
                     }
-                    if !self.terminated {
-                        self.jump(end)?;
-                    }
+                    self.jump(end)?;
                 }
                 self.place(end)
             }

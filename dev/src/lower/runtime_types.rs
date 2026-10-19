@@ -1,5 +1,5 @@
 // Translated from lower/rtti_lowering.cpp::runtime_function. See NOTICE.
-//! Program-owned ABI entry identities are declared only when a cast needs them.
+//! Program-owned ABI entries are declared once when a runtime operation demands them.
 use super::{Error, Symbols};
 use crate::lowir::{
     model::{
@@ -109,7 +109,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         failure: bool,
     ) -> Result<SymbolId, Error> {
-        self.rtti_runtime(
+        self.runtime_function(
             program,
             if failure {
                 Role::BadCast
@@ -118,33 +118,38 @@ impl Symbols<'_, '_> {
             },
         )
     }
-    pub(in crate::lower) fn rtti_runtime(
+    pub(in crate::lower) fn runtime_function(
         &mut self,
         program: &mut Program,
         requested: Role,
     ) -> Result<SymbolId, Error> {
-        let failure = requested != Role::DynamicCast;
-        let known = if requested == Role::BadTypeId {
-            self.table.bad_typeid
-        } else if failure {
-            self.table.bad_cast
-        } else {
-            self.table.dynamic_cast
-        };
-        if let Some(symbol) = known {
+        if let Some(&symbol) = self.table.runtime_entries.get(&requested) {
             return Ok(symbol);
         }
-        let (object, role, types, result): (_, _, &[Type], _) = if requested == Role::BadTypeId {
-            ("__cxa_bad_typeid", Role::BadTypeId, &[], Type::Void)
-        } else if failure {
-            ("__cxa_bad_cast", Role::BadCast, &[], Type::Void)
-        } else {
-            (
+        let (object, types, result, noreturn): (_, &[Type], _, _) = match requested {
+            Role::BadTypeId => ("__cxa_bad_typeid", &[], Type::Void, true),
+            Role::BadCast => ("__cxa_bad_cast", &[], Type::Void, true),
+            Role::DynamicCast => (
                 "__dynamic_cast",
-                Role::DynamicCast,
                 &[Type::Ptr, Type::Ptr, Type::Ptr, Type::I64],
                 Type::Ptr,
-            )
+                false,
+            ),
+            Role::EhAllocateException => {
+                ("__cxa_allocate_exception", &[Type::I64], Type::Ptr, false)
+            }
+            Role::EhThrow => (
+                "__cxa_throw",
+                &[Type::Ptr, Type::Ptr, Type::Ptr],
+                Type::Void,
+                true,
+            ),
+            Role::EhRethrow => ("__cxa_rethrow", &[], Type::Void, true),
+            _ => {
+                return Err(
+                    crate::sema::Error::Invariant("unsupported exception runtime entry").into(),
+                );
+            }
         };
         let symbol = self.table.allocate(
             program,
@@ -170,7 +175,7 @@ impl Symbols<'_, '_> {
             parameters,
             result,
             boundary: Boundary {
-                returns: if failure {
+                returns: if noreturn {
                     Returns::NoReturn
                 } else {
                     Returns::Default
@@ -185,7 +190,7 @@ impl Symbols<'_, '_> {
                 name: program.symbol(symbol).name,
                 signature,
                 metadata: Metadata {
-                    role: Some(role),
+                    role: Some(requested),
                     linkage: Linkage::C,
                     binding: Some(Binding::Strong),
                     object: Some(object),
@@ -200,16 +205,10 @@ impl Symbols<'_, '_> {
             .runtime_roles
             .push(crate::lower::runtime_roles::RoleSymbol {
                 symbol,
-                role,
+                role: requested,
                 origin: crate::lower::runtime_roles::Origin::Runtime,
             });
-        if requested == Role::BadTypeId {
-            self.table.bad_typeid = Some(symbol);
-        } else if failure {
-            self.table.bad_cast = Some(symbol);
-        } else {
-            self.table.dynamic_cast = Some(symbol);
-        }
+        self.table.runtime_entries.insert(requested, symbol);
         Ok(symbol)
     }
 }

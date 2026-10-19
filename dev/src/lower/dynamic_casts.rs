@@ -109,7 +109,9 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         role: crate::lowir::vocabulary::Role,
     ) -> Result<(), Error> {
-        let runtime = self.symbols.rtti_runtime(self.builder.program(), role)?;
+        let runtime = self
+            .symbols
+            .runtime_function(self.builder.program(), role)?;
         let arguments = self.builder.arguments(&[])?;
         self.effect(I::Call(Call {
             result: Type::Void,

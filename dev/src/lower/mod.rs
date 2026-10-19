@@ -66,6 +66,7 @@ mod symbols;
 mod temporary_scan;
 mod thread_local;
 mod throw_scan;
+mod throws;
 mod tracked_lifetimes;
 mod type_queries;
 mod types;

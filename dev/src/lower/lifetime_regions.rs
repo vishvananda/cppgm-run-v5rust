@@ -501,6 +501,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(value)
     }
     pub(super) fn close_lifetime_region(&mut self) -> Result<(), Error> {
+        self.close_lifetime_region_to("call_unwind_end")
+    }
+    pub(super) fn close_lifetime_region_to(&mut self, continuation: &str) -> Result<(), Error> {
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         if !self.lifetime.region {
             return Ok(());
@@ -531,7 +534,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         if self.lifetime_has_pending_chains() && !reused {
-            let next = self.new_block("call_unwind_end")?;
+            let next = self.new_block(continuation)?;
             self.jump(next)?;
             self.place_cleanup_chains(false)?;
             self.place(next)?;

@@ -291,6 +291,18 @@ impl Analyzer<'_> {
     }
 }
 
+impl super::Graph {
+    pub(crate) fn lower_thrown_type(&self, operand: ast::ExprId) -> Result<TypeId, Error> {
+        self.source_exceptions
+            .thrown
+            .get(&operand)
+            .copied()
+            .ok_or(Error::Invariant(
+                "throw operand without retained exception type",
+            ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

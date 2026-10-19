@@ -297,13 +297,22 @@ impl Function<'_, '_, '_, '_> {
                 } else {
                     self.graph.lower_class_copy(operand)?
                 };
-                self.initialize_class_result(operand, result, object, own, projection)?;
+                let throwing = matches!(
+                    self.tree
+                        .expressions
+                        .get(self.without_parentheses(operand))
+                        .kind,
+                    ast::ExprKind::Throw(_)
+                );
+                if throwing {
+                    self.discard(operand)?;
+                } else {
+                    self.initialize_class_result(operand, result, object, own, projection)?;
+                }
                 if !self.lifetime.tracking.active {
                     self.destroy_temporaries(first)?;
                 }
-                if !self.terminated {
-                    self.jump(end)?;
-                }
+                self.jump(end)?;
             }
             self.place(end)
         } else if let (Some(offset), Some(action)) = (projection, action) {

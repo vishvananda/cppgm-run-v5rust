@@ -17,14 +17,19 @@ use std::collections::HashMap;
 pub(super) struct Information {
     objects: HashMap<TypeId, SymbolId>,
 }
+impl Information {
+    pub(super) fn get(&self, ty: TypeId) -> Option<SymbolId> {
+        self.objects.get(&ty).copied()
+    }
+}
 #[derive(Clone, Copy)]
-enum TypeObject {
+pub(super) enum TypeObject {
     Encoding,
     Information,
     Name,
 }
 impl Symbols<'_, '_> {
-    fn type_encoding(&mut self, ty: TypeId, kind: TypeObject) -> Result<String, Error> {
+    pub(super) fn type_encoding(&mut self, ty: TypeId, kind: TypeObject) -> Result<String, Error> {
         let node = self.abi_type(ty)?;
         let mut bytes = Vec::new();
         let target = match kind {
@@ -36,7 +41,7 @@ impl Symbols<'_, '_> {
         String::from_utf8(bytes)
             .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI type name").into())
     }
-    fn pointee_flags(&self, mut ty: TypeId) -> Result<u32, Error> {
+    pub(super) fn pointee_flags(&self, mut ty: TypeId) -> Result<u32, Error> {
         let mut flags = u32::from(self.graph.lower_cv(ty) & 3);
         while let TypeView::Pointer(element) = self.graph.lower_type(ty)? {
             ty = element;
@@ -118,7 +123,17 @@ impl Symbols<'_, '_> {
             }
         };
         let target_object = pointee
-            .map(|pointee| self.type_information(program, pointee))
+            .map(|pointee| {
+                let symbol = self.type_information(program, pointee)?;
+                if program
+                    .global(program.symbol(symbol))
+                    .is_some_and(|global| matches!(global.init, GlobalInit::Declaration))
+                {
+                    self.defined_exception_information(program, pointee)
+                } else {
+                    Ok(symbol)
+                }
+            })
             .transpose()?;
         let holder = owner
             .map(|owner| self.type_information(program, owner))
