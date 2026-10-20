@@ -2,6 +2,9 @@
 mod abi;
 mod address_facts;
 mod builtins;
+mod condition;
+mod condition_mir;
+mod condition_selection;
 mod executable;
 mod frame_carries;
 mod global_data;
@@ -119,6 +122,7 @@ pub(crate) struct Statistics {
     homes: usize,
     lazy_addresses: usize,
     folded_loads: usize,
+    fused_compares: usize,
     lowir_instructions: usize,
     mir_instructions: usize,
     dead_slots: usize,
@@ -136,6 +140,7 @@ impl Statistics {
             (&mut self.homes, function.homes),
             (&mut self.lazy_addresses, function.lazy_addresses),
             (&mut self.folded_loads, function.folded_loads),
+            (&mut self.fused_compares, function.fused_compares),
             (&mut self.lowir_instructions, function.lowir_instructions),
             (&mut self.mir_instructions, function.instructions.len()),
             (&mut self.dead_slots, function.dead_slots),
@@ -161,7 +166,7 @@ impl Statistics {
         // allocation and branch-layout passes remain outside supported paths.
         writeln!(
             out,
-            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares=0 promoted_slots={} dead_slots={} global_registers=0 liveness_steps=0 hull_fallbacks=0 edge_blocks=0 threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies=0 jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames=0 dead_frame_stores=0 native_returns={} short_branches=0 long_branches=0 fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
+            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers=0 liveness_steps=0 hull_fallbacks=0 edge_blocks=0 threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies=0 jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames=0 dead_frame_stores=0 native_returns={} short_branches=0 long_branches=0 fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
             self.functions,
             self.lowir_instructions,
             self.mir_instructions,
@@ -169,6 +174,7 @@ impl Statistics {
             self.homes,
             self.lazy_addresses,
             self.folded_loads,
+            self.fused_compares,
             self.promoted_slots,
             self.dead_slots,
             self.native_returns,

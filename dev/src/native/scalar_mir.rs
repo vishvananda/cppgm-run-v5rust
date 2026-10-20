@@ -88,6 +88,7 @@ impl Operand {
 }
 #[derive(Clone, Copy)]
 pub(super) enum ScalarOp {
+    Condition(super::condition_mir::FlagOp),
     Move(R, Operand),
     Lea(R, Operand),
     Load(R, Type, Operand),
@@ -119,6 +120,7 @@ impl ScalarOp {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         let mut operand = None;
         match self {
+            Self::Condition(op) => op.write(program, out)?,
             Self::Lea(r, src) => {
                 write!(out, "lea {}, ", r.spelling())?;
                 operand = Some(src);
@@ -217,6 +219,7 @@ impl ScalarOp {
     }
     pub(super) fn rebase(self, begin: i32, bytes: u32) -> Self {
         match self {
+            Self::Condition(op) => Self::Condition(op.rebase(begin, bytes)),
             Self::Load(r, t, m) => Self::Load(r, t, m.rebase(begin, bytes)),
             Self::Store(m, t, s) => Self::Store(m.rebase(begin, bytes), t, s.rebase(begin, bytes)),
             Self::Lea(r, m) => Self::Lea(r, m.rebase(begin, bytes)),
@@ -227,11 +230,12 @@ impl ScalarOp {
             other => other,
         }
     }
-    pub(super) fn emit(self, a: &mut Assembler) -> Result<(), Error> {
+    pub(super) fn emit(self, a: &mut Assembler, keep_flags: bool) -> Result<(), Error> {
         match self {
+            Self::Condition(op) => op.emit(a),
             Self::Move(r, src) => match src {
                 Operand::Register(s) => a.mov_rr(r, s),
-                Operand::Immediate(v) => a.mov_ri(r, low_word(v)?),
+                Operand::Immediate(v) => a.mov_ri_flags(r, low_word(v)?, keep_flags),
                 Operand::Symbol(s) => a.lea(r, Rm::rip(ImageSymbol::Program(s), 0)),
                 Operand::Frame(d) => a.load(r, Rm::mem(R::RBP, d), 8, false),
                 Operand::Memory(m) => a.load(r, m.rm(), 8, false),
@@ -297,21 +301,7 @@ impl ScalarOp {
                 0,
             ),
             Self::CompareZero(ty, src) => {
-                let rm = src.rm()?;
-                if let Operand::Register(r) = src {
-                    a.op(
-                        if bytes(ty) == 2 { 0x66 } else { 0 },
-                        bytes(ty) == 8,
-                        if bytes(ty) == 1 { 0x84 } else { 0x85 },
-                        1,
-                        r.code(),
-                        rm,
-                        bytes(ty) == 1,
-                        0,
-                    )
-                } else {
-                    a.alu_ri(7, rm, 0, bytes(ty))
-                }
+                super::condition_mir::FlagOp::Compare(ty, src, Operand::Immediate(0)).emit(a)
             }
             Self::SetEqual(r) => a.op(0, false, 0x0f94, 2, 0, Rm::Reg(r), true, 0),
             Self::Movzx(r) => a.op(0, false, 0x0fb6, 2, r.code(), Rm::Reg(r), true, 0),
@@ -331,6 +321,10 @@ impl ScalarOp {
     }
 }
 fn shift_immediate(a: &mut Assembler, digit: u8, r: R, count: i64, bytes: u8) -> Result<(), Error> {
+    let count = count & (i64::from(bytes) * 8 - 1);
+    if count == 0 {
+        return Ok(());
+    }
     a.op(
         if bytes == 2 { 0x66 } else { 0 },
         bytes == 8,

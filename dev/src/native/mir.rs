@@ -57,6 +57,7 @@ pub(super) struct Function {
     pub(super) homes: usize,
     pub(super) lazy_addresses: usize,
     pub(super) folded_loads: usize,
+    pub(super) fused_compares: usize,
     pub(super) lowir_instructions: usize,
     pub(super) promoted_slots: usize,
     pub(super) dead_slots: usize,
@@ -85,6 +86,7 @@ impl Function {
             homes: 0,
             lazy_addresses: 0,
             folded_loads: 0,
+            fused_compares: 0,
             lowir_instructions: 0,
             promoted_slots: 0,
             dead_slots: 0,
@@ -251,6 +253,7 @@ impl Function {
             a.alu_ri(4, Rm::Reg(R::R12), -i64::from(self.aligned_base), 8)?;
         }
         let mut returns = 0;
+        let flags = super::condition_mir::flags_after(&self.instructions);
         let mut carries = super::frame_carries::Carries::new(&self.bindings);
         let mut carried_reloads = 0;
         for (index, instruction) in self.instructions.iter().enumerate() {
@@ -262,7 +265,7 @@ impl Function {
                 continue;
             }
             match instruction.op {
-                Op::Move(reg, bits) => a.mov_ri(reg, low_word(bits)?)?,
+                Op::Move(reg, bits) => a.mov_ri_flags(reg, low_word(bits)?, flags[index])?,
                 Op::SymbolMove(reg, symbol) => {
                     a.lea(reg, Rm::rip(ImageSymbol::Program(symbol), 0))?;
                 }
@@ -292,7 +295,7 @@ impl Function {
                 }
                 Op::Scalar(op) => op
                     .rebase(self.aligned_disp, self.aligned_bytes)
-                    .emit(&mut a)?,
+                    .emit(&mut a, flags[index])?,
                 Op::Trap => {
                     a.byte(0x0f);
                     a.byte(0x0b);

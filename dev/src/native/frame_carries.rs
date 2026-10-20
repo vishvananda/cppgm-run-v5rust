@@ -14,6 +14,10 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
     Some(match *op {
         Op::Move(r, v) => [Some(Operand::Register(r)), Some(Operand::Immediate(v))],
         Op::Scalar(op) => match op {
+            ScalarOp::Condition(
+                super::condition_mir::FlagOp::Move(..) | super::condition_mir::FlagOp::Test(..),
+            ) => return None,
+            ScalarOp::Condition(op) => op.operands(),
             ScalarOp::Move(r, s) | ScalarOp::Lea(r, s) | ScalarOp::Binary(_, _, r, s) => {
                 [Some(Operand::Register(r)), Some(s)]
             }
@@ -44,7 +48,13 @@ fn plain(op: &Op) -> bool {
 }
 fn written(op: &Op) -> Option<R> {
     match op {
-        Op::Scalar(ScalarOp::Store(..) | ScalarOp::CompareZero(..)) => None,
+        Op::Scalar(
+            ScalarOp::Store(..)
+            | ScalarOp::CompareZero(..)
+            | ScalarOp::Condition(
+                super::condition_mir::FlagOp::Compare(..) | super::condition_mir::FlagOp::Test(..),
+            ),
+        ) => None,
         _ => operands(op)
             .and_then(|ops| ops[0])
             .and_then(Operand::register),
@@ -137,5 +147,28 @@ impl Carries {
             });
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn materialized_condition_test_ends_home_carry_search() {
+        let instructions = [
+            ScalarOp::Store(Operand::Frame(-8), Type::I64, Operand::Register(R::RAX)),
+            ScalarOp::Condition(super::super::condition_mir::FlagOp::Test(Type::U8, R::R8)),
+            ScalarOp::Load(R::R11, Type::I64, Operand::Frame(-8)),
+        ]
+        .map(|op| Instruction {
+            op: Op::Scalar(op),
+            location: None,
+        });
+        let mut carries = Carries {
+            values: Vec::new(),
+            homes: vec![-8],
+        };
+        assert_eq!(carries.track(&instructions, 0), None);
+        assert_eq!(carries.replacement(&instructions[2].op), None);
     }
 }

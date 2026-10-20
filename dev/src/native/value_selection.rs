@@ -92,6 +92,7 @@ pub(super) fn select(
         .layout_slots(body, &slots, &mut selection.mir)?;
     selection.mir.lazy_addresses = selection.addresses.lazy_count;
     selection.mir.folded_loads = selection.addresses.folded_count;
+    selection.mir.fused_compares = selection.facts.fused.iter().filter(|&&v| v).count();
     selection
         .placement
         .entry(body, &selection.facts, &mut selection.mir)?;
@@ -127,6 +128,15 @@ pub(super) fn select(
             }
             I::Unary(op, ty, value) => {
                 selection.unary(inst.result.ok_or(Error::Limit)?, op, ty, value)?;
+            }
+            I::Compare(pred, ty, a, b) => {
+                selection.compare(inst.result.ok_or(Error::Limit)?, pred, ty, a, b)?;
+            }
+            I::Convert(op, to, from, value) => {
+                selection.convert(inst.result.ok_or(Error::Limit)?, op, to, from, value)?;
+            }
+            I::Select(ty, cond, yes, no) => {
+                selection.select_value(inst.result.ok_or(Error::Limit)?, ty, cond, yes, no)?;
             }
             I::Return(ty, value) => {
                 emit_return(&mut selection, ty, value, body.location(inst), &mut scanner)?;

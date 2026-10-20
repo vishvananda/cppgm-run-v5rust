@@ -184,6 +184,28 @@ impl Addresses {
                 continue;
             }
             let inst = body.instruction(id);
+            if let Some(temp) = inst.result
+                && matches!(
+                    inst.kind,
+                    I::Compare(..) | I::Unary(crate::lowir::vocabulary::Unary::Not, ..)
+                )
+                && uses[temp.index()] == 1
+                && let Some(next) = consumers[temp.index()].filter(|&p| p == pos + 1)
+            {
+                let (I::Compare(_, ty, ..) | I::Unary(_, ty, _)) = inst.kind else {
+                    return Err(Error::Limit);
+                };
+                if ty.float_rank() == 0
+                    && ty != Type::I128
+                    && let I::Select(_, cond, yes, no) = body.instruction(ids[next]).kind
+                {
+                    let refers = |v| matches!(facts.resolve(body,v),Alias::Temporary(t) if t==temp);
+                    if refers(cond) && !refers(yes) && !refers(no) {
+                        facts.fused[temp.index()] = true;
+                        facts.active[pos] = false;
+                    }
+                }
+            }
             let I::Load(flags, ty, address) = inst.kind else {
                 continue;
             };
@@ -199,20 +221,26 @@ impl Addresses {
                 continue;
             };
             let consumer = body.instruction(ids[next]);
-            let I::Binary(op, _, user_ty, a, b) = consumer.kind else {
-                continue;
+            let (user_ty, a, b, allowed) = match consumer.kind {
+                I::Binary(op, _, user_ty, a, b) => {
+                    let right = matches!(facts.resolve(body,b),Alias::Temporary(t) if t==temp);
+                    (
+                        user_ty,
+                        a,
+                        b,
+                        matches!(ty, Type::I64 | Type::Ptr | Type::I32 | Type::U32)
+                            && (matches!(
+                                op,
+                                Binary::Add | Binary::And | Binary::Or | Binary::Xor | Binary::Mul
+                            ) || op == Binary::Sub && right),
+                    )
+                }
+                I::Compare(_, user_ty, a, b) => (user_ty, a, b, ty != Type::I1),
+                _ => continue,
             };
-            if user_ty != ty || !matches!(ty, Type::I64 | Type::Ptr | Type::I32 | Type::U32) {
-                continue;
-            }
             let left = matches!(facts.resolve(body,a),Alias::Temporary(t) if t==temp);
             let right = matches!(facts.resolve(body,b),Alias::Temporary(t) if t==temp);
-            if left == right
-                || !(matches!(
-                    op,
-                    Binary::Add | Binary::And | Binary::Or | Binary::Xor | Binary::Mul
-                ) || op == Binary::Sub && right)
-            {
+            if user_ty != ty || left == right || !allowed {
                 continue;
             }
             out.folded[temp.index()] = Some(address);

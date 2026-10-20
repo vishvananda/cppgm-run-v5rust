@@ -252,6 +252,23 @@ impl Assembler {
         }
         Ok(())
     }
+    pub(super) fn mov_ri_flags(
+        &mut self,
+        dst: Register,
+        value: i64,
+        keep_flags: bool,
+    ) -> Result<(), Error> {
+        if value == 0 && keep_flags {
+            if dst.code() & 8 != 0 {
+                self.byte(0x41);
+            }
+            self.byte(0xb8 + (dst.code() & 7));
+            self.imm(0, 4);
+            Ok(())
+        } else {
+            self.mov_ri(dst, value)
+        }
+    }
     pub(super) fn mov_ri(&mut self, dst: Register, value: i64) -> Result<(), Error> {
         if value == 0 {
             self.op(0, false, 0x33, 1, dst.0, Rm::Reg(dst), false, 0)?;

@@ -3,8 +3,8 @@ use super::{slot_analysis::Slot, x86::Register as R};
 use crate::lowir::{
     Error,
     literals::Constant,
-    model::{Body, InstructionKind as I, TempId, Value},
-    vocabulary::{Binary, Type},
+    model::{Body, InstructionKind as I, RuntimeInstruction as Runtime, TempId, Value},
+    vocabulary::{Binary, Convert, Type},
 };
 #[derive(Clone, Copy)]
 pub(super) enum Alias {
@@ -18,9 +18,18 @@ pub(super) struct Interval {
     pub(super) last: Option<usize>,
     pub(super) hint: Option<R>,
     pub(super) forbid: u32,
+    pub(super) uses: u32,
+    pub(super) consumer: Option<usize>,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Identity {
+    Original(Value),
+    Normalized(TempId),
 }
 pub(super) struct Facts {
     aliases: Vec<Option<Alias>>,
+    identities: Vec<Option<Identity>>,
+    pub(super) fused: Vec<bool>,
     pub(super) active: Vec<bool>,
     pub(super) intervals: Vec<Interval>,
 }
@@ -74,6 +83,8 @@ impl Facts {
         let ids = &body.block(body.layout[0]).instructions;
         let mut facts = Self {
             aliases: vec![None; body.temps().len()],
+            identities: vec![None; body.temps().len()],
+            fused: vec![false; body.temps().len()],
             active: vec![true; ids.len()],
             intervals: vec![Interval::default(); body.temps().len()],
         };
@@ -84,7 +95,7 @@ impl Facts {
                     Alias::Constant(Constant::Integer(bits))
                         if ty.bits() != 0 && ty != Type::I128 =>
                     {
-                        Alias::Constant(Constant::Integer(normalize(bits, ty)))
+                        Alias::Constant(Constant::Integer(alias_bits(bits, ty)))
                     }
                     other => other,
                 }),
@@ -94,16 +105,18 @@ impl Facts {
                         Alias::Constant(Constant::Integer(bits))
                             if (ty.bits() != 0 || ty == Type::Ptr) && ty != Type::I128 =>
                         {
-                            Some(Alias::Constant(Constant::Integer(normalize(bits, ty))))
+                            Some(Alias::Constant(Constant::Integer(alias_bits(bits, ty))))
                         }
                         Alias::Constant(Constant::Float(..)) if ty.float_rank() != 0 => {
                             Some(source)
                         }
                         Alias::Temporary(temp)
-                            if body
-                                .temp(temp)
-                                .ty
-                                .is_some_and(|from| alias_compatible(ty, from)) =>
+                            if body.temp(temp).ty.is_some_and(|from| {
+                                alias_compatible(ty, from)
+                                    || (ty.bits() != 0
+                                        && ty != Type::I128
+                                        && Self::known_boolean(body, temp, 0))
+                            }) =>
                         {
                             Some(source)
                         }
@@ -120,7 +133,7 @@ impl Facts {
                         Alias::Constant(Constant::Integer(bits))
                             if ty.bits() != 0 && ty != Type::I128 =>
                         {
-                            Alias::Constant(Constant::Integer(normalize(bits, ty)))
+                            Alias::Constant(Constant::Integer(alias_bits(bits, ty)))
                         }
                         other => other,
                     })
@@ -130,6 +143,29 @@ impl Facts {
                 {
                     facts.active[pos] = false;
                     None
+                }
+                I::Convert(op, to, from, value) => {
+                    let source = facts.resolve(body, value);
+                    if let Alias::Temporary(temp) = source {
+                        let ints = (to.bits() != 0 || to == Type::Ptr)
+                            && (from.bits() != 0 || from == Type::Ptr)
+                            && to != Type::I128
+                            && from != Type::I128;
+                        let boolean = Self::known_boolean(body, temp, 0)
+                            && !(op == Convert::SignExtend && from == Type::I1);
+                        let extension = (op == Convert::ZeroExtend
+                            && matches!(from, Type::U8 | Type::U16 | Type::U32 | Type::I1)
+                            || op == Convert::SignExtend
+                                && matches!(from, Type::I8 | Type::I16 | Type::I32))
+                            && alias_compatible(to, from);
+                        if ints && (boolean || extension) {
+                            Some(source)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
                 I::Index(_, _, base, offset) => {
                     let off = facts.resolve(body, offset);
@@ -145,6 +181,10 @@ impl Facts {
                 _ => None,
             };
             if let Some(result) = inst.result {
+                if let Some(alias) = alias {
+                    facts.identities[result.index()] =
+                        facts.alias_identity(body, slots, &inst.kind, result, alias);
+                }
                 facts.aliases[result.index()] = alias;
                 if alias.is_some() {
                     facts.active[pos] = false;
@@ -168,7 +208,14 @@ impl Facts {
             let inst = body.instruction(id);
             let pure = matches!(
                 inst.kind,
-                I::Copy(..) | I::Unary(..) | I::Binary(..) | I::Addr(..) | I::Index(..)
+                I::Copy(..)
+                    | I::Unary(..)
+                    | I::Binary(..)
+                    | I::Addr(..)
+                    | I::Index(..)
+                    | I::Compare(..)
+                    | I::Convert(..)
+                    | I::Select(..)
             ) || matches!(inst.kind,I::Load(flags,_,_) if !flags.volatile());
             if pure && inst.result.is_some_and(|r| uses[r.index()] == 0) {
                 facts.active[pos] = false;
@@ -183,7 +230,10 @@ impl Facts {
             if facts.active[pos] {
                 body.visit_values(&body.instruction(id).kind, |v| {
                     if let Alias::Temporary(t) = facts.resolve(body, v) {
-                        facts.intervals[t.index()].last = Some(pos);
+                        let interval = &mut facts.intervals[t.index()];
+                        interval.last = Some(pos);
+                        interval.uses += 1;
+                        interval.consumer = Some(pos);
                     }
                 });
             }
@@ -191,13 +241,106 @@ impl Facts {
         facts.refresh_clobbers(body);
         Ok(facts)
     }
+    fn alias_identity(
+        &self,
+        body: &Body,
+        slots: &[Slot],
+        kind: &I,
+        result: TempId,
+        alias: Alias,
+    ) -> Option<Identity> {
+        let source = match *kind {
+            I::Const(_, v) | I::Copy(_, v) | I::Convert(_, _, _, v) | I::Index(_, _, v, _) => v,
+            I::Load(_, _, Value::Slot(slot)) => {
+                let Slot::Promoted(v) = slots[slot.index()] else {
+                    return None;
+                };
+                v
+            }
+            _ => return None,
+        };
+        Some(
+            if matches!((self.resolve(body,source),alias),(Alias::Constant(Constant::Integer(before)),Alias::Constant(Constant::Integer(after))) if before!=after)
+            {
+                Identity::Normalized(result)
+            } else {
+                self.identity(source)
+            },
+        )
+    }
+    fn identity(&self, value: Value) -> Identity {
+        if let Value::Temp(t) = value {
+            self.identities[t.index()].unwrap_or(Identity::Original(value))
+        } else {
+            Identity::Original(value)
+        }
+    }
+    pub(super) fn same_value(&self, left: Value, right: Value) -> bool {
+        self.identity(left) == self.identity(right)
+    }
+    pub(super) fn known_boolean(body: &Body, temp: TempId, depth: u8) -> bool {
+        if temp.index() < body.parameter_count {
+            return false;
+        }
+        let Some(def) = body.temp(temp).definition else {
+            return false;
+        };
+        let inst = body.instruction(def);
+        if let I::Select(_, _, left, right) = inst.kind
+            && depth < 4
+        {
+            return [left, right].into_iter().all(|v| match v {
+                Value::Integer(id) => body.literal(id) <= 1,
+                Value::Temp(t) => Self::known_boolean(body, t, depth + 1),
+                _ => false,
+            });
+        }
+        matches!(
+            inst.kind,
+            I::Compare(..) | I::Runtime(Runtime::AtomicCompareExchange { .. })
+        ) || body.temp(temp).ty == Some(Type::I1)
+            && !matches!(
+                inst.kind,
+                I::Call(..) | I::Load(..) | I::Runtime(Runtime::AtomicLoad(..))
+            )
+    }
+    pub(super) fn compare_scratch(&self, body: &Body, pos: usize) -> bool {
+        let inst = body.instruction(body.block(body.layout[0]).instructions[pos]);
+        let I::Compare(_, ty, a, b) = inst.kind else {
+            return false;
+        };
+        let Some(result) = inst.result else {
+            return false;
+        };
+        if ty.float_rank() != 0
+            || ty == Type::I128
+            || !self.active[pos]
+            || self.fused[result.index()]
+        {
+            return false;
+        }
+        if !matches!(self.resolve(body, a), Alias::Constant(Constant::Integer(_)))
+            && !matches!(self.resolve(body, b), Alias::Constant(Constant::Integer(_)))
+        {
+            return false;
+        }
+        let interval = &self.intervals[result.index()];
+        if interval.uses == 1
+            && matches!(ty, Type::I32 | Type::U32 | Type::I64 | Type::Ptr)
+            && let Some(consumer) = interval.consumer
+            && matches!(body.instruction(body.block(body.layout[0]).instructions[consumer]).kind,I::Return(_,Some(Value::Temp(t))) if t==result)
+        {
+            return false;
+        }
+        true
+    }
     pub(super) fn refresh_clobbers(&mut self, body: &Body) {
         let facts = self;
         let ids = &body.block(body.layout[0]).instructions;
         for interval in &mut facts.intervals {
             interval.forbid = 0;
         }
-        let mut next_shift = None;
+        let mut next = [None; 2];
         for (pos, &id) in ids.iter().enumerate().rev() {
             if !facts.active[pos] {
                 continue;
@@ -205,30 +348,47 @@ impl Facts {
             let inst = body.instruction(id);
             if let Some(result) = inst.result {
                 let interval = &mut facts.intervals[result.index()];
-                if next_shift.is_some_and(|p| interval.last.is_some_and(|last| p <= last)) {
-                    interval.forbid = 1 << R::RCX.code();
+                for (reg, at) in [R::RCX, R::RDX].into_iter().zip(next) {
+                    if at.is_some_and(|p| interval.last.is_some_and(|last| p <= last)) {
+                        interval.forbid |= 1 << reg.code();
+                    }
                 }
             }
             if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(facts.resolve(body,count),Alias::Constant(Constant::Integer(_))))
             {
-                next_shift = Some(pos);
+                next[0] = Some(pos);
+            }
+            if facts.compare_scratch(body, pos) {
+                next[1] = Some(pos);
             }
             if let I::Return(_, Some(value)) = inst.kind
                 && let Alias::Temporary(temp) = facts.resolve(body, value)
             {
-                let two_address = body
+                let two = body
                     .temp(temp)
                     .definition
                     .is_some_and(|def| matches!(body.instruction(def).kind, I::Binary(..)));
-                if !two_address && facts.intervals[temp.index()].last == Some(pos) {
+                if !two && facts.intervals[temp.index()].last == Some(pos) {
                     facts.intervals[temp.index()].hint = Some(R::RAX);
                 }
             }
         }
         for interval in facts.intervals.iter_mut().take(body.parameter_count) {
-            if next_shift.is_some_and(|p| interval.last.is_some_and(|last| p <= last)) {
-                interval.forbid = 1 << R::RCX.code();
+            for (reg, at) in [R::RCX, R::RDX].into_iter().zip(next) {
+                if at.is_some_and(|p| interval.last.is_some_and(|last| p <= last)) {
+                    interval.forbid |= 1 << reg.code();
+                }
             }
         }
+    }
+}
+fn alias_bits(bits: u128, ty: Type) -> u128 {
+    if matches!(
+        ty,
+        Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32
+    ) {
+        normalize(bits, ty)
+    } else {
+        bits
     }
 }
