@@ -115,16 +115,26 @@ impl Symbols<'_, '_> {
                 parents[i] = Some(0);
             }
         }
-        let mut owners = Vec::with_capacity(count);
+        let mut owners = vec![count; count];
+        let mut path = Vec::new();
         for i in 0..count {
+            path.clear();
             let mut root = i;
-            for _ in 0..count {
+            while owners[root] == count {
+                path.push(root);
+                if path.len() > count {
+                    return Err(crate::sema::Error::Invariant("cyclic construction owners").into());
+                }
                 let Some(parent) = parents[root] else {
+                    owners[root] = root;
                     break;
                 };
                 root = parent;
             }
-            owners.push(root);
+            let owner = owners[root];
+            for &node in &path {
+                owners[node] = owner;
+            }
         }
         self.vtables.contexts.owners.insert(context, owners);
         Ok(())
@@ -402,21 +412,24 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         class: EntityId,
     ) -> Result<Vec<DataItem>, Error> {
-        self.vtt_subentries(program, TableContext::complete(class), true)
+        let mut entries = Vec::new();
+        self.append_vtt_subentries(program, TableContext::complete(class), true, &mut entries)?;
+        Ok(entries)
     }
-    fn vtt_subentries(
+    fn append_vtt_subentries(
         &mut self,
         program: &mut Program,
         context: TableContext,
         top: bool,
-    ) -> Result<Vec<DataItem>, Error> {
+        entries: &mut Vec<DataItem>,
+    ) -> Result<(), Error> {
         self.check_stack()?;
         let (symbol, point) = if top {
             self.table_address(program, context.class, 0)?
         } else {
             self.construction_address(program, context, 0)?
         };
-        let mut result = vec![address(symbol, i64::from_ne_bytes(point.to_ne_bytes()))];
+        entries.push(address(symbol, i64::from_ne_bytes(point.to_ne_bytes())));
         for (i, (base, shared)) in self
             .graph
             .lower_inheritance_edges(context.class)
@@ -430,7 +443,7 @@ impl Symbols<'_, '_> {
                 let offset = context
                     .offset
                     .wrapping_add(step.ok_or(crate::sema::Error::Invariant("VTT before layout"))?);
-                result.extend(self.vtt_subentries(
+                self.append_vtt_subentries(
                     program,
                     TableContext {
                         complete: context.complete,
@@ -439,7 +452,8 @@ impl Symbols<'_, '_> {
                         construction: true,
                     },
                     false,
-                )?);
+                    entries,
+                )?;
             }
         }
         for segment in self.vtt_pointer_order(context.class)? {
@@ -448,12 +462,12 @@ impl Symbols<'_, '_> {
             } else {
                 self.construction_address(program, context, segment)?
             };
-            result.push(address(symbol, i64::from_ne_bytes(point.to_ne_bytes())));
+            entries.push(address(symbol, i64::from_ne_bytes(point.to_ne_bytes())));
         }
         if top {
             for &(base, offset) in self.graph.lower_virtual_bases(context.complete) {
                 if !self.graph.lower_virtual_bases(base).is_empty() {
-                    result.extend(self.vtt_subentries(
+                    self.append_vtt_subentries(
                         program,
                         TableContext {
                             complete: context.complete,
@@ -462,11 +476,12 @@ impl Symbols<'_, '_> {
                             construction: true,
                         },
                         false,
-                    )?);
+                        entries,
+                    )?;
                 }
             }
         }
-        Ok(result)
+        Ok(())
     }
 }
 
