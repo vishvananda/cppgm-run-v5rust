@@ -23,7 +23,7 @@ pub(super) struct Staging {
     mask: u32,
 }
 impl Selection<'_> {
-    fn store_transfer(
+    pub(super) fn store_transfer(
         &mut self,
         destination: Operand,
         ty: Type,
@@ -83,7 +83,7 @@ impl Selection<'_> {
                 kind: BindingKind::Temp,
             });
             let (source, read) = if let Alias::Temporary(t) = resolved {
-                let op = self.placement.operand(t)?;
+                let op = self.temp_operand(t)?;
                 let source_ty = self.body.temp(t).ty.ok_or(Error::Limit)?;
                 let read = (super::abi::value_bytes(source_ty)? < super::abi::value_bytes(own)?)
                     .then_some(source_ty);
@@ -95,7 +95,7 @@ impl Selection<'_> {
             return Ok((Operand::Frame(home), None, true));
         }
         if let Alias::Temporary(t) = resolved {
-            let source = self.placement.operand(t)?;
+            let source = self.temp_operand(t)?;
             return Ok((
                 source,
                 source
@@ -124,7 +124,7 @@ impl Selection<'_> {
             if let Some(destination) = part.register {
                 out.mask |= 1 << destination.code();
                 out.moves.push(Transfer {
-                    destination,
+                    destination: Operand::Register(destination),
                     source,
                     ty,
                     source_type: read,
@@ -146,7 +146,7 @@ impl Selection<'_> {
         }
         if plan.variadic {
             out.moves.push(Transfer {
-                destination: R::RAX,
+                destination: Operand::Register(R::RAX),
                 source: Operand::Immediate(0),
                 ty: Type::Void,
                 source_type: None,
@@ -195,10 +195,10 @@ impl Selection<'_> {
             Operand::Immediate(_) | Operand::Symbol(_) | Operand::SymbolOffset(..)
         ) || moves
             .iter()
-            .any(|m| target.mask() & (1 << m.destination.code()) != 0)
+            .any(|m| target.mask() & m.destination.mask() != 0)
         {
             moves.push(Transfer {
-                destination: R::R11,
+                destination: Operand::Register(R::R11),
                 source: target,
                 ty: Type::Void,
                 source_type: None,
@@ -289,11 +289,11 @@ impl Selection<'_> {
             | (1 << R::RDI.code())
             | (1 << R::RSI.code()))
             & !self.placement.excluded();
-        let consumer = interval.consumer.map(|p| {
-            self.body
-                .instruction(self.body.block(self.body.layout[0]).instructions[p])
-        });
-        if interval.forbid & CALLER_SAVED != CALLER_SAVED
+        let consumer = interval
+            .consumer
+            .map(|p| self.body.instruction(self.facts.flow.instructions[p]));
+        if !self.facts.global[temp.index()]
+            && interval.forbid & CALLER_SAVED != CALLER_SAVED
             && general & !args == 0
             && interval.uses == 1
             && consumer.is_some_and(|i| matches!(i.kind, I::Binary(..)))
@@ -303,7 +303,12 @@ impl Selection<'_> {
             return self.finish(temp, R::RAX);
         }
         let stored=interval.uses==1&&interval.consumer==Some(self.pos+1)&&consumer.is_some_and(|inst|matches!(inst.kind,I::Store(_,t,v,address) if t==ty&&matches!(self.facts.resolve(self.body,v),Alias::Temporary(t) if t==temp)&&!matches!(self.facts.resolve(self.body,address),Alias::Temporary(t) if t==temp)));
-        let destination = self.result(temp, [Some(R::RAX), None], 0);
+        let terminal = stored
+            || interval.uses == 1
+                && interval.consumer == Some(self.pos + 1)
+                && consumer.is_some_and(|i| matches!(i.kind,I::Return(t,_) if t==ty));
+        let preference = (self.body.layout.len() == 1 || terminal).then_some(R::RAX);
+        let destination = self.result(temp, [preference, None], 0);
         self.load(destination, Operand::Register(R::RAX), Type::I64);
         if !stored {
             self.normalize(destination, ty);

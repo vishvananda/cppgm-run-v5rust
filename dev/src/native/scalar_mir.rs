@@ -10,7 +10,7 @@ use crate::lowir::{
     vocabulary::{Binary, Type, Unary},
 };
 use std::io::Write;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Operand {
     Memory(super::memory::Memory),
     SymbolOffset(crate::lowir::model::SymbolId, i32),

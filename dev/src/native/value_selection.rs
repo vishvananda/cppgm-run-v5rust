@@ -28,7 +28,7 @@ pub(super) fn select(
     level: u8,
 ) -> Result<MirFunction, Error> {
     let body = function.body.as_ref().ok_or(Error::Limit)?;
-    if level != 0 || body.layout.len() != 1 {
+    if level != 0 {
         return Err(unsupported());
     }
     let signature = program.signature(function.signature);
@@ -41,8 +41,9 @@ pub(super) fn select(
     if layout.indirect_result {
         return Err(unsupported());
     }
-    let slots = slot_analysis::analyze(body)?;
-    let mut facts = Facts::analyze(body, &slots)?;
+    let flow = super::control_flow::Flow::analyze(body)?;
+    let slots = slot_analysis::analyze(body, &flow)?;
+    let mut facts = Facts::analyze(body, &slots, flow)?;
     let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
     let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
     facts.apply_calls(body, &calls);
@@ -71,8 +72,26 @@ pub(super) fn select(
                     .any(|part| part.register.is_some())
         });
     let gprs=signature.parameters.iter().zip(&mir.layout.arguments).filter(|(p,_)|!matches!(p.ty,Type::Object{..}|Type::I128)||p.classes.is_none()).filter(|(_,arg)|matches!(mir.layout.parts(arg),[part] if part.register.is_some_and(|r|r.code()<16))).count();
+    let reserved = if slots.iter().zip(body.slots()).any(|(state, slot)| {
+        matches!(state, Slot::Memory)
+            && matches!(slot.ty, Type::Object { .. })
+            && abi::value_align(slot.ty).is_ok_and(|align| align > 16)
+    }) {
+        1 << R::R12.code()
+    } else {
+        0
+    };
+    let globals =
+        super::global_placement::Globals::analyze(body, &facts, &addresses, &mir.layout, reserved)?;
+    mir.global_registers = globals.count;
+    mir.liveness_steps = globals.steps;
+    mir.hull_fallbacks = globals.fallbacks;
+    let mut control = super::control_selection::Control::new(body, &facts)?;
+    mir.edge_blocks = control.edges.len();
     let placement = Placement::new(
         body,
+        &mir.layout,
+        globals,
         vector_boundary,
         if vector_boundary && gprs >= 2 {
             1 << R::R8.code()
@@ -81,6 +100,9 @@ pub(super) fn select(
         },
     );
     let mut selection = Selection {
+        phis: super::control_selection::PhiInputs::default(),
+        edge_moves: Vec::new(),
+        parallel: super::parallel_transfer::Workspace::default(),
         outgoing: super::call_selection::Staging::default(),
         addresses,
         body,
@@ -96,14 +118,10 @@ pub(super) fn select(
     selection.mir.lazy_addresses = selection.addresses.lazy_count;
     selection.mir.folded_loads = selection.addresses.folded_count;
     selection.mir.fused_compares = selection.facts.fused.iter().filter(|&&v| v).count();
-    selection
-        .placement
-        .entry(body, &selection.facts, &mut selection.mir)?;
     let mut floating = signature.result.float_rank() != 0
         || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
     let mut scanner = FloatingScanner::default();
-    for (pos, &id) in body.block(body.layout[0]).instructions.iter().enumerate() {
-        let inst = body.instruction(id);
+    for inst in body.instructions() {
         floating |= matches!(inst.kind, I::Call(_)) && function.metadata.flags & 1 != 0;
         floating |= match inst.kind {
             I::Store(_, ty, _, _) => ty,
@@ -112,53 +130,111 @@ pub(super) fn select(
         .float_rank()
             != 0;
         body.visit_values(&inst.kind, |v| floating |= matches!(v, Value::Float(..)));
-        if !selection.facts.active[pos] {
+    }
+    selection.mir.blocks.clear();
+    if control.entry_loop {
+        let entry = body.layout[0];
+        selection
+            .placement
+            .enter_block(body, &selection.facts, &selection.addresses, entry);
+        selection.mir.begin_block(super::mir::BlockName::Edge(
+            body.block(entry).name,
+            body.block(entry).name,
+        ))?;
+        let mut moves = selection
+            .placement
+            .entry(body, &selection.facts, &mut selection.mir)?;
+        super::parallel_transfer::emit(&mut selection, &mut moves)?;
+        selection.jump(control.targets[entry.index()].ok_or(Error::Limit)?);
+        selection.mir.end_block();
+    }
+    for &block in &body.layout {
+        if !selection.facts.flow.reachable[block.index()] {
             continue;
         }
-        selection.pos = pos;
-        selection.location = body.location(inst);
-        match inst.kind {
-            I::Call(ref call) => selection.call(
-                program,
-                inst.result,
-                call,
-                calls.at(pos).ok_or(Error::Limit)?,
-            )?,
-            I::Load(_, ty, address) => {
-                selection.read_memory(inst.result.ok_or(Error::Limit)?, ty, address)?;
-            }
-            I::Store(_, ty, value, address) => selection.write_memory(ty, value, address)?,
-            I::Addr(_) => selection.select_address(inst.result.ok_or(Error::Limit)?)?,
-            I::Index(ty, _, base, offset) => {
-                selection.select_index(inst.result.ok_or(Error::Limit)?, ty, base, offset)?;
-            }
-            I::Copy(ty, value) => selection.copy(inst.result.ok_or(Error::Limit)?, ty, value)?,
-            I::Binary(op, _, ty, a, b) => {
-                selection.binary(inst.result.ok_or(Error::Limit)?, op, ty, a, b)?;
-            }
-            I::Unary(op, ty, value) => {
-                selection.unary(inst.result.ok_or(Error::Limit)?, op, ty, value)?;
-            }
-            I::Compare(pred, ty, a, b) => {
-                selection.compare(inst.result.ok_or(Error::Limit)?, pred, ty, a, b)?;
-            }
-            I::Convert(op, to, from, value) => {
-                selection.convert(inst.result.ok_or(Error::Limit)?, op, to, from, value)?;
-            }
-            I::Select(ty, cond, yes, no) => {
-                selection.select_value(inst.result.ok_or(Error::Limit)?, ty, cond, yes, no)?;
-            }
-            I::Return(ty, value) => {
-                emit_return(&mut selection, ty, value, body.location(inst), &mut scanner)?;
-            }
-            I::Unreachable => selection.mir.instructions.push(Instruction {
-                op: Op::Trap,
-                location: selection.location,
-            }),
-            _ => return Err(unsupported()),
+        control.prepare(block);
+        selection.location = None;
+        selection
+            .placement
+            .enter_block(body, &selection.facts, &selection.addresses, block);
+        let created = selection
+            .mir
+            .begin_block(super::mir::BlockName::Named(body.block(block).name))?;
+        if Some(created) != control.targets[block.index()] {
+            return Err(Error::Construction("native block out of order".into()));
         }
-        selection.placement.release(&selection.facts, pos);
-        selection.placement.retire();
+        if block == body.layout[0] && !control.entry_loop {
+            let mut moves =
+                selection
+                    .placement
+                    .entry(body, &selection.facts, &mut selection.mir)?;
+            super::parallel_transfer::emit(&mut selection, &mut moves)?;
+        }
+        for pos in selection.facts.flow.ranges[block.index()].clone() {
+            let id = selection.facts.flow.instructions[pos];
+            let inst = body.instruction(id);
+            if !selection.facts.active[pos] {
+                continue;
+            }
+            selection.pos = pos;
+            selection.location = body.location(inst);
+            match inst.kind {
+                I::Phi(..) => {}
+                I::Jump(..) | I::Branch(..) | I::Switch(..) => {
+                    selection.terminator(&control, block, &inst.kind)?;
+                }
+                I::Call(ref call) => selection.call(
+                    program,
+                    inst.result,
+                    call,
+                    calls.at(pos).ok_or(Error::Limit)?,
+                )?,
+                I::Load(_, ty, address) => {
+                    selection.read_memory(inst.result.ok_or(Error::Limit)?, ty, address)?;
+                }
+                I::Store(_, ty, value, address) => selection.write_memory(ty, value, address)?,
+                I::Addr(_) => selection.select_address(inst.result.ok_or(Error::Limit)?)?,
+                I::Index(ty, _, base, offset) => {
+                    selection.select_index(inst.result.ok_or(Error::Limit)?, ty, base, offset)?;
+                }
+                I::Copy(ty, value) => {
+                    selection.copy(inst.result.ok_or(Error::Limit)?, ty, value)?;
+                }
+                I::Binary(op, _, ty, a, b) => {
+                    selection.binary(inst.result.ok_or(Error::Limit)?, op, ty, a, b)?;
+                }
+                I::Unary(op, ty, value) => {
+                    selection.unary(inst.result.ok_or(Error::Limit)?, op, ty, value)?;
+                }
+                I::Compare(pred, ty, a, b) => {
+                    selection.compare(inst.result.ok_or(Error::Limit)?, pred, ty, a, b)?;
+                }
+                I::Convert(op, to, from, value) => {
+                    selection.convert(inst.result.ok_or(Error::Limit)?, op, to, from, value)?;
+                }
+                I::Select(ty, cond, yes, no) => {
+                    selection.select_value(inst.result.ok_or(Error::Limit)?, ty, cond, yes, no)?;
+                }
+                I::Return(ty, value) => {
+                    emit_return(&mut selection, ty, value, body.location(inst), &mut scanner)?;
+                }
+                I::Unreachable => selection.mir.instructions.push(Instruction {
+                    op: Op::Trap,
+                    location: selection.location,
+                }),
+                _ => return Err(unsupported()),
+            }
+            let (late, early) = selection.facts.clobbers[pos];
+            selection.placement.note_clobbers(late | early);
+            if inst.kind.terminator() {
+                selection.mir.end_block();
+                selection.edge_blocks(&control, block)?;
+            }
+            selection.placement.release(&selection.facts, pos);
+            selection.placement.retire();
+        }
+        selection.mir.end_block();
+        selection.placement.finish_block(block);
     }
     selection.mir.scratch_bytes = if floating { 48 } else { 0 };
     selection.placement.finish_frame(&mut selection.mir)?;

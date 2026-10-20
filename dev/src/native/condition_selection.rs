@@ -140,6 +140,32 @@ impl Selection<'_> {
         }
         self.finish(temp, r)
     }
+    pub(super) fn fused_flags(&mut self, temp: TempId) -> Result<Condition, Error> {
+        let def = self.body.temp(temp).definition.ok_or(Error::Limit)?;
+        let cc = match self.body.instruction(def).kind {
+            I::Compare(pred, ty, a, b) => {
+                let comparison = self.comparison(pred, ty, a, b, false)?;
+                self.emit(ScalarOp::Condition(comparison.op));
+                comparison.condition
+            }
+            I::Unary(Unary::Not, ty, v) => {
+                let src = self.operand(v, ty, R::R10)?;
+                let mut src = src;
+                if matches!(src, Operand::Immediate(_) | Operand::Symbol(_)) {
+                    self.load(R::R10, src, ty);
+                    src = Operand::Register(R::R10);
+                }
+                self.emit(ScalarOp::Condition(FlagOp::Compare(
+                    ty,
+                    src,
+                    Operand::Immediate(0),
+                )));
+                Condition::Equal
+            }
+            _ => return Err(unsupported()),
+        };
+        Ok(cc)
+    }
     fn select_flags(&mut self, value: Value) -> Result<(Condition, Option<bool>), Error> {
         let resolved = self.facts.resolve(self.body, value);
         if let Alias::Constant(Constant::Integer(bits)) = resolved {
@@ -147,29 +173,7 @@ impl Selection<'_> {
         }
         let ty = if let Alias::Temporary(t) = resolved {
             if self.facts.fused[t.index()] {
-                let def = self.body.temp(t).definition.ok_or(Error::Limit)?;
-                let cc = match self.body.instruction(def).kind {
-                    I::Compare(pred, ty, a, b) => {
-                        let comparison = self.comparison(pred, ty, a, b, false)?;
-                        self.emit(ScalarOp::Condition(comparison.op));
-                        comparison.condition
-                    }
-                    I::Unary(Unary::Not, ty, v) => {
-                        let src = self.operand(v, ty, R::R10)?;
-                        let mut src = src;
-                        if matches!(src, Operand::Immediate(_) | Operand::Symbol(_)) {
-                            self.load(R::R10, src, ty);
-                            src = Operand::Register(R::R10);
-                        }
-                        self.emit(ScalarOp::Condition(FlagOp::Compare(
-                            ty,
-                            src,
-                            Operand::Immediate(0),
-                        )));
-                        Condition::Equal
-                    }
-                    _ => return Err(unsupported()),
-                };
+                let cc = self.fused_flags(t)?;
                 return Ok((cc, None));
             }
             self.body.temp(t).ty.ok_or(Error::Limit)?
@@ -318,8 +322,9 @@ mod tests {
         b.effect(I::Return(Type::I64, Some(value)))?;
         b.finish()?;
         let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
-        let slots = super::super::slot_analysis::analyze(body)?;
-        let facts = super::super::value_facts::Facts::analyze(body, &slots)?;
+        let flow = super::super::control_flow::Flow::analyze(body)?;
+        let slots = super::super::slot_analysis::analyze(body, &flow)?;
+        let facts = super::super::value_facts::Facts::analyze(body, &slots, flow)?;
         assert_ne!(facts.intervals[2].forbid & (1 << R::RDX.code()), 0);
         Ok(())
     }

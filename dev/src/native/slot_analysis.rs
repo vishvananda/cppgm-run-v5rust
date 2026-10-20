@@ -20,19 +20,30 @@ struct Uses {
     escape: u8,
     stored: Option<Value>,
 }
-pub(super) fn analyze(body: &Body) -> Result<Vec<Slot>, Error> {
+pub(super) fn analyze(body: &Body, flow: &super::control_flow::Flow) -> Result<Vec<Slot>, Error> {
     let mut uses: Vec<Uses> = (0..body.slots().len()).map(|_| Uses::default()).collect();
-    for &id in &body.block(body.layout[0]).instructions {
+    let mut stored_in_entry = vec![false; body.slots().len()];
+    for (pos, &id) in flow.instructions.iter().enumerate() {
+        let block = flow.blocks[pos];
+        if !flow.reachable[block.index()] {
+            continue;
+        }
         match body.instruction(id).kind {
             I::Load(facts, ty, Value::Slot(slot)) => {
                 let u = &mut uses[slot.index()];
                 u.loads += 1;
-                if facts.volatile() || ty != body.slot(slot).ty || u.stores == 0 {
+                if facts.volatile()
+                    || ty != body.slot(slot).ty
+                    || block == body.layout[0] && !stored_in_entry[slot.index()]
+                {
                     u.escape = 1;
                 }
             }
             I::Store(facts, ty, stored, Value::Slot(slot)) => {
                 let u = &mut uses[slot.index()];
+                if block == body.layout[0] {
+                    stored_in_entry[slot.index()] = true;
+                }
                 u.stores += 1;
                 u.stored = if u.stores == 1 { Some(stored) } else { None };
                 if facts.volatile() || ty != body.slot(slot).ty {
@@ -65,7 +76,13 @@ pub(super) fn analyze(body: &Body) -> Result<Vec<Slot>, Error> {
             Slot::Unused
         } else if u.loads == 0 && u.escape == 0 {
             Slot::Dead
-        } else if u.escape == 0 && u.stores == 1 && scalar && stands_for {
+        } else if u.escape == 0
+            && u.stores == 1
+            && stored_in_entry[out.len()]
+            && flow.predecessors(body.layout[0]).is_empty()
+            && scalar
+            && stands_for
+        {
             Slot::Promoted(u.stored.ok_or(Error::Limit)?)
         } else {
             Slot::Memory

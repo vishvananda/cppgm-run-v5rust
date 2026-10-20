@@ -36,7 +36,7 @@ impl Calls {
             .map(|id| &self.entries[id.0 as usize])
     }
     pub(super) fn analyze(program: &Program, body: &Body, facts: &Facts) -> Result<Self, Error> {
-        let instructions = &body.block(body.layout[0]).instructions;
+        let instructions = &facts.flow.instructions;
         let mut out = Self {
             ids: Vec::new(),
             entries: Vec::new(),

@@ -80,7 +80,7 @@ impl Rm {
         }
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Label(u32);
 #[derive(Clone, Copy)]
 pub(super) struct CodeFixup {
@@ -112,6 +112,9 @@ impl Assembler {
         let label = Label(u32::try_from(self.labels.len()).map_err(|_| Error::Limit)?);
         self.labels.push(None);
         Ok(label)
+    }
+    pub(super) fn label_position(&self, label: Label) -> Option<usize> {
+        self.labels[label.0 as usize]
     }
     pub(super) fn bind(&mut self, label: Label) {
         self.labels[label.0 as usize] = Some(self.code.len());

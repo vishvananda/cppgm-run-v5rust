@@ -7,10 +7,14 @@ mod call_selection;
 mod condition;
 mod condition_mir;
 mod condition_selection;
+mod control_flow;
+mod control_selection;
 mod division;
+mod emission;
 mod executable;
 mod frame_carries;
 mod global_data;
+mod global_placement;
 mod image;
 mod memory;
 mod memory_selection;
@@ -133,6 +137,12 @@ pub(crate) struct Statistics {
     dead_slots: usize,
     promoted_slots: usize,
     native_returns: usize,
+    global_registers: usize,
+    liveness_steps: usize,
+    hull_fallbacks: usize,
+    edge_blocks: usize,
+    short_branches: usize,
+    long_branches: usize,
     fixups: usize,
     code_bytes: usize,
     carried_reloads: usize,
@@ -141,6 +151,10 @@ impl Statistics {
     fn selected(&mut self, function: &mir::Function) -> Result<(), Error> {
         for (counter, increment) in [
             (&mut self.functions, 1),
+            (&mut self.global_registers, function.global_registers),
+            (&mut self.liveness_steps, function.liveness_steps),
+            (&mut self.hull_fallbacks, function.hull_fallbacks),
+            (&mut self.edge_blocks, function.edge_blocks),
             (&mut self.spills, function.spills),
             (&mut self.homes, function.homes),
             (&mut self.lazy_addresses, function.lazy_addresses),
@@ -159,6 +173,8 @@ impl Statistics {
     fn encoded(&mut self, emission: mir::Emission) -> Result<(), Error> {
         for (counter, increment) in [
             (&mut self.native_returns, emission.returns),
+            (&mut self.short_branches, emission.short_branches),
+            (&mut self.long_branches, emission.long_branches),
             (&mut self.fixups, emission.fixups),
             (&mut self.code_bytes, emission.code_bytes),
             (&mut self.carried_reloads, emission.carried_reloads),
@@ -168,11 +184,10 @@ impl Statistics {
         Ok(())
     }
     pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
-        // Block-local placement reports its actual homes and spills. Cross-block
-        // allocation and branch-layout passes remain outside supported paths.
+        // Counters follow the selected function plans and final native encoding.
         writeln!(
             out,
-            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers=0 liveness_steps=0 hull_fallbacks=0 edge_blocks=0 threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies={} jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames=0 dead_frame_stores=0 native_returns={} short_branches=0 long_branches=0 fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
+            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers={} liveness_steps={} hull_fallbacks={} edge_blocks={} threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies={} jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames=0 dead_frame_stores=0 native_returns={} short_branches={} long_branches={} fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
             self.functions,
             self.lowir_instructions,
             self.mir_instructions,
@@ -183,8 +198,14 @@ impl Statistics {
             self.fused_compares,
             self.promoted_slots,
             self.dead_slots,
+            self.global_registers,
+            self.liveness_steps,
+            self.hull_fallbacks,
+            self.edge_blocks,
             self.dynamic_copies,
             self.native_returns,
+            self.short_branches,
+            self.long_branches,
             self.fixups,
             self.carried_reloads,
             self.code_bytes,

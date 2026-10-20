@@ -9,7 +9,7 @@ use super::{
 };
 use crate::lowir::{
     Error,
-    model::{Body, TempId},
+    model::{BlockId, Body, TempId},
     vocabulary::Type,
 };
 const ORDER: [R; 12] = [
@@ -34,6 +34,16 @@ struct Location {
     homed: bool,
 }
 pub(super) struct Placement {
+    pub(super) globals: super::global_placement::Globals,
+    incoming: Vec<Option<R>>,
+    block: Option<BlockId>,
+    pinned: u32,
+    written: u32,
+    exit_block: bool,
+    last: Vec<Option<usize>>,
+    available: Vec<u32>,
+    emitted: Vec<bool>,
+    available_in: u32,
     locations: Vec<Location>,
     owners: [Option<TempId>; 16],
     frame: u32,
@@ -44,8 +54,33 @@ pub(super) struct Placement {
     dying: Vec<TempId>,
 }
 impl Placement {
-    pub(super) fn new(body: &Body, vector_boundary: bool, excluded: u32) -> Self {
+    pub(super) fn new(
+        body: &Body,
+        layout: &abi::Layout,
+        globals: super::global_placement::Globals,
+        vector_boundary: bool,
+        excluded: u32,
+    ) -> Self {
         Self {
+            globals,
+            incoming: layout
+                .arguments
+                .iter()
+                .map(|arg| {
+                    let [part] = layout.parts(arg) else {
+                        return None;
+                    };
+                    part.register
+                })
+                .collect(),
+            block: None,
+            pinned: 0,
+            written: 0,
+            exit_block: false,
+            last: vec![None; body.temps().len()],
+            available: vec![0; body.blocks().len()],
+            emitted: vec![false; body.blocks().len()],
+            available_in: 0,
             locations: (0..body.temps().len())
                 .map(|_| Location::default())
                 .collect(),
@@ -61,6 +96,9 @@ impl Placement {
     fn bind(&mut self, temp: TempId, r: R) {
         self.owners[usize::from(r.code())] = Some(temp);
         self.locations[temp.index()].reg = Some(r);
+        if self.incoming.get(temp.index()).copied().flatten() != Some(r) {
+            self.written |= 1 << r.code();
+        }
         if SAVED.contains(&r) {
             self.preserve |= 1 << r.code();
         }
@@ -74,7 +112,7 @@ impl Placement {
     ) -> Option<R> {
         let allowed = |r: R| {
             self.owners[usize::from(r.code())].is_none()
-                && (facts.intervals[temp.index()].forbid | exclude | self.excluded)
+                && (facts.intervals[temp.index()].forbid | exclude | self.excluded | self.pinned)
                     & (1 << r.code())
                     == 0
         };
@@ -231,84 +269,191 @@ impl Placement {
         });
         Ok(offset)
     }
+    pub(super) fn enter_block(
+        &mut self,
+        body: &Body,
+        facts: &Facts,
+        addresses: &super::address_facts::Addresses,
+        block: BlockId,
+    ) {
+        for owner in &mut self.owners {
+            if let Some(temp) = owner.take() {
+                self.locations[temp.index()].reg = None;
+            }
+        }
+        self.dying.clear();
+        self.block = Some(block);
+        self.pinned = self.globals.reserved[block.index()];
+        self.written = 0;
+        self.exit_block = facts.flow.successors(block).is_empty();
+        self.last[..body.parameter_count.min(32)].fill(None);
+        for index in
+            self.globals.binding_first[block.index()]..self.globals.binding_first[block.index() + 1]
+        {
+            let temp = self.globals.bindings[index];
+            self.last[temp.index()] = None;
+            if let Some(reg) = self.globals.registers[temp.index()] {
+                self.bind(temp, reg);
+            }
+        }
+        let mut late = [None; 16];
+        let mut early = [None; 16];
+        for pos in facts.flow.ranges[block.index()].clone() {
+            let (clobber, before) = facts.clobbers[pos];
+            for reg in 0..16 {
+                if clobber & (1 << reg) != 0 && late[reg].is_none() {
+                    late[reg] = Some(pos);
+                }
+                if before & (1 << reg) != 0 && early[reg].is_none() {
+                    early[reg] = Some(pos);
+                }
+            }
+        }
+        for pos in facts.flow.ranges[block.index()].clone() {
+            let inst = body.instruction(facts.flow.instructions[pos]);
+            if matches!(inst.kind, crate::lowir::model::InstructionKind::Phi(..))
+                || !facts.active[pos]
+                    && facts.reads[pos] == pos
+                    && !inst.result.is_some_and(|t| addresses.lazy[t.index()])
+            {
+                continue;
+            }
+            let at = facts.reads[pos];
+            body.visit_values(&inst.kind, |v| {
+                for temp in super::global_placement::parts(body, facts, addresses, v)
+                    .into_iter()
+                    .flatten()
+                {
+                    if self.globals.registers[temp.index()].is_some() {
+                        self.last[temp.index()] =
+                            Some(self.last[temp.index()].map_or(at, |old| old.max(at)));
+                    }
+                    if temp.index() < body.parameter_count
+                        && facts.global[temp.index()]
+                        && self.globals.registers[temp.index()].is_none()
+                        && let Some(reg) = self.incoming[temp.index()]
+                        && reg.code() < 16
+                        && late[usize::from(reg.code())].is_none_or(|first| at <= first)
+                        && early[usize::from(reg.code())].is_none_or(|first| at < first)
+                    {
+                        self.last[temp.index()] =
+                            Some(self.last[temp.index()].map_or(at, |old| old.max(at)));
+                    }
+                }
+            });
+        }
+        self.available_in = if block == body.layout[0] {
+            (0..body.parameter_count.min(32))
+                .filter(|&p| {
+                    facts.global[p]
+                        && self.globals.registers[p].is_none()
+                        && self.incoming[p].is_some()
+                })
+                .fold(0, |mask, p| mask | (1 << p))
+        } else {
+            let preds = facts.flow.predecessors(block);
+            if preds.is_empty() {
+                0
+            } else {
+                preds.iter().fold(u32::MAX, |mask, b| {
+                    mask & if self.emitted[b.index()] {
+                        self.available[b.index()]
+                    } else {
+                        0
+                    }
+                })
+            }
+        };
+        if block != body.layout[0] {
+            for p in 0..body.parameter_count.min(32) {
+                if self.available_in & (1 << p) == 0
+                    || self.globals.registers[p].is_some()
+                    || self.last[p].is_none()
+                {
+                    continue;
+                }
+                if let Some(reg) = self.incoming[p]
+                    && self.owners[usize::from(reg.code())].is_none()
+                    && self.pinned & (1 << reg.code()) == 0
+                {
+                    let name = body.temps()[p].name;
+                    if let Some(temp) = body.find_temp(name) {
+                        self.bind(temp, reg);
+                    }
+                }
+            }
+        }
+        self.written = 0;
+    }
+    pub(super) fn note_clobbers(&mut self, mask: u32) {
+        self.written |= mask;
+    }
+    pub(super) fn finish_block(&mut self, block: BlockId) {
+        let written = self.written | self.pinned;
+        self.available[block.index()] = self.available_in;
+        for p in 0..self.incoming.len().min(32) {
+            if self.incoming[p].is_some_and(|r| written & (1 << r.code()) != 0) {
+                self.available[block.index()] &= !(1 << p);
+            }
+        }
+        self.emitted[block.index()] = true;
+    }
     pub(super) fn entry(
         &mut self,
         body: &Body,
         facts: &Facts,
         mir: &mut Function,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<super::parallel_transfer::Transfer>, Error> {
+        use super::parallel_transfer::Transfer;
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
-            if facts.intervals[index].last.is_none() {
+            if facts.intervals[index].uses == 0 {
                 continue;
             }
-            let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
             let ty = parameter.ty.ok_or(Error::Limit)?;
-            if ty.float_rank() != 0 || matches!(ty, Type::Object { .. } | Type::I128) {
-                return Err(unsupported());
-            }
-            let [part] = mir.layout.parts(&mir.layout.arguments[index]) else {
-                return Err(unsupported());
-            };
-            if let Some(r) = part.register
-                && facts.intervals[index].forbid & (1 << r.code()) == 0
+            super::memory::scalar(ty)?;
+            let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
+            if let Some(reg) = self.incoming[index]
+                && self.globals.registers[index].is_none()
+                && facts.intervals[index].last.is_some()
+                && facts.intervals[index].forbid & (1 << reg.code()) == 0
+                && self.pinned & (1 << reg.code()) == 0
+                && self.owners[usize::from(reg.code())].is_none()
             {
-                self.bind(temp, r);
+                self.bind(temp, reg);
             }
         }
-        let incoming = mir
-            .layout
-            .arguments
+        let incoming = self
+            .incoming
             .iter()
             .enumerate()
-            .filter(|(i, _)| facts.intervals[*i].last.is_some())
-            .flat_map(|(_, arg)| mir.layout.parts(arg))
-            .filter_map(|part| part.register)
+            .filter(|(i, _)| facts.intervals[*i].uses != 0)
+            .filter_map(|(_, r)| *r)
             .fold(0, |mask, r| mask | (1 << r.code()));
-        // No scalar entry transfer writes an incoming register: relocation
-        // excludes their union. Stack loads precede the deferred parallel moves.
         let mut transfers = Vec::new();
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
-            if facts.intervals[index].last.is_none() {
+            if facts.intervals[index].uses == 0 {
                 continue;
             }
             let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
-            if self.locations[index].reg.is_some() {
-                continue;
-            }
             let ty = parameter.ty.ok_or(Error::Limit)?;
             let [part] = mir.layout.parts(&mir.layout.arguments[index]) else {
                 return Err(unsupported());
             };
-            let source = part.register;
-            let stack = part.stack;
-            if let Some(reg) = source {
-                if let Some(target) = self.allocate(facts, temp, [None, None], incoming) {
-                    self.bind(temp, target);
-                    transfers.push(Instruction {
-                        op: Op::Scalar(ScalarOp::Move(target, Operand::Register(reg))),
-                        location: None,
-                    });
-                } else {
-                    let home = self.home(body, temp, mir)?;
-                    self.locations[index].homed = true;
-                    transfers.push(Instruction {
-                        op: Op::Scalar(ScalarOp::Store(
-                            Operand::Frame(home),
-                            ty,
-                            Operand::Register(reg),
-                        )),
-                        location: None,
-                    });
-                }
+            let source = if let Some(reg) = part.register {
+                Operand::Register(reg)
             } else {
+                Operand::Frame(16_i32.wrapping_add(part.stack))
+            };
+            let destination = if let Some(reg) = self.globals.registers[index] {
+                if part.register.is_none() {
+                    self.locations[index].home = source.frame_offset();
+                }
+                Operand::Register(reg)
+            } else if part.register.is_none() {
                 let home = self.home(body, temp, mir)?;
                 self.locations[index].homed = true;
                 mir.instructions.push(Instruction {
-                    op: Op::Scalar(ScalarOp::Load(
-                        R::RAX,
-                        ty,
-                        Operand::Frame(16_i32.wrapping_add(stack)),
-                    )),
+                    op: Op::Scalar(ScalarOp::Load(R::RAX, ty, source)),
                     location: None,
                 });
                 mir.instructions.push(Instruction {
@@ -319,10 +464,27 @@ impl Placement {
                     )),
                     location: None,
                 });
-            }
+                continue;
+            } else if facts.global[index] {
+                Operand::Frame(self.home(body, temp, mir)?)
+            } else if self.locations[index].reg == part.register {
+                continue;
+            } else if let Some(reg) = self.allocate(facts, temp, [None, None], incoming) {
+                self.bind(temp, reg);
+                Operand::Register(reg)
+            } else {
+                self.locations[index].homed = true;
+                Operand::Frame(self.home(body, temp, mir)?)
+            };
+            transfers.push(Transfer {
+                destination,
+                source,
+                ty,
+                source_type: None,
+                address: false,
+            });
         }
-        mir.instructions.extend(transfers);
-        Ok(())
+        Ok(transfers)
     }
     pub(super) fn operand(&self, temp: TempId) -> Result<Operand, Error> {
         let loc = &self.locations[temp.index()];
@@ -350,10 +512,7 @@ impl Placement {
         if skip_parameters && self.vector_boundary && temp.index() < body.parameter_count {
             return None;
         }
-        facts.intervals[temp.index()]
-            .last
-            .filter(|&last| last <= pos)
-            .map(|_| r)
+        self.dies(facts, temp, pos).then_some(r)
     }
     pub(super) fn parameter_mask(&self, body: &Body, operands: [Operand; 2]) -> u32 {
         if !self.vector_boundary {
@@ -369,14 +528,27 @@ impl Placement {
             })
             .fold(0, |mask, r| mask | (1 << r.code()))
     }
+    fn dies(&self, facts: &Facts, temp: TempId, pos: usize) -> bool {
+        if self.globals.registers[temp.index()].is_some() {
+            return self.exit_block && self.last[temp.index()].is_none_or(|last| last <= pos);
+        }
+        let own =
+            facts.definitions[temp.index()].map_or(facts.flow.blocks[0], |p| facts.flow.blocks[p]);
+        let last = if self.block == Some(own) {
+            facts.intervals[temp.index()].last
+        } else {
+            self.last[temp.index()]
+        };
+        last.is_none_or(|last| last <= pos)
+    }
     pub(super) fn release(&mut self, facts: &Facts, pos: usize) {
-        for owner in &mut self.owners {
-            if owner.is_some_and(|t| {
-                facts.intervals[t.index()]
-                    .last
-                    .is_none_or(|last| last <= pos)
-            }) && let Some(temp) = owner.take()
+        for reg in 0..self.owners.len() {
+            if let Some(temp) = self.owners[reg]
+                && self.dies(facts, temp, pos)
             {
+                self.owners[reg] = None;
+                self.pinned &= !(1 << reg);
+                self.written |= 1 << reg;
                 self.dying.push(temp);
             }
         }
@@ -402,12 +574,17 @@ impl Placement {
         mir: &mut Function,
     ) -> R {
         self.release(facts, pos);
+        if let Some(r) = self.globals.registers[temp.index()] {
+            return r;
+        }
         if let Some(r) = self.allocate(facts, temp, prefs, exclude) {
             self.bind(temp, r);
             r
         } else {
             self.locations[temp.index()].homed = true;
-            mir.spills += 1;
+            if !facts.global[temp.index()] {
+                mir.spills += 1;
+            }
             if exclude & (1 << R::R10.code()) != 0 {
                 R::R11
             } else {
@@ -418,12 +595,16 @@ impl Placement {
     pub(super) fn finish(
         &mut self,
         body: &Body,
+        facts: &Facts,
         temp: TempId,
         r: R,
         mir: &mut Function,
         location: Option<crate::lowir::model::DebugLocation>,
     ) -> Result<(), Error> {
-        if self.locations[temp.index()].homed {
+        if self.globals.registers[temp.index()].is_some() {
+            return Ok(());
+        }
+        if self.locations[temp.index()].homed || facts.global[temp.index()] {
             let home = self.home(body, temp, mir)?;
             let ty = body.temp(temp).ty.ok_or(Error::Limit)?;
             mir.instructions.push(Instruction {

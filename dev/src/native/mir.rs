@@ -1,10 +1,9 @@
 //! Per-function native facts shared by MIR serialization and encoding. See NOTICE.
 use super::{
     abi::Layout,
-    global_data,
-    image::{Image, ImageSymbol, Section},
+    image::{Image, ImageSymbol},
     scalar_mir::Operand,
-    x86::{Assembler, Register as R, Rm},
+    x86::{Assembler, Register as R},
 };
 use crate::{
     lowir::{
@@ -89,7 +88,10 @@ impl CallSite {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum Op {
+    Jump(BlockId),
+    Branch(super::condition::Condition, BlockId),
     Move(R, u128),
     SymbolMove(R, SymbolId),
     FloatMove(R, FloatKind, u128),
@@ -116,10 +118,26 @@ pub(super) struct Binding {
     pub(super) offset: i32,
     pub(super) kind: BindingKind,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct BlockId(pub(super) u32);
+impl BlockId {
+    pub(super) fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+#[derive(Clone, Copy)]
+pub(super) enum BlockName {
+    Named(NameId),
+    Edge(NameId, NameId),
+}
+pub(super) struct Block {
+    pub(super) name: BlockName,
+    pub(super) range: std::ops::Range<usize>,
+}
 pub(super) struct Function {
-    symbol: SymbolId,
+    pub(super) symbol: SymbolId,
     signature: SignatureId,
-    block: NameId,
+    pub(super) blocks: Vec<Block>,
     pub(super) layout: Layout,
     pub(super) instructions: Vec<Instruction>,
     pub(super) scratch_bytes: u32,
@@ -136,6 +154,10 @@ pub(super) struct Function {
     pub(super) fused_compares: usize,
     pub(super) dynamic_copies: usize,
     pub(super) lowir_instructions: usize,
+    pub(super) global_registers: usize,
+    pub(super) liveness_steps: usize,
+    pub(super) hull_fallbacks: usize,
+    pub(super) edge_blocks: usize,
     pub(super) promoted_slots: usize,
     pub(super) dead_slots: usize,
 }
@@ -149,7 +171,10 @@ impl Function {
         Self {
             symbol,
             signature,
-            block,
+            blocks: vec![Block {
+                name: BlockName::Named(block),
+                range: 0..0,
+            }],
             layout,
             instructions: Vec::new(),
             scratch_bytes: 0,
@@ -166,6 +191,10 @@ impl Function {
             fused_compares: 0,
             dynamic_copies: 0,
             lowir_instructions: 0,
+            global_registers: 0,
+            liveness_steps: 0,
+            hull_fallbacks: 0,
+            edge_blocks: 0,
             promoted_slots: 0,
             dead_slots: 0,
         }
@@ -243,171 +272,129 @@ impl Function {
                 binding.ty
             )?;
         }
-        writeln!(out, "\n  block ^{}", program.names.get(self.block))?;
         let mut floating = FloatingScanner::default();
-        for instruction in &self.instructions {
-            match instruction.op {
-                Op::Move(reg, bits) => {
-                    let low = low_word(bits)
-                        .map_err(|_| std::io::Error::other("invalid MIR immediate"))?;
-                    write!(out, "    mov {}, ", reg.spelling())?;
-                    if bits >> 64 == if low < 0 { u128::from(u64::MAX) } else { 0 } {
-                        write!(out, "{low}")?;
-                    } else {
-                        write!(out, "0x{bits:032x}")?;
-                    }
-                }
-                Op::SymbolMove(reg, symbol) => write!(
-                    out,
-                    "    mov {}, @{}",
-                    reg.spelling(),
-                    program.names.get(program.symbol(symbol).name)
-                )?,
-                Op::FloatMove(reg, kind, bits) => write!(
-                    out,
-                    "    fmov.{} {}, {}",
-                    kind.ty(),
-                    reg.spelling(),
-                    literals::mir_text(&mut floating, kind, bits)
-                        .map_err(|_| std::io::Error::other("invalid floating MIR value"))?
-                )?,
-                Op::FloatReturn(bits) => write!(
-                    out,
-                    "    fret.f80 {}",
-                    literals::mir_text(&mut floating, FloatKind::F80, bits)
-                        .map_err(|_| std::io::Error::other("invalid floating MIR value"))?
-                )?,
-                Op::Return(reg) => {
-                    write!(out, "    ret")?;
-                    if let Some(reg) = reg {
-                        write!(out, " {}", reg.spelling())?;
-                    }
-                }
-                Op::Trap => write!(out, "    trap")?,
-                Op::Call(site) => site.write(program, out)?,
-                Op::DynamicCopy => write!(out, "    copy_bytes_dynamic")?,
-                Op::Scalar(op) => {
-                    write!(out, "    ")?;
-                    op.write(program, out)?;
-                }
-            }
-            if let Some(location) = instruction.location {
-                out.write_all(b" !dbg(")?;
-                let file = program.names.bytes(location.file);
-                let end = file
-                    .iter()
-                    .position(|&byte| byte == 0)
-                    .unwrap_or(file.len());
-                out.write_all(&file[..end])?;
-                write!(out, ", {}, {})", location.line, location.column)?;
-            }
+        for block in &self.blocks {
+            write!(out, "\n  block ")?;
+            Self::block_name(program, block.name, out)?;
             writeln!(out)?;
+            let end = if self.blocks.len() == 1 {
+                self.instructions.len()
+            } else {
+                block.range.end
+            };
+            for instruction in &self.instructions[block.range.start..end] {
+                self.write_instruction(program, out, instruction, &mut floating)?;
+            }
         }
         Ok(())
     }
+    pub(super) fn begin_block(&mut self, name: BlockName) -> Result<BlockId, Error> {
+        self.end_block();
+        let id = BlockId(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?);
+        let at = self.instructions.len();
+        self.blocks.push(Block {
+            name,
+            range: at..at,
+        });
+        Ok(id)
+    }
+    pub(super) fn end_block(&mut self) {
+        if let Some(block) = self.blocks.last_mut() {
+            block.range.end = self.instructions.len();
+        }
+    }
+    fn block_name(program: &Program, name: BlockName, out: &mut impl Write) -> std::io::Result<()> {
+        match name {
+            BlockName::Named(n) => write!(out, "^{}", program.names.get(n)),
+            BlockName::Edge(from, to) => write!(
+                out,
+                "^{}~{}",
+                program.names.get(from),
+                program.names.get(to)
+            ),
+        }
+    }
+    fn label(&self, program: &Program, id: BlockId, out: &mut impl Write) -> std::io::Result<()> {
+        Self::block_name(program, self.blocks[id.index()].name, out)
+    }
+    fn write_instruction(
+        &self,
+        program: &Program,
+        out: &mut impl Write,
+        instruction: &Instruction,
+        floating: &mut FloatingScanner,
+    ) -> std::io::Result<()> {
+        match instruction.op {
+            Op::Jump(target) => {
+                write!(out, "    jmp ")?;
+                self.label(program, target, out)?;
+            }
+            Op::Branch(cond, target) => {
+                write!(out, "    j{} ", cond.spelling())?;
+                self.label(program, target, out)?;
+            }
+            Op::Move(reg, bits) => {
+                let low =
+                    low_word(bits).map_err(|_| std::io::Error::other("invalid MIR immediate"))?;
+                write!(out, "    mov {}, ", reg.spelling())?;
+                if bits >> 64 == if low < 0 { u128::from(u64::MAX) } else { 0 } {
+                    write!(out, "{low}")?;
+                } else {
+                    write!(out, "0x{bits:032x}")?;
+                }
+            }
+            Op::SymbolMove(reg, symbol) => write!(
+                out,
+                "    mov {}, @{}",
+                reg.spelling(),
+                program.names.get(program.symbol(symbol).name)
+            )?,
+            Op::FloatMove(reg, kind, bits) => write!(
+                out,
+                "    fmov.{} {}, {}",
+                kind.ty(),
+                reg.spelling(),
+                literals::mir_text(floating, kind, bits)
+                    .map_err(|_| std::io::Error::other("invalid floating MIR value"))?
+            )?,
+            Op::FloatReturn(bits) => write!(
+                out,
+                "    fret.f80 {}",
+                literals::mir_text(floating, FloatKind::F80, bits)
+                    .map_err(|_| std::io::Error::other("invalid floating MIR value"))?
+            )?,
+            Op::Return(reg) => {
+                write!(out, "    ret")?;
+                if let Some(reg) = reg {
+                    write!(out, " {}", reg.spelling())?;
+                }
+            }
+            Op::Trap => write!(out, "    trap")?,
+            Op::Call(site) => site.write(program, out)?,
+            Op::DynamicCopy => write!(out, "    copy_bytes_dynamic")?,
+            Op::Scalar(op) => {
+                write!(out, "    ")?;
+                op.write(program, out)?;
+            }
+        }
+        if let Some(location) = instruction.location {
+            out.write_all(b" !dbg(")?;
+            let file = program.names.bytes(location.file);
+            let end = file
+                .iter()
+                .position(|&byte| byte == 0)
+                .unwrap_or(file.len());
+            out.write_all(&file[..end])?;
+            write!(out, ", {}, {})", location.line, location.column)?;
+        }
+        writeln!(out)?;
+        Ok(())
+    }
     pub(super) fn emit(&self, image: &mut Image) -> Result<Emission, Error> {
-        let base = image.align_text()?;
-        image.define(ImageSymbol::Program(self.symbol), Section::Text, base);
-        let mut a = Assembler::default();
-        a.push(R::RBP);
-        a.mov_rr(R::RBP, R::RSP)?;
-        let saved = self.preserve.count_ones() * 8;
-        if self.stack_size != saved {
-            a.alu_ri(5, Rm::Reg(R::RSP), i64::from(self.stack_size - saved), 8)?;
-        }
-        for r in super::placement::SAVED.into_iter().rev() {
-            if self.preserve & (1 << r.code()) != 0 {
-                a.push(r);
-            }
-        }
-        if self.aligned_base != 0 {
-            a.lea(
-                R::R12,
-                Rm::mem(
-                    R::RBP,
-                    self.aligned_disp
-                        .wrapping_add(self.aligned_base.cast_signed())
-                        .wrapping_sub(1),
-                ),
-            )?;
-            a.alu_ri(4, Rm::Reg(R::R12), -i64::from(self.aligned_base), 8)?;
-        }
-        let mut returns = 0;
-        let flags = super::condition_mir::flags_after(&self.instructions);
-        let mut carries = super::frame_carries::Carries::new(&self.bindings);
-        let mut carried_reloads = 0;
-        for (index, instruction) in self.instructions.iter().enumerate() {
-            let replacement = carries.replacement(&instruction.op);
-            let pending = carries.track(&self.instructions, index);
-            if let Some((dst, source)) = replacement {
-                a.mov_rr(dst, source)?;
-                carried_reloads += 1;
-                continue;
-            }
-            match instruction.op {
-                Op::Move(reg, bits) => a.mov_ri_flags(reg, low_word(bits)?, flags[index])?,
-                Op::SymbolMove(reg, symbol) => {
-                    a.lea(reg, Rm::rip(ImageSymbol::Program(symbol), 0))?;
-                }
-                Op::FloatMove(reg, kind, bits) => {
-                    if bits & u128::from(u64::MAX) == 0 {
-                        a.sse(0, 0x57, reg, Rm::Reg(reg))?;
-                    } else {
-                        let source = constant(image, kind, bits)?;
-                        a.sse(
-                            if kind == FloatKind::F32 { 0xf3 } else { 0xf2 },
-                            0x10,
-                            reg,
-                            source,
-                        )?;
-                    }
-                }
-                Op::FloatReturn(bits) => {
-                    let source = constant(image, FloatKind::F80, bits)?;
-                    a.op(0, false, 0xdb, 1, 5, source, false, 0)?;
-                    returns += 1;
-                }
-                Op::Return(reg) => {
-                    if let Some(reg) = reg {
-                        return_register(&mut a, reg)?;
-                    }
-                    returns += 1;
-                }
-                Op::Call(site) => site.emit(&mut a, self.aligned_disp, self.aligned_bytes)?,
-                Op::DynamicCopy => {
-                    a.mov_rr(R::RCX, R::RDX)?;
-                    a.byte(0xf3);
-                    a.byte(0xa4);
-                }
-                Op::Scalar(op) => op
-                    .rebase(self.aligned_disp, self.aligned_bytes)
-                    .emit(&mut a, flags[index])?,
-                Op::Trap => {
-                    a.byte(0x0f);
-                    a.byte(0x0b);
-                }
-            }
-            if let Some(source) = pending {
-                a.mov_rr(R::R11, source)?;
-            }
-        }
-        for r in super::placement::SAVED {
-            if self.preserve & (1 << r.code()) != 0 {
-                a.pop(r);
-            }
-        }
-        a.byte(0xc9);
-        a.ret();
-        let emission = Emission {
-            carried_reloads,
-            returns,
-            fixups: a.fixups.len(),
-            code_bytes: a.code.len(),
-        };
-        image.append(a)?;
-        Ok(emission)
+        super::emission::emit(self, image)
     }
 }
+
 pub(super) fn low_word(bits: u128) -> Result<i64, Error> {
     Ok(i64::from_le_bytes(
         u64::try_from(bits & u128::from(u64::MAX))
@@ -415,44 +402,14 @@ pub(super) fn low_word(bits: u128) -> Result<i64, Error> {
             .to_le_bytes(),
     ))
 }
-fn return_register(a: &mut Assembler, reg: R) -> Result<(), Error> {
-    if reg.code() < 16 {
-        return a.mov_rr(R::RAX, reg);
-    }
-    let zero = R::xmm(0)?;
-    if reg != zero {
-        a.sse(0, 0x28, zero, Rm::Reg(reg))?;
-    }
-    Ok(())
-}
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(super) struct Emission {
     pub(super) returns: usize,
     pub(super) fixups: usize,
     pub(super) code_bytes: usize,
     pub(super) carried_reloads: usize,
-}
-fn constant(image: &mut Image, kind: FloatKind, bits: u128) -> Result<Rm, Error> {
-    let mut scanner = FloatingScanner::default();
-    let bytes = global_data::constant_bytes(
-        &mut scanner,
-        kind.ty(),
-        literals::Constant::Float(kind, bits),
-    )?;
-    let size = if kind == FloatKind::F32 {
-        4
-    } else if kind == FloatKind::F64 {
-        8
-    } else {
-        16
-    };
-    Ok(Rm::rip(
-        image.constant(
-            &bytes[..size],
-            u8::try_from(size).map_err(|_| Error::Limit)?,
-        )?,
-        0,
-    ))
+    pub(super) short_branches: usize,
+    pub(super) long_branches: usize,
 }
 
 #[cfg(test)]

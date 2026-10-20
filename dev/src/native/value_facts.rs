@@ -27,6 +27,11 @@ enum Identity {
     Normalized(TempId),
 }
 pub(super) struct Facts {
+    pub(super) flow: super::control_flow::Flow,
+    pub(super) global: Vec<bool>,
+    pub(super) definitions: Vec<Option<usize>>,
+    pub(super) clobbers: Vec<(u32, u32)>,
+    pub(super) reads: Vec<usize>,
     aliases: Vec<Option<Alias>>,
     identities: Vec<Option<Identity>>,
     pub(super) fused: Vec<bool>,
@@ -72,24 +77,54 @@ pub(super) fn normalize(bits: u128, ty: Type) -> u128 {
 impl Facts {
     pub(super) fn resolve(&self, body: &Body, value: Value) -> Alias {
         match value {
-            Value::Temp(id) => self.aliases[id.index()].unwrap_or(Alias::Temporary(id)),
+            Value::Temp(id) => {
+                let mut out = Alias::Temporary(id);
+                while let Alias::Temporary(temp) = out
+                    && let Some(next) = self.aliases[temp.index()]
+                {
+                    out = next;
+                }
+                out
+            }
             Value::Integer(id) => Alias::Constant(Constant::Integer(body.literal(id))),
             Value::Float(id, kind) => Alias::Constant(Constant::Float(kind, body.literal(id))),
             Value::Symbol(id) => Alias::Symbol(id),
             Value::Slot(id) => Alias::Slot(id),
         }
     }
-    pub(super) fn analyze(body: &Body, slots: &[Slot]) -> Result<Self, Error> {
-        let ids = &body.block(body.layout[0]).instructions;
+    pub(super) fn analyze(
+        body: &Body,
+        slots: &[Slot],
+        flow: super::control_flow::Flow,
+    ) -> Result<Self, Error> {
+        let ids = flow.instructions.clone();
+        let mut definitions = vec![None; body.temps().len()];
+        for (pos, &id) in ids.iter().enumerate() {
+            if let Some(result) = body.instruction(id).result {
+                definitions[result.index()] = Some(pos);
+            }
+        }
         let mut facts = Self {
+            global: vec![false; body.temps().len()],
+            definitions,
+            clobbers: vec![(0, 0); ids.len()],
+            reads: (0..ids.len()).collect(),
+            active: flow
+                .blocks
+                .iter()
+                .map(|b| flow.reachable[b.index()])
+                .collect(),
+            flow,
             aliases: vec![None; body.temps().len()],
             identities: vec![None; body.temps().len()],
             fused: vec![false; body.temps().len()],
-            active: vec![true; ids.len()],
             intervals: vec![Interval::default(); body.temps().len()],
         };
         for (pos, &id) in ids.iter().enumerate() {
             let inst = body.instruction(id);
+            if !facts.active[pos] {
+                continue;
+            }
             let alias = match inst.kind {
                 I::Const(ty, value) => Some(match facts.resolve(body, value) {
                     Alias::Constant(Constant::Integer(bits))
@@ -209,6 +244,7 @@ impl Facts {
             let pure = matches!(
                 inst.kind,
                 I::Copy(..)
+                    | I::Phi(..)
                     | I::Unary(..)
                     | I::Binary(..)
                     | I::Addr(..)
@@ -226,20 +262,51 @@ impl Facts {
                 });
             }
         }
+        let entry = body.layout[0];
+        for index in 0..body.parameter_count {
+            facts.global[index] = !facts.flow.predecessors(entry).is_empty();
+        }
         for (pos, &id) in ids.iter().enumerate() {
-            if facts.active[pos] {
-                body.visit_values(&body.instruction(id).kind, |v| {
-                    if let Alias::Temporary(t) = facts.resolve(body, v) {
-                        let interval = &mut facts.intervals[t.index()];
-                        interval.last = Some(pos);
-                        interval.uses += 1;
-                        interval.consumer = Some(pos);
+            if !facts.active[pos] {
+                continue;
+            }
+            let inst = body.instruction(id);
+            if matches!(inst.kind, I::Phi(..))
+                && let Some(result) = inst.result
+            {
+                facts.global[result.index()] = true;
+            }
+            if let I::Phi(_, pairs) = &inst.kind {
+                for &(pred, value) in pairs {
+                    if facts.flow.reachable[pred.index()] {
+                        let at = facts.flow.ranges[pred.index()].end - 1;
+                        facts.note_use(body, value, at, pos);
                     }
-                });
+                }
+            } else {
+                body.visit_values(&inst.kind, |value| facts.note_use(body, value, pos, pos));
             }
         }
         facts.refresh_clobbers(body);
         Ok(facts)
+    }
+    fn note_use(&mut self, body: &Body, value: Value, at: usize, consumer: usize) {
+        if let Alias::Temporary(temp) = self.resolve(body, value) {
+            let def_block =
+                self.definitions[temp.index()].map_or(body.layout[0], |p| self.flow.blocks[p]);
+            let used_block = self.flow.blocks[at];
+            let interval = &mut self.intervals[temp.index()];
+            interval.uses += 1;
+            interval.consumer = Some(consumer);
+            if def_block == used_block
+                && !self.global[temp.index()]
+                && self.definitions[temp.index()].is_none_or(|p| p <= at)
+            {
+                interval.last = Some(interval.last.map_or(at, |last| last.max(at)));
+            } else {
+                self.global[temp.index()] = true;
+            }
+        }
     }
     fn alias_identity(
         &self,
@@ -304,8 +371,31 @@ impl Facts {
                 I::Call(..) | I::Load(..) | I::Runtime(Runtime::AtomicLoad(..))
             )
     }
+    pub(super) fn sunk_compare(&self, body: &Body, pos: usize) -> bool {
+        let inst = body.instruction(self.flow.instructions[pos]);
+        let Some(result) = inst.result else {
+            return false;
+        };
+        let (I::Compare(_, ty, ..) | I::Unary(crate::lowir::vocabulary::Unary::Not, ty, _)) =
+            inst.kind
+        else {
+            return false;
+        };
+        let Some(reader) = self.intervals[result.index()].consumer else {
+            return false;
+        };
+        let local = !self.global[result.index()] && self.intervals[result.index()].uses == 1;
+        let later = reader > pos + 1 && self.flow.blocks[reader] == self.flow.blocks[pos];
+        let branch = body.instruction(self.flow.instructions[reader]);
+        ty.float_rank() == 0
+            && ty != Type::I128
+            && local
+            && later
+            && matches!(branch.kind, I::Branch(value, ..)
+                if matches!(self.resolve(body, value), Alias::Temporary(t) if t == result))
+    }
     pub(super) fn compare_scratch(&self, body: &Body, pos: usize) -> bool {
-        let inst = body.instruction(body.block(body.layout[0]).instructions[pos]);
+        let inst = body.instruction(self.flow.instructions[pos]);
         let I::Compare(_, ty, a, b) = inst.kind else {
             return false;
         };
@@ -328,7 +418,7 @@ impl Facts {
         if interval.uses == 1
             && matches!(ty, Type::I32 | Type::U32 | Type::I64 | Type::Ptr)
             && let Some(consumer) = interval.consumer
-            && matches!(body.instruction(body.block(body.layout[0]).instructions[consumer]).kind,I::Return(_,Some(Value::Temp(t))) if t==result)
+            && matches!(body.instruction(self.flow.instructions[consumer]).kind,I::Return(_,Some(Value::Temp(t))) if t==result)
         {
             return false;
         }
@@ -373,7 +463,7 @@ impl Facts {
         }
     }
     fn rebuild_clobbers(&mut self, body: &Body, calls: Option<&super::call_facts::Calls>) {
-        let ids = &body.block(body.layout[0]).instructions;
+        let ids = self.flow.instructions.clone();
         for interval in &mut self.intervals {
             interval.forbid = 0;
         }
@@ -393,6 +483,10 @@ impl Facts {
             out
         };
         for (pos, &id) in ids.iter().enumerate().rev() {
+            if pos + 1 == ids.len() || self.flow.blocks[pos] != self.flow.blocks[pos + 1] {
+                late = [None; 16];
+                early = [None; 16];
+            }
             if !self.active[pos] {
                 continue;
             }
@@ -423,6 +517,7 @@ impl Facts {
             let call = calls.and_then(|c| c.at(pos));
             let clobber = fixed | call.map_or(0, |_| super::abi::CALLER_SAVED);
             let before = fixed | call.map_or(0, |c| c.early);
+            self.clobbers[pos] = (clobber, before);
             for reg in 0..16 {
                 if clobber & (1 << reg) != 0 {
                     late[reg] = Some(pos);

@@ -8,14 +8,14 @@ use crate::lowir::{
     model::{Program, SymbolId},
 };
 use std::io::Write;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Base {
     Absolute,
     Register(R),
     Frame,
     Symbol(SymbolId),
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Memory {
     pub(super) base: Base,
     pub(super) index: Option<R>,

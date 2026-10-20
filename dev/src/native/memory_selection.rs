@@ -18,7 +18,7 @@ use crate::lowir::{
 };
 impl Selection<'_> {
     fn temp_register(&mut self, temp: TempId, scratch: R) -> Result<R, Error> {
-        let source = self.placement.operand(temp)?;
+        let source = self.temp_operand(temp)?;
         if let Some(r) = source.register() {
             return Ok(r);
         }
@@ -74,11 +74,11 @@ impl Selection<'_> {
                     .wrapping_add(disp),
             ),
             AddressBase::Temporary(temp) => {
-                let source = self.placement.operand(temp)?;
+                let source = self.temp_operand(temp)?;
                 if source.register().is_none()
                     && spare.is_none()
                     && let Some(index) = expr.index
-                    && self.placement.operand(index)?.register().is_none()
+                    && self.temp_operand(index)?.register().is_none()
                 {
                     self.temp_register(index, scratch)?;
                     if expr.scale > 1 {

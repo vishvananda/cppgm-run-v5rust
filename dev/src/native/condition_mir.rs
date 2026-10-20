@@ -131,7 +131,8 @@ pub(super) fn flags_after(instructions: &[Instruction]) -> Vec<bool> {
             Op::Move(..)
             | Op::SymbolMove(..)
             | Op::Scalar(ScalarOp::Move(..) | ScalarOp::Load(..) | ScalarOp::Lea(..)) => next,
-            Op::Scalar(
+            Op::Branch(..)
+            | Op::Scalar(
                 ScalarOp::SetEqual(..) | ScalarOp::Condition(FlagOp::Set(..) | FlagOp::Move(..)),
             ) => true,
             _ => false,

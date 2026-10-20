@@ -116,7 +116,7 @@ impl Addresses {
     }
     pub(super) fn analyze(body: &Body, facts: &mut Facts) -> Result<Self, Error> {
         let count = body.temps().len();
-        let ids = &body.block(body.layout[0]).instructions;
+        let ids = facts.flow.instructions.clone();
         let mut out = Self {
             expressions: vec![None; count],
             lazy: vec![false; count],
@@ -173,7 +173,11 @@ impl Addresses {
             }
             if let Some(expr) = expr {
                 out.expressions[temp.index()] = Some(expr);
-                if uses[temp.index()] != 0 && !value_use[temp.index()] {
+                if uses[temp.index()] != 0
+                    && !value_use[temp.index()]
+                    && !(facts.global[temp.index()]
+                        && (matches!(expr.base, AddressBase::Temporary(_)) || expr.index.is_some()))
+                {
                     out.lazy[temp.index()] = true;
                     out.lazy_count += 1;
                 }
@@ -189,8 +193,10 @@ impl Addresses {
                     inst.kind,
                     I::Compare(..) | I::Unary(crate::lowir::vocabulary::Unary::Not, ..)
                 )
+                && !facts.global[temp.index()]
                 && uses[temp.index()] == 1
-                && let Some(next) = consumers[temp.index()].filter(|&p| p == pos + 1)
+                && let Some(next) = consumers[temp.index()]
+                    .filter(|&p| p == pos + 1 && facts.flow.blocks[p] == facts.flow.blocks[pos])
             {
                 let (I::Compare(_, ty, ..) | I::Unary(_, ty, _)) = inst.kind else {
                     return Err(Error::Limit);
@@ -203,21 +209,46 @@ impl Addresses {
                     if refers(cond) && !refers(yes) && !refers(no) {
                         facts.fused[temp.index()] = true;
                         facts.active[pos] = false;
+                        facts.reads[pos] = next;
                     }
+                }
+            }
+            if let Some(temp) = inst.result
+                && !facts.global[temp.index()]
+                && matches!(
+                    inst.kind,
+                    I::Compare(..) | I::Unary(crate::lowir::vocabulary::Unary::Not, ..)
+                )
+                && uses[temp.index()] == 1
+                && let Some(next) = consumers[temp.index()]
+                    .filter(|&p| p > pos && facts.flow.blocks[p] == facts.flow.blocks[pos])
+                && let I::Branch(value, ..) = body.instruction(ids[next]).kind
+                && matches!(facts.resolve(body,value),Alias::Temporary(t) if t==temp)
+            {
+                let (I::Compare(_, ty, ..) | I::Unary(_, ty, _)) = inst.kind else {
+                    return Err(Error::Limit);
+                };
+                if ty.float_rank() == 0 && ty != Type::I128 {
+                    facts.fused[temp.index()] = true;
+                    facts.active[pos] = false;
+                    facts.reads[pos] = next;
                 }
             }
             let I::Load(flags, ty, address) = inst.kind else {
                 continue;
             };
             let temp = inst.result.ok_or(Error::Limit)?;
-            if flags.volatile()
+            if facts.global[temp.index()]
+                || flags.volatile()
                 || ty.float_rank() != 0
                 || matches!(ty, Type::Object { .. } | Type::I128)
                 || uses[temp.index()] != 1
             {
                 continue;
             }
-            let Some(next) = consumers[temp.index()].filter(|&p| p == pos + 1) else {
+            let Some(next) = consumers[temp.index()]
+                .filter(|&p| p == pos + 1 && facts.flow.blocks[p] == facts.flow.blocks[pos])
+            else {
                 continue;
             };
             let consumer = body.instruction(ids[next]);
@@ -235,7 +266,12 @@ impl Addresses {
                             ) || op == Binary::Sub && right),
                     )
                 }
-                I::Compare(_, user_ty, a, b) => (user_ty, a, b, ty != Type::I1),
+                I::Compare(_, user_ty, a, b) => (
+                    user_ty,
+                    a,
+                    b,
+                    ty != Type::I1 && !facts.sunk_compare(body, next),
+                ),
                 _ => continue,
             };
             let left = matches!(facts.resolve(body,a),Alias::Temporary(t) if t==temp);
@@ -243,10 +279,14 @@ impl Addresses {
             if user_ty != ty || left == right || !allowed {
                 continue;
             }
+            facts.reads[pos] = next;
             out.folded[temp.index()] = Some(address);
             out.folded_count += 1;
             facts.active[pos] = false;
-            if let Alias::Temporary(t) = facts.resolve(body, address) {
+            if let Alias::Temporary(t) = facts.resolve(body, address)
+                && facts.definitions[t.index()].map_or(body.layout[0], |p| facts.flow.blocks[p])
+                    == facts.flow.blocks[pos]
+            {
                 let last = &mut facts.intervals[t.index()].last;
                 *last = Some(last.map_or(next, |old| old.max(next)));
             }
@@ -265,7 +305,14 @@ impl Addresses {
                 expr.index,
             ];
             for part in parts.into_iter().flatten() {
-                if let Some(last) = facts.intervals[t].last {
+                if facts.global[t] {
+                    facts.global[part.index()] = true;
+                }
+                if let Some(last) = facts.intervals[t].last
+                    && facts.definitions[part.index()]
+                        .map_or(body.layout[0], |p| facts.flow.blocks[p])
+                        == facts.definitions[t].map_or(body.layout[0], |p| facts.flow.blocks[p])
+                {
                     let old = &mut facts.intervals[part.index()].last;
                     *old = Some(old.map_or(last, |p| p.max(last)));
                 }
@@ -279,6 +326,27 @@ impl Addresses {
             {
                 facts.active[pos] = false;
             }
+        }
+        for pos in (0..facts.reads.len()).rev() {
+            let reader = facts.reads[pos];
+            facts.reads[pos] = facts.reads[reader];
+        }
+        for (pos, &id) in ids.iter().enumerate() {
+            if !facts.sunk_compare(body, pos) {
+                continue;
+            }
+            let read = facts.reads[pos];
+            body.visit_values(&body.instruction(id).kind, |value| {
+                if let Alias::Temporary(temp) = facts.resolve(body, value)
+                    && !facts.global[temp.index()]
+                    && facts.definitions[temp.index()]
+                        .map_or(body.layout[0], |p| facts.flow.blocks[p])
+                        == facts.flow.blocks[pos]
+                {
+                    let last = &mut facts.intervals[temp.index()].last;
+                    *last = Some(last.map_or(read, |old| old.max(read)));
+                }
+            });
         }
         facts.refresh_clobbers(body);
         Ok(out)

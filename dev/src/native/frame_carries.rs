@@ -76,6 +76,9 @@ fn store(op: &Op) -> Option<i32> {
     }
 }
 impl Carries {
+    pub(super) fn clear(&mut self) {
+        self.values.clear();
+    }
     pub(super) fn new(bindings: &[Binding]) -> Self {
         let mut homes: Vec<_> = bindings
             .iter()

@@ -14,6 +14,9 @@ use crate::lowir::{
     vocabulary::{Binary, Type, Unary},
 };
 pub(super) struct Selection<'a> {
+    pub(super) phis: super::control_selection::PhiInputs,
+    pub(super) edge_moves: Vec<super::parallel_transfer::Transfer>,
+    pub(super) parallel: super::parallel_transfer::Workspace,
     pub(super) outgoing: super::call_selection::Staging,
     pub(super) addresses: super::address_facts::Addresses,
     pub(super) body: &'a Body,
@@ -49,7 +52,7 @@ impl Selection<'_> {
                     )?;
                     Operand::Register(scratch)
                 } else {
-                    self.placement.operand(temp)?
+                    self.temp_operand(temp)?
                 };
                 let own = self.body.temp(temp).ty.ok_or(Error::Limit)?;
                 if op.is_memory() && super::abi::value_bytes(own)? != super::abi::value_bytes(ty)? {
@@ -60,6 +63,22 @@ impl Selection<'_> {
                 }
             }
         }
+    }
+    pub(super) fn temp_operand(&mut self, temp: TempId) -> Result<Operand, Error> {
+        if let Ok(operand) = self.placement.operand(temp) {
+            return Ok(operand);
+        }
+        if self.facts.definitions[temp.index()]
+            .is_some_and(|p| self.facts.flow.reachable[self.facts.flow.blocks[p].index()])
+            || temp.index() < self.body.parameter_count
+        {
+            return Ok(Operand::Frame(self.placement.home(
+                self.body,
+                temp,
+                &mut self.mir,
+            )?));
+        }
+        Ok(Operand::Immediate(0))
     }
     pub(super) fn load(&mut self, r: R, source: Operand, ty: Type) {
         match source {
@@ -74,8 +93,14 @@ impl Selection<'_> {
             .result(&self.facts, temp, self.pos, prefs, exclude, &mut self.mir)
     }
     pub(super) fn finish(&mut self, temp: TempId, r: R) -> Result<(), Error> {
-        self.placement
-            .finish(self.body, temp, r, &mut self.mir, self.location)
+        self.placement.finish(
+            self.body,
+            &self.facts,
+            temp,
+            r,
+            &mut self.mir,
+            self.location,
+        )
     }
     pub(super) fn dying(&self, op: Operand, skip_params: bool) -> Option<R> {
         self.placement
