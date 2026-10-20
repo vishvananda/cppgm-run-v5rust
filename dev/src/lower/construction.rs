@@ -20,6 +20,11 @@ pub(super) enum EmptyValueZeroing {
     Emit,
     Omit,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CopyCall {
+    Expression,
+    Direct,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Variant {
@@ -160,6 +165,7 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         source: ast::ExprId,
         elision: bool,
+        call: CopyCall,
     ) -> Result<(), Error> {
         // object_lowering.cpp::call_constructor demands the selected body.
         // Only call_special publishes the class table at the call site;
@@ -170,7 +176,7 @@ impl Function<'_, '_, '_, '_> {
             object,
             Some(ConstructorArguments::Single(source)),
             elision,
-            false,
+            call == CopyCall::Direct,
         )
     }
     fn call_constructor_with_elision(

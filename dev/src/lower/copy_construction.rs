@@ -25,6 +25,10 @@ impl Function<'_, '_, '_, '_> {
                     .lower_base_initialization_span(class, index as usize, false)?
                     .0
             }
+            CopyTarget::VirtualBase(base) => self
+                .graph
+                .lower_virtual_base_offset(class, base)
+                .ok_or(crate::sema::Error::Invariant("copy virtual base layout"))?,
             CopyTarget::Member(member) => {
                 if let Some(field) = self.graph.lower_bit_field(member)? {
                     field.bit / 8
@@ -33,6 +37,20 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
         })
+    }
+    fn shared_copy_base(
+        &self,
+        class: crate::sema::lowering::EntityId,
+        action: SubobjectCopy,
+    ) -> Option<crate::sema::lowering::EntityId> {
+        match action.target {
+            CopyTarget::VirtualBase(base) => Some(base),
+            CopyTarget::Base(index) => self
+                .graph
+                .lower_inheritance_edge(class, index as usize)
+                .and_then(|(base, shared, _)| shared.then_some(base)),
+            CopyTarget::Member(_) => None,
+        }
     }
     pub(super) fn copy_address(
         &mut self,
@@ -72,7 +90,7 @@ impl Function<'_, '_, '_, '_> {
                 Ok(super::bit_fields::Transfer {
                     member: match action.target {
                         CopyTarget::Member(member) => Some(member),
-                        CopyTarget::Base(_) => None,
+                        CopyTarget::Base(_) | CopyTarget::VirtualBase(_) => None,
                     },
                     ty: action.ty,
                     offset: self.copy_offset(class, action)?,
@@ -87,20 +105,24 @@ impl Function<'_, '_, '_, '_> {
             .collect::<Result<_, Error>>()?;
         self.copying.active = true;
         let mut guarded = 0;
-        for (index, action) in actions.iter().enumerate().rev() {
-            if let Some(constructor) = action.constructor
-                && !self.graph.lower_constructor_trivial(constructor)
-                && self.default_constructor_throws(constructor)?
-            {
+        let mut throws = Vec::with_capacity(actions.len());
+        for (index, action) in actions.iter().enumerate() {
+            let throwing = if let Some(constructor) = action.constructor {
+                !self.graph.lower_constructor_trivial(constructor)
+                    && self.default_constructor_throws(constructor)?
+            } else {
+                false
+            };
+            throws.push(throwing);
+            if throwing {
                 guarded = index;
-                break;
             }
         }
         let mut first = transfers.iter().take_while(|action| action.trivial).count();
-        if self.graph.lower_polymorphic(class) {
+        if self.graph.lower_dynamic_class(class) {
             first = 0;
         }
-        let mut field_wise = self.graph.lower_polymorphic(class);
+        let mut field_wise = self.graph.lower_dynamic_class(class);
         for action in &transfers {
             field_wise |= if let Some(member) = action.member {
                 self.graph.lower_local_name(member).is_some()
@@ -109,11 +131,18 @@ impl Function<'_, '_, '_, '_> {
                 true
             };
         }
-        let limit = if variant == Variant::Base && !self.graph.lower_constructor_trivial(id) {
+        let mut limit = if variant == Variant::Base && !self.graph.lower_constructor_trivial(id) {
             self.graph.lower_nonvirtual_bytes(class)?
         } else {
             types::layout(self.graph, ty)?.0
         };
+        if variant != Variant::Base {
+            for &(base, offset) in self.graph.lower_virtual_bases(class) {
+                if !self.graph.lower_class_empty(base)? {
+                    limit = limit.min(offset);
+                }
+            }
+        }
         if first == actions.len() && !field_wise {
             if !self.graph.lower_class_empty(class)? {
                 let destination = self.assignment_this(ty)?;
@@ -124,13 +153,42 @@ impl Function<'_, '_, '_, '_> {
             self.copying.active = false;
             return Ok(());
         }
-        let prefix = if first < transfers.len() && !self.graph.lower_polymorphic(class) {
+        let prefix = if first < transfers.len() && !self.graph.lower_dynamic_class(class) {
             transfers[first].offset
         } else {
             0
         };
         if first == actions.len() {
             first = 0;
+        }
+        if variant != Variant::Base {
+            let mut planned = std::collections::HashMap::new();
+            let mut later = false;
+            for (index, &action) in actions.iter().enumerate() {
+                if let Some(base) = self.shared_copy_base(class, action) {
+                    planned.insert(base, index);
+                } else {
+                    later |= throws[index];
+                }
+            }
+            let order: Vec<_> = self
+                .symbols
+                .virtual_construction_order(class)
+                .into_iter()
+                .filter_map(|base| planned.get(&base).copied())
+                .collect();
+            let mut tracked = vec![false; order.len()];
+            for (position, &index) in order.iter().enumerate().rev() {
+                tracked[position] = later || index < guarded;
+                later |= throws[index];
+            }
+            for (position, &index) in order.iter().enumerate() {
+                let address =
+                    self.copy_subobject(function, ty, actions[index], transfers[index], limit)?;
+                if tracked[position] {
+                    self.note_copied_member(class, ty, actions[index], transfers[index], address)?;
+                }
+            }
         }
         if prefix != 0 {
             let destination = self.assignment_this(ty)?;
@@ -141,14 +199,18 @@ impl Function<'_, '_, '_, '_> {
                 source,
                 destination,
             ))?;
-            for &transfer in transfers.iter().take(first.min(guarded)) {
-                self.note_copied_member(class, ty, transfer, None)?;
+            for index in 0..first.min(guarded) {
+                self.note_copied_member(class, ty, actions[index], transfers[index], None)?;
             }
         } else {
             first = 0;
         }
         while first < actions.len() {
             let action = actions[first];
+            if self.shared_copy_base(class, action).is_some() {
+                first += 1;
+                continue;
+            }
             if let CopyTarget::Member(member) = action.target
                 && self.graph.lower_bit_field(member)?.is_some()
             {
@@ -158,7 +220,7 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 let address = self.copy_subobject(function, ty, action, transfers[first], limit)?;
                 if first < guarded {
-                    self.note_copied_member(class, ty, transfers[first], address)?;
+                    self.note_copied_member(class, ty, action, transfers[first], address)?;
                 }
             }
             first += 1;
@@ -172,6 +234,7 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         class: crate::sema::lowering::EntityId,
         ty: TypeId,
+        action: SubobjectCopy,
         transfer: super::bit_fields::Transfer,
         address: Option<Value>,
     ) -> Result<(), Error> {
@@ -200,7 +263,17 @@ impl Function<'_, '_, '_, '_> {
             let object = self.assignment_this(ty)?;
             self.copy_address(object, transfer.ty, transfer)?
         };
-        self.copied_subobject(transfer.ty, address);
+        let base = match action.target {
+            CopyTarget::Member(_) => None,
+            CopyTarget::Base(index) if self.shared_copy_base(class, action).is_none() => {
+                Some(super::destruction::BaseSubobject::Direct(index))
+            }
+            _ => Some(super::destruction::BaseSubobject::Virtual(
+                self.shared_copy_base(class, action)
+                    .ok_or(crate::sema::Error::Invariant("copy cleanup shared base"))?,
+            )),
+        };
+        self.copied_subobject(transfer.ty, address, base);
         Ok(())
     }
     fn copy_subobject(
@@ -275,10 +348,23 @@ impl Function<'_, '_, '_, '_> {
             return Ok(Some(destination));
         }
         let source = self.assignment_source(function)?;
-        let source = self.copy_address(source, action.ty, transfer)?;
+        let owner = self
+            .graph
+            .lower_function(function)?
+            .object
+            .ok_or(crate::sema::Error::Invariant("copy owner"))?;
+        let shared = self.shared_copy_base(owner, action);
+        let source = if let Some(base) = shared {
+            self.virtual_base_address(source, action.ty, owner, base)?
+        } else {
+            self.copy_address(source, action.ty, transfer)?
+        };
         if transfer.trivial {
             let (size, align) = types::layout(self.graph, action.ty)?;
-            let size = if transfer.member.is_none() && transfer.offset.wrapping_add(size) > limit {
+            let size = if shared.is_none()
+                && transfer.member.is_none()
+                && transfer.offset.wrapping_add(size) > limit
+            {
                 self.graph.lower_nonvirtual_bytes(
                     cls.ok_or(crate::sema::Error::Invariant("copy base class"))?,
                 )?
@@ -295,7 +381,24 @@ impl Function<'_, '_, '_, '_> {
         let id = action
             .constructor
             .ok_or(crate::sema::Error::Invariant("nontrivial copy constructor"))?;
-        self.call_copy_constructor(
+        let saved = self.virtual_context.hidden;
+        if transfer.member.is_none()
+            && !self
+                .graph
+                .lower_virtual_bases(cls.ok_or(crate::sema::Error::Invariant("copy base class"))?)
+                .is_empty()
+        {
+            self.virtual_context.hidden = Some(match action.target {
+                CopyTarget::Base(index) if shared.is_none() => {
+                    self.symbols.vtt_base_index(owner, index as usize)?
+                }
+                _ => self.symbols.vtt_virtual_index(
+                    owner,
+                    cls.ok_or(crate::sema::Error::Invariant("shared copy class"))?,
+                )?,
+            });
+        }
+        let result = self.call_copy_constructor(
             id,
             if transfer.member.is_none() {
                 Variant::Base
@@ -304,7 +407,9 @@ impl Function<'_, '_, '_, '_> {
             },
             destination,
             source,
-        )?;
+        );
+        self.virtual_context.hidden = saved;
+        result?;
         Ok(Some(destination))
     }
     pub(super) fn delegate_copy_storage(
@@ -482,6 +587,11 @@ impl Function<'_, '_, '_, '_> {
                 self.fit(value, parameter)?.value
             };
             values.push(value);
+        }
+        // call_copy forms the hidden context before demanding the entry and
+        // opening a plain copy region. This also fixes table emission order.
+        if entry.hidden_vtt(self.graph)? {
+            values.insert(1, self.hidden_vtt_value()?);
         }
         let chained = if parameters.len() == 1 {
             self.begin_copy_call(throws)?

@@ -11,10 +11,15 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
+pub(super) enum BaseSubobject {
+    Direct(u32),
+    Virtual(EntityId),
+}
+#[derive(Clone, Copy)]
 pub(super) struct Subobject {
     pub ty: TypeId,
     pub offset: u64,
-    pub member: bool,
+    pub base: Option<BaseSubobject>,
     pub element: Option<u64>,
 }
 #[derive(Default)]
@@ -105,7 +110,7 @@ impl Function<'_, '_, '_, '_> {
                         self.destruction.actions.push(Subobject {
                             ty,
                             offset,
-                            member: true,
+                            base: None,
                             element: Some(index),
                         });
                     }
@@ -113,22 +118,52 @@ impl Function<'_, '_, '_, '_> {
                     self.destruction.actions.push(Subobject {
                         ty,
                         offset,
-                        member: true,
+                        base: None,
                         element: None,
                     });
                 }
             }
         }
-        for base in self.graph.lower_destructor_bases(class).rev() {
+        for (index, base) in self.graph.lower_destructor_bases(class).enumerate().rev() {
             let (base, offset) = base?;
+            if self
+                .graph
+                .lower_inheritance_edge(class, index)
+                .is_some_and(|(_, shared, _)| shared)
+            {
+                continue;
+            }
             let ty = self.graph.lower_entity_type(base)?;
             if self.symbols.class_destructor(ty)?.is_some() {
                 self.destruction.actions.push(Subobject {
                     ty,
                     offset,
-                    member: false,
+                    base: Some(BaseSubobject::Direct(
+                        u32::try_from(index).map_err(|_| crate::lowir::Error::Limit)?,
+                    )),
                     element: None,
                 });
+            }
+        }
+        if self.virtual_context.vtt.is_none() {
+            for base in self
+                .symbols
+                .virtual_construction_order(class)
+                .into_iter()
+                .rev()
+            {
+                let ty = self.graph.lower_entity_type(base)?;
+                if self.symbols.class_destructor(ty)?.is_some() {
+                    let offset = self.graph.lower_virtual_base_offset(class, base).ok_or(
+                        crate::sema::Error::Invariant("destructor virtual base layout"),
+                    )?;
+                    self.destruction.actions.push(Subobject {
+                        ty,
+                        offset,
+                        base: Some(BaseSubobject::Virtual(base)),
+                        element: None,
+                    });
+                }
             }
         }
         if calls_complete {
@@ -232,9 +267,12 @@ impl Function<'_, '_, '_, '_> {
                 return Ok(());
             }
         }
-        let class = self.destruction.class.ok_or(crate::sema::Error::Invariant(
-            "destruction actions without class",
-        ))?;
+        let class = self
+            .virtual_context
+            .class
+            .ok_or(crate::sema::Error::Invariant(
+                "destruction actions without class",
+            ))?;
         let source = self.graph.lower_entity_type(class)?;
         let object = self.object_pointer(source)?.value;
         let offset = self.builder.integer(u128::from(action.offset))?;
@@ -242,7 +280,7 @@ impl Function<'_, '_, '_, '_> {
             .emit(
                 I::Index(
                     Type::I8,
-                    action.member.then_some(Projection::Field),
+                    action.base.is_none().then_some(Projection::Field),
                     object,
                     offset,
                 ),
@@ -272,18 +310,57 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
         } else {
-            let entry = if !action.member
+            let hidden = action.base.is_some()
+                && self
+                    .graph
+                    .lower_function(destructor)?
+                    .object
+                    .is_some_and(|base| !self.graph.lower_virtual_bases(base).is_empty());
+            let own_entry = matches!(action.base, Some(BaseSubobject::Virtual(_)))
+                && self
+                    .entity
+                    .map(|entity| self.graph.lower_function(entity))
+                    .transpose()?
+                    .is_some_and(|facts| {
+                        matches!(
+                            facts.name,
+                            crate::sema::lowering::FunctionName::Destructor(_)
+                        )
+                    });
+            let entry = if action.base.is_some()
                 && (self.graph.lower_function(destructor)?.emission
                     == crate::sema::lowering::Emission::Always
-                    || self.graph.lower_virtual_slot(destructor).is_some())
+                    || self.graph.lower_virtual_slot(destructor).is_some()
+                    || hidden
+                    || own_entry)
             {
                 Entry::DestructorBase(destructor)
             } else {
                 Entry::Function(destructor)
             };
+            let mut values = vec![object];
+            if hidden {
+                let saved = self.virtual_context.hidden;
+                self.virtual_context.hidden = Some(match action.base {
+                    Some(BaseSubobject::Direct(index)) => {
+                        self.symbols.vtt_base_index(class, index as usize)?
+                    }
+                    Some(BaseSubobject::Virtual(base)) => {
+                        self.symbols.vtt_virtual_index(class, base)?
+                    }
+                    None => {
+                        return Err(
+                            crate::sema::Error::Invariant("hidden member destructor").into()
+                        );
+                    }
+                });
+                let result = self.hidden_vtt_value();
+                self.virtual_context.hidden = saved;
+                values.push(result?);
+            }
             self.symbols.demand_entry(entry);
             let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
-            let arguments = self.builder.arguments(&[object])?;
+            let arguments = self.builder.arguments(&values)?;
             // A deferred subobject cleanup can be emitted while a source
             // initializer's segment is pending. Its nonthrowing destructor
             // is still that segment's next region event (emit_call).

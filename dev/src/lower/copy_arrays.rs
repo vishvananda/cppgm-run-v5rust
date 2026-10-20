@@ -68,7 +68,7 @@ impl Function<'_, '_, '_, '_> {
             let from = self.element_address(base, index, size, element)?;
             self.call_copy_constructor(constructor, Variant::Complete, to, from)?;
             if guarded && index + 1 < count {
-                self.copied_subobject(element, to);
+                self.copied_subobject(element, to, None);
             }
         }
         self.copy_truncate(mark);

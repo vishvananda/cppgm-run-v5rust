@@ -704,7 +704,7 @@ impl Function<'_, '_, '_, '_> {
                 .class_destructor(self.graph.lower_entity_type(variable)?)?
                 == Some(destructor)
         {
-            self.symbols.demand_destruction(destructor);
+            self.symbols.demand_destruction(destructor)?;
         }
         let terminate = unwinding
             && !matches!(cleanup.place, CleanupPlace::Deallocation { .. })

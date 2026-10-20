@@ -101,6 +101,13 @@ impl Function<'_, '_, '_, '_> {
                 .graph
                 .lower_inheritance_edge(plan.class, index)
                 .is_some_and(|(_, shared, _)| shared);
+        let identity = Some(if shared {
+            super::destruction::BaseSubobject::Virtual(base.class)
+        } else {
+            super::destruction::BaseSubobject::Direct(
+                u32::try_from(index).map_err(|_| crate::lowir::Error::Limit)?,
+            )
+        });
         if variant == Variant::Base && shared {
             return Ok(());
         }
@@ -134,7 +141,7 @@ impl Function<'_, '_, '_, '_> {
                 false
             });
         if !base.forwards && (base.initializer.is_none() && trivial || empty && value && trivial) {
-            return self.subobject_constructed(ty, offset, false);
+            return self.subobject_constructed(ty, offset, identity);
         }
         self.bit_initialization.high = self.bit_initialization.high.max(
             offset
@@ -150,7 +157,7 @@ impl Function<'_, '_, '_, '_> {
                 ))?,
                 object,
             )?;
-            return self.subobject_constructed(ty, offset, false);
+            return self.subobject_constructed(ty, offset, identity);
         }
         let source = base
             .initializer
@@ -244,7 +251,7 @@ impl Function<'_, '_, '_, '_> {
                     Variant::Complete,
                 ));
         }
-        self.subobject_constructed(ty, offset, false)
+        self.subobject_constructed(ty, offset, identity)
     }
 
     fn indirect_initialization_span(

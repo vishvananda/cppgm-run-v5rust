@@ -494,6 +494,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
         entity: EntityId,
     ) -> Result<(), Error> {
         self.demand(entity);
+        if self
+            .graph
+            .lower_function(entity)?
+            .object
+            .is_some_and(|class| !self.graph.lower_virtual_bases(class).is_empty())
+        {
+            self.demand_entry(super::construction::Entry::DestructorBase(entity));
+        }
         self.rooted_destructors.insert(entity);
         let symbol = self.function_symbol(program, entity)?;
         program.root_function(symbol);
@@ -1405,12 +1413,21 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .insert((ty, self.bound_pattern, self.own_level), id);
         Ok(id)
     }
-    pub(super) fn demand_destruction(&mut self, entity: EntityId) {
-        if self.graph.lower_virtual_slot(entity).is_some() {
+    pub(super) fn demand_destruction(&mut self, entity: EntityId) -> Result<(), Error> {
+        if self.graph.lower_virtual_slot(entity).is_some()
+            || self
+                .graph
+                .lower_function(entity)?
+                .object
+                .is_some_and(|class| !self.graph.lower_virtual_bases(class).is_empty())
+        {
             self.demand_entry(super::construction::Entry::DestructorBase(entity));
+        }
+        if self.graph.lower_virtual_slot(entity).is_some() {
             self.demand_entry(super::construction::Entry::DestructorDeleting(entity));
         }
         self.demand(entity);
+        Ok(())
     }
     pub(super) fn demand(&mut self, entity: EntityId) {
         let entity = self.graph.lower_function_entity(entity);
@@ -2860,6 +2877,9 @@ impl Symbols<'_, '_> {
                 .ok_or(crate::sema::Error::Invariant(
                     "deleting entry without class",
                 ))?;
+        if !self.graph.lower_virtual_bases(class).is_empty() {
+            return Ok(false);
+        }
         for &member in self.graph.lower_class_member_entities(class) {
             if self
                 .class_destructor(self.graph.lower_entity_type(member)?)?

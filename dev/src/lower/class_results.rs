@@ -405,7 +405,13 @@ impl Function<'_, '_, '_, '_> {
             self.place(end)
         } else if let (Some(offset), Some(action)) = (projection, action) {
             self.materialize_projected_copy(id, result, object, action, offset)
-        } else if self.materialize_copy(id, result, object, action)? {
+        } else if self.materialize_copy(
+            id,
+            result,
+            object,
+            action,
+            super::construction::CopyCall::Expression,
+        )? {
             Ok(())
         } else {
             self.materialize_class(id, result, object)

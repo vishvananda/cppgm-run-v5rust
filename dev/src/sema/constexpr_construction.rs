@@ -945,6 +945,28 @@ impl Analyzer<'_> {
                 .as_ref()
                 .ok_or(Error::Invariant("lost constant copy plan"))?[index];
             let (to, from) = match action.target {
+                super::copy_construction::CopyTarget::VirtualBase(base) => {
+                    let class = self.graph.constructors.get(id).class;
+                    self.class_layout(class, location)?;
+                    let offset = super::integral::signed(
+                        self.graph
+                            .lower_virtual_base_offset(class, base)
+                            .ok_or(Error::Invariant("constant copy virtual base layout"))?,
+                    );
+                    let ty = self.bare_type(action.ty)?;
+                    (
+                        Address {
+                            offset: target.offset.wrapping_add(offset),
+                            designated: ty,
+                            ..target
+                        },
+                        Address {
+                            offset: source.offset.wrapping_add(offset),
+                            designated: ty,
+                            ..source
+                        },
+                    )
+                }
                 super::copy_construction::CopyTarget::Base(index) => {
                     let class = self.graph.constructors.get(id).class;
                     self.class_layout(class, location)?;

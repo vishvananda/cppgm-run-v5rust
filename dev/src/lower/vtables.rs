@@ -1548,6 +1548,12 @@ impl Symbols<'_, '_> {
         if let Some(&symbol) = self.vtables.vtts.get(&class) {
             return Ok(symbol);
         }
+        // vtt_symbol first publishes the class table. That table can request
+        // its VTT recursively; reuse that completed symbol before reserving.
+        self.vtable_symbol(program, class)?;
+        if let Some(&symbol) = self.vtables.vtts.get(&class) {
+            return Ok(symbol);
+        }
         let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Vtt)?;
         self.vtables.vtts.insert(class, symbol);
         if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {

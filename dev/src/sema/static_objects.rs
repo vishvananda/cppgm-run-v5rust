@@ -301,6 +301,13 @@ impl Analyzer<'_> {
                 return Ok(false);
             };
             let (offset, primary) = match action.target {
+                super::copy_construction::CopyTarget::VirtualBase(base) => {
+                    let offset = self
+                        .graph
+                        .lower_virtual_base_offset(class, base)
+                        .ok_or(Error::Invariant("copy image virtual base layout"))?;
+                    (offset, self.graph.lower_polymorphic(base) && offset == 0)
+                }
                 super::copy_construction::CopyTarget::Base(index) => {
                     let base = &self.graph.entity(class).bases[index as usize];
                     let offset = base

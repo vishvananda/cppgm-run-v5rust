@@ -4,7 +4,7 @@
 use super::{
     Error,
     construction::{Entry, Variant},
-    destruction::Subobject,
+    destruction::{BaseSubobject, Subobject},
     function::Function,
 };
 use crate::{
@@ -37,7 +37,7 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         ty: TypeId,
         offset: u64,
-        member: bool,
+        base: Option<BaseSubobject>,
     ) -> Result<(), Error> {
         if self.symbols.class_destructor(ty)?.is_none() {
             return Ok(());
@@ -45,7 +45,7 @@ impl Function<'_, '_, '_, '_> {
         self.completed_construction(CompletedObject::Subobject(Subobject {
             ty,
             offset,
-            member,
+            base,
             element: None,
         }))
     }
@@ -208,17 +208,34 @@ impl Function<'_, '_, '_, '_> {
         if guarded {
             self.open_destructor_unwind_guard()?;
         }
+        let hidden = variant == Variant::Base
+            && !self
+                .graph
+                .lower_virtual_bases(
+                    facts
+                        .object
+                        .ok_or(crate::sema::Error::Invariant("delegated cleanup class"))?,
+                )
+                .is_empty();
         let entry = if variant == Variant::Base
-            && facts.emission == crate::sema::lowering::Emission::Always
+            && (facts.emission == crate::sema::lowering::Emission::Always || hidden)
         {
             Entry::DestructorBase(destructor)
         } else {
             Entry::Function(destructor)
         };
         let object = self.object_pointer(ty)?.value;
+        let mut values = vec![object];
+        if hidden {
+            let saved = self.virtual_context.hidden;
+            self.virtual_context.hidden = Some(0);
+            let result = self.hidden_vtt_value();
+            self.virtual_context.hidden = saved;
+            values.push(result?);
+        }
         let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
         self.symbols.demand_entry(entry);
-        let arguments = self.builder.arguments(&[object])?;
+        let arguments = self.builder.arguments(&values)?;
         self.effect(I::Call(crate::lowir::model::Call {
             result: crate::lowir::vocabulary::Type::Void,
             callee: crate::lowir::model::Value::Symbol(symbol),

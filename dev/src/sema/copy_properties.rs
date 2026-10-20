@@ -414,12 +414,9 @@ impl Analyzer<'_> {
             .entity(class)
             .scope
             .ok_or(Error::Invariant("copy class scope"))?;
-        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
-        for index in 0..count {
-            let Some((child, member, cv)) = self.graph.copy_child(class, index)? else {
-                if index >= self.graph.entity(class).bases.len() {
-                    let member = self.graph.entity(class).members
-                        [index - self.graph.entity(class).bases.len()];
+        for target in self.graph.copy_targets(class)? {
+            let Some((child, member, cv)) = self.graph.copy_target_child(class, target)? else {
+                if let super::copy_construction::CopyTarget::Member(member) = target {
                     let ty = self
                         .graph
                         .entity(member)

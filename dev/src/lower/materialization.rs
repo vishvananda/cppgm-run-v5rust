@@ -1,7 +1,7 @@
 // Translated from lower/object_lowering.cpp::materialize_prvalue/temporary_object.
 // See NOTICE.
 //! Original class expressions initialize their destination without an intermediate copy.
-use super::{Error, function::Function, types};
+use super::{Error, construction::CopyCall, function::Function, types};
 use crate::{
     lowir::model::{InstructionKind as I, Value},
     sema::lowering::{ClassInitialization, CopyAction, EntityId, TypeId, TypeView},
@@ -549,7 +549,7 @@ impl Function<'_, '_, '_, '_> {
         if let Some(action @ CopyAction::Constructor { constructor, .. }) =
             self.graph.lower_class_copy(id)?
             && matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if class == self.graph.lower_constructor(constructor).class)
-            && self.materialize_copy(id, ty, object, Some(action))?
+            && self.materialize_copy(id, ty, object, Some(action), CopyCall::Expression)?
         {
             return Ok(());
         }
@@ -559,7 +559,13 @@ impl Function<'_, '_, '_, '_> {
         if self.initialize_function_conversion(id, ty, object)? {
             return Ok(());
         }
-        if self.materialize_copy(id, ty, object, self.graph.lower_class_copy(id)?)? {
+        if self.materialize_copy(
+            id,
+            ty,
+            object,
+            self.graph.lower_class_copy(id)?,
+            CopyCall::Expression,
+        )? {
             return Ok(());
         }
         self.materialize_prvalue(id, ty, object, volatile)
@@ -570,6 +576,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
         action: Option<CopyAction>,
+        call: CopyCall,
     ) -> Result<bool, Error> {
         match action {
             Some(CopyAction::Storage {
@@ -606,7 +613,7 @@ impl Function<'_, '_, '_, '_> {
                 {
                     return Ok(true);
                 }
-                self.call_constructor_from_expression(constructor, object, id, elision)?;
+                self.call_constructor_from_expression(constructor, object, id, elision, call)?;
                 return Ok(true);
             }
             None => (),

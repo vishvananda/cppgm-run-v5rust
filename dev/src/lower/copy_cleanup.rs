@@ -10,6 +10,7 @@ struct Made {
     address: Value,
     ty: TypeId,
     handler: Option<BlockId>,
+    base: Option<super::destruction::BaseSubobject>,
 }
 #[derive(Default)]
 pub(super) struct State {
@@ -25,11 +26,17 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn copy_truncate(&mut self, mark: usize) {
         self.copying.actions.truncate(mark);
     }
-    pub(super) fn copied_subobject(&mut self, ty: TypeId, address: Value) {
+    pub(super) fn copied_subobject(
+        &mut self,
+        ty: TypeId,
+        address: Value,
+        base: Option<super::destruction::BaseSubobject>,
+    ) {
         self.copying.actions.push(Made {
             address,
             ty,
             handler: None,
+            base,
         });
     }
     pub(super) fn copy_handler(&mut self) -> Result<BlockId, Error> {
@@ -86,8 +93,7 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(crate::sema::Error::Invariant("copy cleanup resume"))?;
             let Some(index) = index else {
                 self.place(resume)?;
-                self.effect(I::Runtime(R::Resume))?;
-                self.terminated = true;
+                self.handler_resume()?;
                 continue;
             };
             let action = self.copying.actions[index];
@@ -99,7 +105,38 @@ impl Function<'_, '_, '_, '_> {
             if throws {
                 self.open_destructor_unwind_guard()?;
             }
-            self.destroy_copied_object(action.ty, action.address)?;
+            if let Some(base) = action.base
+                && let TypeView::Class(class) = self.graph.lower_type(action.ty)?
+                && !self.graph.lower_virtual_bases(class).is_empty()
+            {
+                let owner = self
+                    .virtual_context
+                    .class
+                    .ok_or(crate::sema::Error::Invariant("copy cleanup owner"))?;
+                let offset = match base {
+                    super::destruction::BaseSubobject::Direct(index) => {
+                        self.graph
+                            .lower_base_initialization_span(owner, index as usize, false)?
+                            .0
+                    }
+                    super::destruction::BaseSubobject::Virtual(base) => {
+                        self.graph.lower_virtual_base_offset(owner, base).ok_or(
+                            crate::sema::Error::Invariant("copy cleanup virtual base layout"),
+                        )?
+                    }
+                };
+                self.destroy_subobject(
+                    super::destruction::Subobject {
+                        ty: action.ty,
+                        offset,
+                        base: Some(base),
+                        element: None,
+                    },
+                    false,
+                )?;
+            } else {
+                self.destroy_copied_object(action.ty, action.address)?;
+            }
             if throws {
                 self.effect(I::Runtime(R::EhEnd))?;
             }

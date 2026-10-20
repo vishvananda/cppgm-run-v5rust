@@ -224,7 +224,22 @@ impl Function<'_, '_, '_, '_> {
                     self.lifetime.expression_start = Some(self.builder.position()?);
                 }
                 let saved = self.lifetime.declared_object.replace(object);
-                let result = self.materialize_class(expr, ty, object);
+                let result = (|| {
+                    if matches!(initializer.kind, ast::InitializerKind::Parenthesized(_))
+                        && let Some(action @ crate::sema::lowering::CopyAction::Constructor { .. }) =
+                            self.graph.lower_class_copy(source)?
+                        && self.materialize_copy(
+                            source,
+                            ty,
+                            object,
+                            Some(action),
+                            super::construction::CopyCall::Direct,
+                        )?
+                    {
+                        return Ok(());
+                    }
+                    self.materialize_class(expr, ty, object)
+                })();
                 self.lifetime.declared_object = saved;
                 return result;
             }

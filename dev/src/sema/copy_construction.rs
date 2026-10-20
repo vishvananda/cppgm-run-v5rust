@@ -22,6 +22,7 @@ pub(super) enum Origin {
 pub(crate) enum CopyTarget {
     Base(u32),
     Member(EntityId),
+    VirtualBase(EntityId),
 }
 #[derive(Clone, Copy)]
 pub(crate) struct SubobjectCopy {
@@ -30,6 +31,77 @@ pub(crate) struct SubobjectCopy {
     pub constructor: Option<ConstructorId>,
 }
 impl super::graph::Graph {
+    /// Defaulted constructors select direct bases, members, then indirect
+    /// virtual bases. This is plan order; lowering owns construction order.
+    pub(super) fn copy_targets(&self, class: EntityId) -> Result<Vec<CopyTarget>, Error> {
+        let entity = self.entity(class);
+        let mut targets = Vec::with_capacity(entity.bases.len() + entity.members.len());
+        for index in 0..entity.bases.len() {
+            targets.push(CopyTarget::Base(
+                u32::try_from(index).map_err(|_| Error::Limit("copy base index"))?,
+            ));
+        }
+        targets.extend(entity.members.iter().copied().map(CopyTarget::Member));
+        // An explicitly defaulted member's properties may be selected before
+        // its enclosing class publishes virtual facts. Its bases are complete.
+        if entity.bases.iter().any(|edge| {
+            edge.is_virtual
+                || self
+                    .virtuals
+                    .classes
+                    .get(&edge.class)
+                    .is_some_and(|facts| facts.has_virtual_bases)
+        }) {
+            let direct: std::collections::HashSet<_> = entity
+                .bases
+                .iter()
+                .filter(|edge| edge.is_virtual)
+                .map(|edge| edge.class)
+                .collect();
+            targets.extend(
+                self.virtual_base_order(class)
+                    .into_iter()
+                    .filter(|base| !direct.contains(base))
+                    .map(CopyTarget::VirtualBase),
+            );
+        }
+        Ok(targets)
+    }
+    pub(super) fn copy_target_type(
+        &self,
+        class: EntityId,
+        target: CopyTarget,
+    ) -> Result<TypeId, Error> {
+        let entity = match target {
+            CopyTarget::Base(index) => self.entity(class).bases[index as usize].class,
+            CopyTarget::Member(member) | CopyTarget::VirtualBase(member) => member,
+        };
+        self.entity(entity)
+            .ty
+            .ok_or(Error::Invariant("copy action without type"))
+    }
+    pub(super) fn copy_target_child(
+        &self,
+        class: EntityId,
+        target: CopyTarget,
+    ) -> Result<Option<(EntityId, Option<EntityId>, Cv)>, Error> {
+        let mut ty = self.copy_target_type(class, target)?;
+        while let TypeKind::Array { element, .. } = self.types.get(ty).kind {
+            ty = element;
+        }
+        Ok(if let TypeKind::Class(child) = self.types.get(ty).kind {
+            Some((
+                child,
+                match target {
+                    CopyTarget::Member(member) => Some(member),
+                    _ => None,
+                },
+                self.types.get(ty).cv,
+            ))
+        } else {
+            None
+        })
+    }
     /// `object_lowering.cpp::copies_storage`: an instantiated out-of-class
     /// defaulted copy stays nontrivial for ABI passing, but transfers storage
     /// when every selected subobject copy is trivial. Synthesis has already
@@ -230,44 +302,36 @@ impl Analyzer<'_> {
             }
         };
         self.prepare_copy_parameters(binding)?;
-        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
-        let mut actions = Vec::with_capacity(count);
+        let targets = self.graph.copy_targets(class)?;
+        let mut actions = Vec::with_capacity(targets.len());
         let mut child_index = 0;
-        for index in 0..count {
-            let bases = self.graph.entity(class).bases.len();
-            let target = if index < bases {
-                CopyTarget::Base(u32::try_from(index).map_err(|_| Error::Limit("copy base index"))?)
-            } else {
-                CopyTarget::Member(self.graph.entity(class).members[index - bases])
-            };
-            let ty = match target {
-                CopyTarget::Base(index) => {
-                    self.graph
-                        .entity(self.graph.entity(class).bases[index as usize].class)
-                        .ty
-                }
-                CopyTarget::Member(member) => self.graph.entity(member).ty,
-            }
-            .ok_or(Error::Invariant("copy action without type"))?;
-            let constructor = if let Some((child, _, _)) = self.graph.copy_child(class, index)? {
-                let (_, planned_child, selected) =
-                    self.graph.copy_properties.get(properties).subobjects[child_index];
-                child_index += 1;
-                if child != planned_child {
-                    return Err(Error::Invariant("copy action child identity"));
-                }
-                if let Some(selected) = selected {
-                    self.ready_copy_plan(child, selected.origin, location)?
-                } else if self.graph.copy_properties.get(properties).deleted {
-                    // The frozen deleted-property result retains this subobject
-                    // without a callable selection; explicit roots still emit it.
-                    None
+        for target in targets {
+            let ty = self.graph.copy_target_type(class, target)?;
+            let constructor =
+                if let Some((child, _, _)) = self.graph.copy_target_child(class, target)? {
+                    let &(_, planned_child, selected) = self
+                        .graph
+                        .copy_properties
+                        .get(properties)
+                        .subobjects
+                        .get(child_index)
+                        .ok_or(Error::Invariant("missing copy child selection"))?;
+                    child_index += 1;
+                    if child != planned_child {
+                        return Err(Error::Invariant("copy action child identity"));
+                    }
+                    if let Some(selected) = selected {
+                        self.ready_copy_plan(child, selected.origin, location)?
+                    } else if self.graph.copy_properties.get(properties).deleted {
+                        // The frozen deleted-property result retains this subobject
+                        // without a callable selection; explicit roots still emit it.
+                        None
+                    } else {
+                        return Err(Error::Invariant("deleted copy action"));
+                    }
                 } else {
-                    return Err(Error::Invariant("deleted copy action"));
-                }
-            } else {
-                None
-            };
+                    None
+                };
             actions.push(SubobjectCopy {
                 target,
                 ty,
@@ -438,6 +502,90 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn indirect_copy_selections_are_unique_ordered_and_demand_owned() {
+        let source = SourceBuffer::new(b"struct V{int n;V(const V&);};struct W{int w;};struct A:virtual V{};struct B:virtual V{};struct D:A,B,virtual W{int m;};struct Unused:A{};struct E:A{E(const E&)=default;};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"indirect-copy-plan").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"D".as_slice(), b"V", b"W", b"Unused", b"E"]
+            .map(|name| cursor.intern_name(name).unwrap());
+        let syntax = (tree.expressions.mark(), tree.declarations.mark());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let [class, shared, direct, unused, defaulted] = names.map(|name| {
+            analyzer
+                .graph
+                .binding(
+                    analyzer
+                        .graph
+                        .own(global, name, super::super::lookup::Filter::Elaborated)
+                        .unwrap(),
+                )
+                .entity
+        });
+        let binding = analyzer.graph.entity(defaulted).declared_constructors[0];
+        let function = analyzer
+            .graph
+            .entity(analyzer.graph.binding(binding).entity);
+        let facts = analyzer
+            .graph
+            .copy_properties
+            .get(function.copy_properties.unwrap());
+        // Explicit defaulting selects the indirect base before E publishes
+        // virtual facts, while its callable body remains undemanded.
+        assert_eq!(facts.subobjects.len(), 2);
+        assert_eq!(facts.subobjects[1].1, shared);
+        assert!(matches!(facts.plan, ConstructorState::NotStarted));
+        analyzer.prepare_copy_properties(class).unwrap();
+        let id = analyzer
+            .build_implicit_copy_plan(class, RefKind::Lvalue)
+            .unwrap();
+        assert_eq!(
+            id,
+            analyzer
+                .build_implicit_copy_plan(class, RefKind::Lvalue)
+                .unwrap()
+        );
+        let plan = analyzer.graph.constructors.get(id);
+        let actions = plan.copy.as_ref().unwrap();
+        assert_eq!(actions.len(), 5); // three direct bases, a member, one indirect virtual base
+        assert!(matches!(actions[2].target, CopyTarget::Base(2)));
+        assert!(matches!(actions[3].target, CopyTarget::Member(_)));
+        assert!(matches!(actions[4].target, CopyTarget::VirtualBase(base) if base == shared));
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| matches!(action.target, CopyTarget::VirtualBase(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            analyzer
+                .graph
+                .copy_target_type(class, actions[2].target)
+                .unwrap(),
+            analyzer.graph.entity(direct).ty.unwrap()
+        );
+        assert!(actions[4].constructor.is_some());
+        assert!(!plan.nothrow && plan.nontrivial());
+        assert!(analyzer.graph.entity(unused).implicit_copies.is_none());
+        assert!(analyzer.graph.storage_layouts.is_empty());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert_eq!(
+            syntax,
+            (
+                analyzer.tree.expressions.mark(),
+                analyzer.tree.declarations.mark()
+            )
+        );
+    }
 
     #[test]
     fn defaulted_copy_keeps_written_clause_but_synthesizes_unnamed_parameters() {

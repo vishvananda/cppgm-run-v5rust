@@ -112,7 +112,7 @@ impl Function<'_, '_, '_, '_> {
                 self.destroy_temporaries(first)?;
                 self.end_lifetime_expression(region)?;
                 if !plan.union && !nested {
-                    self.subobject_constructed(ty, offset, true)?;
+                    self.subobject_constructed(ty, offset, None)?;
                 }
                 self.bit_initialization.unit = 0;
                 self.bit_initialization.high = self.bit_initialization.high.max(
@@ -124,7 +124,7 @@ impl Function<'_, '_, '_, '_> {
             }
             let Some(initializer) = initializer else {
                 if !plan.union && !nested {
-                    self.subobject_constructed(ty, offset, true)?;
+                    self.subobject_constructed(ty, offset, None)?;
                 }
                 continue;
             };
@@ -135,7 +135,7 @@ impl Function<'_, '_, '_, '_> {
             self.destroy_temporaries(first)?;
             self.end_lifetime_expression(region)?;
             if !plan.union && !nested {
-                self.subobject_constructed(ty, offset, true)?;
+                self.subobject_constructed(ty, offset, None)?;
             }
             self.bit_initialization.unit = 0;
             self.bit_initialization.high = self.bit_initialization.high.max(

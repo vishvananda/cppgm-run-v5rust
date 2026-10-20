@@ -108,6 +108,11 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         action: AssignmentAction,
     ) -> Result<Value, Error> {
+        if let Some((class, index)) = action.base
+            && let Some((base, true, _)) = self.graph.lower_inheritance_edge(class, index as usize)
+        {
+            return self.virtual_base_address(object, action.ty, class, base);
+        }
         let offset = self
             .builder
             .integer(u128::from(self.assignment_offset(action)?))?;
@@ -166,10 +171,10 @@ impl Function<'_, '_, '_, '_> {
             }
             first += 1;
         }
-        if self.graph.lower_polymorphic(class) {
+        if self.graph.lower_dynamic_class(class) {
             first = 0;
         }
-        let mut field_wise = self.graph.lower_polymorphic(class);
+        let mut field_wise = self.graph.lower_dynamic_class(class);
         for action in actions {
             field_wise |= if let Some(member) = action.member {
                 self.graph.lower_bit_field(member)?.is_some()
@@ -193,7 +198,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             let prefix = actions
                 .get(first)
-                .filter(|_| !self.graph.lower_polymorphic(class))
+                .filter(|_| !self.graph.lower_dynamic_class(class))
                 .copied()
                 .map(|a| self.assignment_offset(a))
                 .transpose()?

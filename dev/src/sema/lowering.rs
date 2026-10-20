@@ -2363,7 +2363,8 @@ impl Graph {
     pub(crate) fn lower_destructor_bases(
         &self,
         class: EntityId,
-    ) -> impl DoubleEndedIterator<Item = Result<(EntityId, u64), Error>> + '_ {
+    ) -> impl DoubleEndedIterator<Item = Result<(EntityId, u64), Error>> + ExactSizeIterator + '_
+    {
         self.entity(class).bases.iter().map(|base| {
             Ok((
                 base.class,
