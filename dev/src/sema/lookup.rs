@@ -1,10 +1,10 @@
 // Translated from sema/lookup.cpp and analyzer_types.cpp's name_prefix. See NOTICE.
-//! Searches visit only lexical parents and explicit namespace edges.
+//! Searches visit lexical parents and explicit namespace and base-class edges.
 use super::{
     Error,
     analyzer::Analyzer,
     function_names::ValueKey,
-    graph::{BindingId, BindingKind, ScopeId, ScopeKind},
+    graph::{BindingId, BindingKind, Graph, ScopeId, ScopeKind},
     types::{TypeId, TypeKind},
 };
 use crate::{
@@ -89,6 +89,104 @@ struct BaseLookup {
     scope: Option<ScopeId>,
     ambiguous: bool,
     injected_template: bool,
+    shared: bool,
+    virtual_base: VirtualOrigin,
+}
+
+// The last virtual base on the paths to a declaration set. Keep absence and
+// several bases distinct from a real compact scope identity.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum VirtualOrigin {
+    #[default]
+    None,
+    One(ScopeId),
+    Several,
+}
+impl VirtualOrigin {
+    fn union(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::None, _) => other,
+            (_, Self::None) => self,
+            _ if self == other => self,
+            _ => Self::Several,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum BaseRelation {
+    Derived,
+    Virtual,
+}
+
+// Query-owned scratch and complete relation keys. A shared-base lattice is
+// visited by class, never by path, and neither a visited set nor an overload
+// vector is allocated per frame of member lookup.
+#[derive(Default)]
+struct LookupBases {
+    memo: HashMap<(ScopeId, ScopeId, BaseRelation), bool>,
+    work: Vec<ScopeId>,
+    seen: HashSet<ScopeId>,
+}
+impl LookupBases {
+    fn reaches(
+        &mut self,
+        graph: &Graph,
+        derived: Option<ScopeId>,
+        base: Option<ScopeId>,
+        relation: BaseRelation,
+    ) -> bool {
+        let (Some(derived), Some(base)) = (derived, base) else {
+            return false;
+        };
+        let key = (derived, base, relation);
+        if let Some(&found) = self.memo.get(&key) {
+            return found;
+        }
+        self.work.clear();
+        self.seen.clear();
+        self.work.push(derived);
+        self.seen.insert(derived);
+        let mut found = false;
+        'search: while let Some(scope) = self.work.pop() {
+            let node = graph.scope(scope);
+            let Some(class) = node.owner.filter(|_| node.kind == ScopeKind::Class) else {
+                continue;
+            };
+            for edge in &graph.entity(class).bases {
+                let Some(scope) = graph.entity(edge.class).scope else {
+                    continue;
+                };
+                if scope == base && (relation == BaseRelation::Derived || edge.is_virtual) {
+                    found = true;
+                    break 'search;
+                }
+                if self.seen.insert(scope) {
+                    self.work.push(scope);
+                }
+            }
+        }
+        self.memo.insert(key, found);
+        found
+    }
+
+    fn contains_shared(
+        &mut self,
+        graph: &Graph,
+        found: BaseLookup,
+        class: Option<ScopeId>,
+    ) -> bool {
+        if !found.shared {
+            return false;
+        }
+        match found.virtual_base {
+            VirtualOrigin::Several => class.is_some(),
+            VirtualOrigin::One(base) => {
+                class == Some(base) || self.reaches(graph, class, Some(base), BaseRelation::Virtual)
+            }
+            VirtualOrigin::None => false,
+        }
+    }
 }
 impl LookupResult {
     fn checked_template_id(
@@ -213,6 +311,7 @@ impl Analyzer<'_> {
         // is collected only once, after the graph walk, rather than copied at
         // every inherited level. Query memos store absence or this compact fact.
         let mut memo = HashMap::<ScopeId, BaseLookup>::new();
+        let mut relations = LookupBases::default();
         let mut work = vec![(scope, 0usize, BaseLookup::default())];
         while let Some((current, next, result)) = work.last_mut() {
             let owner = self
@@ -249,7 +348,12 @@ impl Analyzer<'_> {
                     memo.insert(base, own);
                     own
                 };
-                self.merge_base_lookup(result, found, key, filter)?;
+                let mut found = found;
+                if edge.is_virtual && found.scope.is_some() && !found.shared {
+                    found.virtual_base = found.virtual_base.union(VirtualOrigin::One(base));
+                }
+                found.shared |= edge.is_virtual;
+                self.merge_base_lookup(result, found, key, filter, &mut relations)?;
                 *next += 1;
             } else {
                 let (current, _, found) = work
@@ -274,6 +378,7 @@ impl Analyzer<'_> {
         found: BaseLookup,
         key: ValueKey,
         filter: Filter,
+        relations: &mut LookupBases,
     ) -> Result<(), Error> {
         // Match merge_base's order: identical entities propagate a subtree's
         // ambiguity; equal designated types converge only before ambiguity.
@@ -299,15 +404,39 @@ impl Analyzer<'_> {
                     (!result.ambiguous || result.injected_template) && found.injected_template;
             }
             result.ambiguous |= found.ambiguous;
-        } else if !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
-            && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
-            && a.ty == b.ty
-            && !result.ambiguous
-            && !found.ambiguous)
+            result.shared &= found.shared;
+            result.virtual_base = result.virtual_base.union(found.virtual_base);
+        } else if result.shared
+            && relations.reaches(
+                &self.graph,
+                self.graph.entity(b.entity).home,
+                self.graph.entity(a.entity).home,
+                BaseRelation::Derived,
+            )
+            && relations.contains_shared(&self.graph, *result, self.graph.entity(b.entity).home)
         {
-            result.injected_template = (!result.ambiguous || result.injected_template)
-                && self.graph.same_template_injected_names(a_id, b_id);
-            result.ambiguous = true;
+            *result = found;
+        } else if !found.shared
+            || !relations.reaches(
+                &self.graph,
+                self.graph.entity(a.entity).home,
+                self.graph.entity(b.entity).home,
+                BaseRelation::Derived,
+            )
+            || !relations.contains_shared(&self.graph, found, self.graph.entity(a.entity).home)
+        {
+            if !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
+                && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
+                && a.ty == b.ty
+                && !result.ambiguous
+                && !found.ambiguous)
+            {
+                result.injected_template = (!result.ambiguous || result.injected_template)
+                    && self.graph.same_template_injected_names(a_id, b_id);
+                result.ambiguous = true;
+            }
+            result.shared &= found.shared;
+            result.virtual_base = result.virtual_base.union(found.virtual_base);
         }
         Ok(())
     }
@@ -922,6 +1051,140 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn shared_member_hiding_preserves_origins_ambiguity_and_demand() {
+        let source = SourceBuffer::new(
+            br"
+struct V { typedef char m; void unused(); };
+struct B : virtual V { typedef int m; };
+struct C : virtual V {};
+struct D : B, C {}; struct Reverse : C, B {};
+struct N : V {}; struct Distinct : B, N {};
+struct Mixed : C, N {}; struct NotShared : B, Mixed {};
+struct W : V {}; struct BV : virtual W { typedef int m; };
+struct CV : virtual W {}; struct Within : BV, CV {};
+struct W2 : V {}; struct Other : virtual W2 {};
+struct WrongOrigin : BV, Other {};
+struct Many : virtual W, virtual W2 {};
+struct Several : BV, Many {};
+struct T { typedef char m; }; struct Same : virtual V, virtual T {};
+struct Converged : B, Same {};
+struct U : virtual V { using V::m; };
+struct Imported : B, U {};
+struct F { void f(int); void f(char); };
+struct FB : virtual F { void f(long); };
+struct FC : virtual F {}; struct Functions : FC, FB {};
+struct FU : F { using F::f; }; struct ImportedFunctions : FC, FU {};
+template<class T> struct Lazy : D { void unused() { typename T::missing x; } };
+struct Undemanded : Lazy<int> {};
+"
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"shared-lookup").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.set_lowering();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let expressions = analyzer.tree.expressions.mark();
+        let declarations_mark = analyzer.tree.declarations.mark();
+        let key = analyzer.identifiers.intern(b"m").unwrap();
+        let mut selected_type = None;
+        for name in [
+            "D",
+            "Reverse",
+            "Within",
+            "Several",
+            "Converged",
+            "Undemanded",
+        ] {
+            let name = analyzer.identifiers.intern(name.as_bytes()).unwrap();
+            let class = analyzer
+                .graph
+                .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+                .entity;
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let result = analyzer
+                .class_lookup(scope, key.into(), Filter::Prefix)
+                .unwrap();
+            let ty = analyzer.graph.binding(result.binding.unwrap()).ty.unwrap();
+            assert_eq!(selected_type.get_or_insert(ty), &ty);
+            assert!(result.functions.as_slice().is_empty());
+            assert!(matches!(
+                analyzer.graph.entity(class).layout,
+                LayoutState::NotStarted
+            ));
+        }
+        for name in ["Distinct", "NotShared", "WrongOrigin", "Imported"] {
+            let name = analyzer.identifiers.intern(name.as_bytes()).unwrap();
+            let class = analyzer
+                .graph
+                .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+                .entity;
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let result = analyzer
+                .class_lookup_in(scope, key.into(), Filter::Prefix, false)
+                .unwrap();
+            assert!(result.ambiguous);
+            assert!(!result.injected_template);
+            assert!(
+                analyzer
+                    .class_lookup(scope, key.into(), Filter::Prefix)
+                    .is_err()
+            );
+        }
+        let name = analyzer.identifiers.intern(b"Functions").unwrap();
+        let class = analyzer
+            .graph
+            .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+            .entity;
+        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let name = analyzer.identifiers.intern(b"f").unwrap();
+        let result = analyzer
+            .class_lookup(scope, name.into(), Filter::Ordinary)
+            .unwrap();
+        assert_eq!(result.functions.as_slice().len(), 1);
+        let name = analyzer.identifiers.intern(b"ImportedFunctions").unwrap();
+        let class = analyzer
+            .graph
+            .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+            .entity;
+        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let key = analyzer.identifiers.intern(b"f").unwrap();
+        let imported = analyzer
+            .class_lookup(scope, key.into(), Filter::Ordinary)
+            .unwrap();
+        let name = analyzer.identifiers.intern(b"F").unwrap();
+        let class = analyzer
+            .graph
+            .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+            .entity;
+        let original = analyzer.own_lookup(
+            analyzer.graph.entity(class).scope.unwrap(),
+            key.into(),
+            Filter::Ordinary,
+        );
+        let entities = |result: &super::LookupResult| {
+            result
+                .functions
+                .iter()
+                .map(|&id| analyzer.graph.binding(id).entity)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(entities(&original), entities(&imported));
+        assert_eq!(
+            analyzer.graph.binding(original.binding.unwrap()).entity,
+            analyzer.graph.binding(imported.binding.unwrap()).entity
+        );
+        assert_eq!(expressions, analyzer.tree.expressions.mark());
+        assert_eq!(declarations_mark, analyzer.tree.declarations.mark());
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn injected_template_ambiguity_keeps_a_canonical_representative_and_lazy_bodies() {

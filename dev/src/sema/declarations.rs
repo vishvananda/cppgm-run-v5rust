@@ -353,7 +353,10 @@ impl Analyzer<'_> {
             }
         }
         if self.graph.binding(target_id).kind == BindingKind::Function {
-            for &target in found.functions.as_slice() {
+            // Lookup lists newest first; introduce in declaration order, as
+            // Analyzer::using_declaration does, so the representative entity
+            // and inherited declaration-set identity remain the source's.
+            for &target in found.functions.iter().rev() {
                 self.introduce_function_using(target, target_key, scope, location)?;
             }
             return Ok(());

@@ -257,6 +257,7 @@ pub(crate) struct Graph {
     ordinals: Vec<usize>,
     binding_scopes: Vec<ScopeId>,
     binding_access: Vec<Access>,
+    member_imports: std::collections::HashSet<EntityId>,
     pub(super) anonymous_enums: u32,
     pub(super) local_types: u32,
     pub(super) block_linkages: super::linkage::BlockLinkages,
@@ -475,6 +476,7 @@ impl Graph {
             ordinals: Vec::new(),
             binding_scopes: Vec::new(),
             binding_access: Vec::new(),
+            member_imports: std::collections::HashSet::new(),
             anonymous_enums: 0,
             local_types: 0,
             block_linkages: super::linkage::BlockLinkages::default(),
@@ -815,6 +817,15 @@ impl Graph {
         let ordinal = earlier.map_or(self.bindings.len(), |id| self.ordinals[id.0 as usize]);
         if self.entity(binding.entity).home.is_none() {
             self.entity_mut(binding.entity).home = Some(scope);
+        }
+        if self.scope(scope).kind == ScopeKind::Class
+            && self.scope(scope).owner != Some(binding.entity)
+            && self
+                .entity(binding.entity)
+                .home
+                .is_some_and(|home| home != scope && self.scope(home).kind == ScopeKind::Class)
+        {
+            self.member_imports.insert(binding.entity);
         }
         let access = earlier.map_or(self.scope(scope).member_access, |id| {
             self.binding_access(id)
@@ -1409,6 +1420,45 @@ impl Graph {
     }
     pub(super) fn binding_scope(&self, id: BindingId) -> ScopeId {
         self.binding_scopes[id.0 as usize]
+    }
+    pub(super) fn has_member_import(&self, binding: BindingId) -> bool {
+        self.member_imports.contains(&self.binding(binding).entity)
+    }
+    // Analyzer::member_declaration, using the existing declaration and entity
+    // indexes instead of scanning a class or copying its overload set.
+    pub(super) fn own_member_declaration(
+        &self,
+        scope: ScopeId,
+        binding: BindingId,
+    ) -> Option<BindingId> {
+        let binding = self.binding(binding);
+        if let Some(entry) = binding
+            .name
+            .and_then(|name| self.scope(scope).index.get(&name))
+        {
+            for id in [entry.value, entry.ty, entry.tag].into_iter().flatten() {
+                if self.binding(id).entity == binding.entity {
+                    return Some(id);
+                }
+            }
+        }
+        let key = binding
+            .name
+            .map(super::function_names::ValueKey::Identifier)
+            .or_else(|| {
+                self.entity(binding.entity)
+                    .function?
+                    .special
+                    .map(super::function_names::ValueKey::Special)
+            })?;
+        let position = self
+            .function_positions
+            .get(&(scope, key, binding.entity))?
+            .visible?;
+        self.visible_function_sets
+            .get(&(scope, key))?
+            .get(position)
+            .copied()
     }
     pub(super) fn binding_limit(&self) -> usize {
         self.bindings.len()

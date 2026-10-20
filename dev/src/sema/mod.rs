@@ -75,6 +75,7 @@ mod function_packs;
 mod function_resolution;
 mod function_templates;
 mod graph;
+mod import_access;
 mod inheritance;
 mod inherited_constructors;
 mod initialization;

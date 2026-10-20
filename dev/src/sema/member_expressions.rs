@@ -626,6 +626,9 @@ impl Analyzer<'_> {
         object: Option<EntityId>,
         scope: ScopeId,
     ) -> Option<AccessFailure> {
+        if self.graph.has_member_import(binding) {
+            return self.imported_member_access_failure(binding, naming, object, scope);
+        }
         if !self.direct_member_accessible(binding, scope) {
             return Some(AccessFailure::Inaccessible);
         }

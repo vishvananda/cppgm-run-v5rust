@@ -393,8 +393,9 @@ fn class_using_hiding_updates_indexes_without_changing_import_identity() {
         .filter(|&id| graph.entity(graph.binding(id).entity).home == Some(base))
         .collect();
     assert_eq!(imported.len(), 4);
-    // C++ imports the overload list from its newest declaration first.
-    for (import, original) in imported[..3].iter().zip(originals.iter().rev()) {
+    // C++ reverses its newest-first lookup view before introducing overloads.
+    // Imported declarations retain source order and canonical base identity.
+    for (import, original) in imported[..3].iter().zip(&originals) {
         assert_eq!(
             graph.binding(*import).entity,
             graph.binding(*original).entity
