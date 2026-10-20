@@ -33,10 +33,13 @@ pub(super) struct Virtuals {
     assignment_targets: HashSet<EntityId>,
     implicit_assignments: HashMap<EntityId, Vec<EntityId>>,
     layouts: HashMap<EntityId, Vec<Option<VirtualEntry>>>,
+    pub(super) final_overriders: super::final_overriders::Groups,
 }
 impl Virtuals {
     pub(super) fn abstract_class(&self, class: EntityId) -> bool {
-        self.pure_counts.get(&class).copied().unwrap_or(0) != 0
+        self.final_overriders
+            .abstract_class(class)
+            .unwrap_or_else(|| self.pure_counts.get(&class).copied().unwrap_or(0) != 0)
     }
 }
 
@@ -403,13 +406,20 @@ impl Analyzer<'_> {
         for function in functions {
             let ty = self.graph.lower_entity_type(function)?;
             let signature = self.graph.types.declaration_signature(ty)?;
-            let mut next = self
+            let mut work: Vec<_> = self
                 .graph
                 .entity(class)
                 .bases
-                .first()
-                .map(|base| base.class);
-            while let Some(base) = next {
+                .iter()
+                .rev()
+                .map(|base| base.class)
+                .collect();
+            let mut seen = HashSet::new();
+            let mut overridden = None;
+            while let Some(base) = work.pop() {
+                if !seen.insert(base) {
+                    continue;
+                }
                 if let Some(&found) = self
                     .graph
                     .virtuals
@@ -419,41 +429,61 @@ impl Analyzer<'_> {
                     self.check_virtual_override(function, found, class, location)?;
                     self.check_override_nonthrowing(function, found, None, location)?;
                     self.note_exception_override(function, found, None, location);
-                    self.graph.virtuals.functions.insert(
-                        function,
-                        VirtualFunction {
-                            is_virtual: true,
-                            overridden: Some(found),
-                            ..VirtualFunction::default()
-                        },
+                    overridden = overridden.or(Some(found));
+                } else {
+                    work.extend(
+                        self.graph
+                            .entity(base)
+                            .bases
+                            .iter()
+                            .rev()
+                            .map(|edge| edge.class),
                     );
-                    self.graph
-                        .virtuals
-                        .declarations
-                        .insert((class, key, signature), function);
-                    self.graph
-                        .virtuals
-                        .implicit_assignments
-                        .entry(class)
-                        .or_default()
-                        .push(function);
-                    break;
                 }
-                next = self.graph.entity(base).bases.first().map(|base| base.class);
+            }
+            if let Some(found) = overridden {
+                self.graph.virtuals.functions.insert(
+                    function,
+                    VirtualFunction {
+                        is_virtual: true,
+                        overridden: Some(found),
+                        ..VirtualFunction::default()
+                    },
+                );
+                self.graph
+                    .virtuals
+                    .declarations
+                    .insert((class, key, signature), function);
+                self.graph
+                    .virtuals
+                    .implicit_assignments
+                    .entry(class)
+                    .or_default()
+                    .push(function);
             }
         }
         Ok(())
     }
 
-    pub(super) fn complete_virtual_members(&mut self, class: EntityId) -> Result<(), Error> {
-        // The PA13 table has one primary chain. Counts are inherited once;
-        // replacing a pure entry changes the count, without copying slot arrays.
-        let mut pure = self
+    pub(super) fn complete_virtual_members(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if self.graph.needs_final_overriders(class) {
+            return self.graph.resolve_final_overriders(class, location);
+        }
+        // Primary-chain abstractness remains a compact delta. A preceding
+        // non-dynamic base contributes no virtual functions to that chain.
+        let primary = self
             .graph
             .entity(class)
             .bases
-            .first()
-            .and_then(|edge| self.graph.virtuals.pure_counts.get(&edge.class))
+            .iter()
+            .find(|edge| self.graph.entity(edge.class).polymorphism.is_dynamic())
+            .map(|edge| edge.class);
+        let mut pure = primary
+            .and_then(|base| self.graph.virtuals.pure_counts.get(&base))
             .copied()
             .unwrap_or(0);
         let scope = self
@@ -501,13 +531,7 @@ impl Analyzer<'_> {
                         .pure
                 })
         };
-        if self
-            .graph
-            .entity(class)
-            .bases
-            .first()
-            .is_some_and(|edge| destructor_pure(edge.class))
-        {
+        if primary.is_some_and(destructor_pure) {
             pure = pure
                 .checked_sub(1)
                 .ok_or(Error::Invariant("destructor pure count underflow"))?;
@@ -1026,7 +1050,7 @@ impl super::graph::Graph {
             .map(Vec::as_slice)
             .ok_or(Error::Invariant("undemanded virtual slot layout"))
     }
-    fn virtual_member_count(&self, class: EntityId) -> Result<usize, Error> {
+    pub(super) fn virtual_member_count(&self, class: EntityId) -> Result<usize, Error> {
         let scope = self
             .entity(class)
             .scope
@@ -1039,7 +1063,11 @@ impl super::graph::Graph {
                 .get(&class)
                 .map_or(0, Vec::len))
     }
-    fn virtual_member_at(&self, class: EntityId, index: usize) -> Result<Option<EntityId>, Error> {
+    pub(super) fn virtual_member_at(
+        &self,
+        class: EntityId,
+        index: usize,
+    ) -> Result<Option<EntityId>, Error> {
         let scope = self
             .entity(class)
             .scope

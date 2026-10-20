@@ -64,6 +64,7 @@ mod explicit_specializations;
 mod expression_facts;
 mod expression_keys;
 mod expressions;
+mod final_overriders;
 mod fixed_expressions;
 mod floating_intrinsics;
 mod friendships;

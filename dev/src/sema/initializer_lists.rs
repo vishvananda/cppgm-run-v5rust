@@ -196,7 +196,7 @@ impl Analyzer<'_> {
         if self.semantic() {
             self.classify_class_copies(class)?;
             self.complete_destructor(class)?;
-            self.complete_virtual_members(class)?;
+            self.complete_virtual_members(class, SourceOffset(0))?;
             self.complete_virtual_layout(class)?;
         }
         Ok(true)
