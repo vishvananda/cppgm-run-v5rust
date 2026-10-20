@@ -401,7 +401,18 @@ impl Facts {
                 self.intervals[result.index()].forbid =
                     mask(&self.intervals[result.index()], &late, &early);
             }
-            let fixed = if self.compare_scratch(body, pos) {
+            let fixed = if let I::Binary(
+                op @ (Binary::Div | Binary::Mod | Binary::UDiv | Binary::UMod),
+                _,
+                ty,
+                _,
+                right,
+            ) = inst.kind
+                && ty.float_rank() == 0
+                && ty != Type::I128
+            {
+                super::division::Form::at(self, body, op, right).clobbers()
+            } else if self.compare_scratch(body, pos) {
                 1 << R::RDX.code()
             } else if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(self.resolve(body,count),Alias::Constant(Constant::Integer(_))))
             {

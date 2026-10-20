@@ -2,7 +2,7 @@
 use super::{
     condition::Condition,
     condition_mir::FlagOp,
-    scalar_mir::{Operand, ScalarOp},
+    scalar_mir::{Operand, ScalarOp, flip_sign},
     scalar_selection::Selection,
     value_facts::Alias,
     value_selection::unsupported,
@@ -266,17 +266,6 @@ impl Selection<'_> {
 }
 fn bits(ty: Type) -> u32 {
     if ty == Type::Ptr { 64 } else { ty.bits() }
-}
-fn flip_sign(ty: Type) -> Type {
-    match ty {
-        Type::I8 => Type::U8,
-        Type::I16 => Type::U16,
-        Type::I32 => Type::U32,
-        Type::U8 => Type::I8,
-        Type::U16 => Type::I16,
-        Type::U32 => Type::I32,
-        _ => ty,
-    }
 }
 
 #[cfg(test)]

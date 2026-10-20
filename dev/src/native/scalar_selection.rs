@@ -128,6 +128,9 @@ impl Selection<'_> {
         if matches!(op, Binary::Shl | Binary::Shr | Binary::UShr) {
             return self.shift(temp, op, ty, left, right);
         }
+        if matches!(op, Binary::Div | Binary::Mod | Binary::UDiv | Binary::UMod) {
+            return self.divide(temp, op, ty, left, right);
+        }
         if !matches!(
             op,
             Binary::Add | Binary::Sub | Binary::Mul | Binary::And | Binary::Or | Binary::Xor

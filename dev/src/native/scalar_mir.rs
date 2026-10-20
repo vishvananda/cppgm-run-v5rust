@@ -88,6 +88,8 @@ impl Operand {
 }
 #[derive(Clone, Copy)]
 pub(super) enum ScalarOp {
+    SignDividend,
+    Divide { unsigned: bool, source: Operand },
     Condition(super::condition_mir::FlagOp),
     Move(R, Operand),
     Lea(R, Operand),
@@ -108,6 +110,17 @@ pub(super) fn signed(ty: Type) -> bool {
         Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::I128
     )
 }
+pub(super) fn flip_sign(ty: Type) -> Type {
+    match ty {
+        Type::I8 => Type::U8,
+        Type::I16 => Type::U16,
+        Type::I32 => Type::U32,
+        Type::U8 => Type::I8,
+        Type::U16 => Type::I16,
+        Type::U32 => Type::I32,
+        _ => ty,
+    }
+}
 pub(super) fn bytes(ty: Type) -> u8 {
     match ty {
         Type::I1 | Type::I8 | Type::U8 => 1,
@@ -120,6 +133,11 @@ impl ScalarOp {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         let mut operand = None;
         match self {
+            Self::SignDividend => write!(out, "cqo")?,
+            Self::Divide { unsigned, source } => {
+                write!(out, "{} ", if unsigned { "div" } else { "idiv" })?;
+                operand = Some(source);
+            }
             Self::Condition(op) => op.write(program, out)?,
             Self::Lea(r, src) => {
                 write!(out, "lea {}, ", r.spelling())?;
@@ -219,6 +237,10 @@ impl ScalarOp {
     }
     pub(super) fn rebase(self, begin: i32, bytes: u32) -> Self {
         match self {
+            Self::Divide { unsigned, source } => Self::Divide {
+                unsigned,
+                source: source.rebase(begin, bytes),
+            },
             Self::Condition(op) => Self::Condition(op.rebase(begin, bytes)),
             Self::Load(r, t, m) => Self::Load(r, t, m.rebase(begin, bytes)),
             Self::Store(m, t, s) => Self::Store(m.rebase(begin, bytes), t, s.rebase(begin, bytes)),
@@ -232,6 +254,21 @@ impl ScalarOp {
     }
     pub(super) fn emit(self, a: &mut Assembler, keep_flags: bool) -> Result<(), Error> {
         match self {
+            Self::SignDividend => {
+                a.byte(0x48);
+                a.byte(0x99);
+                Ok(())
+            }
+            Self::Divide { unsigned, source } => a.op(
+                0,
+                true,
+                0xf7,
+                1,
+                if unsigned { 6 } else { 7 },
+                source.rm()?,
+                false,
+                0,
+            ),
             Self::Condition(op) => op.emit(a),
             Self::Move(r, src) => match src {
                 Operand::Register(s) => a.mov_rr(r, s),
