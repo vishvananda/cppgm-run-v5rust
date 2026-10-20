@@ -1307,15 +1307,26 @@ impl Analyzer<'_> {
         if node.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Class(entity) if entity == class)) {
             return Ok(class);
         }
-        if let Some(base) = node.ty.and_then(|ty| self.graph.class_of(ty))
-            && self
+        if let Some(base) = node.ty.and_then(|ty| self.graph.class_of(ty)) {
+            let direct = self
                 .graph
                 .entity(class)
                 .bases
                 .iter()
-                .any(|edge| edge.class == base)
-        {
-            return Ok(base);
+                .find(|edge| edge.class == base);
+            let is_virtual = self.graph.virtual_base_order(class).contains(&base);
+            if direct.is_some_and(|edge| !edge.is_virtual) && is_virtual {
+                return Err(Error::at(
+                    initializer.location,
+                    "the mem-initializer names both a direct base and a virtual base",
+                ));
+            }
+            if direct.is_some() {
+                return Ok(base);
+            }
+            if is_virtual {
+                return Err(Error::Missing("indirect virtual base constructor plan"));
+            }
         }
         Err(Error::at(
             initializer.location,

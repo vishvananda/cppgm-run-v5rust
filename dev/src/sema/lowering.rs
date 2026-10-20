@@ -990,8 +990,14 @@ impl Graph {
             .get(path)
             .iter()
             .try_fold(0u64, |sum, &(class, index)| {
-                self.entity(class).bases[index]
-                    .offset
+                let edge = &self.entity(class).bases[index];
+                // This API denotes a fixed adjustment. A virtual edge needs
+                // either a proven complete-object projection or a vbase row;
+                // its offset in this intermediate class is neither of those.
+                if edge.is_virtual {
+                    return Err(Error::Missing("virtual base projection"));
+                }
+                edge.offset
                     .map(|offset| sum.wrapping_add(offset))
                     .ok_or(Error::Invariant("base projection without completed layout"))
             })

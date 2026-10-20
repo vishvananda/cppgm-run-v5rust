@@ -38,18 +38,32 @@ enum Walk {
 
 pub(super) struct EmptyPlacement {
     placed: HashSet<(EntityId, u64)>,
-    work: Vec<(EntityId, u64)>,
+    work: Vec<(EntityId, u64, bool)>,
     maximum: u64,
     record_limit: u64,
     budget: u64,
-    hint: Option<(EntityId, EntityId, u64)>,
+    hint: Option<(EntityId, EntityId, u64, bool)>,
 }
 impl EmptyPlacement {
-    pub(super) fn new(graph: &Graph, class: EntityId) -> Result<Self, Error> {
+    pub(super) fn new(
+        graph: &Graph,
+        class: EntityId,
+        virtual_bases: &[(EntityId, u64)],
+    ) -> Result<Self, Error> {
         let mut record_limit = 0;
         for base in &graph.entity(class).bases {
             let LayoutState::Value { empty, size, .. } = graph.entity(base.class).layout else {
                 return Err(Error::Invariant("empty placement before base layout"));
+            };
+            if empty {
+                record_limit = record_limit.max(size);
+            }
+        }
+        for &(base, _) in virtual_bases {
+            let LayoutState::Value { empty, size, .. } = graph.entity(base).layout else {
+                return Err(Error::Invariant(
+                    "empty placement before virtual base layout",
+                ));
             };
             if empty {
                 record_limit = record_limit.max(size);
@@ -64,7 +78,7 @@ impl EmptyPlacement {
             hint: None,
         })
     }
-    fn spend(&mut self, location: SourceOffset) -> Result<(), Error> {
+    pub(super) fn spend(&mut self, location: SourceOffset) -> Result<(), Error> {
         if self.budget == 0 {
             return Err(Error::at(
                 location,
@@ -81,18 +95,29 @@ impl EmptyPlacement {
         offset: u64,
         location: SourceOffset,
     ) -> Result<bool, Error> {
+        self.conflict_object(graph, class, offset, false, location)
+    }
+    fn conflict_object(
+        &mut self,
+        graph: &Graph,
+        class: EntityId,
+        offset: u64,
+        complete: bool,
+        location: SourceOffset,
+    ) -> Result<bool, Error> {
         if self.placed.is_empty() {
             return Ok(false);
         }
-        if let Some((root, child, relative)) = self.hint
+        if let Some((root, child, relative, hint_complete)) = self.hint
             && root == class
+            && hint_complete == complete
             && self
                 .placed
                 .contains(&(child, offset.wrapping_add(relative)))
         {
             return Ok(true);
         }
-        self.walk(graph, class, offset, Walk::Conflict, location)
+        self.walk(graph, class, offset, complete, Walk::Conflict, location)
     }
     pub(super) fn record_base(
         &mut self,
@@ -107,6 +132,7 @@ impl EmptyPlacement {
             graph,
             class,
             offset,
+            false,
             if empty {
                 Walk::Record
             } else {
@@ -142,7 +168,7 @@ impl EmptyPlacement {
             if at > self.maximum {
                 break;
             }
-            if self.conflict(graph, class, at, location)? {
+            if self.conflict_object(graph, class, at, true, location)? {
                 return Ok(true);
             }
         }
@@ -176,6 +202,7 @@ impl EmptyPlacement {
                 graph,
                 class,
                 offset.wrapping_add(index.wrapping_mul(size)),
+                true,
                 Walk::RecordReachable(tail),
                 location,
             )?;
@@ -188,6 +215,7 @@ impl EmptyPlacement {
         graph: &Graph,
         root: EntityId,
         offset: u64,
+        complete: bool,
         walk: Walk,
         location: SourceOffset,
     ) -> Result<bool, Error> {
@@ -197,8 +225,8 @@ impl EmptyPlacement {
             Walk::RecordReachable(tail) => (self.record_limit, tail),
         };
         self.work.clear();
-        self.work.push((root, offset));
-        while let Some((class, at)) = self.work.pop() {
+        self.work.push((root, offset, complete));
+        while let Some((class, at, complete_object)) = self.work.pop() {
             let LayoutState::Value {
                 size,
                 empty,
@@ -216,7 +244,7 @@ impl EmptyPlacement {
             if empty {
                 if matches!(walk, Walk::Conflict) {
                     if self.placed.contains(&(class, at)) {
-                        self.hint = Some((root, class, at - offset));
+                        self.hint = Some((root, class, at - offset, complete));
                         self.work.clear();
                         return Ok(true);
                     }
@@ -226,6 +254,9 @@ impl EmptyPlacement {
                 }
             }
             for base in &graph.entity(class).bases {
+                if base.is_virtual {
+                    continue;
+                }
                 self.spend(location)?;
                 self.work.push((
                     base.class,
@@ -233,7 +264,14 @@ impl EmptyPlacement {
                         base.offset
                             .ok_or(Error::Invariant("empty walk without base offset"))?,
                     ),
+                    false,
                 ));
+            }
+            if complete_object && let Some(layout) = graph.virtuals.storage_layouts.get(&class) {
+                for &(base, offset) in &layout.bases {
+                    self.spend(location)?;
+                    self.work.push((base, at.wrapping_add(offset), false));
+                }
             }
             for &member in &graph.entity(class).members {
                 let node = graph.entity(member);
@@ -263,7 +301,7 @@ impl EmptyPlacement {
                 while index < count {
                     self.spend(location)?;
                     self.work
-                        .push((element, start.wrapping_add(index.wrapping_mul(bytes))));
+                        .push((element, start.wrapping_add(index.wrapping_mul(bytes)), true));
                     index = first_outside_gap(start, bytes, index + 1, gap_begin, gap_end);
                 }
             }

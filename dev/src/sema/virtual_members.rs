@@ -37,6 +37,7 @@ pub(super) struct Virtuals {
     assignment_targets: HashSet<EntityId>,
     implicit_assignments: HashMap<EntityId, Vec<EntityId>>,
     layouts: HashMap<EntityId, Vec<Option<VirtualEntry>>>,
+    pub(super) storage_layouts: HashMap<EntityId, super::virtual_layout::VirtualLayout>,
     pub(super) final_overriders: super::final_overriders::Groups,
 }
 impl Virtuals {

@@ -10,6 +10,7 @@ pub(super) enum LayoutState {
     Value {
         size: u64,
         alignment: u64,
+        non_virtual_alignment: u64,
         non_virtual_size: u64,
         empty: bool,
         contains_empty: bool,
@@ -493,17 +494,6 @@ impl Analyzer<'_> {
         if !self.complete_class(entity)? {
             return Err(Error::at(location, "size of an incomplete class"));
         }
-        // Virtual-base formation and unevaluated path queries do not demand
-        // storage. Its ABI placement/construction tables are a separate group.
-        if self
-            .graph
-            .entity(entity)
-            .bases
-            .iter()
-            .any(|edge| edge.is_virtual)
-        {
-            return Err(Error::Missing("virtual base class layout"));
-        }
         match self.graph.entity(entity).layout {
             LayoutState::Value { .. } => Ok(false),
             LayoutState::InProgress => Err(Error::at(location, "class contains itself")),
@@ -585,99 +575,19 @@ impl Analyzer<'_> {
         bits: &mut super::bit_layout::BitLayout,
     ) -> Result<(), Error> {
         let union = self.graph.entity(entity).key == Keyword::Union;
-        let mut size = 0u64;
-        let mut data_size = 0u64;
-        let mut contains_volatile_or_union = union;
-        let mut contains_data_member_pointer = false;
-        let mut empty = self.graph.entity(entity).members.iter().all(|&member| {
-            let member = self.graph.entity(member);
-            member.name.is_none()
-                && member
-                    .bit_field
-                    .is_some_and(|id| self.graph.bit_fields.width(id) == 0)
-        });
-        let polymorphic = self.graph.entity(entity).polymorphism.is_dynamic();
-        let primary = self
-            .graph
-            .entity(entity)
-            .bases
-            .iter()
-            .position(|edge| self.graph.entity(edge.class).polymorphism.is_dynamic());
-        if polymorphic {
-            empty = false;
-            if primary.is_none() {
-                size = 8;
-                data_size = 8;
-            }
-        }
-        let mut contains_empty = false;
-        let mut alignment = if polymorphic && primary.is_none() {
-            8
-        } else {
-            1
-        };
+        let mut bases = self.place_class_bases(entity, location)?;
+        let mut size = bases.size;
+        let mut data_size = bases.data_size;
+        let mut alignment = bases.alignment;
+        let mut contains_volatile_or_union = union || bases.contains_volatile_or_union;
+        let mut contains_data_member_pointer = bases.contains_data_member_pointer;
+        let mut contains_empty = bases.contains_empty;
         let attributes = self.graph.entity(entity).storage_attributes;
         let pack = u64::from(self.graph.entity(entity).class_packing);
-        let mut non_pod = polymorphic
+        let mut non_pod = bases.dynamic
             || self.graph.entity(entity).layout_category == LayoutCategory::NonPod
             || !self.graph.entity(entity).bases.is_empty();
         let mut packs_all = true;
-        let mut placement = super::empty_layout::EmptyPlacement::new(&self.graph, entity)?;
-        for index in primary.into_iter().chain(
-            (0..self.graph.entity(entity).bases.len()).filter(|index| Some(*index) != primary),
-        ) {
-            let base = self.graph.entity(entity).bases[index].class;
-            let LayoutState::Value {
-                size: bytes,
-                alignment: natural,
-                non_virtual_size,
-                empty: base_empty,
-                contains_empty: child_empty,
-                contains_volatile_or_union: child_volatile,
-                contains_data_member_pointer: child_member_pointer,
-            } = self.graph.entity(base).layout
-            else {
-                return Err(Error::Invariant("base without completed layout"));
-            };
-            empty &= base_empty;
-            contains_empty |= child_empty;
-            contains_volatile_or_union |= child_volatile;
-            contains_data_member_pointer |= child_member_pointer;
-            let base_alignment = if base_empty || pack == 0 {
-                natural
-            } else {
-                natural.min(pack)
-            };
-            let mut offset = if base_empty {
-                0
-            } else {
-                round_up(data_size, base_alignment)
-            };
-            if placement.conflict(&self.graph, base, offset, location)? {
-                if base_empty {
-                    offset = round_up(data_size, natural);
-                }
-                while placement.conflict(&self.graph, base, offset, location)? {
-                    offset = offset.wrapping_add(natural);
-                }
-            }
-            if base_empty {
-                size = size.max(offset.wrapping_add(bytes));
-            } else {
-                data_size = offset.wrapping_add(non_virtual_size);
-                size = size.max(data_size);
-            }
-            if size >> 60 != 0 {
-                return Err(Error::at(
-                    location,
-                    "a class too large (its size reaches 2^60 bytes)",
-                ));
-            }
-            alignment = alignment.max(base_alignment);
-            self.graph.entity_mut(entity).bases[index].offset = Some(offset);
-            placement.record_base(&self.graph, base, offset, data_size, base_empty, location)?;
-        }
-        contains_empty |= empty;
         let mut data_bits = data_size * 8;
         for index in 0..self.graph.entity(entity).members.len() {
             let member = self.graph.entity(entity).members[index];
@@ -756,11 +666,16 @@ impl Analyzer<'_> {
                 round_up(data_size, member_alignment)
             };
             if !union {
-                while placement.member_conflict(&self.graph, ty, offset, location)? {
+                while bases
+                    .placement
+                    .member_conflict(&self.graph, ty, offset, location)?
+                {
                     offset = round_up(offset.wrapping_add(natural), member_alignment);
                 }
                 data_size = offset.wrapping_add(bytes);
-                placement.record_member(&self.graph, ty, offset, data_size, location)?;
+                bases
+                    .placement
+                    .record_member(&self.graph, ty, offset, data_size, location)?;
             }
             self.graph.entity_mut(member).member_offset = Some(offset);
             bits.end_run(offset);
@@ -778,6 +693,15 @@ impl Analyzer<'_> {
                 ));
             }
         }
+        let non_virtual_size = size;
+        let non_virtual_alignment = alignment;
+        let member_data = round_up(data_bits, 8) / 8;
+        bases.size = size;
+        bases.data_size = member_data;
+        bases.alignment = alignment;
+        self.finish_virtual_layout(entity, &mut bases, location)?;
+        size = bases.size;
+        alignment = bases.alignment;
         let requested = u64::from(attributes.alignment);
         if requested != 0 {
             if requested >= alignment {
@@ -798,22 +722,24 @@ impl Analyzer<'_> {
         let full_size = round_up(size.max(1), alignment);
         bits.finish(
             &mut self.graph.bit_fields,
-            if non_pod {
-                round_up(data_bits, 8) / 8
-            } else {
-                full_size
-            },
+            if non_pod { member_data } else { full_size },
             location,
         )?;
         self.graph.entity_mut(entity).layout = LayoutState::Value {
             contains_data_member_pointer,
             contains_volatile_or_union,
-            empty,
+            empty: bases.empty,
             contains_empty,
-            non_virtual_size: if non_pod { size } else { full_size },
+            non_virtual_alignment: if bases.layout.bases.is_empty() {
+                alignment
+            } else {
+                non_virtual_alignment
+            },
+            non_virtual_size: if non_pod { non_virtual_size } else { full_size },
             size: full_size,
             alignment,
         };
+        self.publish_virtual_layout(entity, bases);
         Ok(())
     }
 }
