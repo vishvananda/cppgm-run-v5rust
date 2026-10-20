@@ -2,7 +2,7 @@
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::anonymous_types::{ClassSpelling, UnnamedNumbering};
 pub(crate) use super::assignment::Action as AssignmentAction;
-pub(crate) use super::base_projections::{BaseProjection, VcallSignature};
+pub(crate) use super::base_projections::{BaseProjection, BaseRoute, BaseRoutes, VcallSignature};
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constexpr_values::TemporaryId;
 pub(crate) use super::constructor_initialization::ConstructorArguments;

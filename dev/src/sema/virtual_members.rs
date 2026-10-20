@@ -1200,47 +1200,6 @@ impl super::graph::Graph {
             .filter(|(from, to)| from != to)
             .map(|(from, to)| (from, to, reference)))
     }
-    pub(super) fn nonvirtual_result_offset(
-        &self,
-        derived: EntityId,
-        base: EntityId,
-    ) -> Result<Option<u64>, Error> {
-        // Relative offsets are memoized by class, so repeated subobjects do
-        // not repeat a search. The first nonvirtual path in declaration order
-        // is the route chosen by the C++ ABI query, after semantic covariance.
-        let mut known = HashMap::new();
-        known.insert(base, Some(0_u64));
-        let mut work = vec![(derived, 0_usize)];
-        while let Some((class, next)) = work.last_mut() {
-            if known.contains_key(class) {
-                work.pop();
-                continue;
-            }
-            let Some(edge) = self.entity(*class).bases.get(*next) else {
-                known.insert(*class, None);
-                work.pop();
-                continue;
-            };
-            if edge.is_virtual {
-                *next += 1;
-                continue;
-            }
-            if let Some(&below) = known.get(&edge.class) {
-                if let Some(below) = below {
-                    let offset = edge
-                        .offset
-                        .ok_or(Error::Invariant("covariant result before layout"))?;
-                    known.insert(*class, Some(offset.wrapping_add(below)));
-                    work.pop();
-                } else {
-                    *next += 1;
-                }
-            } else {
-                work.push((edge.class, 0));
-            }
-        }
-        Ok(known[&derived])
-    }
     pub(crate) fn lower_covariant_result(
         &self,
         function: EntityId,

@@ -76,6 +76,7 @@ pub(crate) struct Analyzer<'tree> {
     // this survives nested instantiations until an actual body owns the use.
     pub(super) initializer_demand_owner: Option<super::graph::EntityId>,
     pub(super) parenthesized_elements: std::collections::HashSet<ast::ExprId>,
+    pub(super) static_addresses: super::static_addresses::Queries,
     pub(super) static_initializers:
         Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
@@ -251,6 +252,7 @@ impl<'tree> Analyzer<'tree> {
             initializing_declarator: None,
             initializer_demand_owner: None,
             parenthesized_elements: std::collections::HashSet::new(),
+            static_addresses: super::static_addresses::Queries::default(),
             static_initializers: Vec::new(),
             body_context: None,
             enclosing_bodies: Vec::new(),

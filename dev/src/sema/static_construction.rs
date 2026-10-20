@@ -262,7 +262,9 @@ impl Analyzer<'_> {
                 return Ok(());
             }
         }
-        if object != facts.ty {
+        // static_construction rejects a class with virtual bases before
+        // attempting any constructor or demanding its subobjects' tables.
+        if object != facts.ty || self.graph.lower_virtual_class(class)?.has_virtual_bases {
             return Ok(());
         }
         let arguments = match initializer.map(|i| i.kind) {

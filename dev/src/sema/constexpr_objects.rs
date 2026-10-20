@@ -317,17 +317,7 @@ impl Analyzer<'_> {
             self.graph.types.get(place.designated).kind,
             TypeKind::Reference { .. }
         ) {
-            let value = if let Some(value) = self.published_scalar(place, location)? {
-                value
-            } else {
-                self.constexpr_frames.read(place, location)?
-            };
-            let Value::Pointer(referent) = value else {
-                return Err(Error::Invariant(
-                    "constant reference member without binding",
-                ));
-            };
-            place = referent;
+            place = self.read_constant_address(place, location)?;
         }
         place.designated = ty;
         Ok(place)
@@ -499,14 +489,24 @@ impl Analyzer<'_> {
                 .class_of(place.designated)
                 .ok_or(Error::Invariant("constant base path without class"))?;
             self.class_layout(class, location)?;
-            for &(class, index) in self.graph.base_paths.get(path) {
-                let edge = self.graph.entity(class).bases[index];
-                place.offset = place.offset.wrapping_add(super::integral::signed(
-                    edge.offset
-                        .ok_or(Error::Invariant("constant base without offset"))?,
-                ));
-                place.designated = self.graph.lower_entity_type(edge.class)?;
-            }
+            let &(last, index) = self
+                .graph
+                .base_paths
+                .get(path)
+                .last()
+                .ok_or(Error::Invariant("empty constant base path"))?;
+            let base = self.graph.entity(last).bases[index].class;
+            let offset = self
+                .graph
+                .base_search_offset(class, base, super::base_projections::OffsetSearch::Constant)?
+                .ok_or_else(|| {
+                    nonconstant(
+                        location,
+                        "a conversion to a base class outside constant evaluation",
+                    )
+                })?;
+            place.offset = place.offset.wrapping_add(super::integral::signed(offset));
+            place.designated = self.graph.lower_entity_type(base)?;
         }
         Ok(place)
     }
@@ -550,7 +550,29 @@ impl Analyzer<'_> {
             .first()
             .ok_or(Error::Invariant("empty constant cast route"))?;
         self.class_layout(derived, location)?;
-        let offset = super::integral::signed(self.graph.lower_path_offset(cast.path)?);
+        let edges = self.graph.base_paths.get(cast.path);
+        let &(last, index) = edges
+            .last()
+            .ok_or(Error::Invariant("empty constant cast route"))?;
+        let base = self.graph.entity(last).bases[index].class;
+        let offset = super::integral::signed(
+            self.graph
+                .base_search_offset(
+                    derived,
+                    base,
+                    super::base_projections::OffsetSearch::Constant,
+                )?
+                .ok_or_else(|| {
+                    nonconstant(
+                        location,
+                        if cast.downcast {
+                            "a conversion to a derived class outside constant evaluation"
+                        } else {
+                            "a conversion to a base class outside constant evaluation"
+                        },
+                    )
+                })?,
+        );
         if cast.downcast {
             place.offset = place.offset.wrapping_sub(offset);
             let root = self.address_root_type(place, location)?;

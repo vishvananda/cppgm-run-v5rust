@@ -11,11 +11,7 @@ use crate::{
 };
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone, Copy)]
-pub(in crate::lower) struct Route {
-    pub via: Option<EntityId>,
-    pub offset: u64,
-}
+pub(super) use crate::sema::lowering::BaseRoute as Route;
 #[derive(Clone, Copy)]
 enum Row {
     Base(EntityId),
@@ -30,8 +26,7 @@ enum Row {
 pub(super) struct Routes {
     vtt_orders: HashMap<EntityId, Vec<usize>>,
     construction_orders: HashMap<EntityId, Vec<EntityId>>,
-    selected: HashMap<(EntityId, EntityId), Route>,
-    holders: HashMap<EntityId, HashMap<EntityId, Route>>,
+    projections: crate::sema::lowering::BaseRoutes,
     rows: HashMap<EntityId, Vec<Row>>,
     full_rows: HashMap<EntityId, Vec<Row>>,
     segments: HashMap<EntityId, HashMap<(u64, EntityId), usize>>,
@@ -44,50 +39,7 @@ impl Symbols<'_, '_> {
         from: EntityId,
         to: EntityId,
     ) -> Result<Route, Error> {
-        if let Some(&route) = self.base_routes.selected.get(&(from, to)) {
-            return Ok(route);
-        }
-        let mut route = Route {
-            via: None,
-            offset: 0,
-        };
-        if let Some(offset) = self.graph.lower_nonvirtual_offset(from, to)? {
-            route.offset = offset;
-        } else {
-            self.virtual_holders(from)?;
-            route = self.base_routes.holders[&from].get(&to).copied().ok_or(
-                crate::sema::Error::Invariant("virtual projection without a base route"),
-            )?;
-        }
-        self.base_routes.selected.insert((from, to), route);
-        Ok(route)
-    }
-    fn virtual_holders(&mut self, from: EntityId) -> Result<(), Error> {
-        if self.base_routes.holders.contains_key(&from) {
-            return Ok(());
-        }
-        let mut holders = HashMap::new();
-        let mut work = Vec::new();
-        for &(base, _) in self.graph.lower_virtual_bases(from) {
-            work.push((base, 0u64));
-            while let Some((class, offset)) = work.pop() {
-                if holders.contains_key(&class) {
-                    continue;
-                }
-                holders.insert(
-                    class,
-                    Route {
-                        via: Some(base),
-                        offset,
-                    },
-                );
-                for (child, step) in self.graph.lower_nonvirtual_base_offsets(class).rev() {
-                    work.push((child, offset.wrapping_add(step?)));
-                }
-            }
-        }
-        self.base_routes.holders.insert(from, holders);
-        Ok(())
+        Ok(self.base_routes.projections.get(self.graph, from, to)?)
     }
     pub(in crate::lower) fn vbase_row_offset(
         &mut self,
@@ -329,7 +281,7 @@ pub(crate) fn assert_base_routes(
         -56
     );
     let counts = (
-        symbols.base_routes.selected.len(),
+        symbols.base_routes.projections.len(),
         symbols.base_routes.rows.len(),
         symbols.base_routes.positions.len(),
     );
@@ -343,7 +295,7 @@ pub(crate) fn assert_base_routes(
     assert_eq!(
         counts,
         (
-            symbols.base_routes.selected.len(),
+            symbols.base_routes.projections.len(),
             symbols.base_routes.rows.len(),
             symbols.base_routes.positions.len()
         )
