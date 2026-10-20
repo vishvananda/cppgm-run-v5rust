@@ -452,7 +452,17 @@ impl Analyzer<'_> {
             }
         } else {
             if let Some(declaration) = declaration {
-                self.check_declaration_direct_access(declaration, scope, location)?;
+                if let Some(naming) = facts.member_naming {
+                    self.check_declaration_member_access(
+                        declaration,
+                        naming,
+                        None,
+                        scope,
+                        location,
+                    )?;
+                } else {
+                    self.check_declaration_direct_access(declaration, scope, location)?;
+                }
             }
             if self.member_function_owner(binding).is_some() && self.unevaluated == 0 {
                 return Err(Error::at(

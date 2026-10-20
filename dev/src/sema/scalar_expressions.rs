@@ -357,6 +357,12 @@ impl Analyzer<'_> {
                 ));
             }
             let mut facts = self.function_designation(binding, found.functions.as_slice())?;
+            // Static functions still name a member through the written class.
+            // Keep that access identity even though they need no object.
+            facts.member_naming = found
+                .qualifier
+                .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+                .and_then(|home| self.graph.scope(home).owner);
             if found
                 .functions
                 .as_slice()
@@ -397,11 +403,18 @@ impl Analyzer<'_> {
             }
             return Ok(facts);
         }
-        self.check_declaration_direct_access(
-            binding,
-            scope,
-            self.tree.expressions.get(id).location,
-        )?;
+        // Qualified class lookup already checked access through its naming
+        // class. A second direct check would lose that path and its frontier.
+        if found
+            .qualifier
+            .is_none_or(|home| self.graph.scope(home).kind != super::graph::ScopeKind::Class)
+        {
+            self.check_declaration_direct_access(
+                binding,
+                scope,
+                self.tree.expressions.get(id).location,
+            )?;
+        }
         let binding = self.graph.binding(binding);
         if matches!(
             binding.kind,
