@@ -3,6 +3,7 @@ use super::{
     abi::Layout,
     global_data,
     image::{Image, ImageSymbol, Section},
+    scalar_mir::Operand,
     x86::{Assembler, Register as R, Rm},
 };
 use crate::{
@@ -15,6 +16,79 @@ use crate::{
     types::floating::FloatingScanner,
 };
 use std::io::Write;
+#[derive(Clone, Copy)]
+pub(super) struct CallSite {
+    pub(super) target: Operand,
+    pub(super) arguments: u32,
+    pub(super) stack: u32,
+    pub(super) variadic: bool,
+    pub(super) no_unwind: bool,
+    pub(super) no_return: bool,
+}
+impl CallSite {
+    pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
+        write!(
+            out,
+            "    call {}",
+            if matches!(self.target, Operand::Symbol(_)) {
+                ""
+            } else {
+                "*"
+            }
+        )?;
+        self.target.write(program, out)?;
+        write!(out, " [args=(")?;
+        let mut first = true;
+        for r in [
+            R::RAX,
+            R::RCX,
+            R::RDX,
+            R::RBX,
+            R::RSP,
+            R::RBP,
+            R::RSI,
+            R::RDI,
+            R::R8,
+            R::R9,
+            R::R10,
+            R::R11,
+            R::R12,
+            R::R13,
+            R::R14,
+            R::R15,
+        ] {
+            if self.arguments & (1 << r.code()) != 0 {
+                if !first {
+                    write!(out, ",")?;
+                }
+                write!(out, "{}", r.spelling())?;
+                first = false;
+            }
+        }
+        write!(out, ")")?;
+        if self.stack != 0 {
+            write!(out, ", stack={}", self.stack.wrapping_add(15) & !15)?;
+        }
+        for (set, name) in [
+            (self.variadic, "variadic"),
+            (self.no_unwind, "unwind=no"),
+            (self.no_return, "returns=noreturn"),
+        ] {
+            if set {
+                write!(out, ", {name}")?;
+            }
+        }
+        write!(out, "]")
+    }
+    pub(super) fn emit(self, a: &mut Assembler, begin: i32, size: u32) -> Result<(), Error> {
+        if let Operand::Symbol(symbol) = self.target {
+            a.call_symbol(ImageSymbol::Program(symbol))
+        } else {
+            a.call_rm(self.target.rebase(begin, size).rm()?)
+        }
+    }
+}
+
 pub(super) enum Op {
     Move(R, u128),
     SymbolMove(R, SymbolId),
@@ -22,6 +96,8 @@ pub(super) enum Op {
     FloatReturn(u128),
     Return(Option<R>),
     Trap,
+    Call(CallSite),
+    DynamicCopy,
     Scalar(super::scalar_mir::ScalarOp),
 }
 pub(super) struct Instruction {
@@ -58,6 +134,7 @@ pub(super) struct Function {
     pub(super) lazy_addresses: usize,
     pub(super) folded_loads: usize,
     pub(super) fused_compares: usize,
+    pub(super) dynamic_copies: usize,
     pub(super) lowir_instructions: usize,
     pub(super) promoted_slots: usize,
     pub(super) dead_slots: usize,
@@ -87,6 +164,7 @@ impl Function {
             lazy_addresses: 0,
             folded_loads: 0,
             fused_compares: 0,
+            dynamic_copies: 0,
             lowir_instructions: 0,
             promoted_slots: 0,
             dead_slots: 0,
@@ -206,6 +284,8 @@ impl Function {
                     }
                 }
                 Op::Trap => write!(out, "    trap")?,
+                Op::Call(site) => site.write(program, out)?,
+                Op::DynamicCopy => write!(out, "    copy_bytes_dynamic")?,
                 Op::Scalar(op) => {
                     write!(out, "    ")?;
                     op.write(program, out)?;
@@ -293,6 +373,12 @@ impl Function {
                     }
                     returns += 1;
                 }
+                Op::Call(site) => site.emit(&mut a, self.aligned_disp, self.aligned_bytes)?,
+                Op::DynamicCopy => {
+                    a.mov_rr(R::RCX, R::RDX)?;
+                    a.byte(0xf3);
+                    a.byte(0xa4);
+                }
                 Op::Scalar(op) => op
                     .rebase(self.aligned_disp, self.aligned_bytes)
                     .emit(&mut a, flags[index])?,
@@ -367,4 +453,32 @@ fn constant(image: &mut Image, kind: FloatKind, bits: u128) -> Result<Rm, Error>
         )?,
         0,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn call_view_keeps_raw_stack_demand_and_wraps_target_alignment() -> Result<(), Error> {
+        let program = Program::default();
+        for (raw, suffix) in [
+            (0, ""),
+            (8, ", stack=16"),
+            (16, ", stack=16"),
+            (u32::MAX - 7, ", stack=0"),
+        ] {
+            let site = CallSite {
+                target: Operand::Register(R::RAX),
+                arguments: 0,
+                stack: raw,
+                variadic: false,
+                no_unwind: false,
+                no_return: false,
+            };
+            let mut text = Vec::new();
+            site.write(&program, &mut text).map_err(Error::Output)?;
+            assert_eq!(text, format!("    call *rax [args=(){suffix}]").as_bytes());
+        }
+        Ok(())
+    }
 }

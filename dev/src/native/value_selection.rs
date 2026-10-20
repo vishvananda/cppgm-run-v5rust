@@ -44,6 +44,8 @@ pub(super) fn select(
     let slots = slot_analysis::analyze(body)?;
     let mut facts = Facts::analyze(body, &slots)?;
     let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
+    let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
+    facts.apply_calls(body, &calls);
     let mut mir = MirFunction::new(
         symbol,
         function.signature,
@@ -79,6 +81,7 @@ pub(super) fn select(
         },
     );
     let mut selection = Selection {
+        outgoing: super::call_selection::Staging::default(),
         addresses,
         body,
         facts,
@@ -101,6 +104,7 @@ pub(super) fn select(
     let mut scanner = FloatingScanner::default();
     for (pos, &id) in body.block(body.layout[0]).instructions.iter().enumerate() {
         let inst = body.instruction(id);
+        floating |= matches!(inst.kind, I::Call(_)) && function.metadata.flags & 1 != 0;
         floating |= match inst.kind {
             I::Store(_, ty, _, _) => ty,
             _ => inst.kind.result_type(),
@@ -114,6 +118,12 @@ pub(super) fn select(
         selection.pos = pos;
         selection.location = body.location(inst);
         match inst.kind {
+            I::Call(ref call) => selection.call(
+                program,
+                inst.result,
+                call,
+                calls.at(pos).ok_or(Error::Limit)?,
+            )?,
             I::Load(_, ty, address) => {
                 selection.read_memory(inst.result.ok_or(Error::Limit)?, ty, address)?;
             }

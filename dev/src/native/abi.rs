@@ -5,6 +5,10 @@ use crate::lowir::{
     model::Signature,
     vocabulary::{EightbyteClass, ObjectClasses, Type},
 };
+// Allocatable caller-saved GPRs; r10/r11 are reserved emission scratch.
+pub(super) const CALLER_SAVED: u32 =
+    (1 << 0) | (1 << 1) | (1 << 2) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9);
+
 pub(super) fn value_bytes(ty: Type) -> Result<u32, Error> {
     Ok(match ty {
         Type::Void => 0,
@@ -53,28 +57,38 @@ pub(super) struct Layout {
     pub(super) indirect_result: bool,
     gprs: usize,
     xmms: u8,
-    stack: u32,
+    pub(super) stack: u32,
 }
 impl Layout {
     pub(super) fn parts(&self, argument: &Argument) -> &[Part] {
         &self.parts[argument.first..argument.first + argument.count]
     }
-    pub(super) fn classify(signature: &Signature) -> Result<Self, Error> {
+    fn empty(signature: &Signature) -> Self {
         let indirect_result = matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16)
             || matches!(
                 signature.boundary.result_classes,
                 Some(ObjectClasses::Memory)
             );
-        let mut layout = Self {
+        Self {
             arguments: Vec::new(),
             parts: Vec::new(),
             indirect_result,
             gprs: usize::from(indirect_result),
             xmms: 0,
             stack: 0,
-        };
+        }
+    }
+    pub(super) fn classify(signature: &Signature) -> Result<Self, Error> {
+        let mut layout = Self::empty(signature);
         for parameter in &signature.parameters {
             layout.argument(parameter.ty, parameter.classes)?;
+        }
+        Ok(layout)
+    }
+    pub(super) fn classify_call(signature: &Signature, types: &[Type]) -> Result<Self, Error> {
+        let mut layout = Self::empty(signature);
+        for (index, &ty) in types.iter().enumerate() {
+            layout.argument(ty, signature.parameters.get(index).and_then(|p| p.classes))?;
         }
         Ok(layout)
     }

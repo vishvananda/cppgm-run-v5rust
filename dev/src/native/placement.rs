@@ -87,6 +87,15 @@ impl Placement {
                 return Some(reg);
             }
         }
+        if facts.intervals[temp.index()].forbid & super::abi::CALLER_SAVED
+            == super::abi::CALLER_SAVED
+        {
+            for r in SAVED {
+                if allowed(r) {
+                    return Some(r);
+                }
+            }
+        }
         if self.vector_boundary {
             for r in [
                 R::R8,
@@ -115,7 +124,7 @@ impl Placement {
         }
         None
     }
-    fn frame_alloc(&mut self, bytes: u64, align: u32) -> Result<i32, Error> {
+    pub(super) fn frame_alloc(&mut self, bytes: u64, align: u32) -> Result<i32, Error> {
         let align = u64::from(align.clamp(1, 16));
         let size = (u64::from(self.frame)
             .checked_add(bytes)
@@ -255,6 +264,9 @@ impl Placement {
             .flat_map(|(_, arg)| mir.layout.parts(arg))
             .filter_map(|part| part.register)
             .fold(0, |mask, r| mask | (1 << r.code()));
+        // No scalar entry transfer writes an incoming register: relocation
+        // excludes their union. Stack loads precede the deferred parallel moves.
+        let mut transfers = Vec::new();
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
             if facts.intervals[index].last.is_none() {
                 continue;
@@ -272,14 +284,14 @@ impl Placement {
             if let Some(reg) = source {
                 if let Some(target) = self.allocate(facts, temp, [None, None], incoming) {
                     self.bind(temp, target);
-                    mir.instructions.push(Instruction {
+                    transfers.push(Instruction {
                         op: Op::Scalar(ScalarOp::Move(target, Operand::Register(reg))),
                         location: None,
                     });
                 } else {
                     let home = self.home(body, temp, mir)?;
                     self.locations[index].homed = true;
-                    mir.instructions.push(Instruction {
+                    transfers.push(Instruction {
                         op: Op::Scalar(ScalarOp::Store(
                             Operand::Frame(home),
                             ty,
@@ -309,6 +321,7 @@ impl Placement {
                 });
             }
         }
+        mir.instructions.extend(transfers);
         Ok(())
     }
     pub(super) fn operand(&self, temp: TempId) -> Result<Operand, Error> {
@@ -423,6 +436,12 @@ impl Placement {
             });
         }
         Ok(())
+    }
+    pub(super) fn excluded(&self) -> u32 {
+        self.excluded
+    }
+    pub(super) fn force_home(&mut self, temp: TempId) {
+        self.locations[temp.index()].homed = true;
     }
     pub(super) fn finish_frame(&self, mir: &mut Function) -> Result<(), Error> {
         let mut frame = u64::from(self.frame);

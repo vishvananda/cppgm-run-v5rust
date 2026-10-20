@@ -14,6 +14,7 @@ use crate::lowir::{
     vocabulary::{Binary, Type, Unary},
 };
 pub(super) struct Selection<'a> {
+    pub(super) outgoing: super::call_selection::Staging,
     pub(super) addresses: super::address_facts::Addresses,
     pub(super) body: &'a Body,
     pub(super) facts: Facts,

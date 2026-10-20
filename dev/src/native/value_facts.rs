@@ -335,50 +335,110 @@ impl Facts {
         true
     }
     pub(super) fn refresh_clobbers(&mut self, body: &Body) {
-        let facts = self;
+        self.rebuild_clobbers(body, None);
+    }
+    pub(super) fn apply_calls(&mut self, body: &Body, calls: &super::call_facts::Calls) {
+        self.rebuild_clobbers(body, Some(calls));
+    }
+    fn call_hints(
+        &mut self,
+        body: &Body,
+        call: &crate::lowir::model::Call,
+        plan: &super::call_facts::CallPlan,
+        pos: usize,
+    ) {
+        for (arg, layout) in body
+            .arguments(call.arguments)
+            .iter()
+            .zip(&plan.layout.arguments)
+        {
+            let Alias::Temporary(temp) = self.resolve(body, *arg) else {
+                continue;
+            };
+            if temp.index() < body.parameter_count {
+                continue;
+            }
+            let interval = &mut self.intervals[temp.index()];
+            let address = body
+                .temp(temp)
+                .definition
+                .is_some_and(|def| matches!(body.instruction(def).kind, I::Addr(_)));
+            if (interval.uses == 1 || address)
+                && interval.last == Some(pos)
+                && interval.hint.is_none()
+                && let [part] = plan.layout.parts(layout)
+            {
+                interval.hint = part.register;
+            }
+        }
+    }
+    fn rebuild_clobbers(&mut self, body: &Body, calls: Option<&super::call_facts::Calls>) {
         let ids = &body.block(body.layout[0]).instructions;
-        for interval in &mut facts.intervals {
+        for interval in &mut self.intervals {
             interval.forbid = 0;
         }
-        let mut next = [None; 2];
+        let mut late = [None; 16];
+        let mut early = [None; 16];
+        let mask = |interval: &Interval,
+                    late: &[Option<usize>; 16],
+                    early: &[Option<usize>; 16]| {
+            let mut out = 0_u32;
+            for reg in 0..16 {
+                if interval.last.is_some_and(|last| {
+                    late[reg].is_some_and(|at| at < last) || early[reg].is_some_and(|at| at <= last)
+                }) {
+                    out |= 1 << reg;
+                }
+            }
+            out
+        };
         for (pos, &id) in ids.iter().enumerate().rev() {
-            if !facts.active[pos] {
+            if !self.active[pos] {
                 continue;
             }
             let inst = body.instruction(id);
             if let Some(result) = inst.result {
-                let interval = &mut facts.intervals[result.index()];
-                for (reg, at) in [R::RCX, R::RDX].into_iter().zip(next) {
-                    if at.is_some_and(|p| interval.last.is_some_and(|last| p <= last)) {
-                        interval.forbid |= 1 << reg.code();
-                    }
+                self.intervals[result.index()].forbid =
+                    mask(&self.intervals[result.index()], &late, &early);
+            }
+            let fixed = if self.compare_scratch(body, pos) {
+                1 << R::RDX.code()
+            } else if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(self.resolve(body,count),Alias::Constant(Constant::Integer(_))))
+            {
+                1 << R::RCX.code()
+            } else {
+                0
+            };
+            let call = calls.and_then(|c| c.at(pos));
+            let clobber = fixed | call.map_or(0, |_| super::abi::CALLER_SAVED);
+            let before = fixed | call.map_or(0, |c| c.early);
+            for reg in 0..16 {
+                if clobber & (1 << reg) != 0 {
+                    late[reg] = Some(pos);
+                }
+                if before & (1 << reg) != 0 {
+                    early[reg] = Some(pos);
                 }
             }
-            if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(facts.resolve(body,count),Alias::Constant(Constant::Integer(_))))
-            {
-                next[0] = Some(pos);
-            }
-            if facts.compare_scratch(body, pos) {
-                next[1] = Some(pos);
-            }
             if let I::Return(_, Some(value)) = inst.kind
-                && let Alias::Temporary(temp) = facts.resolve(body, value)
+                && let Alias::Temporary(temp) = self.resolve(body, value)
             {
                 let two = body
                     .temp(temp)
                     .definition
                     .is_some_and(|def| matches!(body.instruction(def).kind, I::Binary(..)));
-                if !two && facts.intervals[temp.index()].last == Some(pos) {
-                    facts.intervals[temp.index()].hint = Some(R::RAX);
+                if !two && self.intervals[temp.index()].last == Some(pos) {
+                    self.intervals[temp.index()].hint = Some(R::RAX);
                 }
+            }
+            if let Some(plan) = call
+                && let I::Call(call) = &inst.kind
+            {
+                self.call_hints(body, call, plan, pos);
             }
         }
-        for interval in facts.intervals.iter_mut().take(body.parameter_count) {
-            for (reg, at) in [R::RCX, R::RDX].into_iter().zip(next) {
-                if at.is_some_and(|p| interval.last.is_some_and(|last| p <= last)) {
-                    interval.forbid |= 1 << reg.code();
-                }
-            }
+        for interval in self.intervals.iter_mut().take(body.parameter_count) {
+            interval.forbid = mask(interval, &late, &early);
         }
     }
 }
