@@ -48,6 +48,30 @@ impl Graph {
         }
         result
     }
+    /// Shared bases not named by a direct virtual edge. Available while the
+    /// class completes, before its own virtual/layout facts are published.
+    pub(super) fn indirect_virtual_bases(&self, class: EntityId) -> Vec<EntityId> {
+        let bases = &self.entity(class).bases;
+        if !bases.iter().any(|edge| {
+            edge.is_virtual
+                || self
+                    .virtuals
+                    .classes
+                    .get(&edge.class)
+                    .is_some_and(|facts| facts.has_virtual_bases)
+        }) {
+            return Vec::new();
+        }
+        let direct: HashSet<_> = bases
+            .iter()
+            .filter(|edge| edge.is_virtual)
+            .map(|edge| edge.class)
+            .collect();
+        self.virtual_base_order(class)
+            .into_iter()
+            .filter(|base| !direct.contains(base))
+            .collect()
+    }
     pub(super) fn nonvirtual_primary(&self, class: EntityId) -> Option<usize> {
         self.entity(class)
             .bases

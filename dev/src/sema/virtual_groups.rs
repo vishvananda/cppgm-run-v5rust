@@ -150,6 +150,7 @@ impl Graph {
             group.share_primaries(self, class)?;
         }
         self.virtuals.groups.insert(class, group);
+        self.virtuals.grouped_classes.push(class);
         Ok(())
     }
     fn demand_slot_levels(&mut self, root: EntityId) -> Result<(), Error> {

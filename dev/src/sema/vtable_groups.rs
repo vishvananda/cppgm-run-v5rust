@@ -238,7 +238,11 @@ impl Graph {
             }
         }
         self.virtuals.groups.insert(class, group);
+        self.virtuals.grouped_classes.push(class);
         Ok(())
+    }
+    pub(crate) fn lower_grouped_classes(&self) -> &[EntityId] {
+        &self.virtuals.grouped_classes
     }
     pub(crate) fn lower_vtable_group(&self, class: EntityId) -> Option<&VtableGroup> {
         self.virtuals.groups.get(&class)

@@ -266,6 +266,12 @@ impl Analyzer<'_> {
                             .iter()
                             .map(|edge| Owner::Destructor(edge.class)),
                     );
+                    work.extend(
+                        self.graph
+                            .indirect_virtual_bases(class)
+                            .into_iter()
+                            .map(Owner::Destructor),
+                    );
                     for &member in &entity.members {
                         let mut ty = self.graph.lower_entity_type(member)?;
                         while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {

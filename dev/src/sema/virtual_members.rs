@@ -36,6 +36,7 @@ pub(super) struct Virtuals {
     function_signatures: HashMap<EntityId, (ValueKey, TypeId)>,
     covariant_results: HashMap<EntityId, EntityId>,
     pub(super) groups: HashMap<EntityId, super::vtable_groups::VtableGroup>,
+    pub(super) grouped_classes: Vec<EntityId>,
     pub(super) base_memberships: HashSet<(EntityId, EntityId)>,
     pub(super) chain_overriders: HashMap<(EntityId, EntityId, EntityId), Option<EntityId>>,
     deallocators: HashMap<EntityId, EntityId>,
@@ -82,7 +83,7 @@ impl SlotId {
         usize::try_from(self.0).map_err(|_| Error::Limit("virtual slot limit"))
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SlotKind {
     Function,
     CompleteDestructor,

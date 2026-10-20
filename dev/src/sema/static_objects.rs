@@ -281,6 +281,15 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let plan = self.graph.constructors.get(constructor);
         let class = plan.class;
+        if self
+            .graph
+            .entity(class)
+            .bases
+            .iter()
+            .any(|base| base.is_virtual)
+        {
+            return Ok(false);
+        }
         let Some(actions) = &plan.copy else {
             return Ok(false);
         };
@@ -369,6 +378,18 @@ impl Analyzer<'_> {
             return Ok(false);
         }
         let class = plan.class;
+        // An implicit/defaulted constructor with virtual bases is not
+        // constexpr. The root's constant-initialization exemption from the
+        // literal-type rule does not make that constructor evaluable.
+        if self
+            .graph
+            .entity(class)
+            .bases
+            .iter()
+            .any(|base| base.is_virtual)
+        {
+            return Ok(false);
+        }
         // A primary base at offset zero is still the initialized root in
         // ConstantInterpreter::run_constructor. Other constructed subobjects
         // must have a literal type, including its trivial destructor.

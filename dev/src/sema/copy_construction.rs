@@ -42,29 +42,11 @@ impl super::graph::Graph {
             ));
         }
         targets.extend(entity.members.iter().copied().map(CopyTarget::Member));
-        // An explicitly defaulted member's properties may be selected before
-        // its enclosing class publishes virtual facts. Its bases are complete.
-        if entity.bases.iter().any(|edge| {
-            edge.is_virtual
-                || self
-                    .virtuals
-                    .classes
-                    .get(&edge.class)
-                    .is_some_and(|facts| facts.has_virtual_bases)
-        }) {
-            let direct: std::collections::HashSet<_> = entity
-                .bases
-                .iter()
-                .filter(|edge| edge.is_virtual)
-                .map(|edge| edge.class)
-                .collect();
-            targets.extend(
-                self.virtual_base_order(class)
-                    .into_iter()
-                    .filter(|base| !direct.contains(base))
-                    .map(CopyTarget::VirtualBase),
-            );
-        }
+        targets.extend(
+            self.indirect_virtual_bases(class)
+                .into_iter()
+                .map(CopyTarget::VirtualBase),
+        );
         Ok(targets)
     }
     pub(super) fn copy_target_type(

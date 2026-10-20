@@ -44,7 +44,9 @@ pub(super) struct Tables {
     thunks: Vec<Thunk>,
     thunk_symbols: HashMap<ThunkKey, usize>,
     definition_classes: std::collections::HashSet<EntityId>,
-    definition_targets: HashMap<EntityId, Vec<TableTarget>>,
+    definitions_indexed: bool,
+    construction_sensitive: std::collections::HashSet<EntityId>,
+    definition_targets: DefinitionTargets,
     own_entry_thunks: HashMap<(EntityId, usize), bool>,
     contexts: construction_tables::Contexts,
     return_adjustments: HashMap<(EntityId, EntityId, EntityId), Option<ResultAdjustment>>,
@@ -146,13 +148,60 @@ struct ThunkKey {
     result: Option<ResultAdjustment>,
     internal: bool,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct TableTarget {
     function: EntityId,
     kind: SlotKind,
     adjustment: ThisAdjustment,
     adjusted: EntityId,
     through: EntityId,
+}
+// One flat unit-owned store. Each function's order is most-recent-first;
+// seeing a complete key again moves its existing node to the head.
+#[derive(Default)]
+struct DefinitionTargets {
+    nodes: Vec<DefinitionTarget>,
+    seen: HashMap<TableTarget, usize>,
+    heads: HashMap<EntityId, usize>,
+}
+struct DefinitionTarget {
+    target: TableTarget,
+    previous: Option<usize>,
+    next: Option<usize>,
+}
+impl DefinitionTargets {
+    fn note(&mut self, target: TableTarget) {
+        let head = self.heads.get(&target.function).copied();
+        let index = if let Some(&index) = self.seen.get(&target) {
+            if head == Some(index) {
+                return;
+            }
+            let node = &self.nodes[index];
+            let (previous, next) = (node.previous, node.next);
+            if let Some(previous) = previous {
+                self.nodes[previous].next = next;
+            }
+            if let Some(next) = next {
+                self.nodes[next].previous = previous;
+            }
+            index
+        } else {
+            let index = self.nodes.len();
+            self.nodes.push(DefinitionTarget {
+                target,
+                previous: None,
+                next: None,
+            });
+            self.seen.insert(target, index);
+            index
+        };
+        self.nodes[index].next = head;
+        self.nodes[index].previous = None;
+        if let Some(head) = head {
+            self.nodes[head].previous = Some(index);
+        }
+        self.heads.insert(target.function, index);
+    }
 }
 struct Thunk {
     symbol: SymbolId,
@@ -1269,7 +1318,118 @@ impl Symbols<'_, '_> {
         self.vtables.pure_virtual = Some(symbol);
         Ok(symbol)
     }
+    fn prepare_definition_thunks(&mut self, class: EntityId) -> Result<(), Error> {
+        if self.vtables.definition_classes.contains(&class) {
+            return Ok(());
+        }
+        if !self.vtables.definitions_indexed {
+            self.vtables.definitions_indexed = true;
+            // Completion order puts each base before its derived classes.
+            for &grouped in self.graph.lower_grouped_classes() {
+                let group = self
+                    .graph
+                    .lower_vtable_group(grouped)
+                    .ok_or(crate::sema::Error::Invariant("missing completed group"))?;
+                let sensitive =
+                    group.segments.iter().enumerate().skip(1).any(|(i, s)| {
+                        s.shared && s.within.is_some_and(|within| within.index() == i)
+                    }) || self
+                        .graph
+                        .lower_inheritance_edges(grouped)
+                        .any(|(base, _)| self.vtables.construction_sensitive.contains(&base))
+                        || self
+                            .graph
+                            .lower_virtual_bases(grouped)
+                            .iter()
+                            .any(|(base, _)| self.vtables.construction_sensitive.contains(base));
+                if sensitive {
+                    self.vtables.construction_sensitive.insert(grouped);
+                }
+            }
+            for &grouped in self.graph.lower_grouped_classes() {
+                if self.vtables.definition_classes.insert(grouped) {
+                    self.index_definition_thunks(grouped)?;
+                }
+            }
+        }
+        if self.vtables.definition_classes.insert(class) {
+            self.index_definition_thunks(class)?;
+        }
+        Ok(())
+    }
+    fn index_construction_thunks(&mut self, context: TableContext, top: bool) -> Result<(), Error> {
+        self.check_stack()?;
+        if !self.vtables.construction_sensitive.contains(&context.class) {
+            return Ok(());
+        }
+        let graph = self.graph;
+        if !top {
+            let group =
+                graph
+                    .lower_vtable_group(context.class)
+                    .ok_or(crate::sema::Error::Invariant(
+                        "construction thunk without group",
+                    ))?;
+            for segment in std::iter::once(0).chain(self.vtt_pointer_order(context.class)?) {
+                let segment = self.construction_owner(context, segment)?;
+                let part = &group.segments[segment];
+                for (slot, own) in graph.lower_virtual_slots(part.class)?.iter().enumerate() {
+                    let own = own.ok_or(crate::sema::Error::Invariant(
+                        "unfilled construction thunk slot",
+                    ))?;
+                    let entry = group.entries[part.entries.start + slot];
+                    let adjustment = self.construction_adjustment(context, segment, slot)?;
+                    if !graph.lower_virtual_pure(entry.function) {
+                        self.note_definition_target(TableTarget {
+                            function: entry.function,
+                            kind: entry.kind,
+                            adjustment,
+                            adjusted: own.adjusted,
+                            through: part.class,
+                        })?;
+                    }
+                }
+            }
+        }
+        for (i, (base, shared)) in graph.lower_inheritance_edges(context.class).enumerate() {
+            if !shared && !graph.lower_virtual_bases(base).is_empty() {
+                let (_, _, offset) = graph.lower_inheritance_edge(context.class, i).ok_or(
+                    crate::sema::Error::Invariant("missing construction thunk base"),
+                )?;
+                self.index_construction_thunks(
+                    TableContext {
+                        complete: context.complete,
+                        class: base,
+                        offset: context.offset.wrapping_add(offset.ok_or(
+                            crate::sema::Error::Invariant("construction thunk before layout"),
+                        )?),
+                        construction: true,
+                    },
+                    false,
+                )?;
+            }
+        }
+        if top {
+            for &(base, offset) in graph.lower_virtual_bases(context.complete) {
+                if !graph.lower_virtual_bases(base).is_empty() {
+                    self.index_construction_thunks(
+                        TableContext {
+                            complete: context.complete,
+                            class: base,
+                            offset,
+                            construction: true,
+                        },
+                        false,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
     fn index_definition_thunks(&mut self, class: EntityId) -> Result<(), Error> {
+        if !self.graph.lower_virtual_bases(class).is_empty() {
+            self.index_construction_thunks(TableContext::complete(class), true)?;
+        }
         let graph = self.graph;
         let group = graph.lower_vtable_group(class);
         let count = group.map_or(1, |group| group.segments.len());
@@ -1288,10 +1448,6 @@ impl Symbols<'_, '_> {
                     (own.function, own.kind)
                 };
                 if graph.lower_virtual_pure(function) {
-                    continue;
-                }
-                let facts = graph.lower_function(function)?;
-                if facts.object != Some(class) {
                     continue;
                 }
                 let adjustment = self.entry_adjustment(class, index, slot)?;
@@ -1330,11 +1486,7 @@ impl Symbols<'_, '_> {
         if target.adjustment.unused || target.adjustment.is_zero() && result.is_none() {
             return Ok(());
         }
-        self.vtables
-            .definition_targets
-            .entry(target.function)
-            .or_default()
-            .push(target);
+        self.vtables.definition_targets.note(target);
         Ok(())
     }
     fn virtual_thunk_level(
@@ -1390,9 +1542,7 @@ impl Symbols<'_, '_> {
             && !self.graph.lower_virtual_pure(entity)
             && let Some(class) = self.graph.lower_function(entity)?.object
         {
-            if self.vtables.definition_classes.insert(class) {
-                self.index_definition_thunks(class)?;
-            }
+            self.prepare_definition_thunks(class)?;
             let symbol = self.entry_symbol(program, entry)?;
             let binding = program
                 .function(program.symbol(symbol))
@@ -1401,14 +1551,11 @@ impl Symbols<'_, '_> {
                 ))?
                 .metadata
                 .binding;
-            for target in self
-                .vtables
-                .definition_targets
-                .remove(&entity)
-                .unwrap_or_default()
-                .into_iter()
-                .rev()
-            {
+            let mut next = self.vtables.definition_targets.heads.get(&entity).copied();
+            while let Some(index) = next {
+                let node = &self.vtables.definition_targets.nodes[index];
+                let target = node.target;
+                next = node.next;
                 let result =
                     self.result_adjustment(entity, target.kind, target.adjusted, target.through)?;
                 let entry = if matches!(target.kind, SlotKind::DeletingDestructor) {

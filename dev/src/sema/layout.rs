@@ -37,6 +37,7 @@ pub(super) enum StorageDemand {
 pub(super) struct Boundaries {
     root_count: usize,
     explicit_roots: bool,
+    definition_groups: Option<usize>,
     seen_tables: std::collections::HashSet<EntityId>,
     seen_constructors: std::collections::HashSet<super::construction::ConstructorId>,
     seen: std::collections::HashSet<EntityId>,
@@ -113,7 +114,12 @@ impl Analyzer<'_> {
     }
     pub(super) fn finish_lowering_boundaries(&mut self) -> Result<(), Error> {
         let mut state = std::mem::take(&mut self.graph.boundaries);
-        let result = self.advance_lowering_boundaries(&mut state);
+        let result = self.advance_lowering_boundaries(&mut state).and_then(|()| {
+            if let Some(next) = state.definition_groups.as_mut() {
+                self.prepare_definition_group_layouts(next)?;
+            }
+            Ok(())
+        });
         self.graph.boundaries = state;
         result
     }
@@ -183,11 +189,80 @@ impl Analyzer<'_> {
         );
         Ok(())
     }
+    fn prepare_definition_group_layouts(&mut self, next: &mut usize) -> Result<(), Error> {
+        // The unit's completed table groups are the ABI inventory for an
+        // emitted external virtual definition, even with external table keys.
+        // Visit each group once; this requests layouts, never member bodies.
+        while let Some(&class) = self.graph.lower_grouped_classes().get(*next) {
+            let segments = self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(Error::Invariant("completed group missing recipe"))?
+                .segments
+                .len();
+            for segment in 0..segments {
+                let through = self
+                    .graph
+                    .lower_vtable_group(class)
+                    .ok_or(Error::Invariant("completed group missing recipe"))?
+                    .segments[segment]
+                    .class;
+                // Lost-primary anchors and definition-owned virtual variants
+                // read the primary chain even when its table key is external.
+                self.graph.demand_virtual_chain(through, true)?;
+            }
+            let count = self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(Error::Invariant("completed group missing recipe"))?
+                .entries
+                .len();
+            if count != 0 {
+                self.class_layout(class, SourceOffset(0))?;
+            }
+            for index in 0..count {
+                let function = self
+                    .graph
+                    .lower_vtable_group(class)
+                    .ok_or(Error::Invariant("completed group missing recipe"))?
+                    .entries[index]
+                    .function;
+                if !self.graph.lower_virtual_pure(function) {
+                    self.prepare_covariant_result(function)?;
+                }
+            }
+            *next += 1;
+        }
+        Ok(())
+    }
+    fn prepare_virtual_definition_layouts(
+        &mut self,
+        entity: EntityId,
+        groups: &mut Option<usize>,
+    ) -> Result<(), Error> {
+        // A virtual definition owns its adjusting thunks even when another
+        // unit owns the table. Prepare its checked result and the unit's
+        // completed group inventory without requesting unrelated bodies.
+        if self.graph.lower_function_defined(entity)
+            && !self.graph.lower_virtual_pure(entity)
+            && !self.graph.lower_function(entity)?.internal
+        {
+            self.prepare_covariant_result(entity)?;
+            if self.graph.lower_virtual_slot(entity).is_some()
+                && let Some(class) = self.graph.lower_function(entity)?.object
+            {
+                self.graph.demand_virtual_chain(class, true)?;
+                self.prepare_definition_group_layouts(groups.get_or_insert(0))?;
+            }
+        }
+        Ok(())
+    }
     fn advance_lowering_boundaries(&mut self, state: &mut Boundaries) -> Result<(), Error> {
         use super::function_demands::Demand;
         let Boundaries {
             root_count,
             explicit_roots,
+            definition_groups,
             seen_tables,
             seen_constructors,
             seen,
@@ -285,14 +360,7 @@ impl Analyzer<'_> {
                 &mut constructors,
             )?;
             seen.insert(entity);
-            // A virtual definition owns its adjusting thunks even when another
-            // unit owns the table. Layout only its checked covariant result.
-            if self.graph.lower_function_defined(entity)
-                && !self.graph.lower_virtual_pure(entity)
-                && !self.graph.lower_function(entity)?.internal
-            {
-                self.prepare_covariant_result(entity)?;
-            }
+            self.prepare_virtual_definition_layouts(entity, definition_groups)?;
             if let Some(classes) = class_informations.remove(&entity) {
                 for class in classes {
                     self.class_layout(class, SourceOffset(0))?;

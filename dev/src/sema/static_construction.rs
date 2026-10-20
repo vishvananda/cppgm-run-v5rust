@@ -43,6 +43,9 @@ mod tests {
             #pragma pack(pop)
             Packed packed{};
             Empty over_budget[4194305]{};
+            struct VirtualRoot{virtual int f(){return 1;}};
+            struct VirtualChild:virtual VirtualRoot{}; VirtualChild virtual_child;
+            struct IndirectChild:VirtualChild{}; IndirectChild indirect_child;
             struct Unused{virtual void f();};
             void local(){Empty automatic;}
         "
@@ -105,6 +108,12 @@ mod tests {
                 .lower_static_construction(entity(b"over_budget"))
                 .is_none()
         );
+        for name in [b"virtual_child".as_slice(), b"indirect_child"] {
+            let child = entity(name);
+            assert!(!graph.lower_evaluated_construction(child));
+            assert!(graph.lower_static_construction(child).is_none());
+            assert!(graph.lower_static_construction_demands(child).is_empty());
+        }
         assert_eq!(graph.static_constructions.attempts.len(), 5);
         let unused = graph
             .binding(

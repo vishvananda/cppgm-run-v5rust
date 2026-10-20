@@ -39,12 +39,17 @@ impl Graph {
         &self,
         class: EntityId,
         index: usize,
+        indirect: &[EntityId],
     ) -> Result<Option<(EntityId, bool)>, Error> {
         let entity = self.entity(class);
         if let Some(base) = entity.bases.get(index) {
             return Ok(Some((base.class, false)));
         }
-        let member = entity.members[index - entity.bases.len()];
+        let index = index - entity.bases.len();
+        if let Some(&base) = indirect.get(index) {
+            return Ok(Some((base, false)));
+        }
+        let member = entity.members[index - indirect.len()];
         let mut ty = self
             .entity(member)
             .ty
@@ -66,7 +71,7 @@ impl Graph {
                 self.entity(class).members.len()
             };
         for index in 0..count {
-            if let Some((child, _)) = self.destruction_child(class, index)? {
+            if let Some((child, _)) = self.destruction_child(class, index, &[])? {
                 let facts = self.entity(child).destruction.ok_or(Error::Invariant(
                     "subobject destructor properties not complete",
                 ))?;
@@ -97,9 +102,12 @@ impl Graph {
 }
 impl Analyzer<'_> {
     pub(super) fn implicit_destructor_nothrow(&mut self, class: EntityId) -> Result<bool, Error> {
-        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
+        let indirect = self.graph.indirect_virtual_bases(class);
+        let count = self.graph.entity(class).bases.len()
+            + indirect.len()
+            + self.graph.entity(class).members.len();
         for index in 0..count {
-            let Some((child, _)) = self.graph.destruction_child(class, index)? else {
+            let Some((child, _)) = self.graph.destruction_child(class, index, &indirect)? else {
                 continue;
             };
             let facts = self
@@ -130,9 +138,13 @@ impl Analyzer<'_> {
             trivial: true,
             deleted: false,
         };
-        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
+        let indirect = self.graph.indirect_virtual_bases(class);
+        let count = self.graph.entity(class).bases.len()
+            + indirect.len()
+            + self.graph.entity(class).members.len();
         for index in 0..count {
-            let Some((child, member)) = self.graph.destruction_child(class, index)? else {
+            let Some((child, member)) = self.graph.destruction_child(class, index, &indirect)?
+            else {
                 continue;
             };
             let child_facts = self
@@ -301,14 +313,17 @@ impl Analyzer<'_> {
         scope: super::graph::ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        let indirect = self.graph.indirect_virtual_bases(class);
         let count = self.graph.entity(class).bases.len()
+            + indirect.len()
             + if self.graph.entity(class).key == Keyword::Union {
                 0
             } else {
                 self.graph.entity(class).members.len()
             };
         for index in 0..count {
-            let Some((child, member)) = self.graph.destruction_child(class, index)? else {
+            let Some((child, member)) = self.graph.destruction_child(class, index, &indirect)?
+            else {
                 continue;
             };
             if member && self.graph.entity(child).anonymous_class.is_some() {
@@ -348,7 +363,7 @@ impl Analyzer<'_> {
             let count =
                 self.graph.entity(current).bases.len() + self.graph.entity(current).members.len();
             for index in 0..count {
-                if let Some((child, _)) = self.graph.destruction_child(current, index)? {
+                if let Some((child, _)) = self.graph.destruction_child(current, index, &[])? {
                     if let (Some(parent), Some(binding)) =
                         (parent, self.destructor_callable(child)?)
                         && !self.graph.destructor_trivial(child)?

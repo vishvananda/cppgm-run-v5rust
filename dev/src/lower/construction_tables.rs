@@ -139,6 +139,14 @@ impl Symbols<'_, '_> {
         self.vtables.contexts.owners.insert(context, owners);
         Ok(())
     }
+    pub(super) fn construction_owner(
+        &mut self,
+        context: TableContext,
+        segment: usize,
+    ) -> Result<usize, Error> {
+        self.prepare_context_owners(context)?;
+        Ok(self.vtables.contexts.owners[&context][segment])
+    }
     pub(super) fn construction_adjustment(
         &mut self,
         context: TableContext,
