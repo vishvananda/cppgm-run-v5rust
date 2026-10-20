@@ -31,6 +31,7 @@ pub(super) struct Virtuals {
     slots: HashMap<EntityId, SlotId>,
     primary_overrides: HashMap<EntityId, EntityId>,
     function_signatures: HashMap<EntityId, (ValueKey, TypeId)>,
+    covariant_results: HashMap<EntityId, EntityId>,
     pub(super) groups: HashMap<EntityId, super::vtable_groups::VtableGroup>,
     deallocators: HashMap<EntityId, EntityId>,
     assignment_targets: HashSet<EntityId>,
@@ -104,6 +105,12 @@ impl Virtuals {
     }
     pub(super) fn destructor(&self, class: EntityId) -> Option<EntityId> {
         self.destructors.get(&class).copied()
+    }
+    pub(super) fn signature(&self, function: EntityId) -> Result<(ValueKey, TypeId), Error> {
+        self.function_signatures
+            .get(&function)
+            .copied()
+            .ok_or(Error::Invariant("virtual without signature identity"))
     }
 }
 
@@ -561,7 +568,11 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    pub(super) fn complete_virtual_layout(&mut self, class: EntityId) -> Result<(), Error> {
+    pub(super) fn complete_virtual_layout(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         if !self.graph.entity(class).polymorphism.is_dynamic() {
             return Ok(());
         }
@@ -624,7 +635,7 @@ impl Analyzer<'_> {
                 .transpose()?;
             let adjusted = if let Some(base) = overridden {
                 self.graph.virtuals.primary_overrides.insert(function, base);
-                self.covariant_slot_needs_adjustment(function, base)?
+                self.covariant_slot_needs_adjustment(function, base, location)?
             } else {
                 false
             };
@@ -704,11 +715,12 @@ impl Analyzer<'_> {
         &mut self,
         function: EntityId,
         overridden: EntityId,
+        location: SourceOffset,
     ) -> Result<bool, Error> {
         let Some((derived, base, _)) = self.graph.covariant_classes(function, overridden)? else {
             return Ok(false);
         };
-        self.class_layout(derived, SourceOffset(0))?;
+        self.class_layout(derived, location)?;
         Ok(self
             .graph
             .nonvirtual_result_offset(derived, base)?
@@ -833,7 +845,14 @@ impl Analyzer<'_> {
                 .scope
                 .ok_or(Error::Invariant("class without scope"))?,
             location,
-        )
+        )?;
+        // Keep the checked result identity for thunk demand. A secondary-only
+        // override does not run the primary slot's adjustment/layout query.
+        self.graph
+            .virtuals
+            .covariant_results
+            .insert(function, derived);
+        Ok(())
     }
 
     pub(super) fn pure_specifier(
@@ -892,11 +911,56 @@ impl Analyzer<'_> {
         self.class_layout(class, SourceOffset(0))?;
         self.prepare_destruction(class)?;
         self.graph.demand_virtual_slots(class)?;
-        for entry in self.graph.lower_virtual_slots(class)? {
-            let entry = entry.ok_or(Error::Invariant("unfilled virtual slot"))?;
-            if !self.graph.lower_virtual_pure(entry.function) {
-                work.push(entry.function);
+        for index in 0..self.graph.lower_virtual_slots(class)?.len() {
+            let function = self.graph.lower_virtual_slots(class)?[index]
+                .ok_or(Error::Invariant("unfilled virtual slot"))?
+                .function;
+            self.virtual_target_boundary(function, work)?;
+        }
+        // Secondary entries may name functions absent from the primary table.
+        // Their bodies, argument boundaries and covariant layouts are demanded
+        // by the same emitted table, independently of a source call to them.
+        let count = self
+            .graph
+            .lower_vtable_group(class)
+            .map_or(0, |group| group.segments.len());
+        for segment in 1..count {
+            let group = self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(Error::Invariant("missing demanded vtable group"))?;
+            if group.segments[segment].shared {
+                continue;
             }
+            let entries = group.segments[segment].entries.clone();
+            for index in entries {
+                let function = self
+                    .graph
+                    .lower_vtable_group(class)
+                    .ok_or(Error::Invariant("missing demanded vtable group"))?
+                    .entries[index]
+                    .function;
+                self.virtual_target_boundary(function, work)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn virtual_target_boundary(
+        &mut self,
+        function: EntityId,
+        work: &mut Vec<EntityId>,
+    ) -> Result<(), Error> {
+        if !self.graph.lower_virtual_pure(function) {
+            self.prepare_covariant_result(function)?;
+            work.push(function);
+        }
+        Ok(())
+    }
+
+    pub(super) fn prepare_covariant_result(&mut self, function: EntityId) -> Result<(), Error> {
+        if let Some(&class) = self.graph.virtuals.covariant_results.get(&function) {
+            self.class_layout(class, SourceOffset(0))?;
         }
         Ok(())
     }
@@ -1170,11 +1234,7 @@ impl super::graph::Graph {
         {
             return Ok(self.virtuals.destructor(class));
         }
-        let &(key, signature) = self
-            .virtuals
-            .function_signatures
-            .get(&function)
-            .ok_or(Error::Invariant("virtual without signature identity"))?;
+        let (key, signature) = self.virtuals.signature(function)?;
         Ok(self
             .virtuals
             .declarations

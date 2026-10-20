@@ -197,7 +197,7 @@ impl Analyzer<'_> {
             self.classify_class_copies(class)?;
             self.complete_destructor(class)?;
             self.complete_virtual_members(class, SourceOffset(0))?;
-            self.complete_virtual_layout(class)?;
+            self.complete_virtual_layout(class, SourceOffset(0))?;
         }
         Ok(true)
     }

@@ -370,6 +370,24 @@ mod tests {
     }
 
     #[test]
+    fn unused_secondary_covariant_result_retains_identity_without_layout_demand() {
+        inspect(b"struct P{int p;};struct Q{int q;};struct R:P,Q{};struct A{virtual void f();};struct B{virtual Q*get();};struct D:A,B{R*get();};", |graph, class| {
+            let entry = graph.lower_virtual_slots(class).unwrap()[1].unwrap();
+            let ty = graph.lower_entity_type(entry.function).unwrap();
+            let super::super::lowering::TypeView::Function { result, .. } = graph.lower_type(ty).unwrap() else {
+                panic!("virtual signature");
+            };
+            let super::super::lowering::TypeView::Pointer(result) = graph.lower_type(result).unwrap() else {
+                panic!("covariant pointer");
+            };
+            let super::super::lowering::TypeView::Class(result) = graph.lower_type(result).unwrap() else {
+                panic!("covariant class");
+            };
+            assert!(matches!(graph.entity(result).layout, LayoutState::NotStarted));
+        });
+    }
+
+    #[test]
     fn projection_does_not_instantiate_unused_virtual_bodies() {
         inspect_with_instances(b"template<class T>struct A{virtual int f(){return T::missing();}};struct B{virtual int g();};struct D:A<int>,B{};", true, |graph,class| {
             let entry = graph.lower_virtual_slots(class).unwrap()[0].unwrap();

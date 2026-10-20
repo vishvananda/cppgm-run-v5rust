@@ -1129,6 +1129,8 @@ impl Symbols<'_, '_> {
     ) -> Result<(), Error> {
         if let Entry::Function(entity) = entry
             && self.graph.lower_virtual_slot(entity).is_some()
+            && !self.graph.lower_function(entity)?.internal
+            && !self.graph.lower_virtual_pure(entity)
             && let Some(class) = self.graph.lower_function(entity)?.object
         {
             if self.vtables.definition_classes.insert(class) {

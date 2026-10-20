@@ -280,36 +280,17 @@ impl Graph {
                 > 1
     }
 
-    fn virtual_signature(&mut self, function: EntityId) -> Result<VirtualSignature, Error> {
+    fn virtual_signature(&self, function: EntityId) -> Result<VirtualSignature, Error> {
         let member = self.entity(function).member_function.map(|key| key.kind);
         if member == Some(MemberKind::Destructor) {
             return Ok(VirtualSignature::Destructor);
         }
-        let ty = self.lower_entity_type(function)?;
-        let signature = if member == Some(MemberKind::Conversion) {
-            self.types.canonical_function(ty)?
-        } else {
-            self.types.declaration_signature(ty)?
-        };
-        let props = self
-            .entity(function)
-            .function
-            .ok_or(Error::Invariant("virtual function properties"))?;
-        let key = if member == Some(MemberKind::Conversion) {
-            ValueKey::Special(super::function_names::SpecialName::Conversion)
-        } else if let Some(special) = props.special {
-            ValueKey::Special(special)
-        } else {
-            self.entity(function)
-                .name
-                .ok_or(Error::Invariant("virtual function name"))?
-                .into()
-        };
+        let (key, signature) = self.virtuals.signature(function)?;
         Ok(VirtualSignature::Function(key, signature))
     }
 
     fn index_virtual_declarations(
-        &mut self,
+        &self,
         class: EntityId,
         declarations: &mut Declarations,
     ) -> Result<(), Error> {
@@ -359,12 +340,11 @@ impl Graph {
         let Some(inherited) = self.virtuals.final_overriders.classes.get(&base) else {
             return Ok(false);
         };
-        let inherited = inherited.clone();
         let mut declarations = Declarations::default();
         self.index_virtual_declarations(class, &mut declarations)?;
         let mut signatures = HashMap::new();
         let mut finals = FinalOverriders::new();
-        for ((subobject, function), pure) in inherited {
+        for (&(subobject, function), &pure) in inherited {
             let signature = if let Some(&known) = signatures.get(&function) {
                 known
             } else {

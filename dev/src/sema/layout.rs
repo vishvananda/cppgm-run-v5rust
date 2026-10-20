@@ -284,6 +284,14 @@ impl Analyzer<'_> {
                 &mut constructors,
             )?;
             seen.insert(entity);
+            // A virtual definition owns its adjusting thunks even when another
+            // unit owns the table. Layout only its checked covariant result.
+            if self.graph.lower_function_defined(entity)
+                && !self.graph.lower_virtual_pure(entity)
+                && !self.graph.lower_function(entity)?.internal
+            {
+                self.prepare_covariant_result(entity)?;
+            }
             if let Some(classes) = class_informations.remove(&entity) {
                 for class in classes {
                     self.class_layout(class, SourceOffset(0))?;
