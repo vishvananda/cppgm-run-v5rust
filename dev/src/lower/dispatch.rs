@@ -13,19 +13,39 @@ impl Function<'_, '_, '_, '_> {
         if !self.graph.lower_polymorphic(class) {
             return Ok(());
         }
-        let symbol = self.symbols.vtable_symbol(self.builder.program(), class)?;
-        let object = self.object_pointer(source)?.value;
-        let table = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
-        let offset = self.builder.integer(16)?;
-        let table = self
-            .emit(I::Index(Type::I8, None, table, offset), source)?
-            .value;
-        self.effect(I::Store(
-            Facts::memory(false, true),
-            Type::Ptr,
-            table,
-            object,
-        ))
+        self.symbols.vtable_symbol(self.builder.program(), class)?;
+        let offsets = self.graph.lower_segment_offsets(class)?;
+        for (index, offset) in offsets.into_iter().enumerate() {
+            if self
+                .graph
+                .lower_vtable_group(class)
+                .is_some_and(|group| group.segments[index].shared)
+            {
+                continue;
+            }
+            let mut object = self.object_pointer(source)?.value;
+            if index != 0 {
+                let offset = self.builder.integer(u128::from(offset))?;
+                object = self
+                    .emit(I::Index(Type::I8, None, object, offset), source)?
+                    .value;
+            }
+            let (symbol, point) =
+                self.symbols
+                    .table_address(self.builder.program(), class, index)?;
+            let table = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
+            let offset = self.builder.integer(u128::from(point))?;
+            let table = self
+                .emit(I::Index(Type::I8, None, table, offset), source)?
+                .value;
+            self.effect(I::Store(
+                Facts::memory(false, true),
+                Type::Ptr,
+                table,
+                object,
+            ))?;
+        }
+        Ok(())
     }
     pub(super) fn virtual_callee(
         &mut self,

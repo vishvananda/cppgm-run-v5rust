@@ -29,6 +29,9 @@ pub(super) struct Virtuals {
     pure_counts: HashMap<EntityId, u32>,
     classes: HashMap<EntityId, ClassVirtuals>,
     slots: HashMap<EntityId, SlotId>,
+    primary_overrides: HashMap<EntityId, EntityId>,
+    function_signatures: HashMap<EntityId, (ValueKey, TypeId)>,
+    pub(super) groups: HashMap<EntityId, super::vtable_groups::VtableGroup>,
     deallocators: HashMap<EntityId, EntityId>,
     assignment_targets: HashSet<EntityId>,
     implicit_assignments: HashMap<EntityId, Vec<EntityId>>,
@@ -83,11 +86,14 @@ pub(crate) struct VirtualEntry {
     pub slot: SlotId,
     pub function: EntityId,
     pub kind: SlotKind,
+    pub introducer: EntityId,
+    pub adjusted: EntityId,
 }
 /// Class completion records only its changes. Lowering builds a demanded table
 /// from this primary-chain recipe, never all the tables of an unused hierarchy.
 pub(crate) struct ClassVirtuals {
     pub primary: Option<EntityId>,
+    pub has_virtual_bases: bool,
     pub size: u32,
     pub key: Option<EntityId>,
     pub entries: Vec<VirtualEntry>,
@@ -311,6 +317,10 @@ impl Analyzer<'_> {
                     .virtuals
                     .declarations
                     .insert((class, key, signature), function);
+                self.graph
+                    .virtuals
+                    .function_signatures
+                    .insert(function, (key, signature));
             }
             self.graph.entity_mut(class).aggregation =
                 super::aggregate_initialization::Aggregation::Ineligible;
@@ -456,6 +466,10 @@ impl Analyzer<'_> {
                     .insert((class, key, signature), function);
                 self.graph
                     .virtuals
+                    .function_signatures
+                    .insert(function, (key, signature));
+                self.graph
+                    .virtuals
                     .implicit_assignments
                     .entry(class)
                     .or_default()
@@ -480,7 +494,9 @@ impl Analyzer<'_> {
             .entity(class)
             .bases
             .iter()
-            .find(|edge| self.graph.entity(edge.class).polymorphism.is_dynamic())
+            .find(|edge| {
+                !edge.is_virtual && self.graph.entity(edge.class).polymorphism.is_dynamic()
+            })
             .map(|edge| edge.class);
         let mut pure = primary
             .and_then(|base| self.graph.virtuals.pure_counts.get(&base))
@@ -554,7 +570,9 @@ impl Analyzer<'_> {
             .entity(class)
             .bases
             .iter()
-            .find(|edge| self.graph.entity(edge.class).polymorphism.is_dynamic())
+            .find(|edge| {
+                !edge.is_virtual && self.graph.entity(edge.class).polymorphism.is_dynamic()
+            })
             .map(|edge| edge.class);
         let mut size = if let Some(base) = primary {
             self.graph.lower_virtual_class(base)?.size
@@ -585,8 +603,16 @@ impl Analyzer<'_> {
                 .entity(function)
                 .member_function
                 .is_some_and(|member| member.kind == MemberKind::Destructor);
-            let inherited = facts
-                .overridden
+            let mut next = primary;
+            let mut overridden = None;
+            while let Some(base) = next {
+                if let Some(found) = self.graph.declared_virtual_overrider(base, function)? {
+                    overridden = Some(found);
+                    break;
+                }
+                next = self.graph.lower_virtual_class(base)?.primary;
+            }
+            let inherited = overridden
                 .map(|base| {
                     self.graph
                         .virtuals
@@ -596,7 +622,13 @@ impl Analyzer<'_> {
                         .ok_or(Error::Invariant("override without completed virtual slot"))
                 })
                 .transpose()?;
-            let slot = if let Some(slot) = inherited {
+            let adjusted = if let Some(base) = overridden {
+                self.graph.virtuals.primary_overrides.insert(function, base);
+                self.covariant_slot_needs_adjustment(function, base)?
+            } else {
+                false
+            };
+            let slot = if let Some(slot) = inherited.filter(|_| !adjusted) {
                 slot
             } else {
                 let slot = SlotId(size);
@@ -609,6 +641,8 @@ impl Analyzer<'_> {
             entries.push(VirtualEntry {
                 slot,
                 function,
+                introducer: function,
+                adjusted: function,
                 kind: if destructor {
                     SlotKind::CompleteDestructor
                 } else {
@@ -623,6 +657,8 @@ impl Analyzer<'_> {
                             .ok_or(Error::Limit("virtual slot limit"))?,
                     ),
                     function,
+                    introducer: function,
+                    adjusted: function,
                     kind: SlotKind::DeletingDestructor,
                 });
             }
@@ -646,12 +682,37 @@ impl Analyzer<'_> {
             class,
             ClassVirtuals {
                 primary,
+                has_virtual_bases: self.graph.entity(class).bases.iter().any(|edge| {
+                    edge.is_virtual
+                        || self
+                            .graph
+                            .virtuals
+                            .classes
+                            .get(&edge.class)
+                            .is_some_and(|facts| facts.has_virtual_bases)
+                }),
                 size,
                 key,
                 entries,
             },
         );
+        self.graph.complete_nonvirtual_group(class)?;
         Ok(())
+    }
+
+    fn covariant_slot_needs_adjustment(
+        &mut self,
+        function: EntityId,
+        overridden: EntityId,
+    ) -> Result<bool, Error> {
+        let Some((derived, base, _)) = self.graph.covariant_classes(function, overridden)? else {
+            return Ok(false);
+        };
+        self.class_layout(derived, SourceOffset(0))?;
+        Ok(self
+            .graph
+            .nonvirtual_result_offset(derived, base)?
+            .is_none_or(|offset| offset != 0))
     }
 
     fn check_virtual_override(
@@ -1001,6 +1062,126 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
+    fn covariant_classes(
+        &self,
+        function: EntityId,
+        overridden: EntityId,
+    ) -> Result<Option<(EntityId, EntityId, bool)>, Error> {
+        let result = |function| -> Result<TypeId, Error> {
+            let ty = self.lower_entity_type(function)?;
+            let TypeKind::Function { result, .. } = self.types.get(ty).kind else {
+                return Err(Error::Invariant("virtual result type"));
+            };
+            Ok(result)
+        };
+        let mine = result(function)?;
+        let theirs = result(overridden)?;
+        if mine == theirs {
+            return Ok(None);
+        }
+        let (from, to, reference) = match (&self.types.get(mine).kind, &self.types.get(theirs).kind)
+        {
+            (TypeKind::Pointer(from), TypeKind::Pointer(to)) => (*from, *to, false),
+            (
+                TypeKind::Reference { element: from, .. },
+                TypeKind::Reference { element: to, .. },
+            ) => (*from, *to, true),
+            _ => return Ok(None),
+        };
+        Ok(self
+            .class_of(from)
+            .zip(self.class_of(to))
+            .filter(|(from, to)| from != to)
+            .map(|(from, to)| (from, to, reference)))
+    }
+    fn nonvirtual_result_offset(
+        &self,
+        derived: EntityId,
+        base: EntityId,
+    ) -> Result<Option<u64>, Error> {
+        // Relative offsets are memoized by class, so repeated subobjects do
+        // not repeat a search. The first nonvirtual path in declaration order
+        // is the route chosen by the C++ ABI query, after semantic covariance.
+        let mut known = HashMap::new();
+        known.insert(base, Some(0_u64));
+        let mut work = vec![(derived, 0_usize)];
+        while let Some((class, next)) = work.last_mut() {
+            if known.contains_key(class) {
+                work.pop();
+                continue;
+            }
+            let Some(edge) = self.entity(*class).bases.get(*next) else {
+                known.insert(*class, None);
+                work.pop();
+                continue;
+            };
+            if edge.is_virtual {
+                *next += 1;
+                continue;
+            }
+            if let Some(&below) = known.get(&edge.class) {
+                if let Some(below) = below {
+                    let offset = edge
+                        .offset
+                        .ok_or(Error::Invariant("covariant result before layout"))?;
+                    known.insert(*class, Some(offset.wrapping_add(below)));
+                    work.pop();
+                } else {
+                    *next += 1;
+                }
+            } else {
+                work.push((edge.class, 0));
+            }
+        }
+        Ok(known[&derived])
+    }
+    pub(crate) fn lower_covariant_adjustment(
+        &self,
+        function: EntityId,
+        adjusted: EntityId,
+        through: EntityId,
+    ) -> Result<Option<(i64, bool)>, Error> {
+        let Some((from, to, reference)) = self.covariant_classes(function, adjusted)? else {
+            return Ok(None);
+        };
+        let offset = if through != from
+            && through != to
+            && self.is_base_of(through, from)
+            && self.is_base_of(to, through)
+        {
+            self.nonvirtual_result_offset(from, through)?
+                .zip(self.nonvirtual_result_offset(through, to)?)
+                .map(|(a, b)| a.wrapping_add(b))
+        } else {
+            self.nonvirtual_result_offset(from, to)?
+        };
+        let offset = offset.ok_or(Error::Missing("virtual covariant result adjustment"))?;
+        Ok((offset != 0).then_some((i64::from_ne_bytes(offset.to_ne_bytes()), reference)))
+    }
+    pub(super) fn declared_virtual_overrider(
+        &self,
+        class: EntityId,
+        function: EntityId,
+    ) -> Result<Option<EntityId>, Error> {
+        if self
+            .entity(function)
+            .member_function
+            .is_some_and(|m| m.kind == MemberKind::Destructor)
+        {
+            return Ok(self.virtuals.destructor(class));
+        }
+        let &(key, signature) = self
+            .virtuals
+            .function_signatures
+            .get(&function)
+            .ok_or(Error::Invariant("virtual without signature identity"))?;
+        Ok(self
+            .virtuals
+            .declarations
+            .get(&(class, key, signature))
+            .copied())
+    }
+
     pub(crate) fn lower_emits_vtable(&self, class: EntityId) -> Result<bool, Error> {
         Ok(self
             .lower_virtual_class(class)?
@@ -1009,11 +1190,20 @@ impl super::graph::Graph {
             && !self.lower_class_instantiated_elsewhere(class))
     }
 
-    fn demand_virtual_slots(&mut self, root: EntityId) -> Result<(), Error> {
+    pub(super) fn demand_virtual_slots(&mut self, root: EntityId) -> Result<(), Error> {
+        self.demand_virtual_chain(root, false)
+    }
+    pub(super) fn demand_virtual_chain(
+        &mut self,
+        root: EntityId,
+        retain_chain: bool,
+    ) -> Result<(), Error> {
         let mut chain = Vec::new();
         let mut next = Some(root);
         while let Some(class) = next {
-            if self.virtuals.layouts.contains_key(&class) {
+            // An already cached head need not have retained an external key
+            // owner's table below it. A secondary projection reads every link.
+            if !retain_chain && self.virtuals.layouts.contains_key(&class) {
                 break;
             }
             chain.push(class);
@@ -1030,11 +1220,65 @@ impl super::graph::Graph {
                 None,
             );
             for entry in &facts.entries {
-                work[entry.slot.index()?] = Some(*entry);
+                if matches!(entry.kind, SlotKind::DeletingDestructor) {
+                    continue;
+                }
+                let function = entry.function;
+                let own = entry.slot;
+                let mut next = Some(function);
+                while let Some(overridden) = next {
+                    let slot = self
+                        .lower_virtual_slot(overridden)
+                        .ok_or(Error::Invariant("overridden virtual without slot"))?;
+                    let old = work.get(slot.index()?).copied().flatten();
+                    let introducer = if slot == own
+                        && self
+                            .virtuals
+                            .primary_overrides
+                            .get(&function)
+                            .and_then(|base| self.lower_virtual_slot(*base))
+                            != Some(own)
+                    {
+                        function
+                    } else {
+                        old.map_or(overridden, |old| old.introducer)
+                    };
+                    let adjusted = if slot == own {
+                        function
+                    } else {
+                        old.map_or(introducer, |old| old.adjusted)
+                    };
+                    let placed = VirtualEntry {
+                        slot,
+                        function,
+                        kind: entry.kind,
+                        introducer,
+                        adjusted,
+                    };
+                    *work
+                        .get_mut(slot.index()?)
+                        .ok_or(Error::Invariant("virtual slot outside primary table"))? =
+                        Some(placed);
+                    if matches!(entry.kind, SlotKind::CompleteDestructor) {
+                        let slot = slot.deleting()?;
+                        *work
+                            .get_mut(slot.index()?)
+                            .ok_or(Error::Invariant("destructor slot outside primary table"))? =
+                            Some(VirtualEntry {
+                                slot,
+                                kind: SlotKind::DeletingDestructor,
+                                ..placed
+                            });
+                    }
+                    next = self.virtuals.primary_overrides.get(&introducer).copied();
+                }
             }
             // Like analyzer_virtual.cpp::virtual_slots, retain the demanded
             // chain's layouts only where this unit can emit their tables.
-            if class == root || facts.key.is_none_or(|key| self.lower_function_defined(key)) {
+            if retain_chain
+                || class == root
+                || facts.key.is_none_or(|key| self.lower_function_defined(key))
+            {
                 self.virtuals.layouts.insert(class, work.clone());
             }
         }
@@ -1341,18 +1585,25 @@ mod tests {
             super::super::copy_properties::Preparation::Pending
         ));
         assert!(graph.root_demands.as_slice().is_empty());
-        for class in classes {
-            assert!(!matches!(
+        // Covariant B& -> A& checks the completed result layout, even at
+        // offset zero (analyzer_virtual.cpp::result_needs_adjustment).
+        for &class in [base, derived] {
+            assert!(matches!(
                 graph.entity(class).layout,
                 super::super::layout::LayoutState::Value { .. }
             ));
         }
+        assert!(matches!(
+            graph.entity(*unused).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+        assert!(graph.virtuals.layouts.is_empty());
         assert_eq!(expressions, tree.expressions.mark());
         assert_eq!(syntax, tree.declarations.mark());
     }
 
     #[test]
-    fn override_facts_share_entities_without_demanding_layouts_or_bodies() {
+    fn covariant_override_facts_share_entities_and_demand_only_the_result_layout() {
         let source = SourceBuffer::new(b"struct A{virtual A*f()const &;virtual void g()=0;virtual ~A()=0;};struct B:A{B*f()const & override;void g()override;};struct Unused{virtual void h();};".to_vec()).unwrap();
         let mut unit =
             SyntaxUnit::new(Preprocessor::with_name(&source, b"virtual-ownership").unwrap());
@@ -1428,12 +1679,17 @@ mod tests {
         assert!(graph.entity(b).implicit_destructor.is_some());
         assert!(graph.lower_virtual_deallocator(b).is_ok());
         assert!(graph.root_demands.as_slice().is_empty());
-        for id in [a, b, unused] {
-            assert!(!matches!(
+        for id in [a, b] {
+            assert!(matches!(
                 graph.entity(id).layout,
                 super::super::layout::LayoutState::Value { .. }
             ));
         }
+        assert!(matches!(
+            graph.entity(unused).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+        assert!(graph.virtuals.layouts.is_empty());
         assert_eq!(expressions, tree.expressions.mark());
     }
 }

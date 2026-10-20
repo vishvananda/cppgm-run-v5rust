@@ -149,6 +149,7 @@ mod variable_specializations;
 mod variable_templates;
 mod virtual_exceptions;
 mod virtual_members;
+mod vtable_groups;
 use crate::support::source::SourceOffset;
 #[derive(Debug)]
 pub(crate) enum Error {

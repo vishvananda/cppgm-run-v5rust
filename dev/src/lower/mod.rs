@@ -140,6 +140,7 @@ fn finish_unit(
     symbols: &mut symbols::Symbols<'_, '_>,
     graph: &Graph,
 ) -> Result<Option<crate::lowir::model::SymbolId>, Error> {
+    symbols.emit_thunks(program, definitions)?;
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     definitions.release_held();
     globals::finish(program, symbols, graph)?;
