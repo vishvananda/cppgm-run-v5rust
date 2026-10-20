@@ -2,6 +2,7 @@
 mod abi;
 mod address_facts;
 mod builtins;
+mod bulk;
 mod call_facts;
 mod call_selection;
 mod condition;

@@ -52,6 +52,18 @@ pub(super) enum Rm {
     },
 }
 impl Rm {
+    pub(super) fn displaced(mut self, offset: i32) -> Self {
+        if let Self::Memory { disp, .. } = &mut self {
+            *disp = disp.wrapping_add(offset);
+        }
+        self
+    }
+    pub(super) fn uses(self, reg: Register) -> bool {
+        match self {
+            Self::Reg(value) => value == reg,
+            Self::Memory { base, index, .. } => base == Some(reg) || index == Some(reg),
+        }
+    }
     pub(super) fn mem(base: Register, disp: i32) -> Self {
         Self::Memory {
             base: Some(base),

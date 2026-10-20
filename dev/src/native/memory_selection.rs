@@ -39,6 +39,13 @@ impl Selection<'_> {
                 ),
             ),
             Alias::Temporary(temp) => {
+                if matches!(self.body.temp(temp).ty, Some(Type::Object { .. })) {
+                    return Ok(Operand::Frame(self.placement.home(
+                        self.body,
+                        temp,
+                        &mut self.mir,
+                    )?));
+                }
                 if self.addresses.lazy[temp.index()] {
                     return self.lazy_memory(
                         self.addresses.expressions[temp.index()].ok_or(Error::Limit)?,

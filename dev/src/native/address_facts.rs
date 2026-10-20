@@ -139,7 +139,7 @@ impl Addresses {
                 }
             });
             match inst.kind {
-                I::Load(..) => {}
+                I::Load(..) | I::CopyObject(..) | I::ZeroInit(..) => {}
                 I::Index(_, _, _, v) | I::Store(_, _, v, _) => {
                     if let Alias::Temporary(t) = facts.resolve(body, v) {
                         value_use[t.index()] = true;
@@ -348,7 +348,7 @@ impl Addresses {
                 }
             });
         }
-        facts.refresh_clobbers(body);
+        facts.refresh_clobbers(body)?;
         Ok(out)
     }
 }

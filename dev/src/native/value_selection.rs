@@ -46,7 +46,7 @@ pub(super) fn select(
     let mut facts = Facts::analyze(body, &slots, flow)?;
     let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
     let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
-    facts.apply_calls(body, &calls);
+    facts.apply_calls(body, &calls)?;
     let mut mir = MirFunction::new(
         symbol,
         function.signature,
@@ -180,6 +180,12 @@ pub(super) fn select(
             selection.location = body.location(inst);
             match inst.kind {
                 I::Phi(..) => {}
+                I::CopyObject(bytes, align, source, destination) => {
+                    selection.bulk(bytes, align, Some(source), destination)?;
+                }
+                I::ZeroInit(bytes, align, destination) => {
+                    selection.bulk(bytes, align, None, destination)?;
+                }
                 I::Jump(..) | I::Branch(..) | I::Switch(..) => {
                     selection.terminator(&control, block, &inst.kind)?;
                 }
@@ -189,6 +195,15 @@ pub(super) fn select(
                     call,
                     calls.at(pos).ok_or(Error::Limit)?,
                 )?,
+                I::Load(_, ty @ Type::Object { .. }, address) => {
+                    selection.object_load(inst.result.ok_or(Error::Limit)?, ty, address)?;
+                }
+                I::Store(_, ty @ Type::Object { .. }, value, address) => {
+                    selection.object_store(ty, value, address)?;
+                }
+                I::Copy(ty @ Type::Object { .. }, value) => {
+                    selection.object_copy(inst.result.ok_or(Error::Limit)?, ty, value)?;
+                }
                 I::Load(_, ty, address) => {
                     selection.read_memory(inst.result.ok_or(Error::Limit)?, ty, address)?;
                 }

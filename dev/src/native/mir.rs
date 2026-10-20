@@ -100,6 +100,7 @@ pub(super) enum Op {
     Trap,
     Call(CallSite),
     DynamicCopy,
+    Bulk(super::bulk::Bulk),
     Scalar(super::scalar_mir::ScalarOp),
 }
 pub(super) struct Instruction {
@@ -372,6 +373,7 @@ impl Function {
             Op::Trap => write!(out, "    trap")?,
             Op::Call(site) => site.write(program, out)?,
             Op::DynamicCopy => write!(out, "    copy_bytes_dynamic")?,
+            Op::Bulk(op) => op.write(program, out)?,
             Op::Scalar(op) => {
                 write!(out, "    ")?;
                 op.write(program, out)?;

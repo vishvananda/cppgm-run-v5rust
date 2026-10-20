@@ -287,7 +287,7 @@ impl Facts {
                 body.visit_values(&inst.kind, |value| facts.note_use(body, value, pos, pos));
             }
         }
-        facts.refresh_clobbers(body);
+        facts.refresh_clobbers(body)?;
         Ok(facts)
     }
     fn note_use(&mut self, body: &Body, value: Value, at: usize, consumer: usize) {
@@ -424,11 +424,15 @@ impl Facts {
         }
         true
     }
-    pub(super) fn refresh_clobbers(&mut self, body: &Body) {
-        self.rebuild_clobbers(body, None);
+    pub(super) fn refresh_clobbers(&mut self, body: &Body) -> Result<(), Error> {
+        self.rebuild_clobbers(body, None)
     }
-    pub(super) fn apply_calls(&mut self, body: &Body, calls: &super::call_facts::Calls) {
-        self.rebuild_clobbers(body, Some(calls));
+    pub(super) fn apply_calls(
+        &mut self,
+        body: &Body,
+        calls: &super::call_facts::Calls,
+    ) -> Result<(), Error> {
+        self.rebuild_clobbers(body, Some(calls))
     }
     fn call_hints(
         &mut self,
@@ -462,7 +466,11 @@ impl Facts {
             }
         }
     }
-    fn rebuild_clobbers(&mut self, body: &Body, calls: Option<&super::call_facts::Calls>) {
+    fn rebuild_clobbers(
+        &mut self,
+        body: &Body,
+        calls: Option<&super::call_facts::Calls>,
+    ) -> Result<(), Error> {
         let ids = self.flow.instructions.clone();
         for interval in &mut self.intervals {
             interval.forbid = 0;
@@ -506,6 +514,23 @@ impl Facts {
                 && ty != Type::I128
             {
                 super::division::Form::at(self, body, op, right).clobbers()
+            } else if let I::CopyObject(bytes, align, ..) = inst.kind {
+                if super::bulk::direct_copy(bytes, super::bulk::alignment(align)) {
+                    0
+                } else {
+                    (1 << R::RDI.code()) | (1 << R::RSI.code()) | (1 << R::RCX.code())
+                }
+            } else if let I::ZeroInit(bytes, ..) = inst.kind {
+                if super::bulk::direct_zero(bytes) {
+                    0
+                } else {
+                    (1 << R::RDI.code()) | (1 << R::RAX.code()) | (1 << R::RCX.code())
+                }
+            } else if let I::Load(_, ty @ Type::Object { .. }, _)
+            | I::Store(_, ty @ Type::Object { .. }, _, _)
+            | I::Copy(ty @ Type::Object { .. }, _) = inst.kind
+            {
+                super::bulk::object_clobbers(ty)?
             } else if self.compare_scratch(body, pos) {
                 1 << R::RDX.code()
             } else if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(self.resolve(body,count),Alias::Constant(Constant::Integer(_))))
@@ -546,6 +571,7 @@ impl Facts {
         for interval in self.intervals.iter_mut().take(body.parameter_count) {
             interval.forbid = mask(interval, &late, &early);
         }
+        Ok(())
     }
 }
 fn alias_bits(bits: u128, ty: Type) -> u128 {

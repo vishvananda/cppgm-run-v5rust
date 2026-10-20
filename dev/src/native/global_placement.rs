@@ -121,7 +121,11 @@ impl Globals {
             {
                 continue;
             }
-            super::memory::scalar(temp.ty.ok_or(Error::Limit)?)?;
+            let ty = temp.ty.ok_or(Error::Limit)?;
+            if matches!(ty, crate::lowir::vocabulary::Type::Object { .. }) {
+                continue;
+            }
+            super::memory::scalar(ty)?;
             candidates.push(id);
         }
         if candidates.is_empty() {

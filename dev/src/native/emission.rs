@@ -297,6 +297,9 @@ impl<'a> Pass<'a> {
                 self.assembler.byte(0xf3);
                 self.assembler.byte(0xa4);
             }
+            Op::Bulk(op) => op
+                .rebase(f.aligned_disp, f.aligned_bytes)
+                .emit(&mut self.assembler)?,
             Op::Scalar(op) => op
                 .rebase(f.aligned_disp, f.aligned_bytes)
                 .emit(&mut self.assembler, self.flags[index])?,
