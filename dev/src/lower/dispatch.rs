@@ -30,6 +30,10 @@ impl Function<'_, '_, '_, '_> {
         } else {
             Vec::new()
         };
+        let mut from_vtt = vec![false; offsets.len()];
+        for &index in &order {
+            from_vtt[index] = true;
+        }
         let object = self.table_subobject(class, source, 0, &offsets)?;
         if self.virtual_context.vtt.is_some() {
             let table = self.construction_table_value(source)?;
@@ -42,12 +46,12 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.store_table_at(class, source, 0, object)?;
         }
-        for index in 1..offsets.len() {
+        for (index, &from_vtt) in from_vtt.iter().enumerate().skip(1) {
             if self
                 .graph
                 .lower_vtable_group(class)
                 .is_some_and(|group| group.segments[index].shared)
-                || order.contains(&index)
+                || from_vtt
             {
                 continue;
             }

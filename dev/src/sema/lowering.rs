@@ -422,9 +422,7 @@ impl Graph {
         base: EntityId,
     ) -> Result<(u64, bool, u64), Error> {
         let offset = self
-            .lower_virtual_bases(class)
-            .iter()
-            .find_map(|&(child, offset)| (child == base).then_some(offset))
+            .lower_virtual_base_offset(class, base)
             .ok_or(Error::Invariant("indirect constructor base without layout"))?;
         let super::layout::LayoutState::Value { size, empty, .. } = self.entity(base).layout else {
             return Err(Error::Invariant("indirect constructor base without size"));

@@ -329,11 +329,8 @@ impl VtableGroup {
         for (index, segment) in self.segments.iter().enumerate().skip(1) {
             let offset = if segment.within == Some(SegmentId::new(index)?) {
                 graph
-                    .lower_virtual_bases(class)
-                    .iter()
-                    .find(|&&(base, _)| base == segment.class)
+                    .lower_virtual_base_offset(class, segment.class)
                     .ok_or(Error::Invariant("sharing before virtual layout"))?
-                    .1
             } else {
                 let (owner, edge) = segment
                     .edge

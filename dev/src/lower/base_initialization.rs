@@ -7,7 +7,42 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 
+#[derive(Clone, Copy)]
+enum SharedPlan {
+    Direct(usize),
+    Indirect(usize),
+}
+
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn initialize_virtual_bases(&mut self, owner: ConstructorId) -> Result<(), Error> {
+        let plan = self.graph.lower_constructor(owner);
+        // Plan order governs tail occupancy; construction order is a separate
+        // projection. Index each shared occurrence once for this ABI entry.
+        let mut selected = std::collections::HashMap::new();
+        for (index, base) in plan.bases.iter().enumerate() {
+            if self
+                .graph
+                .lower_inheritance_edge(plan.class, index)
+                .is_some_and(|(_, shared, _)| shared)
+            {
+                selected.insert(base.class, SharedPlan::Direct(index));
+            }
+        }
+        for (index, base) in plan.indirect_bases.iter().enumerate() {
+            selected.insert(base.class, SharedPlan::Indirect(index));
+        }
+        for base in self.symbols.virtual_construction_order(plan.class) {
+            match selected.get(&base).copied() {
+                Some(SharedPlan::Direct(index)) => {
+                    self.initialize_base(owner, Variant::Complete, index)?;
+                }
+                Some(SharedPlan::Indirect(index)) => self.initialize_indirect_base(owner, index)?,
+                None => {}
+            }
+        }
+        Ok(())
+    }
+
     fn base_source(&self, initializer: ast::Initializer) -> Option<ast::ExprId> {
         let values = match initializer.kind {
             ast::InitializerKind::Parenthesized(values) => values,

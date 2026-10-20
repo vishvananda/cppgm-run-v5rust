@@ -628,24 +628,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.virtual_context.pending = !self.graph.lower_virtual_bases(plan.class).is_empty();
         if variant != Variant::Base {
-            for base in self.symbols.virtual_construction_order(plan.class) {
-                if let Some(index) = plan.bases.iter().enumerate().find_map(|(index, init)| {
-                    (init.class == base
-                        && self
-                            .graph
-                            .lower_inheritance_edge(plan.class, index)
-                            .is_some_and(|(_, shared, _)| shared))
-                    .then_some(index)
-                }) {
-                    self.initialize_base(id, variant, index)?;
-                } else if let Some(index) = plan
-                    .indirect_bases
-                    .iter()
-                    .position(|init| init.class == base)
-                {
-                    self.initialize_indirect_base(id, index)?;
-                }
-            }
+            self.initialize_virtual_bases(id)?;
         }
         for index in 0..plan.bases.len() {
             if self

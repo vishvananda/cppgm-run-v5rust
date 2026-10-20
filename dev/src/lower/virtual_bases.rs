@@ -400,7 +400,7 @@ impl Symbols<'_, '_> {
         segment: usize,
     ) -> Result<Vec<crate::lowir::model::DataItem>, Error> {
         let class = context.class;
-        self.table_row_count(class, segment)?;
+        let count = self.table_row_count(class, segment)?;
         let group = self.graph.lower_vtable_group(class);
         let holder = group.map_or(class, |g| g.segments[segment].class);
         let full = group.is_some_and(|g| {
@@ -408,15 +408,14 @@ impl Symbols<'_, '_> {
                 .within
                 .is_some_and(|id| id.index() == segment)
         });
-        let rows = if full {
-            &self.base_routes.full_rows[&holder]
-        } else {
-            &self.base_routes.rows[&holder]
-        }
-        .clone();
         let table_at = self.context_at(context, segment)?;
-        let mut values = Vec::with_capacity(rows.len());
-        for row in rows.into_iter().rev() {
+        let mut values = Vec::with_capacity(count);
+        for index in (0..count).rev() {
+            let row = if full {
+                self.base_routes.full_rows[&holder][index]
+            } else {
+                self.base_routes.rows[&holder][index]
+            };
             let at = match row {
                 Row::Base(base) => self.virtual_base_offset(context.complete, base)?,
                 Row::Call {
@@ -470,10 +469,7 @@ impl Symbols<'_, '_> {
         base: EntityId,
     ) -> Result<u64, Error> {
         self.graph
-            .lower_virtual_bases(class)
-            .iter()
-            .find(|&&(child, _)| child == base)
-            .map(|&(_, offset)| offset)
+            .lower_virtual_base_offset(class, base)
             .ok_or_else(|| {
                 crate::sema::Error::Invariant("virtual base offset before layout").into()
             })

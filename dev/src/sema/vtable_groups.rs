@@ -252,11 +252,8 @@ impl Graph {
         for (index, segment) in group.segments.iter().enumerate().skip(1) {
             if segment.within == Some(SegmentId::new(index)?) {
                 let offset = self
-                    .lower_virtual_bases(class)
-                    .iter()
-                    .find(|&&(base, _)| base == segment.class)
-                    .ok_or(Error::Invariant("virtual segment before layout"))?
-                    .1;
+                    .lower_virtual_base_offset(class, segment.class)
+                    .ok_or(Error::Invariant("virtual segment before layout"))?;
                 offsets.push(offset);
                 continue;
             }

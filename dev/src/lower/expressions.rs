@@ -779,6 +779,10 @@ impl Function<'_, '_, '_, '_> {
             };
             let object = self.graph.lower_object_source(receiver)?;
             if self.graph.lower_function(entity)?.object.is_some() && invoker.is_none() {
+                let callable = self.graph.lower_callable_object_call(id)?;
+                if callable {
+                    self.call_object_class = None;
+                }
                 let value = match object.ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "member call without receiver",
                 )))? {
@@ -802,11 +806,9 @@ impl Function<'_, '_, '_, '_> {
                 {
                     value = self.base_projection(value, source, offset)?;
                 }
-                self.call_object_class = if self.graph.lower_callable_object_call(id)? {
-                    None
-                } else {
-                    self.graph.lower_receiver_class(receiver)?
-                };
+                if !callable {
+                    self.call_object_class = self.graph.lower_receiver_class(receiver)?;
+                }
                 values.push(value);
             } else if invoker.is_none()
                 && let Some(crate::sema::lowering::ObjectSource::Explicit { expression, arrow }) =

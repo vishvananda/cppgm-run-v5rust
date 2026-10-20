@@ -32,8 +32,16 @@ impl Analyzer<'_> {
         callee: ast::ExprId,
         binding: BindingId,
         arguments: List<ast::ExprId>,
+        callable: bool,
     ) -> Result<Option<EntityId>, Error> {
-        let mut class = self.graph.lower_receiver_class(callee)?;
+        let mut class = if callable {
+            match self.graph.call_object_effect(self.tree, callee)? {
+                ObjectEffect::Set(class) => class,
+                ObjectEffect::Preserve => None,
+            }
+        } else {
+            self.graph.lower_receiver_class(callee)?
+        };
         let function = self.graph.binding(binding).entity;
         let ty = self.graph.lower_function(function)?.ty;
         let super::lowering::TypeView::Function { parameters, .. } = self.graph.lower_type(ty)?
@@ -78,12 +86,25 @@ impl Graph {
                     self.expression_facts.set_call_object_effect(id, effect);
                 }
                 Step::Visit(id) => {
-                    let facts = self.expression_facts.get(id)?;
                     if let Some(effect) = self.expression_facts.call_object_effect(id) {
                         values.push(effect);
                         continue;
                     }
                     work.push(Step::Finish(id, values.len()));
+                    // A scalar's braced initializer is syntax only; its
+                    // elements own the expression facts and are evaluated.
+                    if let ExprKind::Braced { elements, .. } = tree.expressions.get(id).kind {
+                        work.extend(
+                            tree.expr_lists
+                                .get(elements)
+                                .iter()
+                                .rev()
+                                .copied()
+                                .map(Step::Visit),
+                        );
+                        continue;
+                    }
+                    let facts = self.expression_facts.get(id)?;
                     if facts.folded.is_some() || facts.query_value.is_some() {
                         if let ExprKind::Member { base, .. } = tree.expressions.get(id).kind {
                             work.push(Step::Visit(base));
@@ -153,6 +174,17 @@ impl Graph {
                 work.push(Step::Visit(condition));
             }
             ExprKind::Call { callee, arguments } => {
+                if self.lower_destructor_evaluation_only(id)? {
+                    let mut callee = callee;
+                    while let ExprKind::Paren(inner) = tree.expressions.get(callee).kind {
+                        callee = inner;
+                    }
+                    let ExprKind::Member { base, .. } = tree.expressions.get(callee).kind else {
+                        return Err(Error::Invariant("destructor effect without member"));
+                    };
+                    work.push(Step::Visit(base));
+                    return Ok(());
+                }
                 let supplied = tree.expr_lists.get(arguments);
                 if let Some(super::function_resolution::CallTarget::Direct(binding)) =
                     self.expression_facts.get(id)?.call
@@ -171,19 +203,42 @@ impl Graph {
                     }
                     work.extend(supplied.iter().rev().copied().map(Step::Visit));
                     if facts.object.is_some() && self.lower_closure_invocation(id).is_none() {
-                        let class = if self.expression_facts.get(id)?.call_form
-                            == CallForm::CallableObject
-                        {
-                            None
+                        if self.expression_facts.get(id)?.call_form == CallForm::CallableObject {
+                            // call_object clears the receiver before it
+                            // evaluates a callable object's expression.
+                            work.push(Step::Visit(callee));
+                            work.push(Step::Set(None));
                         } else {
-                            self.lower_receiver_class(callee)?
-                        };
-                        work.push(Step::Set(class));
+                            work.push(Step::Set(self.lower_receiver_class(callee)?));
+                            work.push(Step::Visit(callee));
+                        }
+                    } else {
+                        work.push(Step::Visit(callee));
                     }
                 } else {
-                    work.extend(supplied.iter().rev().copied().map(Step::Visit));
+                    // An indirect callee is evaluated after its arguments.
+                    // A bound member pointer evaluates its object before the
+                    // arguments, then the pointer value after them.
+                    if self.lower_bound_member_pointer(callee)? {
+                        let mut access = callee;
+                        while let ExprKind::Paren(inner) = tree.expressions.get(access).kind {
+                            access = inner;
+                        }
+                        let ExprKind::Binary { left, right, .. } =
+                            tree.expressions.get(access).kind
+                        else {
+                            return Err(Error::Invariant(
+                                "bound call effect without member pointer",
+                            ));
+                        };
+                        work.push(Step::Visit(right));
+                        work.extend(supplied.iter().rev().copied().map(Step::Visit));
+                        work.push(Step::Visit(left));
+                    } else {
+                        work.push(Step::Visit(callee));
+                        work.extend(supplied.iter().rev().copied().map(Step::Visit));
+                    }
                 }
-                work.push(Step::Visit(callee));
             }
             ExprKind::Braced { elements, .. } => work.extend(
                 tree.expr_lists

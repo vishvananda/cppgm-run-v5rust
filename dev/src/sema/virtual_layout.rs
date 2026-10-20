@@ -9,11 +9,18 @@ use std::collections::{HashMap, HashSet};
 
 pub(super) struct VirtualLayout {
     pub bases: Vec<(EntityId, u64)>,
+    positions: HashMap<EntityId, usize>,
     pub primary: Option<EntityId>,
     indirect: HashSet<EntityId>,
 }
 
 impl Graph {
+    /// The base order is fixed when the plan is published. Placement changes
+    /// only offsets, so this class-owned identity index needs no invalidation.
+    pub(crate) fn lower_virtual_base_offset(&self, class: EntityId, base: EntityId) -> Option<u64> {
+        let layout = self.virtuals.storage_layouts.get(&class)?;
+        Some(layout.bases[*layout.positions.get(&base)?].1)
+    }
     /// Preorder of inheritance edges, expanding each class once. A virtual
     /// occurrence is recorded even if its class was first reached nonvirtually.
     pub(super) fn virtual_base_order(&self, root: EntityId) -> Vec<EntityId> {
@@ -90,6 +97,11 @@ impl Graph {
             primary = primary.or(first);
         }
         Ok(VirtualLayout {
+            positions: bases
+                .iter()
+                .enumerate()
+                .map(|(index, &base)| (base, index))
+                .collect(),
             bases: bases.into_iter().map(|base| (base, 0)).collect(),
             primary,
             indirect,
