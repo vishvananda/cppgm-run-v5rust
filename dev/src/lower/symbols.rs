@@ -2968,6 +2968,9 @@ pub(crate) use vtables::{assert_covariant_routes, assert_hierarchy_flags, assert
 pub(crate) use virtual_bases::assert_base_routes;
 
 #[cfg(test)]
+pub(crate) use vtables::assert_construction_context;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]

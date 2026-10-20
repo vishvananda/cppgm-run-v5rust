@@ -289,6 +289,7 @@ impl Analyzer<'_> {
             members: Vec::new(),
             written_members: Vec::new(),
             bases: Vec::new(),
+            indirect_bases: Vec::new(),
             subobjects: Vec::new(),
             delegation: None,
             copy: Some(actions),

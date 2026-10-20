@@ -20,6 +20,13 @@ pub(crate) struct BaseInitialization {
     pub forwards: bool,
 }
 
+struct BasePlans {
+    direct: Vec<BaseInitialization>,
+    indirect: Vec<BaseInitialization>,
+    const_default: bool,
+    deleted: bool,
+}
+
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum ConstructorExceptionSource {
     #[default]
@@ -72,6 +79,7 @@ pub(super) struct Constructor {
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub written_members: Vec<bool>,
     pub bases: Vec<BaseInitialization>,
+    pub indirect_bases: Vec<BaseInitialization>,
     pub subobjects: Vec<MemberConstruction>,
     pub delegation: Option<Delegation>,
     pub copy: Option<Vec<super::copy_construction::SubobjectCopy>>,
@@ -512,73 +520,18 @@ impl Analyzer<'_> {
     ) -> Result<ConstructorId, Error> {
         let union = self.graph.entity(class).key == Keyword::Union;
         let mut deleted = self.graph.closure_call(class).is_some();
-        let mut bases_const_default = true;
-        let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
+        let BasePlans {
+            direct: bases,
+            indirect: indirect_bases,
+            const_default: bases_const_default,
+            deleted: base_deleted,
+        } = self.default_base_plans(class, binding)?;
+        deleted |= base_deleted;
         let inherited = binding.and_then(|binding| {
             self.graph
                 .inherited_constructors
                 .source(self.graph.binding(binding).entity)
         });
-        for index in 0..self.graph.entity(class).bases.len() {
-            let edge = self.graph.entity(class).bases[index];
-            if matches!(
-                self.graph.entity(edge.class).layout,
-                super::layout::LayoutState::Unsupported
-            ) {
-                return Err(Error::Missing("extended base subobject constructor plans"));
-            }
-            let forwarded = inherited.filter(|&source| {
-                self.graph
-                    .entity(self.graph.binding(source).entity)
-                    .member_function
-                    .is_some_and(|key| key.class == edge.class)
-            });
-            let base = if let Some(source) = forwarded {
-                self.declared_constructor_plan(source)?
-            } else if let ConstructorState::Ready(base) =
-                self.graph.entity(edge.class).default_construction
-            {
-                base
-            } else {
-                return Err(Error::Missing("defaulted base subobject constructor plans"));
-            };
-            bases.push(BaseInitialization {
-                class: edge.class,
-                constructor: Some(base),
-                arguments: None,
-                initializer: None,
-                forwards: forwarded.is_some(),
-            });
-            let base = self.graph.constructors.get(base);
-            // implicit_default_facts plans its bases with location zero;
-            // default_constructor checks deletion at that plan's location.
-            if base.deleted {
-                return Err(Error::at(SourceOffset(0), "use of a deleted function"));
-            }
-            bases_const_default &= base.const_default;
-        }
-        let scope = self
-            .graph
-            .entity(class)
-            .scope
-            .ok_or(Error::Invariant("constructor class without scope"))?;
-        for base in &bases {
-            if !base.forwards
-                && let Some(binding) = base
-                    .constructor
-                    .and_then(|id| self.graph.constructors.get(id).binding)
-            {
-                self.check_special_member_access(binding, class, scope, SourceOffset(0))?;
-            }
-            if let Some(binding) = self.graph.entity(base.class).declared_destructor {
-                deleted |= !self.direct_member_accessible(binding, scope)
-                    || self
-                        .graph
-                        .entity(self.graph.binding(binding).entity)
-                        .availability
-                        == super::graph::FunctionAvailability::Deleted;
-            }
-        }
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
         let mut subobjects = Vec::new();
         let mut const_members = 0;
@@ -685,6 +638,7 @@ impl Analyzer<'_> {
         let mut nothrow = true;
         for id in bases
             .iter()
+            .chain(&indirect_bases)
             .filter_map(|base| base.constructor)
             .chain(subobjects.iter().map(|child| child.constructor))
         {
@@ -735,6 +689,7 @@ impl Analyzer<'_> {
             written_members: vec![false; plans.len()],
             members: plans,
             bases,
+            indirect_bases,
             subobjects,
             delegation: None,
             copy: None,
@@ -742,6 +697,113 @@ impl Analyzer<'_> {
             triviality: Triviality::Trivial,
         };
         self.publish_constructor(record)
+    }
+
+    fn default_base_plans(
+        &mut self,
+        class: EntityId,
+        binding: Option<BindingId>,
+    ) -> Result<BasePlans, Error> {
+        let mut bases_const_default = true;
+        let mut deleted = false;
+        let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
+        let inherited = binding.and_then(|binding| {
+            self.graph
+                .inherited_constructors
+                .source(self.graph.binding(binding).entity)
+        });
+        for index in 0..self.graph.entity(class).bases.len() {
+            let edge = self.graph.entity(class).bases[index];
+            if matches!(
+                self.graph.entity(edge.class).layout,
+                super::layout::LayoutState::Unsupported
+            ) {
+                return Err(Error::Missing("extended base subobject constructor plans"));
+            }
+            let forwarded = inherited.filter(|&source| {
+                self.graph
+                    .entity(self.graph.binding(source).entity)
+                    .member_function
+                    .is_some_and(|key| key.class == edge.class)
+            });
+            let base = if let Some(source) = forwarded {
+                self.declared_constructor_plan(source)?
+            } else if let ConstructorState::Ready(base) =
+                self.graph.entity(edge.class).default_construction
+            {
+                base
+            } else {
+                return Err(Error::Missing("defaulted base subobject constructor plans"));
+            };
+            bases.push(BaseInitialization {
+                class: edge.class,
+                constructor: Some(base),
+                arguments: None,
+                initializer: None,
+                forwards: forwarded.is_some(),
+            });
+            let base = self.graph.constructors.get(base);
+            // implicit_default_facts plans its bases with location zero;
+            // default_constructor checks deletion at that plan's location.
+            if base.deleted {
+                return Err(Error::at(SourceOffset(0), "use of a deleted function"));
+            }
+            bases_const_default &= base.const_default;
+        }
+        let mut indirect_bases = Vec::new();
+        let shared = if self.graph.lower_dynamic_class(class) {
+            self.graph.virtual_base_order(class)
+        } else {
+            Vec::new()
+        };
+        for base in shared {
+            if self
+                .graph
+                .entity(class)
+                .bases
+                .iter()
+                .any(|edge| edge.is_virtual && edge.class == base)
+            {
+                continue;
+            }
+            let constructor = self.default_constructor(base, SourceOffset(0))?;
+            bases_const_default &= self.graph.constructors.get(constructor).const_default;
+            indirect_bases.push(BaseInitialization {
+                class: base,
+                constructor: Some(constructor),
+                arguments: None,
+                initializer: None,
+                forwards: false,
+            });
+        }
+        let scope = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("constructor class without scope"))?;
+        for base in bases.iter().chain(&indirect_bases) {
+            if !base.forwards
+                && let Some(binding) = base
+                    .constructor
+                    .and_then(|id| self.graph.constructors.get(id).binding)
+            {
+                self.check_special_member_access(binding, class, scope, SourceOffset(0))?;
+            }
+            if let Some(binding) = self.graph.entity(base.class).declared_destructor {
+                deleted |= !self.direct_member_accessible(binding, scope)
+                    || self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .availability
+                        == super::graph::FunctionAvailability::Deleted;
+            }
+        }
+        Ok(BasePlans {
+            direct: bases,
+            indirect: indirect_bases,
+            const_default: bases_const_default,
+            deleted,
+        })
     }
 
     fn subobject_constructor_nothrow(&mut self, id: ConstructorId) -> Result<bool, Error> {
@@ -826,6 +888,7 @@ impl Analyzer<'_> {
             || record
                 .bases
                 .iter()
+                .chain(&record.indirect_bases)
                 .filter_map(|base| base.constructor)
                 .chain(record.subobjects.iter().map(|child| child.constructor))
                 .any(|id| self.graph.constructors.get(id).nontrivial())
@@ -925,6 +988,7 @@ impl Analyzer<'_> {
             members: Vec::new(),
             written_members: Vec::new(),
             bases: Vec::new(),
+            indirect_bases: Vec::new(),
             subobjects: Vec::new(),
             delegation: None,
             copy: None,
@@ -1125,45 +1189,25 @@ impl Analyzer<'_> {
         let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
         for index in 0..self.graph.entity(class).bases.len() {
             let base = self.graph.entity(class).bases[index].class;
-            let initializer = written.get(&base).map(|written| ast::Initializer {
-                location: written.location,
-                ..written.initializer
-            });
-            let selected = if let Some(initializer) = initializer {
-                let ty = self
-                    .graph
-                    .entity(base)
-                    .ty
-                    .ok_or(Error::Invariant("base without type"))?;
-                let saved = self.base_object.replace(class);
-                let selected = self.initialize_class_object_context(
-                    ty,
-                    initializer,
-                    scope,
-                    initializer.location,
-                    super::constructor_initialization::ClassContext::Base,
-                );
-                self.base_object = saved;
-                selected?
-            } else {
-                let id = self.default_constructor(base, location)?;
-                let record = self.graph.constructors.get(id);
-                if record.deleted {
-                    return Err(Error::at(location, "use of a deleted function"));
-                }
-                if let Some(binding) = record.binding {
-                    self.check_special_member_access(binding, class, scope, location)?;
-                }
-                self.demand_constructor_use(id);
-                Some((id, ConstructorArguments::Value))
-            };
-            bases.push(BaseInitialization {
-                class: base,
-                constructor: selected.map(|(id, _)| id),
-                arguments: selected.and_then(|(_, arguments)| initializer.map(|_| arguments)),
-                initializer,
-                forwards: false,
-            });
+            bases.push(self.written_base_plan(class, base, &written, scope, location)?);
+        }
+        let mut indirect_bases = Vec::new();
+        let shared = if self.graph.lower_dynamic_class(class) {
+            self.graph.virtual_base_order(class)
+        } else {
+            Vec::new()
+        };
+        for base in shared {
+            if self
+                .graph
+                .entity(class)
+                .bases
+                .iter()
+                .any(|edge| edge.is_virtual && edge.class == base)
+            {
+                continue;
+            }
+            indirect_bases.push(self.written_base_plan(class, base, &written, scope, location)?);
         }
         let super::member_construction::MemberActions {
             members: plans,
@@ -1173,12 +1217,61 @@ impl Analyzer<'_> {
         self.graph.constructors.records[id.0 as usize].members = plans;
         self.graph.constructors.records[id.0 as usize].written_members = written_members;
         self.graph.constructors.records[id.0 as usize].bases = bases;
+        self.graph.constructors.records[id.0 as usize].indirect_bases = indirect_bases;
         self.graph.constructors.records[id.0 as usize].subobjects = subobjects;
         self.check_subobject_destruction(class, scope, location)?;
         self.prepare_destruction(class)?;
         Ok(())
     }
 
+    fn written_base_plan(
+        &mut self,
+        class: EntityId,
+        base: EntityId,
+        written: &std::collections::HashMap<EntityId, ast::MemInitializer>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<BaseInitialization, Error> {
+        let initializer = written.get(&base).map(|written| ast::Initializer {
+            location: written.location,
+            ..written.initializer
+        });
+        let selected = if let Some(initializer) = initializer {
+            let ty = self
+                .graph
+                .entity(base)
+                .ty
+                .ok_or(Error::Invariant("base without type"))?;
+            let saved = self.base_object.replace(class);
+            let selected = self.initialize_class_object_context(
+                ty,
+                initializer,
+                scope,
+                initializer.location,
+                super::constructor_initialization::ClassContext::Base,
+            );
+            self.base_object = saved;
+            selected?
+        } else {
+            let id = self.default_constructor(base, location)?;
+            let record = self.graph.constructors.get(id);
+            if record.deleted {
+                return Err(Error::at(location, "use of a deleted function"));
+            }
+            if let Some(binding) = record.binding {
+                self.check_special_member_access(binding, class, scope, location)?;
+            }
+            self.demand_constructor_use(id);
+            Some((id, ConstructorArguments::Value))
+        };
+        Ok(BaseInitialization {
+            class: base,
+            constructor: selected.map(|(id, _)| id),
+            arguments: selected.and_then(|(_, arguments)| initializer.map(|_| arguments)),
+            initializer,
+            forwards: false,
+        })
+    }
     fn delegate_construction(
         &mut self,
         id: ConstructorId,
@@ -1321,11 +1414,8 @@ impl Analyzer<'_> {
                     "the mem-initializer names both a direct base and a virtual base",
                 ));
             }
-            if direct.is_some() {
+            if direct.is_some() || is_virtual {
                 return Ok(base);
-            }
-            if is_virtual {
-                return Err(Error::Missing("indirect virtual base constructor plan"));
             }
         }
         Err(Error::at(
@@ -1344,6 +1434,47 @@ mod tests {
         syntax::SyntaxUnit,
     };
 
+    #[test]
+    fn indirect_base_plans_keep_selection_without_replaying_syntax() {
+        use super::ConstructorState;
+        let source = SourceBuffer::new(b"struct V{int n;V(int x):n(x){}};struct B:virtual V{B():V(1){}};struct D:B{D():V(7){}};template<class T>struct U{U(){T::missing();}};void f(){D x;}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"indirect-construction").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax = (tree.expressions.mark(), tree.declarations.mark());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut classes = Vec::new();
+        for spelling in [b"V".as_slice(), b"B", b"D", b"U"] {
+            let name = cursor.intern_name(spelling).unwrap();
+            classes.push(
+                graph
+                    .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                    .entity,
+            );
+        }
+        let ConstructorState::Ready(id) = graph.entity(classes[2]).default_construction else {
+            panic!("default selection");
+        };
+        let plan = graph.constructors.get(id);
+        assert_eq!(plan.bases.len(), 1);
+        assert_eq!(plan.bases[0].class, classes[1]);
+        assert_eq!(plan.indirect_bases.len(), 1);
+        let base = plan.indirect_bases[0];
+        assert_eq!(base.class, classes[0]);
+        assert!(base.initializer.is_some());
+        assert_eq!(
+            graph.constructors.get(base.constructor.unwrap()).class,
+            classes[0]
+        );
+        assert!(matches!(
+            graph.entity(classes[3]).default_construction,
+            ConstructorState::NotStarted
+        ));
+        assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
+    }
     #[test]
     fn recursive_construction_keeps_child_selection_and_original_arguments() {
         use crate::sema::{

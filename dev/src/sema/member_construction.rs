@@ -245,6 +245,7 @@ impl Analyzer<'_> {
             members,
             written_members,
             bases: Vec::new(),
+            indirect_bases: Vec::new(),
             subobjects,
             delegation: None,
             triviality: Triviality::Trivial,

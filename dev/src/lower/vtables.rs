@@ -1,5 +1,7 @@
 // Translated from lower/vtable_lowering.cpp and rtti_lowering.cpp. See NOTICE.
 //! Demanded primary tables and readonly class RTTI, keyed by semantic class identity.
+#[path = "construction_tables.rs"]
+mod construction_tables;
 use super::Symbols;
 use crate::{
     abi::encoder::{Encoder, Target},
@@ -44,7 +46,26 @@ pub(super) struct Tables {
     definition_classes: std::collections::HashSet<EntityId>,
     definition_targets: HashMap<EntityId, Vec<TableTarget>>,
     own_entry_thunks: HashMap<(EntityId, usize), bool>,
+    contexts: construction_tables::Contexts,
     return_adjustments: HashMap<(EntityId, EntityId, EntityId), Option<ResultAdjustment>>,
+}
+/// Immutable ABI query context; complete and construction tables share row recipes.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct TableContext {
+    pub complete: EntityId,
+    pub class: EntityId,
+    pub offset: u64,
+    pub construction: bool,
+}
+impl TableContext {
+    pub fn complete(class: EntityId) -> Self {
+        Self {
+            complete: class,
+            class,
+            offset: 0,
+            construction: false,
+        }
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct ResultAdjustment {
@@ -478,7 +499,7 @@ impl Symbols<'_, '_> {
         self.vtables.return_adjustments.insert(key, adjustment);
         Ok(adjustment)
     }
-    fn segment_offsets(&mut self, class: EntityId) -> Result<&[u64], Error> {
+    pub(super) fn segment_offsets(&mut self, class: EntityId) -> Result<&[u64], Error> {
         if !self.vtables.offsets.contains_key(&class) {
             self.vtables
                 .offsets
@@ -1519,7 +1540,11 @@ impl Symbols<'_, '_> {
             .and_then(|bytes| bytes.checked_add(16))
             .ok_or_else(|| crate::sema::Error::Limit("vtable row limit").into())
     }
-    fn vtt_symbol(&mut self, program: &mut Program, class: EntityId) -> Result<SymbolId, Error> {
+    pub(in crate::lower) fn vtt_symbol(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+    ) -> Result<SymbolId, Error> {
         if let Some(&symbol) = self.vtables.vtts.get(&class) {
             return Ok(symbol);
         }
@@ -1528,23 +1553,7 @@ impl Symbols<'_, '_> {
         if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
             return Ok(symbol);
         }
-        let mut items = Vec::new();
-        let (table, point) = self.table_address(program, class, 0)?;
-        items.push(address(table, i64::from_ne_bytes(point.to_ne_bytes())));
-        for (base, shared) in self.graph.lower_inheritance_edges(class) {
-            if !shared && !self.graph.lower_virtual_bases(base).is_empty() {
-                return Err(Error::Missing("virtual-base construction table group"));
-            }
-        }
-        for segment in self.vtt_pointer_order(class)? {
-            let (table, point) = self.table_address(program, class, segment)?;
-            items.push(address(table, i64::from_ne_bytes(point.to_ne_bytes())));
-        }
-        for &(base, _) in self.graph.lower_virtual_bases(class) {
-            if !self.graph.lower_virtual_bases(base).is_empty() {
-                return Err(Error::Missing("virtual-base construction table group"));
-            }
-        }
+        let items = self.vtt_entries(program, class)?;
         metadata.flags |= 4;
         define(program, symbol, metadata, items)?;
         Ok(symbol)
@@ -1558,17 +1567,25 @@ impl Symbols<'_, '_> {
         segment: usize,
         slot: usize,
     ) -> Result<ThisAdjustment, Error> {
+        self.context_adjustment(TableContext::complete(class), segment, slot)
+    }
+    fn context_adjustment(
+        &mut self,
+        context: TableContext,
+        segment: usize,
+        slot: usize,
+    ) -> Result<ThisAdjustment, Error> {
         self.check_stack()?;
+        let class = context.class;
         let Some(group) = self.graph.lower_vtable_group(class) else {
             return Ok(ThisAdjustment::default());
         };
         let part = &group.segments[segment];
         let entry = group.entries[part.entries.start + slot];
-        let offsets = self.graph.lower_segment_offsets(class)?;
-        let overrider_at = offsets[entry.overrider.index()];
+        let overrider_at = self.context_at(context, entry.overrider.index())?;
         let own = self.graph.lower_virtual_slots(part.class)?[slot]
             .ok_or(crate::sema::Error::Invariant("unfilled adjustment slot"))?;
-        let (anchor, unused) = self.slot_anchor(class, segment, slot)?;
+        let (anchor, unused) = self.slot_anchor(context, segment, slot)?;
         if unused {
             return Ok(ThisAdjustment {
                 unused: true,
@@ -1585,7 +1602,7 @@ impl Symbols<'_, '_> {
                 part.within.map(crate::sema::lowering::SegmentId::index),
             )
         };
-        let level_at = offsets[place];
+        let level_at = self.context_at(context, place)?;
         if level_at == overrider_at
             && !self.graph.lower_virtual_pure(entry.function)
             && self
@@ -1601,7 +1618,11 @@ impl Symbols<'_, '_> {
                 != Some(within)
         {
             return Ok(ThisAdjustment {
-                offset: i64::from_ne_bytes(offsets[within].wrapping_sub(level_at).to_ne_bytes()),
+                offset: i64::from_ne_bytes(
+                    self.context_at(context, within)?
+                        .wrapping_sub(level_at)
+                        .to_ne_bytes(),
+                ),
                 vcall: Some(self.vcall_row_offset(group.segments[within].class, own.function)?),
                 unused: false,
             });
@@ -1612,10 +1633,11 @@ impl Symbols<'_, '_> {
     }
     fn slot_anchor(
         &mut self,
-        class: EntityId,
+        context: TableContext,
         segment: usize,
         slot: usize,
     ) -> Result<(Option<EntityId>, bool), Error> {
+        let class = context.class;
         let graph = self.graph;
         let group = graph
             .lower_vtable_group(class)
@@ -1639,13 +1661,13 @@ impl Symbols<'_, '_> {
             return Ok((None, false));
         }
         let mut lost = vec![false; chain.len()];
-        let mut place = graph.lower_segment_offsets(class)?[segment];
+        let mut place = self.context_at(context, segment)?;
         for index in 1..chain.len() {
             if graph
                 .lower_itanium_primary(chain[index - 1])
                 .is_some_and(|(_, shared)| shared)
             {
-                let at = self.virtual_base_offset(class, chain[index])?;
+                let at = self.virtual_base_offset(context.complete, chain[index])?;
                 lost[index] = at != place;
                 place = at;
             }
@@ -1713,3 +1735,6 @@ impl Symbols<'_, '_> {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+pub(crate) use construction_tables::assert_construction_context;

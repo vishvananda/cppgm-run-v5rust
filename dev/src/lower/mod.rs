@@ -24,6 +24,7 @@ mod conditional_values;
 mod conditions;
 mod constant_demands;
 mod construction;
+mod construction_context;
 mod constructor_cleanup;
 mod conversion_functions;
 mod conversions;
@@ -485,3 +486,6 @@ pub(crate) use symbols::{assert_covariant_routes, assert_hierarchy_flags, assert
 
 #[cfg(test)]
 pub(crate) use symbols::assert_base_routes;
+
+#[cfg(test)]
+pub(crate) use symbols::assert_construction_context;

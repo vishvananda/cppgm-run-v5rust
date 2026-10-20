@@ -25,28 +25,56 @@ impl Function<'_, '_, '_, '_> {
         }
         self.symbols.vtable_symbol(self.builder.program(), class)?;
         let offsets = self.graph.lower_segment_offsets(class)?;
-        for (index, offset) in offsets.into_iter().enumerate() {
+        let order = if self.virtual_context.vtt.is_some() {
+            self.symbols.vtt_pointer_order(class)?
+        } else {
+            Vec::new()
+        };
+        let object = self.table_subobject(class, source, 0, &offsets)?;
+        if self.virtual_context.vtt.is_some() {
+            let table = self.construction_table_value(source)?;
+            self.effect(I::Store(
+                Facts::memory(false, true),
+                Type::Ptr,
+                table,
+                object,
+            ))?;
+        } else {
+            self.store_table_at(class, source, 0, object)?;
+        }
+        for index in 1..offsets.len() {
             if self
                 .graph
                 .lower_vtable_group(class)
                 .is_some_and(|group| group.segments[index].shared)
+                || order.contains(&index)
             {
                 continue;
             }
-            let mut object = self.object_pointer(source)?.value;
-            if index != 0 {
-                let offset = self.builder.integer(u128::from(offset))?;
-                object = self
-                    .emit(I::Index(Type::I8, None, object, offset), source)?
-                    .value;
-            }
-            let (symbol, point) =
-                self.symbols
-                    .table_address(self.builder.program(), class, index)?;
-            let table = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
-            let offset = self.builder.integer(u128::from(point))?;
+            let object = self.table_subobject(class, source, index, &offsets)?;
+            self.store_table_at(class, source, index, object)?;
+        }
+        for index in order {
+            let object = self.table_subobject(class, source, index, &offsets)?;
+            let slot = self.symbols.vtt_segment_index(class, index)?;
+            let offset = u64::try_from(slot)
+                .map_err(|_| crate::lowir::Error::Limit)?
+                .wrapping_mul(8);
+            let offset = self.builder.integer(u128::from(offset))?;
+            let vtt = self
+                .virtual_context
+                .vtt
+                .ok_or(crate::sema::Error::Invariant(
+                    "secondary pointer without VTT",
+                ))?;
+            let entry = self
+                .emit(I::Index(Type::I8, None, vtt, offset), source)?
+                .value;
             let table = self
-                .emit(I::Index(Type::I8, None, table, offset), source)?
+                .emit(
+                    I::Load(Facts::memory(false, true), Type::Ptr, entry),
+                    source,
+                )?
                 .value;
             self.effect(I::Store(
                 Facts::memory(false, true),
@@ -56,6 +84,73 @@ impl Function<'_, '_, '_, '_> {
             ))?;
         }
         Ok(())
+    }
+    fn store_table_at(
+        &mut self,
+        class: EntityId,
+        source: TypeId,
+        index: usize,
+        object: Value,
+    ) -> Result<(), Error> {
+        let (symbol, point) = self
+            .symbols
+            .table_address(self.builder.program(), class, index)?;
+        let table = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
+        let offset = self.builder.integer(u128::from(point))?;
+        let table = self
+            .emit(I::Index(Type::I8, None, table, offset), source)?
+            .value;
+        self.effect(I::Store(
+            Facts::memory(false, true),
+            Type::Ptr,
+            table,
+            object,
+        ))
+    }
+    fn table_subobject(
+        &mut self,
+        class: EntityId,
+        source: TypeId,
+        index: usize,
+        offsets: &[u64],
+    ) -> Result<Value, Error> {
+        let within = if index == 0 {
+            None
+        } else {
+            self.graph
+                .lower_vtable_group(class)
+                .and_then(|g| g.segments[index].within)
+        };
+        if let Some(within) = within {
+            let within = within.index();
+            let holder = self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(crate::sema::Error::Invariant(
+                    "secondary table without group",
+                ))?
+                .segments[within]
+                .class;
+            let object = self.object_pointer(source)?.value;
+            let address = self.virtual_base_address(object, source, class, holder)?;
+            if self.virtual_context.vtt.is_some() && offsets[index] == offsets[within] {
+                return Ok(address);
+            }
+            let offset = self
+                .builder
+                .integer(u128::from(offsets[index].wrapping_sub(offsets[within])))?;
+            return Ok(self
+                .emit(I::Index(Type::I8, None, address, offset), source)?
+                .value);
+        }
+        let object = self.object_pointer(source)?.value;
+        if index == 0 {
+            return Ok(object);
+        }
+        let offset = self.builder.integer(u128::from(offsets[index]))?;
+        Ok(self
+            .emit(I::Index(Type::I8, None, object, offset), source)?
+            .value)
     }
     pub(super) fn virtual_callee(
         &mut self,

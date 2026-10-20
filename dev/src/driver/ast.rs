@@ -538,13 +538,63 @@ mod tests {
         crate::lower::assert_constructor_parameter_temporaries(&graph, tree, cursor, declarations);
         assert_eq!(tree.expressions.mark(), count);
     }
+    fn anchor_classes(
+        graph: &crate::sema::Graph,
+        tree: &crate::syntax::ast::Tree,
+        last: crate::syntax::ast::DeclId,
+    ) -> Vec<crate::sema::lowering::EntityId> {
+        use crate::{sema::lowering::TypeView, syntax::ast};
+        let ast::DeclKind::Function { declarator, .. } = tree.declarations.get(last).kind else {
+            panic!("anchor function");
+        };
+        let ty = graph
+            .lower_entity_type(graph.lower_declared(declarator).unwrap())
+            .unwrap();
+        let TypeView::Function { parameters, .. } = graph.lower_type(ty).unwrap() else {
+            panic!("anchor signature");
+        };
+        parameters
+            .iter()
+            .map(|&ty| {
+                let TypeView::Pointer(ty) = graph.lower_type(ty).unwrap() else {
+                    panic!("pointer");
+                };
+                let TypeView::Class(class) = graph.lower_type(ty).unwrap() else {
+                    panic!("class");
+                };
+                class
+            })
+            .collect()
+    }
+    #[test]
+    fn construction_contexts_keep_complete_offsets_without_emission_demand() {
+        use crate::{
+            preprocess::unit::Preprocessor, sema::Analyzer, support::source::SourceBuffer,
+        };
+        {
+            let source = "struct V{virtual int f(){return 1;}int n;};struct P{virtual int p(){return 2;}int n;};struct B:virtual V{int n;};struct D:P,B{long long tail[3];};template<class T>struct U{virtual int f(){return T::missing();}};void use(){D x;}void anchor(D*,B*,V*,U<int>*){}".to_owned();
+            let source = SourceBuffer::new(source.into_bytes()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"covariant-demand").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let syntax = (tree.expressions.mark(), tree.declarations.mark());
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let graph = analyzer.analyze(declarations).unwrap();
+            let classes = anchor_classes(
+                &graph,
+                tree,
+                *tree.decl_lists.get(declarations).last().unwrap(),
+            );
+            crate::lower::assert_construction_context(&graph, tree, cursor, &classes);
+            assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
+        }
+    }
     #[test]
     fn covariant_routes_reuse_facts_without_publishing_tables_or_dormant_bodies() {
         use crate::{
-            preprocess::unit::Preprocessor,
-            sema::{Analyzer, lowering::TypeView},
-            support::source::SourceBuffer,
-            syntax::ast,
+            preprocess::unit::Preprocessor, sema::Analyzer, support::source::SourceBuffer,
         };
         for reference in [false, true] {
             let marker = if reference { "&" } else { "*" };
@@ -565,31 +615,11 @@ mod tests {
             let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
             analyzer.set_lowering();
             let graph = analyzer.analyze(declarations).unwrap();
-            let ast::DeclKind::Function { declarator, .. } = tree
-                .declarations
-                .get(*tree.decl_lists.get(declarations).last().unwrap())
-                .kind
-            else {
-                panic!("anchor function");
-            };
-            let ty = graph
-                .lower_entity_type(graph.lower_declared(declarator).unwrap())
-                .unwrap();
-            let TypeView::Function { parameters, .. } = graph.lower_type(ty).unwrap() else {
-                panic!("anchor signature");
-            };
-            let classes: Vec<_> = parameters
-                .iter()
-                .map(|&ty| {
-                    let TypeView::Pointer(ty) = graph.lower_type(ty).unwrap() else {
-                        panic!("pointer");
-                    };
-                    let TypeView::Class(class) = graph.lower_type(ty).unwrap() else {
-                        panic!("class");
-                    };
-                    class
-                })
-                .collect();
+            let classes = anchor_classes(
+                &graph,
+                tree,
+                *tree.decl_lists.get(declarations).last().unwrap(),
+            );
             crate::lower::assert_covariant_routes(&graph, tree, cursor, &classes, reference);
             assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
         }

@@ -430,7 +430,7 @@ impl Function<'_, '_, '_, '_> {
                     || self.initializer_throws(Some(delegation.initializer))?,
             );
         }
-        for base in plan.bases {
+        for base in plan.bases.iter().chain(plan.indirect_bases) {
             if let Some(constructor) = base.constructor
                 && !self.graph.lower_constructor_trivial(constructor)
                 && !Entry::Constructor(constructor, Variant::Base)

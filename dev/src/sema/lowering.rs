@@ -57,6 +57,7 @@ pub(crate) struct ConstructorView<'a> {
     pub zero_before_value: bool,
     pub members: &'a [(EntityId, Option<ast::Initializer>)],
     pub bases: &'a [super::construction::BaseInitialization],
+    pub indirect_bases: &'a [super::construction::BaseInitialization],
     pub class: EntityId,
     pub subobjects: &'a [super::construction::MemberConstruction],
     pub delegation: Option<super::construction::Delegation>,
@@ -392,7 +393,14 @@ impl Graph {
         };
         let begin = offset.wrapping_add(non_virtual_size);
         let end = offset.wrapping_add(size);
-        let mut occupied = base_entry && end > limit;
+        let mut complete_limit = u64::MAX;
+        for &(base, offset) in self.lower_virtual_bases(class) {
+            if !self.lower_class_empty(base)? {
+                complete_limit = complete_limit.min(offset);
+            }
+        }
+        let mut occupied = !self.lower_virtual_bases(edge.class).is_empty()
+            || !edge.is_virtual && end > if base_entry { limit } else { complete_limit };
         // Earlier initialized bases can occupy a later base's tail padding.
         // Source order and layout order need not agree (primary/empty bases).
         for prior in &self.entity(class).bases[..index] {
@@ -407,6 +415,21 @@ impl Graph {
             empty,
             if occupied { non_virtual_size } else { size },
         ))
+    }
+    pub(crate) fn lower_indirect_base_layout(
+        &self,
+        class: EntityId,
+        base: EntityId,
+    ) -> Result<(u64, bool, u64), Error> {
+        let offset = self
+            .lower_virtual_bases(class)
+            .iter()
+            .find_map(|&(child, offset)| (child == base).then_some(offset))
+            .ok_or(Error::Invariant("indirect constructor base without layout"))?;
+        let super::layout::LayoutState::Value { size, empty, .. } = self.entity(base).layout else {
+            return Err(Error::Invariant("indirect constructor base without size"));
+        };
+        Ok((offset, empty, size))
     }
     pub(crate) fn lower_nonvirtual_bytes(&self, class: EntityId) -> Result<u64, Error> {
         if let super::layout::LayoutState::Value {
@@ -458,6 +481,7 @@ impl Graph {
             union: self.entity(plan.class).key == crate::lex::vocabulary::Keyword::Union,
             members: &plan.members,
             bases: &plan.bases,
+            indirect_bases: &plan.indirect_bases,
             subobjects: &plan.subobjects,
             delegation: plan.delegation,
             copy: plan.copy.as_deref(),

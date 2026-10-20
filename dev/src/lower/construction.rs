@@ -43,6 +43,15 @@ impl Entry {
             Self::Constructor(id, _) => graph.lower_constructor_function(id)?,
         })
     }
+    pub(super) fn hidden_vtt(self, graph: &Graph) -> Result<bool, Error> {
+        Ok(matches!(
+            self,
+            Self::Constructor(_, Variant::Base) | Self::DestructorBase(_)
+        ) && self
+            .facts(graph)?
+            .object
+            .is_some_and(|class| !graph.lower_virtual_bases(class).is_empty()))
+    }
     pub(super) fn entity(self, graph: &Graph) -> Option<EntityId> {
         match self {
             Self::Function(entity)
@@ -224,6 +233,9 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let mut values = vec![object];
+        if entry.hidden_vtt(self.graph)? {
+            values.push(self.hidden_vtt_value()?);
+        }
         for index in 0..parameters.len().max(written.len()) {
             let parameter = parameters.get(index).copied();
             if parameter.is_none() {
@@ -345,6 +357,23 @@ impl Function<'_, '_, '_, '_> {
             )?;
         }
         let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
+        let mut hidden_values;
+        let values = if entry.hidden_vtt(self.graph)? {
+            let TypeView::Function { parameters, .. } =
+                self.graph.lower_type(entry.facts(self.graph)?.ty)?
+            else {
+                return Err(crate::sema::Error::Invariant("base entry signature").into());
+            };
+            if values.len() == parameters.len() + 1 {
+                hidden_values = values.to_vec();
+                hidden_values.insert(1, self.hidden_vtt_value()?);
+                &hidden_values
+            } else {
+                values
+            }
+        } else {
+            values
+        };
         let arguments = self.builder.arguments(values)?;
         self.effect(I::Call(crate::lowir::model::Call {
             result: Type::Void,
@@ -555,6 +584,9 @@ impl Function<'_, '_, '_, '_> {
             super::bit_fields::InitializationOrder::Ordinary
         };
         if let Some(delegation) = plan.delegation {
+            if self.virtual_context.vtt.is_some() {
+                self.virtual_context.hidden = Some(0);
+            }
             let first = self.lifetime.cleanups.len();
             let began =
                 self.begin_constructor_initializer(delegation.initializer, delegation.constructor)?;
@@ -586,8 +618,47 @@ impl Function<'_, '_, '_, '_> {
                 .lower_nonvirtual_bytes(plan.class)?
                 .wrapping_mul(8);
         }
+        if variant != Variant::Base {
+            for &(base, offset) in self.graph.lower_virtual_bases(plan.class) {
+                if !self.graph.lower_class_empty(base)? {
+                    self.bit_initialization.limit =
+                        self.bit_initialization.limit.min(offset.wrapping_mul(8));
+                }
+            }
+        }
+        self.virtual_context.pending = !self.graph.lower_virtual_bases(plan.class).is_empty();
+        if variant != Variant::Base {
+            for base in self.symbols.virtual_construction_order(plan.class) {
+                if let Some(index) = plan.bases.iter().enumerate().find_map(|(index, init)| {
+                    (init.class == base
+                        && self
+                            .graph
+                            .lower_inheritance_edge(plan.class, index)
+                            .is_some_and(|(_, shared, _)| shared))
+                    .then_some(index)
+                }) {
+                    self.initialize_base(id, variant, index)?;
+                } else if let Some(index) = plan
+                    .indirect_bases
+                    .iter()
+                    .position(|init| init.class == base)
+                {
+                    self.initialize_indirect_base(id, index)?;
+                }
+            }
+        }
         for index in 0..plan.bases.len() {
-            self.initialize_base(id, variant, index)?;
+            if self
+                .graph
+                .lower_inheritance_edge(plan.class, index)
+                .is_some_and(|(_, shared, _)| !shared)
+            {
+                self.initialize_base(id, variant, index)?;
+            }
+        }
+        self.virtual_context.pending = false;
+        if self.virtual_context.vtt.is_none() {
+            self.virtual_context.this_values.clear();
         }
         self.store_vptr(plan.class, plan.object_pointer)?;
         self.initialize_member_plan(id, plan.object_pointer, location)

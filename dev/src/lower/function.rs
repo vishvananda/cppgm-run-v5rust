@@ -36,6 +36,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub aggregation: super::aggregate_cleanup::State,
     pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
+    pub virtual_context: super::construction_context::FunctionContext,
     pub call_object_class: Option<EntityId>,
     pub captured_members: HashMap<EntityId, EntityId>,
     pub closure_this: Option<EntityId>,
@@ -130,6 +131,7 @@ pub(super) fn lower<'a>(
         }
     }
     let object_count = usize::from(facts.object.is_some());
+    let hidden_count = usize::from(entry.hidden_vtt(graph)?);
     let result_boundary = symbols.result_boundary(result)?;
     let result_count = usize::from(result_boundary.indirect);
     let mut names = Vec::with_capacity(parameters.len() + object_count + result_count);
@@ -138,6 +140,9 @@ pub(super) fn lower<'a>(
     }
     if object_count != 0 {
         names.push(("this".to_owned(), Type::Ptr));
+    }
+    if hidden_count != 0 {
+        names.push(("__vtt".to_owned(), Type::Ptr));
     }
     for &(_, name, ty) in &parameter_bindings {
         names.push((
@@ -199,11 +204,11 @@ pub(super) fn lower<'a>(
     for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
         let (pass, bytes) = reference_boundary(graph, ty)?;
         builder.parameter_classes(
-            index + object_count + result_count,
+            index + object_count + result_count + hidden_count,
             symbols.parameter_classes(ty)?,
         )?;
         builder.parameter_boundary(
-            index + object_count + result_count,
+            index + object_count + result_count + hidden_count,
             pass,
             bytes,
             distinct && index == 0 || parameter_no_alias(facts.builtin, index),
@@ -228,6 +233,7 @@ pub(super) fn lower<'a>(
     builder.block("entry")?;
     let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
     function.initialization_output = output.initialization;
+    function.virtual_context.class = facts.object;
     if result_boundary.indirect {
         function.result_destination = Some(function.builder.parameter(0)?);
     }
@@ -281,7 +287,15 @@ pub(super) fn lower<'a>(
     if object_count != 0 {
         function.initialize_this(result_count)?;
     }
-    function.initialize_parameters(&parameter_bindings, &names, object_count + result_count)?;
+    if hidden_count != 0 {
+        function.virtual_context.vtt =
+            Some(function.builder.parameter(object_count + result_count)?);
+    }
+    function.initialize_parameters(
+        &parameter_bindings,
+        &names,
+        object_count + result_count + hidden_count,
+    )?;
     if let Some(entity) = entity
         && graph.lower_assignment(entity).is_some()
     {
@@ -342,6 +356,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             aggregation: super::aggregate_cleanup::State::default(),
             entity,
             this_slot: None,
+            virtual_context: super::construction_context::FunctionContext::default(),
             call_object_class: None,
             captured_members: entity
                 .and_then(|function| graph.lower_call_closure(function))
@@ -491,14 +506,18 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "implicit object without this slot",
             )))?;
-        self.emit(
+        let value = self.emit(
             I::Load(
                 crate::lowir::model::Facts::memory(false, true),
                 Type::Ptr,
                 slot,
             ),
             source,
-        )
+        )?;
+        if self.virtual_context.pending || self.virtual_context.vtt.is_some() {
+            self.virtual_context.this_values.insert(value.value);
+        }
+        Ok(value)
     }
 
     pub(super) fn check_stack(&self) -> Result<(), Error> {
@@ -1043,12 +1062,33 @@ pub(super) fn declare(
             },
         );
     }
+    if entry.hidden_vtt(graph)? {
+        let first = 1;
+        let name = program.names.intern("arg1")?;
+        program.signature_mut(signature).parameters.insert(
+            first,
+            crate::lowir::model::Parameter {
+                name,
+                ty: Type::Ptr,
+                pass: None,
+                object_bytes: 0,
+                no_alias: false,
+                classes: None,
+            },
+        );
+        for index in first + 1..program.signature(signature).parameters.len() {
+            let name = program.names.intern(&format!("arg{index}"))?;
+            program.signature_mut(signature).parameters[index].name = name;
+        }
+    }
     let boundary = program.signature_mut(signature);
     let distinct = entry
         .entity(graph)
         .is_some_and(|entity| graph.lower_copy_constructor(entity));
     for (index, parameter) in boundary.parameters.iter_mut().enumerate() {
-        parameter.no_alias = distinct && index < 2 || parameter_no_alias(facts.builtin, index);
+        parameter.no_alias = distinct
+            && (index == 0 || index == 1 + usize::from(entry.hidden_vtt(graph)?))
+            || parameter_no_alias(facts.builtin, index);
     }
     builtin_boundary(&mut boundary.boundary, facts.builtin);
     let mut metadata = symbols.entry_metadata(program, entry, &name)?;

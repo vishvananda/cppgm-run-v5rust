@@ -33,13 +33,58 @@ impl Function<'_, '_, '_, '_> {
         variant: Variant,
         index: usize,
     ) -> Result<(), Error> {
+        let saved = self.virtual_context.hidden;
+        let result = self.initialize_base_plan(owner, variant, index, false);
+        self.virtual_context.hidden = saved;
+        result
+    }
+    pub(super) fn initialize_indirect_base(
+        &mut self,
+        owner: ConstructorId,
+        index: usize,
+    ) -> Result<(), Error> {
+        let saved = self.virtual_context.hidden;
+        let result = self.initialize_base_plan(owner, Variant::Complete, index, true);
+        self.virtual_context.hidden = saved;
+        result
+    }
+    fn initialize_base_plan(
+        &mut self,
+        owner: ConstructorId,
+        variant: Variant,
+        index: usize,
+        indirect: bool,
+    ) -> Result<(), Error> {
         let plan = self.graph.lower_constructor(owner);
-        let base = plan.bases[index];
-        let (offset, empty, span) = self.graph.lower_base_initialization_span(
-            plan.class,
-            index,
-            variant == Variant::Base && !self.graph.lower_constructor_trivial(owner),
-        )?;
+        let base = if indirect {
+            plan.indirect_bases[index]
+        } else {
+            plan.bases[index]
+        };
+        let shared = indirect
+            || self
+                .graph
+                .lower_inheritance_edge(plan.class, index)
+                .is_some_and(|(_, shared, _)| shared);
+        if variant == Variant::Base && shared {
+            return Ok(());
+        }
+        let (offset, empty, span) = if indirect {
+            self.indirect_initialization_span(owner, index)?
+        } else {
+            self.graph.lower_base_initialization_span(
+                plan.class,
+                index,
+                variant == Variant::Base && !self.graph.lower_constructor_trivial(owner),
+            )?
+        };
+        if !self.graph.lower_virtual_bases(base.class).is_empty() {
+            self.virtual_context.hidden = Some(if shared {
+                self.symbols.vtt_virtual_index(plan.class, base.class)?
+            } else {
+                self.symbols.vtt_base_index(plan.class, index)?
+            });
+        }
         let ty = self.graph.lower_entity_type(base.class)?;
         let trivial = base
             .constructor
@@ -165,6 +210,53 @@ impl Function<'_, '_, '_, '_> {
                 ));
         }
         self.subobject_constructed(ty, offset, false)
+    }
+
+    fn indirect_initialization_span(
+        &self,
+        owner: ConstructorId,
+        index: usize,
+    ) -> Result<(u64, bool, u64), Error> {
+        let plan = self.graph.lower_constructor(owner);
+        let base = plan.indirect_bases[index].class;
+        let (offset, empty, size) = self.graph.lower_indirect_base_layout(plan.class, base)?;
+        let data = self.graph.lower_nonvirtual_bytes(base)?;
+        let begin = offset.wrapping_add(data);
+        let end = offset.wrapping_add(size);
+        let mut occupied = !self.graph.lower_virtual_bases(base).is_empty();
+        // The C++ plan places indirect virtual entries after direct bases
+        // and members. Occupancy is plan order, independently of execution.
+        for i in 0..plan.bases.len() {
+            let (class, _, from) = self.graph.lower_inheritance_edge(plan.class, i).ok_or(
+                crate::sema::Error::Invariant("constructor plan without direct base"),
+            )?;
+            let from = from.ok_or(crate::sema::Error::Invariant(
+                "constructor base before layout",
+            ))?;
+            let to = from.wrapping_add(self.graph.lower_nonvirtual_bytes(class)?);
+            occupied |= from < end && to > begin;
+        }
+        for &(member, _) in plan.members {
+            let (from, to) = if let Some(field) = self.graph.lower_bit_field(member)? {
+                (
+                    field.bit / 8,
+                    field.bit.wrapping_add(field.width).wrapping_add(7) / 8,
+                )
+            } else {
+                let from = self.graph.lower_member_offset(member)?;
+                let size = types::layout(self.graph, self.graph.lower_entity_type(member)?)?.0;
+                (from, from.wrapping_add(size))
+            };
+            occupied |= from < end && to > begin;
+        }
+        for prior in &plan.indirect_bases[..index] {
+            let (from, _, _) = self
+                .graph
+                .lower_indirect_base_layout(plan.class, prior.class)?;
+            let to = from.wrapping_add(self.graph.lower_nonvirtual_bytes(prior.class)?);
+            occupied |= from < end && to > begin;
+        }
+        Ok((offset, empty, if occupied { data } else { size }))
     }
 
     fn initialize_base_copy(

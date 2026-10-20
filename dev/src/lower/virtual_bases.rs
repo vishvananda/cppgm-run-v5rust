@@ -28,6 +28,8 @@ enum Row {
 }
 #[derive(Default)]
 pub(super) struct Routes {
+    vtt_orders: HashMap<EntityId, Vec<usize>>,
+    construction_orders: HashMap<EntityId, Vec<EntityId>>,
     selected: HashMap<(EntityId, EntityId), Route>,
     holders: HashMap<EntityId, HashMap<EntityId, Route>>,
     rows: HashMap<EntityId, Vec<Row>>,
@@ -240,6 +242,20 @@ impl Function<'_, '_, '_, '_> {
         class: EntityId,
         base: EntityId,
     ) -> Result<Value, Error> {
+        if (self.virtual_context.pending || self.virtual_context.vtt.is_some())
+            && self.virtual_context.this_values.contains(&object)
+            && self.virtual_context.class == Some(class)
+        {
+            let displacement = if self.virtual_context.vtt.is_some() {
+                self.construction_row(source, class, base)?
+            } else {
+                self.builder
+                    .integer(u128::from(self.symbols.virtual_base_offset(class, base)?))?
+            };
+            return Ok(self
+                .emit(I::Index(Type::I8, None, object, displacement), source)?
+                .value);
+        }
         let row_offset = self.symbols.vbase_row_offset(class, base)?;
         let vptr = self
             .emit(
@@ -376,6 +392,14 @@ impl Symbols<'_, '_> {
         class: EntityId,
         segment: usize,
     ) -> Result<Vec<crate::lowir::model::DataItem>, Error> {
+        self.context_rows(super::vtables::TableContext::complete(class), segment)
+    }
+    pub(super) fn context_rows(
+        &mut self,
+        context: super::vtables::TableContext,
+        segment: usize,
+    ) -> Result<Vec<crate::lowir::model::DataItem>, Error> {
+        let class = context.class;
         self.table_row_count(class, segment)?;
         let group = self.graph.lower_vtable_group(class);
         let holder = group.map_or(class, |g| g.segments[segment].class);
@@ -390,11 +414,11 @@ impl Symbols<'_, '_> {
             &self.base_routes.rows[&holder]
         }
         .clone();
-        let offsets = self.graph.lower_segment_offsets(class)?;
+        let table_at = self.context_at(context, segment)?;
         let mut values = Vec::with_capacity(rows.len());
         for row in rows.into_iter().rev() {
             let at = match row {
-                Row::Base(base) => self.virtual_base_offset(class, base)?,
+                Row::Base(base) => self.virtual_base_offset(context.complete, base)?,
                 Row::Call {
                     function,
                     holder: declaring,
@@ -416,11 +440,8 @@ impl Symbols<'_, '_> {
                             declaring,
                         )?
                         .ok_or(crate::sema::Error::Invariant("vcall row outside its level"))?;
-                    let k = self.group_segment(
-                        class,
-                        offsets[level].wrapping_add(relative),
-                        declaring,
-                    )?;
+                    let at = self.segment_offsets(class)?[level].wrapping_add(relative);
+                    let k = self.group_segment(class, at, declaring)?;
                     let slot = self
                         .graph
                         .lower_virtual_slot(function)
@@ -428,14 +449,17 @@ impl Symbols<'_, '_> {
                         .index()?;
                     let group =
                         group.ok_or(crate::sema::Error::Invariant("vcall without entries"))?;
-                    offsets[group.entries[group.segments[k].entries.start + slot]
-                        .overrider
-                        .index()]
+                    self.context_at(
+                        context,
+                        group.entries[group.segments[k].entries.start + slot]
+                            .overrider
+                            .index(),
+                    )?
                 }
             };
             values.push(super::vtables::integer(
                 Type::I64,
-                at.wrapping_sub(offsets[segment]),
+                at.wrapping_sub(table_at),
             ));
         }
         Ok(values)
@@ -490,7 +514,13 @@ impl Symbols<'_, '_> {
 }
 
 impl Symbols<'_, '_> {
-    pub(super) fn vtt_pointer_order(&mut self, class: EntityId) -> Result<Vec<usize>, Error> {
+    pub(in crate::lower) fn vtt_pointer_order(
+        &mut self,
+        class: EntityId,
+    ) -> Result<Vec<usize>, Error> {
+        if let Some(order) = self.base_routes.vtt_orders.get(&class) {
+            return Ok(order.clone());
+        }
         let mut seen = HashSet::new();
         let mut result = Vec::new();
         let mut work = vec![(class, 0u64, false, 0usize)];
@@ -550,6 +580,7 @@ impl Symbols<'_, '_> {
             )
             .into());
         }
+        self.base_routes.vtt_orders.insert(class, result.clone());
         Ok(result)
     }
 }
@@ -573,5 +604,46 @@ impl Symbols<'_, '_> {
                 )
                 .into()
             })
+    }
+}
+
+impl Symbols<'_, '_> {
+    pub(in crate::lower) fn virtual_construction_order(
+        &mut self,
+        class: EntityId,
+    ) -> Vec<EntityId> {
+        if let Some(order) = self.base_routes.construction_orders.get(&class) {
+            return order.clone();
+        }
+        let mut pending = vec![class];
+        while let Some(&top) = pending.last() {
+            let before = pending.len();
+            for (base, _) in self.graph.lower_inheritance_edges(top) {
+                if !self.graph.lower_virtual_bases(base).is_empty()
+                    && !self.base_routes.construction_orders.contains_key(&base)
+                {
+                    pending.push(base);
+                }
+            }
+            if pending.len() != before {
+                continue;
+            }
+            pending.pop();
+            if self.base_routes.construction_orders.contains_key(&top) {
+                continue;
+            }
+            let mut seen = HashSet::new();
+            let mut order = Vec::new();
+            for (base, shared) in self.graph.lower_inheritance_edges(top) {
+                if let Some(inherited) = self.base_routes.construction_orders.get(&base) {
+                    order.extend(inherited.iter().copied().filter(|&base| seen.insert(base)));
+                }
+                if shared && seen.insert(base) {
+                    order.push(base);
+                }
+            }
+            self.base_routes.construction_orders.insert(top, order);
+        }
+        self.base_routes.construction_orders[&class].clone()
     }
 }
