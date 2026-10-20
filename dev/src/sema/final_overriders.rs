@@ -440,17 +440,26 @@ mod tests {
             .binding(graph.own(graph.global, name, Filter::Elaborated).unwrap())
             .entity;
         check(&graph, class);
-        assert!(matches!(
-            graph.entity(class).layout,
-            LayoutState::NotStarted
-        ));
+        // ABI projection now completes storage where virtual primary pointers
+        // may share. The semantic witness still demands no body or emission.
+        if graph.has_virtual_primary_below(class) {
+            assert!(matches!(
+                graph.entity(class).layout,
+                LayoutState::Value { .. }
+            ));
+        } else {
+            assert!(matches!(
+                graph.entity(class).layout,
+                LayoutState::NotStarted
+            ));
+        }
         assert!(graph.root_demands.as_slice().is_empty());
         assert_eq!(expressions, tree.expressions.mark());
         assert_eq!(syntax, tree.declarations.mark());
     }
 
     #[test]
-    fn virtual_diamond_keeps_the_dominating_subobject_without_storage_demand() {
+    fn virtual_diamond_keeps_the_dominating_subobject_without_emission_demand() {
         inspect(b"struct R{virtual int f()=0;};struct A:virtual R{int f();};struct B:virtual R{};struct Mid:A,B{};struct D:Mid{};", |graph, class| {
             assert!(!graph.virtuals.abstract_class(class));
             let finals = &graph.virtuals.final_overriders.classes[&class];

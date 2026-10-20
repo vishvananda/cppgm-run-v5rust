@@ -1,6 +1,6 @@
 // Translated from analyzer_virtual.cpp::vtable_group/group_slots/group_below/group_splice.
 // See NOTICE.
-//! Nonvirtual ABI segments preserve each occurrence and its selected overrider.
+//! ABI segments preserve each occurrence and its selected overrider.
 use super::{
     Error,
     graph::{EntityId, Graph},
@@ -8,12 +8,12 @@ use super::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct SegmentId(u32);
+pub(crate) struct SegmentId(pub(super) u32);
 impl SegmentId {
     pub(crate) fn index(self) -> usize {
         self.0 as usize
     }
-    fn new(index: usize) -> Result<Self, Error> {
+    pub(super) fn new(index: usize) -> Result<Self, Error> {
         Ok(Self(
             u32::try_from(index).map_err(|_| Error::Limit("vtable segment limit"))?,
         ))
@@ -31,6 +31,7 @@ pub(crate) struct Segment {
     // An edge is identified by its owning class and declaration ordinal.
     pub edge: Option<(EntityId, u32)>,
     pub shared: bool,
+    pub within: Option<SegmentId>,
     pub entries: std::ops::Range<usize>,
 }
 #[derive(Default)]
@@ -39,7 +40,7 @@ pub(crate) struct VtableGroup {
     pub entries: Vec<GroupEntry>,
 }
 impl VtableGroup {
-    fn push(
+    pub(super) fn push(
         &mut self,
         class: EntityId,
         parent: SegmentId,
@@ -52,23 +53,27 @@ impl VtableGroup {
             parent,
             edge,
             shared,
+            within: None,
             entries: self.entries.len()..self.entries.len(),
         });
         Ok(id)
     }
-    fn close(&mut self, id: SegmentId) {
+    pub(super) fn close(&mut self, id: SegmentId) {
         self.segments[id.index()].entries.end = self.entries.len();
     }
-    fn slots(
+    pub(super) fn slots(
         &mut self,
         graph: &Graph,
-        top: EntityId,
+        top: Option<EntityId>,
         class: EntityId,
         id: SegmentId,
     ) -> Result<(), Error> {
         for slot in graph.lower_virtual_slots(class)? {
             let slot = slot.ok_or(Error::Invariant("unfilled group slot"))?;
-            let found = graph.declared_virtual_overrider(top, slot.function)?;
+            let found = top
+                .map(|top| graph.declared_virtual_overrider(top, slot.function))
+                .transpose()?
+                .flatten();
             self.entries.push(GroupEntry {
                 function: found.unwrap_or(slot.function),
                 kind: slot.kind,
@@ -78,10 +83,10 @@ impl VtableGroup {
         self.close(id);
         Ok(())
     }
-    fn splice(
+    pub(super) fn splice(
         &mut self,
         graph: &Graph,
-        top: EntityId,
+        top: Option<EntityId>,
         class: EntityId,
         chain: Option<&std::collections::HashMap<EntityId, SegmentId>>,
     ) -> Result<(), Error> {
@@ -89,7 +94,12 @@ impl VtableGroup {
             return Ok(());
         };
         let first = self.segments.len() - 1;
-        for from in group.segments.iter().skip(1) {
+        for from in group
+            .segments
+            .iter()
+            .skip(1)
+            .take_while(|part| part.within.is_none())
+        {
             let map = |id: SegmentId, owner: EntityId| -> Result<SegmentId, Error> {
                 if id.index() != 0 {
                     SegmentId::new(first + id.index())
@@ -108,7 +118,10 @@ impl VtableGroup {
             let parent = map(from.parent, owner)?;
             let id = self.push(from.class, parent, from.edge, from.shared)?;
             for slot in &group.entries[from.entries.clone()] {
-                let found = graph.declared_virtual_overrider(top, slot.function)?;
+                let found = top
+                    .map(|top| graph.declared_virtual_overrider(top, slot.function))
+                    .transpose()?
+                    .flatten();
                 let owner = graph
                     .lower_function(slot.function)?
                     .object
@@ -127,10 +140,10 @@ impl VtableGroup {
         }
         Ok(())
     }
-    fn below(
+    pub(super) fn below(
         &mut self,
         graph: &Graph,
-        top: EntityId,
+        top: Option<EntityId>,
         class: EntityId,
         segment: SegmentId,
     ) -> Result<(), Error> {
@@ -139,7 +152,7 @@ impl VtableGroup {
         let mut link = class;
         loop {
             chain.insert(link, parent);
-            let Some(next) = graph.lower_virtual_class(link)?.primary else {
+            let Some(next) = graph.nonvirtual_table_primary(link)? else {
                 break;
             };
             let edge = graph
@@ -203,13 +216,13 @@ impl Graph {
         }
         let mut group = VtableGroup::default();
         let root = group.push(class, SegmentId(0), None, false)?;
-        group.slots(self, class, class, root)?;
+        group.slots(self, Some(class), class, root)?;
         for (index, edge) in self.entity(class).bases.iter().enumerate() {
             if !self.lower_polymorphic(edge.class) {
                 continue;
             }
             if Some(edge.class) == primary {
-                group.splice(self, class, edge.class, None)?;
+                group.splice(self, Some(class), edge.class, None)?;
             } else {
                 let id = group.push(
                     edge.class,
@@ -220,8 +233,8 @@ impl Graph {
                     )),
                     false,
                 )?;
-                group.slots(self, class, edge.class, id)?;
-                group.below(self, class, edge.class, id)?;
+                group.slots(self, Some(class), edge.class, id)?;
+                group.below(self, Some(class), edge.class, id)?;
             }
         }
         self.virtuals.groups.insert(class, group);
@@ -236,7 +249,17 @@ impl Graph {
         };
         let mut offsets = Vec::<u64>::with_capacity(group.segments.len());
         offsets.push(0);
-        for segment in group.segments.iter().skip(1) {
+        for (index, segment) in group.segments.iter().enumerate().skip(1) {
+            if segment.within == Some(SegmentId::new(index)?) {
+                let offset = self
+                    .lower_virtual_bases(class)
+                    .iter()
+                    .find(|&&(base, _)| base == segment.class)
+                    .ok_or(Error::Invariant("virtual segment before layout"))?
+                    .1;
+                offsets.push(offset);
+                continue;
+            }
             let (owner, index) = segment
                 .edge
                 .ok_or(Error::Invariant("segment without base edge"))?;

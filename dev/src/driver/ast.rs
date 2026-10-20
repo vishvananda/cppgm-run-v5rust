@@ -583,7 +583,7 @@ mod tests {
         assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
     }
     #[test]
-    fn hierarchy_flags_distinguish_shared_and_repeated_occurrences_without_layout_demand() {
+    fn hierarchy_flags_distinguish_shared_and_repeated_occurrences_without_additional_demand() {
         use crate::{
             preprocess::unit::Preprocessor,
             sema::{Analyzer, lowering::TypeView},

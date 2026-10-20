@@ -36,6 +36,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub aggregation: super::aggregate_cleanup::State,
     pub entity: Option<EntityId>,
     pub this_slot: Option<Value>,
+    pub call_object_class: Option<EntityId>,
     pub captured_members: HashMap<EntityId, EntityId>,
     pub closure_this: Option<EntityId>,
     pub persistent_references: bool,
@@ -341,6 +342,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             aggregation: super::aggregate_cleanup::State::default(),
             entity,
             this_slot: None,
+            call_object_class: None,
             captured_members: entity
                 .and_then(|function| graph.lower_call_closure(function))
                 .map(|class| {

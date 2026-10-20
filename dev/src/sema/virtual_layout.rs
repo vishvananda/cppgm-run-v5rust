@@ -17,6 +17,9 @@ impl Graph {
     /// Preorder of inheritance edges, expanding each class once. A virtual
     /// occurrence is recorded even if its class was first reached nonvirtually.
     pub(super) fn virtual_base_order(&self, root: EntityId) -> Vec<EntityId> {
+        if let Some(facts) = self.virtuals.classes.get(&root) {
+            return facts.bases.clone();
+        }
         let mut expanded = HashSet::new();
         let mut shared = HashSet::new();
         let mut result = Vec::new();
@@ -45,7 +48,7 @@ impl Graph {
             .position(|edge| !edge.is_virtual && self.layout_dynamic(edge.class))
     }
     pub(super) fn layout_dynamic(&self, class: EntityId) -> bool {
-        self.lower_polymorphic(class) || self.virtuals.storage_layouts.contains_key(&class)
+        self.lower_dynamic(class) || self.virtuals.storage_layouts.contains_key(&class)
     }
     pub(super) fn virtual_layout_plan(&self, class: EntityId) -> Result<VirtualLayout, Error> {
         let mut bases = Vec::new();
@@ -367,7 +370,8 @@ mod tests {
             struct Small : virtual Aligned { char c; };
             struct Outer : Small { char c; };
             struct Object { Small member; E es[2]; };
-            struct Dormant : virtual N { void unused(); };
+            struct NonEmpty { virtual void f(); int n; };
+            struct Dormant : virtual NonEmpty { void unused(); };
         "
             .to_vec(),
         )

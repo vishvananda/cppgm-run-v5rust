@@ -362,6 +362,17 @@ impl Analyzer<'_> {
             && (callable || !self.qualified_call_designator(callee))
         {
             facts.dispatch = super::expression_facts::Dispatch::Virtual;
+            if !callable
+                && self.lowering()
+                && self.unevaluated == 0
+                && let Some(class) = self.call_table_class(callee, binding, arguments)?
+                && self.graph.lower_dynamic(class)
+                && self.graph.lower_virtual_class(class)?.has_virtual_bases
+            {
+                self.graph
+                    .class_information_uses
+                    .push((self.body_context.as_ref().map(|body| body.entity), class));
+            }
         }
         self.graph.record_call_binding(id, binding);
         Ok(facts)

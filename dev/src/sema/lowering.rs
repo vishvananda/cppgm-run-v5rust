@@ -18,6 +18,7 @@ pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 pub(crate) use super::symbolic_members::MemberPointer as MemberPointerValue;
 pub(crate) use super::virtual_members::{SlotId, SlotKind};
+pub(crate) use super::vtable_groups::SegmentId;
 use super::{
     Error,
     graph::{BindingKind, Graph},
@@ -966,6 +967,13 @@ impl Graph {
         }
     }
 
+    pub(crate) fn lower_receiver_class(&self, id: ast::ExprId) -> Result<Option<EntityId>, Error> {
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .object
+            .and_then(|object| self.class_of(object.ty)))
+    }
     pub(crate) fn lower_object_source(
         &self,
         id: ast::ExprId,

@@ -802,6 +802,11 @@ impl Function<'_, '_, '_, '_> {
                 {
                     value = self.base_projection(value, source, offset)?;
                 }
+                self.call_object_class = if self.graph.lower_callable_object_call(id)? {
+                    None
+                } else {
+                    self.graph.lower_receiver_class(receiver)?
+                };
                 values.push(value);
             } else if invoker.is_none()
                 && let Some(crate::sema::lowering::ObjectSource::Explicit { expression, arrow }) =
@@ -868,7 +873,9 @@ impl Function<'_, '_, '_, '_> {
                     let receiver = *values.get(usize::from(boundary.indirect)).ok_or(
                         crate::sema::Error::Invariant("virtual call without receiver"),
                     )?;
-                    self.member_callee(entity, receiver, true, source)?
+                    let callee = self.member_callee(entity, receiver, true, source)?;
+                    self.demand_virtual_call_table()?;
+                    callee
                 } else {
                     self.symbols.demand(entity);
                     (self.symbols.callee(entity, &mut self.builder)?, None)

@@ -336,6 +336,15 @@ impl Analyzer<'_> {
             }
             if let Some(class) = self.graph.lower_function(entity)?.object {
                 self.class_layout(class, SourceOffset(0))?;
+                // Entry anchors read this definition's primary chain even when
+                // another unit owns its table; unrelated declarations do not.
+                if self.graph.lower_virtual_slot(entity).is_some()
+                    && self.graph.lower_function_defined(entity)
+                    && !self.graph.lower_virtual_pure(entity)
+                    && !self.graph.lower_function(entity)?.internal
+                {
+                    self.graph.demand_virtual_chain(class, true)?;
+                }
                 if self.graph.lower_polymorphic(class)
                     && self.graph.lower_virtual_class(class)?.key == Some(entity)
                 {

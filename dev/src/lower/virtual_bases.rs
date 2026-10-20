@@ -19,7 +19,12 @@ pub(in crate::lower) struct Route {
 #[derive(Clone, Copy)]
 enum Row {
     Base(EntityId),
-    Call(VcallSignature),
+    Call {
+        signature: VcallSignature,
+        function: EntityId,
+        holder: EntityId,
+        level: EntityId,
+    },
 }
 #[derive(Default)]
 pub(super) struct Routes {
@@ -27,7 +32,9 @@ pub(super) struct Routes {
     holders: HashMap<EntityId, HashMap<EntityId, Route>>,
     rows: HashMap<EntityId, Vec<Row>>,
     full_rows: HashMap<EntityId, Vec<Row>>,
+    segments: HashMap<EntityId, HashMap<(u64, EntityId), usize>>,
     positions: HashMap<(EntityId, EntityId), i64>,
+    vcall_positions: HashMap<(EntityId, VcallSignature), i64>,
 }
 impl Symbols<'_, '_> {
     pub(in crate::lower) fn base_route(
@@ -169,7 +176,7 @@ impl Symbols<'_, '_> {
         let mut signatures: HashSet<_> = rows
             .iter()
             .filter_map(|row| match row {
-                Row::Call(signature) => Some(*signature),
+                Row::Call { signature, .. } => Some(*signature),
                 Row::Base(_) => None,
             })
             .collect();
@@ -194,13 +201,31 @@ impl Symbols<'_, '_> {
             for function in self.graph.lower_vcall_functions(holder)? {
                 let signature = self.graph.lower_vcall_signature(function)?;
                 if signatures.insert(signature) {
-                    rows.push(Row::Call(signature));
+                    rows.push(Row::Call {
+                        signature,
+                        function,
+                        holder,
+                        level: class,
+                    });
                 }
             }
             for base in self.graph.lower_nonvirtual_bases(holder).rev() {
-                if Some(base) != primary && self.graph.lower_polymorphic(base) {
+                if Some(base) != primary && self.graph.lower_dynamic(base) {
                     work.push((base, false));
                 }
+            }
+        }
+        for (index, row) in rows.iter().enumerate() {
+            if let Row::Call { signature, .. } = row {
+                let index = i64::try_from(index)
+                    .map_err(|_| crate::sema::Error::Limit("vcall row limit"))?;
+                let position = index
+                    .checked_add(3)
+                    .and_then(|n| n.checked_mul(-8))
+                    .ok_or(crate::sema::Error::Limit("vcall row limit"))?;
+                self.base_routes
+                    .vcall_positions
+                    .insert((class, *signature), position);
             }
         }
         self.base_routes.full_rows.insert(class, rows);
@@ -318,4 +343,235 @@ pub(crate) fn assert_base_routes(
     assert!(symbols.entries.is_empty());
     assert!(program.globals().is_empty());
     assert!(program.symbols().is_empty());
+}
+
+impl Symbols<'_, '_> {
+    pub(super) fn table_row_count(
+        &mut self,
+        class: EntityId,
+        segment: usize,
+    ) -> Result<usize, Error> {
+        let (holder, full) = self
+            .graph
+            .lower_vtable_group(class)
+            .map_or((class, false), |group| {
+                let part = &group.segments[segment];
+                (
+                    part.class,
+                    part.within.is_some_and(|id| id.index() == segment),
+                )
+            });
+        self.base_rows(holder)?;
+        if full {
+            self.full_base_rows(holder)?;
+        }
+        Ok(if full {
+            self.base_routes.full_rows[&holder].len()
+        } else {
+            self.base_routes.rows[&holder].len()
+        })
+    }
+    pub(super) fn table_rows(
+        &mut self,
+        class: EntityId,
+        segment: usize,
+    ) -> Result<Vec<crate::lowir::model::DataItem>, Error> {
+        self.table_row_count(class, segment)?;
+        let group = self.graph.lower_vtable_group(class);
+        let holder = group.map_or(class, |g| g.segments[segment].class);
+        let full = group.is_some_and(|g| {
+            g.segments[segment]
+                .within
+                .is_some_and(|id| id.index() == segment)
+        });
+        let rows = if full {
+            &self.base_routes.full_rows[&holder]
+        } else {
+            &self.base_routes.rows[&holder]
+        }
+        .clone();
+        let offsets = self.graph.lower_segment_offsets(class)?;
+        let mut values = Vec::with_capacity(rows.len());
+        for row in rows.into_iter().rev() {
+            let at = match row {
+                Row::Base(base) => self.virtual_base_offset(class, base)?,
+                Row::Call {
+                    function,
+                    holder: declaring,
+                    level,
+                    ..
+                } => {
+                    let level = if level == holder {
+                        segment
+                    } else {
+                        self.group_segment(class, self.virtual_base_offset(class, level)?, level)?
+                    };
+                    let relative = self
+                        .graph
+                        .lower_nonvirtual_offset(
+                            group
+                                .ok_or(crate::sema::Error::Invariant("vcall row without group"))?
+                                .segments[level]
+                                .class,
+                            declaring,
+                        )?
+                        .ok_or(crate::sema::Error::Invariant("vcall row outside its level"))?;
+                    let k = self.group_segment(
+                        class,
+                        offsets[level].wrapping_add(relative),
+                        declaring,
+                    )?;
+                    let slot = self
+                        .graph
+                        .lower_virtual_slot(function)
+                        .ok_or(crate::sema::Error::Invariant("vcall function without slot"))?
+                        .index()?;
+                    let group =
+                        group.ok_or(crate::sema::Error::Invariant("vcall without entries"))?;
+                    offsets[group.entries[group.segments[k].entries.start + slot]
+                        .overrider
+                        .index()]
+                }
+            };
+            values.push(super::vtables::integer(
+                Type::I64,
+                at.wrapping_sub(offsets[segment]),
+            ));
+        }
+        Ok(values)
+    }
+    pub(super) fn virtual_base_offset(
+        &self,
+        class: EntityId,
+        base: EntityId,
+    ) -> Result<u64, Error> {
+        self.graph
+            .lower_virtual_bases(class)
+            .iter()
+            .find(|&&(child, _)| child == base)
+            .map(|&(_, offset)| offset)
+            .ok_or_else(|| {
+                crate::sema::Error::Invariant("virtual base offset before layout").into()
+            })
+    }
+    pub(super) fn group_segment(
+        &mut self,
+        class: EntityId,
+        offset: u64,
+        base: EntityId,
+    ) -> Result<usize, Error> {
+        if !self.base_routes.segments.contains_key(&class) {
+            let mut result = HashMap::new();
+            let group = self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(crate::sema::Error::Invariant("segment query without group"))?;
+            for (index, at) in self
+                .graph
+                .lower_segment_offsets(class)?
+                .into_iter()
+                .enumerate()
+                .skip(1)
+            {
+                result
+                    .entry((at, group.segments[index].class))
+                    .or_insert(index);
+            }
+            self.base_routes.segments.insert(class, result);
+        }
+        self.base_routes.segments[&class]
+            .get(&(offset, base))
+            .copied()
+            .ok_or_else(|| {
+                crate::sema::Error::Invariant("a virtual base's subobject without a table segment")
+                    .into()
+            })
+    }
+}
+
+impl Symbols<'_, '_> {
+    pub(super) fn vtt_pointer_order(&mut self, class: EntityId) -> Result<Vec<usize>, Error> {
+        let mut seen = HashSet::new();
+        let mut result = Vec::new();
+        let mut work = vec![(class, 0u64, false, 0usize)];
+        while let Some((holder, offset, moral, next)) = work.last_mut() {
+            if self.graph.lower_virtual_bases(*holder).is_empty() && !*moral {
+                work.pop();
+                continue;
+            }
+            let Some((base, shared, step)) = self.graph.lower_inheritance_edge(*holder, *next)
+            else {
+                work.pop();
+                continue;
+            };
+            *next += 1;
+            if !self.graph.lower_dynamic(base) {
+                continue;
+            }
+            let mut at = *offset;
+            let mut virtual_below = *moral;
+            if shared {
+                if !seen.insert(base) {
+                    continue;
+                }
+                at = self.virtual_base_offset(class, base)?;
+                virtual_below = true;
+            } else {
+                at = at.wrapping_add(
+                    step.ok_or(crate::sema::Error::Invariant("VTT walk before base layout"))?,
+                );
+            }
+            let primary = self.graph.lower_itanium_primary(*holder);
+            if (shared || primary != Some((base, false)))
+                && (virtual_below || !self.graph.lower_virtual_bases(base).is_empty())
+            {
+                result.push(self.group_segment(class, at, base)?);
+            }
+            work.push((base, at, virtual_below, 0));
+        }
+        let group = self
+            .graph
+            .lower_vtable_group(class)
+            .ok_or(crate::sema::Error::Invariant("VTT without group"))?;
+        let expected = group
+            .segments
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(index, segment)| {
+                (!segment.shared || segment.within.is_some_and(|id| id.index() == *index))
+                    && (!self.graph.lower_virtual_bases(segment.class).is_empty()
+                        || segment.within.is_some())
+            })
+            .count();
+        if result.len() != expected {
+            return Err(crate::sema::Error::Invariant(
+                "a VTT whose virtual pointers the inheritance graph does not list",
+            )
+            .into());
+        }
+        Ok(result)
+    }
+}
+
+impl Symbols<'_, '_> {
+    pub(super) fn vcall_row_offset(
+        &mut self,
+        class: EntityId,
+        function: EntityId,
+    ) -> Result<i64, Error> {
+        self.base_rows(class)?;
+        self.full_base_rows(class)?;
+        let signature = self.graph.lower_vcall_signature(function)?;
+        self.base_routes
+            .vcall_positions
+            .get(&(class, signature))
+            .copied()
+            .ok_or_else(|| {
+                crate::sema::Error::Invariant(
+                    "a virtual base without a vcall offset for a function its table overrides",
+                )
+                .into()
+            })
+    }
 }

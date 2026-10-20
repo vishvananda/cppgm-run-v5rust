@@ -7,7 +7,7 @@ use super::{
     types,
 };
 use crate::{
-    lex::{PostTokenKind, pp_lexer::Punctuator as P, vocabulary::Keyword},
+    lex::{pp_lexer::Punctuator as P, vocabulary::Keyword},
     lowir::{
         model::{BlockId, Facts, InstructionKind as I},
         vocabulary::{Compare, Type},
@@ -126,63 +126,9 @@ impl Function<'_, '_, '_, '_> {
         id
     }
     pub(super) fn literal_truth(&self, id: ast::ExprId) -> Result<Option<bool>, Error> {
-        let id = self.without_parentheses(id);
-        let facts = self.graph.lower_expression(id)?;
-        if let Some(shape) = self.graph.lower_literal_call(id)? {
-            // The frozen literal_truth reads the call-form value retained on
-            // the literal: string=0; cooked=1, template=2, character=3, raw=4.
-            return Ok((types::storage(self.graph, facts.ty)?.float_rank() == 0
-                && !matches!(
-                    self.graph.lower_type(facts.ty)?,
-                    crate::sema::lowering::TypeView::Array { .. }
-                ))
-            .then_some(!matches!(
-                shape,
-                crate::sema::lowering::LiteralCall::String { .. }
-            )));
-        }
-        match self.tree.expressions.get(id).kind {
-            ExprKind::Keyword(Keyword::True) => Ok(Some(true)),
-            ExprKind::Keyword(Keyword::False) => Ok(Some(false)),
-            ExprKind::Id(_) if facts.folded.is_some() => Ok(facts.folded.map(|v| v != 0)),
-            ExprKind::Id(_)
-                if matches!(
-                    self.graph.lower_evaluated_pointer(self.tree, id)?,
-                    Some(crate::sema::lowering::StaticValue::Integer(0))
-                ) =>
-            {
-                Ok(Some(false))
-            }
-            ExprKind::Conditional {
-                condition,
-                then_expr,
-                else_expr,
-            } if !matches!(
-                self.graph.lower_type(facts.ty)?,
-                crate::sema::lowering::TypeView::Class(_)
-            ) =>
-            {
-                if let Some(selected) =
-                    self.graph.lower_constant_conversion(self.tree, condition)?
-                {
-                    self.literal_truth(if selected { then_expr } else { else_expr })
-                } else {
-                    Ok(None)
-                }
-            }
-            ExprKind::Literal(literal)
-                if types::storage(self.graph, facts.ty)?.float_rank() == 0 =>
-            {
-                if let PostTokenKind::Literal { data, .. } | PostTokenKind::Character { data, .. } =
-                    literal.kind
-                {
-                    Ok(Some(data.as_slice().iter().any(|&b| b != 0)))
-                } else {
-                    Ok(None)
-                }
-            }
-            _ => Ok(None),
-        }
+        self.graph
+            .lower_literal_truth(self.tree, id)
+            .map_err(Error::from)
     }
     pub(super) fn truth(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let id = self.without_parentheses(id);

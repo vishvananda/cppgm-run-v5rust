@@ -55,6 +55,18 @@ impl Graph {
             .map_or(&[], |layout| layout.bases.as_slice())
     }
     pub(crate) fn lower_itanium_primary(&self, class: EntityId) -> Option<(EntityId, bool)> {
+        if let Some(facts) = self.virtuals.classes.get(&class) {
+            return facts.primary.map(|primary| {
+                (
+                    primary,
+                    !self
+                        .entity(class)
+                        .bases
+                        .iter()
+                        .any(|edge| !edge.is_virtual && edge.class == primary),
+                )
+            });
+        }
         self.nonvirtual_primary(class)
             .map(|index| (self.entity(class).bases[index].class, false))
             .or_else(|| {
@@ -113,7 +125,13 @@ impl Graph {
                 )
             })
             .collect();
-        entries.sort_unstable_by_key(|entry| entry.slot.byte_offset());
+        entries.sort_unstable_by_key(|entry| {
+            self.virtuals
+                .vcall_orders
+                .get(&entry.function)
+                .copied()
+                .unwrap_or(entry.slot.byte_offset())
+        });
         Ok(entries.into_iter().map(|entry| entry.function).collect())
     }
     pub(crate) fn lower_vcall_signature(

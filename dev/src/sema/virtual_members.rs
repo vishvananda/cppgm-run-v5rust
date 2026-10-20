@@ -27,12 +27,17 @@ pub(super) struct Virtuals {
     signatures: HashSet<(ValueKey, TypeId)>,
     destructors: HashMap<EntityId, EntityId>,
     pure_counts: HashMap<EntityId, u32>,
-    classes: HashMap<EntityId, ClassVirtuals>,
+    pub(super) classes: HashMap<EntityId, ClassVirtuals>,
     slots: HashMap<EntityId, SlotId>,
+    pub(super) vcall_orders: HashMap<EntityId, u64>,
+    projection_chains: HashSet<EntityId>,
     primary_overrides: HashMap<EntityId, EntityId>,
+    pub(super) slot_levels: HashMap<EntityId, Vec<Option<EntityId>>>,
     function_signatures: HashMap<EntityId, (ValueKey, TypeId)>,
     covariant_results: HashMap<EntityId, EntityId>,
     pub(super) groups: HashMap<EntityId, super::vtable_groups::VtableGroup>,
+    pub(super) base_memberships: HashSet<(EntityId, EntityId)>,
+    pub(super) chain_overriders: HashMap<(EntityId, EntityId, EntityId), Option<EntityId>>,
     deallocators: HashMap<EntityId, EntityId>,
     assignment_targets: HashSet<EntityId>,
     implicit_assignments: HashMap<EntityId, Vec<EntityId>>,
@@ -96,6 +101,8 @@ pub(crate) struct VirtualEntry {
 pub(crate) struct ClassVirtuals {
     pub primary: Option<EntityId>,
     pub has_virtual_bases: bool,
+    pub has_virtual_primary: bool,
+    pub bases: Vec<EntityId>,
     pub size: u32,
     pub key: Option<EntityId>,
     pub entries: Vec<VirtualEntry>,
@@ -574,18 +581,19 @@ impl Analyzer<'_> {
         class: EntityId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        if !self.graph.entity(class).polymorphism.is_dynamic() {
+        let has_virtual_bases = self.graph.entity(class).bases.iter().any(|edge| {
+            edge.is_virtual
+                || self
+                    .graph
+                    .virtuals
+                    .classes
+                    .get(&edge.class)
+                    .is_some_and(|facts| facts.has_virtual_bases)
+        });
+        if !self.graph.entity(class).polymorphism.is_dynamic() && !has_virtual_bases {
             return Ok(());
         }
-        let primary = self
-            .graph
-            .entity(class)
-            .bases
-            .iter()
-            .find(|edge| {
-                !edge.is_virtual && self.graph.entity(edge.class).polymorphism.is_dynamic()
-            })
-            .map(|edge| edge.class);
+        let primary = self.virtual_table_primary(class, location)?;
         let mut size = if let Some(base) = primary {
             self.graph.lower_virtual_class(base)?.size
         } else {
@@ -650,6 +658,12 @@ impl Analyzer<'_> {
                 slot
             };
             self.graph.virtuals.slots.insert(function, slot);
+            let order = overridden
+                .and_then(|base| self.graph.virtuals.vcall_orders.get(&base).copied())
+                .map_or(slot.byte_offset(), |inherited| {
+                    inherited.min(slot.byte_offset())
+                });
+            self.graph.virtuals.vcall_orders.insert(function, order);
             entries.push(VirtualEntry {
                 slot,
                 function,
@@ -690,25 +704,52 @@ impl Analyzer<'_> {
         if self.graph.instance_class(scope) {
             key = None;
         }
+        let bases = if has_virtual_bases {
+            self.graph.virtual_base_order(class)
+        } else {
+            Vec::new()
+        };
+        let own_virtual_primary = primary.is_some_and(|primary| {
+            !self
+                .graph
+                .entity(class)
+                .bases
+                .iter()
+                .any(|edge| !edge.is_virtual && edge.class == primary)
+        });
+        let has_virtual_primary = own_virtual_primary
+            || self.graph.entity(class).bases.iter().any(|edge| {
+                self.graph
+                    .virtuals
+                    .classes
+                    .get(&edge.class)
+                    .is_some_and(|facts| facts.has_virtual_primary)
+            });
+        for &base in &bases {
+            self.graph.virtuals.base_memberships.insert((class, base));
+        }
         self.graph.virtuals.classes.insert(
             class,
             ClassVirtuals {
                 primary,
-                has_virtual_bases: self.graph.entity(class).bases.iter().any(|edge| {
-                    edge.is_virtual
-                        || self
-                            .graph
-                            .virtuals
-                            .classes
-                            .get(&edge.class)
-                            .is_some_and(|facts| facts.has_virtual_bases)
-                }),
+                has_virtual_bases,
+                has_virtual_primary,
+                bases,
                 size,
                 key,
                 entries,
             },
         );
-        self.graph.complete_nonvirtual_group(class)?;
+        if has_virtual_bases {
+            // Sharing is a relation between actual subobject placements. Layout
+            // is demanded only when a virtual primary can share a pointer.
+            if self.graph.has_virtual_primary_below(class) {
+                self.class_layout(class, location)?;
+            }
+            self.graph.complete_virtual_group(class)?;
+        } else {
+            self.graph.complete_nonvirtual_group(class)?;
+        }
         Ok(())
     }
 
@@ -911,7 +952,7 @@ impl Analyzer<'_> {
         seen.insert(class);
         self.class_layout(class, SourceOffset(0))?;
         self.prepare_destruction(class)?;
-        self.graph.demand_virtual_slots(class)?;
+        self.graph.demand_virtual_chain(class, true)?;
         for index in 0..self.graph.lower_virtual_slots(class)?.len() {
             let function = self.graph.lower_virtual_slots(class)?[index]
                 .ok_or(Error::Invariant("unfilled virtual slot"))?
@@ -1264,7 +1305,9 @@ impl super::graph::Graph {
         while let Some(class) = next {
             // An already cached head need not have retained an external key
             // owner's table below it. A secondary projection reads every link.
-            if !retain_chain && self.virtuals.layouts.contains_key(&class) {
+            if self.virtuals.layouts.contains_key(&class)
+                && (!retain_chain || self.virtuals.projection_chains.contains(&class))
+            {
                 break;
             }
             chain.push(class);
@@ -1341,6 +1384,9 @@ impl super::graph::Graph {
                 || facts.key.is_none_or(|key| self.lower_function_defined(key))
             {
                 self.virtuals.layouts.insert(class, work.clone());
+            }
+            if retain_chain {
+                self.virtuals.projection_chains.insert(class);
             }
         }
         Ok(())
@@ -1437,18 +1483,26 @@ impl super::graph::Graph {
     pub(crate) fn lower_rtti_bases(
         &self,
         class: EntityId,
-    ) -> impl Iterator<Item = Result<(EntityId, bool, u64), Error>> + '_ {
+    ) -> impl Iterator<Item = Result<(EntityId, bool, bool, u64), Error>> + '_ {
         self.entity(class).bases.iter().map(|base| {
-            if base.is_virtual {
-                return Err(Error::Missing("virtual-base RTTI rows"));
-            }
             Ok((
                 base.class,
                 base.access == super::graph::Access::Public,
+                base.is_virtual,
                 base.offset
                     .ok_or(Error::Invariant("RTTI base without layout"))?,
             ))
         })
+    }
+    pub(crate) fn lower_inheritance_edge(
+        &self,
+        class: EntityId,
+        index: usize,
+    ) -> Option<(EntityId, bool, Option<u64>)> {
+        self.entity(class)
+            .bases
+            .get(index)
+            .map(|edge| (edge.class, edge.is_virtual, edge.offset))
     }
     pub(crate) fn lower_inheritance_edges(
         &self,

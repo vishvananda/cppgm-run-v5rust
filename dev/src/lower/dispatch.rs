@@ -9,6 +9,16 @@ use crate::{
     sema::lowering::{EntityId, SlotId, TypeId},
 };
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn demand_virtual_call_table(&mut self) -> Result<(), Error> {
+        if let Some(class) = self.call_object_class
+            && !self.graph.lower_virtual_bases(class).is_empty()
+        {
+            self.symbols
+                .construction_table(self.builder.program(), class)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn store_vptr(&mut self, class: EntityId, source: TypeId) -> Result<(), Error> {
         if !self.graph.lower_polymorphic(class) {
             return Ok(());

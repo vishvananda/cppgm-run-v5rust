@@ -37,11 +37,13 @@ pub(super) struct Tables {
     signatures: HashMap<EntityId, SignatureId>,
     pure_virtual: Option<SymbolId>,
     views: HashMap<EntityId, Vec<Option<SymbolId>>>,
+    vtts: HashMap<EntityId, SymbolId>,
     offsets: HashMap<EntityId, Vec<u64>>,
     thunks: Vec<Thunk>,
     thunk_symbols: HashMap<ThunkKey, usize>,
     definition_classes: std::collections::HashSet<EntityId>,
     definition_targets: HashMap<EntityId, Vec<TableTarget>>,
+    own_entry_thunks: HashMap<(EntityId, usize), bool>,
     return_adjustments: HashMap<(EntityId, EntityId, EntityId), Option<ResultAdjustment>>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,10 +51,27 @@ struct ResultAdjustment {
     offset: i64,
     reference: bool,
 }
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
+struct ThisAdjustment {
+    offset: i64,
+    vcall: Option<i64>,
+    unused: bool,
+}
+impl ThisAdjustment {
+    fn fixed(offset: i64) -> Self {
+        Self {
+            offset,
+            ..Self::default()
+        }
+    }
+    fn is_zero(self) -> bool {
+        self.offset == 0 && self.vcall.is_none()
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct ThunkKey {
     entry: Entry,
-    adjustment: i64,
+    adjustment: ThisAdjustment,
     result: Option<ResultAdjustment>,
     internal: bool,
 }
@@ -60,7 +79,7 @@ struct ThunkKey {
 struct TableTarget {
     function: EntityId,
     kind: SlotKind,
-    adjustment: i64,
+    adjustment: ThisAdjustment,
     adjusted: EntityId,
     through: EntityId,
 }
@@ -69,7 +88,7 @@ struct Thunk {
     target: SymbolId,
     signature: SignatureId,
     this_index: usize,
-    adjustment: i64,
+    adjustment: ThisAdjustment,
     result: Option<ResultAdjustment>,
     family: Option<(
         EntityId,
@@ -81,6 +100,7 @@ struct Thunk {
 #[derive(Clone, Copy)]
 enum ClassObject {
     Table,
+    Vtt,
     Typeinfo,
     Name,
 }
@@ -167,6 +187,7 @@ impl Symbols<'_, '_> {
             &self.abi,
             match kind {
                 ClassObject::Table => Target::Vtable(node),
+                ClassObject::Vtt => Target::Vtt(node),
                 ClassObject::Typeinfo => Target::Typeinfo(node),
                 ClassObject::Name => Target::TypeinfoName(node),
             },
@@ -189,10 +210,13 @@ impl Symbols<'_, '_> {
         let (internal, local, key, scope) = self.graph.lower_virtual_class_identity(class)?;
         let prefix = match kind {
             ClassObject::Table => "__vtable_",
+            ClassObject::Vtt => "__vtt_",
             ClassObject::Typeinfo => "__rtti_",
             ClassObject::Name => "__typeinfo_name_",
         };
-        let spelling = if internal && local {
+        let spelling = if matches!(kind, ClassObject::Vtt) {
+            format!("{}____vtt", self.class_presentation(class)?)
+        } else if internal && local {
             format!("{prefix}type_{encoding}")
         } else {
             let mut components = Vec::new();
@@ -206,8 +230,15 @@ impl Symbols<'_, '_> {
             }
             components.reverse();
             let label = components.join("__");
-            if matches!(kind, ClassObject::Table) {
-                format!("{label}__vtable")
+            if matches!(kind, ClassObject::Table | ClassObject::Vtt) {
+                format!(
+                    "{label}{}",
+                    if matches!(kind, ClassObject::Vtt) {
+                        "____vtt"
+                    } else {
+                        "__vtable"
+                    }
+                )
             } else {
                 let key = match key {
                     Keyword::Class => "class",
@@ -276,29 +307,38 @@ impl Symbols<'_, '_> {
         }
         let typeinfo = self.typeinfo_symbol(program, class)?;
         let slots = self.graph.lower_virtual_slots(class)?;
-        let mut items = Vec::with_capacity(slots.len() + 2);
+        let mut items = self.table_rows(class, 0)?;
+        items.reserve(slots.len() + 2);
         items.push(integer(Type::I64, 0));
         items.push(address(typeinfo, 0));
-        for slot in slots {
+        let group = self.graph.lower_vtable_group(class);
+        for (index, slot) in slots.iter().enumerate() {
             let slot = slot.ok_or(crate::sema::Error::Invariant("unfilled virtual slot"))?;
-            items.push(address(
-                self.table_target(
-                    program,
-                    TableTarget {
-                        function: slot.function,
-                        kind: slot.kind,
-                        adjustment: 0,
-                        adjusted: slot.adjusted,
-                        through: class,
-                    },
-                    metadata.binding,
-                )?,
-                0,
-            ));
+            let (function, kind) = group.map_or((slot.function, slot.kind), |group| {
+                let entry = group.entries[index];
+                (entry.function, entry.kind)
+            });
+            let adjustment = self.entry_adjustment(class, 0, index)?;
+            items.push(self.table_target(
+                program,
+                TableTarget {
+                    function,
+                    kind,
+                    adjustment,
+                    adjusted: slot.adjusted,
+                    through: class,
+                },
+                metadata.binding,
+            )?);
         }
         define(program, symbol, metadata, items)?;
         if self.graph.lower_vtable_group(class).is_some() {
             self.define_views(program, class, symbol, metadata.binding)?;
+        }
+        if !self.graph.lower_virtual_bases(class).is_empty() {
+            self.vtt_symbol(program, class)?;
+        }
+        if self.graph.lower_vtable_group(class).is_some() {
             for (base, _) in self.graph.lower_inheritance_edges(class) {
                 self.construction_table(program, base)?;
             }
@@ -310,7 +350,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         target: TableTarget,
         binding: Option<Binding>,
-    ) -> Result<SymbolId, Error> {
+    ) -> Result<DataItem, Error> {
         let TableTarget {
             function,
             kind,
@@ -318,8 +358,11 @@ impl Symbols<'_, '_> {
             adjusted,
             through,
         } = target;
+        if adjustment.unused {
+            return Ok(integer(Type::Ptr, 0));
+        }
         if self.graph.lower_virtual_pure(function) {
-            return self.pure_virtual_symbol(program, function);
+            return Ok(address(self.pure_virtual_symbol(program, function)?, 0));
         }
         let entry = if matches!(kind, SlotKind::DeletingDestructor) {
             Entry::DestructorDeleting(function)
@@ -333,11 +376,12 @@ impl Symbols<'_, '_> {
             self.demand_entry(Entry::Function(function));
         }
         let result = self.result_adjustment(function, kind, adjusted, through)?;
-        if adjustment != 0 || result.is_some() {
-            self.thunk_symbol(program, entry, adjustment, result, binding, false)
+        let symbol = if !adjustment.is_zero() || result.is_some() {
+            self.thunk_symbol(program, entry, adjustment, result, binding, false)?
         } else {
-            self.entry_symbol(program, entry)
-        }
+            self.entry_symbol(program, entry)?
+        };
+        Ok(address(symbol, 0))
     }
     fn result_adjustment(
         &mut self,
@@ -414,25 +458,24 @@ impl Symbols<'_, '_> {
             let Some(symbol) = self.vtables.views[&class][index] else {
                 continue;
             };
-            let mut items = vec![
+            let mut items = self.table_rows(class, index)?;
+            items.extend([
                 integer(
                     Type::I64,
                     self.vtables.offsets[&class][index].wrapping_neg(),
                 ),
                 address(typeinfo, 0),
-            ];
+            ]);
             let own = self.graph.lower_virtual_slots(segment.class)?;
             for (slot, entry) in group.entries[segment.entries.clone()].iter().enumerate() {
-                let offset = self.vtables.offsets[&class][entry.overrider.index()]
-                    .wrapping_sub(self.vtables.offsets[&class][index]);
-                let offset = i64::from_ne_bytes(offset.to_ne_bytes());
-                items.push(address(
+                let adjustment = self.entry_adjustment(class, index, slot)?;
+                items.push(
                     self.table_target(
                         program,
                         TableTarget {
                             function: entry.function,
                             kind: entry.kind,
-                            adjustment: offset,
+                            adjustment,
                             adjusted: own[slot]
                                 .ok_or(crate::sema::Error::Invariant("unfilled view slot"))?
                                 .adjusted,
@@ -440,8 +483,7 @@ impl Symbols<'_, '_> {
                         },
                         binding,
                     )?,
-                    0,
-                ));
+                );
             }
             define(
                 program,
@@ -463,29 +505,31 @@ impl Symbols<'_, '_> {
     ) -> Result<(SymbolId, u64), Error> {
         let symbol = self.vtable_symbol(program, class)?;
         let Some(group) = self.graph.lower_vtable_group(class) else {
-            return Ok((symbol, 16));
+            return Ok((symbol, self.table_header_bytes(class, 0)?));
         };
         while segment != 0 && group.segments[segment].shared {
             segment = group.segments[segment].parent.index();
         }
         if segment == 0 {
-            return Ok((symbol, 16));
+            return Ok((symbol, self.table_header_bytes(class, 0)?));
         }
         if let Some(views) = self.vtables.views.get(&class) {
             return Ok((
                 views[segment].ok_or(crate::sema::Error::Invariant("missing view symbol"))?,
-                16,
+                self.table_header_bytes(class, segment)?,
             ));
         }
-        let mut point = 16 + u64::from(self.graph.lower_virtual_class(class)?.size) * 8;
+        let mut point = self.table_header_bytes(class, 0)?
+            + u64::from(self.graph.lower_virtual_class(class)?.size) * 8;
         for (index, part) in group.segments.iter().enumerate().skip(1) {
             if part.shared {
                 continue;
             }
             if index == segment {
-                return Ok((symbol, point + 16));
+                return Ok((symbol, point + self.table_header_bytes(class, index)?));
             }
-            point += 16 + u64::from(self.graph.lower_virtual_class(part.class)?.size) * 8;
+            point += self.table_header_bytes(class, index)?
+                + u64::from(self.graph.lower_virtual_class(part.class)?.size) * 8;
         }
         Err(crate::sema::Error::Invariant("unknown vtable segment").into())
     }
@@ -493,7 +537,7 @@ impl Symbols<'_, '_> {
         &mut self,
         program: &mut Program,
         entry: Entry,
-        adjustment: i64,
+        adjustment: ThisAdjustment,
         result: Option<ResultAdjustment>,
         binding: Option<Binding>,
         strong: bool,
@@ -526,8 +570,8 @@ impl Symbols<'_, '_> {
             Target::Thunk {
                 function,
                 this: CallOffset {
-                    offset: adjustment,
-                    vcall: None,
+                    offset: adjustment.offset,
+                    vcall: adjustment.vcall,
                 },
                 result: result.map(|r| CallOffset {
                     offset: r.offset,
@@ -539,14 +583,24 @@ impl Symbols<'_, '_> {
         )?;
         let object = program.names.intern_bytes(&object)?;
         let returned = result.map_or(0, |r| r.offset);
-        let spelling = format!(
+        let mut spelling = format!(
             "_{}__vtable_return_adjust__this_{}{}__return_{}{}",
             program.names.get(program.symbol(target).name),
-            if adjustment < 0 { "neg" } else { "pos" },
-            adjustment.unsigned_abs(),
+            if adjustment.offset < 0 { "neg" } else { "pos" },
+            adjustment.offset.unsigned_abs(),
             if returned < 0 { "neg" } else { "pos" },
             returned.unsigned_abs()
         );
+        if let Some(vcall) = adjustment.vcall {
+            use std::fmt::Write;
+            write!(
+                spelling,
+                "__vcall_{}{}",
+                if vcall < 0 { "n" } else { "p" },
+                vcall.unsigned_abs()
+            )
+            .map_err(|_| crate::sema::Error::Invariant("thunk spelling"))?;
+        }
         let symbol = self
             .table
             .allocate(program, &spelling, Some(object), internal)?;
@@ -612,8 +666,8 @@ impl Symbols<'_, '_> {
                     Target::Thunk {
                         function,
                         this: CallOffset {
-                            offset: adjustment,
-                            vcall: None,
+                            offset: adjustment.offset,
+                            vcall: adjustment.vcall,
                         },
                         result: None,
                     },
@@ -722,10 +776,21 @@ impl Symbols<'_, '_> {
             for index in 0..params.len() {
                 let mut argument = builder.parameter(index)?;
                 if index == thunk.this_index {
-                    let offset = builder.integer(u128::from_ne_bytes(
-                        i128::from(thunk.adjustment).to_ne_bytes(),
-                    ))?;
-                    argument = builder.generated(I::Index(Type::I8, None, argument, offset))?;
+                    if thunk.adjustment.offset != 0 || thunk.adjustment.vcall.is_none() {
+                        let offset = builder.integer(u128::from_ne_bytes(
+                            i128::from(thunk.adjustment.offset).to_ne_bytes(),
+                        ))?;
+                        argument = builder.generated(I::Index(Type::I8, None, argument, offset))?;
+                    }
+                    if let Some(vcall) = thunk.adjustment.vcall {
+                        let facts = crate::lowir::model::Facts::memory(false, true);
+                        let table = builder.generated(I::Load(facts, Type::Ptr, argument))?;
+                        let offset = builder
+                            .integer(u128::from_ne_bytes(i128::from(vcall).to_ne_bytes()))?;
+                        let row = builder.generated(I::Index(Type::I8, None, table, offset))?;
+                        let offset = builder.generated(I::Load(facts, Type::I64, row))?;
+                        argument = builder.generated(I::Index(Type::I8, None, argument, offset))?;
+                    }
                 }
                 arguments.push(argument);
             }
@@ -915,7 +980,7 @@ impl Symbols<'_, '_> {
             .graph
             .lower_rtti_bases(class)
             .collect::<Result<Vec<_>, _>>()?;
-        let single = matches!(bases.as_slice(), [(_, true, 0)]);
+        let single = matches!(bases.as_slice(), [(_, true, false, 0)]);
         let kind = self.rtti_vtable(
             program,
             if bases.is_empty() {
@@ -928,7 +993,7 @@ impl Symbols<'_, '_> {
         )?;
         let name = self.typeinfo_name(program, class)?;
         let mut targets = Vec::with_capacity(bases.len());
-        for &(base, _, _) in &bases {
+        for &(base, _, _, _) in &bases {
             targets.push(self.class_typeinfo(program, base, true)?);
         }
         let mut items = vec![address(kind, 16), address(name, 0)];
@@ -940,11 +1005,16 @@ impl Symbols<'_, '_> {
                 Type::I32,
                 u64::try_from(bases.len()).map_err(|_| crate::lowir::Error::Limit)?,
             ));
-            for (&(_, public, offset), target) in bases.iter().zip(targets) {
+            for (&(base, public, is_virtual, offset), target) in bases.iter().zip(targets) {
+                let offset = if is_virtual {
+                    u64::from_ne_bytes(self.vbase_row_offset(class, base)?.to_ne_bytes())
+                } else {
+                    offset
+                };
                 items.push(address(target, 0));
                 items.push(integer(
                     Type::I64,
-                    offset.wrapping_shl(8) | if public { 2 } else { 0 },
+                    offset.wrapping_shl(8) | if public { 2 } else { 0 } | u64::from(is_virtual),
                 ));
             }
         }
@@ -1080,8 +1150,8 @@ impl Symbols<'_, '_> {
     fn index_definition_thunks(&mut self, class: EntityId) -> Result<(), Error> {
         let graph = self.graph;
         let group = graph.lower_vtable_group(class);
-        let offsets = graph.lower_segment_offsets(class)?;
-        for (index, &offset) in offsets.iter().enumerate() {
+        let count = group.map_or(1, |group| group.segments.len());
+        for index in 0..count {
             if group.is_some_and(|g| g.segments[index].shared) {
                 continue;
             }
@@ -1089,11 +1159,11 @@ impl Symbols<'_, '_> {
             let own = graph.lower_virtual_slots(through)?;
             for (slot, entry) in own.iter().enumerate() {
                 let own = entry.ok_or(crate::sema::Error::Invariant("unfilled definition slot"))?;
-                let (function, kind, at) = if let Some(group) = group {
+                let (function, kind) = if let Some(group) = group {
                     let entry = group.entries[group.segments[index].entries.start + slot];
-                    (entry.function, entry.kind, offsets[entry.overrider.index()])
+                    (entry.function, entry.kind)
                 } else {
-                    (own.function, own.kind, 0)
+                    (own.function, own.kind)
                 };
                 if graph.lower_virtual_pure(function) {
                     continue;
@@ -1102,25 +1172,90 @@ impl Symbols<'_, '_> {
                 if facts.object != Some(class) {
                     continue;
                 }
-                let adjustment = i64::from_ne_bytes(at.wrapping_sub(offset).to_ne_bytes());
-                let result = self.result_adjustment(function, kind, own.adjusted, through)?;
-                if adjustment == 0 && result.is_none() {
-                    continue;
-                }
-                self.vtables
-                    .definition_targets
-                    .entry(function)
-                    .or_default()
-                    .push(TableTarget {
+                let adjustment = self.entry_adjustment(class, index, slot)?;
+                self.note_definition_target(TableTarget {
+                    function,
+                    kind,
+                    adjustment,
+                    adjusted: own.adjusted,
+                    through,
+                })?;
+                if let Some(level) = self.virtual_thunk_level(function, through, slot)? {
+                    let adjustment = ThisAdjustment {
+                        offset: 0,
+                        vcall: Some(self.vcall_row_offset(level, function)?),
+                        unused: false,
+                    };
+                    self.note_definition_target(TableTarget {
                         function,
                         kind,
                         adjustment,
                         adjusted: own.adjusted,
                         through,
-                    });
+                    })?;
+                }
             }
         }
         Ok(())
+    }
+    fn note_definition_target(&mut self, target: TableTarget) -> Result<(), Error> {
+        let result = self.result_adjustment(
+            target.function,
+            target.kind,
+            target.adjusted,
+            target.through,
+        )?;
+        if target.adjustment.unused || target.adjustment.is_zero() && result.is_none() {
+            return Ok(());
+        }
+        self.vtables
+            .definition_targets
+            .entry(target.function)
+            .or_default()
+            .push(target);
+        Ok(())
+    }
+    fn virtual_thunk_level(
+        &self,
+        function: EntityId,
+        table: EntityId,
+        slot: usize,
+    ) -> Result<Option<EntityId>, Error> {
+        let owner = self.graph.lower_function(function)?.object;
+        let mut below = true;
+        let mut link = Some(table);
+        while let Some(class) = link {
+            if Some(class) == owner {
+                below = false;
+                break;
+            }
+            link = self.graph.lower_virtual_class(class)?.primary;
+        }
+        let mut level = None;
+        link = Some(table);
+        while let Some(class) = link {
+            let facts = self.graph.lower_virtual_class(class)?;
+            if slot
+                >= usize::try_from(facts.size)
+                    .map_err(|_| crate::sema::Error::Limit("virtual slot limit"))?
+            {
+                break;
+            }
+            below |= Some(class) == owner;
+            let Some((next, shared)) = self.graph.lower_itanium_primary(class) else {
+                break;
+            };
+            if below
+                && shared
+                && slot
+                    < usize::try_from(self.graph.lower_virtual_class(next)?.size)
+                        .map_err(|_| crate::sema::Error::Limit("virtual slot limit"))?
+            {
+                level = Some(next);
+            }
+            link = Some(next);
+        }
+        Ok(level)
     }
     pub(in crate::lower) fn key_function_table(
         &mut self,
@@ -1251,10 +1386,11 @@ pub(crate) fn assert_hierarchy_flags(
     let mut table = super::SymbolTable::default();
     let symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
     assert_eq!(parameters.len(), 6);
-    for ((&ty, expected), slots) in parameters
+    for (((&ty, expected), slots), layout) in parameters
         .iter()
         .zip([0, 1, 2, 3, 3, 0])
-        .zip([true, true, false, false, false, false])
+        .zip([true, true, true, true, true, false])
+        .zip([true, false, true, true, true, false])
     {
         let TypeView::Pointer(pointee) = graph.lower_type(ty).unwrap() else {
             panic!("anchor pointer");
@@ -1263,13 +1399,216 @@ pub(crate) fn assert_hierarchy_flags(
             panic!("anchor class");
         };
         assert_eq!(symbols.inheritance_flags(class), expected);
-        assert!(graph.lower_class_layout(class).is_err());
-        // Repeat's ABI group demands its own and its external primary
-        // chain's slots; hierarchy_flags itself still demands no output.
+        assert_eq!(graph.lower_class_layout(class).is_ok(), layout);
+        // Class completion projects virtual primary pointers where they may
+        // share. This readonly hierarchy query adds no layout/slot demand.
         assert_eq!(graph.lower_virtual_slots(class).is_ok(), slots);
     }
     assert_eq!(symbols.pending.len(), 0);
     assert!(symbols.vtables.objects.is_empty());
     assert!(symbols.vtables.typeinfos.is_empty());
     assert!(program.globals().is_empty());
+}
+
+impl Symbols<'_, '_> {
+    fn table_header_bytes(&mut self, class: EntityId, segment: usize) -> Result<u64, Error> {
+        let rows = u64::try_from(self.table_row_count(class, segment)?)
+            .map_err(|_| crate::sema::Error::Limit("vtable row limit"))?;
+        rows.checked_mul(8)
+            .and_then(|bytes| bytes.checked_add(16))
+            .ok_or_else(|| crate::sema::Error::Limit("vtable row limit").into())
+    }
+    fn vtt_symbol(&mut self, program: &mut Program, class: EntityId) -> Result<SymbolId, Error> {
+        if let Some(&symbol) = self.vtables.vtts.get(&class) {
+            return Ok(symbol);
+        }
+        let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Vtt)?;
+        self.vtables.vtts.insert(class, symbol);
+        if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
+            return Ok(symbol);
+        }
+        let mut items = Vec::new();
+        let (table, point) = self.table_address(program, class, 0)?;
+        items.push(address(table, i64::from_ne_bytes(point.to_ne_bytes())));
+        for (base, shared) in self.graph.lower_inheritance_edges(class) {
+            if !shared && !self.graph.lower_virtual_bases(base).is_empty() {
+                return Err(Error::Missing("virtual-base construction table group"));
+            }
+        }
+        for segment in self.vtt_pointer_order(class)? {
+            let (table, point) = self.table_address(program, class, segment)?;
+            items.push(address(table, i64::from_ne_bytes(point.to_ne_bytes())));
+        }
+        for &(base, _) in self.graph.lower_virtual_bases(class) {
+            if !self.graph.lower_virtual_bases(base).is_empty() {
+                return Err(Error::Missing("virtual-base construction table group"));
+            }
+        }
+        metadata.flags |= 4;
+        define(program, symbol, metadata, items)?;
+        Ok(symbol)
+    }
+}
+
+impl Symbols<'_, '_> {
+    fn entry_adjustment(
+        &mut self,
+        class: EntityId,
+        segment: usize,
+        slot: usize,
+    ) -> Result<ThisAdjustment, Error> {
+        self.check_stack()?;
+        let Some(group) = self.graph.lower_vtable_group(class) else {
+            return Ok(ThisAdjustment::default());
+        };
+        let part = &group.segments[segment];
+        let entry = group.entries[part.entries.start + slot];
+        let offsets = self.graph.lower_segment_offsets(class)?;
+        let overrider_at = offsets[entry.overrider.index()];
+        let own = self.graph.lower_virtual_slots(part.class)?[slot]
+            .ok_or(crate::sema::Error::Invariant("unfilled adjustment slot"))?;
+        let (anchor, unused) = self.slot_anchor(class, segment, slot)?;
+        if unused {
+            return Ok(ThisAdjustment {
+                unused: true,
+                ..ThisAdjustment::default()
+            });
+        }
+        let (place, within) = if let Some(anchor) = anchor {
+            let place =
+                self.group_segment(class, self.virtual_base_offset(class, anchor)?, anchor)?;
+            (place, Some(place))
+        } else {
+            (
+                segment,
+                part.within.map(crate::sema::lowering::SegmentId::index),
+            )
+        };
+        let level_at = offsets[place];
+        if level_at == overrider_at
+            && !self.graph.lower_virtual_pure(entry.function)
+            && self
+                .result_adjustment(entry.function, entry.kind, own.adjusted, part.class)?
+                .is_none()
+        {
+            return Ok(ThisAdjustment::default());
+        }
+        if let Some(within) = within
+            && group.segments[entry.overrider.index()]
+                .within
+                .map(crate::sema::lowering::SegmentId::index)
+                != Some(within)
+        {
+            return Ok(ThisAdjustment {
+                offset: i64::from_ne_bytes(offsets[within].wrapping_sub(level_at).to_ne_bytes()),
+                vcall: Some(self.vcall_row_offset(group.segments[within].class, own.function)?),
+                unused: false,
+            });
+        }
+        Ok(ThisAdjustment::fixed(i64::from_ne_bytes(
+            overrider_at.wrapping_sub(level_at).to_ne_bytes(),
+        )))
+    }
+    fn slot_anchor(
+        &mut self,
+        class: EntityId,
+        segment: usize,
+        slot: usize,
+    ) -> Result<(Option<EntityId>, bool), Error> {
+        let graph = self.graph;
+        let group = graph
+            .lower_vtable_group(class)
+            .ok_or(crate::sema::Error::Invariant("anchor without group"))?;
+        let part = &group.segments[segment];
+        let entry = group.entries[part.entries.start + slot];
+        let mut chain = Vec::new();
+        let mut link = Some(part.class);
+        while let Some(class) = link {
+            let facts = graph.lower_virtual_class(class)?;
+            if slot
+                >= usize::try_from(facts.size)
+                    .map_err(|_| crate::sema::Error::Limit("virtual slot limit"))?
+            {
+                break;
+            }
+            chain.push(class);
+            link = facts.primary;
+        }
+        if chain.is_empty() {
+            return Ok((None, false));
+        }
+        let mut lost = vec![false; chain.len()];
+        let mut place = graph.lower_segment_offsets(class)?[segment];
+        for index in 1..chain.len() {
+            if graph
+                .lower_itanium_primary(chain[index - 1])
+                .is_some_and(|(_, shared)| shared)
+            {
+                let at = self.virtual_base_offset(class, chain[index])?;
+                lost[index] = at != place;
+                place = at;
+            }
+        }
+        let mut parent = chain.len() - 1;
+        let mut unused = false;
+        for (index, &class) in chain.iter().enumerate() {
+            let function = graph.lower_virtual_slots(class)?[slot]
+                .ok_or(crate::sema::Error::Invariant("unfilled anchor slot"))?
+                .function;
+            if graph.lower_function(function)?.object == Some(class) {
+                parent = index;
+                break;
+            }
+            unused |= lost.get(index + 1).copied().unwrap_or(false);
+        }
+        let adjusted = graph.lower_virtual_slots(part.class)?[slot]
+            .ok_or(crate::sema::Error::Invariant("unfilled result slot"))?
+            .adjusted;
+        if !graph.lower_virtual_pure(entry.function)
+            && matches!(entry.kind, SlotKind::Function)
+            && entry.function != adjusted
+            && self
+                .result_adjustment(entry.function, entry.kind, adjusted, part.class)?
+                .is_some()
+        {
+            if graph.lower_function(entry.function)?.object == Some(chain[parent])
+                && parent + 1 < chain.len()
+            {
+                parent += 1;
+            }
+            while parent + 1 < chain.len() && self.own_entry_thunk(chain[parent], slot)? {
+                unused |= lost[parent + 1];
+                parent += 1;
+            }
+        }
+        let mut anchor = None;
+        for index in 1..=parent {
+            if graph
+                .lower_itanium_primary(chain[index - 1])
+                .is_some_and(|(_, shared)| shared)
+            {
+                anchor = Some(chain[index]);
+            }
+        }
+        Ok((anchor, unused))
+    }
+    fn own_entry_thunk(&mut self, class: EntityId, slot: usize) -> Result<bool, Error> {
+        if let Some(&known) = self.vtables.own_entry_thunks.get(&(class, slot)) {
+            return Ok(known);
+        }
+        let own = self.graph.lower_virtual_slots(class)?[slot]
+            .ok_or(crate::sema::Error::Invariant("unfilled own thunk slot"))?;
+        let group = self.graph.lower_vtable_group(class);
+        let (function, kind) = group.map_or((own.function, own.kind), |group| {
+            let entry = group.entries[slot];
+            (entry.function, entry.kind)
+        });
+        let result = !self.graph.lower_virtual_pure(function)
+            && (self
+                .result_adjustment(function, kind, own.adjusted, class)?
+                .is_some()
+                || group.is_some() && !self.entry_adjustment(class, 0, slot)?.is_zero());
+        self.vtables.own_entry_thunks.insert((class, slot), result);
+        Ok(result)
+    }
 }

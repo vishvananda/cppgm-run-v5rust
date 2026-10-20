@@ -287,6 +287,7 @@ struct ClassConversion {
 }
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    call_object_effects: std::collections::HashMap<ast::ExprId, super::call_tables::ObjectEffect>,
     initializer_arrays: std::collections::HashMap<ast::ExprId, TypeId>,
     runtime_casts: std::collections::HashMap<ast::ExprId, super::dynamic_casts::RuntimeCast>,
     type_queries: std::collections::HashMap<ast::ExprId, super::type_queries::TypeQuery>,
@@ -317,6 +318,19 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn call_object_effect(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::call_tables::ObjectEffect> {
+        self.call_object_effects.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_call_object_effect(
+        &mut self,
+        id: ast::ExprId,
+        effect: super::call_tables::ObjectEffect,
+    ) {
+        self.call_object_effects.insert(self.root(id), effect);
+    }
     pub(super) fn initializer_array(&self, id: ast::ExprId) -> Option<TypeId> {
         self.initializer_arrays.get(&self.root(id)).copied()
     }
@@ -519,6 +533,7 @@ impl ExpressionFacts {
     }
     pub(super) fn set(&mut self, id: ast::ExprId, facts: ExprFacts) {
         let id = self.root(id);
+        self.call_object_effects.remove(&id);
         super::record(&mut self.records, id.index(), facts);
     }
     pub(super) fn share(&mut self, id: ast::ExprId, inner: ast::ExprId) {

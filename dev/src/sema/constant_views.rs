@@ -301,3 +301,67 @@ impl Graph {
             .map(|bits| bits != 0))
     }
 }
+
+// Shared by branch emission and call-table argument-effect demand. A literal
+// shortcut is narrower than general constant evaluation in the frozen course.
+impl Graph {
+    pub(crate) fn lower_literal_truth(
+        &self,
+        tree: &ast::Tree,
+        mut id: ast::ExprId,
+    ) -> Result<Option<bool>, Error> {
+        use super::lowering::{LiteralCall, StaticValue, TypeView};
+        use crate::{
+            lex::{PostTokenKind, vocabulary::Keyword},
+            types::FundamentalType as F,
+        };
+        loop {
+            id = without_parentheses(tree, id);
+            let facts = self.lower_expression(id)?;
+            let ty = self.lower_type(facts.ty)?;
+            let floating = matches!(
+                ty,
+                TypeView::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+            );
+            if let Some(shape) = self.lower_literal_call(id)? {
+                return Ok((!floating && !matches!(ty, TypeView::Array { .. }))
+                    .then_some(!matches!(shape, LiteralCall::String { .. })));
+            }
+            match tree.expressions.get(id).kind {
+                ExprKind::Keyword(Keyword::True) => return Ok(Some(true)),
+                ExprKind::Keyword(Keyword::False) => return Ok(Some(false)),
+                ExprKind::Id(_) if facts.folded.is_some() => {
+                    return Ok(facts.folded.map(|v| v != 0));
+                }
+                ExprKind::Id(_)
+                    if matches!(
+                        self.lower_evaluated_pointer(tree, id)?,
+                        Some(StaticValue::Integer(0))
+                    ) =>
+                {
+                    return Ok(Some(false));
+                }
+                ExprKind::Conditional {
+                    condition,
+                    then_expr,
+                    else_expr,
+                } if !matches!(ty, TypeView::Class(_)) => {
+                    let Some(selected) = self.lower_constant_conversion(tree, condition)? else {
+                        return Ok(None);
+                    };
+                    id = if selected { then_expr } else { else_expr };
+                }
+                ExprKind::Literal(literal) if !floating => {
+                    return Ok(match literal.kind {
+                        PostTokenKind::Literal { data, .. }
+                        | PostTokenKind::Character { data, .. } => {
+                            Some(data.as_slice().iter().any(|&b| b != 0))
+                        }
+                        _ => None,
+                    });
+                }
+                _ => return Ok(None),
+            }
+        }
+    }
+}
