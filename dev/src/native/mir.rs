@@ -22,10 +22,17 @@ pub(super) enum Op {
     FloatReturn(u128),
     Return(Option<R>),
     Trap,
+    Scalar(super::scalar_mir::ScalarOp),
 }
 pub(super) struct Instruction {
     pub(super) op: Op,
     pub(super) location: Option<DebugLocation>,
+}
+pub(super) struct Binding {
+    pub(super) name: NameId,
+    pub(super) ty: Type,
+    pub(super) offset: i32,
+    pub(super) parameter: bool,
 }
 pub(super) struct Function {
     symbol: SymbolId,
@@ -34,6 +41,11 @@ pub(super) struct Function {
     pub(super) layout: Layout,
     pub(super) instructions: Vec<Instruction>,
     pub(super) scratch_bytes: u32,
+    pub(super) stack_size: u32,
+    pub(super) preserve: u32,
+    pub(super) bindings: Vec<Binding>,
+    pub(super) spills: usize,
+    pub(super) homes: usize,
     pub(super) lowir_instructions: usize,
     pub(super) promoted_slots: usize,
     pub(super) dead_slots: usize,
@@ -52,6 +64,11 @@ impl Function {
             layout,
             instructions: Vec::new(),
             scratch_bytes: 0,
+            stack_size: 0,
+            preserve: 0,
+            bindings: Vec::new(),
+            spills: 0,
+            homes: 0,
             lowir_instructions: 0,
             promoted_slots: 0,
             dead_slots: 0,
@@ -92,11 +109,33 @@ impl Function {
         };
         writeln!(
             out,
-            "    return {result} -> {reg}\n  frame\n    stack_size {}\n    scratch_bytes {}\n    frame_pointer keep\n    epilogues shared\n\n  block ^{}",
-            self.scratch_bytes,
-            self.scratch_bytes,
-            program.names.get(self.block)
+            "    return {result} -> {reg}\n  frame\n    stack_size {}\n    scratch_bytes {}\n    frame_pointer keep\n    epilogues shared",
+            self.stack_size, self.scratch_bytes
         )?;
+        if self.preserve != 0 {
+            write!(out, "    preserve")?;
+            for r in super::placement::SAVED {
+                if self.preserve & (1 << r.code()) != 0 {
+                    write!(out, " {}", r.spelling())?;
+                }
+            }
+            writeln!(out)?;
+        }
+        for binding in &self.bindings {
+            writeln!(
+                out,
+                "    {} %{} -> [rbp{:+}] : {}",
+                if binding.parameter {
+                    "param-slot"
+                } else {
+                    "temp"
+                },
+                program.names.get(binding.name),
+                binding.offset,
+                binding.ty
+            )?;
+        }
+        writeln!(out, "\n  block ^{}", program.names.get(self.block))?;
         let mut floating = FloatingScanner::default();
         for instruction in &self.instructions {
             match instruction.op {
@@ -137,6 +176,10 @@ impl Function {
                     }
                 }
                 Op::Trap => write!(out, "    trap")?,
+                Op::Scalar(op) => {
+                    write!(out, "    ")?;
+                    op.write(program, out)?;
+                }
             }
             if let Some(location) = instruction.location {
                 out.write_all(b" !dbg(")?;
@@ -158,11 +201,26 @@ impl Function {
         let mut a = Assembler::default();
         a.push(R::RBP);
         a.mov_rr(R::RBP, R::RSP)?;
-        if self.scratch_bytes != 0 {
-            a.alu_ri(5, Rm::Reg(R::RSP), i64::from(self.scratch_bytes), 8)?;
+        let saved = self.preserve.count_ones() * 8;
+        if self.stack_size != saved {
+            a.alu_ri(5, Rm::Reg(R::RSP), i64::from(self.stack_size - saved), 8)?;
+        }
+        for r in super::placement::SAVED.into_iter().rev() {
+            if self.preserve & (1 << r.code()) != 0 {
+                a.push(r);
+            }
         }
         let mut returns = 0;
-        for instruction in &self.instructions {
+        let mut carries = super::frame_carries::Carries::new(&self.bindings);
+        let mut carried_reloads = 0;
+        for (index, instruction) in self.instructions.iter().enumerate() {
+            let replacement = carries.replacement(&instruction.op);
+            let pending = carries.track(&self.instructions, index);
+            if let Some((dst, source)) = replacement {
+                a.mov_rr(dst, source)?;
+                carried_reloads += 1;
+                continue;
+            }
             match instruction.op {
                 Op::Move(reg, bits) => a.mov_ri(reg, low_word(bits)?)?,
                 Op::SymbolMove(reg, symbol) => {
@@ -192,15 +250,25 @@ impl Function {
                     }
                     returns += 1;
                 }
+                Op::Scalar(op) => op.emit(&mut a)?,
                 Op::Trap => {
                     a.byte(0x0f);
                     a.byte(0x0b);
                 }
             }
+            if let Some(source) = pending {
+                a.mov_rr(R::R11, source)?;
+            }
+        }
+        for r in super::placement::SAVED {
+            if self.preserve & (1 << r.code()) != 0 {
+                a.pop(r);
+            }
         }
         a.byte(0xc9);
         a.ret();
         let emission = Emission {
+            carried_reloads,
             returns,
             fixups: a.fixups.len(),
             code_bytes: a.code.len(),
@@ -209,7 +277,7 @@ impl Function {
         Ok(emission)
     }
 }
-fn low_word(bits: u128) -> Result<i64, Error> {
+pub(super) fn low_word(bits: u128) -> Result<i64, Error> {
     Ok(i64::from_le_bytes(
         u64::try_from(bits & u128::from(u64::MAX))
             .map_err(|_| Error::Limit)?
@@ -231,6 +299,7 @@ pub(super) struct Emission {
     pub(super) returns: usize,
     pub(super) fixups: usize,
     pub(super) code_bytes: usize,
+    pub(super) carried_reloads: usize,
 }
 fn constant(image: &mut Image, kind: FloatKind, bits: u128) -> Result<Rm, Error> {
     let mut scanner = FloatingScanner::default();

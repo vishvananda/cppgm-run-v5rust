@@ -1,94 +1,25 @@
-//! Typed constant aliases and terminal-value selection for one function. See NOTICE.
+//! Native function driver over typed analysis, placement and instruction selection. See NOTICE.
+pub(super) use super::value_facts::alias_compatible;
 use super::{
     abi,
     mir::{Function as MirFunction, Instruction, Op},
+    placement::Placement,
+    scalar_selection::Selection,
     slot_analysis::{self, Slot},
+    value_facts::{Alias, Facts, normalize},
     x86::Register as R,
 };
 use crate::{
     lowir::{
         Error,
         literals::{self, Constant, FloatKind},
-        model::{
-            Arity, Body, DebugLocation, Function, InstructionKind as I, Program, SymbolId, Value,
-        },
+        model::{Arity, DebugLocation, Function, InstructionKind as I, Program, SymbolId, Value},
         vocabulary::Type,
     },
     types::floating::FloatingScanner,
 };
-#[derive(Clone, Copy)]
-enum Alias {
-    Constant(Constant),
-    Parameter(usize),
-    Symbol(SymbolId),
-}
-
 pub(super) fn unsupported() -> Error {
     Error::NotImplemented("native instruction selection and placement")
-}
-pub(super) fn alias_compatible(to: Type, from: Type) -> bool {
-    if to == from {
-        return true;
-    }
-    if !matches!(to, Type::Ptr) && to.bits() == 0
-        || !matches!(from, Type::Ptr) && from.bits() == 0
-        || matches!(to, Type::I128)
-        || matches!(from, Type::I128)
-    {
-        return false;
-    }
-    let tb = if to == Type::Ptr { 64 } else { to.bits() };
-    let fb = if from == Type::Ptr { 64 } else { from.bits() };
-    from == Type::I1
-        || tb == 64
-        || tb > fb
-            && (!matches!(from, Type::I8 | Type::I16 | Type::I32)
-                || matches!(to, Type::I8 | Type::I16 | Type::I32))
-}
-fn normalize(bits: u128, ty: Type) -> u128 {
-    if ty == Type::I128 {
-        return bits;
-    }
-    let width = if ty == Type::Ptr { 64 } else { ty.bits() };
-    if width == 0 {
-        return bits;
-    }
-    let mask = (1_u128 << width) - 1;
-    let low = bits & mask;
-    if matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64) && low & (1 << (width - 1)) != 0 {
-        low | !mask
-    } else {
-        low
-    }
-}
-fn resolve(body: &Body, aliases: &[Option<Alias>], value: Value) -> Result<Alias, Error> {
-    match value {
-        Value::Temp(temp) => aliases[temp.index()].ok_or_else(unsupported),
-        Value::Integer(id) => Ok(Alias::Constant(Constant::Integer(body.literal(id)))),
-        Value::Float(id, kind) => Ok(Alias::Constant(Constant::Float(kind, body.literal(id)))),
-        Value::Symbol(id) => Ok(Alias::Symbol(id)),
-        Value::Slot(_) => Err(unsupported()),
-    }
-}
-fn copy_alias(
-    body: &Body,
-    aliases: &[Option<Alias>],
-    ty: Type,
-    value: Value,
-) -> Result<Alias, Error> {
-    let source = resolve(body, aliases, value)?;
-    match source {
-        Alias::Constant(Constant::Integer(bits))
-            if (ty.bits() != 0 || ty == Type::Ptr) && ty != Type::I128 =>
-        {
-            Ok(Alias::Constant(Constant::Integer(normalize(bits, ty))))
-        }
-        Alias::Constant(Constant::Float(..)) if ty.float_rank() != 0 => Ok(source),
-        Alias::Parameter(_) if matches!(value,Value::Temp(temp) if body.temp(temp).ty.is_some_and(|from|alias_compatible(ty,from))) => {
-            Ok(source)
-        }
-        _ => Err(unsupported()),
-    }
 }
 pub(super) fn select(
     program: &Program,
@@ -114,6 +45,7 @@ pub(super) fn select(
     if slots.iter().any(|s| matches!(s, Slot::Memory)) {
         return Err(unsupported());
     }
+    let facts = Facts::analyze(body, &slots)?;
     let mut mir = MirFunction::new(
         symbol,
         function.signature,
@@ -126,95 +58,102 @@ pub(super) fn select(
         .iter()
         .filter(|s| matches!(s, Slot::Promoted(_)))
         .count();
-    let mut aliases = vec![None; body.temps().len()];
-    for (index, alias) in aliases.iter_mut().take(body.parameter_count).enumerate() {
-        *alias = Some(Alias::Parameter(index));
-    }
+    let vector_boundary = signature
+        .parameters
+        .iter()
+        .zip(&mir.layout.arguments)
+        .any(|(p, arg)| {
+            matches!(p.ty, Type::F32 | Type::F64)
+                && mir
+                    .layout
+                    .parts(arg)
+                    .iter()
+                    .any(|part| part.register.is_some())
+        });
+    let gprs=signature.parameters.iter().zip(&mir.layout.arguments).filter(|(p,_)|!matches!(p.ty,Type::Object{..}|Type::I128)||p.classes.is_none()).filter(|(_,arg)|matches!(mir.layout.parts(arg),[part] if part.register.is_some_and(|r|r.code()<16))).count();
+    let placement = Placement::new(
+        body,
+        vector_boundary,
+        if vector_boundary && gprs >= 2 {
+            1 << R::R8.code()
+        } else {
+            0
+        },
+    );
+    let mut selection = Selection {
+        body,
+        facts,
+        placement,
+        mir,
+        location: None,
+        pos: 0,
+    };
+    selection
+        .placement
+        .entry(body, &selection.facts, &mut selection.mir)?;
     let mut floating = signature.result.float_rank() != 0
         || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
     let mut scanner = FloatingScanner::default();
-    for &id in &body.block(body.layout[0]).instructions {
+    for (pos, &id) in body.block(body.layout[0]).instructions.iter().enumerate() {
         let inst = body.instruction(id);
-        let location = body.location(inst);
-        body.visit_values(&inst.kind, |value| {
-            floating |= matches!(value, Value::Float(..));
-        });
-        let alias = match inst.kind {
-            I::Const(ty, value) => {
-                floating |= ty.float_rank() != 0;
-                let value = resolve(body, &aliases, value)?;
-                Some(match value {
-                    Alias::Constant(Constant::Integer(bits))
-                        if ty.bits() != 0 && ty != Type::I128 =>
-                    {
-                        Alias::Constant(Constant::Integer(normalize(bits, ty)))
-                    }
-                    _ => value,
-                })
+        floating |= match inst.kind {
+            I::Store(_, ty, _, _) => ty,
+            _ => inst.kind.result_type(),
+        }
+        .float_rank()
+            != 0;
+        body.visit_values(&inst.kind, |v| floating |= matches!(v, Value::Float(..)));
+        if !selection.facts.active[pos] {
+            continue;
+        }
+        selection.pos = pos;
+        selection.location = body.location(inst);
+        match inst.kind {
+            I::Copy(ty, value) => selection.copy(inst.result.ok_or(Error::Limit)?, ty, value)?,
+            I::Binary(op, _, ty, a, b) => {
+                selection.binary(inst.result.ok_or(Error::Limit)?, op, ty, a, b)?;
             }
-            I::Copy(ty, value) => {
-                floating |= ty.float_rank() != 0;
-                Some(copy_alias(body, &aliases, ty, value)?)
-            }
-            I::Store(_, ty, _, Value::Slot(slot))
-                if matches!(slots[slot.index()], Slot::Dead | Slot::Promoted(_)) =>
-            {
-                floating |= ty.float_rank() != 0;
-                None
-            }
-            I::Load(_, ty, Value::Slot(slot)) => {
-                floating |= ty.float_rank() != 0;
-                let Slot::Promoted(value) = slots[slot.index()] else {
-                    return Err(unsupported());
-                };
-                let value = resolve(body, &aliases, value)?;
-                Some(match value {
-                    Alias::Constant(Constant::Integer(bits))
-                        if ty.bits() != 0 && ty != Type::I128 =>
-                    {
-                        Alias::Constant(Constant::Integer(normalize(bits, ty)))
-                    }
-                    _ => value,
-                })
+            I::Unary(op, ty, value) => {
+                selection.unary(inst.result.ok_or(Error::Limit)?, op, ty, value)?;
             }
             I::Return(ty, value) => {
-                floating |= ty.float_rank() != 0;
-                emit_return(&mut mir, body, &aliases, ty, value, location, &mut scanner)?;
-                None
+                emit_return(&mut selection, ty, value, body.location(inst), &mut scanner)?;
             }
-            I::Unreachable => {
-                mir.instructions.push(Instruction {
-                    op: Op::Trap,
-                    location,
-                });
-                None
-            }
+            I::Unreachable => selection.mir.instructions.push(Instruction {
+                op: Op::Trap,
+                location: selection.location,
+            }),
             _ => return Err(unsupported()),
-        };
-        if let Some(result) = inst.result {
-            aliases[result.index()] = alias;
         }
+        selection.placement.release(&selection.facts, pos);
+        selection.placement.retire();
     }
-    mir.scratch_bytes = if floating { 48 } else { 0 };
-    Ok(mir)
+    selection.mir.scratch_bytes = if floating { 48 } else { 0 };
+    selection.placement.finish_frame(&mut selection.mir)?;
+    Ok(selection.mir)
 }
 fn emit_return(
-    mir: &mut MirFunction,
-    body: &Body,
-    aliases: &[Option<Alias>],
+    selection: &mut Selection<'_>,
     ty: Type,
     value: Option<Value>,
     location: Option<DebugLocation>,
     scanner: &mut FloatingScanner,
 ) -> Result<(), Error> {
-    let mut emit = |op| mir.instructions.push(Instruction { op, location });
     let Some(value) = value else {
+        let mir = &mut selection.mir;
+        let mut emit = |op| mir.instructions.push(Instruction { op, location });
         emit(Op::Return(None));
         return Ok(());
     };
-    let source = resolve(body, aliases, value)?;
+    let source = selection.facts.resolve(selection.body, value)?;
     match source {
         Alias::Constant(value) => {
+            let mut emit = |op| {
+                selection
+                    .mir
+                    .instructions
+                    .push(Instruction { op, location });
+            };
             if let Some(kind) = FloatKind::from_type(ty) {
                 let bits = literals::native_float(scanner, value, kind)?;
                 if kind == FloatKind::F80 {
@@ -248,30 +187,33 @@ fn emit_return(
                 }
             }
         }
-        Alias::Parameter(index) => {
-            let own = body
-                .temps()
-                .get(index)
-                .and_then(|t| t.ty)
-                .ok_or(Error::Limit)?;
-            if own.float_rank() != 0 || matches!(own, Type::Object { .. } | Type::I128) {
+        Alias::Temporary(temp) => {
+            let own = selection.body.temp(temp).ty.ok_or(Error::Limit)?;
+            if own.float_rank() != 0
+                || matches!(own, Type::Object { .. } | Type::I128)
+                || matches!(ty, Type::I128 | Type::F80)
+            {
                 return Err(unsupported());
             }
-            let argument = mir.layout.arguments.get(index).ok_or(Error::Limit)?;
-            let [part] = mir.layout.parts(argument) else {
-                return Err(unsupported());
+            let source = selection.operand(value, ty, R::R10)?;
+            let reg = if let Some(reg) = source.register() {
+                reg
+            } else {
+                selection.load(R::RAX, source, ty);
+                R::RAX
             };
-            let reg = part.register.ok_or_else(unsupported)?;
-            if matches!(ty, Type::I128 | Type::F80) {
-                return Err(unsupported());
-            }
-            // The course ABI keeps a scalar parameter in its incoming register.
-            mir.instructions.push(Instruction {
+            selection.mir.instructions.push(Instruction {
                 op: Op::Return(Some(reg)),
                 location,
             });
         }
         Alias::Symbol(symbol) => {
+            let mut emit = |op| {
+                selection
+                    .mir
+                    .instructions
+                    .push(Instruction { op, location });
+            };
             if ty == Type::I128 || ty.float_rank() != 0 {
                 return Err(unsupported());
             }
@@ -285,7 +227,144 @@ fn emit_return(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lowir::builder::FunctionBuilder;
+    use crate::lowir::{builder::FunctionBuilder, vocabulary::Binary};
+
+    fn chosen(program: &Program, index: usize) -> Result<MirFunction, Error> {
+        let function = &program.functions()[index];
+        select(
+            program,
+            program.find_symbol(function.name).ok_or(Error::Limit)?,
+            function,
+            0,
+        )
+    }
+    #[test]
+    fn backward_dead_elision_does_not_keep_parameter_registers_live() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder =
+            FunctionBuilder::new(&mut program, "dead", &[("p", Type::I64)], Type::I64)?;
+        builder.block("entry")?;
+        let p = builder.parameter(0)?;
+        let one = builder.integer(1)?;
+        let a = builder.value(
+            I::Binary(
+                Binary::Add,
+                crate::lowir::model::Facts::default(),
+                Type::I64,
+                p,
+                one,
+            ),
+            "a",
+        )?;
+        builder.value(
+            I::Unary(crate::lowir::vocabulary::Unary::Neg, Type::I64, a),
+            "unused",
+        )?;
+        builder.effect(I::Return(Type::I64, Some(one)))?;
+        builder.finish()?;
+        let selected = chosen(&program, 0)?;
+        assert_eq!(selected.instructions.len(), 2);
+        assert_eq!(selected.homes, 0);
+        assert_eq!(selected.preserve, 0);
+        Ok(())
+    }
+    #[test]
+    fn a_parameter_survives_until_its_actual_last_use() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder =
+            FunctionBuilder::new(&mut program, "reuse", &[("p", Type::I64)], Type::I64)?;
+        builder.block("entry")?;
+        let p = builder.parameter(0)?;
+        let one = builder.integer(1)?;
+        let a = builder.value(
+            I::Binary(
+                Binary::Add,
+                crate::lowir::model::Facts::default(),
+                Type::I64,
+                p,
+                one,
+            ),
+            "a",
+        )?;
+        let b = builder.value(
+            I::Binary(
+                Binary::Add,
+                crate::lowir::model::Facts::default(),
+                Type::I64,
+                p,
+                a,
+            ),
+            "b",
+        )?;
+        builder.effect(I::Return(Type::I64, Some(b)))?;
+        builder.finish()?;
+        let selected = chosen(&program, 0)?;
+        let regs: Vec<_> = selected
+            .instructions
+            .iter()
+            .filter_map(|inst| {
+                if let Op::Scalar(super::super::scalar_mir::ScalarOp::Binary(_, _, r, _)) = inst.op
+                {
+                    Some(r)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(regs, [R::R8, R::RDI]);
+        Ok(())
+    }
+    #[test]
+    fn spill_and_preservation_state_ends_with_its_function() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder =
+            FunctionBuilder::new(&mut program, "pressure", &[("p", Type::I64)], Type::I64)?;
+        builder.block("entry")?;
+        let p = builder.parameter(0)?;
+        let one = builder.integer(1)?;
+        let mut values = Vec::new();
+        for i in 0..20 {
+            values.push(builder.value(
+                I::Binary(
+                    Binary::Add,
+                    crate::lowir::model::Facts::default(),
+                    Type::I64,
+                    p,
+                    one,
+                ),
+                &format!("v{i}"),
+            )?);
+        }
+        let mut sum = values[0];
+        for (i, &v) in values.iter().enumerate().skip(1) {
+            sum = builder.value(
+                I::Binary(
+                    Binary::Add,
+                    crate::lowir::model::Facts::default(),
+                    Type::I64,
+                    sum,
+                    v,
+                ),
+                &format!("s{i}"),
+            )?;
+        }
+        builder.effect(I::Return(Type::I64, Some(sum)))?;
+        builder.finish()?;
+        let mut builder = FunctionBuilder::new(&mut program, "plain", &[], Type::I64)?;
+        builder.block("entry")?;
+        let zero = builder.integer(0)?;
+        builder.effect(I::Return(Type::I64, Some(zero)))?;
+        builder.finish()?;
+        let large = chosen(&program, 0)?;
+        let small = chosen(&program, 1)?;
+        assert!(large.spills > 0);
+        assert_eq!(large.preserve.count_ones(), 5);
+        assert!(large.stack_size >= u32::try_from(large.homes).map_err(|_| Error::Limit)? * 8);
+        assert_eq!(small.stack_size, 0);
+        assert_eq!(small.preserve, 0);
+        assert_eq!(small.homes, 0);
+        Ok(())
+    }
     #[test]
     fn wide_return_words_keep_their_zero_extended_immediate_facts() -> Result<(), Error> {
         let mut program = Program::default();

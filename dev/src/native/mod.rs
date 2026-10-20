@@ -2,13 +2,18 @@
 mod abi;
 mod builtins;
 mod executable;
+mod frame_carries;
 mod global_data;
 mod image;
 mod mir;
 mod mir_globals;
+mod placement;
 mod runtime;
+mod scalar_mir;
+mod scalar_selection;
 mod slot_analysis;
 mod startup;
+mod value_facts;
 mod value_selection;
 mod x86;
 
@@ -107,6 +112,8 @@ pub(crate) struct Statistics {
     select_ms: f64,
     encode_ms: f64,
     functions: usize,
+    spills: usize,
+    homes: usize,
     lowir_instructions: usize,
     mir_instructions: usize,
     dead_slots: usize,
@@ -114,11 +121,14 @@ pub(crate) struct Statistics {
     native_returns: usize,
     fixups: usize,
     code_bytes: usize,
+    carried_reloads: usize,
 }
 impl Statistics {
     fn selected(&mut self, function: &mir::Function) -> Result<(), Error> {
         for (counter, increment) in [
             (&mut self.functions, 1),
+            (&mut self.spills, function.spills),
+            (&mut self.homes, function.homes),
             (&mut self.lowir_instructions, function.lowir_instructions),
             (&mut self.mir_instructions, function.instructions.len()),
             (&mut self.dead_slots, function.dead_slots),
@@ -133,24 +143,28 @@ impl Statistics {
             (&mut self.native_returns, emission.returns),
             (&mut self.fixups, emission.fixups),
             (&mut self.code_bytes, emission.code_bytes),
+            (&mut self.carried_reloads, emission.carried_reloads),
         ] {
             *counter = counter.checked_add(increment).ok_or(Error::Limit)?;
         }
         Ok(())
     }
     pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
-        // Terminal selection uses aliases and local-slot elision; no spills,
-        // cross-block placement or branch-layout passes run on these paths.
+        // Block-local placement reports its actual homes and spills. Cross-block
+        // allocation and branch-layout passes remain outside supported paths.
         writeln!(
             out,
-            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills=0 homes=0 lazy_addresses=0 folded_loads=0 fused_compares=0 promoted_slots={} dead_slots={} global_registers=0 liveness_steps=0 hull_fallbacks=0 edge_blocks=0 threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies=0 jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames=0 dead_frame_stores=0 native_returns={} short_branches=0 long_branches=0 fixups={} scratch_carried_reloads=0 code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
+            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses=0 folded_loads=0 fused_compares=0 promoted_slots={} dead_slots={} global_registers=0 liveness_steps=0 hull_fallbacks=0 edge_blocks=0 threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies=0 jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames=0 dead_frame_stores=0 native_returns={} short_branches=0 long_branches=0 fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
             self.functions,
             self.lowir_instructions,
             self.mir_instructions,
+            self.spills,
+            self.homes,
             self.promoted_slots,
             self.dead_slots,
             self.native_returns,
             self.fixups,
+            self.carried_reloads,
             self.code_bytes,
             self.select_ms,
             self.encode_ms,
