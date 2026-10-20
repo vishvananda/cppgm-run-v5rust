@@ -10,9 +10,15 @@ use crate::{
         model::{Facts, InstructionKind as I, Value},
         vocabulary::{Compare, Type},
     },
-    sema::lowering::TypeId,
+    sema::lowering::{BaseProjection, TypeId},
     syntax::ast::{self, ExprKind},
 };
+#[derive(Clone, Copy)]
+pub(super) enum BaseAccess {
+    Table,
+    Complete,
+    Nullable,
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn nonnull_pointer(&self, id: ast::ExprId) -> bool {
         match self.tree.expressions.get(self.without_parentheses(id)).kind {
@@ -21,12 +27,101 @@ impl Function<'_, '_, '_, '_> {
             _ => false,
         }
     }
+    pub(super) fn member_base_access(
+        &self,
+        id: ast::ExprId,
+        arrow: bool,
+    ) -> Result<BaseAccess, Error> {
+        let id = self.without_parentheses(id);
+        let facts = self.graph.lower_expression(id)?;
+        if arrow {
+            return Ok(
+                if (self.graph.lower_arrow_count(id) != 0
+                    || matches!(
+                        self.graph.lower_type(facts.ty)?,
+                        crate::sema::lowering::TypeView::Pointer(_)
+                    ))
+                    && !self.nonnull_pointer(id)
+                {
+                    BaseAccess::Nullable
+                } else {
+                    BaseAccess::Table
+                },
+            );
+        }
+        if !matches!(
+            self.graph.lower_type(facts.ty)?,
+            crate::sema::lowering::TypeView::Class(_)
+        ) {
+            return Ok(BaseAccess::Table);
+        }
+        let complete = if let ExprKind::Id(name) = self.tree.expressions.get(id).kind {
+            self.graph.lower_object_source(id)?.is_none()
+                && self.graph.lower_named_object(name)?
+                && matches!(
+                    self.graph
+                        .lower_type(self.graph.lower_entity_type(self.graph.lower_name(name)?)?)?,
+                    crate::sema::lowering::TypeView::Class(_)
+                )
+        } else {
+            !facts.is_place
+        };
+        Ok(if complete {
+            BaseAccess::Complete
+        } else {
+            BaseAccess::Table
+        })
+    }
     pub(super) fn base_projection(
         &mut self,
         object: Value,
         source: TypeId,
-        offset: u64,
+        offset: impl Into<BaseProjection>,
     ) -> Result<Value, Error> {
+        self.project_base_access(object, source, offset.into(), BaseAccess::Table)
+    }
+    pub(super) fn project_base_access(
+        &mut self,
+        object: Value,
+        source: TypeId,
+        projection: BaseProjection,
+        access: BaseAccess,
+    ) -> Result<Value, Error> {
+        let offset = match projection {
+            BaseProjection::Fixed(offset) => offset,
+            BaseProjection::Route { from, to } => {
+                let route = self.symbols.base_route(from, to)?;
+                let Some(base) = route.via else {
+                    return self.base_projection(object, source, route.offset);
+                };
+                if matches!(access, BaseAccess::Complete) {
+                    let offset = self
+                        .graph
+                        .lower_virtual_bases(from)
+                        .iter()
+                        .find(|&&(class, _)| class == base)
+                        .ok_or(crate::sema::Error::Invariant(
+                            "complete object without virtual base",
+                        ))?
+                        .1;
+                    return self.base_projection(object, source, offset.wrapping_add(route.offset));
+                }
+                if matches!(access, BaseAccess::Nullable) {
+                    let value = RValue {
+                        value: object,
+                        ty: Type::Ptr,
+                        source,
+                        literal: false,
+                        bits: None,
+                    };
+                    return Ok(self
+                        .adjust_base_pointer(value, source, projection, true)?
+                        .value);
+                }
+                let object = self.virtual_base_address(object, source, from, base)?;
+                return self.base_projection(object, source, route.offset);
+            }
+        };
         let offset = self.builder.integer(u128::from_le_bytes(
             i128::from(i64::from_le_bytes(offset.to_le_bytes())).to_le_bytes(),
         ))?;
@@ -40,21 +135,42 @@ impl Function<'_, '_, '_, '_> {
         mut object: Value,
         source: TypeId,
     ) -> Result<Value, Error> {
-        for offset in self
+        let mut access = match self.tree.expressions.get(self.without_parentheses(id)).kind {
+            ExprKind::Member { base, op, .. } => {
+                self.member_base_access(base, op.token.as_punctuator() == Some(Punctuator::Arrow))?
+            }
+            _ => BaseAccess::Table,
+        };
+        for projection in self
             .graph
-            .lower_member_base_offsets(id)?
+            .lower_member_projections(id)?
             .into_iter()
             .flatten()
         {
-            object = self.base_projection(object, source, offset)?;
+            object = self.project_base_access(object, source, projection, access)?;
+            access = BaseAccess::Table;
         }
         Ok(object)
+    }
+    pub(super) fn convert_base_pointer(
+        &mut self,
+        value: RValue,
+        target: TypeId,
+        delta: BaseProjection,
+        null_test: bool,
+    ) -> Result<RValue, Error> {
+        if null_test && matches!(delta, BaseProjection::Route { .. }) {
+            // pointer_to_base reserves its ordinary conversion slot before
+            // the virtual route allocates its own null-tested result.
+            self.generated_slot("basecast", Type::Ptr)?;
+        }
+        self.adjust_base_pointer(value, target, delta, null_test)
     }
     pub(super) fn adjust_base_pointer(
         &mut self,
         value: RValue,
         target: TypeId,
-        delta: u64,
+        delta: BaseProjection,
         null_test: bool,
     ) -> Result<RValue, Error> {
         if !null_test {
@@ -90,6 +206,6 @@ impl Function<'_, '_, '_, '_> {
         ))?;
         self.jump(end)?;
         self.place(end)?;
-        self.read_place(slot, target)
+        self.emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), target)
     }
 }

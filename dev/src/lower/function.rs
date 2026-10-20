@@ -811,7 +811,7 @@ impl Function<'_, '_, '_, '_> {
             let expr = self.initializer_expression(initializer)?;
             let saved = self.empty_value_zeroing;
             self.empty_value_zeroing = if self.graph.lower_function_conversion(expr)?.is_some()
-                || self.graph.lower_base_conversion_offset(expr)?.is_none()
+                || self.graph.lower_base_conversion(expr)?.is_none()
             {
                 super::construction::EmptyValueZeroing::Omit
             } else {

@@ -14,6 +14,8 @@ mod runtime_types;
 mod specialization_labels;
 #[path = "type_information.rs"]
 mod type_information;
+#[path = "virtual_bases.rs"]
+mod virtual_bases;
 #[path = "vtables.rs"]
 mod vtables;
 use crate::{
@@ -158,6 +160,7 @@ pub(super) struct Symbols<'a, 'source> {
     numeric_scanner: crate::types::floating::FloatingScanner,
     pub data: super::data::Objects,
     vtables: vtables::Tables,
+    base_routes: virtual_bases::Routes,
     cast_hints: runtime_types::CastHints,
     type_information: type_information::Information,
     exception_information: exception_information::Information,
@@ -235,6 +238,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             objects: HashMap::new(),
             data: super::data::Objects::default(),
             vtables: vtables::Tables::default(),
+            base_routes: virtual_bases::Routes::default(),
             cast_hints: runtime_types::CastHints::default(),
             type_information: type_information::Information::default(),
             exception_information: exception_information::Information::default(),
@@ -2950,6 +2954,9 @@ impl Symbols<'_, '_> {
 
 #[cfg(test)]
 pub(crate) use vtables::{assert_hierarchy_flags, assert_table_demand};
+
+#[cfg(test)]
+pub(crate) use virtual_bases::assert_base_routes;
 
 #[cfg(test)]
 mod tests {

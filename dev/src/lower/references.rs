@@ -128,8 +128,13 @@ impl Function<'_, '_, '_, '_> {
                 },
                 persistent,
             )?;
-            if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
-                return self.base_projection(address, facts.ty, offset);
+            if let Some(offset) = self.graph.lower_base_conversion(id)? {
+                return self.project_base_access(
+                    address,
+                    facts.ty,
+                    offset,
+                    super::base_projections::BaseAccess::Complete,
+                );
             }
             return Ok(address);
         }
@@ -158,9 +163,9 @@ impl Function<'_, '_, '_, '_> {
                 if let Some(adjustment) = self.graph.lower_member_pointer_conversion(id)? {
                     self.convert_member_pointer(value, target, adjustment)?
                 } else if context != Context::Cast
-                    && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
+                    && let Some(offset) = self.graph.lower_base_conversion(id)?
                 {
-                    self.adjust_base_pointer(value, target, offset, offset != 0)?
+                    self.convert_base_pointer(value, target, offset, !offset.is_zero())?
                 } else {
                     self.convert(value, target, context)?
                 }
@@ -195,8 +200,13 @@ impl Function<'_, '_, '_, '_> {
             return Ok(self.emit(I::Addr(slot), target)?.value);
         }
         let address = self.address(id)?;
-        if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
-            self.base_projection(address, facts.ty, offset)
+        if let Some(offset) = self.graph.lower_base_conversion(id)? {
+            self.project_base_access(
+                address,
+                facts.ty,
+                offset,
+                self.member_base_access(id, false)?,
+            )
         } else {
             Ok(address)
         }
@@ -214,15 +224,20 @@ impl Function<'_, '_, '_, '_> {
             && (self.graph.lower_expression(operand)?.temporary.is_some()
                 || self.class_conversion(operand).is_some()
                 || self.graph.lower_function_conversion(operand)?.is_some()
-                || self.graph.lower_base_conversion_offset(operand)?.is_some())
+                || self.graph.lower_base_conversion(operand)?.is_some())
         {
             return self.bind_reference(operand, reference, Context::Cast);
         }
         if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)?
-            && (delta != 0 || project_zero)
+            && (!delta.is_zero() || project_zero)
         {
             let address = self.address(operand)?;
-            return self.base_projection(address, facts.ty, delta);
+            return self.project_base_access(
+                address,
+                facts.ty,
+                delta,
+                self.member_base_access(operand, false)?,
+            );
         }
         self.scalar_place(operand)
     }

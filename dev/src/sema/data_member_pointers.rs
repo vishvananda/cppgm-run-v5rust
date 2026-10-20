@@ -439,14 +439,14 @@ impl super::graph::Graph {
             .transpose()
     }
 
-    pub(crate) fn lower_member_pointer_object_offset(
+    pub(crate) fn lower_member_pointer_projection(
         &self,
         id: ast::ExprId,
-    ) -> Result<Option<u64>, Error> {
+    ) -> Result<Option<super::base_projections::BaseProjection>, Error> {
         self.expression_facts
             .get(id)?
             .member_path
-            .map(|path| self.lower_path_offset(path))
+            .map(|path| self.lower_path_projection(path))
             .transpose()
     }
 

@@ -9,6 +9,7 @@ mod array_allocation;
 mod arrow_calls;
 mod assignment;
 mod base_layout;
+mod base_projections;
 mod bit_fields;
 mod bit_layout;
 mod builtin_calls;

@@ -179,8 +179,8 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.address(left)?
         };
-        if let Some(offset) = self.graph.lower_member_pointer_object_offset(id)?
-            && offset != 0
+        if let Some(offset) = self.graph.lower_member_pointer_projection(id)?
+            && !offset.is_zero()
         {
             object = self.base_projection(object, source, offset)?;
         }

@@ -607,12 +607,12 @@ mod tests {
         assert_eq!(facts.category, ValueCategory::Lvalue);
         assert_eq!(graph.types.get(facts.ty).cv, Cv::CONST);
         assert_eq!(
-            graph.lower_conditional_base_offsets(conditional).unwrap(),
-            [None, Some(0)]
+            graph.lower_conditional_projections(conditional).unwrap(),
+            [None, Some(crate::sema::lowering::BaseProjection::Fixed(0))]
         );
         assert_eq!(
-            graph.lower_conditional_base_offsets(paren).unwrap(),
-            [None, Some(0)]
+            graph.lower_conditional_projections(paren).unwrap(),
+            [None, Some(crate::sema::lowering::BaseProjection::Fixed(0))]
         );
         let left = graph.expression_facts.get(then_expr).unwrap();
         let right = graph.expression_facts.get(else_expr).unwrap();

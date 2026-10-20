@@ -49,7 +49,7 @@ impl Function<'_, '_, '_, '_> {
             let mut address = self.address(object)?;
             for offset in self
                 .graph
-                .lower_receiver_base_offsets(object)?
+                .lower_receiver_projections(object)?
                 .into_iter()
                 .flatten()
             {

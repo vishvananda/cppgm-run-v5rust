@@ -2,6 +2,7 @@
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::anonymous_types::{ClassSpelling, UnnamedNumbering};
 pub(crate) use super::assignment::Action as AssignmentAction;
+pub(crate) use super::base_projections::{BaseProjection, VcallSignature};
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constexpr_values::TemporaryId;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
@@ -151,7 +152,7 @@ pub(crate) struct MemberCall {
     pub function: EntityId,
     pub result: TypeId,
     pub place: bool,
-    pub offset: Option<u64>,
+    pub offset: Option<BaseProjection>,
 }
 pub(crate) use super::construction::ConstructorId;
 #[derive(Clone, Copy)]
@@ -252,7 +253,7 @@ impl Graph {
                         place: step.category != super::expression_facts::ValueCategory::Prvalue,
                         offset: step
                             .path
-                            .map(|path| self.lower_path_offset(path))
+                            .map(|path| self.lower_path_projection(path))
                             .transpose()?,
                     },
                     step.after.result,
@@ -286,7 +287,7 @@ impl Graph {
                         place: step.category != super::expression_facts::ValueCategory::Prvalue,
                         offset: step
                             .path
-                            .map(|path| self.lower_path_offset(path))
+                            .map(|path| self.lower_path_projection(path))
                             .transpose()?,
                     },
                     step.after.result,
@@ -335,7 +336,7 @@ impl Graph {
                     place: step.category != super::expression_facts::ValueCategory::Prvalue,
                     offset: step
                         .path
-                        .map(|path| self.lower_path_offset(path))
+                        .map(|path| self.lower_path_projection(path))
                         .transpose()?,
                 })
             })
@@ -1002,30 +1003,30 @@ impl Graph {
                     .ok_or(Error::Invariant("base projection without completed layout"))
             })
     }
-    pub(crate) fn lower_member_base_offsets(
+    pub(crate) fn lower_member_projections(
         &self,
         id: ast::ExprId,
-    ) -> Result<[Option<u64>; 2], Error> {
+    ) -> Result<[Option<BaseProjection>; 2], Error> {
         let facts = self.expression_facts.get(id)?;
         Ok([
             facts
                 .member_naming_path
-                .map(|path| self.lower_path_offset(path))
+                .map(|path| self.lower_path_projection(path))
                 .transpose()?,
             facts
                 .member_path
-                .map(|path| self.lower_path_offset(path))
+                .map(|path| self.lower_path_projection(path))
                 .transpose()?,
         ])
     }
-    pub(crate) fn lower_base_conversion_offset(
+    pub(crate) fn lower_base_conversion(
         &self,
         id: ast::ExprId,
-    ) -> Result<Option<u64>, Error> {
+    ) -> Result<Option<BaseProjection>, Error> {
         if let Some(step) = self.expression_facts.function_conversion(id) {
             return step
                 .after_path
-                .map(|path| self.lower_path_offset(path))
+                .map(|path| self.lower_path_projection(path))
                 .transpose();
         }
         let facts = self.expression_facts.get(id)?;
@@ -1042,54 +1043,57 @@ impl Graph {
         let path = facts
             .base_path
             .ok_or(Error::Invariant("base conversion without retained path"))?;
-        self.lower_path_offset(path).map(Some)
+        self.lower_path_projection(path).map(Some)
     }
-    pub(crate) fn lower_conditional_base_offsets(
+    pub(crate) fn lower_conditional_projections(
         &self,
         id: ast::ExprId,
-    ) -> Result<[Option<u64>; 2], Error> {
+    ) -> Result<[Option<BaseProjection>; 2], Error> {
         let [left, right] = self.expression_facts.conditional_paths(id);
         Ok([
-            left.map(|path| self.lower_path_offset(path)).transpose()?,
-            right.map(|path| self.lower_path_offset(path)).transpose()?,
+            left.map(|path| self.lower_path_projection(path))
+                .transpose()?,
+            right
+                .map(|path| self.lower_path_projection(path))
+                .transpose()?,
         ])
     }
-    pub(crate) fn lower_receiver_base_offsets(
+    pub(crate) fn lower_receiver_projections(
         &self,
         id: ast::ExprId,
-    ) -> Result<[Option<u64>; 2], Error> {
+    ) -> Result<[Option<BaseProjection>; 2], Error> {
         if let Some(receiver) = self.expression_facts.callable_receiver(id) {
             return Ok([
                 receiver
                     .naming_path
                     .or(receiver.path)
-                    .map(|path| self.lower_path_offset(path))
+                    .map(|path| self.lower_path_projection(path))
                     .transpose()?,
                 receiver
                     .member_path
-                    .map(|path| self.lower_path_offset(path))
+                    .map(|path| self.lower_path_projection(path))
                     .transpose()?,
             ]);
         }
-        let offsets = self.lower_member_base_offsets(id)?;
+        let offsets = self.lower_member_projections(id)?;
         if offsets[0].is_some() {
             Ok(offsets)
         } else {
-            Ok([self.lower_base_conversion_offset(id)?, None])
+            Ok([self.lower_base_conversion(id)?, None])
         }
     }
     pub(crate) fn lower_cast_base_adjustment(
         &self,
         id: ast::ExprId,
-    ) -> Result<Option<(u64, bool)>, Error> {
+    ) -> Result<Option<(BaseProjection, bool)>, Error> {
         let facts = self.expression_facts.get(id)?;
         let Some(cast) = facts.base_cast else {
             return Ok(None);
         };
-        let offset = self.lower_path_offset(cast.path)?;
+        let offset = self.lower_path_projection(cast.path)?;
         Ok(Some((
             if cast.downcast {
-                offset.wrapping_neg()
+                offset.negated()?
             } else {
                 offset
             },

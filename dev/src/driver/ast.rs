@@ -630,4 +630,64 @@ mod tests {
         crate::lower::assert_hierarchy_flags(&graph, tree, cursor, parameters);
         assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
     }
+    #[test]
+    fn route_and_row_queries_reuse_facts_without_demanding_tables_or_bodies() {
+        use crate::{
+            sema::{Analyzer, lowering::TypeView},
+            syntax::ast,
+        };
+        let source = SourceBuffer::new(
+            br"
+            struct Inside { int n; };
+            struct V : Inside { virtual int f(); virtual int g() const; virtual ~V(); };
+            struct B : virtual V { int b; };
+            struct W { int w; };
+            struct D : B, virtual W { int d; };
+            template<class T> struct Dormant : virtual V { void bad(){T::missing();} };
+            struct P { virtual void f(); virtual void f(int); virtual ~P(); };
+            struct Q : virtual P {};
+            struct R : Q, virtual W {};
+            int sizes[sizeof(D)+sizeof(R)];
+            void anchor(D*, B*, V*, Inside*, W*, Dormant<int>*, R*, Q*, P*) {}
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"projection-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax_count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let ast::DeclKind::Function { declarator, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("anchor");
+        };
+        let entity = graph.lower_declared(declarator).unwrap();
+        let TypeView::Function { parameters, .. } = graph
+            .lower_type(graph.lower_function(entity).unwrap().ty)
+            .unwrap()
+        else {
+            panic!("anchor signature");
+        };
+        let classes: Vec<_> = parameters
+            .iter()
+            .map(|&ty| {
+                let TypeView::Pointer(ty) = graph.lower_type(ty).unwrap() else {
+                    panic!("pointer");
+                };
+                let TypeView::Class(class) = graph.lower_type(ty).unwrap() else {
+                    panic!("class");
+                };
+                class
+            })
+            .collect();
+        crate::lower::assert_base_routes(&graph, tree, cursor, &classes);
+        assert_eq!(syntax_count, tree.expressions.mark());
+    }
 }

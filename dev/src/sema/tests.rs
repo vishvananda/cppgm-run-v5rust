@@ -2113,9 +2113,12 @@ fn explicit_base_cast_route_survives_conversion_of_its_result() {
     assert_ne!(facts.base_cast.unwrap().path, facts.base_path.unwrap());
     assert_eq!(
         graph.lower_cast_base_adjustment(cast).unwrap(),
-        Some((0, false))
+        Some((crate::sema::lowering::BaseProjection::Fixed(0), false))
     );
-    assert_eq!(graph.lower_base_conversion_offset(cast).unwrap(), Some(4));
+    assert_eq!(
+        graph.lower_base_conversion(cast).unwrap(),
+        Some(crate::sema::lowering::BaseProjection::Fixed(4))
+    );
     assert_ne!(facts.ty, facts.conversion.unwrap().result);
 }
 

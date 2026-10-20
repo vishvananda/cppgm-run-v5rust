@@ -38,7 +38,7 @@ impl Groups {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum VirtualSignature {
+pub(super) enum VirtualSignature {
     Destructor,
     Function(ValueKey, TypeId),
 }
@@ -280,7 +280,7 @@ impl Graph {
                 > 1
     }
 
-    fn virtual_signature(&self, function: EntityId) -> Result<VirtualSignature, Error> {
+    pub(super) fn virtual_signature(&self, function: EntityId) -> Result<VirtualSignature, Error> {
         let member = self.entity(function).member_function.map(|key| key.kind);
         if member == Some(MemberKind::Destructor) {
             return Ok(VirtualSignature::Destructor);

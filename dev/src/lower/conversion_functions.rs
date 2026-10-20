@@ -29,7 +29,7 @@ impl Function<'_, '_, '_, '_> {
                     },
                 )?
                 .value;
-            return if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+            return if let Some(offset) = self.graph.lower_base_conversion(id)? {
                 self.base_projection(address, element, offset)
             } else {
                 Ok(address)
@@ -40,7 +40,7 @@ impl Function<'_, '_, '_, '_> {
             crate::sema::lowering::TypeView::Class(_)
         ) {
             let address = self.conversion_temporary(id, call, persistent)?;
-            return if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+            return if let Some(offset) = self.graph.lower_base_conversion(id)? {
                 self.base_projection(address, element, offset)
             } else {
                 Ok(address)
@@ -229,7 +229,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.conversion_temporary(id, call, false)?
         };
-        if let Some(offset) = self.graph.lower_base_conversion_offset(id)? {
+        if let Some(offset) = self.graph.lower_base_conversion(id)? {
             if !call.place {
                 let slot = self.builder.addressed_storage(source);
                 source = self.emit(I::Addr(slot), call.result)?.value;

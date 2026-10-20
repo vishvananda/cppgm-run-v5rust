@@ -77,7 +77,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.effect(I::Branch(condition.value, then_block, else_block))?;
         self.terminated = true;
-        let offsets = self.graph.lower_conditional_base_offsets(id)?;
+        let offsets = self.graph.lower_conditional_projections(id)?;
         for ((block, expr), offset) in [(then_block, then_expr), (else_block, else_expr)]
             .into_iter()
             .zip(offsets)

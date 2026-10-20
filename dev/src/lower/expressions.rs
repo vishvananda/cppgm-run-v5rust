@@ -21,9 +21,9 @@ impl Function<'_, '_, '_, '_> {
         if let Some((call, target)) = self.graph.lower_function_conversion(id)? {
             let value = self.call_conversion(id, call)?;
             if context != Context::Cast
-                && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
+                && let Some(offset) = self.graph.lower_base_conversion(id)?
             {
-                return self.adjust_base_pointer(value, target, offset, offset != 0);
+                return self.convert_base_pointer(value, target, offset, !offset.is_zero());
             }
             return self.convert(value, target, context);
         }
@@ -74,13 +74,13 @@ impl Function<'_, '_, '_, '_> {
                 return self.convert_member_pointer(value, target, adjustment);
             }
             if context != Context::Cast
-                && let Some(offset) = self.graph.lower_base_conversion_offset(id)?
+                && let Some(offset) = self.graph.lower_base_conversion(id)?
             {
-                return self.adjust_base_pointer(
+                return self.convert_base_pointer(
                     value,
                     target,
                     offset,
-                    !self.nonnull_pointer(id) && offset != 0,
+                    !self.nonnull_pointer(id) && !offset.is_zero(),
                 );
             }
             self.convert(value, target, context)
@@ -362,13 +362,13 @@ impl Function<'_, '_, '_, '_> {
                     return self.convert_member_pointer(value, source, adjustment);
                 }
                 if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)?
-                    && (delta != 0 || project_zero)
+                    && (!delta.is_zero() || project_zero)
                 {
-                    return self.adjust_base_pointer(
+                    return self.convert_base_pointer(
                         value,
                         source,
                         delta,
-                        delta != 0 && !self.nonnull_pointer(operand),
+                        !delta.is_zero() && !self.nonnull_pointer(operand),
                     );
                 }
                 let value = self.convert(value, source, Context::Cast)?;
@@ -447,7 +447,7 @@ impl Function<'_, '_, '_, '_> {
         // The frozen comparison owner adjusts a base pointer before evaluating
         // the right operand; ordinary scalar conversions follow both evaluations.
         let early_base = comparison
-            && (self.graph.lower_base_conversion_offset(left)?.is_some()
+            && (self.graph.lower_base_conversion(left)?.is_some()
                 || self.graph.lower_member_pointer_conversion(left)?.is_some());
         let a = self.expression(left, context)?;
         let a = if early_base {
@@ -796,7 +796,7 @@ impl Function<'_, '_, '_, '_> {
                 let mut value = value;
                 for offset in self
                     .graph
-                    .lower_receiver_base_offsets(receiver)?
+                    .lower_receiver_projections(receiver)?
                     .into_iter()
                     .flatten()
                 {

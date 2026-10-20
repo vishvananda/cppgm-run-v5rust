@@ -1128,8 +1128,8 @@ mod tests {
         assert!(graph.class_of(facts.ty).is_some());
         assert!(facts.base_path.is_none());
         assert_eq!(
-            graph.lower_base_conversion_offset(operand).unwrap(),
-            Some(0)
+            graph.lower_base_conversion(operand).unwrap(),
+            Some(crate::sema::lowering::BaseProjection::Fixed(0))
         );
         assert_ne!(operand, graph.expression_facts.root(operand));
     }

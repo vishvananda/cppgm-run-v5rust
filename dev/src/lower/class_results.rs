@@ -351,7 +351,7 @@ impl Function<'_, '_, '_, '_> {
         result: TypeId,
         object: Value,
         action: Option<crate::sema::lowering::CopyAction>,
-        projection: Option<u64>,
+        projection: Option<crate::sema::lowering::BaseProjection>,
     ) -> Result<(), Error> {
         self.check_stack()?;
         let root = self.without_parentheses(id);
@@ -373,7 +373,7 @@ impl Function<'_, '_, '_, '_> {
             // argument binding to either branch. Its base projection belongs
             // to that binding, not to a new branch-specific conversion.
             let projection = if facts.is_place {
-                projection.or(self.graph.lower_base_conversion_offset(root)?)
+                projection.or(self.graph.lower_base_conversion(root)?)
             } else {
                 None
             };
@@ -417,7 +417,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
         action: crate::sema::lowering::CopyAction,
-        offset: u64,
+        offset: crate::sema::lowering::BaseProjection,
     ) -> Result<(), Error> {
         use crate::sema::lowering::CopyAction;
         let source = self.address(id)?;

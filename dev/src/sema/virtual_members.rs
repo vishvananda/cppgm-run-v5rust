@@ -1159,7 +1159,7 @@ impl super::graph::Graph {
             .filter(|(from, to)| from != to)
             .map(|(from, to)| (from, to, reference)))
     }
-    fn nonvirtual_result_offset(
+    pub(super) fn nonvirtual_result_offset(
         &self,
         derived: EntityId,
         base: EntityId,
