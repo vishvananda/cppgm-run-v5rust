@@ -14,6 +14,7 @@ use crate::lowir::{
     vocabulary::{Binary, Type, Unary},
 };
 pub(super) struct Selection<'a> {
+    pub(super) addresses: super::address_facts::Addresses,
     pub(super) body: &'a Body,
     pub(super) facts: Facts,
     pub(super) placement: Placement,
@@ -29,18 +30,28 @@ impl Selection<'_> {
         });
     }
     pub(super) fn operand(&mut self, value: Value, ty: Type, scratch: R) -> Result<Operand, Error> {
-        match self.facts.resolve(self.body, value)? {
+        match self.facts.resolve(self.body, value) {
             Alias::Constant(Constant::Integer(bits)) => Ok(Operand::Immediate(
                 i128::from(super::mir::low_word(normalize(bits, ty))?).cast_unsigned(),
             )),
             Alias::Constant(Constant::Float(_, bits)) => Ok(Operand::Immediate(bits)),
             Alias::Symbol(id) => Ok(Operand::Symbol(id)),
+            Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
             Alias::Temporary(temp) => {
-                let op = self.placement.operand(temp)?;
+                let op = if let Some(address) = self.addresses.folded[temp.index()] {
+                    self.address(address, scratch)?
+                } else if self.addresses.lazy[temp.index()] {
+                    self.materialize(
+                        scratch,
+                        self.addresses.expressions[temp.index()].ok_or(Error::Limit)?,
+                        false,
+                    )?;
+                    Operand::Register(scratch)
+                } else {
+                    self.placement.operand(temp)?
+                };
                 let own = self.body.temp(temp).ty.ok_or(Error::Limit)?;
-                if matches!(op, Operand::Frame(_))
-                    && super::abi::value_bytes(own)? != super::abi::value_bytes(ty)?
-                {
+                if op.is_memory() && super::abi::value_bytes(own)? != super::abi::value_bytes(ty)? {
                     self.load(scratch, op, own);
                     Ok(Operand::Register(scratch))
                 } else {
@@ -52,19 +63,20 @@ impl Selection<'_> {
     pub(super) fn load(&mut self, r: R, source: Operand, ty: Type) {
         match source {
             Operand::Register(s) if s == r => {}
-            Operand::Frame(d) => self.emit(ScalarOp::Load(r, ty, d)),
+            Operand::Frame(d) => self.emit(ScalarOp::Load(r, ty, Operand::Frame(d))),
+            Operand::Memory(m) => self.emit(ScalarOp::Load(r, ty, Operand::Memory(m))),
             _ => self.emit(ScalarOp::Move(r, source)),
         }
     }
-    fn result(&mut self, temp: TempId, prefs: [Option<R>; 2], exclude: u32) -> R {
+    pub(super) fn result(&mut self, temp: TempId, prefs: [Option<R>; 2], exclude: u32) -> R {
         self.placement
             .result(&self.facts, temp, self.pos, prefs, exclude, &mut self.mir)
     }
-    fn finish(&mut self, temp: TempId, r: R) -> Result<(), Error> {
+    pub(super) fn finish(&mut self, temp: TempId, r: R) -> Result<(), Error> {
         self.placement
             .finish(self.body, temp, r, &mut self.mir, self.location)
     }
-    fn dying(&self, op: Operand, skip_params: bool) -> Option<R> {
+    pub(super) fn dying(&self, op: Operand, skip_params: bool) -> Option<R> {
         self.placement
             .dying(&self.facts, op, self.pos, self.body, skip_params)
     }
@@ -94,7 +106,7 @@ impl Selection<'_> {
         let src = self.operand(value, own, R::R10)?;
         let r = self.result(temp, [self.dying(src, false), None], 0);
         if let Operand::Frame(d) = src {
-            self.emit(ScalarOp::Load(r, ty, d));
+            self.emit(ScalarOp::Load(r, ty, Operand::Frame(d)));
         } else {
             self.load(r, src, Type::I64);
             self.normalize(r, ty);
@@ -146,25 +158,13 @@ impl Selection<'_> {
         let exclude = (b.mask() & !dying_b.map_or(0, |r| 1 << r.code()))
             | self.placement.parameter_mask(self.body, [a, b]);
         let r = self.result(temp, [dying_a, dying_b], exclude);
-        let width = if matches!(b, Operand::Frame(_)) {
-            ty
-        } else {
-            Type::I64
-        };
+        let width = if b.is_memory() { ty } else { Type::I64 };
         if a.register() == Some(r) {
             self.emit(ScalarOp::Binary(op, width, r, b));
         } else if commutative && b.register() == Some(r) {
             self.emit(ScalarOp::Binary(op, width, r, a));
         } else {
-            self.load(
-                r,
-                a,
-                if matches!(a, Operand::Frame(_)) {
-                    ty
-                } else {
-                    Type::I64
-                },
-            );
+            self.load(r, a, if a.is_memory() { ty } else { Type::I64 });
             self.emit(ScalarOp::Binary(op, width, r, b));
         }
         if ty.bits() > 0
@@ -179,21 +179,13 @@ impl Selection<'_> {
     fn right_register(&mut self, op: Binary, ty: Type, a: Operand, b: &mut Operand) {
         let wide_mem = matches!(ty, Type::I64 | Type::Ptr | Type::I32 | Type::U32);
         let large = matches!(*b,Operand::Immediate(v) if super::mir::low_word(v).is_ok_and(|v|i32::try_from(v).is_err()));
-        if matches!(*b, Operand::Frame(_)) && !wide_mem || op == Binary::Mul && large {
+        if b.is_memory() && !wide_mem || op == Binary::Mul && large {
             let scratch = if a.register() == Some(R::R11) {
                 R::R10
             } else {
                 R::R11
             };
-            self.load(
-                scratch,
-                *b,
-                if matches!(*b, Operand::Frame(_)) {
-                    ty
-                } else {
-                    Type::I64
-                },
-            );
+            self.load(scratch, *b, if b.is_memory() { ty } else { Type::I64 });
             *b = Operand::Register(scratch);
         }
     }
@@ -257,7 +249,7 @@ impl Selection<'_> {
     ) -> Result<(), Error> {
         let a = self.operand(left, ty, R::R10)?;
         let count = if let Alias::Constant(Constant::Integer(bits)) =
-            self.facts.resolve(self.body, right)?
+            self.facts.resolve(self.body, right)
         {
             Operand::Immediate(bits & 63)
         } else {
@@ -271,15 +263,7 @@ impl Selection<'_> {
             Operand::Register(R::RCX)
         };
         let r = self.result(temp, [self.dying(a, false), None], 1 << R::RCX.code());
-        self.load(
-            r,
-            a,
-            if matches!(a, Operand::Frame(_)) {
-                ty
-            } else {
-                Type::I64
-            },
-        );
+        self.load(r, a, if a.is_memory() { ty } else { Type::I64 });
         let unsigned = match ty {
             Type::I8 => Type::U8,
             Type::I16 => Type::U16,

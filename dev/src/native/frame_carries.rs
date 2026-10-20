@@ -1,6 +1,6 @@
 //! Bounded encoder tracking of the frozen frame-home carried reloads. See NOTICE.
 use super::{
-    mir::{Binding, Instruction, Op},
+    mir::{Binding, BindingKind, Instruction, Op},
     scalar_mir::{Operand, ScalarOp},
     x86::Register as R,
 };
@@ -14,11 +14,11 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
     Some(match *op {
         Op::Move(r, v) => [Some(Operand::Register(r)), Some(Operand::Immediate(v))],
         Op::Scalar(op) => match op {
-            ScalarOp::Move(r, s) | ScalarOp::Binary(_, _, r, s) => {
+            ScalarOp::Move(r, s) | ScalarOp::Lea(r, s) | ScalarOp::Binary(_, _, r, s) => {
                 [Some(Operand::Register(r)), Some(s)]
             }
-            ScalarOp::Load(r, _, d) => [Some(Operand::Register(r)), Some(Operand::Frame(d))],
-            ScalarOp::Store(d, _, r) => [Some(Operand::Frame(d)), Some(Operand::Register(r))],
+            ScalarOp::Load(r, _, d) => [Some(Operand::Register(r)), Some(d)],
+            ScalarOp::Store(d, _, r) => [Some(d), Some(r)],
             ScalarOp::Extend(_, r) | ScalarOp::SetEqual(r) | ScalarOp::Movzx(r) => {
                 [Some(Operand::Register(r)), None]
             }
@@ -33,7 +33,8 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
 fn plain(op: &Op) -> bool {
     operands(op).is_some_and(|ops| {
         ops.into_iter().flatten().all(|operand| match operand {
-            Operand::Symbol(_) => false,
+            Operand::Symbol(_) | Operand::SymbolOffset(..) => false,
+            Operand::Memory(m) if matches!(m.base, super::memory::Base::Symbol(_)) => false,
             Operand::Immediate(v) => {
                 super::mir::low_word(v).is_ok_and(|v| i32::try_from(v).is_ok())
             }
@@ -51,7 +52,7 @@ fn written(op: &Op) -> Option<R> {
 }
 fn reload(op: &Op, offset: i32) -> Option<R> {
     if let Op::Scalar(ScalarOp::Load(r, Type::I64 | Type::Ptr, d)) = *op
-        && d == offset
+        && d.frame_offset() == Some(offset)
     {
         return Some(r);
     }
@@ -59,14 +60,21 @@ fn reload(op: &Op, offset: i32) -> Option<R> {
 }
 fn store(op: &Op) -> Option<i32> {
     if let Op::Scalar(ScalarOp::Store(offset, _, _)) = *op {
-        Some(offset)
+        offset.frame_offset()
     } else {
         None
     }
 }
 impl Carries {
     pub(super) fn new(bindings: &[Binding]) -> Self {
-        let mut homes: Vec<_> = bindings.iter().map(|b| b.offset).collect();
+        let mut homes: Vec<_> = bindings
+            .iter()
+            .filter(|b| {
+                b.kind != BindingKind::Slot
+                    && !matches!(b.ty, Type::Object { .. } | Type::I128 | Type::F80)
+            })
+            .map(|b| b.offset)
+            .collect();
         homes.sort_unstable();
         Self {
             values: Vec::new(),
@@ -77,7 +85,7 @@ impl Carries {
         if let Op::Scalar(ScalarOp::Load(r, Type::I64 | Type::Ptr, d)) = *op {
             self.values
                 .iter()
-                .find(|(offset, _)| *offset == d)
+                .find(|(offset, _)| Some(*offset) == d.frame_offset())
                 .map(|(_, source)| (r, *source))
         } else {
             None
@@ -89,8 +97,15 @@ impl Carries {
             self.values.clear();
             return None;
         }
-        let home = if let Op::Scalar(ScalarOp::Store(d, Type::I64 | Type::Ptr, r)) = *op {
-            self.homes.binary_search(&d).is_ok().then_some((d, r))
+        let home = if let Op::Scalar(ScalarOp::Store(
+            d,
+            Type::I64 | Type::Ptr,
+            Operand::Register(r),
+        )) = *op
+        {
+            d.frame_offset()
+                .filter(|d| self.homes.binary_search(d).is_ok())
+                .map(|d| (d, r))
         } else {
             None
         };
@@ -118,7 +133,7 @@ impl Carries {
             scratch_used |= operands(&inst.op).is_some_and(|ops| {
                 ops.into_iter()
                     .flatten()
-                    .any(|o| o.register() == Some(R::R11))
+                    .any(|o| o.mask() & (1 << R::R11.code()) != 0)
             });
         }
         None

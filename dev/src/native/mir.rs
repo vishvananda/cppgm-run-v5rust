@@ -28,11 +28,17 @@ pub(super) struct Instruction {
     pub(super) op: Op,
     pub(super) location: Option<DebugLocation>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum BindingKind {
+    Slot,
+    Parameter,
+    Temp,
+}
 pub(super) struct Binding {
     pub(super) name: NameId,
     pub(super) ty: Type,
     pub(super) offset: i32,
-    pub(super) parameter: bool,
+    pub(super) kind: BindingKind,
 }
 pub(super) struct Function {
     symbol: SymbolId,
@@ -42,10 +48,15 @@ pub(super) struct Function {
     pub(super) instructions: Vec<Instruction>,
     pub(super) scratch_bytes: u32,
     pub(super) stack_size: u32,
+    pub(super) aligned_base: u32,
+    pub(super) aligned_disp: i32,
+    pub(super) aligned_bytes: u32,
     pub(super) preserve: u32,
     pub(super) bindings: Vec<Binding>,
     pub(super) spills: usize,
     pub(super) homes: usize,
+    pub(super) lazy_addresses: usize,
+    pub(super) folded_loads: usize,
     pub(super) lowir_instructions: usize,
     pub(super) promoted_slots: usize,
     pub(super) dead_slots: usize,
@@ -65,10 +76,15 @@ impl Function {
             instructions: Vec::new(),
             scratch_bytes: 0,
             stack_size: 0,
+            aligned_base: 0,
+            aligned_disp: 0,
+            aligned_bytes: 0,
             preserve: 0,
             bindings: Vec::new(),
             spills: 0,
             homes: 0,
+            lazy_addresses: 0,
+            folded_loads: 0,
             lowir_instructions: 0,
             promoted_slots: 0,
             dead_slots: 0,
@@ -112,6 +128,13 @@ impl Function {
             "    return {result} -> {reg}\n  frame\n    stack_size {}\n    scratch_bytes {}\n    frame_pointer keep\n    epilogues shared",
             self.stack_size, self.scratch_bytes
         )?;
+        if self.aligned_base != 0 {
+            writeln!(
+                out,
+                "    aligned_base {} r12 = rbp{}",
+                self.aligned_base, self.aligned_disp
+            )?;
+        }
         if self.preserve != 0 {
             write!(out, "    preserve")?;
             for r in super::placement::SAVED {
@@ -124,11 +147,16 @@ impl Function {
         for binding in &self.bindings {
             writeln!(
                 out,
-                "    {} %{} -> [rbp{:+}] : {}",
-                if binding.parameter {
-                    "param-slot"
+                "    {} {}{} -> [rbp{:+}] : {}",
+                match binding.kind {
+                    BindingKind::Slot => "slot",
+                    BindingKind::Parameter => "param-slot",
+                    BindingKind::Temp => "temp",
+                },
+                if binding.kind == BindingKind::Slot {
+                    '$'
                 } else {
-                    "temp"
+                    '%'
                 },
                 program.names.get(binding.name),
                 binding.offset,
@@ -210,6 +238,18 @@ impl Function {
                 a.push(r);
             }
         }
+        if self.aligned_base != 0 {
+            a.lea(
+                R::R12,
+                Rm::mem(
+                    R::RBP,
+                    self.aligned_disp
+                        .wrapping_add(self.aligned_base.cast_signed())
+                        .wrapping_sub(1),
+                ),
+            )?;
+            a.alu_ri(4, Rm::Reg(R::R12), -i64::from(self.aligned_base), 8)?;
+        }
         let mut returns = 0;
         let mut carries = super::frame_carries::Carries::new(&self.bindings);
         let mut carried_reloads = 0;
@@ -250,7 +290,9 @@ impl Function {
                     }
                     returns += 1;
                 }
-                Op::Scalar(op) => op.emit(&mut a)?,
+                Op::Scalar(op) => op
+                    .rebase(self.aligned_disp, self.aligned_bytes)
+                    .emit(&mut a)?,
                 Op::Trap => {
                     a.byte(0x0f);
                     a.byte(0x0b);

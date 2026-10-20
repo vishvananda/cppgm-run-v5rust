@@ -1,7 +1,7 @@
 //! Block-local scalar placement, spill homes and callee-save frame ownership. See NOTICE.
 use super::{
     abi,
-    mir::{Binding, Function, Instruction, Op},
+    mir::{Binding, BindingKind, Function, Instruction, Op},
     scalar_mir::{Operand, ScalarOp},
     value_facts::Facts,
     value_selection::unsupported,
@@ -37,6 +37,7 @@ pub(super) struct Placement {
     locations: Vec<Location>,
     owners: [Option<TempId>; 16],
     frame: u32,
+    slots: Vec<Option<i32>>,
     pub(super) preserve: u32,
     vector_boundary: bool,
     excluded: u32,
@@ -50,6 +51,7 @@ impl Placement {
                 .collect(),
             owners: [None; 16],
             frame: 0,
+            slots: vec![None; body.slots().len()],
             preserve: 0,
             vector_boundary,
             excluded,
@@ -113,29 +115,110 @@ impl Placement {
         }
         None
     }
-    fn home(&mut self, body: &Body, temp: TempId, mir: &mut Function) -> Result<i32, Error> {
-        if let Some(home) = self.locations[temp.index()].home {
-            return Ok(home);
-        }
-        let ty = body.temp(temp).ty.ok_or(Error::Limit)?;
-        let bytes = abi::value_bytes(ty)?.max(1).div_ceil(8) * 8;
-        let align = abi::value_align(ty)?.clamp(8, 16);
-        let size = (u64::from(self.frame) + u64::from(bytes) + u64::from(align) - 1)
-            & !(u64::from(align) - 1);
+    fn frame_alloc(&mut self, bytes: u64, align: u32) -> Result<i32, Error> {
+        let align = u64::from(align.clamp(1, 16));
+        let size = (u64::from(self.frame)
+            .checked_add(bytes)
+            .and_then(|n| n.checked_add(align - 1))
+            .ok_or(Error::Limit)?)
+            & !(align - 1);
         if size > 0x7fff_0000 {
             return Err(Error::Diagnostic(
                 "stack frame exceeds the 32-bit displacement range".into(),
             ));
         }
         self.frame = u32::try_from(size).map_err(|_| Error::Limit)?;
-        let offset = -i32::try_from(size).map_err(|_| Error::Limit)?;
+        Ok(-i32::try_from(size).map_err(|_| Error::Limit)?)
+    }
+    pub(super) fn slot(&self, slot: crate::lowir::model::SlotId) -> Result<i32, Error> {
+        self.slots[slot.index()].ok_or(Error::Limit)
+    }
+    pub(super) fn layout_slots(
+        &mut self,
+        body: &Body,
+        states: &[super::slot_analysis::Slot],
+        mir: &mut Function,
+    ) -> Result<(), Error> {
+        use super::slot_analysis::Slot;
+        for (slot, state) in body.slots().iter().zip(states) {
+            if matches!(state, Slot::Memory) && matches!(slot.ty, Type::Object { .. }) {
+                mir.aligned_base = mir.aligned_base.max(abi::value_align(slot.ty)?);
+            }
+        }
+        if mir.aligned_base <= 16 {
+            mir.aligned_base = 0;
+        }
+        let mut area = 0_u64;
+        for (i, (slot, state)) in body.slots().iter().zip(states).enumerate() {
+            if !matches!(state, Slot::Memory) || abi::value_align(slot.ty)? <= 16 {
+                continue;
+            }
+            let align = u64::from(abi::value_align(slot.ty)?);
+            area = (area + align - 1) & !(align - 1);
+            self.slots[i] = Some(i32::try_from(area).map_err(|_| Error::Limit)?);
+            area += (u64::from(abi::value_bytes(slot.ty)?) + 7) & !7;
+        }
+        if area == 0 {
+            mir.aligned_base = 0;
+        } else {
+            mir.aligned_disp = self
+                .frame_alloc(area + u64::from(mir.aligned_base), 16)?
+                .wrapping_add(16);
+            mir.aligned_bytes = u32::try_from(area).map_err(|_| Error::Limit)?;
+            self.preserve |= 1 << R::R12.code();
+            self.excluded |= 1 << R::R12.code();
+        }
+        for (i, (slot, state)) in body.slots().iter().zip(states).enumerate() {
+            if !matches!(state, Slot::Memory) {
+                continue;
+            }
+            let ty = slot.ty;
+            let bytes = (u64::from(abi::value_bytes(ty)?) + 7) & !7;
+            let mut align = abi::value_align(ty)?;
+            if matches!(ty, Type::Object { .. }) {
+                align = align.max(8);
+            }
+            let offset = if mir.aligned_base != 0 && align > 16 {
+                self.slots[i]
+                    .ok_or(Error::Limit)?
+                    .wrapping_add(mir.aligned_disp)
+            } else {
+                self.frame_alloc(bytes.max(8), align)?
+            };
+            self.slots[i] = Some(offset);
+            mir.bindings.push(Binding {
+                name: slot.name,
+                ty,
+                offset,
+                kind: BindingKind::Slot,
+            });
+        }
+        Ok(())
+    }
+    pub(super) fn home(
+        &mut self,
+        body: &Body,
+        temp: TempId,
+        mir: &mut Function,
+    ) -> Result<i32, Error> {
+        if let Some(home) = self.locations[temp.index()].home {
+            return Ok(home);
+        }
+        let ty = body.temp(temp).ty.ok_or(Error::Limit)?;
+        let bytes = abi::value_bytes(ty)?.max(1).div_ceil(8) * 8;
+        let align = abi::value_align(ty)?.clamp(8, 16);
+        let offset = self.frame_alloc(u64::from(bytes), align)?;
         self.locations[temp.index()].home = Some(offset);
         mir.homes += 1;
         mir.bindings.push(Binding {
             name: body.temp(temp).name,
             ty,
             offset,
-            parameter: temp.index() < body.parameter_count,
+            kind: if temp.index() < body.parameter_count {
+                BindingKind::Parameter
+            } else {
+                BindingKind::Temp
+            },
         });
         Ok(offset)
     }
@@ -197,7 +280,11 @@ impl Placement {
                     let home = self.home(body, temp, mir)?;
                     self.locations[index].homed = true;
                     mir.instructions.push(Instruction {
-                        op: Op::Scalar(ScalarOp::Store(home, ty, reg)),
+                        op: Op::Scalar(ScalarOp::Store(
+                            Operand::Frame(home),
+                            ty,
+                            Operand::Register(reg),
+                        )),
                         location: None,
                     });
                 }
@@ -205,11 +292,19 @@ impl Placement {
                 let home = self.home(body, temp, mir)?;
                 self.locations[index].homed = true;
                 mir.instructions.push(Instruction {
-                    op: Op::Scalar(ScalarOp::Load(R::RAX, ty, 16_i32.wrapping_add(stack))),
+                    op: Op::Scalar(ScalarOp::Load(
+                        R::RAX,
+                        ty,
+                        Operand::Frame(16_i32.wrapping_add(stack)),
+                    )),
                     location: None,
                 });
                 mir.instructions.push(Instruction {
-                    op: Op::Scalar(ScalarOp::Store(home, ty, R::RAX)),
+                    op: Op::Scalar(ScalarOp::Store(
+                        Operand::Frame(home),
+                        ty,
+                        Operand::Register(R::RAX),
+                    )),
                     location: None,
                 });
             }
@@ -319,7 +414,11 @@ impl Placement {
             let home = self.home(body, temp, mir)?;
             let ty = body.temp(temp).ty.ok_or(Error::Limit)?;
             mir.instructions.push(Instruction {
-                op: Op::Scalar(ScalarOp::Store(home, ty, r)),
+                op: Op::Scalar(ScalarOp::Store(
+                    Operand::Frame(home),
+                    ty,
+                    Operand::Register(r),
+                )),
                 location,
             });
         }

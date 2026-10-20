@@ -42,10 +42,8 @@ pub(super) fn select(
         return Err(unsupported());
     }
     let slots = slot_analysis::analyze(body)?;
-    if slots.iter().any(|s| matches!(s, Slot::Memory)) {
-        return Err(unsupported());
-    }
-    let facts = Facts::analyze(body, &slots)?;
+    let mut facts = Facts::analyze(body, &slots)?;
+    let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
     let mut mir = MirFunction::new(
         symbol,
         function.signature,
@@ -81,6 +79,7 @@ pub(super) fn select(
         },
     );
     let mut selection = Selection {
+        addresses,
         body,
         facts,
         placement,
@@ -88,6 +87,11 @@ pub(super) fn select(
         location: None,
         pos: 0,
     };
+    selection
+        .placement
+        .layout_slots(body, &slots, &mut selection.mir)?;
+    selection.mir.lazy_addresses = selection.addresses.lazy_count;
+    selection.mir.folded_loads = selection.addresses.folded_count;
     selection
         .placement
         .entry(body, &selection.facts, &mut selection.mir)?;
@@ -109,6 +113,14 @@ pub(super) fn select(
         selection.pos = pos;
         selection.location = body.location(inst);
         match inst.kind {
+            I::Load(_, ty, address) => {
+                selection.read_memory(inst.result.ok_or(Error::Limit)?, ty, address)?;
+            }
+            I::Store(_, ty, value, address) => selection.write_memory(ty, value, address)?,
+            I::Addr(_) => selection.select_address(inst.result.ok_or(Error::Limit)?)?,
+            I::Index(ty, _, base, offset) => {
+                selection.select_index(inst.result.ok_or(Error::Limit)?, ty, base, offset)?;
+            }
             I::Copy(ty, value) => selection.copy(inst.result.ok_or(Error::Limit)?, ty, value)?,
             I::Binary(op, _, ty, a, b) => {
                 selection.binary(inst.result.ok_or(Error::Limit)?, op, ty, a, b)?;
@@ -145,7 +157,7 @@ fn emit_return(
         emit(Op::Return(None));
         return Ok(());
     };
-    let source = selection.facts.resolve(selection.body, value)?;
+    let source = selection.facts.resolve(selection.body, value);
     match source {
         Alias::Constant(value) => {
             let mut emit = |op| {
@@ -204,6 +216,15 @@ fn emit_return(
             };
             selection.mir.instructions.push(Instruction {
                 op: Op::Return(Some(reg)),
+                location,
+            });
+        }
+        Alias::Slot(_) => {
+            super::memory::scalar(ty)?;
+            let source = selection.operand(value, ty, R::R10)?;
+            selection.load(R::RAX, source, ty);
+            selection.mir.instructions.push(Instruction {
+                op: Op::Return(Some(R::RAX)),
                 location,
             });
         }

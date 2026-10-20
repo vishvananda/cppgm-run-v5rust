@@ -12,6 +12,8 @@ use crate::lowir::{
 use std::io::Write;
 #[derive(Clone, Copy)]
 pub(super) enum Operand {
+    Memory(super::memory::Memory),
+    SymbolOffset(crate::lowir::model::SymbolId, i32),
     Register(R),
     Immediate(u128),
     Frame(i32),
@@ -26,12 +28,34 @@ impl Operand {
         }
     }
     pub(super) fn mask(self) -> u32 {
-        self.register().map_or(0, |r| 1 << r.code())
+        if let Self::Memory(m) = self {
+            m.mask()
+        } else {
+            self.register().map_or(0, |r| 1 << r.code())
+        }
+    }
+    pub(super) fn is_memory(self) -> bool {
+        matches!(self, Self::Frame(_) | Self::Memory(_))
+    }
+    pub(super) fn memory(self) -> Option<super::memory::Memory> {
+        match self {
+            Self::Frame(d) => Some(super::memory::Memory::frame(d)),
+            Self::Memory(m) => Some(m),
+            _ => None,
+        }
+    }
+    pub(super) fn frame_offset(self) -> Option<i32> {
+        self.memory().and_then(super::memory::Memory::frame_offset)
+    }
+    pub(super) fn rebase(self, begin: i32, bytes: u32) -> Self {
+        self.memory()
+            .map_or(self, |m| Self::Memory(m.rebased(begin, bytes)))
     }
     pub(super) fn rm(self) -> Result<Rm, Error> {
         match self {
             Self::Register(r) => Ok(Rm::Reg(r)),
             Self::Frame(d) => Ok(Rm::mem(R::RBP, d)),
+            Self::Memory(m) => Ok(m.rm()),
             _ => Err(Error::Construction(
                 "scalar operand is not register/memory".into(),
             )),
@@ -41,6 +65,14 @@ impl Operand {
         match self {
             Self::Register(r) => write!(out, "{}", r.spelling()),
             Self::Frame(d) => write!(out, "[rbp{d:+}]"),
+            Self::Memory(m) => m.write(program, out),
+            Self::SymbolOffset(id, d) => {
+                write!(out, "@{}", program.names.get(program.symbol(id).name))?;
+                if d != 0 {
+                    write!(out, "{d:+}")?;
+                }
+                Ok(())
+            }
             Self::Symbol(id) => write!(out, "@{}", program.names.get(program.symbol(id).name)),
             Self::Immediate(bits) => {
                 let low = low_word(bits)
@@ -57,8 +89,9 @@ impl Operand {
 #[derive(Clone, Copy)]
 pub(super) enum ScalarOp {
     Move(R, Operand),
-    Load(R, Type, i32),
-    Store(i32, Type, R),
+    Lea(R, Operand),
+    Load(R, Type, Operand),
+    Store(Operand, Type, Operand),
     Binary(Binary, Type, R, Operand),
     Unary(Unary, Type, R),
     Extend(Type, R),
@@ -86,18 +119,23 @@ impl ScalarOp {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         let mut operand = None;
         match self {
+            Self::Lea(r, src) => {
+                write!(out, "lea {}, ", r.spelling())?;
+                operand = Some(src);
+            }
             Self::Move(r, src) => {
                 write!(out, "mov {}, ", r.spelling())?;
                 operand = Some(src);
             }
             Self::Load(r, ty, d) => {
                 write!(out, "load.{ty} {}, ", r.spelling())?;
-                operand = Some(Operand::Frame(d));
+                operand = Some(d);
             }
             Self::Store(d, ty, r) => {
                 write!(out, "store.{ty} ")?;
-                Operand::Frame(d).write(program, out)?;
-                write!(out, ", {}", r.spelling())?;
+                d.write(program, out)?;
+                write!(out, ", ")?;
+                r.write(program, out)?;
             }
             Self::Binary(op, ty, r, src) => {
                 write!(
@@ -177,6 +215,18 @@ impl ScalarOp {
         }
         Ok(())
     }
+    pub(super) fn rebase(self, begin: i32, bytes: u32) -> Self {
+        match self {
+            Self::Load(r, t, m) => Self::Load(r, t, m.rebase(begin, bytes)),
+            Self::Store(m, t, s) => Self::Store(m.rebase(begin, bytes), t, s.rebase(begin, bytes)),
+            Self::Lea(r, m) => Self::Lea(r, m.rebase(begin, bytes)),
+            Self::Move(r, m) => Self::Move(r, m.rebase(begin, bytes)),
+            Self::Binary(op, t, r, m) => Self::Binary(op, t, r, m.rebase(begin, bytes)),
+            Self::Scan(op, t, r, m) => Self::Scan(op, t, r, m.rebase(begin, bytes)),
+            Self::CompareZero(t, m) => Self::CompareZero(t, m.rebase(begin, bytes)),
+            other => other,
+        }
+    }
     pub(super) fn emit(self, a: &mut Assembler) -> Result<(), Error> {
         match self {
             Self::Move(r, src) => match src {
@@ -184,9 +234,31 @@ impl ScalarOp {
                 Operand::Immediate(v) => a.mov_ri(r, low_word(v)?),
                 Operand::Symbol(s) => a.lea(r, Rm::rip(ImageSymbol::Program(s), 0)),
                 Operand::Frame(d) => a.load(r, Rm::mem(R::RBP, d), 8, false),
+                Operand::Memory(m) => a.load(r, m.rm(), 8, false),
+                Operand::SymbolOffset(s, d) => a.lea(r, Rm::rip(ImageSymbol::Program(s), d)),
             },
-            Self::Load(r, ty, d) => a.load(r, Rm::mem(R::RBP, d), bytes(ty), signed(ty)),
-            Self::Store(d, ty, r) => a.store(Rm::mem(R::RBP, d), r, bytes(ty)),
+            Self::Load(r, ty, d) => a.load(r, d.rm()?, bytes(ty), signed(ty)),
+            Self::Store(d, ty, src) => {
+                if let Operand::Register(r) = src {
+                    a.store(d.rm()?, r, bytes(ty))
+                } else if let Operand::Immediate(v) = src {
+                    let low = low_word(v)?;
+                    if bytes(ty) < 8 || i32::try_from(low).is_ok() {
+                        a.store_imm(d.rm()?, low, bytes(ty))
+                    } else {
+                        let scratch = if d.mask() & (1 << R::R11.code()) == 0 {
+                            R::R11
+                        } else {
+                            R::R10
+                        };
+                        a.mov_ri(scratch, low)?;
+                        a.store(d.rm()?, scratch, 8)
+                    }
+                } else {
+                    Err(Error::Construction("invalid store source".into()))
+                }
+            }
+            Self::Lea(r, src) => a.lea(r, src.rm()?),
             Self::Extend(ty, r) => a.load(r, Rm::Reg(r), bytes(ty), signed(ty)),
             Self::Binary(op, ty, r, src) => binary(a, op, ty, r, src),
             Self::Unary(op, ty, r) => match op {

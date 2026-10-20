@@ -1,5 +1,5 @@
 //! Function-owned aliases, dead definitions and scalar use intervals. See NOTICE.
-use super::{slot_analysis::Slot, value_selection::unsupported, x86::Register as R};
+use super::{slot_analysis::Slot, x86::Register as R};
 use crate::lowir::{
     Error,
     literals::Constant,
@@ -11,6 +11,7 @@ pub(super) enum Alias {
     Constant(Constant),
     Temporary(TempId),
     Symbol(crate::lowir::model::SymbolId),
+    Slot(crate::lowir::model::SlotId),
 }
 #[derive(Clone, Copy, Default)]
 pub(super) struct Interval {
@@ -60,14 +61,14 @@ pub(super) fn normalize(bits: u128, ty: Type) -> u128 {
 }
 
 impl Facts {
-    pub(super) fn resolve(&self, body: &Body, value: Value) -> Result<Alias, Error> {
-        Ok(match value {
+    pub(super) fn resolve(&self, body: &Body, value: Value) -> Alias {
+        match value {
             Value::Temp(id) => self.aliases[id.index()].unwrap_or(Alias::Temporary(id)),
             Value::Integer(id) => Alias::Constant(Constant::Integer(body.literal(id))),
             Value::Float(id, kind) => Alias::Constant(Constant::Float(kind, body.literal(id))),
             Value::Symbol(id) => Alias::Symbol(id),
-            Value::Slot(_) => return Err(unsupported()),
-        })
+            Value::Slot(id) => Alias::Slot(id),
+        }
     }
     pub(super) fn analyze(body: &Body, slots: &[Slot]) -> Result<Self, Error> {
         let ids = &body.block(body.layout[0]).instructions;
@@ -79,7 +80,7 @@ impl Facts {
         for (pos, &id) in ids.iter().enumerate() {
             let inst = body.instruction(id);
             let alias = match inst.kind {
-                I::Const(ty, value) => Some(match facts.resolve(body, value)? {
+                I::Const(ty, value) => Some(match facts.resolve(body, value) {
                     Alias::Constant(Constant::Integer(bits))
                         if ty.bits() != 0 && ty != Type::I128 =>
                     {
@@ -88,7 +89,7 @@ impl Facts {
                     other => other,
                 }),
                 I::Copy(ty, value) => {
-                    let source = facts.resolve(body, value)?;
+                    let source = facts.resolve(body, value);
                     match source {
                         Alias::Constant(Constant::Integer(bits))
                             if (ty.bits() != 0 || ty == Type::Ptr) && ty != Type::I128 =>
@@ -115,7 +116,7 @@ impl Facts {
                     let Slot::Promoted(value) = slots[slot.index()] else {
                         return Err(Error::Limit);
                     };
-                    Some(match facts.resolve(body, value)? {
+                    Some(match facts.resolve(body, value) {
                         Alias::Constant(Constant::Integer(bits))
                             if ty.bits() != 0 && ty != Type::I128 =>
                         {
@@ -130,6 +131,17 @@ impl Facts {
                     facts.active[pos] = false;
                     None
                 }
+                I::Index(_, _, base, offset) => {
+                    let off = facts.resolve(body, offset);
+                    let base = facts.resolve(body, base);
+                    if matches!(off,Alias::Constant(Constant::Integer(bits)) if bits & u128::from(u64::MAX)==0)
+                        && matches!(base,Alias::Temporary(t) if body.temp(t).ty==Some(Type::Ptr))
+                    {
+                        Some(base)
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             };
             if let Some(result) = inst.result {
@@ -143,7 +155,7 @@ impl Facts {
         for (pos, &id) in ids.iter().enumerate() {
             if facts.active[pos] {
                 body.visit_values(&body.instruction(id).kind, |v| {
-                    if let Ok(Alias::Temporary(temp)) = facts.resolve(body, v) {
+                    if let Alias::Temporary(temp) = facts.resolve(body, v) {
                         uses[temp.index()] += 1;
                     }
                 });
@@ -154,11 +166,14 @@ impl Facts {
                 continue;
             }
             let inst = body.instruction(id);
-            let pure = matches!(inst.kind, I::Copy(..) | I::Unary(..) | I::Binary(..));
+            let pure = matches!(
+                inst.kind,
+                I::Copy(..) | I::Unary(..) | I::Binary(..) | I::Addr(..) | I::Index(..)
+            ) || matches!(inst.kind,I::Load(flags,_,_) if !flags.volatile());
             if pure && inst.result.is_some_and(|r| uses[r.index()] == 0) {
                 facts.active[pos] = false;
                 body.visit_values(&inst.kind, |v| {
-                    if let Ok(Alias::Temporary(temp)) = facts.resolve(body, v) {
+                    if let Alias::Temporary(temp) = facts.resolve(body, v) {
                         uses[temp.index()] = uses[temp.index()].saturating_sub(1);
                     }
                 });
@@ -167,11 +182,20 @@ impl Facts {
         for (pos, &id) in ids.iter().enumerate() {
             if facts.active[pos] {
                 body.visit_values(&body.instruction(id).kind, |v| {
-                    if let Ok(Alias::Temporary(t)) = facts.resolve(body, v) {
+                    if let Alias::Temporary(t) = facts.resolve(body, v) {
                         facts.intervals[t.index()].last = Some(pos);
                     }
                 });
             }
+        }
+        facts.refresh_clobbers(body);
+        Ok(facts)
+    }
+    pub(super) fn refresh_clobbers(&mut self, body: &Body) {
+        let facts = self;
+        let ids = &body.block(body.layout[0]).instructions;
+        for interval in &mut facts.intervals {
+            interval.forbid = 0;
         }
         let mut next_shift = None;
         for (pos, &id) in ids.iter().enumerate().rev() {
@@ -185,12 +209,12 @@ impl Facts {
                     interval.forbid = 1 << R::RCX.code();
                 }
             }
-            if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(facts.resolve(body,count)?,Alias::Constant(Constant::Integer(_))))
+            if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(facts.resolve(body,count),Alias::Constant(Constant::Integer(_))))
             {
                 next_shift = Some(pos);
             }
             if let I::Return(_, Some(value)) = inst.kind
-                && let Alias::Temporary(temp) = facts.resolve(body, value)?
+                && let Alias::Temporary(temp) = facts.resolve(body, value)
             {
                 let two_address = body
                     .temp(temp)
@@ -206,6 +230,5 @@ impl Facts {
                 interval.forbid = 1 << R::RCX.code();
             }
         }
-        Ok(facts)
     }
 }
