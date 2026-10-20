@@ -6,6 +6,14 @@ use super::{
     inheritance::BasePathId,
 };
 
+/// Checked canonical result identities; lowering selects their ABI route.
+pub(crate) struct CovariantResult {
+    pub from: EntityId,
+    pub to: EntityId,
+    pub through: Option<EntityId>,
+    pub reference: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BaseProjection {
     Fixed(u64),

@@ -943,7 +943,7 @@ impl Analyzer<'_> {
         seen: &mut HashSet<EntityId>,
         work: &mut Vec<EntityId>,
     ) -> Result<(), Error> {
-        if !self.graph.lower_polymorphic(class) || seen.contains(&class) {
+        if !self.graph.lower_dynamic_class(class) || seen.contains(&class) {
             return Ok(());
         }
         if !self.graph.lower_emits_vtable(class)? {
@@ -1241,28 +1241,26 @@ impl super::graph::Graph {
         }
         Ok(known[&derived])
     }
-    pub(crate) fn lower_covariant_adjustment(
+    pub(crate) fn lower_covariant_result(
         &self,
         function: EntityId,
         adjusted: EntityId,
         through: EntityId,
-    ) -> Result<Option<(i64, bool)>, Error> {
+    ) -> Result<Option<super::base_projections::CovariantResult>, Error> {
         let Some((from, to, reference)) = self.covariant_classes(function, adjusted)? else {
             return Ok(None);
         };
-        let offset = if through != from
+        let through = (through != from
             && through != to
             && self.is_base_of(through, from)
-            && self.is_base_of(to, through)
-        {
-            self.nonvirtual_result_offset(from, through)?
-                .zip(self.nonvirtual_result_offset(through, to)?)
-                .map(|(a, b)| a.wrapping_add(b))
-        } else {
-            self.nonvirtual_result_offset(from, to)?
-        };
-        let offset = offset.ok_or(Error::Missing("virtual covariant result adjustment"))?;
-        Ok((offset != 0).then_some((i64::from_ne_bytes(offset.to_ne_bytes()), reference)))
+            && self.is_base_of(to, through))
+        .then_some(through);
+        Ok(Some(super::base_projections::CovariantResult {
+            from,
+            to,
+            through,
+            reference,
+        }))
     }
     pub(super) fn declared_virtual_overrider(
         &self,
@@ -1450,6 +1448,14 @@ impl super::graph::Graph {
     }
     pub(crate) fn lower_polymorphic(&self, class: EntityId) -> bool {
         self.entity(class).polymorphism.is_dynamic()
+    }
+    pub(crate) fn lower_dynamic_class(&self, class: EntityId) -> bool {
+        self.lower_polymorphic(class)
+            || self
+                .virtuals
+                .classes
+                .get(&class)
+                .is_some_and(|facts| facts.has_virtual_bases)
     }
     pub(crate) fn lower_virtual_class(&self, class: EntityId) -> Result<&ClassVirtuals, Error> {
         self.virtuals

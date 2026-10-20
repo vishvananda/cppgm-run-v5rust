@@ -48,8 +48,58 @@ pub(super) struct Tables {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct ResultAdjustment {
+    // Canonical route identities remain part of the thunk key, even if two
+    // distinct returned layouts happen to use the same negative row number.
+    from: EntityId,
+    via: Option<EntityId>,
     offset: i64,
     reference: bool,
+}
+
+#[cfg(test)]
+pub(crate) fn assert_covariant_routes(
+    graph: &crate::sema::Graph,
+    tree: &crate::syntax::ast::Tree,
+    cursor: &crate::syntax::cursor::Cursor<'_>,
+    classes: &[EntityId],
+    reference: bool,
+) {
+    use crate::support::stack::StackBudget;
+    let (class, dormant) = (classes[0], classes[1]);
+    assert!(graph.lower_class_layout(dormant).is_err());
+    let slots = graph.lower_virtual_slots(class).unwrap();
+    let (old, own) = (slots[0].unwrap(), slots[1].unwrap());
+    assert_eq!(old.function, own.function);
+    let mut table = super::SymbolTable::default();
+    let mut symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
+    let result = symbols
+        .result_adjustment(own.function, old.kind, old.adjusted, class)
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.reference, reference);
+    assert_eq!(result.offset, 12);
+    assert!(result.via.is_some());
+    let counts = symbols.vtables.return_adjustments.len();
+    for _ in 0..3 {
+        assert!(
+            symbols
+                .result_adjustment(own.function, old.kind, old.adjusted, class)
+                .unwrap()
+                == Some(result)
+        );
+    }
+    assert_eq!(counts, symbols.vtables.return_adjustments.len());
+    assert!(
+        symbols
+            .result_adjustment(own.function, own.kind, own.adjusted, class)
+            .unwrap()
+            .is_none()
+    );
+    assert!(symbols.vtables.objects.is_empty());
+    assert!(symbols.vtables.typeinfos.is_empty());
+    assert!(symbols.vtables.thunks.is_empty());
+    assert_eq!(symbols.pending.len(), 0);
+    assert!(graph.lower_class_layout(dormant).is_err());
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 struct ThisAdjustment {
@@ -90,6 +140,7 @@ struct Thunk {
     this_index: usize,
     adjustment: ThisAdjustment,
     result: Option<ResultAdjustment>,
+    result_row: Option<i64>,
     family: Option<(
         EntityId,
         Option<crate::lowir::model::NameId>,
@@ -278,7 +329,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         class: EntityId,
     ) -> Result<(), Error> {
-        if self.graph.lower_polymorphic(class) && self.graph.lower_emits_vtable(class)? {
+        if self.graph.lower_dynamic_class(class) && self.graph.lower_emits_vtable(class)? {
             self.vtable_symbol(program, class)?;
         }
         Ok(())
@@ -397,10 +448,33 @@ impl Symbols<'_, '_> {
         if let Some(&known) = self.vtables.return_adjustments.get(&key) {
             return Ok(known);
         }
-        let adjustment = self
+        let Some(classes) = self
             .graph
-            .lower_covariant_adjustment(function, adjusted, through)?
-            .map(|(offset, reference)| ResultAdjustment { offset, reference });
+            .lower_covariant_result(function, adjusted, through)?
+        else {
+            self.vtables.return_adjustments.insert(key, None);
+            return Ok(None);
+        };
+        let route = if let Some(through) = classes.through {
+            let first = self.base_route(classes.from, through)?;
+            let second = self.base_route(through, classes.to)?;
+            if second.via.is_none() {
+                super::virtual_bases::Route {
+                    via: first.via,
+                    offset: first.offset.wrapping_add(second.offset),
+                }
+            } else {
+                self.base_route(classes.from, classes.to)?
+            }
+        } else {
+            self.base_route(classes.from, classes.to)?
+        };
+        let adjustment = (route.via.is_some() || route.offset != 0).then_some(ResultAdjustment {
+            from: classes.from,
+            via: route.via,
+            offset: i64::from_ne_bytes(route.offset.to_ne_bytes()),
+            reference: classes.reference,
+        });
         self.vtables.return_adjustments.insert(key, adjustment);
         Ok(adjustment)
     }
@@ -564,6 +638,10 @@ impl Symbols<'_, '_> {
             super::super::construction::Variant::Complete
         };
         let function = self.encode_function(&facts, variant)?;
+        let result_row = result
+            .and_then(|r| r.via.map(|via| (r.from, via)))
+            .map(|(from, via)| self.vbase_row_offset(from, via))
+            .transpose()?;
         let mut object = Vec::new();
         Encoder::encode(
             &self.abi,
@@ -575,7 +653,7 @@ impl Symbols<'_, '_> {
                 },
                 result: result.map(|r| CallOffset {
                     offset: r.offset,
-                    vcall: None,
+                    vcall: result_row,
                 }),
             },
             &mut object,
@@ -600,6 +678,16 @@ impl Symbols<'_, '_> {
                 vcall.unsigned_abs()
             )
             .map_err(|_| crate::sema::Error::Invariant("thunk spelling"))?;
+        }
+        if let Some(row) = result_row {
+            use std::fmt::Write;
+            write!(
+                spelling,
+                "__virtual_{}{}",
+                if row < 0 { "n" } else { "p" },
+                row.unsigned_abs()
+            )
+            .map_err(|_| crate::sema::Error::Invariant("thunk result spelling"))?;
         }
         let symbol = self
             .table
@@ -687,6 +775,7 @@ impl Symbols<'_, '_> {
             this_index,
             adjustment,
             result,
+            result_row,
             family,
             metadata: Metadata {
                 object: Some(object),
@@ -809,7 +898,7 @@ impl Symbols<'_, '_> {
                 Some(builder.generated(call)?)
             };
             let returned = if let Some(adjustment) = thunk.result {
-                let value =
+                let mut value =
                     returned.ok_or(crate::sema::Error::Invariant("void covariant thunk"))?;
                 if !adjustment.reference {
                     let null_block = builder.block_id("return_null_1")?;
@@ -826,10 +915,22 @@ impl Symbols<'_, '_> {
                     builder.effect(I::Return(result, Some(value)))?;
                     builder.place_block(adjust_block)?;
                 }
-                let offset = builder.integer(u128::from_ne_bytes(
-                    i128::from(adjustment.offset).to_ne_bytes(),
-                ))?;
-                Some(builder.generated(I::Index(Type::I8, None, value, offset))?)
+                if let Some(row) = thunk.result_row {
+                    let facts = crate::lowir::model::Facts::memory(false, true);
+                    let table = builder.generated(I::Load(facts, Type::Ptr, value))?;
+                    let offset =
+                        builder.integer(u128::from_ne_bytes(i128::from(row).to_ne_bytes()))?;
+                    let row = builder.generated(I::Index(Type::I8, None, table, offset))?;
+                    let offset = builder.generated(I::Load(facts, Type::I64, row))?;
+                    value = builder.generated(I::Index(Type::I8, None, value, offset))?;
+                }
+                if adjustment.offset != 0 {
+                    let offset = builder.integer(u128::from_ne_bytes(
+                        i128::from(adjustment.offset).to_ne_bytes(),
+                    ))?;
+                    value = builder.generated(I::Index(Type::I8, None, value, offset))?;
+                }
+                Some(value)
             } else {
                 returned
             };

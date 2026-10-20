@@ -20,7 +20,7 @@ impl Function<'_, '_, '_, '_> {
     }
 
     pub(super) fn store_vptr(&mut self, class: EntityId, source: TypeId) -> Result<(), Error> {
-        if !self.graph.lower_polymorphic(class) {
+        if !self.graph.lower_dynamic_class(class) {
             return Ok(());
         }
         self.symbols.vtable_symbol(self.builder.program(), class)?;

@@ -2498,6 +2498,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(function) = entry.entity(self.graph) {
             self.name_local_classes(function)?;
         }
+        // HiddenBaseParameters: a class with virtual bases has distinct base
+        // and complete ABI entries, even when only one is demanded here.
+        if entry
+            .facts(self.graph)?
+            .object
+            .is_some_and(|class| !self.graph.lower_virtual_bases(class).is_empty())
+        {
+            return Ok(());
+        }
         if let Entry::Function(entity) = entry
             && matches!(
                 self.graph.lower_function(entity)?.name,
@@ -2953,7 +2962,7 @@ impl Symbols<'_, '_> {
 }
 
 #[cfg(test)]
-pub(crate) use vtables::{assert_hierarchy_flags, assert_table_demand};
+pub(crate) use vtables::{assert_covariant_routes, assert_hierarchy_flags, assert_table_demand};
 
 #[cfg(test)]
 pub(crate) use virtual_bases::assert_base_routes;

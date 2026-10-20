@@ -388,7 +388,9 @@ mod tests {
             assert_ne!(old.introducer, own.introducer);
             assert_ne!(old.adjusted, own.adjusted);
             assert_eq!(own.adjusted, own.function);
-            assert_eq!(graph.lower_covariant_adjustment(own.function, old.adjusted, class).unwrap(), Some((4, false)));
+            let result = graph.lower_covariant_result(own.function, old.adjusted, class).unwrap().unwrap();
+            assert!(!result.reference);
+            assert_eq!(graph.lower_nonvirtual_offset(result.from, result.to).unwrap(), Some(4));
         });
     }
 

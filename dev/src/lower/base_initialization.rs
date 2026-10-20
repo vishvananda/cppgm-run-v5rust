@@ -151,9 +151,10 @@ impl Function<'_, '_, '_, '_> {
         self.destroy_temporaries(first)?;
         self.end_lifetime_expression(region)?;
         // object_lowering.cpp::construct_base's course entry demand.
-        if self.graph.lower_polymorphic(plan.class)
+        if (self.graph.lower_polymorphic(plan.class)
             && (!self.graph.lower_polymorphic(base.class)
                 || self.graph.lower_virtual_destructor(base.class))
+            || !self.graph.lower_virtual_bases(plan.class).is_empty())
             && let Some(constructor) =
                 constructor.filter(|id| self.graph.lower_user_provided_constructor(*id))
         {

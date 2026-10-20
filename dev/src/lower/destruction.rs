@@ -58,8 +58,12 @@ impl Function<'_, '_, '_, '_> {
                 signature: None,
                 copy_elision: false,
             }))
-        } else {
+        } else if self.graph.lower_polymorphic(class) {
             self.store_vptr(class, source)
+        } else {
+            // destructor_stores_tables: a vptr required only by virtual
+            // inheritance is retained during destruction in the course form.
+            Ok(())
         }
     }
     pub(super) fn begin_destructor(
