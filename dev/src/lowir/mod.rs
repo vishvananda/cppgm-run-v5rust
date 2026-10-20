@@ -48,6 +48,18 @@ impl Error {
 /// # Errors
 /// Returns structural, input/output or explicitly unimplemented feature failures.
 pub fn roundtrip(paths: &[PathBuf], output: &Path, statistics: bool) -> Result<Statistics, Error> {
+    let (program, mut stats) = read_files(paths, statistics)?;
+    let start = std::time::Instant::now();
+    write_file(&program, output)?;
+    stats.write_ms = start.elapsed().as_secs_f64() * 1000.0;
+    Ok(stats)
+}
+/// The text-tool boundary produces one validated unit, without a text roundtrip
+/// between the reader and its native or serialization consumer.
+pub(crate) fn read_files(
+    paths: &[PathBuf],
+    statistics: bool,
+) -> Result<(model::Program, Statistics), Error> {
     let mut program = model::Program::default();
     let start = std::time::Instant::now();
     let mut source_bytes = 0_usize;
@@ -71,10 +83,7 @@ pub fn roundtrip(paths: &[PathBuf], output: &Path, statistics: bool) -> Result<S
     stats.source_bytes = source_bytes;
     stats.parse_ms = parse_ms;
     stats.validate_ms = validate_ms;
-    let start = std::time::Instant::now();
-    write_file(&program, output)?;
-    stats.write_ms = start.elapsed().as_secs_f64() * 1000.0;
-    Ok(stats)
+    Ok((program, stats))
 }
 /// Construct and validate a PA8 exercise through the shared typed model.
 ///

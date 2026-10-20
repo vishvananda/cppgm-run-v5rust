@@ -218,6 +218,51 @@ fn finite(kind: FloatKind, encoding: u128) -> Result<(u128, i64, bool), Error> {
     ))
 }
 
+/// The native dump uses the first general-decimal precision that roundtrips
+/// at the stated width. This is a view of bits, separate from `LowIR`'s spelling.
+pub(crate) fn mir_text(
+    scanner: &mut FloatingScanner,
+    kind: FloatKind,
+    bits: u128,
+) -> Result<String, Error> {
+    let (fraction, exponent_bits, _) = kind.layout();
+    let shift = if kind == FloatKind::F80 { 64 } else { fraction };
+    let sign = if bits & kind.sign() == 0 { "" } else { "-" };
+    let exponent = (bits >> shift) & ((1 << exponent_bits) - 1);
+    if exponent == (1 << exponent_bits) - 1 {
+        let name = if bits & ((1 << fraction) - 1) == 0 {
+            "inf"
+        } else {
+            "nan"
+        };
+        return Ok(format!("{sign}{name}"));
+    }
+    let (significand, exponent, _) = finite(kind, bits)?;
+    let mut spelling = "0".to_owned();
+    if significand != 0 {
+        let (digits, scale) = scanner
+            .decimal_binary(significand, exponent)
+            .map_err(|_| Error::Limit)?;
+        let max_digits = match kind {
+            FloatKind::F32 => 9,
+            FloatKind::F64 => 17,
+            FloatKind::F80 => 21,
+        };
+        for precision in 1..=max_digits {
+            spelling = general_decimal(&digits, scale, precision)?;
+            if matches!(scan(scanner, &spelling, kind.ty(), false)?,
+                Some(Constant::Float(_, read)) if read == bits & !kind.sign())
+            {
+                break;
+            }
+        }
+    }
+    if !spelling.contains(['.', 'e']) {
+        spelling.push_str(".0");
+    }
+    Ok(format!("{sign}{spelling}{}", kind.suffix()))
+}
+
 pub(crate) fn text(
     scanner: &mut FloatingScanner,
     kind: FloatKind,
@@ -354,6 +399,26 @@ fn general_decimal(digits: &str, scale: i64, precision: usize) -> Result<String,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_spelling_roundtrips_at_each_target_width() -> Result<(), Error> {
+        let mut scratch = FloatingScanner::default();
+        for (kind, bits, expected) in [
+            (FloatKind::F32, 0x3dcc_cccd, "0.1f"),
+            (FloatKind::F64, 0x3fb9_9999_9999_999a, "0.1"),
+            (FloatKind::F80, (0x3fff_u128 << 64) | (1 << 63), "1.0L"),
+            (FloatKind::F32, 1, "1e-45f"),
+            (FloatKind::F64, 1, "5e-324"),
+            (FloatKind::F80, 1, "4e-4951L"),
+            (FloatKind::F32, 1 << 31, "-0.0f"),
+            (FloatKind::F64, 1 << 63, "-0.0"),
+            (FloatKind::F32, 0x7f80_0000, "inf"),
+            (FloatKind::F64, 0xfff8_0000_0000_0001, "-nan"),
+        ] {
+            assert_eq!(mir_text(&mut scratch, kind, bits)?, expected);
+        }
+        Ok(())
+    }
 
     #[test]
     fn integer_conversion_retains_x87_intermediate_rounding() -> Result<(), Error> {
