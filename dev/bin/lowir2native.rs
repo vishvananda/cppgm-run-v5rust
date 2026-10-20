@@ -1,7 +1,9 @@
 fn main() -> std::process::ExitCode {
+    use std::os::unix::fs::PermissionsExt;
     cppgm_rust::driver::lowir2native::run(
         &std::env::args_os().skip(1).collect::<Vec<_>>(),
         peak_rss,
+        std::fs::Permissions::from_mode(0o755),
     )
 }
 

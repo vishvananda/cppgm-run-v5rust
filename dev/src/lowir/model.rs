@@ -35,6 +35,11 @@ impl TempId {
         self.0 as usize
     }
 }
+impl SlotId {
+    pub(crate) fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 pub(crate) struct Names {
     text: Vec<Arc<[u8]>>,
     index: HashMap<Arc<[u8]>, NameId>,

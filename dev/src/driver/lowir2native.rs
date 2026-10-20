@@ -33,8 +33,12 @@ struct Invocation {
 
 /// Run the standalone backend with byte-preserving arguments.
 #[must_use]
-pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
-    match execute(args, peak_rss) {
+pub fn run(
+    args: &[OsString],
+    peak_rss: fn() -> u64,
+    permissions: std::fs::Permissions,
+) -> std::process::ExitCode {
+    match execute(args, peak_rss, permissions) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(Error::NotImplemented(feature)) => {
             eprintln!("lowir2native: Rust port is not implemented yet: {feature}");
@@ -64,7 +68,11 @@ fn write_error(out: &mut impl Write, error: Error) -> io::Result<()> {
     out.write_all(b"\n")
 }
 
-fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
+fn execute(
+    args: &[OsString],
+    peak_rss: fn() -> u64,
+    permissions: std::fs::Permissions,
+) -> Result<(), Error> {
     if args.iter().any(|arg| arg == "--batch-stdin") {
         let mut out = io::stdout().lock();
         for line in io::stdin().lock().split(b'\n') {
@@ -80,7 +88,8 @@ fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
             .write_all(HELP.as_bytes())
             .map_err(Error::Output);
     }
-    let invocation = parse(args)?;
+    let mut invocation = parse(args)?;
+    invocation.options.permissions = Some(permissions);
     let (program, _) = crate::lowir::read_files(&invocation.sources, false)?;
     let report = native::compile(&program, &invocation.options)?;
     if invocation.options.stats {

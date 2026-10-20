@@ -10,34 +10,6 @@ use crate::{
 };
 use std::io::Write;
 
-/// `global_size` visits every storage item before the first global is dumped.
-/// Its value-width check belongs to the native displacement boundary rather
-/// than the `LowIR` validator, which accepts larger abstract object types.
-pub(super) fn validate_storage(program: &Program) -> Result<(), Error> {
-    fn check(ty: Type) -> Result<(), Error> {
-        if matches!(ty, Type::Object { bytes, .. } if bytes > 0x7fff_0000) {
-            return Err(Error::Diagnostic(
-                "object larger than the 32-bit displacement range".into(),
-            ));
-        }
-        Ok(())
-    }
-    for global in program.globals_in_publication_order() {
-        match &global.init {
-            GlobalInit::Declaration => {}
-            GlobalInit::Data(items) => {
-                for item in items {
-                    if let DataItem::Constant(ty, _) = item {
-                        check(*ty)?;
-                    }
-                }
-            }
-            _ => check(global.ty.unwrap_or(Type::Ptr))?,
-        }
-    }
-    Ok(())
-}
-
 pub(super) fn write(program: &Program, out: &mut impl Write) -> Result<(), Error> {
     let mut floating = FloatingScanner::default();
     for global in program.globals_in_publication_order() {

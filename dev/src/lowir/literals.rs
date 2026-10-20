@@ -218,6 +218,60 @@ fn finite(kind: FloatKind, encoding: u128) -> Result<(u128, i64, bool), Error> {
     ))
 }
 
+/// Native immediates and global initializers convert the signed low integer
+/// word through x87, or round a retained floating value to its stored width.
+pub(crate) fn native_float(
+    scanner: &mut FloatingScanner,
+    value: Constant,
+    target: FloatKind,
+) -> Result<u128, Error> {
+    let Constant::Float(kind, bits) = value else {
+        let Constant::Integer(bits) = value else {
+            return Err(Error::Limit);
+        };
+        let low = u64::try_from(bits & u128::from(u64::MAX)).map_err(|_| Error::Limit)?;
+        let signed = i64::from_le_bytes(low.to_le_bytes());
+        return integer_as_float(scanner, i128::from(signed).cast_unsigned(), target, false);
+    };
+    if kind == target {
+        return Ok(bits);
+    }
+    let (fraction, exponents, _) = kind.layout();
+    let shift = if kind == FloatKind::F80 { 64 } else { fraction };
+    let negative = bits & kind.sign() != 0;
+    let result = if (bits >> shift) & ((1 << exponents) - 1) == (1 << exponents) - 1 {
+        let payload = bits & ((1 << fraction) - 1);
+        let Constant::Float(_, infinity) = special("inf", target.ty(), false) else {
+            return Err(Error::Limit);
+        };
+        if payload == 0 {
+            infinity
+        } else {
+            let (to_fraction, _, _) = target.layout();
+            let payload = if to_fraction > fraction {
+                payload << (to_fraction - fraction)
+            } else {
+                payload >> (fraction - to_fraction)
+            };
+            infinity | payload | (1 << (to_fraction - 1))
+        }
+    } else {
+        let (significand, exponent, _) = finite(kind, bits)?;
+        if let Some(value) = scanner
+            .binary(significand, exponent, target.fundamental())
+            .map_err(|_| Error::Limit)?
+        {
+            value
+        } else {
+            let Constant::Float(_, value) = special("inf", target.ty(), false) else {
+                return Err(Error::Limit);
+            };
+            value
+        }
+    };
+    Ok(result | if negative { target.sign() } else { 0 })
+}
+
 /// The native dump uses the first general-decimal precision that roundtrips
 /// at the stated width. This is a view of bits, separate from `LowIR`'s spelling.
 pub(crate) fn mir_text(
@@ -399,6 +453,51 @@ fn general_decimal(digits: &str, scale: i64, precision: usize) -> Result<String,
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_float_conversion_uses_the_signed_low_word_and_target_width() -> Result<(), Error> {
+        let mut scanner = FloatingScanner::default();
+        assert_eq!(
+            native_float(
+                &mut scanner,
+                Constant::Integer((1 << 100) | 1),
+                FloatKind::F64
+            )?,
+            0x3ff0_0000_0000_0000
+        );
+        assert_eq!(
+            native_float(
+                &mut scanner,
+                Constant::Integer(u128::from(u64::MAX)),
+                FloatKind::F64
+            )?,
+            0xbff0_0000_0000_0000
+        );
+        assert_eq!(
+            native_float(
+                &mut scanner,
+                Constant::Float(FloatKind::F32, 0x3dcc_cccd),
+                FloatKind::F64
+            )?,
+            0x3fb9_9999_a000_0000
+        );
+        assert_eq!(
+            native_float(
+                &mut scanner,
+                Constant::Float(FloatKind::F80, 1 << 79),
+                FloatKind::F32
+            )?,
+            1 << 31
+        );
+        assert_eq!(
+            native_float(
+                &mut scanner,
+                Constant::Float(FloatKind::F64, 0x7fef_ffff_ffff_ffff),
+                FloatKind::F32
+            )?,
+            0x7f80_0000
+        );
+        Ok(())
+    }
 
     #[test]
     fn native_spelling_roundtrips_at_each_target_width() -> Result<(), Error> {

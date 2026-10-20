@@ -9,10 +9,10 @@ use std::io::Write;
 #[derive(Default)]
 pub(super) struct Startup {
     pub(super) entry: Option<SymbolId>,
-    init: Option<SymbolId>,
-    fini: Option<SymbolId>,
-    atexit: Option<SymbolId>,
-    entry_parameters: usize,
+    pub(super) init: Option<SymbolId>,
+    pub(super) fini: Option<SymbolId>,
+    pub(super) atexit: Option<SymbolId>,
+    pub(super) entry_parameters: usize,
 }
 
 impl Startup {

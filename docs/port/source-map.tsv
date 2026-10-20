@@ -120,15 +120,15 @@ dev/src/lowir/validator.cpp	dev/src/lowir/validator.rs,dev/src/lowir/model.rs	pa
 dev/src/lowir/validator.h	dev/src/lowir/validator.rs	partial PA8: typed core/call/symbol/TLS/runtime validation with original instruction/source locations and separate construction result/link audit; distinct EH handler versus ordinary edge facts; full later construction field checks pending
 dev/src/lowir_model.h	dev/src/lowir/vocabulary.rs,dev/src/lowir/model.rs	partial PA8: scalar/object types and complete unary/binary/comparison/conversion vocabulary; typed integer/CFG/memory/call/global/data/address payloads and introductory object boundary classes; atomic update/fence/MemoryOrder vocabulary and atomic/EH/varargs/stack payloads; typed debug locations with body-local IDs; typed Constant/FloatKind and body-owned literal bits; host-object extensions pending; PA10 full-stage audit: compact Value identity supports function-local untyped-place tracking; metadata is a copied typed fact carrier; function-owned aggregate path scratch retains capacity and restores on Result.
 dev/src/mir_model.h		pending
-dev/src/native/backend.cpp	dev/src/native/mod.rs,dev/src/native/startup.rs	partial PA24: typed native preflight, no-entry rejection before output creation, startup role and object-name atexit discovery, MIR data-only compilation with exact zero-work counters and measured timing/RSS; per-function selection/emission, executable/runtime paths pending
-dev/src/native/backend.h	dev/src/native/mod.rs	partial PA24: typed standalone native options and statistics boundary over validated Program; full backend/emitter interfaces pending
+dev/src/native/backend.cpp	dev/src/native/mod.rs,dev/src/native/startup.rs	partial PA24: typed standalone orchestration over one validated Program; startup/global inventory, demand-selected single-block terminal functions, shared MIR/encoding facts, function-owned transient selection and assembly, exact supported counters; general selection/optimizer, object/link interfaces pending
+dev/src/native/backend.h	dev/src/native/mod.rs,dev/src/native/startup.rs	partial PA24: typed standalone orchestration over one validated Program; startup/global inventory, demand-selected single-block terminal functions, shared MIR/encoding facts, function-owned transient selection and assembly, exact supported counters; general selection/optimizer, object/link interfaces pending
 dev/src/native/backend_error.h		pending
-dev/src/native/image/executable_file.cpp		pending
-dev/src/native/image/executable_file.h		pending
-dev/src/native/image/global_data.cpp		pending
-dev/src/native/image/global_data.h		pending
-dev/src/native/image/image.cpp		pending
-dev/src/native/image/image.h		pending
+dev/src/native/image/executable_file.cpp	dev/src/native/executable.rs,dev/bin/lowir2native.rs	partial PA24: exact default standalone ELF64 segments, addresses, trailing-zero/BSS layout and buffered output with typed host permissions; generalized linker segment alignment/object structures pending
+dev/src/native/image/executable_file.h	dev/src/native/executable.rs,dev/bin/lowir2native.rs	partial PA24: exact default standalone ELF64 segments, addresses, trailing-zero/BSS layout and buffered output with typed host permissions; generalized linker segment alignment/object structures pending
+dev/src/native/image/global_data.cpp	dev/src/native/global_data.rs,dev/src/lowir/literals.rs	partial PA24: typed global layout in publication order, target-wrapping raw spans/alignment, native floating coercion and byte payloads, address fixups; standalone data image integrated
+dev/src/native/image/global_data.h	dev/src/native/global_data.rs,dev/src/lowir/literals.rs	partial PA24: typed global layout in publication order, target-wrapping raw spans/alignment, native floating coercion and byte payloads, address fixups; standalone data image integrated
+dev/src/native/image/image.cpp	dev/src/native/image.rs	partial PA24: compact typed program/local symbols, section storage, scalar constant interning, function fixup rebasing, PC-relative and data-address resolution; generalized object/link image interfaces pending
+dev/src/native/image/image.h	dev/src/native/image.rs	partial PA24: compact typed program/local symbols, section storage, scalar constant interning, function fixup rebasing, PC-relative and data-address resolution; generalized object/link image interfaces pending
 dev/src/native/link/linker.cpp		pending
 dev/src/native/link/linker.h		pending
 dev/src/native/link/routine_builder.cpp		pending
@@ -138,13 +138,13 @@ dev/src/native/link/runtime_library.h		pending
 dev/src/native/link/runtime_support.cpp		pending
 dev/src/native/link/runtime_support.h		pending
 dev/src/native/mir/eh_tables.h		pending
-dev/src/native/mir/mir.h		pending
-dev/src/native/mir/mir_writer.cpp	dev/src/native/mir_globals.rs,dev/src/native/startup.rs,dev/src/lowir/literals.rs	partial PA24: startup/header and scalar/structured global views, storage metadata, full i128 and signed-low-word integer spelling, wrapping signed-word symbolic addends and exact shortest-width floating spelling; function ABI/frame/instruction views pending
-dev/src/native/mir/mir_writer.h	dev/src/native/mir_globals.rs,dev/src/native/startup.rs	partial PA24: bounded streaming startup/global MIR views with structured output errors; function writer interface pending
-dev/src/native/mir/operand.h		pending
-dev/src/native/mir/registers.h		pending
+dev/src/native/mir/mir.h	dev/src/native/mir.rs,dev/src/native/image.rs,dev/src/native/x86.rs	partial PA24: function-owned typed terminal instruction model, compact labels/symbols/registers and retained immediate bits shared by writer/encoder; full instruction and EH vocabulary pending
+dev/src/native/mir/mir_writer.cpp	dev/src/native/mir.rs,dev/src/native/mir_globals.rs,dev/src/native/startup.rs,dev/src/lowir/literals.rs	partial PA24: streamed startup/global and terminal-function ABI/frame/op/debug views, full i128 immediate words and raw byte filenames; general MIR opcode/operand views pending
+dev/src/native/mir/mir_writer.h	dev/src/native/mir.rs,dev/src/native/mir_globals.rs,dev/src/native/startup.rs,dev/src/lowir/literals.rs	partial PA24: streamed startup/global and terminal-function ABI/frame/op/debug views, full i128 immediate words and raw byte filenames; general MIR opcode/operand views pending
+dev/src/native/mir/operand.h	dev/src/native/mir.rs,dev/src/native/image.rs,dev/src/native/x86.rs	partial PA24: function-owned typed terminal instruction model, compact labels/symbols/registers and retained immediate bits shared by writer/encoder; full instruction and EH vocabulary pending
+dev/src/native/mir/registers.h	dev/src/native/x86.rs	partial PA24: private typed physical GPR/XMM identities, exact names and encoding codes; condition vocabulary pending
 dev/src/native/mir/type_kinds.h		pending
-dev/src/native/object/elf_format.h		pending
+dev/src/native/object/elf_format.h	dev/src/native/executable.rs,dev/bin/lowir2native.rs	partial PA24: exact default standalone ELF64 segments, addresses, trailing-zero/BSS layout and buffered output with typed host permissions; generalized linker segment alignment/object structures pending
 dev/src/native/object/elf_object.h		pending
 dev/src/native/object/elf_object_reader.cpp		pending
 dev/src/native/object/elf_object_writer.cpp		pending
@@ -156,24 +156,24 @@ dev/src/native/object/object_compiler.cpp		pending
 dev/src/native/object/object_compiler.h		pending
 dev/src/native/object/object_file.cpp		pending
 dev/src/native/object/object_file.h		pending
-dev/src/native/runtime/eh_record.h		pending
-dev/src/native/runtime/runtime.cpp		pending
-dev/src/native/runtime/runtime.h		pending
-dev/src/native/select/allocation.cpp		pending
+dev/src/native/runtime/eh_record.h	dev/src/native/runtime.rs,dev/src/native/builtins.rs	partial PA24: exact standalone EH dispatcher/uncaught exit, startup/init/fini/exit_group, atexit mmap pages and LIFO drain, declared memory builtins and TLS wrappers; exception selection, setjmp/longjmp thunks and linked runtime helpers pending
+dev/src/native/runtime/runtime.cpp	dev/src/native/runtime.rs,dev/src/native/builtins.rs	partial PA24: exact standalone EH dispatcher/uncaught exit, startup/init/fini/exit_group, atexit mmap pages and LIFO drain, declared memory builtins and TLS wrappers; exception selection, setjmp/longjmp thunks and linked runtime helpers pending
+dev/src/native/runtime/runtime.h	dev/src/native/runtime.rs,dev/src/native/builtins.rs	partial PA24: exact standalone EH dispatcher/uncaught exit, startup/init/fini/exit_group, atexit mmap pages and LIFO drain, declared memory builtins and TLS wrappers; exception selection, setjmp/longjmp thunks and linked runtime helpers pending
+dev/src/native/select/allocation.cpp	dev/src/native/value_selection.rs,dev/src/native/mir.rs	partial PA24: terminal scalar incoming-register use, dead/promoted local elision and exact zero/48-byte scratch frames; general homes/frame allocation, register preservation and allocation pending
 dev/src/native/select/allocation_structures.h		pending
-dev/src/native/select/analysis.cpp		pending
+dev/src/native/select/analysis.cpp	dev/src/native/slot_analysis.rs,dev/src/native/value_selection.rs	partial PA24: single-block constant/copy aliases, compatible parameter copies, narrow normalization, dead/promoted slot facts; general CFG alias/fold/load/home analysis pending
 dev/src/native/select/block_placement.cpp		pending
 dev/src/native/select/block_placement.h		pending
 dev/src/native/select/branch_layout.cpp		pending
 dev/src/native/select/bulk_policy.h		pending
-dev/src/native/select/call_abi.cpp	dev/src/native/mir_globals.rs	partial PA24: preserve value_bytes object displacement-range rejection during native global preflight; value sizes/alignments and full call/return ABI classification remain pending
-dev/src/native/select/call_abi.h		pending
-dev/src/native/select/emit_calls.cpp		pending
-dev/src/native/select/emit_control.cpp		pending
+dev/src/native/select/call_abi.cpp	dev/src/native/abi.rs	partial PA24: native widths/alignments and displacement diagnostic; SysV scalar/object argument register/stack classification with class exhaustion, hidden-result register reservation and target-wrapping stack offsets; full return/call parts, variadic handling and cached call layouts pending
+dev/src/native/select/call_abi.h	dev/src/native/abi.rs	partial PA24: native widths/alignments and displacement diagnostic; SysV scalar/object argument register/stack classification with class exhaustion, hidden-result register reservation and target-wrapping stack offsets; full return/call parts, variadic handling and cached call layouts pending
+dev/src/native/select/emit_calls.cpp	dev/src/native/value_selection.rs,dev/src/native/mir.rs,dev/src/native/abi.rs	partial PA24: terminal scalar/void/constant x87 returns and incoming ABI view; used floating/object/stack parameters, object returns, calls/tail calls and variadic entry pending
+dev/src/native/select/emit_control.cpp	dev/src/native/value_selection.rs,dev/src/native/mir.rs	partial PA24: single-block typed dispatch for const/copy/promoted locals/return/trap; general branches, block placement and control selection pending
 dev/src/native/select/emit_convert.cpp		pending
 dev/src/native/select/emit_divide.cpp		pending
 dev/src/native/select/emit_memory.cpp		pending
-dev/src/native/select/emit_values.cpp		pending
+dev/src/native/select/emit_values.cpp	dev/src/native/value_selection.rs,dev/src/native/mir.rs	partial PA24: typed terminal integer/full-i128/floating/symbol operands and exact constant normalization/view facts; ordinary arithmetic, conversions, memory and general operand placement pending
 dev/src/native/select/for_each_inst.h		pending
 dev/src/native/select/frame_layout.cpp		pending
 dev/src/native/select/frame_layout.h		pending
@@ -187,7 +187,7 @@ dev/src/native/select/loop_split.h		pending
 dev/src/native/select/mir_cleanup.cpp		pending
 dev/src/native/select/mir_cleanup.h		pending
 dev/src/native/select/operand_roles.h		pending
-dev/src/native/select/operands.cpp		pending
+dev/src/native/select/operands.cpp	dev/src/native/value_selection.rs,dev/src/native/mir.rs	partial PA24: typed terminal integer/full-i128/floating/symbol operands and exact constant normalization/view facts; ordinary arithmetic, conversions, memory and general operand placement pending
 dev/src/native/select/register_allocation.cpp		pending
 dev/src/native/select/selector.cpp		pending
 dev/src/native/select/selector.h		pending
@@ -195,11 +195,11 @@ dev/src/native/select/selector_facts.h		pending
 dev/src/native/select/selector_state.h		pending
 dev/src/native/select/shrink_wrap.cpp		pending
 dev/src/native/select/shrink_wrap.h		pending
-dev/src/native/x86/assembler.cpp		pending
-dev/src/native/x86/assembler.h		pending
-dev/src/native/x86/emitter.cpp		pending
-dev/src/native/x86/emitter.h		pending
-dev/src/native/x86/emitter_floating.cpp		pending
+dev/src/native/x86/assembler.cpp	dev/src/native/x86.rs	partial PA24: checked function-owned code/fixup/label stores, core REX/ModRM/SIB, RIP-relative immediate-end fixups, local short/long branches, runtime/terminal instruction forms; full instruction and GOT/TLS relocation forms pending
+dev/src/native/x86/assembler.h	dev/src/native/x86.rs	partial PA24: checked function-owned code/fixup/label stores, core REX/ModRM/SIB, RIP-relative immediate-end fixups, local short/long branches, runtime/terminal instruction forms; full instruction and GOT/TLS relocation forms pending
+dev/src/native/x86/emitter.cpp	dev/src/native/mir.rs,dev/src/native/x86.rs	partial PA24: terminal moves/symbol addresses/returns/trap, exact prologue/epilogue and code alignment; full MIR instruction dispatch pending
+dev/src/native/x86/emitter.h	dev/src/native/mir.rs,dev/src/native/x86.rs	partial PA24: terminal moves/symbol addresses/returns/trap, exact prologue/epilogue and code alignment; full MIR instruction dispatch pending
+dev/src/native/x86/emitter_floating.cpp	dev/src/native/mir.rs,dev/src/native/image.rs,dev/src/native/x86.rs	partial PA24: terminal f32/f64 constant moves and f80 return with exact scalar constant pool and positive-zero xor; general floating operations pending
 dev/src/native/x86/emitter_memory.cpp		pending
 dev/src/opt/aggregate_slots.cpp		pending
 dev/src/opt/call_graph.cpp		pending
