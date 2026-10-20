@@ -582,4 +582,52 @@ mod tests {
         crate::lower::assert_table_demand(&graph, tree, cursor, &classes);
         assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
     }
+    #[test]
+    fn hierarchy_flags_distinguish_shared_and_repeated_occurrences_without_layout_demand() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            sema::{Analyzer, lowering::TypeView},
+            support::source::SourceBuffer,
+            syntax::ast,
+        };
+        let source = SourceBuffer::new(
+            br"
+            struct Root{virtual void f();};
+            struct Left:Root{};struct Right:Root{};
+            struct Repeat:Left,Right{};
+            struct VLeft:virtual Left{};struct VRight:virtual Left{};
+            struct Diamond:VLeft,VRight{};
+            struct Mixed:Diamond,Left{};
+            struct Branch:virtual Right{};
+            struct Both:Diamond,Branch{};
+            struct Unrelated{virtual void unused();};
+            void anchor(Root*,Repeat*,Diamond*,Mixed*,Both*,Unrelated*);
+        "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"rtti-hierarchy-flags").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax = (tree.expressions.mark(), tree.declarations.mark());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let ast::DeclKind::Simple { declarators, .. } = tree
+            .declarations
+            .get(*tree.decl_lists.get(declarations).last().unwrap())
+            .kind
+        else {
+            panic!("anchor declaration");
+        };
+        let declarator = tree.init_declarators.get(declarators)[0].declarator;
+        let function = graph.lower_declared(declarator).unwrap();
+        let ty = graph.lower_function(function).unwrap().ty;
+        let TypeView::Function { parameters, .. } = graph.lower_type(ty).unwrap() else {
+            panic!("anchor signature");
+        };
+        crate::lower::assert_hierarchy_flags(&graph, tree, cursor, parameters);
+        assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
+    }
 }

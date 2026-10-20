@@ -411,21 +411,52 @@ impl Symbols<'_, '_> {
         if single {
             items.push(address(targets[0], 0));
         } else if !bases.is_empty() {
-            // Multiple and virtual inheritance are a later stage. A PA13 class
-            // reaching VMI has exactly one inaccessible or nonzero-offset base.
-            if bases.len() != 1 {
-                return Err(Error::Missing("multiple-inheritance RTTI flags"));
-            }
-            items.push(integer(Type::I32, 0));
-            items.push(integer(Type::I32, 1));
-            items.push(address(targets[0], 0));
+            items.push(integer(Type::I32, u64::from(self.inheritance_flags(class))));
             items.push(integer(
-                Type::I64,
-                bases[0].2.wrapping_shl(8) | if bases[0].1 { 2 } else { 0 },
+                Type::I32,
+                u64::try_from(bases.len()).map_err(|_| crate::lowir::Error::Limit)?,
             ));
+            for (&(_, public, offset), target) in bases.iter().zip(targets) {
+                items.push(address(target, 0));
+                items.push(integer(
+                    Type::I64,
+                    offset.wrapping_shl(8) | if public { 2 } else { 0 },
+                ));
+            }
         }
         define(program, symbol, metadata, items)?;
         Ok(symbol)
+    }
+    fn inheritance_flags(&self, class: EntityId) -> u32 {
+        // vtable_lowering.cpp::inheritance_flags: count actual nonvirtual
+        // occurrences, but descend through each shared virtual base only once.
+        // The bounded walk's repeat flag disables the runtime's shortcuts.
+        let mut work = vec![class];
+        let mut marks = HashMap::<EntityId, u8>::new();
+        let mut flags = 0;
+        let mut visits = 0_u32;
+        while let Some(class) = work.pop() {
+            for (next, shared) in self.graph.lower_inheritance_edges(class) {
+                visits += 1;
+                if visits > 1 << 16 {
+                    return 1;
+                }
+                let mark = marks.entry(next).or_default();
+                if shared {
+                    flags |= u32::from(*mark & 1 != 0);
+                    if *mark & 2 != 0 {
+                        flags |= 2;
+                        continue;
+                    }
+                    *mark |= 2;
+                } else {
+                    flags |= u32::from(*mark != 0);
+                    *mark |= 1;
+                }
+                work.push(next);
+            }
+        }
+        flags
     }
     pub(in crate::lower) fn virtual_signature(
         &mut self,
@@ -595,4 +626,33 @@ pub(crate) fn assert_table_demand(
     assert!(!symbols.vtables.typeinfos.contains_key(&unused));
     symbols.vtable_symbol(&mut program, a).unwrap();
     assert!(symbols.vtables.pure_virtual.is_some());
+}
+
+#[cfg(test)]
+pub(crate) fn assert_hierarchy_flags(
+    graph: &crate::sema::Graph,
+    tree: &crate::syntax::ast::Tree,
+    cursor: &crate::syntax::cursor::Cursor<'_>,
+    parameters: &[crate::sema::lowering::TypeId],
+) {
+    use crate::{sema::lowering::TypeView, support::stack::StackBudget};
+    let program = Program::default();
+    let mut table = super::SymbolTable::default();
+    let symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
+    assert_eq!(parameters.len(), 6);
+    for (&ty, expected) in parameters.iter().zip([0, 1, 2, 3, 3, 0]) {
+        let TypeView::Pointer(pointee) = graph.lower_type(ty).unwrap() else {
+            panic!("anchor pointer");
+        };
+        let TypeView::Class(class) = graph.lower_type(pointee).unwrap() else {
+            panic!("anchor class");
+        };
+        assert_eq!(symbols.inheritance_flags(class), expected);
+        assert!(graph.lower_class_layout(class).is_err());
+        assert!(graph.lower_virtual_slots(class).is_err());
+    }
+    assert_eq!(symbols.pending.len(), 0);
+    assert!(symbols.vtables.objects.is_empty());
+    assert!(symbols.vtables.typeinfos.is_empty());
+    assert!(program.globals().is_empty());
 }

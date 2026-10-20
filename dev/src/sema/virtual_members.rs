@@ -1134,6 +1134,9 @@ impl super::graph::Graph {
         class: EntityId,
     ) -> impl Iterator<Item = Result<(EntityId, bool, u64), Error>> + '_ {
         self.entity(class).bases.iter().map(|base| {
+            if base.is_virtual {
+                return Err(Error::Missing("virtual-base RTTI rows"));
+            }
             Ok((
                 base.class,
                 base.access == super::graph::Access::Public,
@@ -1141,6 +1144,15 @@ impl super::graph::Graph {
                     .ok_or(Error::Invariant("RTTI base without layout"))?,
             ))
         })
+    }
+    pub(crate) fn lower_inheritance_edges(
+        &self,
+        class: EntityId,
+    ) -> impl Iterator<Item = (EntityId, bool)> + '_ {
+        self.entity(class)
+            .bases
+            .iter()
+            .map(|base| (base.class, base.is_virtual))
     }
     pub(crate) fn lower_virtual_key_owner(&self, function: EntityId) -> Option<EntityId> {
         let home = self.entity(function).home?;

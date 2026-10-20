@@ -2949,7 +2949,7 @@ impl Symbols<'_, '_> {
 }
 
 #[cfg(test)]
-pub(crate) use vtables::assert_table_demand;
+pub(crate) use vtables::{assert_hierarchy_flags, assert_table_demand};
 
 #[cfg(test)]
 mod tests {
