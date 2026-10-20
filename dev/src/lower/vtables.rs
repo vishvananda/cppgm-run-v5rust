@@ -171,8 +171,17 @@ struct DefinitionTarget {
 }
 impl DefinitionTargets {
     fn note(&mut self, target: TableTarget) {
+        // DefinitionKey excludes the unused-entry sentinel. A repeated key
+        // moves the original node, retaining its first observed adjustment.
+        let key = TableTarget {
+            adjustment: ThisAdjustment {
+                unused: false,
+                ..target.adjustment
+            },
+            ..target
+        };
         let head = self.heads.get(&target.function).copied();
-        let index = if let Some(&index) = self.seen.get(&target) {
+        let index = if let Some(&index) = self.seen.get(&key) {
             if head == Some(index) {
                 return;
             }
@@ -192,7 +201,7 @@ impl DefinitionTargets {
                 previous: None,
                 next: None,
             });
-            self.seen.insert(target, index);
+            self.seen.insert(key, index);
             index
         };
         self.nodes[index].next = head;
@@ -1483,7 +1492,7 @@ impl Symbols<'_, '_> {
             target.adjusted,
             target.through,
         )?;
-        if target.adjustment.unused || target.adjustment.is_zero() && result.is_none() {
+        if target.adjustment.is_zero() && result.is_none() {
             return Ok(());
         }
         self.vtables.definition_targets.note(target);
@@ -1556,6 +1565,9 @@ impl Symbols<'_, '_> {
                 let node = &self.vtables.definition_targets.nodes[index];
                 let target = node.target;
                 next = node.next;
+                if target.adjustment.unused {
+                    continue;
+                }
                 let result =
                     self.result_adjustment(entity, target.kind, target.adjusted, target.through)?;
                 let entry = if matches!(target.kind, SlotKind::DeletingDestructor) {
