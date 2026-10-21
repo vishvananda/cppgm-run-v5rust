@@ -490,6 +490,17 @@ impl Facts {
             }
         }
     }
+    fn hint(&mut self, body: &Body, value: Value, register: R, pos: usize) {
+        let Alias::Temporary(temp) = self.resolve(body, value) else {
+            return;
+        };
+        let block = self.definitions[temp.index()]
+            .map_or(body.layout[0], |definition| self.flow.blocks[definition]);
+        let interval = &mut self.intervals[temp.index()];
+        if interval.hint.is_none() && interval.last == Some(pos) && block == self.flow.blocks[pos] {
+            interval.hint = Some(register);
+        }
+    }
     fn rebuild_clobbers(
         &mut self,
         body: &Body,
@@ -638,13 +649,27 @@ impl Facts {
                 if (!two || body.temp(temp).ty.is_some_and(|ty| ty.float_rank() != 0))
                     && self.intervals[temp.index()].last == Some(pos)
                 {
-                    self.intervals[temp.index()].hint = Some(
+                    self.hint(
+                        body,
+                        value,
                         if matches!(body.temp(temp).ty, Some(Type::F32 | Type::F64)) {
                             R::XMM0
                         } else {
                             R::RAX
                         },
+                        pos,
                     );
+                }
+            }
+            if let I::Binary(op, _, ty, left, right) = inst.kind
+                && ty.float_rank() == 0
+            {
+                if clobber & (1 << R::RAX.code()) != 0 {
+                    self.hint(body, left, R::RAX, pos);
+                } else if clobber & (1 << R::RCX.code()) != 0
+                    && matches!(op, Binary::Shl | Binary::Shr | Binary::UShr)
+                {
+                    self.hint(body, right, R::RCX, pos);
                 }
             }
             if let Some(plan) = call

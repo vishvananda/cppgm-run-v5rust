@@ -1,0 +1,86 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @extend
+  abi
+    return i128 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %value -> [rbp-16] : i128
+
+  block ^entry
+    mov r11, 0x00000000000000008000000000000000
+    sext.i128 [rbp-16], r11
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @zero_extend
+  abi
+    return i128 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %value -> [rbp-16] : i128
+
+  block ^entry
+    mov r11, -1
+    zext.i128 [rbp-16], r11
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @truncate
+  abi
+    return i128 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %value -> [rbp-16] : i128
+
+  block ^entry
+    mov r11, 0x00000000000000010000000000000002
+    sext.i128 [rbp-16], r11
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %extended -> [rbp-16] : i128
+    temp %zero_extended -> [rbp-32] : i128
+    temp %truncated -> [rbp-48] : i128
+
+  block ^entry
+    call @extend [args=()]
+    store.i64 [rbp-16], rax
+    store.i64 [rbp-8], rdx
+    call @zero_extend [args=()]
+    store.i64 [rbp-32], rax
+    store.i64 [rbp-24], rdx
+    call @truncate [args=()]
+    store.i64 [rbp-48], rax
+    store.i64 [rbp-40], rdx
+    set.ne.i128 r8, [rbp-16], -9223372036854775808
+    set.ne.i128 r9, [rbp-32], 0x0000000000000000ffffffffffffffff
+    set.ne.i128 rdi, [rbp-48], 2
+    or r8, r9
+    or r8, rdi
+    ret r8

@@ -81,7 +81,8 @@ impl Selection<'_> {
                 } else {
                     // emit_convert reads src.imm for every non-memory wide
                     // carrier. The C++ Operand default initializes that field
-                    // to zero for registers and symbols; preserve it explicitly.
+                    // to zero for registers; preserve it explicitly. Symbol
+                    // addresses have already been rejected by operand().
                     Operand::Immediate(0)
                 };
                 self.load(r, source, Type::I64);

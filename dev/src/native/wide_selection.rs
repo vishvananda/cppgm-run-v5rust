@@ -16,6 +16,9 @@ use crate::lowir::{
 };
 impl Selection<'_> {
     pub(super) fn wide_operand(&mut self, value: Value, scratch: R) -> Result<Operand, Error> {
+        if matches!(self.facts.resolve(self.body, value), Alias::Symbol(_)) {
+            return self.operand(value, Type::I128, scratch);
+        }
         if let Alias::Temporary(temp) = self.facts.resolve(self.body, value) {
             let own = self.body.temp(temp).ty.ok_or(Error::Limit)?;
             if (own.bits() != 0 && own != Type::I128) || own == Type::Ptr {

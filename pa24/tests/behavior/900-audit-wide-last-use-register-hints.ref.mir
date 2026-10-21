@@ -1,0 +1,90 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @source
+  storage scalar i64
+  init i64 0
+
+function @multiply
+  abi
+    return i128 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %wide -> [rbp-16] : i128
+
+  block ^entry
+    load.i64 rax, @source
+    mul.i128 [rbp-16], rax, 3
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @divide
+  abi
+    return i128 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %wide -> [rbp-16] : i128
+
+  block ^entry
+    load.i64 rax, @source
+    div.i128 [rbp-16], rax, 3
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @remainder
+  abi
+    return i128 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %wide -> [rbp-16] : i128
+
+  block ^entry
+    load.i64 rax, @source
+    umod.i128 [rbp-16], rax, 3
+    load.i64 rax, [rbp-16]
+    load.i64 rdx, [rbp-8]
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    temp %product -> [rbp-16] : i128
+    temp %quotient -> [rbp-32] : i128
+    temp %remainder -> [rbp-48] : i128
+
+  block ^entry
+    call @multiply [args=()]
+    store.i64 [rbp-16], rax
+    store.i64 [rbp-8], rdx
+    call @divide [args=()]
+    store.i64 [rbp-32], rax
+    store.i64 [rbp-24], rdx
+    call @remainder [args=()]
+    store.i64 [rbp-48], rax
+    store.i64 [rbp-40], rdx
+    set.ne.i128 r8, [rbp-16], 0
+    set.ne.i128 r9, [rbp-32], 0
+    set.ne.i128 rdi, [rbp-48], 0
+    or r8, r9
+    or r8, rdi
+    ret r8

@@ -140,7 +140,8 @@ fn constant_temporary<'a>(
         graph.lower_type(ty)?,
         crate::sema::lowering::TypeView::Class(_) | crate::sema::lowering::TypeView::Array { .. }
     );
-    let data = items(output, symbols, graph, tree, image)?;
+    let mut data = items(output, symbols, graph, tree, image)?;
+    preserve_static_offsets(&mut data)?;
     let storage = if aggregate {
         super::globals::structured_type(graph, ty, &data)?
     } else {
@@ -223,6 +224,67 @@ pub(super) fn items<'a>(
         });
     }
     Ok(out)
+}
+/// Layout builders have already supplied padding. Prevent `LowIR`'s natural
+/// item alignment from moving an unaligned scalar at publication time.
+pub(super) fn preserve_static_offsets(items: &mut Vec<DataItem>) -> Result<(), Error> {
+    use crate::lowir::vocabulary::Type;
+    fn layout(item: DataItem) -> (u64, u64) {
+        match item {
+            DataItem::Zero(bytes) => (bytes.cast_unsigned(), 1),
+            DataItem::Address(..) | DataItem::Constant(Type::Ptr, _) => (8, 8),
+            DataItem::Constant(Type::Object { bytes, align }, _) => {
+                (bytes, 1_u64.wrapping_shl(u32::from(align)))
+            }
+            DataItem::Constant(ty, _) => {
+                let size = if ty.bits() != 0 {
+                    u64::from(ty.bits().max(8) / 8)
+                } else {
+                    match ty.float_rank() {
+                        1 => 4,
+                        2 => 8,
+                        _ => 16,
+                    }
+                };
+                (size, size)
+            }
+        }
+    }
+    let mut offset = 0_u64;
+    let first = items.iter().position(|&item| {
+        let (size, align) = layout(item);
+        if matches!(item, DataItem::Constant(..)) && offset & (align - 1) != 0 {
+            true
+        } else {
+            offset = offset.wrapping_add(size);
+            false
+        }
+    });
+    let Some(first) = first else {
+        return Ok(());
+    };
+    for item in items.split_off(first) {
+        let (size, align) = layout(item);
+        if let DataItem::Constant(_, Constant::Integer(bits) | Constant::Float(_, bits)) = item
+            && offset & (align - 1) != 0
+        {
+            items
+                .try_reserve(usize::try_from(size).map_err(|_| crate::lowir::Error::Limit)?)
+                .map_err(|_| crate::lowir::Error::Limit)?;
+            let bytes = bits.to_le_bytes();
+            for index in 0..size {
+                let byte = usize::try_from(index).ok().and_then(|i| bytes.get(i));
+                items.push(DataItem::Constant(
+                    Type::U8,
+                    Constant::Integer(u128::from(byte.copied().unwrap_or(0))),
+                ));
+            }
+        } else {
+            items.push(item);
+        }
+        offset = offset.wrapping_add(size);
+    }
+    Ok(())
 }
 /// Member functions use two i64 words, never an i128 item with 16-byte alignment.
 pub(super) fn member_items(

@@ -383,6 +383,7 @@ fn define_storage<'a>(
     };
     if let GlobalInit::Data(items) = &mut init {
         super::null_initialization::static_nulls(graph, facts.ty, items)?;
+        data::preserve_static_offsets(items)?;
     } else if matches!(init, GlobalInit::Zero)
         && graph.lower_member_pointer_type(facts.ty).is_some()
         && graph.lower_holds_data_member_pointer(facts.ty)?

@@ -40,12 +40,18 @@ impl Selection<'_> {
             return self.float_operand(value, ty);
         }
         match self.facts.resolve(self.body, value) {
+            Alias::Constant(Constant::Integer(bits)) if ty == Type::I128 => {
+                Ok(Operand::Immediate(bits))
+            }
             Alias::Constant(Constant::Integer(bits)) => Ok(Operand::Immediate(
                 i128::from(super::mir::low_word(normalize(bits, ty))?).cast_unsigned(),
             )),
             Alias::Constant(Constant::Float(_, bits)) => Ok(Operand::Immediate(bits)),
             Alias::Symbol(_) if ty.float_rank() != 0 => Err(Error::Diagnostic(
                 "floating value requires a numeric value or storage operand".into(),
+            )),
+            Alias::Symbol(_) if ty == Type::I128 => Err(Error::Diagnostic(
+                "i128 value requires numeric bits or stored contents, not a symbol address".into(),
             )),
             Alias::Symbol(id) => Ok(Operand::Symbol(id)),
             Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
