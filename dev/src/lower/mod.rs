@@ -151,6 +151,9 @@ fn finish_unit(
     globals::finish(program, symbols, graph)?;
     symbols.finish_class_declarations(program, None)?;
     symbols.resolve_runtime_roles(program, definitions)?;
+    if symbols.object_mode() {
+        program.require_object_definitions();
+    }
     symbols.publish_finalizers(finalizers);
     Ok(symbols.initialization)
 }

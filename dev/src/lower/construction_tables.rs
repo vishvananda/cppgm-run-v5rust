@@ -217,7 +217,12 @@ impl Symbols<'_, '_> {
             self.budget,
         )?;
         let object = program.names.intern_bytes(&encoded)?;
-        let (internal, _, _, _) = self.graph.lower_virtual_class_identity(context.complete)?;
+        let (mut internal, _, _, _) = self.graph.lower_virtual_class_identity(context.complete)?;
+        if self.table.object_mode {
+            internal = self
+                .graph
+                .lower_object_type_unit_local(self.graph.lower_entity_type(context.complete)?)?;
+        }
         let strong = self
             .graph
             .lower_virtual_class(context.complete)?
@@ -273,6 +278,9 @@ impl Symbols<'_, '_> {
         let top = self.class_presentation(context.complete)?;
         let prefix = format!("{top}____construction__{base}__{}", context.offset);
         let mut tables = vec![None; group.segments.len()];
+        let mut packed = Vec::new();
+        let mut points = Vec::new();
+        let mut position = 0_u64;
         for (s, targets) in bodies {
             let mut items = self.context_rows(context, s)?;
             let point = self.table_header_bytes(context.class, s)?;
@@ -281,7 +289,14 @@ impl Symbols<'_, '_> {
                 context.offset.wrapping_sub(self.context_at(context, s)?),
             ));
             items.push(address(information, 0));
+            let count = u64::try_from(targets.len()).map_err(|_| crate::lowir::Error::Limit)?;
             items.extend(targets);
+            if self.table.object_mode {
+                points.push((s, position.wrapping_add(point)));
+                position = position.wrapping_add(point).wrapping_add(count * 8);
+                packed.extend(items);
+                continue;
+            }
             let symbol = self.table.allocate(
                 program,
                 &format!("{prefix}__s{s}__vtable"),
@@ -299,6 +314,24 @@ impl Symbols<'_, '_> {
                 items,
             )?;
             tables[s] = Some((symbol, point));
+        }
+        if self.table.object_mode {
+            let symbol =
+                self.table
+                    .allocate(program, &format!("{prefix}__vtable"), Some(object), true)?;
+            define(
+                program,
+                symbol,
+                Metadata {
+                    binding: Some(Binding::Internal),
+                    object: Some(object),
+                    ..Metadata::default()
+                },
+                packed,
+            )?;
+            for (s, point) in points {
+                tables[s] = Some((symbol, point));
+            }
         }
         for s in 0..tables.len() {
             tables[s] = tables[self.vtables.contexts.owners[&context][s]];

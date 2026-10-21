@@ -101,7 +101,11 @@ impl Symbols<'_, '_> {
         };
         let object = self.type_encoding(ty, TypeObject::Information)?;
         let object = program.names.intern(&object)?;
-        let internal = self.graph.lower_type_unit_local(ty)?;
+        let internal = if self.table.object_mode {
+            self.graph.lower_object_type_unit_local(ty)?
+        } else {
+            self.graph.lower_type_unit_local(ty)?
+        };
         let symbol =
             self.table
                 .allocate(program, &format!("__rtti_{label}"), Some(object), internal)?;
@@ -151,8 +155,12 @@ impl Symbols<'_, '_> {
             internal,
         )?;
         if !program.symbol(name).declared() {
-            let items = encoding
-                .bytes()
+            let marker =
+                self.table.object_mode && internal && self.graph.lower_private_type_name(ty)?;
+            let items = marker
+                .then_some(b'*')
+                .into_iter()
+                .chain(encoding.bytes())
                 .chain(std::iter::once(0))
                 .map(|b| integer(Type::I8, u64::from(b)))
                 .collect();

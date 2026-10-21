@@ -1136,21 +1136,28 @@ impl Graph {
     }
     pub(super) fn lower_entity_unit_local(&self, entity: EntityId) -> Result<bool, Error> {
         self.entity(entity).ty.map_or_else(
-            || Ok(self.lower_entity_scope_unit_local(entity)),
+            || self.lower_entity_scope_local(entity, false),
             |ty| self.lower_type_unit_local(ty),
         )
     }
     pub(crate) fn lower_type_unit_local(&self, ty: TypeId) -> Result<bool, Error> {
         self.lower_type_entity_locality(
             ty,
-            Self::lower_entity_scope_unit_local,
+            |graph, entity| graph.lower_entity_scope_local(entity, false),
+            Self::address_argument_unit_local,
+        )
+    }
+    pub(crate) fn lower_object_type_unit_local(&self, ty: TypeId) -> Result<bool, Error> {
+        self.lower_type_entity_locality(
+            ty,
+            |graph, entity| graph.lower_entity_scope_local(entity, true),
             Self::address_argument_unit_local,
         )
     }
     pub(super) fn lower_type_entity_locality(
         &self,
         mut ty: TypeId,
-        is_local: fn(&Self, EntityId) -> bool,
+        is_local: fn(&Self, EntityId) -> Result<bool, Error>,
         address_is_local: fn(&Self, EntityId) -> Result<bool, Error>,
     ) -> Result<bool, Error> {
         // Scalar/object and linear pointer shells need no scratch allocation.
@@ -1167,13 +1174,13 @@ impl Graph {
                             self.scope(home).kind == super::graph::ScopeKind::Class
                         }) =>
                 {
-                    if is_local(self, entity) {
+                    if is_local(self, entity)? {
                         return Ok(true);
                     }
                     break;
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
-                    return Ok(is_local(self, entity));
+                    return is_local(self, entity);
                 }
                 TypeKind::Address { entity, .. } => {
                     return address_is_local(self, entity);
@@ -1206,7 +1213,7 @@ impl Graph {
                 TypeKind::Address { entity, .. } if address_is_local(self, *entity)? => {
                     return Ok(true);
                 }
-                TypeKind::Class(entity) | TypeKind::Enum(entity) if is_local(self, *entity) => {
+                TypeKind::Class(entity) | TypeKind::Enum(entity) if is_local(self, *entity)? => {
                     return Ok(true);
                 }
                 TypeKind::Class(entity) | TypeKind::Enum(entity) => {
@@ -1226,27 +1233,39 @@ impl Graph {
         }
         Ok(false)
     }
-    pub(super) fn lower_entity_scope_unit_local(&self, mut entity: EntityId) -> bool {
+    fn lower_entity_scope_local(
+        &self,
+        mut entity: EntityId,
+        object_mode: bool,
+    ) -> Result<bool, Error> {
         use super::graph::ScopeKind;
         loop {
             let node = self.entity(entity);
             let Some(owner) = node.home else {
-                return true;
+                return Ok(true);
             };
             let scope = self.scope(owner);
             if scope.kind == ScopeKind::Class
                 && self.lower_closure(entity).is_some()
                 && !self.closure_member_context(entity)
+                && !(object_mode
+                    && self.lower_closure(entity).is_some_and(|closure| {
+                        !matches!(closure.context, super::lambdas::ClosureContext::None)
+                    }))
             {
-                return true;
+                return Ok(true);
             }
             if scope.kind != ScopeKind::Class {
-                return matches!(scope.kind, ScopeKind::Block | ScopeKind::Function)
-                    || node.name.is_none()
-                    || self.lower_anonymous_namespace(owner);
+                return Ok(
+                    if matches!(scope.kind, ScopeKind::Block | ScopeKind::Function) {
+                        !object_mode || !self.lower_shared_local_in_mode(entity, true)?
+                    } else {
+                        node.name.is_none() || self.lower_anonymous_namespace(owner)
+                    },
+                );
             }
             let Some(outer) = scope.owner else {
-                return true;
+                return Ok(true);
             };
             entity = outer;
         }

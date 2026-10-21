@@ -94,6 +94,7 @@ pub(crate) struct Program {
     immediate_declaration_set: std::collections::HashSet<SymbolId>,
     pub(crate) names: Names,
     functions: Vec<Function>,
+    completed_definition: Option<SymbolId>,
     publications: Vec<SymbolId>,
     streamed_functions: HashSet<SymbolId>,
     symbols: Vec<Symbol>,
@@ -174,6 +175,9 @@ impl Program {
     }
     pub(crate) fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);
+        if function.body.is_some() {
+            self.completed_definition = Some(symbol);
+        }
         self.symbols[symbol.0 as usize].detail = SymbolDetail::Function(id);
         self.functions.push(function);
         self.publications.push(symbol);
@@ -310,18 +314,17 @@ impl Program {
         output: &mut impl std::io::Write,
         body_only: bool,
     ) -> Result<SymbolId, Error> {
-        let function = self
-            .functions
-            .last()
-            .ok_or(Error::Construction("missing completed definition".into()))?;
         let symbol = self
-            .find_symbol(function.name)
-            .ok_or_else(|| Error::Construction("completed definition without symbol".into()))?;
+            .completed_definition
+            .ok_or_else(|| Error::Construction("missing completed definition".into()))?;
         if let Some(mut sink) = self.definition_sink.take() {
             let result = sink.append(self, symbol);
             self.definition_sink = Some(sink);
             result?;
         } else {
+            let function = self.function(self.symbol(symbol)).ok_or_else(|| {
+                Error::Construction("completed definition without function".into())
+            })?;
             if body_only {
                 super::writer::write_definition_body(self, function, output)
             } else {
@@ -329,10 +332,8 @@ impl Program {
             }
             .map_err(Error::Output)?;
         }
-        self.streamed_functions.insert(symbol);
-        if let Some(function) = self.functions.last_mut() {
-            function.body = None;
-        }
+        self.release_body(symbol)?;
+        self.completed_definition = None;
         Ok(symbol)
     }
     pub(crate) fn complete_body(&mut self, symbol: SymbolId, body: Body) -> Result<(), Error> {
@@ -342,6 +343,7 @@ impl Program {
             ));
         };
         self.functions[id.0 as usize].body = Some(body);
+        self.completed_definition = Some(symbol);
         Ok(())
     }
     pub(crate) fn release_body(&mut self, symbol: SymbolId) -> Result<(), Error> {
@@ -432,6 +434,35 @@ impl Program {
             SymbolDetail::Function(id) => Some(&self.functions[id.0 as usize].metadata),
             SymbolDetail::Global(id) => Some(&self.globals[id.0 as usize].metadata),
             SymbolDetail::Unresolved => None,
+        }
+    }
+    /// Source object declarations require a definition in another unit. TLS
+    /// wrappers carry a generated address definition, even before encoding.
+    pub(crate) fn require_object_definitions(&mut self) {
+        for symbol in &self.symbols {
+            let metadata = match symbol.detail {
+                SymbolDetail::Function(id) => {
+                    let function = &mut self.functions[id.0 as usize];
+                    if function.body.is_some()
+                        || function.metadata.tls_for.is_some()
+                        || self.streamed_functions.contains(&self.index[&symbol.name])
+                    {
+                        continue;
+                    }
+                    &mut function.metadata
+                }
+                SymbolDetail::Global(id) => {
+                    let global = &mut self.globals[id.0 as usize];
+                    if !matches!(global.init, GlobalInit::Declaration) {
+                        continue;
+                    }
+                    &mut global.metadata
+                }
+                SymbolDetail::Unresolved => continue,
+            };
+            if metadata.binding == Some(super::vocabulary::Binding::Weak) {
+                metadata.binding = Some(super::vocabulary::Binding::Strong);
+            }
         }
     }
     pub(crate) fn root_function(&mut self, symbol: SymbolId) {

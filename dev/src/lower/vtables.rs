@@ -41,6 +41,7 @@ pub(super) struct Tables {
     views: HashMap<EntityId, Vec<Option<SymbolId>>>,
     vtts: HashMap<EntityId, SymbolId>,
     offsets: HashMap<EntityId, Vec<u64>>,
+    address_points: HashMap<EntityId, Vec<u64>>,
     thunks: Vec<Thunk>,
     thunk_symbols: HashMap<ThunkKey, usize>,
     definition_classes: std::collections::HashSet<EntityId>,
@@ -337,7 +338,12 @@ impl Symbols<'_, '_> {
         kind: ClassObject,
     ) -> Result<(SymbolId, Metadata), Error> {
         let (encoding, object) = self.class_encoding(class, kind)?;
-        let (internal, local, key, scope) = self.graph.lower_virtual_class_identity(class)?;
+        let (mut internal, local, key, scope) = self.graph.lower_virtual_class_identity(class)?;
+        if self.table.object_mode {
+            internal = self
+                .graph
+                .lower_object_type_unit_local(self.graph.lower_entity_type(class)?)?;
+        }
         let prefix = match kind {
             ClassObject::Table => "__vtable_",
             ClassObject::Vtt => "__vtt_",
@@ -461,8 +467,12 @@ impl Symbols<'_, '_> {
                 metadata.binding,
             )?);
         }
+        let one_object = self.table.object_mode && group.is_some();
+        if one_object {
+            self.append_group_items(program, class, metadata.binding, &mut items)?;
+        }
         define(program, symbol, metadata, items)?;
-        if self.graph.lower_vtable_group(class).is_some() {
+        if group.is_some() && !one_object {
             self.define_views(program, class, symbol, metadata.binding)?;
         }
         if !self.graph.lower_virtual_bases(class).is_empty() {
@@ -607,7 +617,7 @@ impl Symbols<'_, '_> {
         }
         self.vtables.views.insert(class, views);
         let typeinfo = self.typeinfo_symbol(program, class)?;
-        for (index, segment) in group.segments.iter().enumerate().skip(1) {
+        for index in 1..group.segments.len() {
             let Some(symbol) = self.vtables.views[&class][index] else {
                 continue;
             };
@@ -619,25 +629,7 @@ impl Symbols<'_, '_> {
                 ),
                 address(typeinfo, 0),
             ]);
-            let own = self.graph.lower_virtual_slots(segment.class)?;
-            for (slot, entry) in group.entries[segment.entries.clone()].iter().enumerate() {
-                let adjustment = self.entry_adjustment(class, index, slot)?;
-                items.push(
-                    self.table_target(
-                        program,
-                        TableTarget {
-                            function: entry.function,
-                            kind: entry.kind,
-                            adjustment,
-                            adjusted: own[slot]
-                                .ok_or(crate::sema::Error::Invariant("unfilled view slot"))?
-                                .adjusted,
-                            through: segment.class,
-                        },
-                        binding,
-                    )?,
-                );
-            }
+            self.append_view_targets(program, class, index, binding, &mut items)?;
             define(
                 program,
                 symbol,
@@ -647,6 +639,78 @@ impl Symbols<'_, '_> {
                 },
                 items,
             )?;
+        }
+        Ok(())
+    }
+    fn append_view_targets(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        segment: usize,
+        binding: Option<Binding>,
+        targets: &mut Vec<DataItem>,
+    ) -> Result<(), Error> {
+        let graph = self.graph;
+        let group = graph
+            .lower_vtable_group(class)
+            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
+        let part = &group.segments[segment];
+        let own = graph.lower_virtual_slots(part.class)?;
+        for (slot, entry) in group.entries[part.entries.clone()].iter().enumerate() {
+            let adjustment = self.entry_adjustment(class, segment, slot)?;
+            targets.push(
+                self.table_target(
+                    program,
+                    TableTarget {
+                        function: entry.function,
+                        kind: entry.kind,
+                        adjustment,
+                        adjusted: own[slot]
+                            .ok_or(crate::sema::Error::Invariant("unfilled view slot"))?
+                            .adjusted,
+                        through: part.class,
+                    },
+                    binding,
+                )?,
+            );
+        }
+        Ok(())
+    }
+    fn append_group_items(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        binding: Option<Binding>,
+        items: &mut Vec<DataItem>,
+    ) -> Result<(), Error> {
+        let graph = self.graph;
+        let group = graph
+            .lower_vtable_group(class)
+            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
+        // Resolve every slot before publishing the one packed definition.
+        // Target demand can publish other globals; no view symbol is allocated.
+        let mut targets = Vec::new();
+        for (index, part) in group.segments.iter().enumerate().skip(1) {
+            if !part.shared {
+                self.append_view_targets(program, class, index, binding, &mut targets)?;
+            }
+        }
+        self.segment_offsets(class)?;
+        let typeinfo = self.typeinfo_symbol(program, class)?;
+        let mut targets = targets.into_iter();
+        for (index, part) in group.segments.iter().enumerate().skip(1) {
+            if part.shared {
+                continue;
+            }
+            items.extend(self.table_rows(class, index)?);
+            items.extend([
+                integer(
+                    Type::I64,
+                    self.vtables.offsets[&class][index].wrapping_neg(),
+                ),
+                address(typeinfo, 0),
+            ]);
+            items.extend(targets.by_ref().take(part.entries.len()));
         }
         Ok(())
     }
@@ -672,19 +736,24 @@ impl Symbols<'_, '_> {
                 self.table_header_bytes(class, segment)?,
             ));
         }
-        let mut point = self.table_header_bytes(class, 0)?
-            + u64::from(self.graph.lower_virtual_class(class)?.size) * 8;
-        for (index, part) in group.segments.iter().enumerate().skip(1) {
-            if part.shared {
-                continue;
+        if !self.vtables.address_points.contains_key(&class) {
+            let primary = self.table_header_bytes(class, 0)?;
+            let mut points = vec![primary];
+            let mut position =
+                primary.wrapping_add(u64::from(self.graph.lower_virtual_class(class)?.size) * 8);
+            for (index, part) in group.segments.iter().enumerate().skip(1) {
+                if part.shared {
+                    points.push(0);
+                    continue;
+                }
+                let point = position.wrapping_add(self.table_header_bytes(class, index)?);
+                points.push(point);
+                position = point
+                    .wrapping_add(u64::from(self.graph.lower_virtual_class(part.class)?.size) * 8);
             }
-            if index == segment {
-                return Ok((symbol, point + self.table_header_bytes(class, index)?));
-            }
-            point += self.table_header_bytes(class, index)?
-                + u64::from(self.graph.lower_virtual_class(part.class)?.size) * 8;
+            self.vtables.address_points.insert(class, points);
         }
-        Err(crate::sema::Error::Invariant("unknown vtable segment").into())
+        Ok((symbol, self.vtables.address_points[&class][segment]))
     }
     fn thunk_symbol(
         &mut self,
@@ -1118,7 +1187,14 @@ impl Symbols<'_, '_> {
         let (symbol, metadata) = self.class_global(program, class, ClassObject::Name)?;
         self.vtables.names.insert(class, symbol);
         if !defined(program, symbol) {
-            let (name, _) = self.class_encoding(class, ClassObject::Name)?;
+            let (mut name, _) = self.class_encoding(class, ClassObject::Name)?;
+            if self.table.object_mode
+                && self
+                    .graph
+                    .lower_private_type_name(self.graph.lower_entity_type(class)?)?
+            {
+                name.insert(0, '*');
+            }
             let items = name
                 .bytes()
                 .chain(std::iter::once(0))

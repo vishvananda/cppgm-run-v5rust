@@ -950,6 +950,69 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn late_declarations_do_not_replace_the_completed_definition() -> Result<(), Error> {
+        struct Sink;
+        impl crate::lowir::model::DefinitionSink for Sink {
+            fn append(&mut self, program: &Program, symbol: SymbolId) -> Result<(), Error> {
+                assert_eq!(program.names.get(program.symbol(symbol).name), "body");
+                assert!(
+                    program
+                        .function(program.symbol(symbol))
+                        .unwrap()
+                        .body
+                        .is_some()
+                );
+                Ok(())
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
+        }
+        for native in [false, true] {
+            let mut program = Program::default();
+            if native {
+                program.set_definition_sink(Box::new(Sink))?;
+            }
+            let mut builder = FunctionBuilder::new(&mut program, "body", &[], Type::Void)?;
+            builder.block("entry")?;
+            builder.effect(I::Return(Type::Void, None))?;
+            builder.finish()?;
+            let name = program.names.intern("body")?;
+            let body = program.find_symbol(name).unwrap();
+            let signature = program.function(program.symbol(body)).unwrap().signature;
+            let name = program.names.intern("late_declaration")?;
+            let source = program.add_source(std::path::Path::new(""))?;
+            let declaration = program.reference(name, source, 0)?;
+            program.add(
+                declaration,
+                Function {
+                    name,
+                    signature,
+                    metadata: Metadata::default(),
+                    body: None,
+                    location: None,
+                },
+            )?;
+            let mut output = Vec::new();
+            program.stream_last_definition(&mut output)?;
+            assert!(program.function_defined(body));
+            assert!(!program.function_defined(declaration));
+            assert!(
+                program
+                    .functions()
+                    .iter()
+                    .all(|function| function.body.is_none())
+            );
+            if !native {
+                assert_eq!(
+                    output,
+                    b"function @body() -> void {\n  block ^entry:\n    return void\n}\n"
+                );
+            }
+        }
+        Ok(())
+    }
+    #[test]
     fn generated_names_avoid_later_slots_and_streamed_bodies_are_released() -> Result<(), Error> {
         let mut program = Program::default();
         let mut builder =

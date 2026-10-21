@@ -109,10 +109,101 @@ impl Graph {
         }
         Ok(!self.lower_entity_unit_local(class)?)
     }
-    pub(super) fn lower_shared_local(&self, mut class: EntityId) -> Result<bool, Error> {
+    pub(crate) fn lower_private_type_name(&self, ty: super::types::TypeId) -> Result<bool, Error> {
+        self.lower_type_entity_locality(
+            ty,
+            Self::lower_private_entity_name,
+            Self::address_argument_unit_local,
+        )
+    }
+    fn lower_private_entity_name(&self, mut class: EntityId) -> Result<bool, Error> {
+        if !self.lower_object_type_unit_local(self.lower_entity_type(class)?)? {
+            return Ok(false);
+        }
+        if self.class_templates.instance(class).is_some() {
+            // The type DAG walk checks specialization arguments and enclosing
+            // classes separately; only this declaration's own scope is left.
+            return Ok(self.entity(class).home.is_none_or(|home| {
+                self.scope(home).kind != ScopeKind::Class
+                    && (self.scope(home).kind != ScopeKind::Namespace
+                        || self.lower_anonymous_namespace(home))
+            }));
+        }
         loop {
             let node = self.entity(class);
             if node.name.is_none() && self.closure_call(class).is_none()
+                || node.template_head.is_some()
+            {
+                return Ok(true);
+            }
+            let Some(home) = node.home else {
+                return Ok(true);
+            };
+            if self.scope(home).kind == ScopeKind::Class {
+                class = self
+                    .scope(home)
+                    .owner
+                    .ok_or(Error::Invariant("class scope owner"))?;
+                continue;
+            }
+            let Some(function) = self.lower_scope_function(home) else {
+                return Ok(true);
+            };
+            if !(self.lower_inline_function(function) || self.lower_function_instantiated(function))
+            {
+                return Ok(true);
+            }
+            // A shared local has a public signature. A specialization can
+            // still have a public name string despite unit-owned storage.
+            let node = self.entity(function);
+            if node.function.is_none_or(|facts| facts.internal_linkage) {
+                return Ok(true);
+            }
+            if let Some(arguments) = self.function_templates.arguments.get(&function)
+                && self.lower_types_local_in_mode(arguments, true)?
+            {
+                return Ok(true);
+            }
+            if let Some(owner) = node
+                .home
+                .filter(|&home| self.scope(home).kind == ScopeKind::Class)
+                .and_then(|home| self.scope(home).owner)
+                && self.lower_object_type_unit_local(self.lower_entity_type(owner)?)?
+                && !self.lower_shared_local_in_mode(owner, true)?
+            {
+                return Ok(true);
+            }
+            if node
+                .function
+                .is_some_and(|facts| facts.language == super::linkage::Language::C)
+            {
+                return Ok(false);
+            }
+            let super::types::TypeKind::Function { ref parameters, .. } =
+                self.types.get(self.lower_entity_type(function)?).kind
+            else {
+                return Err(Error::Invariant("private type function signature"));
+            };
+            return self.lower_types_local_in_mode(parameters, true);
+        }
+    }
+    pub(super) fn lower_shared_local(&self, class: EntityId) -> Result<bool, Error> {
+        self.lower_shared_local_in_mode(class, false)
+    }
+    pub(super) fn lower_shared_local_in_mode(
+        &self,
+        mut class: EntityId,
+        object_mode: bool,
+    ) -> Result<bool, Error> {
+        loop {
+            let node = self.entity(class);
+            let numbered = object_mode
+                && node.name.is_none()
+                && node.home.is_some_and(|home| {
+                    self.scope(home).kind == ScopeKind::Class
+                        || self.unnamed_local_ordinal(class).is_some()
+                });
+            if node.name.is_none() && self.closure_call(class).is_none() && !numbered
                 || node.template_head.is_some()
             {
                 return Ok(false);
@@ -131,8 +222,9 @@ impl Graph {
                 return Ok(false);
             };
             let node = self.entity(function);
-            if !self.lower_inline_function(function)
-                || self.lower_function_instantiated(function)
+            if !(self.lower_inline_function(function)
+                || object_mode && self.lower_function_instantiated(function))
+                || !object_mode && self.lower_function_instantiated(function)
                 || node.function.is_none_or(|facts| facts.internal_linkage)
             {
                 return Ok(false);
@@ -143,7 +235,7 @@ impl Graph {
                 && let Some(ty) = node.ty
                 && let super::types::TypeKind::Function { ref parameters, .. } =
                     self.types.get(ty).kind
-                && self.lower_types_unit_local(parameters)?
+                && self.lower_types_local_in_mode(parameters, object_mode)?
             {
                 return Ok(false);
             }
@@ -154,7 +246,11 @@ impl Graph {
             else {
                 return Ok(true);
             };
-            if !self.lower_entity_unit_local(owner)? {
+            if !(if object_mode {
+                self.lower_object_type_unit_local(self.lower_entity_type(owner)?)?
+            } else {
+                self.lower_entity_unit_local(owner)?
+            }) {
                 return Ok(true);
             }
             class = owner;
@@ -219,8 +315,19 @@ impl Graph {
     }
 
     fn lower_types_unit_local(&self, types: &[super::types::TypeId]) -> Result<bool, Error> {
+        self.lower_types_local_in_mode(types, false)
+    }
+    fn lower_types_local_in_mode(
+        &self,
+        types: &[super::types::TypeId],
+        object_mode: bool,
+    ) -> Result<bool, Error> {
         for &ty in types {
-            if self.lower_type_unit_local(ty)? {
+            if if object_mode {
+                self.lower_object_type_unit_local(ty)?
+            } else {
+                self.lower_type_unit_local(ty)?
+            } {
                 return Ok(true);
             }
         }
@@ -247,7 +354,7 @@ impl Graph {
             .map(|ty| {
                 self.lower_type_entity_locality(
                     ty,
-                    Self::lower_entity_scope_no_linkage,
+                    |graph, entity| Ok(graph.lower_entity_scope_no_linkage(entity)),
                     |graph, entity| Ok(graph.lower_entity_scope_no_linkage(entity)),
                 )
             })
