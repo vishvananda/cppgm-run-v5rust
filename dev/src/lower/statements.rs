@@ -220,7 +220,10 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    fn goto_label(&mut self, name: crate::lex::identifiers::NameId) -> Result<BlockId, Error> {
+    pub(super) fn goto_label(
+        &mut self,
+        name: crate::lex::identifiers::NameId,
+    ) -> Result<BlockId, Error> {
         if let Some(&block) = self.labels.get(&name) {
             return Ok(block);
         }

@@ -583,6 +583,11 @@ impl<'a, 'source> Renderer<'a, 'source> {
             }
             ExprKind::Literal(literal) => self.tasks.push(Render::Spelling(literal.spelling)),
             ExprKind::Keyword(word) => self.text(word.spelling()),
+            ExprKind::Statement(body) => {
+                self.text("(");
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Statement(body));
+            }
             ExprKind::Paren(inner) => {
                 self.text("(");
                 self.tasks.push(Render::Text(")"));

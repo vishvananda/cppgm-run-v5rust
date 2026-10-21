@@ -3,7 +3,9 @@
 //! Read parsed operands in their definition scope; nested expansions own their names.
 use super::{Error, analyzer::Analyzer, graph::ScopeId, lookup::Filter};
 use crate::syntax::{
+    ParseError,
     ast::{self, ExprKind, NameKind, SpecifierKind},
+    cloning::{Cloner, PackExpander},
     storage::List,
 };
 use std::collections::HashSet;
@@ -52,7 +54,7 @@ impl Analyzer<'_> {
 
     #[cfg(test)]
     pub(super) fn expression_names_pack(
-        &self,
+        &mut self,
         root: ast::ExprId,
         scope: ScopeId,
     ) -> Result<bool, Error> {
@@ -60,7 +62,7 @@ impl Analyzer<'_> {
     }
 
     fn expression_pack_types(
-        &self,
+        &mut self,
         root: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Vec<super::types::TypeId>, Error> {
@@ -74,7 +76,11 @@ impl Analyzer<'_> {
                     if !expressions.insert(id) {
                         continue;
                     }
-                    self.pack_expression_probes(id, &mut work)?;
+                    if matches!(self.tree.expressions.get(id).kind, ExprKind::Statement(_)) {
+                        self.statement_pack_types(id, scope, &mut packs)?;
+                    } else {
+                        self.pack_expression_probes(id, &mut work)?;
+                    }
                 }
                 Probe::Type(id) => {
                     if !types.insert(id) {
@@ -114,6 +120,52 @@ impl Analyzer<'_> {
         }
         Ok(packs)
     }
+    fn statement_pack_types(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        packs: &mut Vec<super::types::TypeId>,
+    ) -> Result<(), Error> {
+        let mut names = DefinitionNames;
+        let names = Cloner::new(self.tree, self.stack_budget, self.stack_base)
+            .with_expander(&mut names)
+            .expression_pack_names(id)
+            .map_err(|error| super::template_bodies::copy_error(&error))?;
+        for name in names {
+            if let Some(ty) = self.definition_pack_type(name, scope)?
+                && !packs.contains(&ty)
+            {
+                packs.push(ty);
+            }
+        }
+        Ok(())
+    }
+    fn definition_pack_type(
+        &self,
+        name: crate::lex::identifiers::NameId,
+        scope: ScopeId,
+    ) -> Result<Option<super::types::TypeId>, Error> {
+        let found = self.unqualified_declaration_result(scope, name.into(), Filter::Ordinary)?;
+        let Some(binding) = found.binding.filter(|_| !found.ambiguous) else {
+            return Ok(None);
+        };
+        let binding = self.graph.binding(binding);
+        if !self
+            .graph
+            .entity(binding.entity)
+            .template_parameter
+            .is_some_and(super::templates::ParameterInfo::is_pack)
+        {
+            return Ok(None);
+        }
+        Ok(
+            if binding.kind == super::graph::BindingKind::TemplateValue {
+                self.graph.entity(binding.entity).ty
+            } else {
+                binding.ty
+            },
+        )
+    }
     fn pack_name_probes(
         &self,
         id: ast::Name,
@@ -127,26 +179,8 @@ impl Analyzer<'_> {
                 NameKind::Identifier(name)
                     if leading && index == 0 && !self.tree.names.get(id).global =>
                 {
-                    let found =
-                        self.unqualified_declaration_result(scope, name.into(), Filter::Ordinary)?;
-                    if !found.ambiguous
-                        && let Some(binding) = found.binding
-                    {
-                        let binding = self.graph.binding(binding);
-                        if self
-                            .graph
-                            .entity(binding.entity)
-                            .template_parameter
-                            .is_some_and(super::templates::ParameterInfo::is_pack)
-                            && let Some(ty) =
-                                if binding.kind == super::graph::BindingKind::TemplateValue {
-                                    self.graph.entity(binding.entity).ty
-                                } else {
-                                    binding.ty
-                                }
-                        {
-                            return Ok(Some(ty));
-                        }
+                    if let Some(ty) = self.definition_pack_type(name, scope)? {
+                        return Ok(Some(ty));
                     }
                 }
                 NameKind::Decltype(expression) | NameKind::DestructorDecltype(expression) => {
@@ -260,7 +294,8 @@ impl Analyzer<'_> {
                 }
             }
             ExprKind::Throw(expression) => work.extend(expression.map(Probe::Expression)),
-            ExprKind::Literal(_)
+            ExprKind::Statement(_)
+            | ExprKind::Literal(_)
             | ExprKind::Keyword(_)
             | ExprKind::SizeofPack(_)
             | ExprKind::PackExpansion(_) => (),
@@ -329,5 +364,25 @@ impl Analyzer<'_> {
                     .map(Probe::Expression),
             ),
         }
+    }
+}
+
+// Collection needs every free leading identifier; semantic lookup then decides
+// whether it denotes a definition-owned pack. Lengths are never consumed and
+// the cloner does not substitute names in this mode. Its lexical shadows and
+// nested-expansion boundaries remain authoritative.
+struct DefinitionNames;
+impl PackExpander for DefinitionNames {
+    fn pack_length(&self, _: crate::lex::identifiers::NameId) -> Option<usize> {
+        Some(0)
+    }
+    fn element_name(
+        &mut self,
+        _: crate::lex::identifiers::NameId,
+        _: usize,
+    ) -> Result<crate::lex::identifiers::NameId, ParseError> {
+        Err(ParseError::Invariant(
+            "definition pack collection attempted substitution",
+        ))
     }
 }

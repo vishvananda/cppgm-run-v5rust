@@ -275,9 +275,9 @@ impl Analyzer<'_> {
                     Ok(true)
                 };
             }
-            // C++ likewise leaves lambda operands unkeyed. Packs require their
+            // C++ leaves lambda and statement-block operands unkeyed. Packs require their
             // declaration owner, which is outside the PA6 template boundary.
-            ExprKind::Lambda(_) => return Ok(false),
+            ExprKind::Lambda(_) | ExprKind::Statement(_) => return Ok(false),
             ExprKind::SizeofPack(name) => {
                 let Some(binding) =
                     self.unqualified(scope, name, super::lookup::Filter::Ordinary)?

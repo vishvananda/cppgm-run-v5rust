@@ -304,7 +304,7 @@ impl Analyzer<'_> {
             }
             let next = depth + 1;
             match kind {
-                ExprKind::Throw(_) => return Ok(true),
+                ExprKind::Throw(_) | ExprKind::Statement(_) => return Ok(true),
                 ExprKind::Call { arguments, .. } if facts.functional_call => {
                     self.throw_work.extend(
                         self.tree

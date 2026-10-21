@@ -293,6 +293,7 @@ impl<'a> Cloner<'a> {
             return Ok(id);
         }
         node.kind = match node.kind {
+            ExprKind::Statement(body) => ExprKind::Statement(self.statement(body)?),
             ExprKind::Paren(id) => ExprKind::Paren(self.expression(id)?),
             ExprKind::PackExpansion(id) => ExprKind::PackExpansion(self.expression(id)?),
             ExprKind::Id(id) => ExprKind::Id(self.name(id)?),

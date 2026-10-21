@@ -128,7 +128,7 @@ impl Function<'_, '_, '_, '_> {
                         work.push(callee);
                     }
                 }
-                ExprKind::Throw(_) => return Ok(true),
+                ExprKind::Throw(_) | ExprKind::Statement(_) => return Ok(true),
                 ExprKind::New {
                     placement,
                     initializer,

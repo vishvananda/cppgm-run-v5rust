@@ -70,6 +70,7 @@ mod references;
 mod runtime_roles;
 mod shutdown;
 mod startup;
+mod statement_expressions;
 mod statements;
 mod symbols;
 mod temporary_scan;

@@ -1559,7 +1559,8 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::New { .. }
             | ExprKind::Delete { .. }
             | ExprKind::SizeofPack(_)
-            | ExprKind::Lambda(_) => "expression",
+            | ExprKind::Lambda(_)
+            | ExprKind::Statement(_) => "expression",
             ExprKind::Call { .. } => {
                 if facts.functional_call || facts.intrinsic.is_some() {
                     "cast-expression"

@@ -192,6 +192,16 @@ impl Parser<'_> {
     }
     fn parenthesized_or_cast(&mut self) -> Result<ExprId, ParseError> {
         let location = self.location()?;
+        if self.at_ahead(P::LeftBrace, 1)? {
+            self.cursor.advance()?;
+            let body = self.without_angle(Self::compound_statement)?;
+            self.expect(P::RightParen)?;
+            let expression = self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::Statement(body),
+            })?;
+            return self.postfix(expression);
+        }
         if self.name_starts_ahead(1)? {
             return self.parenthesized_from_name(location);
         }

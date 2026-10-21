@@ -46,6 +46,7 @@ impl Analyzer<'_> {
         unevaluated: bool,
     ) -> Result<(), Error> {
         match self.tree.expressions.get(id).kind {
+            ExprKind::Statement(body) => self.statement_block(id, body, scope)?,
             ExprKind::Id(name) => {
                 self.check_expression_name(name, scope, false, unevaluated)?;
             }

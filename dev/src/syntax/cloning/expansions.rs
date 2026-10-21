@@ -6,7 +6,7 @@ use super::{
     TemplateArgument, TemplateArgumentKind,
 };
 use crate::{lex::identifiers::NameId, support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) trait PackExpander {
     fn pack_length(&self, name: NameId) -> Option<usize>;
@@ -19,9 +19,15 @@ enum Length {
     Deferred,
 }
 
+#[derive(Default)]
+struct CollectedNames {
+    names: Vec<NameId>,
+    seen: HashSet<NameId>,
+}
+
 pub(super) struct Expansion<'a> {
     expander: &'a mut dyn PackExpander,
-    collecting: Option<Vec<NameId>>,
+    collecting: Option<CollectedNames>,
     renames: HashMap<NameId, NameId>,
     shadows: Vec<(NameId, Option<Length>)>,
     parameter_packs: Vec<(Option<NameId>, usize)>,
@@ -164,8 +170,8 @@ impl Cloner<'_> {
         };
         let length = state.length(name);
         if let Some(names) = state.collecting.as_mut() {
-            if length.is_some() && !names.contains(&name) {
-                names.push(name);
+            if length.is_some() && names.seen.insert(name) {
+                names.names.push(name);
             }
             name
         } else {
@@ -245,19 +251,18 @@ impl Cloner<'_> {
         }
         Ok(())
     }
-    fn pattern_packs(
+    pub(crate) fn expression_pack_names(
         &mut self,
-        pattern: Pattern,
-        location: SourceOffset,
-    ) -> Result<Option<(Vec<NameId>, usize)>, ParseError> {
-        if !self.expanding() {
-            return Ok(None);
-        }
+        expression: ExprId,
+    ) -> Result<Vec<NameId>, ParseError> {
+        self.collect_pattern_names(Pattern::Expression(expression))
+    }
+    fn collect_pattern_names(&mut self, pattern: Pattern) -> Result<Vec<NameId>, ParseError> {
         let state = self
             .expansion
             .as_mut()
             .ok_or(ParseError::Invariant("pack copy without context"))?;
-        let saved = state.collecting.replace(Vec::new());
+        let saved = state.collecting.replace(CollectedNames::default());
         let renames = std::mem::take(&mut state.renames);
         let mark = self.tree.mark();
         let result = self.copy_pattern(pattern);
@@ -273,6 +278,21 @@ impl Cloner<'_> {
         state.collecting = saved;
         state.renames = renames;
         result?;
+        Ok(names.names)
+    }
+    fn pattern_packs(
+        &mut self,
+        pattern: Pattern,
+        location: SourceOffset,
+    ) -> Result<Option<(Vec<NameId>, usize)>, ParseError> {
+        if !self.expanding() {
+            return Ok(None);
+        }
+        let names = self.collect_pattern_names(pattern)?;
+        let state = self
+            .expansion
+            .as_ref()
+            .ok_or(ParseError::Invariant("pack copy lost context"))?;
         let mut count = None;
         // Any pack declared in this copy defers the entire expansion, before
         // testing lengths of the bound packs that accompany it.

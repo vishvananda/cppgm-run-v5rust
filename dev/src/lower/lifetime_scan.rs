@@ -66,6 +66,15 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(live)
     }
+    pub(super) fn scan_statement_expression(&mut self, body: ast::StmtId) -> Result<(), Error> {
+        let contexts = self.handlers.contexts.len();
+        let context = self.handlers.contexts.last().map(|context| context.key);
+        let floor = self.lifetime.cleanups.len();
+        let saved = std::mem::replace(&mut self.lifetime.scan_floor, floor);
+        let result = self.count_live(body, None, contexts, context);
+        self.lifetime.scan_floor = saved;
+        result.map(|_| ())
+    }
     fn count_live(
         &mut self,
         id: ast::StmtId,
@@ -154,6 +163,11 @@ impl Function<'_, '_, '_, '_> {
             }
             StmtKind::Label { name, body } => {
                 self.lifetime.labels.insert(name, live);
+                if self.lifetime.scan_floor != 0 {
+                    self.lifetime
+                        .label_floors
+                        .insert(name, self.lifetime.scan_floor);
+                }
                 self.handlers.labels.insert(name, contexts);
                 return self.count_live(body, live, contexts, context);
             }
@@ -192,7 +206,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         self.scan_lifetimes()?;
         let mut node = self.lifetime.labels.get(&name).copied().flatten();
-        let mut depth = 0;
+        let mut depth = self.lifetime.label_floors.get(&name).copied().unwrap_or(0);
         while let Some(id) = node {
             let live = self.lifetime.live_node(id);
             if let Some(&found) = self.lifetime.depths.get(&live.variable)
@@ -202,7 +216,7 @@ impl Function<'_, '_, '_, '_> {
                     .get(found - 1)
                     .is_some_and(|cleanup| cleanup.variable == Some(live.variable))
             {
-                depth = found;
+                depth = depth.max(found);
                 break;
             }
             node = live.parent;

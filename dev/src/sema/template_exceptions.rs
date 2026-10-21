@@ -329,7 +329,8 @@ impl Analyzer<'_> {
                 ExprKind::Braced { elements, .. } => {
                     work.extend(self.tree.expr_lists.get(elements).iter().rev().copied());
                 }
-                ExprKind::FunctionalCast { .. }
+                ExprKind::Statement(_)
+                | ExprKind::FunctionalCast { .. }
                 | ExprKind::New { .. }
                 | ExprKind::Lambda(_)
                 | ExprKind::PackExpansion(_)

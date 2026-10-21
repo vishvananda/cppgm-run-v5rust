@@ -345,6 +345,54 @@ mod tests {
             })
             .unwrap();
         assert!(!analyzer.expression_names_pack(nested, scope).unwrap());
+        // Statement blocks use the cloner's lexical walk, and collection must
+        // rewind every fact-bearing copy. Nested expansions keep their names.
+        for (value, expected) in [(expression, true), (nested, false)] {
+            let statement = analyzer
+                .tree
+                .statements
+                .add(ast::Statement {
+                    location,
+                    kind: ast::StmtKind::Expression(Some(value)),
+                })
+                .unwrap();
+            let list = analyzer.tree.stmt_lists.begin();
+            analyzer.tree.stmt_lists.push(statement);
+            let list = analyzer.tree.stmt_lists.finish(list).unwrap();
+            let block = analyzer
+                .tree
+                .statements
+                .add(ast::Statement {
+                    location,
+                    kind: ast::StmtKind::Compound(list),
+                })
+                .unwrap();
+            let block = analyzer
+                .tree
+                .expressions
+                .add(ast::Expression {
+                    location,
+                    kind: ExprKind::Statement(block),
+                })
+                .unwrap();
+            let before = (
+                analyzer.tree.expressions.mark(),
+                analyzer.tree.statements.mark(),
+                analyzer.tree.names.mark(),
+            );
+            assert_eq!(
+                analyzer.expression_names_pack(block, scope).unwrap(),
+                expected
+            );
+            assert_eq!(
+                (
+                    analyzer.tree.expressions.mark(),
+                    analyzer.tree.statements.mark(),
+                    analyzer.tree.names.mark()
+                ),
+                before
+            );
+        }
         analyzer.template_depth = 1;
         let ty = analyzer
             .dependent_operand(expression, scope, false)

@@ -315,7 +315,8 @@ impl Graph {
                 work.push(Step::Visit(operand));
             }
             ExprKind::Throw(Some(operand)) => work.push(Step::Visit(operand)),
-            ExprKind::Lambda(_)
+            ExprKind::Statement(_)
+            | ExprKind::Lambda(_)
             | ExprKind::SizeofPack(_)
             | ExprKind::Id(_)
             | ExprKind::Literal(_)

@@ -1021,6 +1021,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Keyword(word) => {
                 self.line("keyword-literal", Payload::Keyword(word), false)?;
             }
+            ExprKind::Statement(body) => {
+                self.open("statement-expression", Payload::None)?;
+                self.tasks.push(Task::Statement(body));
+            }
             ExprKind::Paren(inner) => {
                 self.open("parenthesized-expression", Payload::None)?;
                 self.tasks.push(Task::Expression(inner));

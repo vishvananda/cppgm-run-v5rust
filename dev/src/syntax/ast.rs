@@ -540,6 +540,7 @@ pub(crate) enum ExprKind {
         operand: ExprId,
     },
     Throw(Option<ExprId>),
+    Statement(StmtId),
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Statement {

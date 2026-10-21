@@ -290,7 +290,8 @@ impl Analyzer<'_> {
                 }
                 Ok(false)
             }
-            ExprKind::FunctionalCast { .. }
+            ExprKind::Statement(_)
+            | ExprKind::FunctionalCast { .. }
             | ExprKind::New { .. }
             | ExprKind::Lambda(_)
             | ExprKind::PackExpansion(_) => Ok(true),

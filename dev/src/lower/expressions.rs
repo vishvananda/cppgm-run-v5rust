@@ -264,6 +264,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(value);
         }
         match self.tree.expressions.get(id).kind {
+            ExprKind::Statement(body) => self.statement_expression(id, body, None),
             ExprKind::Throw(operand) => self.throw_value(id, operand),
             ExprKind::Paren(inner) => self.expression(inner, context),
             ExprKind::Literal(literal) => {

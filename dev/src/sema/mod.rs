@@ -125,6 +125,7 @@ mod source_exceptions;
 mod special_members;
 mod specialized_classes;
 mod specifiers;
+mod statement_expressions;
 mod statements;
 mod static_addresses;
 mod static_arrays;

@@ -196,6 +196,8 @@ pub(super) struct Lifetime {
     pub live: Vec<LiveNode>,
     pub returns: HashMap<EntityId, u32>,
     pub labels: HashMap<crate::lex::identifiers::NameId, Option<LiveId>>,
+    pub label_floors: HashMap<crate::lex::identifiers::NameId, usize>,
+    pub scan_floor: usize,
     pub depths: HashMap<EntityId, usize>,
     pub full_expression: bool,
     pub temporary_segment: TemporarySegment,

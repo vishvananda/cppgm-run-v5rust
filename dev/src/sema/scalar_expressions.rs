@@ -80,6 +80,7 @@ impl Analyzer<'_> {
             other => other,
         })?;
         let mut facts = match node.kind {
+            ExprKind::Statement(body) => self.statement_expression(id, body, scope)?,
             ExprKind::Lambda(lambda) => self.lambda_expression(id, lambda, scope)?,
             ExprKind::Paren(inner) => {
                 self.typed_expression(inner, scope)?;
