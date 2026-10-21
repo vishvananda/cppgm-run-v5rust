@@ -41,11 +41,7 @@ impl Selection<'_> {
         ) {
             return Err(super::value_selection::unsupported());
         }
-        let source = if from == Type::I128 {
-            self.aggregate_operand(value, from)?
-        } else {
-            self.operand(value, from, R::R11)?
-        };
+        let source = self.operand(value, from, if to == Type::I128 { R::R11 } else { R::R10 })?;
         if to == Type::I128 {
             let mut r = if let Some(r) = source.register() {
                 r
@@ -83,7 +79,10 @@ impl Selection<'_> {
                 let source = if let Operand::Immediate(bits) = source {
                     Operand::Immediate(bits & u128::from(u64::MAX))
                 } else {
-                    source
+                    // emit_convert reads src.imm for every non-memory wide
+                    // carrier. The C++ Operand default initializes that field
+                    // to zero for registers and symbols; preserve it explicitly.
+                    Operand::Immediate(0)
                 };
                 self.load(r, source, Type::I64);
                 self.normalize(r, to);
@@ -93,25 +92,20 @@ impl Selection<'_> {
         Ok(())
     }
     pub(super) fn aggregate_operand(&mut self, value: Value, ty: Type) -> Result<Operand, Error> {
-        let source = self.aggregate_source(value)?;
-        if matches!(ty, Type::Object { .. })
-            && matches!(
-                self.facts.resolve(self.body, value),
-                Alias::Constant(Constant::Integer(_))
-            )
-            && let Operand::Immediate(bits) = source
-        {
-            Ok(Operand::Immediate(
-                i128::from(super::mir::low_word(bits)?).cast_unsigned(),
-            ))
-        } else {
-            Ok(source)
-        }
-    }
-    pub(super) fn aggregate_source(&mut self, value: Value) -> Result<Operand, Error> {
         match self.facts.resolve(self.body, value) {
             Alias::Temporary(temp) => self.temp_operand(temp),
             Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
+            Alias::Constant(constant) if ty.float_rank() != 0 => {
+                let mut scanner = crate::types::floating::FloatingScanner::default();
+                Ok(Operand::Immediate(crate::lowir::literals::native_float(
+                    &mut scanner,
+                    constant,
+                    crate::lowir::literals::FloatKind::from_type(ty).ok_or(Error::Limit)?,
+                )?))
+            }
+            Alias::Constant(Constant::Integer(bits)) if matches!(ty, Type::Object { .. }) => Ok(
+                Operand::Immediate(i128::from(super::mir::low_word(bits)?).cast_unsigned()),
+            ),
             Alias::Constant(Constant::Integer(bits) | Constant::Float(_, bits)) => {
                 Ok(Operand::Immediate(bits))
             }
@@ -119,6 +113,9 @@ impl Selection<'_> {
                 "operand requires a numeric literal, not a storage location or symbol".into(),
             )),
         }
+    }
+    pub(super) fn aggregate_source(&mut self, value: Value) -> Result<Operand, Error> {
+        self.aggregate_operand(value, Type::I128)
     }
     pub(super) fn wide_load(&mut self, result: TempId, address: Value) -> Result<(), Error> {
         let source = self.address(address, R::R10)?;

@@ -546,7 +546,7 @@ chosen
             SourceBuffer::new(b"#define REPEAT(x) x x\nREPEAT(foo) operator \"\"foo".to_vec())
                 .unwrap();
         let input = Preprocessor::new(&source).unwrap();
-        let mut tokens = PostTokenizer::from_input(input, NumberDialect::Cxx11);
+        let mut tokens = PostTokenizer::from_input(input, NumberDialect::Gnu);
         let first = tokens.next_token().unwrap().name.unwrap();
         assert_eq!(tokens.next_token().unwrap().name, Some(first));
         assert!(matches!(

@@ -1,0 +1,63 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @value
+  storage scalar i64
+  init i64 7
+
+function @truncate
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 0
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+    slot $wide -> [rbp-16] : i128
+
+  block ^entry
+    mov.i128 [rbp-16], 0x00000000000000010000000000000029
+    load.i64 rbx, [rbp-16]
+    mov r12, 41
+    mov r13, 0
+    mov rdi, 41
+    call @truncate [args=(rdi)]
+    mov rdx, 41
+    cmp.i64 rbx, rdx
+    setne rbx
+    movzx rbx, rbx
+    mov rdx, 41
+    cmp.i64 r12, rdx
+    setne r12
+    movzx r12, r12
+    mov rdx, 0
+    cmp.i64 r13, rdx
+    setne r13
+    movzx r13, r13
+    mov rdx, 0
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    or rbx, r12
+    or r13, rax
+    or rbx, r13
+    ret rbx

@@ -183,9 +183,9 @@ impl Function<'_, '_, '_, '_> {
         subtract: bool,
         source: TypeId,
     ) -> Result<(Value, RValue), Error> {
+        let rhs = self.expression(right, Context::Operand)?;
         let place = self.scalar_place(left)?;
         let old = self.read_place(place, source)?;
-        let rhs = self.expression(right, Context::Operand)?;
         let value = self.pointer_offset(old, rhs, subtract, source)?;
         self.effect(I::Store(
             types::memory(self.graph, source)?,
@@ -203,10 +203,10 @@ impl Function<'_, '_, '_, '_> {
         operation: TypeId,
     ) -> Result<(Value, RValue), Error> {
         // E1 += E2 when E1 is bool and the recorded operation is a pointer:
-        // evaluate E1 once, read its count, then E2, scale and convert the sum.
+        // evaluate E2, then E1 once, read its count, scale and convert the sum.
+        let pointer = self.operand(right, Context::CompoundAssignment)?;
         let place = self.scalar_place(left)?;
         let old = self.read_place(place, source)?;
-        let pointer = self.operand(right, Context::CompoundAssignment)?;
         let sum = self.pointer_offset(pointer, old, false, operation)?;
         let value = self.convert(sum, source, Context::CompoundAssignment)?;
         // The frozen bool-pointer path stores the comparison directly,

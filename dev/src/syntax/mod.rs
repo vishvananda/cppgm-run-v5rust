@@ -91,7 +91,7 @@ impl<'a> SyntaxUnit<'a> {
             preprocessor,
             0,
             crate::lex::number::NumberOptions {
-                dialect: crate::lex::number::NumberDialect::Cxx11,
+                dialect: crate::lex::number::NumberDialect::Gnu,
                 binary_exponents: false,
             },
         )

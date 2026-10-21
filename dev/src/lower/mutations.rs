@@ -1,5 +1,5 @@
 // Translated from lower/expression_lowering.cpp's scalar updates. See NOTICE.
-//! Compute each scalar place once and preserve load, RHS conversion, update, store order.
+//! Compute each scalar place once after evaluating and converting its right operand.
 use super::{
     Error,
     conversions::Context,
@@ -465,13 +465,13 @@ impl Function<'_, '_, '_, '_> {
             let place = self.scalar_place(left)?;
             (place, value)
         } else {
-            let place = self.scalar_place(left)?;
-            let old = self.read_place(place, source)?;
             let (operation, _) = self.graph.lower_arithmetic_types(id)?;
             let mut rhs = self.operand(right, Context::CompoundAssignment)?;
             if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
                 rhs = self.convert(rhs, operation, Context::CompoundAssignment)?;
             }
+            let place = self.scalar_place(left)?;
+            let old = self.read_place(place, source)?;
             let lhs = self.convert(old, operation, Context::CompoundAssignment)?;
             let signed = types::signed(self.graph, operation)?;
             let code = match op {

@@ -376,13 +376,11 @@ impl Function<'_, '_, '_, '_> {
     }
     fn normalized_truth(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let value = self.truth(id)?;
-        let ty = if value.ty == Type::Ptr {
-            Type::Ptr
-        } else {
-            Type::I64
-        };
         let zero = self.builder.integer(0)?;
-        self.emit(I::Compare(Compare::Ne, ty, value.value, zero), value.source)
+        self.emit(
+            I::Compare(Compare::Ne, value.ty, value.value, zero),
+            value.source,
+        )
     }
     pub(super) fn logical_value(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let mut spine = Vec::new();

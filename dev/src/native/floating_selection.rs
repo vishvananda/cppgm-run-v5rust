@@ -103,12 +103,7 @@ impl Selection<'_> {
             Alias::Temporary(temp) => self.temp_operand(temp),
             Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
             Alias::Symbol(_) => Err(Error::Diagnostic(
-                if ty == Type::F80 {
-                    "operand requires a numeric literal, not a storage location or symbol"
-                } else {
-                    "floating value requires a numeric value or storage operand"
-                }
-                .into(),
+                "floating value requires a numeric value or storage operand".into(),
             )),
         }
     }
@@ -182,9 +177,9 @@ impl Selection<'_> {
             }
             return Ok(());
         }
-        let source = if ty != Type::F80
-            && matches!(self.facts.resolve(self.body, value), Alias::Temporary(_))
-        {
+        let source = if ty == Type::F80 {
+            self.aggregate_operand(value, ty)?
+        } else if matches!(self.facts.resolve(self.body, value), Alias::Temporary(_)) {
             self.operand(value, ty, R::R11)?
         } else {
             self.float_operand(value, ty)?
@@ -200,7 +195,7 @@ impl Selection<'_> {
         value: Value,
     ) -> Result<(), Error> {
         let source = if ty == Type::F80 {
-            self.float_operand(value, ty)?
+            self.aggregate_operand(value, ty)?
         } else {
             let own = if let Value::Temp(temp) = value {
                 self.body.temp(temp).ty.ok_or(Error::Limit)?

@@ -429,3 +429,30 @@ expressions over these typed literals, followed by PA4's interned/preprocessed
 input. The frozen bare-lexer span quirk must not be generalized to a future
 input cursor with a different record lifetime without comparing that owner.
 Ralph owns advancement; its state and existing goal were not replaced or edited.
+
+
+## Refreshed-oracle preservation during PA24 audit (2026-10-21)
+
+Group base: `712f550a`; oracle `3ef7bd2511b8aaf9695df14253047200b02a57c2`.
+Read the full current PA2 handout, this ledger and frozen
+`lex/post_tokenizer.cpp::split_literal_operator_suffix`. The refreshed standalone
+contract preserves maximal-munch user-defined string tokens after `operator`;
+the parser's suffix split requires explicit GNU source options. Rust's shared
+post-tokenizer now applies that same typed dialect check. The split/span/name
+unit tests select GNU mode, and the syntax test constructor mirrors the existing
+production GNU source configuration. Standalone strict tokens remain strict;
+no production parser, semantic identity or source ownership was duplicated.
+
+The entry failure was `tests/750-reserved-literal-operator-suffix.t`. Its exact
+stage comparison and complete 28/28 course target now pass in
+`/home/vishvananda/work/private/v5rust/artifacts/pa24-refresh-prior-source.log`.
+All 842 direct typed post-token comparisons pass against the current frozen C++
+owners, including source offsets, suffixes, string arrays, errors and repeated
+EOF. Receipts/build commands/raw streams are retained at
+`artifacts/pa24-refresh-audit/pa2-typed/` outside the checkout's tracked files
+(the absolute artifact root is `/home/vishvananda/work/private/v5rust`).
+The lex unit group passes seven tests; the complete Rust quality command passes
+with 431 source files and zero findings. No input or reference was edited.
+The change adds one constant-time dialect predicate with no new retained storage.
+This repairs an earlier-stage acceptance requirement of the active PA24 audit;
+it does not advance Ralph or certify the still-incomplete PA24 full-stage goal.

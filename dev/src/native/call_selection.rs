@@ -83,7 +83,7 @@ impl Selection<'_> {
         pass: Option<Pass>,
     ) -> Result<(Operand, Option<Type>, bool), Error> {
         if ty == Type::F80 {
-            return Ok((self.float_operand(value, ty)?, None, false));
+            return Ok((self.aggregate_operand(value, ty)?, None, false));
         }
         if super::aggregate::memory_value(ty) {
             return Ok((self.aggregate_operand(value, ty)?, None, false));

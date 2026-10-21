@@ -277,7 +277,8 @@ impl<I: PostTokenInput> PostTokenizer<I> {
         let first = self.input.token(first_kind);
         let begin;
         let mut end = first.end;
-        let split = self.after_operator
+        let split = self.dialect == NumberDialect::Gnu
+            && self.after_operator
             && first_kind == PpTokenKind::UserDefinedStringLiteral
             && first.spelling.len() >= 3
             && first.spelling.starts_with(b"\"\"");
@@ -437,7 +438,7 @@ mod tests {
     #[test]
     fn literal_operator_split_preserves_earliest_suffix_span_and_keyword_identity() {
         let source = SourceBuffer::new(b"operator \"\"\\\noperator \"next\"".to_vec()).unwrap();
-        let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+        let mut tokens = PostTokenizer::new(&source, NumberDialect::Gnu).unwrap();
         assert!(is_operator(tokens.next_token().unwrap().kind));
         let token = tokens.next_token().unwrap();
         assert_eq!(token.source, b"\"\"");
@@ -472,7 +473,7 @@ mod tests {
             ));
         }
         let source = SourceBuffer::new(b"operator \"\"suffix /*".to_vec()).unwrap();
-        let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+        let mut tokens = PostTokenizer::new(&source, NumberDialect::Gnu).unwrap();
         assert!(is_operator(tokens.next_token().unwrap().kind));
         assert!(matches!(
             tokens.next_token().unwrap().kind,
@@ -492,7 +493,7 @@ mod tests {
             "not_eq", "new", "delete",
         ] {
             let source = SourceBuffer::new(format!("operator \"\"{word}").into_bytes()).unwrap();
-            let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11).unwrap();
+            let mut tokens = PostTokenizer::new(&source, NumberDialect::Gnu).unwrap();
             assert!(is_operator(tokens.next_token().unwrap().kind));
             assert!(matches!(
                 tokens.next_token().unwrap().kind,
