@@ -433,7 +433,7 @@ impl Function<'_, '_, '_, '_> {
                 self.destroy_cleanup_in(cleanup, below, false)?;
                 self.jump(tail)
             }
-            Action::Resume => self.handler_resume(),
+            Action::Resume => self.resume_outside_tries(),
             Action::Subobjects { pops } => {
                 for _ in 0..pops {
                     self.effect(I::Runtime(R::EhEnd))?;

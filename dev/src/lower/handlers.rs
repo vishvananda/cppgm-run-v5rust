@@ -262,7 +262,7 @@ impl Function<'_, '_, '_, '_> {
             for _ in 0..self.handlers.contexts.len() {
                 self.effect(I::Runtime(R::EhEnd))?;
             }
-            self.handler_resume()?;
+            self.resume_outside_tries()?;
         } else {
             self.leave_handler_contexts()?;
         }
@@ -469,7 +469,21 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn handler_resume(&mut self) -> Result<(), Error> {
-        // Serialized LowIR resumes into the enclosing function guard.
+        self.resume_exception(false)
+    }
+    pub(super) fn resume_outside_tries(&mut self) -> Result<(), Error> {
+        self.resume_exception(true)
+    }
+    fn resume_exception(&mut self, outside_tries: bool) -> Result<(), Error> {
+        // cleanup_lowering.cpp::emit_resume: object mode terminates directly
+        // under a nonthrowing function guard after all applicable tries.
+        // The serialized view instead resumes into that guard.
+        if self.symbols.object_mode()
+            && self.lifetime.function_guard.is_some()
+            && (outside_tries || self.innermost_try().is_none())
+        {
+            return self.terminate_current_exception();
+        }
         self.effect(I::Runtime(R::Resume))?;
         self.terminated = true;
         Ok(())

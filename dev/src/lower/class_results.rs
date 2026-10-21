@@ -66,7 +66,9 @@ impl Function<'_, '_, '_, '_> {
             });
         } else {
             let value = self.zero_return(source)?;
-            self.effect(I::Return(ty, value))?;
+            // emit_terminate suppresses the function guard's return pop;
+            // keep the guard identity live for subsequent landing emission.
+            self.effect_with_return_guard(I::Return(ty, value), end_guard)?;
         }
         self.terminated = true;
         Ok(())

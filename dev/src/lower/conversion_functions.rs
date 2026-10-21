@@ -311,8 +311,7 @@ impl Function<'_, '_, '_, '_> {
                 let tail = self.cleanup_prefix(true, depth - 1)?;
                 self.jump(tail)?;
             } else {
-                self.effect(I::Runtime(R::Resume))?;
-                self.terminated = true;
+                self.handler_resume()?;
             }
             self.place_cleanup_chains(false)?;
             self.place(next)?;

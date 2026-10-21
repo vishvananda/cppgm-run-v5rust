@@ -550,6 +550,13 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn effect(&mut self, kind: I) -> Result<(), Error> {
+        self.effect_with_return_guard(kind, true)
+    }
+    pub(super) fn effect_with_return_guard(
+        &mut self,
+        kind: I,
+        end_guard: bool,
+    ) -> Result<(), Error> {
         if matches!(kind, I::Branch(..) | I::Jump(_))
             && self.lifetime.flow_region == super::lifetime::FlowRegion::Local
         {
@@ -565,7 +572,7 @@ impl Function<'_, '_, '_, '_> {
         if matches!(kind, I::Return(..)) && !self.construction.placing {
             self.end_constructor_region()?;
         }
-        if matches!(kind, I::Return(..)) && self.lifetime.function_guard.is_some() {
+        if matches!(kind, I::Return(..)) && end_guard && self.lifetime.function_guard.is_some() {
             self.builder
                 .effect(I::Runtime(crate::lowir::model::RuntimeInstruction::EhEnd))?;
             self.note_element_marker()?;

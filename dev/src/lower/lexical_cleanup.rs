@@ -178,7 +178,7 @@ impl Function<'_, '_, '_, '_> {
                         self.effect(I::Runtime(R::EhEnd))?;
                         self.jump(target)?;
                     } else {
-                        self.handler_resume()?;
+                        self.resume_outside_tries()?;
                     }
                 }
                 Block::Destroy {

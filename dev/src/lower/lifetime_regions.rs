@@ -243,6 +243,28 @@ impl Function<'_, '_, '_, '_> {
             copy_elision: false,
         }))
     }
+    pub(super) fn terminate_current_exception(&mut self) -> Result<(), Error> {
+        self.effect(I::Runtime(R::EhCatchAll(Some(1))))?;
+        let slot = self.function_exception_slot()?;
+        let source = self.result.ok_or(crate::sema::Error::Invariant(
+            "termination without function",
+        ))?;
+        let exception = self
+            .emit(I::Runtime(R::Exception(Type::Ptr)), source)?
+            .value;
+        self.effect(I::Store(
+            Facts::memory(false, true),
+            Type::Ptr,
+            exception,
+            slot,
+        ))?;
+        let exception = self
+            .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
+            .value;
+        self.terminate_exception(exception)?;
+        let ty = self.symbols.result_boundary(source)?.ty;
+        self.termination_return(source, ty)
+    }
     fn function_exception_slot(&mut self) -> Result<crate::lowir::model::Value, Error> {
         if let Some(slot) = self.lifetime.exception_slot {
             return Ok(slot);
