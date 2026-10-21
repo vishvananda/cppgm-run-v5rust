@@ -22,6 +22,7 @@ pub(super) struct Symbols {
     pub(super) payload: ImageSymbol,
     pub(super) selector: ImageSymbol,
     pub(super) dispatch: ImageSymbol,
+    pub(super) uncaught: ImageSymbol,
     pub(super) catch: ImageSymbol,
     pub(super) wide_division: [ImageSymbol; 4],
     pub(super) float_conversion: [ImageSymbol; 12],
@@ -33,6 +34,7 @@ impl Runtime {
             payload: self.payload,
             selector: self.selector,
             dispatch: self.dispatch,
+            uncaught: self.uncaught,
             catch: self.catch,
             wide_division: self.wide_division,
             float_conversion: self.float_conversion,
@@ -68,66 +70,14 @@ impl Runtime {
             float_conversion,
         })
     }
-    fn dispatcher(&self, image: &mut Image) -> Result<(), Error> {
-        let base = image.align_text()?;
-        image.define(self.uncaught, Section::Text, base);
-        let mut a = Assembler::default();
-        a.mov_ri(R::RDI, 134)?;
-        emit_exit(&mut a, R::RDI)?;
-        while a.code.len() % 16 != 0 {
-            a.byte(0xcc);
-        }
-        image.define(
-            self.dispatch,
-            Section::Text,
-            base + u64::from(a.position()?),
-        );
-        let next = a.label()?;
-        let skip = a.label()?;
-        let found = a.label()?;
-        a.load(R::R11, Rm::rip(self.top, 0), 8, false)?;
-        a.bind(next);
-        a.op(0, true, 0x85, 1, R::R11.code(), Rm::Reg(R::R11), false, 0)?;
-        a.branch(Some(5), skip, true);
-        a.jump_symbol(self.uncaught)?;
-        a.bind(skip);
-        a.op(0, false, 0xf6, 1, 0, Rm::mem(R::R11, 16), true, 1)?;
-        a.imm(2, 1);
-        a.branch(Some(4), found, true);
-        a.load(R::R11, Rm::mem(R::R11, 0), 8, false)?;
-        a.branch(None, next, true);
-        a.bind(found);
-        a.alu_ri(1, Rm::mem(R::R11, 16), 2, 1)?;
-        a.store(Rm::rip(self.top, 0), R::R11, 8)?;
-        for (index, reg) in [R::RBX, R::R12, R::R13, R::R14, R::R15]
-            .into_iter()
-            .enumerate()
-        {
-            a.load(
-                reg,
-                Rm::mem(
-                    R::R11,
-                    32 + 8 * i32::try_from(index).map_err(|_| Error::Limit)?,
-                ),
-                8,
-                false,
-            )?;
-        }
-        a.load(R::RBP, Rm::mem(R::R11, 16), 8, false)?;
-        a.alu_ri(4, Rm::Reg(R::RBP), !3, 8)?;
-        a.load(R::RSP, Rm::mem(R::R11, 24), 8, false)?;
-        a.store_imm(Rm::rip(self.selector, 0), 0, 8)?;
-        a.op(0, false, 0xff, 1, 4, Rm::mem(R::R11, 8), false, 0)?;
-        a.resolve()?;
-        image.append(a)
-    }
+
     pub(super) fn emit(
         &self,
         image: &mut Image,
         program: &Program,
         startup: &Startup,
     ) -> Result<ImageSymbol, Error> {
-        self.dispatcher(image)?;
+        self.symbols().dispatcher(image)?;
         for symbol in program.symbols() {
             let Some(function) = program.function(symbol) else {
                 continue;
@@ -136,11 +86,16 @@ impl Runtime {
                 continue;
             }
             let id = program.find_symbol(symbol.name).ok_or(Error::Limit)?;
-            let mut a = Assembler::default();
             if let Some(object) = function.metadata.tls_for {
-                a.lea(R::RAX, Rm::rip(ImageSymbol::Program(object), 0))?;
-                a.ret();
-            } else if let Some(object) = function.metadata.object {
+                emit_tls_wrapper(
+                    image,
+                    ImageSymbol::Program(id),
+                    ImageSymbol::Program(object),
+                )?;
+                continue;
+            }
+            let mut a = Assembler::default();
+            if let Some(object) = function.metadata.object {
                 if !builtins::emit(&mut a, program.names.bytes(object))? {
                     continue;
                 }
@@ -188,7 +143,7 @@ impl Runtime {
         Ok(start)
     }
 }
-fn emit_exit(a: &mut Assembler, status: R) -> Result<(), Error> {
+pub(super) fn emit_exit(a: &mut Assembler, status: R) -> Result<(), Error> {
     a.mov_rr(R::RDI, status)?;
     a.mov_ri(R::RAX, 231)?;
     a.byte(0x0f);
@@ -251,4 +206,146 @@ fn exit_drain(a: &mut Assembler, state: ImageSymbol) -> Result<(), Error> {
     a.branch(None, next, true);
     a.bind(done);
     Ok(())
+}
+
+pub(super) const IMPORT_NAMES: [&[u8]; 24] = [
+    b"__cppgm_eh_top",
+    b"__cppgm_eh_payload",
+    b"__cppgm_eh_selector",
+    b"__cppgm_eh_dispatch",
+    b"__cppgm_eh_uncaught",
+    b"__cppgm_eh_catch",
+    b"__divti3",
+    b"__udivti3",
+    b"__modti3",
+    b"__umodti3",
+    b"__floattisf",
+    b"__floattidf",
+    b"__floattixf",
+    b"__floatuntisf",
+    b"__floatuntidf",
+    b"__floatuntixf",
+    b"__fixsfti",
+    b"__fixdfti",
+    b"__fixxfti",
+    b"__fixunssfti",
+    b"__fixunsdfti",
+    b"__fixunsxfti",
+    b"_Unwind_Resume",
+    b"__gxx_personality_v0",
+];
+impl Symbols {
+    pub(super) fn imports(image: &mut Image) -> Result<Self, Error> {
+        let top = image.local()?;
+        let payload = image.local()?;
+        let selector = image.local()?;
+        let dispatch = image.local()?;
+        let uncaught = image.local()?;
+        let catch = image.local()?;
+        let mut wide_division = [catch; 4];
+        for symbol in &mut wide_division {
+            *symbol = image.local()?;
+        }
+        let mut float_conversion = [catch; 12];
+        for symbol in &mut float_conversion {
+            *symbol = image.local()?;
+        }
+        let _ = image.local()?;
+        let _ = image.local()?;
+        Ok(Self {
+            top,
+            payload,
+            selector,
+            dispatch,
+            uncaught,
+            catch,
+            wide_division,
+            float_conversion,
+        })
+    }
+    pub(super) fn dispatcher(&self, image: &mut Image) -> Result<(), Error> {
+        DispatcherSymbols {
+            top: self.top,
+            selector: self.selector,
+            dispatch: self.dispatch,
+            uncaught: self.uncaught,
+        }
+        .emit(image)
+    }
+}
+
+pub(super) fn emit_tls_wrapper(
+    image: &mut Image,
+    symbol: ImageSymbol,
+    object: ImageSymbol,
+) -> Result<(), Error> {
+    let base = image.align_text()?;
+    image.define(symbol, Section::Text, base);
+    let mut a = Assembler::default();
+    a.lea(R::RAX, Rm::rip(object, 0))?;
+    a.ret();
+    a.resolve()?;
+    image.append(a)
+}
+
+pub(super) struct DispatcherSymbols {
+    pub(super) top: ImageSymbol,
+    pub(super) selector: ImageSymbol,
+    pub(super) dispatch: ImageSymbol,
+    pub(super) uncaught: ImageSymbol,
+}
+impl DispatcherSymbols {
+    pub(super) fn emit(&self, image: &mut Image) -> Result<(), Error> {
+        let base = image.align_text()?;
+        image.define(self.uncaught, Section::Text, base);
+        let mut a = Assembler::default();
+        a.mov_ri(R::RDI, 134)?;
+        emit_exit(&mut a, R::RDI)?;
+        while a.code.len() % 16 != 0 {
+            a.byte(0xcc);
+        }
+        image.define(
+            self.dispatch,
+            Section::Text,
+            base + u64::from(a.position()?),
+        );
+        let next = a.label()?;
+        let skip = a.label()?;
+        let found = a.label()?;
+        a.load(R::R11, Rm::rip(self.top, 0), 8, false)?;
+        a.bind(next);
+        a.op(0, true, 0x85, 1, R::R11.code(), Rm::Reg(R::R11), false, 0)?;
+        a.branch(Some(5), skip, true);
+        a.jump_symbol(self.uncaught)?;
+        a.bind(skip);
+        a.op(0, false, 0xf6, 1, 0, Rm::mem(R::R11, 16), true, 1)?;
+        a.imm(2, 1);
+        a.branch(Some(4), found, true);
+        a.load(R::R11, Rm::mem(R::R11, 0), 8, false)?;
+        a.branch(None, next, true);
+        a.bind(found);
+        a.alu_ri(1, Rm::mem(R::R11, 16), 2, 1)?;
+        a.store(Rm::rip(self.top, 0), R::R11, 8)?;
+        for (index, reg) in [R::RBX, R::R12, R::R13, R::R14, R::R15]
+            .into_iter()
+            .enumerate()
+        {
+            a.load(
+                reg,
+                Rm::mem(
+                    R::R11,
+                    32 + 8 * i32::try_from(index).map_err(|_| Error::Limit)?,
+                ),
+                8,
+                false,
+            )?;
+        }
+        a.load(R::RBP, Rm::mem(R::R11, 16), 8, false)?;
+        a.alu_ri(4, Rm::Reg(R::RBP), !3, 8)?;
+        a.load(R::RSP, Rm::mem(R::R11, 24), 8, false)?;
+        a.store_imm(Rm::rip(self.selector, 0), 0, 8)?;
+        a.op(0, false, 0xff, 1, 4, Rm::mem(R::R11, 8), false, 0)?;
+        a.resolve()?;
+        image.append(a)
+    }
 }

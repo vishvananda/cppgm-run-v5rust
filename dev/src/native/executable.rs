@@ -21,24 +21,30 @@ pub(super) struct Layout {
 }
 impl Layout {
     pub(super) fn new(image: &Image) -> Result<Self, Error> {
+        Self::with_alignment(image, [1; 4])
+    }
+    pub(super) fn with_alignment(image: &Image, align: [u64; 4]) -> Result<Self, Error> {
         let has_rodata = !image.rodata.is_empty();
         let has_data = !image.data.is_empty() || image.bss != 0;
         let headers = 2 + u16::from(has_rodata) + u16::from(has_data);
-        let text_offset = align_up(64 + 56 * u64::from(headers), 16)?;
+        let text_offset = align_up(64 + 56 * u64::from(headers), align[0].max(16))?;
         let text_end = text_offset
             .checked_add(u64::try_from(image.text.len()).map_err(|_| Error::Limit)?)
             .ok_or(Error::Limit)?;
-        let rodata_offset = align_up(text_end, PAGE)?;
+        let rodata_offset = align_up(text_end, align[1].max(PAGE))?;
         let rodata_end = rodata_offset
             .checked_add(u64::try_from(image.rodata.len()).map_err(|_| Error::Limit)?)
             .ok_or(Error::Limit)?;
-        let data_offset = align_up(if has_rodata { rodata_end } else { text_end }, PAGE)?;
+        let data_offset = align_up(
+            if has_rodata { rodata_end } else { text_end },
+            align[2].max(PAGE),
+        )?;
         let data_address = BASE + data_offset;
         let bss_address = align_up(
             data_address
                 .checked_add(u64::try_from(image.data.len()).map_err(|_| Error::Limit)?)
                 .ok_or(Error::Limit)?,
-            64,
+            align[3].max(64),
         )?;
         Ok(Self {
             text_offset,

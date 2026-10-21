@@ -24,19 +24,25 @@ mod frame_carries;
 mod global_data;
 mod global_placement;
 mod image;
+mod jump_thunk;
+mod linker;
 mod memory;
 mod memory_selection;
 mod mir;
 mod mir_globals;
+mod object;
+mod object_compile;
 mod parallel_transfer;
 mod placement;
 mod runtime;
+mod runtime_link;
 mod scalar_mir;
 mod scalar_selection;
 mod slot_analysis;
 mod startup;
 mod value_facts;
 mod value_selection;
+mod variadic;
 mod wide_compare;
 mod wide_mir;
 mod wide_selection;
@@ -54,7 +60,7 @@ pub(crate) struct Options {
     pub(crate) permissions: Option<std::fs::Permissions>,
 }
 
-pub(crate) fn compile(program: &Program, options: &Options) -> Result<Statistics, Error> {
+pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statistics, Error> {
     let start = std::time::Instant::now();
     let startup = startup::Startup::find(program)?;
     if !options.output.as_os_str().is_empty() && startup.entry.is_none() {
@@ -125,7 +131,26 @@ pub(crate) fn compile(program: &Program, options: &Options) -> Result<Statistics
     }
     if !options.output.as_os_str().is_empty() {
         let entry = runtime.emit(&mut image, program, &startup)?;
-        image.write(&options.output, entry, options.permissions.as_ref())?;
+        match image.write(&options.output, entry, options.permissions.as_ref()) {
+            Ok(()) => {}
+            Err(image::WriteError::Other(error)) => return Err(error),
+            Err(image::WriteError::Undefined) => {
+                drop(image);
+                let source = program
+                    .first_source()
+                    .map(|p| p.as_os_str().as_encoded_bytes().to_vec())
+                    .unwrap_or_default();
+                let linked = object_compile::compile(program, source, options.optimization_level)
+                    .and_then(|object| {
+                        linker::link(vec![object], &options.output, options.permissions.as_ref())
+                    });
+                if let Err(error) = linked {
+                    let _ = std::fs::remove_file(&options.output);
+                    return Err(error);
+                }
+                stats.runtime_linked = true;
+            }
+        }
     }
     stats.total_ms = start.elapsed().as_secs_f64() * 1000.0;
     Ok(stats)
@@ -133,6 +158,7 @@ pub(crate) fn compile(program: &Program, options: &Options) -> Result<Statistics
 
 #[derive(Default)]
 pub(crate) struct Statistics {
+    runtime_linked: bool,
     total_ms: f64,
     select_ms: f64,
     encode_ms: f64,
@@ -195,6 +221,9 @@ impl Statistics {
         Ok(())
     }
     pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
+        if self.runtime_linked {
+            return out.write_all(b"\n");
+        }
         // Counters follow the selected function plans and final native encoding.
         writeln!(
             out,

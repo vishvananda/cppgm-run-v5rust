@@ -103,6 +103,7 @@ pub(super) enum Op {
     Trap,
     Call(CallSite),
     DynamicCopy,
+    VaStart(super::variadic::Start),
     Bulk(super::bulk::Bulk),
     FloatCopy(super::float_transport::FloatCopy),
     Floating(super::floating_mir::FloatingOp),
@@ -132,7 +133,7 @@ pub(super) enum BindingKind {
     Temp,
 }
 pub(super) struct Binding {
-    pub(super) name: NameId,
+    pub(super) name: Option<NameId>,
     pub(super) ty: Type,
     pub(super) offset: i32,
     pub(super) kind: BindingKind,
@@ -156,6 +157,7 @@ pub(super) struct Block {
 pub(super) struct Function {
     pub(super) symbol: SymbolId,
     signature: SignatureId,
+    pub(super) variadic: bool,
     pub(super) blocks: Vec<Block>,
     pub(super) layout: Layout,
     pub(super) instructions: Vec<Instruction>,
@@ -191,6 +193,7 @@ impl Function {
         Self {
             symbol,
             signature,
+            variadic: false,
             blocks: vec![Block {
                 name: BlockName::Named(block),
                 range: 0..0,
@@ -289,7 +292,9 @@ impl Function {
                 } else {
                     '%'
                 },
-                program.names.get(binding.name),
+                binding
+                    .name
+                    .map_or("va-register-save", |name| program.names.get(name)),
                 binding.offset,
                 binding.ty
             )?;
@@ -377,6 +382,7 @@ impl Function {
             }
             Op::Trap => write!(out, "    trap")?,
             Op::Call(site) => site.write(program, out)?,
+            Op::VaStart(op) => op.write(program, out)?,
             Op::DynamicCopy => write!(out, "    copy_bytes_dynamic")?,
             Op::Bulk(op) => op.write(program, out)?,
             Op::FloatCopy(op) => op.write(program, out)?,

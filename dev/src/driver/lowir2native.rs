@@ -90,8 +90,8 @@ fn execute(
     }
     let mut invocation = parse(args)?;
     invocation.options.permissions = Some(permissions);
-    let (program, _) = crate::lowir::read_files(&invocation.sources, false)?;
-    let report = native::compile(&program, &invocation.options)?;
+    let (mut program, _) = crate::lowir::read_files(&invocation.sources, false)?;
+    let report = native::compile(&mut program, &invocation.options)?;
     if invocation.options.stats {
         report
             .write(&mut io::stderr().lock(), peak_rss())

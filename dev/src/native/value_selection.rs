@@ -24,7 +24,8 @@ fn floating_scratch(
     body: &crate::lowir::model::Body,
 ) -> bool {
     let signature = program.signature(function.signature);
-    let mut floating = signature.result.float_rank() != 0
+    let mut floating = signature.boundary.arity == Arity::Variadic
+        || signature.result.float_rank() != 0
         || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
     for inst in body.instructions() {
         if floating {
@@ -58,9 +59,6 @@ pub(super) fn select(
         return Err(unsupported());
     }
     let signature = program.signature(function.signature);
-    if signature.boundary.arity == Arity::Variadic {
-        return Err(unsupported());
-    }
     let layout = abi::Layout::classify(signature)?;
     let flow = super::control_flow::Flow::analyze(body)?;
     let slots = slot_analysis::analyze(body, &flow)?;
@@ -74,6 +72,7 @@ pub(super) fn select(
         body.block(body.layout[0]).name,
         layout,
     );
+    mir.variadic = signature.boundary.arity == Arity::Variadic;
     mir.lowir_instructions = body.instructions().len();
     mir.dead_slots = slots.iter().filter(|s| matches!(s, Slot::Dead)).count();
     mir.promoted_slots = slots
@@ -189,6 +188,9 @@ pub(super) fn select(
             selection.location = body.location(inst);
             match inst.kind {
                 I::Phi(..) => {}
+                I::Runtime(crate::lowir::model::RuntimeInstruction::VaStart(list)) => {
+                    selection.va_start(list)?;
+                }
                 I::Runtime(ref runtime) => {
                     selection.exception(inst.result, runtime, &control.targets)?;
                 }

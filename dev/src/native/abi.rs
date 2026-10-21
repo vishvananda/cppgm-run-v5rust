@@ -81,6 +81,9 @@ pub(super) struct Layout {
     pub(super) stack: u32,
 }
 impl Layout {
+    pub(super) fn gpr_count(&self) -> usize {
+        self.gprs
+    }
     pub(super) fn vector_count(&self) -> u8 {
         self.xmms
     }

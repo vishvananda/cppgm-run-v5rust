@@ -87,6 +87,7 @@ pub(crate) struct Program {
     immediate_declaration_set: std::collections::HashSet<SymbolId>,
     pub(crate) names: Names,
     functions: Vec<Function>,
+    publications: Vec<SymbolId>,
     streamed_functions: HashSet<SymbolId>,
     symbols: Vec<Symbol>,
     index: HashMap<NameId, SymbolId>,
@@ -150,6 +151,7 @@ impl Program {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);
         self.symbols[symbol.0 as usize].detail = SymbolDetail::Function(id);
         self.functions.push(function);
+        self.publications.push(symbol);
         Ok(())
     }
     pub(crate) fn find_symbol(&self, name: NameId) -> Option<SymbolId> {
@@ -266,6 +268,28 @@ impl Program {
         }
         Ok(symbol)
     }
+    pub(crate) fn complete_body(&mut self, symbol: SymbolId, body: Body) -> Result<(), Error> {
+        let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
+            return Err(Error::Construction(
+                "body completion for a non-function".into(),
+            ));
+        };
+        self.functions[id.0 as usize].body = Some(body);
+        Ok(())
+    }
+    pub(crate) fn release_body(&mut self, symbol: SymbolId) -> Result<(), Error> {
+        let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
+            return Err(Error::Construction(
+                "body release for a non-function".into(),
+            ));
+        };
+        self.streamed_functions.insert(symbol);
+        self.functions[id.0 as usize].body = None;
+        Ok(())
+    }
+    pub(crate) fn first_source(&self) -> Option<&Path> {
+        self.sources.first().map(PathBuf::as_path)
+    }
     pub(crate) fn function_defined(&self, symbol: SymbolId) -> bool {
         self.streamed_functions.contains(&symbol)
             || self
@@ -318,7 +342,11 @@ impl Program {
         let id = GlobalId(u32::try_from(self.globals.len()).map_err(|_| Error::Limit)?);
         self.symbols[symbol.0 as usize].detail = SymbolDetail::Global(id);
         self.globals.push(global);
+        self.publications.push(symbol);
         Ok(())
+    }
+    pub(crate) fn publications(&self) -> &[SymbolId] {
+        &self.publications
     }
     pub(crate) fn globals(&self) -> &[Global] {
         &self.globals
@@ -648,6 +676,29 @@ impl Body {
     }
     pub(crate) fn temp_is_parameter(&self, id: TempId) -> bool {
         (id.0 as usize) < self.parameter_count
+    }
+    pub(crate) fn temp_id(&self, index: usize) -> Option<TempId> {
+        (index < self.temps.len())
+            .then(|| u32::try_from(index).ok().map(TempId))
+            .flatten()
+    }
+    pub(crate) fn parameter_value(&self, index: usize) -> Result<Value, Error> {
+        if index >= self.parameter_count || index >= self.temps.len() {
+            return Err(Error::Limit);
+        }
+        Ok(Value::Temp(TempId(
+            u32::try_from(index).map_err(|_| Error::Limit)?,
+        )))
+    }
+    pub(crate) fn generated_block(&mut self) -> Result<BlockId, Error> {
+        let id = BlockId(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?);
+        self.blocks.push(Block {
+            name: NameId(0),
+            placed: false,
+            first_use: 0,
+            instructions: Vec::new(),
+        });
+        Ok(id)
     }
     pub(crate) fn generated_temp(&mut self, ty: Type) -> Result<TempId, Error> {
         let id = TempId(u32::try_from(self.temps.len()).map_err(|_| Error::Limit)?);

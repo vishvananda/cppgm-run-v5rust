@@ -109,7 +109,7 @@ impl Selection<'_> {
                 super::abi::value_align(own)?.max(8),
             )?;
             self.mir.bindings.push(Binding {
-                name: self.body.temp(original).name,
+                name: Some(self.body.temp(original).name),
                 ty: own,
                 offset: home,
                 kind: BindingKind::Temp,
@@ -664,7 +664,10 @@ mod tests {
             .bindings
             .iter()
             .find(|binding| {
-                binding.ty == Type::I64 && program.names.get(binding.name) == "condition"
+                binding.ty == Type::I64
+                    && binding
+                        .name
+                        .is_some_and(|name| program.names.get(name) == "condition")
             })
             .ok_or(Error::Limit)?
             .offset;

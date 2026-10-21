@@ -137,7 +137,7 @@ impl Globals {
             {
                 continue;
             }
-            let id = body.find_temp(temp.name).ok_or(Error::Limit)?;
+            let id = body.temp_id(index).ok_or(Error::Limit)?;
             if !matches!(facts.resolve(body,Value::Temp(id)),Alias::Temporary(t) if t==id) {
                 continue;
             }

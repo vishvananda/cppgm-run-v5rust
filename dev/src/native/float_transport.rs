@@ -69,7 +69,11 @@ impl FloatCopy {
             }
             return Ok(());
         }
-        let prefix = if self.ty == Type::F32 { 0xf3 } else { 0xf2 };
+        let prefix = match self.ty {
+            Type::F32 => 0xf3,
+            Type::I128 => 0,
+            _ => 0xf2,
+        };
         if let Some(destination) = self.destination.register() {
             if let Some(source) = self.source.register() {
                 if destination != source {

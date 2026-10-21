@@ -43,6 +43,27 @@ pub(super) struct Addresses {
     pub(super) lazy_count: usize,
     pub(super) folded_count: usize,
 }
+fn record_value_uses(body: &Body, facts: &Facts, kind: &I, value_use: &mut [bool]) {
+    match *kind {
+        I::Load(..)
+        | I::CopyObject(..)
+        | I::ZeroInit(..)
+        | I::Runtime(
+            crate::lowir::model::RuntimeInstruction::VaStart(_)
+            | crate::lowir::model::RuntimeInstruction::VaArg(..),
+        ) => {}
+        I::Index(_, _, _, v) | I::Store(_, _, v, _) => {
+            if let Alias::Temporary(t) = facts.resolve(body, v) {
+                value_use[t.index()] = true;
+            }
+        }
+        _ => body.visit_values(kind, |v| {
+            if let Alias::Temporary(t) = facts.resolve(body, v) {
+                value_use[t.index()] = true;
+            }
+        }),
+    }
+}
 impl Addresses {
     fn expression(
         &self,
@@ -138,19 +159,7 @@ impl Addresses {
                     consumers[t.index()] = Some(pos);
                 }
             });
-            match inst.kind {
-                I::Load(..) | I::CopyObject(..) | I::ZeroInit(..) => {}
-                I::Index(_, _, _, v) | I::Store(_, _, v, _) => {
-                    if let Alias::Temporary(t) = facts.resolve(body, v) {
-                        value_use[t.index()] = true;
-                    }
-                }
-                _ => body.visit_values(&inst.kind, |v| {
-                    if let Alias::Temporary(t) = facts.resolve(body, v) {
-                        value_use[t.index()] = true;
-                    }
-                }),
-            }
+            record_value_uses(body, facts, &inst.kind, &mut value_use);
         }
         for (pos, &id) in ids.iter().enumerate() {
             if !facts.active[pos] {

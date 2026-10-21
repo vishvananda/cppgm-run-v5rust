@@ -16,6 +16,7 @@ pub(crate) struct FunctionBuilder<'a> {
     body: Body,
     block: Option<BlockId>,
     slot_names: Vec<super::construction_names::SlotName>,
+    publish: bool,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Position {
@@ -31,6 +32,7 @@ pub(crate) struct SuspendedFunction {
     body: Body,
     block: Option<BlockId>,
     slot_names: Vec<super::construction_names::SlotName>,
+    publish: bool,
 }
 
 impl<'a> FunctionBuilder<'a> {
@@ -42,6 +44,7 @@ impl<'a> FunctionBuilder<'a> {
             body: saved.body,
             block: saved.block,
             slot_names: saved.slot_names,
+            publish: saved.publish,
         }
     }
     pub(crate) fn suspend(self) -> SuspendedFunction {
@@ -51,6 +54,7 @@ impl<'a> FunctionBuilder<'a> {
             body: self.body,
             block: self.block,
             slot_names: self.slot_names,
+            publish: self.publish,
         }
     }
     /// Move construction out while a nested initializer borrows the program.
@@ -69,6 +73,7 @@ impl<'a> FunctionBuilder<'a> {
             body: std::mem::replace(&mut self.body, Body::new(None, 0)),
             block: self.block.take(),
             slot_names: std::mem::take(&mut self.slot_names),
+            publish: self.publish,
         }
     }
     pub(crate) fn restore_construction(&mut self, saved: SuspendedFunction) {
@@ -77,6 +82,7 @@ impl<'a> FunctionBuilder<'a> {
         self.body = saved.body;
         self.block = saved.block;
         self.slot_names = saved.slot_names;
+        self.publish = saved.publish;
     }
     pub(crate) fn new(
         program: &'a mut Program,
@@ -127,7 +133,45 @@ impl<'a> FunctionBuilder<'a> {
             body,
             block: None,
             slot_names: Vec::new(),
+            publish: true,
         })
+    }
+    pub(crate) fn complete(program: &'a mut Program, symbol: SymbolId) -> Result<Self, Error> {
+        let source = program
+            .function(program.symbol(symbol))
+            .ok_or(Error::Limit)?;
+        let function = Function {
+            name: source.name,
+            signature: source.signature,
+            metadata: source.metadata,
+            body: None,
+            location: source.location,
+        };
+        let signature = program.signature(function.signature);
+        let mut body = Body::new(None, signature.parameters.len());
+        for parameter in &signature.parameters {
+            let _ = body.generated_temp(parameter.ty)?;
+        }
+        Ok(Self {
+            program,
+            symbol,
+            function,
+            body,
+            block: None,
+            slot_names: Vec::new(),
+            publish: false,
+        })
+    }
+    pub(crate) fn anonymous_block(&mut self) -> Result<BlockId, Error> {
+        self.body.generated_block()
+    }
+    pub(crate) fn anonymous_slot(&mut self, ty: Type) -> Result<Value, Error> {
+        if self.publish {
+            return Err(Error::Construction(
+                "anonymous slot requires an internal definition".into(),
+            ));
+        }
+        self.body.constructed_slot(ty)
     }
     pub(crate) fn metadata(&mut self, metadata: Metadata) {
         self.function.metadata = metadata;
@@ -214,13 +258,7 @@ impl<'a> FunctionBuilder<'a> {
         })
     }
     pub(crate) fn parameter(&self, index: usize) -> Result<Value, Error> {
-        let signature = self.program.signature(self.function.signature);
-        let parameter = signature.parameters.get(index).ok_or(Error::Limit)?;
-        // Parameters are installed in order; the private lookup returns their typed identity.
-        self.body
-            .find_temp(parameter.name)
-            .map(Value::Temp)
-            .ok_or(Error::Limit)
+        self.body.parameter_value(index)
     }
     pub(crate) fn integer(&mut self, value: u128) -> Result<Value, Error> {
         self.constant(Constant::Integer(value))
@@ -456,6 +494,10 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
     pub(crate) fn finish(mut self) -> Result<(), Error> {
+        if !self.publish {
+            return self.program.complete_body(self.symbol, self.body);
+        }
+
         let positional: std::collections::HashSet<_> = self
             .slot_names
             .iter()

@@ -103,6 +103,7 @@ pub(super) struct CodeFixup {
     pub(super) target: ImageSymbol,
     pub(super) addend: i32,
     pub(super) end: u8,
+    pub(super) branch: bool,
 }
 struct LabelReference {
     offset: usize,
@@ -220,6 +221,7 @@ impl Assembler {
                 target,
                 addend: disp,
                 end: 4 + imm_bytes,
+                branch: false,
             });
             self.imm(0, 4);
             return Ok(());
@@ -466,6 +468,7 @@ impl Assembler {
             target,
             addend: 0,
             end: 4,
+            branch: true,
         });
         self.imm(0, 4);
         Ok(())

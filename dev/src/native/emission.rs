@@ -283,6 +283,7 @@ impl<'a> Pass<'a> {
                 }
             }
             Op::Call(site) => site.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
+            Op::VaStart(op) => op.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
             Op::DynamicCopy => {
                 self.assembler.mov_rr(R::RCX, R::RDX)?;
                 self.assembler.byte(0xf3);

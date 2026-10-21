@@ -24,7 +24,7 @@ fn target_align(value: u64, align: u64) -> u64 {
     value.wrapping_add(align - 1) & !(align - 1)
 }
 
-fn layout(global: &Global) -> Result<(u64, u32), Error> {
+pub(super) fn layout(global: &Global) -> Result<(u64, u32), Error> {
     let GlobalInit::Data(items) = &global.init else {
         let ty = global.ty.unwrap_or(Type::Ptr);
         let bytes = value_bytes(ty)?;
@@ -92,49 +92,74 @@ pub(super) fn emit(program: &Program, image: &mut Image) -> Result<(), Error> {
         .data
         .try_reserve(usize::try_from(reserve).map_err(|_| Error::Limit)?)
         .map_err(|_| Error::Limit)?;
+    let mut addresses = Vec::new();
     for (global, bytes, align) in layouts {
         let symbol = program.find_symbol(global.name).ok_or(Error::Limit)?;
         let base = image.reserve_data(symbol, bytes, u64::from(align))?;
-        match &global.init {
-            GlobalInit::Constant(value) => store(
-                image,
-                base,
-                global.ty.unwrap_or(Type::Ptr),
-                *value,
-                &mut scanner,
-            )?,
-            GlobalInit::Address(target, addend) => image.address_item(base, *target, *addend),
-            GlobalInit::Data(items) => {
-                let mut at = 0_u64;
-                for &item in items {
-                    if let DataItem::Zero(amount) = item {
-                        at = at.wrapping_add(amount.cast_unsigned());
-                        continue;
-                    }
-                    let ty = item_type(item).ok_or(Error::Limit)?;
-                    at = target_align(at, u64::from(value_align(ty)?.min(16)));
-                    let offset = base
-                        .checked_add(usize::try_from(at).map_err(|_| Error::Limit)?)
-                        .ok_or(Error::Limit)?;
-                    match item {
-                        DataItem::Address(_, target, addend) => {
-                            image.address_item(offset, target, addend);
-                        }
-                        DataItem::Constant(ty, value) => {
-                            store(image, offset, ty, value, &mut scanner)?;
-                        }
-                        DataItem::Zero(_) => {}
-                    }
-                    at = at.wrapping_add(u64::from(value_bytes(ty)?));
-                }
-            }
-            GlobalInit::Declaration | GlobalInit::Zero => {}
+        addresses.clear();
+        write_global(global, &mut image.data, base, &mut addresses, &mut scanner)?;
+        for address in &addresses {
+            image.address_item(
+                base.checked_add(usize::try_from(address.offset).map_err(|_| Error::Limit)?)
+                    .ok_or(Error::Limit)?,
+                address.target,
+                address.addend,
+            );
         }
     }
     Ok(())
 }
+pub(super) struct Address {
+    pub(super) offset: u64,
+    pub(super) target: crate::lowir::model::SymbolId,
+    pub(super) addend: i64,
+}
+pub(super) fn write_global(
+    global: &Global,
+    out: &mut [u8],
+    base: usize,
+    addresses: &mut Vec<Address>,
+    scanner: &mut FloatingScanner,
+) -> Result<(), Error> {
+    match &global.init {
+        GlobalInit::Constant(value) => {
+            store(out, base, global.ty.unwrap_or(Type::Ptr), *value, scanner)?;
+        }
+        GlobalInit::Address(target, addend) => addresses.push(Address {
+            offset: 0,
+            target: *target,
+            addend: *addend,
+        }),
+        GlobalInit::Data(items) => {
+            let mut at = 0_u64;
+            for &item in items {
+                if let DataItem::Zero(bytes) = item {
+                    at = at.wrapping_add(bytes.cast_unsigned());
+                    continue;
+                }
+                let ty = item_type(item).ok_or(Error::Limit)?;
+                at = target_align(at, u64::from(value_align(ty)?.min(16)));
+                let offset = base
+                    .checked_add(usize::try_from(at).map_err(|_| Error::Limit)?)
+                    .ok_or(Error::Limit)?;
+                match item {
+                    DataItem::Address(_, target, addend) => addresses.push(Address {
+                        offset: at,
+                        target,
+                        addend,
+                    }),
+                    DataItem::Constant(ty, value) => store(out, offset, ty, value, scanner)?,
+                    DataItem::Zero(_) => {}
+                }
+                at = at.wrapping_add(u64::from(value_bytes(ty)?));
+            }
+        }
+        GlobalInit::Declaration | GlobalInit::Zero => {}
+    }
+    Ok(())
+}
 fn store(
-    image: &mut Image,
+    out: &mut [u8],
     offset: usize,
     ty: Type,
     value: Constant,
@@ -145,12 +170,38 @@ fn store(
     if size > bytes.len() {
         return Err(Error::NotImplemented("native object constant payload"));
     }
-    image
-        .data
-        .get_mut(offset..offset.checked_add(size).ok_or(Error::Limit)?)
+    out.get_mut(offset..offset.checked_add(size).ok_or(Error::Limit)?)
         .ok_or(Error::Limit)?
         .copy_from_slice(&bytes[..size]);
     Ok(())
+}
+pub(super) fn is_zero(global: &Global, scanner: &mut FloatingScanner) -> Result<bool, Error> {
+    let zero = |scanner: &mut FloatingScanner, ty, value| -> Result<bool, Error> {
+        let bytes = constant_bytes(scanner, ty, value)?;
+        let size = usize::try_from(value_bytes(ty)?).map_err(|_| Error::Limit)?;
+        Ok(bytes
+            .get(..size)
+            .ok_or(Error::Limit)?
+            .iter()
+            .all(|&byte| byte == 0))
+    };
+    match &global.init {
+        GlobalInit::Zero => Ok(true),
+        GlobalInit::Constant(value) => zero(scanner, global.ty.unwrap_or(Type::Ptr), *value),
+        GlobalInit::Data(items) => {
+            for item in items {
+                match *item {
+                    DataItem::Address(..) => return Ok(false),
+                    DataItem::Constant(ty, value) if !zero(scanner, ty, value)? => {
+                        return Ok(false);
+                    }
+                    _ => {}
+                }
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
 }
 
 #[cfg(test)]

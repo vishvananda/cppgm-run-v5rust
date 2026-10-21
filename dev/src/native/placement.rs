@@ -35,6 +35,7 @@ struct Location {
 }
 pub(super) struct Placement {
     pub(super) sret_home: Option<i32>,
+    pub(super) variadic: Option<super::variadic::SaveArea>,
     pub(super) globals: super::global_placement::Globals,
     incoming: Vec<Option<R>>,
     block: Option<BlockId>,
@@ -65,6 +66,7 @@ impl Placement {
     ) -> Self {
         Self {
             sret_home: None,
+            variadic: None,
             globals,
             incoming: layout
                 .arguments
@@ -257,7 +259,7 @@ impl Placement {
             };
             self.slots[i] = Some(offset);
             mir.bindings.push(Binding {
-                name: slot.name,
+                name: Some(slot.name),
                 ty,
                 offset,
                 kind: BindingKind::Slot,
@@ -281,7 +283,7 @@ impl Placement {
         self.locations[temp.index()].home = Some(offset);
         mir.homes += 1;
         mir.bindings.push(Binding {
-            name: body.temp(temp).name,
+            name: Some(body.temp(temp).name),
             ty,
             offset,
             kind: if temp.index() < body.parameter_count {
@@ -398,11 +400,9 @@ impl Placement {
                 if let Some(reg) = self.incoming[p]
                     && self.owners[usize::from(reg.code())].is_none()
                     && self.pinned & (1 << reg.code()) == 0
+                    && let Some(temp) = body.temp_id(p)
                 {
-                    let name = body.temps()[p].name;
-                    if let Some(temp) = body.find_temp(name) {
-                        self.bind(temp, reg);
-                    }
+                    self.bind(temp, reg);
                 }
             }
         }
@@ -440,6 +440,11 @@ impl Placement {
                 location: None,
             });
         }
+        if mir.variadic && self.variadic.is_none() {
+            let area = super::variadic::SaveArea::allocate(self, &mir.layout)?;
+            self.variadic = Some(area);
+            area.entry(mir)?;
+        }
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
             if facts.intervals[index].uses == 0 {
                 continue;
@@ -452,7 +457,7 @@ impl Placement {
                 continue;
             }
             super::memory::scalar(ty)?;
-            let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
+            let temp = body.temp_id(index).ok_or(Error::Limit)?;
             if let Some(reg) = self.incoming[index]
                 && self.globals.registers[index].is_none()
                 && facts.intervals[index].last.is_some()
@@ -479,7 +484,7 @@ impl Placement {
             if facts.intervals[index].uses == 0 {
                 continue;
             }
-            let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
+            let temp = body.temp_id(index).ok_or(Error::Limit)?;
             let ty = parameter.ty.ok_or(Error::Limit)?;
             if super::aggregate::memory_value(ty) {
                 let argument = &mir.layout.arguments[index];
