@@ -41,7 +41,7 @@ impl Selection<'_> {
             Alias::Temporary(temp) => {
                 if matches!(
                     self.body.temp(temp).ty,
-                    Some(Type::Object { .. } | Type::I128)
+                    Some(Type::Object { .. } | Type::I128 | Type::F80)
                 ) {
                     return Ok(Operand::Frame(self.placement.home(
                         self.body,
@@ -169,6 +169,9 @@ impl Selection<'_> {
         ty: Type,
         address: Value,
     ) -> Result<(), Error> {
+        if ty.float_rank() != 0 {
+            return self.float_read(result, ty, address);
+        }
         super::memory::scalar(ty)?;
         let mem = self.address(address, R::R10)?;
         let prefer = if self.facts.intervals[result.index()].hint.is_none() {
@@ -192,6 +195,9 @@ impl Selection<'_> {
         value: Value,
         address: Value,
     ) -> Result<(), Error> {
+        if ty.float_rank() != 0 {
+            return self.float_write(ty, value, address);
+        }
         super::memory::scalar(ty)?;
         let mut source = self.operand(value, ty, R::R11)?;
         let mem = self.address(address, R::R10)?;

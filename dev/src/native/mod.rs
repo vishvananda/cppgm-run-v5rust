@@ -15,6 +15,8 @@ mod division;
 mod emission;
 mod executable;
 mod float_transport;
+mod floating_mir;
+mod floating_selection;
 mod frame_carries;
 mod global_data;
 mod global_placement;

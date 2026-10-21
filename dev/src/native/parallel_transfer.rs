@@ -90,9 +90,10 @@ fn registers(selection: &mut Selection<'_>, moves: &mut Vec<Transfer>) -> Result
         }
         let first = moves[0];
         let reg = first.destination.register().ok_or(Error::Limit)?;
-        selection.load(R::R10, first.destination, first.ty);
+        let scratch = if reg.code() >= 16 { R::XMM14 } else { R::R10 };
+        selection.load(scratch, first.destination, first.ty);
         for m in moves.iter_mut() {
-            m.redirect(reg, R::R10);
+            m.redirect(reg, scratch);
         }
     }
     Ok(())
@@ -125,7 +126,7 @@ impl Workspace {
         moves: &mut Vec<Transfer>,
     ) -> Result<(), Error> {
         let count = moves.len();
-        let mut regs = [None; 16];
+        let mut regs = [None; 32];
         self.frame_writers.clear();
         for (index, m) in moves.iter().enumerate() {
             if let Some(reg) = m.destination.register() {
@@ -217,16 +218,23 @@ impl Workspace {
                 first_pending += 1;
             }
             let destination = moves[first_pending].destination;
-            selection.load(R::R10, destination, moves[first_pending].ty);
+            let scratch = if destination.register().is_some_and(|r| r.code() >= 16)
+                || matches!(moves[first_pending].ty, Type::F32 | Type::F64)
+            {
+                R::XMM14
+            } else {
+                R::R10
+            };
+            selection.load(scratch, destination, moves[first_pending].ty);
             for at in self.first[first_pending]..self.first[first_pending + 1] {
                 let reader = self.readers[at];
                 if self.done[reader] {
                     continue;
                 }
                 if let Some(reg) = destination.register() {
-                    moves[reader].redirect(reg, R::R10);
+                    moves[reader].redirect(reg, scratch);
                 } else {
-                    moves[reader].source = Operand::Register(R::R10);
+                    moves[reader].source = Operand::Register(scratch);
                 }
                 for dependency in &mut self.dependencies[reader] {
                     if *dependency == Some(first_pending) {

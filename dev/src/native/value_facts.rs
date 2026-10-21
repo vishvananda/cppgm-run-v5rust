@@ -475,13 +475,13 @@ impl Facts {
         for interval in &mut self.intervals {
             interval.forbid = 0;
         }
-        let mut late = [None; 16];
-        let mut early = [None; 16];
+        let mut late = [None; 32];
+        let mut early = [None; 32];
         let mask = |interval: &Interval,
-                    late: &[Option<usize>; 16],
-                    early: &[Option<usize>; 16]| {
+                    late: &[Option<usize>; 32],
+                    early: &[Option<usize>; 32]| {
             let mut out = 0_u32;
-            for reg in 0..16 {
+            for reg in 0..32 {
                 if interval.last.is_some_and(|last| {
                     late[reg].is_some_and(|at| at < last) || early[reg].is_some_and(|at| at <= last)
                 }) {
@@ -492,8 +492,8 @@ impl Facts {
         };
         for (pos, &id) in ids.iter().enumerate().rev() {
             if pos + 1 == ids.len() || self.flow.blocks[pos] != self.flow.blocks[pos + 1] {
-                late = [None; 16];
-                early = [None; 16];
+                late = [None; 32];
+                early = [None; 32];
             }
             if !self.active[pos] {
                 continue;
@@ -540,10 +540,10 @@ impl Facts {
                 0
             };
             let call = calls.and_then(|c| c.at(pos));
-            let clobber = fixed | call.map_or(0, |_| super::abi::CALLER_SAVED);
+            let clobber = fixed | call.map_or(0, |_| super::abi::CALLER_SAVED | 0xffff_0000);
             let before = fixed | call.map_or(0, |c| c.early);
             self.clobbers[pos] = (clobber, before);
-            for reg in 0..16 {
+            for reg in 0..32 {
                 if clobber & (1 << reg) != 0 {
                     late[reg] = Some(pos);
                 }
@@ -558,8 +558,16 @@ impl Facts {
                     .temp(temp)
                     .definition
                     .is_some_and(|def| matches!(body.instruction(def).kind, I::Binary(..)));
-                if !two && self.intervals[temp.index()].last == Some(pos) {
-                    self.intervals[temp.index()].hint = Some(R::RAX);
+                if (!two || body.temp(temp).ty.is_some_and(|ty| ty.float_rank() != 0))
+                    && self.intervals[temp.index()].last == Some(pos)
+                {
+                    self.intervals[temp.index()].hint = Some(
+                        if matches!(body.temp(temp).ty, Some(Type::F32 | Type::F64)) {
+                            R::XMM0
+                        } else {
+                            R::RAX
+                        },
+                    );
                 }
             }
             if let Some(plan) = call

@@ -131,7 +131,7 @@ pub(super) fn bytes(ty: Type) -> u8 {
     match ty {
         Type::I1 | Type::I8 | Type::U8 => 1,
         Type::I16 | Type::U16 => 2,
-        Type::I32 | Type::U32 => 4,
+        Type::I32 | Type::U32 | Type::F32 => 4,
         _ => 8,
     }
 }

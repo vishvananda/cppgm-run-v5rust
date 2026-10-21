@@ -46,7 +46,8 @@ pub(super) struct Placement {
     emitted: Vec<bool>,
     available_in: u32,
     locations: Vec<Location>,
-    owners: [Option<TempId>; 16],
+    owners: [Option<TempId>; 32],
+    vectors: Vec<bool>,
     frame: u32,
     slots: Vec<Option<i32>>,
     pub(super) preserve: u32,
@@ -70,7 +71,9 @@ impl Placement {
                 .iter()
                 .zip(body.temps())
                 .map(|(arg, temp)| {
-                    if temp.ty.is_some_and(super::aggregate::memory_value) {
+                    if temp.ty.is_some_and(|ty| {
+                        super::aggregate::memory_value(ty) || ty.float_rank() != 0
+                    }) {
                         return None;
                     }
                     let [part] = layout.parts(arg) else {
@@ -90,7 +93,12 @@ impl Placement {
             locations: (0..body.temps().len())
                 .map(|_| Location::default())
                 .collect(),
-            owners: [None; 16],
+            owners: [None; 32],
+            vectors: body
+                .temps()
+                .iter()
+                .map(|t| matches!(t.ty, Some(Type::F32 | Type::F64)))
+                .collect(),
             frame: 0,
             slots: vec![None; body.slots().len()],
             preserve: 0,
@@ -122,14 +130,23 @@ impl Placement {
                     & (1 << r.code())
                     == 0
         };
+        let vector = self.vectors[temp.index()];
         for reg in prefs
             .into_iter()
             .chain([facts.intervals[temp.index()].hint])
             .flatten()
         {
-            if ORDER.contains(&reg) && allowed(reg) {
+            if (if vector {
+                (16..24).contains(&reg.code())
+            } else {
+                ORDER.contains(&reg)
+            }) && allowed(reg)
+            {
                 return Some(reg);
             }
+        }
+        if vector {
+            return (0..8).filter_map(|i| R::xmm(i).ok()).find(|&r| allowed(r));
         }
         if facts.intervals[temp.index()].forbid & super::abi::CALLER_SAVED
             == super::abi::CALLER_SAVED
@@ -431,6 +448,9 @@ impl Placement {
             if super::aggregate::memory_value(ty) {
                 continue;
             }
+            if ty.float_rank() != 0 {
+                continue;
+            }
             super::memory::scalar(ty)?;
             let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
             if let Some(reg) = self.incoming[index]
@@ -493,6 +513,21 @@ impl Placement {
             } else {
                 Operand::Frame(16_i32.wrapping_add(part.stack))
             };
+            if ty.float_rank() != 0 {
+                if part.register.is_none() {
+                    self.locations[index].home = source.frame_offset();
+                } else {
+                    self.locations[index].homed = !facts.global[index];
+                    transfers.push(Transfer {
+                        destination: Operand::Frame(self.home(body, temp, mir)?),
+                        source,
+                        ty,
+                        source_type: None,
+                        address: false,
+                    });
+                }
+                continue;
+            }
             let destination = if let Some(reg) = self.globals.registers[index] {
                 if part.register.is_none() {
                     self.locations[index].home = source.frame_offset();
@@ -631,10 +666,17 @@ impl Placement {
             r
         } else {
             self.locations[temp.index()].homed = true;
-            if !facts.global[temp.index()] {
+            if !facts.global[temp.index()]
+                && facts.intervals[temp.index()]
+                    .last
+                    .is_some_and(|last| last > pos)
+            {
                 mir.spills += 1;
             }
-            if exclude & (1 << R::R10.code()) != 0 {
+            if self.vectors[temp.index()] {
+                // The selector reserves xmm14 as its result scratch.
+                R::XMM14
+            } else if exclude & (1 << R::R10.code()) != 0 {
                 R::R11
             } else {
                 R::R10
@@ -657,13 +699,29 @@ impl Placement {
             let home = self.home(body, temp, mir)?;
             let ty = body.temp(temp).ty.ok_or(Error::Limit)?;
             mir.instructions.push(Instruction {
-                op: Op::Scalar(ScalarOp::Store(
-                    Operand::Frame(home),
-                    ty,
-                    Operand::Register(r),
-                )),
+                op: if r.code() >= 16 {
+                    Op::FloatCopy(super::float_transport::FloatCopy {
+                        ty,
+                        destination: Operand::Frame(home),
+                        source: Operand::Register(r),
+                    })
+                } else {
+                    Op::Scalar(ScalarOp::Store(
+                        Operand::Frame(home),
+                        ty,
+                        Operand::Register(r),
+                    ))
+                },
                 location,
             });
+        }
+        if self.locations[temp.index()].homed {
+            if self.locations[temp.index()].reg == Some(r)
+                && self.owners[usize::from(r.code())] == Some(temp)
+            {
+                self.owners[usize::from(r.code())] = None;
+            }
+            self.locations[temp.index()].reg = None;
         }
         Ok(())
     }

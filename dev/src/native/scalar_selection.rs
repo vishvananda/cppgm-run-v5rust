@@ -81,6 +81,9 @@ impl Selection<'_> {
         Ok(Operand::Immediate(0))
     }
     pub(super) fn load(&mut self, r: R, source: Operand, ty: Type) {
+        if source.register() == Some(r) {
+            return;
+        }
         if r.code() >= 16 {
             self.mir.instructions.push(Instruction {
                 op: Op::FloatCopy(super::float_transport::FloatCopy {
@@ -132,6 +135,9 @@ impl Selection<'_> {
         }
     }
     pub(super) fn copy(&mut self, temp: TempId, ty: Type, value: Value) -> Result<(), Error> {
+        if ty.float_rank() != 0 {
+            return self.float_value_copy(temp, ty, value);
+        }
         if ty.float_rank() != 0 || matches!(ty, Type::I128 | Type::Object { .. }) {
             return Err(unsupported());
         }
@@ -158,6 +164,9 @@ impl Selection<'_> {
         left: Value,
         right: Value,
     ) -> Result<(), Error> {
+        if ty.float_rank() != 0 {
+            return self.float_binary(temp, ty, op, left, right);
+        }
         if ty.float_rank() != 0 || matches!(ty, Type::I128 | Type::Object { .. }) {
             return Err(unsupported());
         }
@@ -236,6 +245,9 @@ impl Selection<'_> {
         ty: Type,
         value: Value,
     ) -> Result<(), Error> {
+        if ty.float_rank() != 0 {
+            return self.float_unary(temp, ty, op, value);
+        }
         if ty.float_rank() != 0 || matches!(ty, Type::I128 | Type::Object { .. }) {
             return Err(unsupported());
         }

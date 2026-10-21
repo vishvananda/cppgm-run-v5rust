@@ -74,6 +74,9 @@ impl Selection<'_> {
         left: Value,
         right: Value,
     ) -> Result<(), Error> {
+        if ty.float_rank() != 0 {
+            return self.float_compare(temp, pred, ty, left, right);
+        }
         let comparison = self.comparison(
             pred,
             ty,

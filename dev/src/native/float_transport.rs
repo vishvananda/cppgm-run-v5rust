@@ -46,6 +46,29 @@ impl FloatCopy {
         self
     }
     pub(super) fn emit(self, a: &mut Assembler, image: &mut Image) -> Result<(), Error> {
+        if self.ty == Type::F80 {
+            let scratch = [R::R11, R::R10]
+                .into_iter()
+                .find(|r| (self.destination.mask() | self.source.mask()) & (1 << r.code()) == 0)
+                .ok_or(Error::Limit)?;
+            let to = self.destination.rm()?;
+            if let Operand::Immediate(bits) = self.source {
+                a.mov_ri(scratch, super::mir::low_word(bits)?)?;
+                a.store(to, scratch, 8)?;
+                a.store_imm(
+                    to.displaced(8),
+                    i64::try_from((bits >> 64) & 0xffff).map_err(|_| Error::Limit)?,
+                    2,
+                )?;
+            } else {
+                let from = self.source.rm()?;
+                a.load(scratch, from, 8, false)?;
+                a.store(to, scratch, 8)?;
+                a.load(scratch, from.displaced(8), 2, false)?;
+                a.store(to.displaced(8), scratch, 2)?;
+            }
+            return Ok(());
+        }
         let prefix = if self.ty == Type::F32 { 0xf3 } else { 0xf2 };
         if let Some(destination) = self.destination.register() {
             if let Some(source) = self.source.register() {

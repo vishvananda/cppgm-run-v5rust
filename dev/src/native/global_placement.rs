@@ -29,30 +29,38 @@ pub(super) struct Globals {
 // Counts of each physical clobber bit: fixed-width prefix differences answer
 // the same range OR in constant time, with linear function-owned storage.
 struct Ranges {
-    prefix: Vec<[u32; 16]>,
+    prefix: Vec<u32>,
+    registers: usize,
 }
 impl Ranges {
-    fn new(values: &[u32]) -> Result<Self, Error> {
-        let mut prefix = Vec::with_capacity(values.len() + 1);
-        prefix.push([0_u32; 16]);
-        let mut counts = [0_u32; 16];
+    fn new(values: &[u32], vectors: bool) -> Result<Self, Error> {
+        let registers = if vectors { 32 } else { 16 };
+        let capacity = values
+            .len()
+            .checked_add(1)
+            .and_then(|n| n.checked_mul(registers))
+            .ok_or(Error::Limit)?;
+        let mut prefix = Vec::with_capacity(capacity);
+        prefix.resize(registers, 0);
+        let mut counts = [0_u32; 32];
         for &value in values {
-            for (reg, count) in counts.iter_mut().enumerate() {
+            for (reg, count) in counts[..registers].iter_mut().enumerate() {
                 if value & (1 << reg) != 0 {
                     *count = count.checked_add(1).ok_or(Error::Limit)?;
                 }
             }
-            prefix.push(counts);
+            prefix.extend_from_slice(&counts[..registers]);
         }
-        Ok(Self { prefix })
+        Ok(Self { prefix, registers })
     }
     fn query(&self, first: usize, past: usize) -> u32 {
         if first >= past {
             return 0;
         }
         let mut mask = 0;
-        for reg in 0..16 {
-            if self.prefix[first][reg] != self.prefix[past][reg] {
+        for reg in 0..self.registers {
+            if self.prefix[first * self.registers + reg] != self.prefix[past * self.registers + reg]
+            {
                 mask |= 1 << reg;
             }
         }
@@ -122,14 +130,19 @@ impl Globals {
                 continue;
             }
             let ty = temp.ty.ok_or(Error::Limit)?;
-            if matches!(
-                ty,
-                crate::lowir::vocabulary::Type::Object { .. }
-                    | crate::lowir::vocabulary::Type::I128
-            ) {
+            if ty == crate::lowir::vocabulary::Type::F80
+                || index < body.parameter_count && ty.float_rank() != 0
+                || matches!(
+                    ty,
+                    crate::lowir::vocabulary::Type::Object { .. }
+                        | crate::lowir::vocabulary::Type::I128
+                )
+            {
                 continue;
             }
-            super::memory::scalar(ty)?;
+            if ty.float_rank() == 0 {
+                super::memory::scalar(ty)?;
+            }
             candidates.push(id);
         }
         if candidates.is_empty() {
@@ -154,7 +167,12 @@ impl Globals {
                 early[at] = before;
             }
         }
-        let ranges = Ranges::new(&clobbers)?;
+        let ranges = Ranges::new(
+            &clobbers,
+            candidates
+                .iter()
+                .any(|&t| body.temp(t).ty.is_some_and(|ty| ty.float_rank() != 0)),
+        )?;
         let incoming = |temp: TempId| {
             layout.arguments.get(temp.index()).and_then(|arg| {
                 let [part] = layout.parts(arg) else {
@@ -173,7 +191,11 @@ impl Globals {
         let mut bindings = Vec::new();
         for hull in hulls {
             active.retain(|(h, _)| h.end >= hull.start);
-            if active.len() >= 7 {
+            let vector = body
+                .temp(hull.temp)
+                .ty
+                .is_some_and(|ty| ty.float_rank() != 0);
+            if !vector && active.iter().filter(|(_, r)| r.code() < 16).count() >= 7 {
                 continue;
             }
             let occupied = active.iter().fold(0, |mask, (_, r)| mask | (1 << r.code()));
@@ -186,11 +208,19 @@ impl Globals {
             {
                 forbid |= facts.clobbers[def].1;
             }
-            let allowed = (CALLER_SAVED | SAVED.iter().fold(0, |mask, r| mask | (1 << r.code())))
-                & !forbid
-                & !occupied
-                & !reserved;
-            let mut chosen = None;
+            let allowed = (if vector {
+                0x00ff_0000
+            } else {
+                (CALLER_SAVED | SAVED.iter().fold(0, |mask, r| mask | (1 << r.code()))) & !reserved
+            }) & !forbid
+                & !occupied;
+            let mut chosen = if vector {
+                (0..8)
+                    .filter_map(|i| R::xmm(i).ok())
+                    .find(|r| allowed & (1 << r.code()) != 0)
+            } else {
+                None
+            };
             if hull.temp.index() < body.parameter_count {
                 chosen = incoming(hull.temp).filter(|r| allowed & (1 << r.code()) != 0);
                 if chosen.is_none() && displaced > 4 {

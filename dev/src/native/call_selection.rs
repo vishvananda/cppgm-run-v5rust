@@ -31,7 +31,11 @@ impl Selection<'_> {
         read: Option<Type>,
         address: bool,
     ) {
-        if ty.float_rank() != 0 {
+        if ty == Type::F80
+            || ty.float_rank() != 0
+                && (source.register().is_some_and(|r| r.code() >= 16)
+                    || matches!(source, Operand::Immediate(_)))
+        {
             self.mir.instructions.push(Instruction {
                 op: Op::FloatCopy(super::float_transport::FloatCopy {
                     ty,
@@ -48,8 +52,19 @@ impl Selection<'_> {
                 Operand::Register(R::R11),
             ));
         } else if source.is_memory() {
-            self.load(R::R11, source, read.unwrap_or(ty));
-            self.emit(ScalarOp::Store(destination, ty, Operand::Register(R::R11)));
+            let integer = if ty == Type::F32 {
+                Type::I32
+            } else if ty == Type::F64 {
+                Type::I64
+            } else {
+                ty
+            };
+            self.load(R::R11, source, read.unwrap_or(integer));
+            self.emit(ScalarOp::Store(
+                destination,
+                integer,
+                Operand::Register(R::R11),
+            ));
         } else if matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
             self.load(R::R11, source, Type::I64);
             self.emit(ScalarOp::Store(
@@ -67,6 +82,9 @@ impl Selection<'_> {
         ty: Type,
         pass: Option<Pass>,
     ) -> Result<(Operand, Option<Type>, bool), Error> {
+        if ty == Type::F80 {
+            return Ok((self.float_operand(value, ty)?, None, false));
+        }
         if super::aggregate::memory_value(ty) {
             return Ok((self.aggregate_operand(value, ty)?, None, false));
         }
@@ -83,7 +101,7 @@ impl Selection<'_> {
             && self.body.temp(original).ty != Some(Type::Ptr)
         {
             let own = self.body.temp(original).ty.ok_or(Error::Limit)?;
-            if !super::aggregate::memory_value(own) {
+            if !super::aggregate::memory_value(own) && own.float_rank() == 0 {
                 super::memory::scalar(own)?;
             }
             let home = self.placement.frame_alloc(
@@ -106,6 +124,8 @@ impl Selection<'_> {
                 (
                     if super::aggregate::memory_value(own) {
                         self.aggregate_operand(value, own)?
+                    } else if own.float_rank() != 0 {
+                        self.float_operand(value, own)?
                     } else {
                         self.operand(value, own, R::R10)?
                     },
@@ -145,7 +165,15 @@ impl Selection<'_> {
                 false,
             ));
         }
-        Ok((self.operand(value, ty, R::R10)?, None, false))
+        Ok((
+            if ty.float_rank() != 0 {
+                self.float_operand(value, ty)?
+            } else {
+                self.operand(value, ty, R::R10)?
+            },
+            None,
+            false,
+        ))
     }
     fn stage_arguments(
         &mut self,
@@ -206,6 +234,7 @@ impl Selection<'_> {
                         location: self.location,
                     });
                 } else if !address
+                    && ty.float_rank() == 0
                     && matches!(
                         source,
                         Operand::Immediate(_) | Operand::Symbol(_) | Operand::SymbolOffset(..)
@@ -386,7 +415,18 @@ impl Selection<'_> {
                 Operand::Immediate(u128::from(stack)),
             ));
         }
-        if let Some(result) = result.filter(|_| used) {
+        if call.result == Type::F80 {
+            let destination = if let Some(result) = result.filter(|_| used) {
+                Some(Operand::Frame(self.placement.home(
+                    self.body,
+                    result,
+                    &mut self.mir,
+                )?))
+            } else {
+                None
+            };
+            self.floating(super::floating_mir::FloatingOp::Pop(destination));
+        } else if let Some(result) = result.filter(|_| used) {
             if super::aggregate::memory_value(call.result) {
                 self.aggregate_call_result(result, &plan.layout)?;
             } else {
@@ -397,6 +437,11 @@ impl Selection<'_> {
         Ok(())
     }
     fn call_result(&mut self, temp: TempId, ty: Type, args: u32) -> Result<(), Error> {
+        if matches!(ty, Type::F32 | Type::F64) {
+            let destination = self.result(temp, [Some(R::XMM0), None], 0);
+            self.load(destination, Operand::Register(R::XMM0), ty);
+            return self.finish(temp, destination);
+        }
         let interval = self.facts.intervals[temp.index()];
         let general = ((1 << R::R8.code())
             | (1 << R::R9.code())

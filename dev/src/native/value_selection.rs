@@ -9,14 +9,11 @@ use super::{
     value_facts::{Alias, Facts, normalize},
     x86::Register as R,
 };
-use crate::{
-    lowir::{
-        Error,
-        literals::{self, Constant, FloatKind},
-        model::{Arity, DebugLocation, Function, InstructionKind as I, Program, SymbolId, Value},
-        vocabulary::Type,
-    },
-    types::floating::FloatingScanner,
+use crate::lowir::{
+    Error,
+    literals::Constant,
+    model::{Arity, DebugLocation, Function, InstructionKind as I, Program, SymbolId, Value},
+    vocabulary::Type,
 };
 pub(super) fn unsupported() -> Error {
     Error::NotImplemented("native instruction selection and placement")
@@ -115,16 +112,21 @@ pub(super) fn select(
     selection.mir.fused_compares = selection.facts.fused.iter().filter(|&&v| v).count();
     let mut floating = signature.result.float_rank() != 0
         || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
-    let mut scanner = FloatingScanner::default();
     for inst in body.instructions() {
         floating |= matches!(inst.kind, I::Call(_)) && function.metadata.flags & 1 != 0;
         floating |= match inst.kind {
-            I::Store(_, ty, _, _) => ty,
+            I::Store(_, ty, _, _) | I::Compare(_, ty, _, _) => ty,
             _ => inst.kind.result_type(),
         }
         .float_rank()
             != 0;
-        body.visit_values(&inst.kind, |v| floating |= matches!(v, Value::Float(..)));
+        body.visit_values(&inst.kind, |v| floating |= matches!(v, Value::Float(..)) || matches!(v, Value::Temp(t) if body.temp(t).ty.is_some_and(|ty| ty.float_rank() != 0)));
+        if let I::Call(call) = &inst.kind
+            && let Some(signature) = program.call_boundary(call)
+        {
+            floating |= signature.result.float_rank() != 0
+                || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
+        }
     }
     selection.mir.blocks.clear();
     if control.entry_loop {
@@ -236,7 +238,7 @@ pub(super) fn select(
                     if super::aggregate::memory_value(ty) {
                         selection.aggregate_return(ty, value.ok_or(Error::Limit)?)?;
                     } else {
-                        emit_return(&mut selection, ty, value, body.location(inst), &mut scanner)?;
+                        emit_return(&mut selection, ty, value, body.location(inst))?;
                     }
                 }
                 I::Unreachable => selection.mir.instructions.push(Instruction {
@@ -266,8 +268,12 @@ fn emit_return(
     ty: Type,
     value: Option<Value>,
     location: Option<DebugLocation>,
-    scanner: &mut FloatingScanner,
 ) -> Result<(), Error> {
+    if ty.float_rank() != 0
+        && let Some(value) = value
+    {
+        return selection.float_return(ty, value);
+    }
     let Some(value) = value else {
         let mir = &mut selection.mir;
         let mut emit = |op| mir.instructions.push(Instruction { op, location });
@@ -283,37 +289,26 @@ fn emit_return(
                     .instructions
                     .push(Instruction { op, location });
             };
-            if let Some(kind) = FloatKind::from_type(ty) {
-                let bits = literals::native_float(scanner, value, kind)?;
-                if kind == FloatKind::F80 {
-                    emit(Op::FloatReturn(bits));
-                } else {
-                    let reg = R::xmm(0)?;
-                    emit(Op::FloatMove(reg, kind, bits));
-                    emit(Op::Return(Some(reg)));
-                }
+            let bits = match value {
+                Constant::Integer(bits) => normalize(bits, ty),
+                Constant::Float(_, bits) => bits,
+            };
+            let bytes = bits.to_le_bytes();
+            let mut word = [0; 8];
+            word.copy_from_slice(&bytes[..8]);
+            if ty == Type::I128 {
+                emit(Op::Move(R::RAX, u128::from(u64::from_le_bytes(word))));
+                word.copy_from_slice(&bytes[8..]);
+                emit(Op::Move(R::RDX, u128::from(u64::from_le_bytes(word))));
+                emit(Op::Return(None));
             } else {
-                let bits = match value {
-                    Constant::Integer(bits) => normalize(bits, ty),
-                    Constant::Float(_, bits) => bits,
-                };
-                let bytes = bits.to_le_bytes();
-                let mut word = [0; 8];
-                word.copy_from_slice(&bytes[..8]);
-                if ty == Type::I128 {
-                    emit(Op::Move(R::RAX, u128::from(u64::from_le_bytes(word))));
-                    word.copy_from_slice(&bytes[8..]);
-                    emit(Op::Move(R::RDX, u128::from(u64::from_le_bytes(word))));
-                    emit(Op::Return(None));
+                let immediate = if matches!(value, Constant::Float(..)) {
+                    bits
                 } else {
-                    let immediate = if matches!(value, Constant::Float(..)) {
-                        bits
-                    } else {
-                        i128::from(i64::from_le_bytes(word)).cast_unsigned()
-                    };
-                    emit(Op::Move(R::RAX, immediate));
-                    emit(Op::Return(Some(R::RAX)));
-                }
+                    i128::from(i64::from_le_bytes(word)).cast_unsigned()
+                };
+                emit(Op::Move(R::RAX, immediate));
+                emit(Op::Return(Some(R::RAX)));
             }
         }
         Alias::Temporary(temp) => {

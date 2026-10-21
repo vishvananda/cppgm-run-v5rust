@@ -228,7 +228,10 @@ impl Addresses {
                 let (I::Compare(_, ty, ..) | I::Unary(_, ty, _)) = inst.kind else {
                     return Err(Error::Limit);
                 };
-                if ty.float_rank() == 0 && ty != Type::I128 {
+                if ty != Type::I128
+                    && (ty.float_rank() == 0
+                        || matches!(ty, Type::F32 | Type::F64) && next == pos + 1)
+                {
                     facts.fused[temp.index()] = true;
                     facts.active[pos] = false;
                     facts.reads[pos] = next;

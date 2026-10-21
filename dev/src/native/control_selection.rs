@@ -77,7 +77,7 @@ impl Selection<'_> {
             location: self.location,
         });
     }
-    fn branch(&mut self, condition: Condition, target: mir::BlockId) {
+    pub(super) fn branch(&mut self, condition: Condition, target: mir::BlockId) {
         self.mir.instructions.push(Instruction {
             op: Op::Branch(condition, target),
             location: self.location,
@@ -99,9 +99,11 @@ impl Selection<'_> {
                 let no = control.target(from, *no)?;
                 match self.facts.resolve(self.body, *value) {
                     Alias::Temporary(temp) if self.facts.fused[temp.index()] => {
-                        let cc = self.fused_flags(temp)?;
-                        self.branch(cc, yes);
-                        self.jump(no);
+                        if !self.float_branch(temp, yes, no)? {
+                            let cc = self.fused_flags(temp)?;
+                            self.branch(cc, yes);
+                            self.jump(no);
+                        }
                     }
                     Alias::Constant(Constant::Integer(bits)) => {
                         self.jump(if bits != 0 { yes } else { no });
@@ -184,7 +186,9 @@ impl Selection<'_> {
             if !self.facts.active[pos] {
                 continue;
             }
-            super::memory::scalar(*ty)?;
+            if !matches!(ty, Type::F32 | Type::F64) {
+                super::memory::scalar(*ty)?;
+            }
             let Some(value) = self.phis.lookup(self.body, id, from)? else {
                 continue;
             };
@@ -208,6 +212,9 @@ impl Selection<'_> {
                 }
                 Alias::Slot(slot) => (Operand::Frame(self.placement.slot(slot)?), None, true),
                 Alias::Symbol(symbol) => (Operand::Symbol(symbol), None, false),
+                Alias::Constant(_) if ty.float_rank() != 0 => {
+                    (self.float_operand(value, *ty)?, None, false)
+                }
                 Alias::Constant(Constant::Integer(bits)) => (
                     Operand::Immediate(
                         i128::from(super::mir::low_word(normalize(bits, *ty))?).cast_unsigned(),

@@ -261,27 +261,6 @@ impl<'a> Pass<'a> {
             Op::SymbolMove(reg, symbol) => self
                 .assembler
                 .lea(reg, Rm::rip(ImageSymbol::Program(symbol), 0))?,
-            Op::FloatMove(reg, kind, bits) => {
-                if bits & u128::from(u64::MAX) == 0 {
-                    self.assembler.sse(0, 0x57, reg, Rm::Reg(reg))?;
-                } else {
-                    let source = constant(image, kind, bits)?;
-                    self.assembler.sse(
-                        if kind == FloatKind::F32 { 0xf3 } else { 0xf2 },
-                        0x10,
-                        reg,
-                        source,
-                    )?;
-                }
-            }
-            Op::FloatReturn(bits) => {
-                let source = constant(image, FloatKind::F80, bits)?;
-                self.assembler.op(0, false, 0xdb, 1, 5, source, false, 0)?;
-                self.stats.returns += 1;
-                if !last {
-                    self.branch(None, self.epilogue);
-                }
-            }
             Op::Return(reg) => {
                 if let Some(reg) = reg {
                     return_register(&mut self.assembler, reg)?;
@@ -303,6 +282,16 @@ impl<'a> Pass<'a> {
             Op::FloatCopy(op) => op
                 .rebase(f.aligned_disp, f.aligned_bytes)
                 .emit(&mut self.assembler, image)?,
+            Op::Floating(op) => {
+                op.rebase(f.aligned_disp, f.aligned_bytes)
+                    .emit(&mut self.assembler, image)?;
+                if matches!(op, super::floating_mir::FloatingOp::Return(_)) {
+                    self.stats.returns += 1;
+                    if !last {
+                        self.branch(None, self.epilogue);
+                    }
+                }
+            }
             Op::WideMove {
                 destination,
                 source,

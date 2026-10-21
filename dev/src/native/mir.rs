@@ -5,14 +5,10 @@ use super::{
     scalar_mir::Operand,
     x86::{Assembler, Register as R},
 };
-use crate::{
-    lowir::{
-        Error,
-        literals::{self, FloatKind},
-        model::{DebugLocation, NameId, Program, SignatureId, SymbolId},
-        vocabulary::Type,
-    },
-    types::floating::FloatingScanner,
+use crate::lowir::{
+    Error,
+    model::{DebugLocation, NameId, Program, SignatureId, SymbolId},
+    vocabulary::Type,
 };
 use std::io::Write;
 #[derive(Clone, Copy)]
@@ -103,14 +99,13 @@ pub(super) enum Op {
     Branch(super::condition::Condition, BlockId),
     Move(R, u128),
     SymbolMove(R, SymbolId),
-    FloatMove(R, FloatKind, u128),
-    FloatReturn(u128),
     Return(Option<R>),
     Trap,
     Call(CallSite),
     DynamicCopy,
     Bulk(super::bulk::Bulk),
     FloatCopy(super::float_transport::FloatCopy),
+    Floating(super::floating_mir::FloatingOp),
     WideMove {
         destination: Operand,
         source: Operand,
@@ -288,7 +283,6 @@ impl Function {
                 binding.ty
             )?;
         }
-        let mut floating = FloatingScanner::default();
         for block in &self.blocks {
             write!(out, "\n  block ")?;
             Self::block_name(program, block.name, out)?;
@@ -299,7 +293,7 @@ impl Function {
                 block.range.end
             };
             for instruction in &self.instructions[block.range.start..end] {
-                self.write_instruction(program, out, instruction, &mut floating)?;
+                self.write_instruction(program, out, instruction)?;
             }
         }
         Ok(())
@@ -338,7 +332,6 @@ impl Function {
         program: &Program,
         out: &mut impl Write,
         instruction: &Instruction,
-        floating: &mut FloatingScanner,
     ) -> std::io::Result<()> {
         match instruction.op {
             Op::Jump(target) => {
@@ -365,20 +358,6 @@ impl Function {
                 reg.spelling(),
                 program.names.get(program.symbol(symbol).name)
             )?,
-            Op::FloatMove(reg, kind, bits) => write!(
-                out,
-                "    fmov.{} {}, {}",
-                kind.ty(),
-                reg.spelling(),
-                literals::mir_text(floating, kind, bits)
-                    .map_err(|_| std::io::Error::other("invalid floating MIR value"))?
-            )?,
-            Op::FloatReturn(bits) => write!(
-                out,
-                "    fret.f80 {}",
-                literals::mir_text(floating, FloatKind::F80, bits)
-                    .map_err(|_| std::io::Error::other("invalid floating MIR value"))?
-            )?,
             Op::Return(reg) => {
                 write!(out, "    ret")?;
                 if let Some(reg) = reg {
@@ -390,6 +369,7 @@ impl Function {
             Op::DynamicCopy => write!(out, "    copy_bytes_dynamic")?,
             Op::Bulk(op) => op.write(program, out)?,
             Op::FloatCopy(op) => op.write(program, out)?,
+            Op::Floating(op) => op.write(program, out)?,
             Op::WideMove {
                 destination,
                 source,

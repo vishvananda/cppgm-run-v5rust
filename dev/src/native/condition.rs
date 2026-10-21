@@ -12,6 +12,8 @@ pub(super) enum Condition {
     BelowEqual,
     Above,
     AboveEqual,
+    Parity,
+    NotParity,
 }
 impl Condition {
     pub(super) fn from_predicate(pred: Compare) -> Self {
@@ -40,6 +42,8 @@ impl Condition {
             Self::BelowEqual => 6,
             Self::Above => 7,
             Self::AboveEqual => 3,
+            Self::Parity => 10,
+            Self::NotParity => 11,
         }
     }
     pub(super) fn spelling(self) -> &'static str {
@@ -54,6 +58,8 @@ impl Condition {
             Self::BelowEqual => "be",
             Self::Above => "a",
             Self::AboveEqual => "ae",
+            Self::Parity => "p",
+            Self::NotParity => "np",
         }
     }
     pub(super) fn invert(self) -> Self {
@@ -68,11 +74,13 @@ impl Condition {
             Self::BelowEqual => Self::Above,
             Self::Above => Self::BelowEqual,
             Self::AboveEqual => Self::Below,
+            Self::Parity => Self::NotParity,
+            Self::NotParity => Self::Parity,
         }
     }
     pub(super) fn swapped(self) -> Self {
         match self {
-            Self::Equal | Self::NotEqual => self,
+            Self::Equal | Self::NotEqual | Self::Parity | Self::NotParity => self,
             Self::Less => Self::Greater,
             Self::LessEqual => Self::GreaterEqual,
             Self::Greater => Self::Less,

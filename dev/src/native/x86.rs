@@ -24,6 +24,9 @@ impl Register {
     pub(super) const R13: Self = Self(13);
     pub(super) const R14: Self = Self(14);
     pub(super) const R15: Self = Self(15);
+    pub(super) const XMM0: Self = Self(16);
+    pub(super) const XMM14: Self = Self(30);
+    pub(super) const XMM15: Self = Self(31);
     pub(super) fn xmm(index: u8) -> Result<Self, Error> {
         if index >= 16 {
             return Err(invariant("invalid XMM register"));
@@ -485,6 +488,9 @@ impl Assembler {
             false,
             0,
         )
+    }
+    pub(super) fn x87(&mut self, opcode: u8, digit: u8, memory: Rm) -> Result<(), Error> {
+        self.op(0, false, u32::from(opcode), 1, digit, memory, false, 0)
     }
 }
 
