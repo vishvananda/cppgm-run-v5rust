@@ -524,7 +524,13 @@ fn emit(program: &mut Program, graph: &Graph, key: Key, symbol: SymbolId) -> Res
                 ))?)
             }
         } else {
-            Some(builder.integer(0)?)
+            Some(
+                builder.integer(if super::member_pointers::is_data_pointer(graph, ty) {
+                    u128::MAX
+                } else {
+                    0
+                })?,
+            )
         };
         let root = builder.generated(I::Load(Facts::memory(false, true), Type::Ptr, slots[0]))?;
         let offset = builder.integer(u128::from(graph.lower_member_offset(member)?))?;

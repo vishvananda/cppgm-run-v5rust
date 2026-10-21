@@ -11,9 +11,23 @@ use crate::{
         model::{Facts, InstructionKind as I, SignatureId, Value},
         vocabulary::{Binary, Compare, Convert, Projection, Type},
     },
-    sema::lowering::{EntityId, TypeId},
+    sema::{
+        Graph,
+        lowering::{EntityId, TypeId},
+    },
     syntax::ast::{self, ExprKind},
 };
+
+pub(super) fn is_data_pointer(graph: &Graph, source: TypeId) -> bool {
+    graph
+        .lower_member_pointer_type(source)
+        .is_some_and(|(_, element)| {
+            !matches!(
+                graph.lower_type(element),
+                Ok(crate::sema::lowering::TypeView::Function { .. })
+            )
+        })
+}
 
 impl Function<'_, '_, '_, '_> {
     pub(super) fn member_pointer_constant(
@@ -188,14 +202,7 @@ impl Function<'_, '_, '_, '_> {
     }
 
     pub(super) fn data_member_pointer(&self, source: TypeId) -> bool {
-        self.graph
-            .lower_member_pointer_type(source)
-            .is_some_and(|(_, element)| {
-                !matches!(
-                    self.graph.lower_type(element),
-                    Ok(crate::sema::lowering::TypeView::Function { .. })
-                )
-            })
+        is_data_pointer(self.graph, source)
     }
 
     pub(super) fn member_pointer_truth(&mut self, value: RValue) -> Result<RValue, Error> {
