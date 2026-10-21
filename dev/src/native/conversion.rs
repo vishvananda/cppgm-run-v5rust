@@ -60,7 +60,11 @@ impl Conversion {
         a: &mut Assembler,
         image: &mut Image,
         scratch: i32,
+        runtime: Option<super::runtime::Symbols>,
     ) -> Result<(), Error> {
+        if self.from == Type::I128 || self.to == Type::I128 {
+            return self.emit_wide(a, image, runtime.ok_or(Error::Limit)?);
+        }
         let scratch = Rm::mem(R::RBP, scratch);
         match self.kind {
             Kind::SignedToFloat => {
@@ -125,6 +129,63 @@ impl Conversion {
                 }
             }
         }
+    }
+    fn emit_wide(
+        self,
+        a: &mut Assembler,
+        image: &mut Image,
+        runtime: super::runtime::Symbols,
+    ) -> Result<(), Error> {
+        let to_float = self.from == Type::I128;
+        let floating = if to_float { self.to } else { self.from };
+        let routine = (if to_float { 0 } else { 6 })
+            + (if matches!(self.kind, Kind::UnsignedToFloat | Kind::FloatToUnsigned) {
+                3
+            } else {
+                0
+            })
+            + match floating {
+                Type::F32 => 0,
+                Type::F64 => 1,
+                Type::F80 => 2,
+                _ => return Err(Error::Limit),
+            };
+        let call = runtime.float_conversion[routine];
+        if to_float {
+            super::wide_mir::half(a, R::RDI, self.source, false)?;
+            super::wide_mir::half(a, R::RSI, self.source, true)?;
+            a.call_symbol(call)?;
+            if self.to == Type::F80 {
+                a.x87(0xdb, 7, self.destination.rm()?)?;
+            } else {
+                let dst = self.destination.register().ok_or(Error::Limit)?;
+                let result = R::xmm(0)?;
+                if dst != result {
+                    a.sse(0, 0x28, dst, Rm::Reg(result))?;
+                }
+            }
+            return Ok(());
+        }
+        if self.from == Type::F80 {
+            x87_load(a, image, self.source, self.from)?;
+            a.alu_ri(5, Rm::Reg(R::RSP), 16, 8)?;
+            a.x87(0xdb, 7, Rm::mem(R::RSP, 0))?;
+            a.call_symbol(call)?;
+            a.alu_ri(0, Rm::Reg(R::RSP), 16, 8)?;
+        } else {
+            let input = R::xmm(0)?;
+            if self.source.register() != Some(input) {
+                a.sse(
+                    prefix(self.from),
+                    0x10,
+                    input,
+                    source(self.source, self.from, image)?,
+                )?;
+            }
+            a.call_symbol(call)?;
+        }
+        a.store(self.destination.rm()?, R::RAX, 8)?;
+        a.store(self.destination.displaced(8).rm()?, R::RDX, 8)
     }
     fn unsigned_to_float(
         self,

@@ -308,7 +308,27 @@ impl<'a> Pass<'a> {
                 &mut self.assembler,
                 image,
                 f.scratch_offset,
+                self.runtime,
             )?,
+            Op::Wide(op) => op
+                .rebase(f.aligned_disp, f.aligned_bytes)
+                .emit(&mut self.assembler, self.runtime)?,
+            Op::WideCompare(op) => {
+                let branches = &mut self.branches;
+                let short = self.short;
+                op.rebase(f.aligned_disp, f.aligned_bytes).emit(
+                    &mut self.assembler,
+                    &self.labels,
+                    |a, condition, label| {
+                        let is_short = short.get(branches.len()).copied().unwrap_or(false);
+                        branches.push(Branch {
+                            offset: a.code.len(),
+                            label,
+                        });
+                        a.branch(condition, label, is_short);
+                    },
+                )?;
+            }
             Op::WideMove {
                 destination,
                 source,

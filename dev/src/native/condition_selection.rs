@@ -77,6 +77,9 @@ impl Selection<'_> {
         if ty.float_rank() != 0 {
             return self.float_compare(temp, pred, ty, left, right);
         }
+        if ty == Type::I128 {
+            return self.wide_compare(temp, pred, left, right);
+        }
         let comparison = self.comparison(
             pred,
             ty,

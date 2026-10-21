@@ -53,6 +53,37 @@ impl Selection<'_> {
         };
         self.conversion(kind, from, to, destination, source);
     }
+    fn wide_float_convert(
+        &mut self,
+        result: TempId,
+        operation: Convert,
+        to: Type,
+        from: Type,
+        value: Value,
+    ) -> Result<(), Error> {
+        let kind = match operation {
+            Convert::SignedToFloat => Kind::SignedToFloat,
+            Convert::UnsignedToFloat => Kind::UnsignedToFloat,
+            Convert::FloatToSigned => Kind::FloatToSigned,
+            Convert::FloatToUnsigned => Kind::FloatToUnsigned,
+            _ => return Err(unsupported()),
+        };
+        let source = if from == Type::I128 {
+            self.wide_operand(value, R::R10)?
+        } else {
+            self.float_operand(value, from)?
+        };
+        let destination = if to == Type::I128 {
+            Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?)
+        } else {
+            self.float_destination(result, to, [None, None])?
+        };
+        self.conversion(kind, from, to, destination, source);
+        if let Some(reg) = destination.register() {
+            self.finish(result, reg)?;
+        }
+        Ok(())
+    }
     pub(super) fn float_convert(
         &mut self,
         result: TempId,
@@ -62,7 +93,7 @@ impl Selection<'_> {
         value: Value,
     ) -> Result<(), Error> {
         if from == Type::I128 || to == Type::I128 {
-            return Err(unsupported());
+            return self.wide_float_convert(result, operation, to, from, value);
         }
         match operation {
             Convert::SignedToFloat | Convert::UnsignedToFloat => {

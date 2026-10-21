@@ -99,7 +99,7 @@ impl Selection<'_> {
                 let no = control.target(from, *no)?;
                 match self.facts.resolve(self.body, *value) {
                     Alias::Temporary(temp) if self.facts.fused[temp.index()] => {
-                        if !self.float_branch(temp, yes, no)? {
+                        if !self.wide_branch(temp, yes, no)? && !self.float_branch(temp, yes, no)? {
                             let cc = self.fused_flags(temp)?;
                             self.branch(cc, yes);
                             self.jump(no);
@@ -115,6 +115,10 @@ impl Selection<'_> {
                         } else {
                             Type::Ptr
                         };
+                        if ty == Type::I128 {
+                            self.wide_condition(*value, yes, no)?;
+                            return Ok(());
+                        }
                         super::memory::scalar(ty)?;
                         let source = self.operand(*value, ty, super::x86::Register::R10)?;
                         if let Operand::Immediate(bits) = source {
@@ -137,6 +141,31 @@ impl Selection<'_> {
                 } else {
                     Type::I64
                 };
+                if ty == Type::I128 {
+                    let source = self.wide_operand(*value, super::x86::Register::R10)?;
+                    for &(value, to) in cases {
+                        let right = self.wide_operand(value, super::x86::Register::R11)?;
+                        self.mir.instructions.push(Instruction {
+                            op: Op::WideCompare(super::wide_compare::Comparison {
+                                predicate: crate::lowir::vocabulary::Compare::Eq,
+                                destination: super::wide_compare::Destination::Register(
+                                    super::x86::Register::R11,
+                                ),
+                                left: source,
+                                right,
+                            }),
+                            location: self.location,
+                        });
+                        self.emit(ScalarOp::Condition(FlagOp::Compare(
+                            Type::I64,
+                            Operand::Register(super::x86::Register::R11),
+                            Operand::Immediate(0),
+                        )));
+                        self.branch(Condition::NotEqual, control.target(from, to)?);
+                    }
+                    self.jump(control.target(from, *fallback)?);
+                    return Ok(());
+                }
                 super::memory::scalar(ty)?;
                 let mut source = self.operand(*value, ty, super::x86::Register::R10)?;
                 if source.register().is_none() {

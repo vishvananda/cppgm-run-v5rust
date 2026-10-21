@@ -540,6 +540,12 @@ impl Facts {
             } else {
                 0
             };
+            let wide_multiply = matches!(inst.kind, I::Binary(Binary::Mul, _, Type::I128, ..));
+            let fixed = if wide_multiply {
+                (1 << R::RAX.code()) | (1 << R::RDX.code())
+            } else {
+                fixed
+            };
             let call = calls.and_then(|c| c.at(pos));
             let runtime_call = matches!(
                 inst.kind,
@@ -550,13 +556,26 @@ impl Facts {
                         | Runtime::EhCatchAll(_)
                 )
             );
+            let runtime_call = runtime_call
+                || matches!(
+                    inst.kind,
+                    I::Binary(
+                        Binary::Div | Binary::Mod | Binary::UDiv | Binary::UMod,
+                        _,
+                        Type::I128,
+                        ..
+                    )
+                );
+            let runtime_call = runtime_call
+                || matches!(inst.kind, I::Convert(_, Type::I128, from, _) if from.float_rank()!=0)
+                || matches!(inst.kind, I::Convert(_, to, Type::I128, _) if to.float_rank()!=0);
             let clobber = fixed
                 | if call.is_some() || runtime_call {
                     super::abi::CALLER_SAVED | 0xffff_0000
                 } else {
                     0
                 };
-            let before = fixed | call.map_or(0, |c| c.early);
+            let before = (if wide_multiply { 0 } else { fixed }) | call.map_or(0, |c| c.early);
             self.clobbers[pos] = (clobber, before);
             for reg in 0..32 {
                 if clobber & (1 << reg) != 0 {

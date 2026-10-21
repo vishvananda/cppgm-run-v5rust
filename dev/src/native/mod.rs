@@ -37,6 +37,9 @@ mod slot_analysis;
 mod startup;
 mod value_facts;
 mod value_selection;
+mod wide_compare;
+mod wide_mir;
+mod wide_selection;
 mod x86;
 
 use crate::lowir::{Error, model::Program};

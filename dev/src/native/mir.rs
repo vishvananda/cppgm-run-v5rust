@@ -108,6 +108,8 @@ pub(super) enum Op {
     Floating(super::floating_mir::FloatingOp),
     Convert(super::conversion::Conversion),
     Exception(super::exception::ExceptionOp),
+    Wide(super::wide_mir::Arithmetic),
+    WideCompare(super::wide_compare::Comparison),
     WideMove {
         destination: Operand,
         source: Operand,
@@ -381,6 +383,10 @@ impl Function {
             Op::Floating(op) => op.write(program, out)?,
             Op::Convert(op) => op.write(program, out)?,
             Op::Exception(op) => {
+                op.write(program, out, |target, out| self.label(program, target, out))?;
+            }
+            Op::Wide(op) => op.write(program, out)?,
+            Op::WideCompare(op) => {
                 op.write(program, out, |target, out| self.label(program, target, out))?;
             }
             Op::WideMove {

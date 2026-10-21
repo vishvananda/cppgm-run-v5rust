@@ -167,6 +167,14 @@ impl Selection<'_> {
         if ty.float_rank() != 0 {
             return self.float_binary(temp, ty, op, left, right);
         }
+        if ty == Type::I128 {
+            return self.wide_arithmetic(
+                temp,
+                super::wide_mir::Operation::Binary(op),
+                left,
+                Some(right),
+            );
+        }
         if ty.float_rank() != 0 || matches!(ty, Type::I128 | Type::Object { .. }) {
             return Err(unsupported());
         }
@@ -247,6 +255,9 @@ impl Selection<'_> {
     ) -> Result<(), Error> {
         if ty.float_rank() != 0 {
             return self.float_unary(temp, ty, op, value);
+        }
+        if ty == Type::I128 {
+            return self.wide_unary(temp, op, value);
         }
         if ty.float_rank() != 0 || matches!(ty, Type::I128 | Type::Object { .. }) {
             return Err(unsupported());

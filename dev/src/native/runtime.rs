@@ -13,6 +13,8 @@ pub(super) struct Runtime {
     uncaught: ImageSymbol,
     payload: ImageSymbol,
     catch: ImageSymbol,
+    wide_division: [ImageSymbol; 4],
+    float_conversion: [ImageSymbol; 12],
 }
 #[derive(Clone, Copy)]
 pub(super) struct Symbols {
@@ -21,6 +23,8 @@ pub(super) struct Symbols {
     pub(super) selector: ImageSymbol,
     pub(super) dispatch: ImageSymbol,
     pub(super) catch: ImageSymbol,
+    pub(super) wide_division: [ImageSymbol; 4],
+    pub(super) float_conversion: [ImageSymbol; 12],
 }
 impl Runtime {
     pub(super) fn symbols(&self) -> Symbols {
@@ -30,6 +34,8 @@ impl Runtime {
             selector: self.selector,
             dispatch: self.dispatch,
             catch: self.catch,
+            wide_division: self.wide_division,
+            float_conversion: self.float_conversion,
         }
     }
     pub(super) fn declare(image: &mut Image) -> Result<Self, Error> {
@@ -41,8 +47,15 @@ impl Runtime {
         // Catch, integer division and floating conversion symbols are reserved
         // here as in the frozen runtime; their definitions belong to link mode.
         let catch = image.local()?;
-        for _ in 0..16 {
-            let _ = image.local()?;
+        let wide_division = [
+            image.local()?,
+            image.local()?,
+            image.local()?,
+            image.local()?,
+        ];
+        let mut float_conversion = [catch; 12];
+        for symbol in &mut float_conversion {
+            *symbol = image.local()?;
         }
         Ok(Self {
             top,
@@ -51,6 +64,8 @@ impl Runtime {
             uncaught,
             payload,
             catch,
+            wide_division,
+            float_conversion,
         })
     }
     fn dispatcher(&self, image: &mut Image) -> Result<(), Error> {
