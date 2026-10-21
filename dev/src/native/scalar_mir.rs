@@ -20,6 +20,12 @@ pub(super) enum Operand {
     Symbol(crate::lowir::model::SymbolId),
 }
 impl Operand {
+    pub(super) fn displaced(self, offset: i32) -> Self {
+        self.memory().map_or(self, |mut memory| {
+            memory.displacement = memory.displacement.wrapping_add(offset);
+            Self::Memory(memory)
+        })
+    }
     pub(super) fn register(self) -> Option<R> {
         if let Self::Register(reg) = self {
             Some(reg)

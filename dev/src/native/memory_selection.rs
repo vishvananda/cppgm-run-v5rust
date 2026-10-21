@@ -39,7 +39,10 @@ impl Selection<'_> {
                 ),
             ),
             Alias::Temporary(temp) => {
-                if matches!(self.body.temp(temp).ty, Some(Type::Object { .. })) {
+                if matches!(
+                    self.body.temp(temp).ty,
+                    Some(Type::Object { .. } | Type::I128)
+                ) {
                     return Ok(Operand::Frame(self.placement.home(
                         self.body,
                         temp,

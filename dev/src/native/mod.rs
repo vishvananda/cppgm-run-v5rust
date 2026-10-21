@@ -1,6 +1,7 @@
 //! Typed native boundary and standalone compilation ordering. See NOTICE.
 mod abi;
 mod address_facts;
+mod aggregate;
 mod builtins;
 mod bulk;
 mod call_facts;
@@ -13,6 +14,7 @@ mod control_selection;
 mod division;
 mod emission;
 mod executable;
+mod float_transport;
 mod frame_carries;
 mod global_data;
 mod global_placement;

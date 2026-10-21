@@ -31,7 +31,16 @@ impl Selection<'_> {
         read: Option<Type>,
         address: bool,
     ) {
-        if address {
+        if ty.float_rank() != 0 {
+            self.mir.instructions.push(Instruction {
+                op: Op::FloatCopy(super::float_transport::FloatCopy {
+                    ty,
+                    destination,
+                    source,
+                }),
+                location: self.location,
+            });
+        } else if address {
             self.emit(ScalarOp::Lea(R::R11, source));
             self.emit(ScalarOp::Store(
                 destination,
@@ -58,6 +67,9 @@ impl Selection<'_> {
         ty: Type,
         pass: Option<Pass>,
     ) -> Result<(Operand, Option<Type>, bool), Error> {
+        if super::aggregate::memory_value(ty) {
+            return Ok((self.aggregate_operand(value, ty)?, None, false));
+        }
         let resolved = self.facts.resolve(self.body, value);
         if let Alias::Slot(slot) = resolved {
             return Ok((
@@ -71,7 +83,9 @@ impl Selection<'_> {
             && self.body.temp(original).ty != Some(Type::Ptr)
         {
             let own = self.body.temp(original).ty.ok_or(Error::Limit)?;
-            super::memory::scalar(own)?;
+            if !super::aggregate::memory_value(own) {
+                super::memory::scalar(own)?;
+            }
             let home = self.placement.frame_alloc(
                 u64::from(super::abi::value_bytes(own)?).max(1).div_ceil(8) * 8,
                 super::abi::value_align(own)?.max(8),
@@ -89,18 +103,45 @@ impl Selection<'_> {
                     .then_some(source_ty);
                 (op, read)
             } else {
-                (self.operand(value, own, R::R10)?, None)
+                (
+                    if super::aggregate::memory_value(own) {
+                        self.aggregate_operand(value, own)?
+                    } else {
+                        self.operand(value, own, R::R10)?
+                    },
+                    None,
+                )
             };
-            self.store_transfer(Operand::Frame(home), own, source, read, false);
+            if let Type::Object { .. } = own {
+                self.mir.instructions.push(Instruction {
+                    op: Op::Bulk(super::bulk::Bulk::new(
+                        Operand::Frame(home),
+                        Some(source),
+                        u64::from(super::abi::value_bytes(own)?),
+                        super::abi::value_align(own)?,
+                    )),
+                    location: self.location,
+                });
+            } else if own == Type::I128 {
+                self.mir.instructions.push(Instruction {
+                    op: Op::WideMove {
+                        destination: Operand::Frame(home),
+                        source,
+                    },
+                    location: self.location,
+                });
+            } else {
+                self.store_transfer(Operand::Frame(home), own, source, read, false);
+            }
             return Ok((Operand::Frame(home), None, true));
         }
         if let Alias::Temporary(t) = resolved {
             let source = self.temp_operand(t)?;
             return Ok((
                 source,
-                source
-                    .is_memory()
-                    .then_some(self.body.temp(t).ty.ok_or(Error::Limit)?),
+                source.is_memory().then_some(super::abi::move_type(
+                    self.body.temp(t).ty.ok_or(Error::Limit)?,
+                )),
                 false,
             ));
         }
@@ -109,6 +150,7 @@ impl Selection<'_> {
     fn stage_arguments(
         &mut self,
         call: &Call,
+        result: Option<TempId>,
         plan: &CallPlan,
         out: &mut Staging,
     ) -> Result<(), Error> {
@@ -118,21 +160,52 @@ impl Selection<'_> {
         for (index, &value) in self.body.arguments(call.arguments).iter().enumerate() {
             let ty = plan.types[index];
             let (source, read, address) = self.call_source(value, ty, plan.passes[index])?;
-            let [part] = plan.layout.parts(&plan.layout.arguments[index]) else {
-                return Err(unsupported());
-            };
-            if let Some(destination) = part.register {
-                out.mask |= 1 << destination.code();
-                out.moves.push(Transfer {
-                    destination: Operand::Register(destination),
-                    source,
-                    ty,
-                    source_type: read,
-                    address,
-                });
+            let parts = plan.layout.parts(&plan.layout.arguments[index]);
+            if parts.is_empty() {
+                continue;
+            }
+            let part = parts[0];
+            if part.register.is_some() {
+                for &part in parts {
+                    let destination = part.register.ok_or(Error::Limit)?;
+                    out.mask |= 1 << destination.code();
+                    out.moves.push(Transfer {
+                        destination: Operand::Register(destination),
+                        source: if super::aggregate::memory_value(ty) {
+                            super::aggregate::part_source(source, part)
+                        } else {
+                            source
+                        },
+                        ty: if super::aggregate::memory_value(ty) {
+                            part.move_type()
+                        } else {
+                            ty
+                        },
+                        source_type: read,
+                        address,
+                    });
+                }
             } else {
                 let dst = Operand::Memory(Memory::new(Base::Register(R::RSP), part.stack));
-                if !address
+                if matches!(ty, Type::Object { .. }) {
+                    self.mir.instructions.push(Instruction {
+                        op: Op::Bulk(super::bulk::Bulk::new(
+                            dst,
+                            Some(source),
+                            u64::from(part.size),
+                            8,
+                        )),
+                        location: self.location,
+                    });
+                } else if ty == Type::I128 {
+                    self.mir.instructions.push(Instruction {
+                        op: Op::WideMove {
+                            destination: dst,
+                            source,
+                        },
+                        location: self.location,
+                    });
+                } else if !address
                     && matches!(
                         source,
                         Operand::Immediate(_) | Operand::Symbol(_) | Operand::SymbolOffset(..)
@@ -144,10 +217,24 @@ impl Selection<'_> {
                 }
             }
         }
+        out.moves
+            .sort_by_key(|m| m.destination.register().is_some_and(|r| r.code() >= 16));
+        if plan.layout.indirect_result {
+            let result = result.ok_or_else(unsupported)?;
+            let source = Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?);
+            out.moves.push(Transfer {
+                destination: Operand::Register(R::RDI),
+                source,
+                ty: Type::Void,
+                source_type: None,
+                address: true,
+            });
+            out.mask |= 1 << R::RDI.code();
+        }
         if plan.variadic {
             out.moves.push(Transfer {
                 destination: Operand::Register(R::RAX),
-                source: Operand::Immediate(0),
+                source: Operand::Immediate(u128::from(plan.layout.vector_count())),
                 ty: Type::Void,
                 source_type: None,
                 address: false,
@@ -223,6 +310,17 @@ impl Selection<'_> {
             return Ok(());
         }
         let stack = plan.layout.stack.wrapping_add(15) & !15;
+        let saved_rsp = if plan.layout.stack_align > 16 {
+            let home = self.placement.frame_alloc(8, 8)?;
+            self.emit(ScalarOp::Store(
+                Operand::Frame(home),
+                Type::I64,
+                Operand::Register(R::RSP),
+            ));
+            Some(home)
+        } else {
+            None
+        };
         if stack != 0 {
             self.emit(ScalarOp::Binary(
                 Binary::Sub,
@@ -231,8 +329,18 @@ impl Selection<'_> {
                 Operand::Immediate(u128::from(stack)),
             ));
         }
+        if saved_rsp.is_some() {
+            self.emit(ScalarOp::Binary(
+                Binary::And,
+                Type::I64,
+                R::RSP,
+                Operand::Immediate(u128::from(
+                    (-i64::from(plan.layout.stack_align)).cast_unsigned(),
+                )),
+            ));
+        }
         let mut staged = std::mem::take(&mut self.outgoing);
-        self.stage_arguments(call, plan, &mut staged)?;
+        self.stage_arguments(call, result, plan, &mut staged)?;
         let target = self.call_target(program, call, &mut staged.moves)?;
         let scratch = target.mask() & (1 << R::R11.code()) != 0;
         if scratch {
@@ -268,7 +376,9 @@ impl Selection<'_> {
             }),
             location: self.location,
         });
-        if stack != 0 {
+        if let Some(home) = saved_rsp {
+            self.emit(ScalarOp::Load(R::RSP, Type::I64, Operand::Frame(home)));
+        } else if stack != 0 {
             self.emit(ScalarOp::Binary(
                 Binary::Add,
                 Type::I64,
@@ -277,7 +387,11 @@ impl Selection<'_> {
             ));
         }
         if let Some(result) = result.filter(|_| used) {
-            self.call_result(result, call.result, staged.mask)?;
+            if super::aggregate::memory_value(call.result) {
+                self.aggregate_call_result(result, &plan.layout)?;
+            } else {
+                self.call_result(result, call.result, staged.mask)?;
+            }
         }
         self.outgoing = staged;
         Ok(())

@@ -122,7 +122,11 @@ impl Globals {
                 continue;
             }
             let ty = temp.ty.ok_or(Error::Limit)?;
-            if matches!(ty, crate::lowir::vocabulary::Type::Object { .. }) {
+            if matches!(
+                ty,
+                crate::lowir::vocabulary::Type::Object { .. }
+                    | crate::lowir::vocabulary::Type::I128
+            ) {
                 continue;
             }
             super::memory::scalar(ty)?;

@@ -32,15 +32,10 @@ pub(super) fn select(
         return Err(unsupported());
     }
     let signature = program.signature(function.signature);
-    if signature.boundary.arity == Arity::Variadic
-        || matches!(signature.result, Type::Object { .. })
-    {
+    if signature.boundary.arity == Arity::Variadic {
         return Err(unsupported());
     }
     let layout = abi::Layout::classify(signature)?;
-    if layout.indirect_result {
-        return Err(unsupported());
-    }
     let flow = super::control_flow::Flow::analyze(body)?;
     let slots = slot_analysis::analyze(body, &flow)?;
     let mut facts = Facts::analyze(body, &slots, flow)?;
@@ -71,7 +66,7 @@ pub(super) fn select(
                     .iter()
                     .any(|part| part.register.is_some())
         });
-    let gprs=signature.parameters.iter().zip(&mir.layout.arguments).filter(|(p,_)|!matches!(p.ty,Type::Object{..}|Type::I128)||p.classes.is_none()).filter(|(_,arg)|matches!(mir.layout.parts(arg),[part] if part.register.is_some_and(|r|r.code()<16))).count();
+    let gprs = mir.layout.arguments.iter().filter(|arg| matches!(mir.layout.parts(arg), [part] if part.register.is_some_and(|r| r.code() < 16))).count();
     let reserved = if slots.iter().zip(body.slots()).any(|(state, slot)| {
         matches!(state, Slot::Memory)
             && matches!(slot.ty, Type::Object { .. })
@@ -180,6 +175,13 @@ pub(super) fn select(
             selection.location = body.location(inst);
             match inst.kind {
                 I::Phi(..) => {}
+                I::Load(_, Type::I128, address) => {
+                    selection.wide_load(inst.result.ok_or(Error::Limit)?, address)?;
+                }
+                I::Store(_, Type::I128, value, address) => selection.wide_store(value, address)?,
+                I::Copy(Type::I128, value) => {
+                    selection.wide_copy(inst.result.ok_or(Error::Limit)?, value)?;
+                }
                 I::CopyObject(bytes, align, source, destination) => {
                     selection.bulk(bytes, align, Some(source), destination)?;
                 }
@@ -231,7 +233,11 @@ pub(super) fn select(
                     selection.select_value(inst.result.ok_or(Error::Limit)?, ty, cond, yes, no)?;
                 }
                 I::Return(ty, value) => {
-                    emit_return(&mut selection, ty, value, body.location(inst), &mut scanner)?;
+                    if super::aggregate::memory_value(ty) {
+                        selection.aggregate_return(ty, value.ok_or(Error::Limit)?)?;
+                    } else {
+                        emit_return(&mut selection, ty, value, body.location(inst), &mut scanner)?;
+                    }
                 }
                 I::Unreachable => selection.mir.instructions.push(Instruction {
                     op: Op::Trap,

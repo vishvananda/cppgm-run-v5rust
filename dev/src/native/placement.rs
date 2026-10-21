@@ -34,6 +34,7 @@ struct Location {
     homed: bool,
 }
 pub(super) struct Placement {
+    pub(super) sret_home: Option<i32>,
     pub(super) globals: super::global_placement::Globals,
     incoming: Vec<Option<R>>,
     block: Option<BlockId>,
@@ -62,11 +63,16 @@ impl Placement {
         excluded: u32,
     ) -> Self {
         Self {
+            sret_home: None,
             globals,
             incoming: layout
                 .arguments
                 .iter()
-                .map(|arg| {
+                .zip(body.temps())
+                .map(|(arg, temp)| {
+                    if temp.ty.is_some_and(super::aggregate::memory_value) {
+                        return None;
+                    }
                     let [part] = layout.parts(arg) else {
                         return None;
                     };
@@ -405,11 +411,26 @@ impl Placement {
         mir: &mut Function,
     ) -> Result<Vec<super::parallel_transfer::Transfer>, Error> {
         use super::parallel_transfer::Transfer;
+        if mir.layout.indirect_result {
+            let home = self.frame_alloc(8, 8)?;
+            self.sret_home = Some(home);
+            mir.instructions.push(Instruction {
+                op: Op::Scalar(ScalarOp::Store(
+                    Operand::Frame(home),
+                    Type::Ptr,
+                    Operand::Register(R::RDI),
+                )),
+                location: None,
+            });
+        }
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
             if facts.intervals[index].uses == 0 {
                 continue;
             }
             let ty = parameter.ty.ok_or(Error::Limit)?;
+            if super::aggregate::memory_value(ty) {
+                continue;
+            }
             super::memory::scalar(ty)?;
             let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
             if let Some(reg) = self.incoming[index]
@@ -422,12 +443,16 @@ impl Placement {
                 self.bind(temp, reg);
             }
         }
-        let incoming = self
-            .incoming
+        let incoming = mir
+            .layout
+            .arguments
             .iter()
             .enumerate()
             .filter(|(i, _)| facts.intervals[*i].uses != 0)
-            .filter_map(|(_, r)| *r)
+            .filter_map(|(_, arg)| match mir.layout.parts(arg) {
+                [part] => part.register,
+                _ => None,
+            })
             .fold(0, |mask, r| mask | (1 << r.code()));
         let mut transfers = Vec::new();
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
@@ -436,6 +461,30 @@ impl Placement {
             }
             let temp = body.find_temp(parameter.name).ok_or(Error::Limit)?;
             let ty = parameter.ty.ok_or(Error::Limit)?;
+            if super::aggregate::memory_value(ty) {
+                let argument = &mir.layout.arguments[index];
+                let parts = mir.layout.parts(argument);
+                if parts.is_empty() {
+                    self.home(body, temp, mir)?;
+                } else if parts[0].register.is_none() {
+                    self.locations[index].home = Some(16_i32.wrapping_add(parts[0].stack));
+                } else {
+                    let home = self.home(body, temp, mir)?;
+                    let parts = mir.layout.parts(&mir.layout.arguments[index]);
+                    for &part in parts {
+                        transfers.push(Transfer {
+                            destination: Operand::Frame(
+                                home.wrapping_add(part.offset.cast_signed()),
+                            ),
+                            source: Operand::Register(part.register.ok_or(Error::Limit)?),
+                            ty: part.move_type(),
+                            source_type: None,
+                            address: false,
+                        });
+                    }
+                }
+                continue;
+            }
             let [part] = mir.layout.parts(&mir.layout.arguments[index]) else {
                 return Err(unsupported());
             };

@@ -24,7 +24,7 @@ fn return_register(a: &mut Assembler, reg: R) -> Result<(), Error> {
     }
     Ok(())
 }
-fn constant(image: &mut Image, kind: FloatKind, bits: u128) -> Result<Rm, Error> {
+pub(super) fn constant(image: &mut Image, kind: FloatKind, bits: u128) -> Result<Rm, Error> {
     let mut scanner = FloatingScanner::default();
     let bytes = global_data::constant_bytes(
         &mut scanner,
@@ -300,6 +300,27 @@ impl<'a> Pass<'a> {
             Op::Bulk(op) => op
                 .rebase(f.aligned_disp, f.aligned_bytes)
                 .emit(&mut self.assembler)?,
+            Op::FloatCopy(op) => op
+                .rebase(f.aligned_disp, f.aligned_bytes)
+                .emit(&mut self.assembler, image)?,
+            Op::WideMove {
+                destination,
+                source,
+            } => {
+                let destination = destination.rebase(f.aligned_disp, f.aligned_bytes);
+                let source = source.rebase(f.aligned_disp, f.aligned_bytes);
+                for offset in [0, 8] {
+                    if let super::scalar_mir::Operand::Immediate(bits) = source {
+                        let word = if offset == 0 { bits } else { bits >> 64 };
+                        self.assembler.mov_ri_flags(R::R11, low_word(word)?, true)?;
+                    } else {
+                        self.assembler
+                            .load(R::R11, source.displaced(offset).rm()?, 8, false)?;
+                    }
+                    self.assembler
+                        .store(destination.displaced(offset).rm()?, R::R11, 8)?;
+                }
+            }
             Op::Scalar(op) => op
                 .rebase(f.aligned_disp, f.aligned_bytes)
                 .emit(&mut self.assembler, self.flags[index])?,
@@ -349,6 +370,37 @@ mod tests {
         model::{InstructionKind as I, Program},
         vocabulary::Type,
     };
+    #[test]
+    fn wide_zero_words_use_flag_preserving_immediate_moves() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder = FunctionBuilder::new(&mut program, "f", &[], Type::Ptr)?;
+        let slot = builder.slot("storage", Type::I128)?;
+        builder.block("entry")?;
+        let zero = builder.integer(0)?;
+        builder.effect(I::Store(
+            crate::lowir::model::Facts::default(),
+            Type::I128,
+            zero,
+            slot,
+        ))?;
+        let address = builder.value(I::Addr(slot), "address")?;
+        builder.effect(I::Return(Type::Ptr, Some(address)))?;
+        builder.finish()?;
+        let function = &program.functions()[0];
+        let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
+        let mir = super::super::value_selection::select(&program, symbol, function, 0)?;
+        let mut image = Image::new(program.symbols().len());
+        emit(&mir, &mut image)?;
+        assert_eq!(
+            image
+                .text
+                .windows(6)
+                .filter(|bytes| *bytes == [0x41, 0xbb, 0, 0, 0, 0])
+                .count(),
+            2
+        );
+        Ok(())
+    }
     #[test]
     fn conditional_fallthrough_inversion_and_shared_epilogue_are_relaxed() -> Result<(), Error> {
         let mut program = Program::default();

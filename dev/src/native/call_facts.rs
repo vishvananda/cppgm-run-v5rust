@@ -63,7 +63,9 @@ impl Calls {
 impl CallPlan {
     fn analyze(program: &Program, body: &Body, call: &Call, facts: &Facts) -> Result<Self, Error> {
         let sig = program.call_boundary(call).ok_or_else(unsupported)?;
-        memory::scalar(call.result)?;
+        if !super::aggregate::memory_value(call.result) {
+            memory::scalar(call.result)?;
+        }
         let args = body.arguments(call.arguments);
         let mut types = Vec::with_capacity(args.len());
         let mut passes = Vec::with_capacity(args.len());
@@ -79,14 +81,13 @@ impl CallPlan {
                     Value::Symbol(_) => Type::Ptr,
                 }
             };
-            memory::scalar(ty)?;
+            if !super::aggregate::memory_value(ty) {
+                memory::scalar(ty)?;
+            }
             types.push(ty);
             passes.push(sig.parameters.get(index).and_then(|p| p.pass));
         }
         let layout = Layout::classify_call(sig, &types)?;
-        if layout.indirect_result {
-            return Err(unsupported());
-        }
         let builtin =
             if let super::value_facts::Alias::Symbol(symbol) = facts.resolve(body, call.callee) {
                 program
@@ -119,7 +120,10 @@ impl CallPlan {
             } else {
                 CallKind::Ordinary
             },
-            early: if args.len() > sig.parameters.len() {
+            early: if args.len() > sig.parameters.len()
+                || matches!(call.result, Type::Object { .. })
+                || sig.parameters.iter().any(|p| super::aggregate::memory_value(p.ty))
+                || args.iter().zip(&sig.parameters).any(|(value, parameter)| parameter.pass == Some(Pass::ByAddress) && matches!(*value, Value::Temp(temp) if matches!(body.temp(temp).ty, Some(Type::Object { .. })))) {
                 (1 << 7) | (1 << 6) | (1 << 1)
             } else {
                 0

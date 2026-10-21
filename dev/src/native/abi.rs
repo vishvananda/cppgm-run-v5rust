@@ -35,6 +35,13 @@ pub(super) fn value_align(ty: Type) -> Result<u32, Error> {
         Ok(value_bytes(ty)?.max(1))
     }
 }
+pub(super) fn move_type(ty: Type) -> Type {
+    if matches!(ty, Type::Object { .. } | Type::I128) {
+        Type::I64
+    } else {
+        ty
+    }
+}
 fn eightbyte_class(classes: Option<ObjectClasses>, index: u32) -> EightbyteClass {
     match (classes, index) {
         (Some(ObjectClasses::Direct(first, _)), 0) => first,
@@ -46,6 +53,17 @@ fn eightbyte_class(classes: Option<ObjectClasses>, index: u32) -> EightbyteClass
 pub(super) struct Part {
     pub(super) register: Option<R>,
     pub(super) stack: i32,
+    pub(super) offset: u32,
+    pub(super) size: u32,
+}
+impl Part {
+    pub(super) fn move_type(self) -> Type {
+        if self.register.is_some_and(|r| r.code() >= 16) {
+            if self.size <= 4 { Type::F32 } else { Type::F64 }
+        } else {
+            Type::I64
+        }
+    }
 }
 pub(super) struct Argument {
     first: usize,
@@ -55,38 +73,101 @@ pub(super) struct Layout {
     pub(super) arguments: Vec<Argument>,
     parts: Vec<Part>,
     pub(super) indirect_result: bool,
+    pub(super) result: [Option<Part>; 2],
+    pub(super) classified_result: bool,
+    pub(super) stack_align: u32,
     gprs: usize,
     xmms: u8,
     pub(super) stack: u32,
 }
 impl Layout {
+    pub(super) fn vector_count(&self) -> u8 {
+        self.xmms
+    }
     pub(super) fn parts(&self, argument: &Argument) -> &[Part] {
         &self.parts[argument.first..argument.first + argument.count]
     }
-    fn empty(signature: &Signature) -> Self {
-        let indirect_result = matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16)
-            || matches!(
-                signature.boundary.result_classes,
-                Some(ObjectClasses::Memory)
-            );
-        Self {
+    fn empty(signature: &Signature) -> Result<Self, Error> {
+        if matches!(signature.result, Type::Object { .. })
+            && signature.boundary.result_classes.is_some()
+        {
+            value_bytes(signature.result)?;
+        }
+        let indirect_result = matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16 || matches!(
+            signature.boundary.result_classes,
+            Some(ObjectClasses::Memory)
+        ));
+        let classified_result = matches!(signature.result, Type::Object { .. })
+            && signature.boundary.result_classes.is_some();
+        let mut result = [None; 2];
+        let mut result_count = 0;
+        if !indirect_result && matches!(signature.result, Type::Object { .. } | Type::I128) {
+            let bytes = value_bytes(signature.result)?;
+            let mut gprs = 0;
+            let mut xmms = 0;
+            for offset in (0..bytes).step_by(8) {
+                let class = if classified_result {
+                    eightbyte_class(signature.boundary.result_classes, offset / 8)
+                } else {
+                    EightbyteClass::Integer
+                };
+                let register = match class {
+                    EightbyteClass::None => continue,
+                    EightbyteClass::Integer => {
+                        let r = if gprs == 0 { R::RAX } else { R::RDX };
+                        gprs += 1;
+                        r
+                    }
+                    EightbyteClass::Sse => {
+                        let r = R::xmm(xmms)?;
+                        xmms += 1;
+                        r
+                    }
+                };
+                *result.get_mut(result_count).ok_or(Error::Limit)? = Some(Part {
+                    register: Some(register),
+                    stack: 0,
+                    offset,
+                    size: if classified_result {
+                        (bytes - offset).min(8)
+                    } else {
+                        8
+                    },
+                });
+                result_count += 1;
+            }
+        } else if signature.result != Type::Void
+            && signature.result.float_rank() == 0
+            && !indirect_result
+        {
+            result[0] = Some(Part {
+                register: Some(R::RAX),
+                stack: 0,
+                offset: 0,
+                size: 8,
+            });
+        }
+        Ok(Self {
             arguments: Vec::new(),
             parts: Vec::new(),
             indirect_result,
+            result,
+            classified_result,
+            stack_align: 16,
             gprs: usize::from(indirect_result),
             xmms: 0,
             stack: 0,
-        }
+        })
     }
     pub(super) fn classify(signature: &Signature) -> Result<Self, Error> {
-        let mut layout = Self::empty(signature);
+        let mut layout = Self::empty(signature)?;
         for parameter in &signature.parameters {
             layout.argument(parameter.ty, parameter.classes)?;
         }
         Ok(layout)
     }
     pub(super) fn classify_call(signature: &Signature, types: &[Type]) -> Result<Self, Error> {
-        let mut layout = Self::empty(signature);
+        let mut layout = Self::empty(signature)?;
         for (index, &ty) in types.iter().enumerate() {
             layout.argument(ty, signature.parameters.get(index).and_then(|p| p.classes))?;
         }
@@ -94,10 +175,13 @@ impl Layout {
     }
     fn stack(&mut self, bytes: u32, align: u32) {
         let align = align.max(8);
+        self.stack_align = self.stack_align.max(align);
         self.stack = self.stack.wrapping_add(align - 1) & !(align - 1);
         self.parts.push(Part {
             register: None,
             stack: self.stack.cast_signed(),
+            offset: 0,
+            size: bytes,
         });
         self.stack = self.stack.wrapping_add(bytes.wrapping_add(7) & !7);
     }
@@ -160,6 +244,8 @@ impl Layout {
                     self.parts.push(Part {
                         register: Some(reg),
                         stack: 0,
+                        offset: k * 8,
+                        size: (bytes - k * 8).min(8),
                     });
                 }
             }
@@ -170,6 +256,8 @@ impl Layout {
                 self.parts.push(Part {
                     register: Some(reg),
                     stack: 0,
+                    offset: 0,
+                    size: bytes,
                 });
             } else {
                 self.stack(8, 8);
@@ -182,6 +270,8 @@ impl Layout {
             self.parts.push(Part {
                 register: Some(reg),
                 stack: 0,
+                offset: 0,
+                size: bytes,
             });
         } else {
             self.stack(8, 8);
@@ -216,6 +306,46 @@ mod tests {
             result,
             boundary: Boundary::default(),
         })
+    }
+    #[test]
+    fn explicit_memory_result_metadata_on_void_does_not_add_a_hidden_argument() -> Result<(), Error>
+    {
+        let mut program = Program::default();
+        let mut sig = signature(&mut program, &[Type::Ptr], Type::Void)?;
+        sig.boundary.result_classes = Some(ObjectClasses::Memory);
+        let layout = Layout::classify(&sig)?;
+        assert!(!layout.indirect_result);
+        assert_eq!(layout.parts(&layout.arguments[0])[0].register, Some(R::RDI));
+        Ok(())
+    }
+    #[test]
+    fn mixed_result_eightbytes_keep_their_offsets_and_partial_widths() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut sig = signature(
+            &mut program,
+            &[],
+            Type::Object {
+                bytes: 12,
+                align: 2,
+            },
+        )?;
+        sig.boundary.result_classes = Some(ObjectClasses::Direct(
+            EightbyteClass::Integer,
+            Some(EightbyteClass::Sse),
+        ));
+        let layout = Layout::classify(&sig)?;
+        let first = layout.result[0].ok_or(Error::Limit)?;
+        let last = layout.result[1].ok_or(Error::Limit)?;
+        assert_eq!(
+            (first.register, first.offset, first.size),
+            (Some(R::RAX), 0, 8)
+        );
+        assert_eq!(
+            (last.register, last.offset, last.size),
+            (Some(R::xmm(0)?), 8, 4)
+        );
+        assert_eq!(last.move_type(), Type::F32);
+        Ok(())
     }
     #[test]
     fn an_object_that_cannot_fit_keeps_the_last_gpr_free() -> Result<(), Error> {

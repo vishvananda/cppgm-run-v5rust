@@ -64,6 +64,15 @@ impl CallSite {
                 first = false;
             }
         }
+        for index in 0..16 {
+            if self.arguments & (1 << (16 + index)) != 0 {
+                if !first {
+                    write!(out, ",")?;
+                }
+                write!(out, "xmm{index}")?;
+                first = false;
+            }
+        }
         write!(out, ")")?;
         if self.stack != 0 {
             write!(out, ", stack={}", self.stack.wrapping_add(15) & !15)?;
@@ -101,6 +110,11 @@ pub(super) enum Op {
     Call(CallSite),
     DynamicCopy,
     Bulk(super::bulk::Bulk),
+    FloatCopy(super::float_transport::FloatCopy),
+    WideMove {
+        destination: Operand,
+        source: Operand,
+    },
     Scalar(super::scalar_mir::ScalarOp),
 }
 pub(super) struct Instruction {
@@ -231,6 +245,7 @@ impl Function {
             Type::Void => "void",
             Type::F32 | Type::F64 => "xmm0",
             Type::F80 => "st0",
+            Type::Object { bytes, .. } if bytes > 16 => "[rax]",
             _ => "rax",
         };
         writeln!(
@@ -374,6 +389,16 @@ impl Function {
             Op::Call(site) => site.write(program, out)?,
             Op::DynamicCopy => write!(out, "    copy_bytes_dynamic")?,
             Op::Bulk(op) => op.write(program, out)?,
+            Op::FloatCopy(op) => op.write(program, out)?,
+            Op::WideMove {
+                destination,
+                source,
+            } => {
+                write!(out, "    mov.i128 ")?;
+                destination.write(program, out)?;
+                write!(out, ", ")?;
+                source.write(program, out)?;
+            }
             Op::Scalar(op) => {
                 write!(out, "    ")?;
                 op.write(program, out)?;

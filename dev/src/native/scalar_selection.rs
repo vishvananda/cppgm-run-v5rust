@@ -81,6 +81,17 @@ impl Selection<'_> {
         Ok(Operand::Immediate(0))
     }
     pub(super) fn load(&mut self, r: R, source: Operand, ty: Type) {
+        if r.code() >= 16 {
+            self.mir.instructions.push(Instruction {
+                op: Op::FloatCopy(super::float_transport::FloatCopy {
+                    ty,
+                    destination: Operand::Register(r),
+                    source,
+                }),
+                location: self.location,
+            });
+            return;
+        }
         match source {
             Operand::Register(s) if s == r => {}
             Operand::Frame(d) => self.emit(ScalarOp::Load(r, ty, Operand::Frame(d))),
