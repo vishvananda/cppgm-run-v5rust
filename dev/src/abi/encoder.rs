@@ -522,7 +522,10 @@ impl<'a> Encoder<'a> {
     }
     fn unqualified(&mut self, id: NodeId) -> Result<(), Error> {
         let Node::Name {
-            terminal, internal, ..
+            terminal,
+            internal,
+            data_member,
+            ..
         } = self.graph.get(id)
         else {
             return Err(Error::diagnostic("invalid ABI unqualified name"));
@@ -573,6 +576,9 @@ impl<'a> Encoder<'a> {
                 self.put(b"_");
             }
             _ => return Err(Error::diagnostic("invalid ABI unqualified name")),
+        }
+        if data_member {
+            self.put(b"M");
         }
         self.tags(id);
         Ok(())

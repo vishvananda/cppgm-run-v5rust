@@ -114,6 +114,8 @@ pub enum Node {
         parent: Option<NodeId>,
         terminal: NodeId,
         internal: bool,
+        /// A closure prefix's initializing member: `<name> M` (5.1.8).
+        data_member: bool,
         /// Number of earlier entities with this name directly in the function.
         occurrence: u32,
     },
@@ -353,6 +355,7 @@ impl Graph {
                 parent,
                 terminal,
                 internal: false,
+                data_member: false,
                 occurrence: 0,
             },
             &sorted,
@@ -360,7 +363,7 @@ impl Graph {
     }
     fn is_std_name(&self, name: NodeId, spelling: &[u8]) -> bool {
         matches!(self.get(name), Node::Name {
-            parent: Some(parent), terminal, internal: false, occurrence: 0,
+            parent: Some(parent), terminal, internal: false, data_member: false, occurrence: 0,
         } if self.get(parent) == Node::Std
             && self.get(terminal) == Node::Text
             && self.text(terminal) == spelling)

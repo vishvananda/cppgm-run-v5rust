@@ -235,7 +235,8 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let mut values = vec![object];
-        if entry.hidden_vtt(self.graph)? {
+        let hidden_vtt = entry.hidden_vtt(self.graph)?;
+        if hidden_vtt && !written.is_empty() {
             values.push(self.hidden_vtt_value()?);
         }
         for index in 0..parameters.len().max(written.len()) {
@@ -295,6 +296,12 @@ impl Function<'_, '_, '_, '_> {
                 self.fit(value, parameter)?.value
             };
             values.push(value);
+        }
+        // call_special evaluates omitted arguments before obtaining the hidden
+        // VTT. Written arguments retain the earlier VTT evaluation boundary.
+        if hidden_vtt && written.is_empty() {
+            let vtt = self.hidden_vtt_value()?;
+            values.insert(1, vtt);
         }
         let result = self.emit_constructor_call_with_elision(
             entry,

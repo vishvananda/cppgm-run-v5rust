@@ -90,8 +90,10 @@ impl Analyzer<'_> {
             )
         } else {
             let body = self.body_context.take();
+            let context = self.closure_default_argument.take();
             let result = self.type_member_initializer(pending, initializer);
             self.body_context = body;
+            self.closure_default_argument = context;
             result
         };
         self.graph.member_initializers.0.insert(

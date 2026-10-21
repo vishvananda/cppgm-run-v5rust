@@ -401,6 +401,27 @@ impl Graph {
             .transpose()
             .map(|local| local.unwrap_or(false))
     }
+
+    /// Local-static presentation names in shared local classes and closures
+    /// use the owning function's ABI bytes, including member-default closures.
+    pub(crate) fn lower_static_owner_uses_abi_name(&self, function: EntityId) -> bool {
+        let original = self.entity(function).home;
+        let mut home = original;
+        while let Some(scope) = home {
+            let node = self.scope(scope);
+            if node.kind != ScopeKind::Class
+                || node
+                    .owner
+                    .is_some_and(|class| self.closure_call(class).is_some())
+            {
+                return node.kind == ScopeKind::Class
+                    || home != original
+                        && matches!(node.kind, ScopeKind::Block | ScopeKind::Function);
+            }
+            home = node.parent;
+        }
+        false
+    }
     pub(crate) fn lower_unnamed_member_owner(&self, function: EntityId) -> Option<ScopeId> {
         let home = self.entity(function).home?;
         if self.scope(home).kind != ScopeKind::Class {

@@ -20,6 +20,7 @@ pub(super) struct DefaultArgument {
 
 #[derive(Clone, Copy)]
 pub(super) struct PendingDefaults {
+    pub function: EntityId,
     pub clause: ast::ParameterClause,
     pub scope: ScopeId,
     pub ty: TypeId,
@@ -109,6 +110,7 @@ impl Analyzer<'_> {
         }
         if any {
             let defaults = PendingDefaults {
+                function: entity,
                 clause,
                 scope,
                 ty,
@@ -185,6 +187,7 @@ impl Analyzer<'_> {
             });
         }
         let defaults = PendingDefaults {
+            function: entity,
             clause,
             scope,
             ty,
@@ -227,6 +230,7 @@ impl Analyzer<'_> {
         defaults: PendingDefaults,
     ) -> Result<(), Error> {
         let PendingDefaults {
+            function,
             clause,
             scope,
             ty,
@@ -252,6 +256,7 @@ impl Analyzer<'_> {
         // same source-ordered queue as member bodies. No enclosing body supplies
         // an implicit object to a default argument.
         let saved_body = self.body_context.take();
+        let saved_context = self.closure_default_argument;
         let result = (|| {
             for index in 0..self.tree.parameters.get(clause.parameters).len() {
                 let syntax_item = self.tree.parameters.get(clause.parameters)[index];
@@ -265,6 +270,10 @@ impl Analyzer<'_> {
                     return Err(Error::Invariant("recorded default without expression"));
                 };
                 let target = self.graph.types.function_parameter(ty, index)?;
+                self.closure_default_argument = Some((
+                    function,
+                    u32::try_from(index).map_err(|_| Error::Limit("default argument index"))?,
+                ));
                 let result = (|| {
                     if matches!(
                         self.tree.expressions.get(expression).kind,
@@ -288,6 +297,7 @@ impl Analyzer<'_> {
             Ok(())
         })();
         self.body_context = saved_body;
+        self.closure_default_argument = saved_context;
         result
     }
 }

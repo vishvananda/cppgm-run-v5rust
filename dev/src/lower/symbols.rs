@@ -926,6 +926,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     parent,
                     terminal,
                     internal: facts.internal,
+                    data_member: false,
                     occurrence: 0,
                 },
                 &[],
@@ -1047,6 +1048,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                             parent,
                             terminal,
                             internal: false,
+                            data_member: false,
                             occurrence,
                         },
                         &[],
@@ -1132,6 +1134,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 parent: self.scope(home)?,
                 terminal: self.abi.string(self.cursor.name(name))?,
                 internal: false,
+                data_member: false,
                 occurrence: 0,
             }
         } else if let Some(view) = self.graph.lower_template_id_name(ty) {
@@ -1187,6 +1190,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 parent: Some(self.abi_type(qualifier)?),
                 terminal: self.abi.string(self.cursor.name(name))?,
                 internal: false,
+                data_member: false,
                 occurrence: 0,
             }
         } else if let Some((operand, _)) = self.graph.lower_template_operand(ty) {
@@ -1265,34 +1269,19 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 },
                 TypeView::Enum(_) | TypeView::Class(_) => {
                     let (entity, home, name) = self.graph.lower_nominal_name(ty)?;
-                    let parent =
+                    let mut parent =
                         if let Some((qualifier, _)) = self.graph.lower_dependent_template(entity) {
                             Some(self.abi_type(qualifier)?)
                         } else {
                             self.scope(home)?
                         };
-                    let terminal = if let Some(closure) = self.graph.lower_closure(entity)
+                    if self.table.object_mode {
+                        parent = self.closure_context_scope(entity, parent)?;
+                    }
+                    let terminal = if self.graph.lower_closure(entity).is_some()
                         && self.graph.lower_numbered_closure(entity)
                     {
-                        let facts = self.function_facts(closure.call)?;
-                        let TypeView::Function { parameters, .. } =
-                            self.graph.lower_type(facts.ty)?
-                        else {
-                            return Err(
-                                crate::sema::Error::Invariant("closure ABI signature").into()
-                            );
-                        };
-                        let mut nodes = Vec::with_capacity(parameters.len());
-                        for &parameter in parameters {
-                            nodes.push(self.abi_type(parameter)?);
-                        }
-                        self.abi.intern(
-                            Node::ClosureName {
-                                number: u32::from(closure.course_number),
-                                variadic: false,
-                            },
-                            &nodes,
-                        )?
+                        self.closure_abi_name(entity)?
                     } else if let Some(name) = name {
                         self.abi.string(self.cursor.name(name))?
                     } else {
@@ -1313,6 +1302,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                             parent,
                             terminal,
                             internal: false,
+                            data_member: false,
                             occurrence,
                         },
                         &[],
@@ -1355,6 +1345,85 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let id = self.abi.intern(node, &[]).map_err(Error::from)?;
         self.finish_abi_type(ty, id)
     }
+    fn closure_abi_name(&mut self, class: EntityId) -> Result<NodeId, Error> {
+        let closure = self
+            .graph
+            .lower_closure(class)
+            .ok_or(crate::sema::Error::Invariant("closure ABI owner"))?;
+        let facts = self.function_facts(closure.call)?;
+        let TypeView::Function {
+            parameters,
+            variadic,
+            ..
+        } = self.graph.lower_type(facts.ty)?
+        else {
+            return Err(crate::sema::Error::Invariant("closure ABI signature").into());
+        };
+        let mut nodes = Vec::with_capacity(parameters.len());
+        for &parameter in parameters {
+            nodes.push(self.abi_type(parameter)?);
+        }
+        Ok(self.abi.intern(
+            Node::ClosureName {
+                number: u32::from(if self.table.object_mode {
+                    closure.object_number
+                } else {
+                    closure.course_number
+                }),
+                variadic: self.table.object_mode && variadic,
+            },
+            &nodes,
+        )?)
+    }
+
+    fn closure_context_scope(
+        &mut self,
+        class: EntityId,
+        parent: Option<NodeId>,
+    ) -> Result<Option<NodeId>, Error> {
+        use crate::sema::lowering::ClosureNamingContext;
+        let Some(context) = self
+            .graph
+            .lower_closure(class)
+            .and_then(|facts| facts.naming_context)
+        else {
+            return Ok(parent);
+        };
+        let node = match context {
+            ClosureNamingContext::DataMember(member) => {
+                let facts = self.graph.lower_variable(member)?;
+                let name = facts
+                    .name
+                    .ok_or(crate::sema::Error::Invariant("closure member name"))?;
+                Node::Name {
+                    parent,
+                    terminal: self.abi.string(self.cursor.name(name))?,
+                    internal: false,
+                    data_member: true,
+                    occurrence: 0,
+                }
+            }
+            ClosureNamingContext::DefaultArgument { function, index } => {
+                let facts = self.function_facts(function)?;
+                let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
+                    return Err(crate::sema::Error::Invariant("closure context signature").into());
+                };
+                let count =
+                    u32::try_from(parameters.len()).map_err(|_| crate::lowir::Error::Limit)?;
+                Node::FunctionScope {
+                    encoding: self.function_encoding(function)?,
+                    default_argument: count
+                        .checked_sub(index)
+                        .filter(|&number| number != 0)
+                        .ok_or(crate::sema::Error::Invariant(
+                            "closure default argument index",
+                        ))?,
+                }
+            }
+        };
+        Ok(Some(self.abi.intern(node, &[])?))
+    }
+
     fn expansion_abi_node(&mut self, pattern: TypeId) -> Result<Node, Error> {
         if self.graph.lower_value_argument(pattern) {
             let operand = if let Some(index) = self.graph.lower_template_parameter(pattern) {
@@ -1719,6 +1788,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 internal: facts.name.is_some()
                     && facts.internal
                     && !self.graph.lower_anonymous_namespace(facts.home),
+                data_member: false,
                 occurrence: 0,
             },
             &[],
@@ -1911,7 +1981,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let weak = self.metadata(program, function, &owner_name)?.binding == Some(Binding::Weak);
         let instantiated = self.graph.lower_function_instantiated(function);
         let owner_name =
-            if instantiated || weak && self.graph.lower_function_local_class(function)? {
+            if instantiated || weak && self.graph.lower_static_owner_uses_abi_name(function) {
                 let metadata = self.metadata(program, function, &owner_name)?;
                 let object = metadata.object.ok_or(crate::sema::Error::Invariant(
                     "instantiated function without object name",
@@ -1986,6 +2056,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 parent: Some(parent),
                 terminal,
                 internal: false,
+                data_member: false,
                 occurrence,
             },
             &[],
@@ -2647,6 +2718,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     parent: None,
                     terminal,
                     internal: false,
+                    data_member: false,
                     occurrence: 0,
                 },
                 &[],
@@ -2708,6 +2780,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     internal: facts.declared_linkage
                         == crate::sema::lowering::DeclaredLinkage::Internal
                         && !self.graph.lower_anonymous_namespace(facts.home),
+                    data_member: false,
                     occurrence: 0,
                 },
                 &[],

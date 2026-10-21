@@ -37,6 +37,7 @@ struct Context {
     owner: Option<EntityId>,
     operand_home: Option<ScopeId>,
     default_scope: Option<ScopeId>,
+    closure_default_argument: Option<(EntityId, u32)>,
     friend: Option<ScopeId>,
     initializing: Option<EntityId>,
     initializing_declarator: Option<ast::DeclaratorId>,
@@ -69,6 +70,10 @@ impl Context {
         swap(
             &mut self.default_scope,
             &mut analyzer.default_argument_scope,
+        );
+        swap(
+            &mut self.closure_default_argument,
+            &mut analyzer.closure_default_argument,
         );
         swap(&mut self.friend, &mut analyzer.namespace_friend_class);
         swap(&mut self.initializing, &mut analyzer.initializing);
@@ -179,11 +184,17 @@ mod tests {
         analyzer.operand_home = Some(analyzer.graph.global);
         analyzer.initializing_declarator = Some(declarator);
         analyzer.declaration_access.before_owner_declarator = true;
+        let function = analyzer
+            .graph
+            .add_entity(None, None, crate::lex::vocabulary::Keyword::Int)
+            .unwrap();
+        analyzer.closure_default_argument = Some((function, 2));
         let result = analyzer.instantiation_context(2047, SourceOffset(0), 0, |inner| {
             assert_eq!(inner.instantiation_depth, 2048);
             assert!(inner.operand_home.is_none());
             assert!(inner.initializing_declarator.is_none());
             assert!(!inner.declaration_access.before_owner_declarator);
+            assert!(inner.closure_default_argument.is_none());
             inner.note_dependent_use();
             Ok(())
         });
@@ -193,6 +204,7 @@ mod tests {
         assert_eq!(analyzer.operand_home, Some(analyzer.graph.global));
         assert_eq!(analyzer.initializing_declarator, Some(declarator));
         assert!(analyzer.declaration_access.before_owner_declarator);
+        assert_eq!(analyzer.closure_default_argument, Some((function, 2)));
         let result = analyzer.instantiation_context(0, SourceOffset(0), 0, |inner| {
             assert!(inner.initializing_declarator.is_none());
             inner.note_dependent_use();
@@ -201,6 +213,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(analyzer.dependent_uses.get(), 11);
         assert_eq!(analyzer.initializing_declarator, Some(declarator));
+        assert_eq!(analyzer.closure_default_argument, Some((function, 2)));
         let result =
             analyzer.instantiation_context(2048, SourceOffset(0), 0, |_| -> Result<(), Error> {
                 panic!("logical limit must precede instantiation");

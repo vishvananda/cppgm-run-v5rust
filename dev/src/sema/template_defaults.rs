@@ -405,7 +405,9 @@ impl Analyzer<'_> {
                 self.instantiation_depth,
                 location,
                 limit,
-                |analyzer| analyzer.form_default(default.expression, target, scope, limit),
+                |analyzer| {
+                    analyzer.form_default(default.expression, target, scope, limit, entity, index)
+                },
             );
             if let Err(error) = result {
                 self.graph
@@ -436,7 +438,7 @@ impl Analyzer<'_> {
         let frame = self.template_body_frame(entity, pattern.head, pattern.scope)?;
         let copy = self.copy_expression_in_frame(default.expression, frame)?;
         let target = self.graph.types.function_parameter(ty, index)?;
-        self.form_default(copy, target, frame, pattern.limit)?;
+        self.form_default(copy, target, frame, pattern.limit, entity, index)?;
         let count = self.graph.types.function_parameter_count(ty)?;
         self.graph.entity_mut(entity).defaults.resize(count, None);
         self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
@@ -453,10 +455,14 @@ impl Analyzer<'_> {
         target: super::types::TypeId,
         frame: ScopeId,
         limit: usize,
+        function: EntityId,
+        index: usize,
     ) -> Result<(), Error> {
+        let index = u32::try_from(index).map_err(|_| Error::Limit("default argument index"))?;
         // The default belongs to its declaring scope, with no caller locals or
         // implicit object. Instantiation is evaluated even inside sizeof/noexcept.
         let saved_body = self.body_context.take();
+        let saved_context = self.closure_default_argument.replace((function, index));
         let saved_limit = self.graph.lookup_limit.replace(limit);
         let saved_scope = self.default_argument_scope.replace(frame);
         let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 0);
@@ -486,6 +492,7 @@ impl Analyzer<'_> {
             }
         })();
         self.body_context = saved_body;
+        self.closure_default_argument = saved_context;
         self.graph.lookup_limit = saved_limit;
         self.default_argument_scope = saved_scope;
         self.unevaluated = saved_unevaluated;

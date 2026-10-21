@@ -20,6 +20,13 @@ pub(crate) enum ClosureContext {
     MemberSpecification(EntityId),
     StaticMemberInitializer(EntityId),
 }
+/// Itanium object naming keeps each member initializer and default parameter
+/// separate. Course `LowIR` retains its historical class-wide numbering.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ClosureNamingContext {
+    DataMember(EntityId),
+    DefaultArgument { function: EntityId, index: u32 },
+}
 #[derive(Clone, Copy)]
 pub(crate) struct Closure {
     pub call: EntityId,
@@ -29,6 +36,8 @@ pub(crate) struct Closure {
     pub context: ClosureContext,
     pub ordinal: u32,
     pub course_number: u16,
+    pub object_number: u16,
+    pub naming_context: Option<ClosureNamingContext>,
     deduces: bool,
     pub clause_token: u32,
     pub body_token: u32,
@@ -45,6 +54,7 @@ pub(crate) struct Capture {
 pub(super) struct Closures {
     pub(super) records: HashMap<EntityId, Closure>,
     numbers: HashMap<(Option<EntityId>, TypeId), u32>,
+    context_numbers: HashMap<(ClosureNamingContext, TypeId, bool), u32>,
     invocations: HashMap<ast::ExprId, EntityId>,
     pub(super) captures: HashMap<EntityId, Vec<Capture>>,
 }
@@ -325,34 +335,9 @@ impl Analyzer<'_> {
             self.declare_closure_call(class_scope, lambda, parameters, scope, location)?;
         let enclosing = self.body_context.as_ref().map(|body| body.entity);
         let context = self.closure_context(home);
-        let canonical = self.graph.types.canonical_function(ty)?;
-        let TypeKind::Function {
-            parameters: ref types,
-            ..
-        } = self.graph.types.get(canonical).kind
-        else {
-            return Err(Error::Invariant("closure signature"));
-        };
-        let mut signature = types.clone();
-        if let ClosureContext::MemberSpecification(class) = context
-            && self.graph.class_templates.instance(class).is_none()
-        {
-            signature.insert(0, self.graph.lower_entity_type(class)?);
-        }
-        let key = self
-            .graph
-            .types
-            .intern(TypeKind::Pack(signature), Cv::default())?;
-        let count = self
-            .graph
-            .closures
-            .numbers
-            .entry((enclosing, key))
-            .or_default();
-        let earlier = *count;
-        *count = count
-            .checked_add(1)
-            .ok_or(Error::Limit("closure numbering limit"))?;
+        let naming_context = self.closure_naming_context(home);
+        let (course_number, object_number) =
+            self.number_closure(ty, enclosing, context, naming_context)?;
         self.graph.closures.records.insert(
             class,
             Closure {
@@ -362,7 +347,9 @@ impl Analyzer<'_> {
                 enclosing,
                 context,
                 ordinal,
-                course_number: u16::try_from(earlier).unwrap_or(u16::MAX),
+                course_number,
+                object_number,
+                naming_context,
                 deduces: lambda.trailing.is_none(),
                 clause_token: lambda.clause_token,
                 body_token: lambda.body_token,
@@ -474,6 +461,91 @@ impl Analyzer<'_> {
             _ => ClosureContext::None,
         }
     }
+
+    fn closure_naming_context(&self, home: ScopeId) -> Option<ClosureNamingContext> {
+        if self.body_context.is_some() || self.graph.scope(home).kind != ScopeKind::Class {
+            return None;
+        }
+        if let Some((function, index)) = self.closure_default_argument {
+            return Some(ClosureNamingContext::DefaultArgument { function, index });
+        }
+        self.initializing
+            .filter(|&variable| {
+                self.graph.entity(variable).data_member
+                    == Some(super::graph::DataMemberKind::Instance)
+                    || self.graph.variable_instances.instance(variable)
+            })
+            .map(ClosureNamingContext::DataMember)
+    }
+
+    fn number_closure(
+        &mut self,
+        ty: TypeId,
+        enclosing: Option<EntityId>,
+        context: ClosureContext,
+        naming_context: Option<ClosureNamingContext>,
+    ) -> Result<(u16, u16), Error> {
+        let canonical = self.graph.types.canonical_function(ty)?;
+        let TypeKind::Function {
+            parameters,
+            variadic,
+            ..
+        } = &self.graph.types.get(canonical).kind
+        else {
+            return Err(Error::Invariant("closure signature"));
+        };
+        let variadic = *variadic;
+        let mut signature = parameters.clone();
+        let parameter_key = self
+            .graph
+            .types
+            .intern(TypeKind::Pack(signature.clone()), Cv::default())?;
+        if let ClosureContext::MemberSpecification(class) = context
+            && self.graph.class_templates.instance(class).is_none()
+        {
+            signature.insert(0, self.graph.lower_entity_type(class)?);
+        }
+        let key = self
+            .graph
+            .types
+            .intern(TypeKind::Pack(signature.clone()), Cv::default())?;
+        signature.push(self.graph.types.scalar(Scalar::Void)?);
+        let variadic_key = self
+            .graph
+            .types
+            .intern(TypeKind::Pack(signature), Cv::default())?;
+        let course_number = next_closure_number(
+            self.graph
+                .closures
+                .numbers
+                .entry((enclosing, key))
+                .or_default(),
+        )?;
+        let earlier_variadic = self
+            .graph
+            .closures
+            .numbers
+            .entry((enclosing, variadic_key))
+            .or_default();
+        let object_number = if variadic {
+            next_closure_number(earlier_variadic)?
+        } else {
+            u16::try_from(u32::from(course_number).saturating_sub(*earlier_variadic))
+                .map_err(|_| Error::Invariant("closure number range"))?
+        };
+        let object_number = if let Some(context) = naming_context {
+            next_closure_number(
+                self.graph
+                    .closures
+                    .context_numbers
+                    .entry((context, parameter_key, variadic))
+                    .or_default(),
+            )?
+        } else {
+            object_number
+        };
+        Ok((course_number, object_number))
+    }
     fn declare_closure_call(
         &mut self,
         class_scope: ScopeId,
@@ -556,6 +628,14 @@ impl Analyzer<'_> {
     }
 }
 
+fn next_closure_number(count: &mut u32) -> Result<u16, Error> {
+    let earlier = u16::try_from(*count).unwrap_or(u16::MAX);
+    *count = count
+        .checked_add(1)
+        .ok_or(Error::Limit("closure numbering limit"))?;
+    Ok(earlier)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -564,6 +644,116 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn closure_numbers_separate_object_signatures_and_member_contexts() {
+        let source = SourceBuffer::new(
+            b"inline int f(){auto a=[](...){return 1;};auto b=[]{return 2;};\
+              auto c=[](...){return 3;};auto d=[]{return 4;};return a()+b()+c()+d();}\
+              struct A{int m=[]{return 1;}();int n=[]{return 2;}();\
+              int g(int x=[]{return 3;}()){return x;}\
+              int h(int x=[]{return 4;}()){return x;}};\
+              int main(){A a;return f()+a.g()+a.h()+a.m+a.n;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"closure-number-contexts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut local: Vec<_> = graph
+            .closures
+            .records
+            .values()
+            .filter(|closure| closure.enclosing.is_some())
+            .collect();
+        local.sort_unstable_by_key(|closure| closure.ordinal);
+        assert_eq!(local.len(), 4);
+        assert_eq!(
+            local
+                .iter()
+                .map(|closure| closure.course_number)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            local
+                .iter()
+                .map(|closure| closure.object_number)
+                .collect::<Vec<_>>(),
+            [0, 0, 1, 1]
+        );
+        assert!(local.iter().all(|closure| closure.naming_context.is_none()));
+        let members: Vec<_> = graph
+            .closures
+            .records
+            .values()
+            .filter(|closure| closure.enclosing.is_none())
+            .collect();
+        assert_eq!(members.len(), 4);
+        let mut numbers: Vec<_> = members
+            .iter()
+            .map(|closure| closure.course_number)
+            .collect();
+        numbers.sort_unstable();
+        assert_eq!(numbers, [0, 1, 2, 3]);
+        let contexts: std::collections::HashSet<_> = members
+            .iter()
+            .map(|closure| closure.naming_context.unwrap())
+            .collect();
+        assert_eq!(contexts.len(), 4);
+        assert_eq!(
+            contexts
+                .iter()
+                .filter(|context| matches!(context, ClosureNamingContext::DataMember(_)))
+                .count(),
+            2
+        );
+        assert!(members.iter().all(|closure| closure.object_number == 0));
+    }
+
+    #[test]
+    fn nested_member_initializers_mask_the_surrounding_default_context() {
+        let source = SourceBuffer::new(
+            b"struct A{int f(int v=[]{struct B{int n=[]{return 1;}();\
+              int g(int n=[]{return 2;}()){return n;}};B b;return b.n+b.g();}())\
+              {return v;}};int main(){A a;return a.f();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"nested-closure-contexts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(graph.closures.records.len(), 3);
+        let contexts: std::collections::HashSet<_> = graph
+            .closures
+            .records
+            .values()
+            .map(|closure| closure.naming_context.unwrap())
+            .collect();
+        assert_eq!(contexts.len(), 3);
+        assert_eq!(
+            contexts
+                .iter()
+                .filter(|context| matches!(context, ClosureNamingContext::DataMember(_)))
+                .count(),
+            1
+        );
+        assert!(
+            graph
+                .closures
+                .records
+                .values()
+                .all(|closure| closure.object_number == 0)
+        );
+    }
 
     #[test]
     fn instantiated_lambda_bodies_get_private_facts_and_distinct_canonical_classes() {

@@ -13,6 +13,7 @@ pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::expression_facts::ExpressionOrigin;
 pub(crate) use super::expression_keys::{KeyNode, KeyWord};
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
+pub(crate) use super::lambdas::ClosureNamingContext;
 pub(crate) use super::literal_calls::LiteralCall;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
@@ -1259,9 +1260,9 @@ impl Graph {
                 && self.lower_closure(entity).is_some()
                 && !self.closure_member_context(entity)
                 && !(object_mode
-                    && self.lower_closure(entity).is_some_and(|closure| {
-                        !matches!(closure.context, super::lambdas::ClosureContext::None)
-                    }))
+                    && self
+                        .lower_closure(entity)
+                        .is_some_and(|closure| closure.naming_context.is_some()))
             {
                 return Ok(true);
             }
