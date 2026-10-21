@@ -189,6 +189,9 @@ pub(super) fn select(
             selection.location = body.location(inst);
             match inst.kind {
                 I::Phi(..) => {}
+                I::Runtime(ref runtime) => {
+                    selection.exception(inst.result, runtime, &control.targets)?;
+                }
                 I::Load(_, Type::I128, address) => {
                     selection.wide_load(inst.result.ok_or(Error::Limit)?, address)?;
                 }
@@ -257,7 +260,7 @@ pub(super) fn select(
                     op: Op::Trap,
                     location: selection.location,
                 }),
-                _ => return Err(unsupported()),
+                I::Const(..) => return Err(unsupported()),
             }
             let (late, early) = selection.facts.clobbers[pos];
             selection.placement.note_clobbers(late | early);

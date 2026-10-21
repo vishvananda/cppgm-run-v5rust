@@ -107,6 +107,7 @@ pub(super) enum Op {
     FloatCopy(super::float_transport::FloatCopy),
     Floating(super::floating_mir::FloatingOp),
     Convert(super::conversion::Conversion),
+    Exception(super::exception::ExceptionOp),
     WideMove {
         destination: Operand,
         source: Operand,
@@ -379,6 +380,9 @@ impl Function {
             Op::FloatCopy(op) => op.write(program, out)?,
             Op::Floating(op) => op.write(program, out)?,
             Op::Convert(op) => op.write(program, out)?,
+            Op::Exception(op) => {
+                op.write(program, out, |target, out| self.label(program, target, out))?;
+            }
             Op::WideMove {
                 destination,
                 source,
@@ -415,8 +419,12 @@ impl Function {
         writeln!(out)?;
         Ok(())
     }
-    pub(super) fn emit(&self, image: &mut Image) -> Result<Emission, Error> {
-        super::emission::emit(self, image)
+    pub(super) fn emit(
+        &self,
+        image: &mut Image,
+        runtime: Option<super::runtime::Symbols>,
+    ) -> Result<Emission, Error> {
+        super::emission::emit(self, image, runtime)
     }
 }
 

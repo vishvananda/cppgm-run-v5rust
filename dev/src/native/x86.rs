@@ -347,6 +347,17 @@ impl Assembler {
     pub(super) fn lea(&mut self, dst: Register, src: Rm) -> Result<(), Error> {
         self.op(0, true, 0x8d, 1, dst.0, src, false, 0)
     }
+    pub(super) fn lea_label(&mut self, dst: Register, label: Label) {
+        self.byte(0x48 | if dst.code() & 8 != 0 { 4 } else { 0 });
+        self.byte(0x8d);
+        self.byte(5 | ((dst.code() & 7) << 3));
+        self.references.push(LabelReference {
+            offset: self.code.len(),
+            label,
+            bytes: 4,
+        });
+        self.imm(0, 4);
+    }
     pub(super) fn alu_rr(
         &mut self,
         digit: u8,

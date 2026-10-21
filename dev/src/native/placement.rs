@@ -375,7 +375,7 @@ impl Placement {
                 .fold(0, |mask, p| mask | (1 << p))
         } else {
             let preds = facts.flow.predecessors(block);
-            if preds.is_empty() {
+            if preds.is_empty() || facts.flow.handlers[block.index()] {
                 0
             } else {
                 preds.iter().fold(u32::MAX, |mask, b| {

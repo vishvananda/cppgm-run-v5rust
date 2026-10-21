@@ -10,6 +10,7 @@ pub(super) struct Flow {
     pub(super) blocks: Vec<BlockId>,
     pub(super) ranges: Vec<Range<usize>>,
     pub(super) reachable: Vec<bool>,
+    pub(super) handlers: Vec<bool>,
     pub(super) linear: Vec<usize>,
     pub(super) positions: Vec<usize>,
     successors: Vec<BlockId>,
@@ -25,6 +26,7 @@ impl Flow {
             blocks: Vec::with_capacity(body.instructions().len()),
             ranges: vec![0..0; count],
             reachable: vec![false; count],
+            handlers: vec![false; count],
             linear: vec![0; count],
             positions: vec![0; body.instructions().len()],
             successors: Vec::new(),
@@ -64,10 +66,30 @@ impl Flow {
             return Err(Error::Limit);
         };
         let mut work = vec![entry];
+        let mut handlers = Vec::new();
+        let mut handler_first = vec![0; count + 1];
+        for (index, block) in body.blocks().iter().enumerate() {
+            handler_first[index] = handlers.len();
+            for &id in &block.instructions {
+                if let I::Runtime(runtime) = &body.instruction(id).kind
+                    && let Some(target) = runtime.handler_target()
+                {
+                    handlers.push(target);
+                }
+            }
+        }
+        handler_first[count] = handlers.len();
         out.reachable[entry.index()] = true;
         while let Some(block) = work.pop() {
             for index in out.succ_first[block.index()]..out.succ_first[block.index() + 1] {
                 let next = out.successors[index];
+                if !out.reachable[next.index()] {
+                    out.reachable[next.index()] = true;
+                    work.push(next);
+                }
+            }
+            for &next in &handlers[handler_first[block.index()]..handler_first[block.index() + 1]] {
+                out.handlers[next.index()] = true;
                 if !out.reachable[next.index()] {
                     out.reachable[next.index()] = true;
                     work.push(next);

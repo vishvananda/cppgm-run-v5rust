@@ -117,6 +117,7 @@ struct Branch {
     label: Label,
 }
 struct Pass<'a> {
+    runtime: Option<super::runtime::Symbols>,
     function: &'a Function,
     assembler: Assembler,
     labels: Vec<Label>,
@@ -128,7 +129,12 @@ struct Pass<'a> {
     stats: Emission,
 }
 impl<'a> Pass<'a> {
-    fn new(function: &'a Function, order: &Order, short: &'a [bool]) -> Result<Self, Error> {
+    fn new(
+        function: &'a Function,
+        order: &Order,
+        short: &'a [bool],
+        runtime: Option<super::runtime::Symbols>,
+    ) -> Result<Self, Error> {
         let mut assembler = Assembler::default();
         let mut labels = Vec::with_capacity(function.blocks.len());
         for _ in &function.blocks {
@@ -139,6 +145,7 @@ impl<'a> Pass<'a> {
             labels[block] = labels[target];
         }
         Ok(Self {
+            runtime,
             function,
             assembler,
             labels,
@@ -252,6 +259,11 @@ impl<'a> Pass<'a> {
     ) -> Result<(), Error> {
         let f = self.function;
         match op {
+            Op::Exception(op) => op.rebase(f.aligned_disp, f.aligned_bytes).emit(
+                &mut self.assembler,
+                self.runtime.ok_or(Error::Limit)?,
+                &self.labels,
+            )?,
             Op::Jump(target) => self.branch(None, self.labels[target.index()]),
             Op::Branch(cond, target) => self.branch(Some(cond.code()), self.labels[target.index()]),
             Op::Move(reg, bits) => {
@@ -344,11 +356,15 @@ impl<'a> Pass<'a> {
         Ok(())
     }
 }
-pub(super) fn emit(function: &Function, image: &mut Image) -> Result<Emission, Error> {
+pub(super) fn emit(
+    function: &Function,
+    image: &mut Image,
+    runtime: Option<super::runtime::Symbols>,
+) -> Result<Emission, Error> {
     let base = image.align_text()?;
     image.define(ImageSymbol::Program(function.symbol), Section::Text, base);
     let order = Order::new(function);
-    let mut pass = Pass::new(function, &order, &[])?;
+    let mut pass = Pass::new(function, &order, &[], runtime)?;
     pass.run(image, &order)?;
     let mut short = Vec::with_capacity(pass.branches.len());
     for branch in &pass.branches {
@@ -361,7 +377,7 @@ pub(super) fn emit(function: &Function, image: &mut Image) -> Result<Emission, E
         short.push(i8::try_from(displacement).is_ok());
     }
     if short.iter().any(|&short| short) {
-        pass = Pass::new(function, &order, &short)?;
+        pass = Pass::new(function, &order, &short, runtime)?;
         pass.run(image, &order)?;
     }
     pass.assembler.resolve()?;
@@ -402,7 +418,7 @@ mod tests {
         let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
         let mir = super::super::value_selection::select(&program, symbol, function, 0)?;
         let mut image = Image::new(program.symbols().len());
-        emit(&mir, &mut image)?;
+        emit(&mir, &mut image, None)?;
         assert_eq!(
             image
                 .text
@@ -435,7 +451,7 @@ mod tests {
         let mir = super::super::value_selection::select(&program, symbol, function, 0)?;
         assert_eq!(mir.blocks.len(), 3);
         let mut image = Image::new(program.symbols().len());
-        let stats = emit(&mir, &mut image)?;
+        let stats = emit(&mir, &mut image, None)?;
         assert_eq!(stats.returns, 2);
         assert_eq!(stats.short_branches, 2);
         assert_eq!(stats.long_branches, 0);

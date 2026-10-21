@@ -109,6 +109,24 @@ impl Globals {
             steps: 0,
             fallbacks: 0,
         };
+        if facts
+            .flow
+            .instructions
+            .iter()
+            .enumerate()
+            .any(|(pos, &id)| {
+                facts.active[pos]
+                    && matches!(
+                        body.instruction(id).kind,
+                        I::Runtime(
+                            crate::lowir::model::RuntimeInstruction::EhTry(_)
+                                | crate::lowir::model::RuntimeInstruction::EhCleanup(_)
+                        )
+                    )
+            })
+        {
+            return Ok(out);
+        }
         let mut candidates = Vec::new();
         for (index, temp) in body.temps().iter().enumerate() {
             if !facts.global[index]

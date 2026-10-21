@@ -11,17 +11,37 @@ pub(super) struct Runtime {
     selector: ImageSymbol,
     dispatch: ImageSymbol,
     uncaught: ImageSymbol,
+    payload: ImageSymbol,
+    catch: ImageSymbol,
+}
+#[derive(Clone, Copy)]
+pub(super) struct Symbols {
+    pub(super) top: ImageSymbol,
+    pub(super) payload: ImageSymbol,
+    pub(super) selector: ImageSymbol,
+    pub(super) dispatch: ImageSymbol,
+    pub(super) catch: ImageSymbol,
 }
 impl Runtime {
+    pub(super) fn symbols(&self) -> Symbols {
+        Symbols {
+            top: self.top,
+            payload: self.payload,
+            selector: self.selector,
+            dispatch: self.dispatch,
+            catch: self.catch,
+        }
+    }
     pub(super) fn declare(image: &mut Image) -> Result<Self, Error> {
         let top = image.bss_symbol(8, 8)?;
-        let _ = image.bss_symbol(16, 16)?; // exception payload, before the selector
+        let payload = image.bss_symbol(16, 16)?;
         let selector = image.bss_symbol(8, 8)?;
         let dispatch = image.local()?;
         let uncaught = image.local()?;
         // Catch, integer division and floating conversion symbols are reserved
         // here as in the frozen runtime; their definitions belong to link mode.
-        for _ in 0..17 {
+        let catch = image.local()?;
+        for _ in 0..16 {
             let _ = image.local()?;
         }
         Ok(Self {
@@ -29,6 +49,8 @@ impl Runtime {
             selector,
             dispatch,
             uncaught,
+            payload,
+            catch,
         })
     }
     fn dispatcher(&self, image: &mut Image) -> Result<(), Error> {

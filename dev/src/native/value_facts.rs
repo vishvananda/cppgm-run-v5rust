@@ -252,6 +252,7 @@ impl Facts {
                     | I::Compare(..)
                     | I::Convert(..)
                     | I::Select(..)
+                    | I::Runtime(Runtime::ExceptionSelector(_) | Runtime::StackAlloc(_))
             ) || matches!(inst.kind,I::Load(flags,_,_) if !flags.volatile());
             if pure && inst.result.is_some_and(|r| uses[r.index()] == 0) {
                 facts.active[pos] = false;
@@ -540,7 +541,21 @@ impl Facts {
                 0
             };
             let call = calls.and_then(|c| c.at(pos));
-            let clobber = fixed | call.map_or(0, |_| super::abi::CALLER_SAVED | 0xffff_0000);
+            let runtime_call = matches!(
+                inst.kind,
+                I::Runtime(
+                    Runtime::Throw(..)
+                        | Runtime::Resume
+                        | Runtime::EhCatch(..)
+                        | Runtime::EhCatchAll(_)
+                )
+            );
+            let clobber = fixed
+                | if call.is_some() || runtime_call {
+                    super::abi::CALLER_SAVED | 0xffff_0000
+                } else {
+                    0
+                };
             let before = fixed | call.map_or(0, |c| c.early);
             self.clobbers[pos] = (clobber, before);
             for reg in 0..32 {

@@ -15,6 +15,7 @@ mod conversion;
 mod conversion_selection;
 mod division;
 mod emission;
+mod exception;
 mod executable;
 mod float_transport;
 mod floating_mir;
@@ -107,7 +108,7 @@ pub(crate) fn compile(program: &Program, options: &Options) -> Result<Statistics
         }
         if !options.output.as_os_str().is_empty() {
             let phase = options.stats.then(std::time::Instant::now);
-            let emitted = selected.emit(&mut image)?;
+            let emitted = selected.emit(&mut image, Some(runtime.symbols()))?;
             if let Some(phase) = phase {
                 stats.encode_ms += phase.elapsed().as_secs_f64() * 1000.0;
             }
