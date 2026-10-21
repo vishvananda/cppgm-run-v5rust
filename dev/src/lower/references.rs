@@ -282,7 +282,7 @@ impl Function<'_, '_, '_, '_> {
             (Some(types::storage(self.graph, ty)?), GlobalInit::Zero)
         };
         let storage = if let GlobalInit::Data(items) = &init {
-            super::globals::structured_type(self.graph, ty, items)?
+            super::globals::structured_type(self.graph, ty, items, self.symbols.object_mode())?
         } else {
             storage
         };

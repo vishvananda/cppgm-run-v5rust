@@ -160,6 +160,7 @@ impl Function<'_, '_, '_, '_> {
             made: Vec::new(),
         });
         if let Some(list) = listed
+            && !self.symbols.object_mode()
             && let Some(array) = self.graph.lower_initializer_array(list)
             && matches!(self.graph.lower_type(array)?, TypeView::Array { bound, .. } if bound != 0)
         {
@@ -225,7 +226,11 @@ impl Function<'_, '_, '_, '_> {
             self.register_static_finalizers(symbol, &temporaries.made, facts.ty)?;
         }
         if destroyed {
-            self.register_static_destruction(symbol, facts.ty)?;
+            self.register_destruction(
+                symbol,
+                facts.ty,
+                facts.thread_local && self.symbols.object_mode(),
+            )?;
         }
         let one = self.builder.integer(1)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, one, flag))?;
@@ -313,11 +318,22 @@ impl Function<'_, '_, '_, '_> {
         let program = self.builder.program();
         let name = program.symbol(symbol).name;
         let mut ty = if let GlobalInit::Data(items) = &init {
-            super::globals::structured_type(self.graph, facts.ty, items)?
+            super::globals::structured_type(
+                self.graph,
+                facts.ty,
+                items,
+                self.symbols.object_mode(),
+            )?
         } else {
             Some(types::storage(self.graph, facts.ty)?)
         };
-        super::globals::align_storage(self.graph, entity, &mut ty, &mut init)?;
+        super::globals::align_storage(
+            self.graph,
+            entity,
+            &mut ty,
+            &mut init,
+            self.symbols.object_mode(),
+        )?;
         program.add_global(
             symbol,
             Global {
@@ -347,6 +363,14 @@ impl Function<'_, '_, '_, '_> {
         global: crate::lowir::model::SymbolId,
         ty: crate::sema::lowering::TypeId,
     ) -> Result<(), Error> {
+        self.register_destruction(global, ty, false)
+    }
+    pub(super) fn register_destruction(
+        &mut self,
+        global: crate::lowir::model::SymbolId,
+        ty: crate::sema::lowering::TypeId,
+        thread: bool,
+    ) -> Result<(), Error> {
         let Some(finalizer) = super::shutdown::for_type(
             self.builder.program(),
             self.symbols,
@@ -358,7 +382,7 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Ok(());
         };
-        self.register_static_finalizers(global, &[finalizer], ty)
+        self.register_finalizers(global, &[finalizer], ty, thread)
     }
     fn register_static_finalizers(
         &mut self,
@@ -366,13 +390,35 @@ impl Function<'_, '_, '_, '_> {
         finalizers: &[super::shutdown::Finalizer],
         ty: crate::sema::lowering::TypeId,
     ) -> Result<(), Error> {
+        self.register_finalizers(global, finalizers, ty, false)
+    }
+    fn register_finalizers(
+        &mut self,
+        global: crate::lowir::model::SymbolId,
+        finalizers: &[super::shutdown::Finalizer],
+        ty: crate::sema::lowering::TypeId,
+        thread: bool,
+    ) -> Result<(), Error> {
         use crate::lowir::model::Call;
         let program = self.builder.program();
         let destructor = self.symbols.local_destructor_symbol(program, global)?;
         super::shutdown::local(program, destructor, finalizers)?;
         program.stream_last_definition(&mut self.symbols.generated_definitions)?;
-        let registrar = self.symbols.atexit_function(program)?;
-        let arguments = self.builder.arguments(&[Value::Symbol(destructor)])?;
+        let (registrar, arguments) = if thread {
+            let dso = self.symbols.dso_handle(program)?;
+            let registrar = self.symbols.thread_atexit_function(program)?;
+            let zero = self.builder.integer(0)?;
+            let arguments =
+                self.builder
+                    .arguments(&[Value::Symbol(destructor), zero, Value::Symbol(dso)])?;
+            (registrar, arguments)
+        } else {
+            let registrar = self.symbols.atexit_function(program)?;
+            (
+                registrar,
+                self.builder.arguments(&[Value::Symbol(destructor)])?,
+            )
+        };
         self.before_lifetime_call(false)?;
         let value = self.emit(
             I::Call(Call {
@@ -423,7 +469,12 @@ impl Function<'_, '_, '_, '_> {
                 symbols.object,
                 Global {
                     name,
-                    ty: super::globals::structured_type(self.graph, ty, &items)?,
+                    ty: super::globals::structured_type(
+                        self.graph,
+                        ty,
+                        &items,
+                        self.symbols.object_mode(),
+                    )?,
                     metadata: symbols.metadata,
                     init: GlobalInit::Data(items),
                 },

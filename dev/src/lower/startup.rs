@@ -82,7 +82,7 @@ impl Startup {
         ),
         symbols: &mut Symbols<'a, '_>,
         source: (&'a Graph, &'a ast::Tree),
-        (entity, initializer): (EntityId, Option<ast::Initializer>),
+        (entity, initializer, dynamic): (EntityId, Option<ast::Initializer>, bool),
         budget: StackBudget,
         guard: Option<Guard>,
     ) -> Result<(), Error> {
@@ -107,7 +107,7 @@ impl Startup {
             finalizers,
         });
         let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
-        let result = function.initialize_guarded_global(entity, initializer, guard);
+        let result = function.initialize_guarded_global(entity, initializer, guard, dynamic);
         function.symbols.replace_temporary_owner(saved);
         result?;
         self.next_block = function.next_block;
@@ -208,10 +208,10 @@ impl Function<'_, '_, '_, '_> {
         entity: EntityId,
         initializer: Option<ast::Initializer>,
         guard: Option<Guard>,
+        dynamic: bool,
     ) -> Result<(), Error> {
         let Some(guard) = guard else {
-            self.initialize_global(entity, initializer)?;
-            return self.destroy_temporaries(0);
+            return self.initialize_and_register_global(entity, initializer, dynamic);
         };
         let ty = self.graph.lower_entity_type(entity)?;
         let flag = Value::Symbol(guard.shared);
@@ -245,8 +245,7 @@ impl Function<'_, '_, '_, '_> {
             one,
             flag,
         ))?;
-        self.initialize_global(entity, initializer)?;
-        self.destroy_temporaries(0)?;
+        self.initialize_and_register_global(entity, initializer, dynamic)?;
         if let Some(constructed) = guard.constructed {
             let one = self.builder.integer(1)?;
             self.effect(I::Store(
@@ -258,6 +257,24 @@ impl Function<'_, '_, '_, '_> {
         }
         self.jump(done)?;
         self.place(done)
+    }
+    fn initialize_and_register_global(
+        &mut self,
+        entity: EntityId,
+        initializer: Option<ast::Initializer>,
+        dynamic: bool,
+    ) -> Result<(), Error> {
+        if dynamic {
+            self.initialize_global(entity, initializer)?;
+            self.destroy_temporaries(0)?;
+        }
+        if self.symbols.object_mode() {
+            let symbol = self
+                .symbols
+                .variable_symbol(self.builder.program(), entity)?;
+            self.register_static_destruction(symbol, self.graph.lower_entity_type(entity)?)?;
+        }
+        Ok(())
     }
     pub(super) fn initialize_global(
         &mut self,

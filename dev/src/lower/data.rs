@@ -143,7 +143,7 @@ fn constant_temporary<'a>(
     let mut data = items(output, symbols, graph, tree, image)?;
     preserve_static_offsets(&mut data)?;
     let storage = if aggregate {
-        super::globals::structured_type(graph, ty, &data)?
+        super::globals::structured_type(graph, ty, &data, symbols.object_mode())?
     } else {
         Some(types::storage(graph, ty)?)
     };
@@ -533,7 +533,7 @@ pub(super) fn reference_temporary<'a>(
         Global {
             name,
             ty: if let GlobalInit::Data(items) = &init {
-                super::globals::structured_type(graph, ty, items)?
+                super::globals::structured_type(graph, ty, items, symbols.object_mode())?
             } else {
                 Some(types::storage(graph, ty)?)
             },

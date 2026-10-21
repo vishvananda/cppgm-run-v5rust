@@ -146,6 +146,13 @@ fn define_variable_contents<'a>(
     budget: crate::support::stack::StackBudget,
 ) -> Result<(), Error> {
     let initialization = define(output, symbols, graph, tree, entity, initializer, location)?;
+    // Namespace TLS uses its separate first-use scheduler. Until that object
+    // dialect is translated, retain the existing guarded finalization path.
+    let registered = symbols.object_mode()
+        && !graph.lower_variable(entity)?.thread_local
+        && symbols
+            .storage_destructor(graph.lower_entity_type(entity)?)?
+            .is_some();
     let mut thread_initialization = None;
     let mut constructed = None;
     if initialization == Initialization::Dynamic && graph.lower_variable(entity)?.thread_local {
@@ -157,13 +164,14 @@ fn define_variable_contents<'a>(
             initializer,
             budget,
         )?);
-    } else if initialization == Initialization::Dynamic {
+    } else if initialization == Initialization::Dynamic || registered {
         let guard = if graph.lower_variable(entity)?.emission
             == crate::sema::lowering::Emission::Demanded
         {
-            if symbols
-                .storage_destructor(graph.lower_entity_type(entity)?)?
-                .is_some()
+            if !registered
+                && symbols
+                    .storage_destructor(graph.lower_entity_type(entity)?)?
+                    .is_some()
             {
                 constructed = Some(symbols.instance_constructed(output.program, entity)?);
             }
@@ -178,7 +186,11 @@ fn define_variable_contents<'a>(
             (output.program, output.definitions, output.finalizers),
             symbols,
             (graph, tree),
-            (entity, initializer),
+            (
+                entity,
+                initializer,
+                initialization == Initialization::Dynamic,
+            ),
             budget,
             guard,
         )?;
@@ -188,14 +200,16 @@ fn define_variable_contents<'a>(
     {
         let facts = graph.lower_variable(entity)?;
         let global = symbols.variable_symbol(output.program, entity)?;
-        if let Some(mut finalizer) = super::shutdown::for_type(
-            output.program,
-            symbols,
-            graph,
-            global,
-            facts.ty,
-            thread_initialization.map(|(guard, _)| guard),
-        )? {
+        if !registered
+            && let Some(mut finalizer) = super::shutdown::for_type(
+                output.program,
+                symbols,
+                graph,
+                global,
+                facts.ty,
+                thread_initialization.map(|(guard, _)| guard),
+            )?
+        {
             finalizer.constructed = constructed;
             output.finalizers.push(finalizer);
         }
@@ -397,9 +411,9 @@ fn define_storage<'a>(
         symbols.demand_reference_initializer_calls(graph, tree, initializer)?;
     }
     if let GlobalInit::Data(items) = &init {
-        ty = structured_type(graph, facts.ty, items)?;
+        ty = structured_type(graph, facts.ty, items, symbols.object_mode())?;
     }
-    align_storage(graph, entity, &mut ty, &mut init)?;
+    align_storage(graph, entity, &mut ty, &mut init, symbols.object_mode())?;
     if !dynamic && !facts.thread_local && symbols.readonly_object(facts.ty)? {
         metadata.storage = Some(Storage::ReadOnly);
     }
@@ -463,14 +477,15 @@ pub(super) fn align_storage(
     entity: EntityId,
     storage: &mut Option<crate::lowir::vocabulary::Type>,
     init: &mut GlobalInit,
+    object_mode: bool,
 ) -> Result<(), Error> {
     use crate::lowir::{model::DataItem, vocabulary::Type};
     let ty = graph.lower_entity_type(entity)?;
-    let requested = u64::from(graph.lower_requested_alignment(entity));
-    if requested == 0 {
-        return Ok(());
-    }
     let (size, natural) = types::layout(graph, ty)?;
+    let mut requested = u64::from(graph.lower_requested_alignment(entity));
+    if object_mode && size >= 16 && matches!(graph.lower_type(ty)?, TypeView::Array { .. }) {
+        requested = requested.max(16);
+    }
     if requested <= 1u64 << natural {
         return Ok(());
     }
@@ -505,9 +520,13 @@ pub(super) fn align_storage(
             DataItem::Zero(_) => None,
         })
         .max()
-        .unwrap_or(0);
-    *storage = (requested > 1u64 << implied).then_some(Type::Object {
-        bytes: size.wrapping_add(requested - 1) / requested * requested,
+        .map_or(if object_mode { 16 } else { 1 }, |align| 1u64 << align);
+    *storage = (requested > implied).then_some(Type::Object {
+        bytes: if object_mode {
+            size.max(requested)
+        } else {
+            size.wrapping_add(requested - 1) / requested * requested
+        },
         align: u8::try_from(requested.trailing_zeros()).map_err(|_| crate::lowir::Error::Limit)?,
     });
     Ok(())
@@ -516,6 +535,7 @@ pub(super) fn structured_type(
     graph: &Graph,
     ty: crate::sema::lowering::TypeId,
     items: &[crate::lowir::model::DataItem],
+    object_mode: bool,
 ) -> Result<Option<crate::lowir::vocabulary::Type>, Error> {
     let (bytes, align) = types::layout(graph, ty)?;
     let implied = items
@@ -526,8 +546,18 @@ pub(super) fn structured_type(
             | crate::lowir::model::DataItem::Constant(ty, _) => Some(types::storage_alignment(*ty)),
         })
         .max()
-        .unwrap_or(0);
-    Ok((align > implied).then_some(crate::lowir::vocabulary::Type::Object { bytes, align }))
+        .map_or(if object_mode { 16 } else { 1 }, |align| 1u64 << align);
+    let alignment = 1u64 << align;
+    Ok(
+        (alignment > implied).then_some(crate::lowir::vocabulary::Type::Object {
+            bytes: if object_mode {
+                bytes.max(alignment)
+            } else {
+                bytes.wrapping_add(alignment - 1) / alignment * alignment
+            },
+            align,
+        }),
+    )
 }
 pub(super) fn finish(
     program: &mut Program,

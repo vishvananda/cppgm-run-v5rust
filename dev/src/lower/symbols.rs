@@ -6,6 +6,8 @@ mod argument_declarations;
 mod call_signatures;
 #[path = "exception_information.rs"]
 mod exception_information;
+#[path = "lifetime_symbols.rs"]
+mod lifetime_symbols;
 #[path = "placeholder_mangling.rs"]
 mod placeholder_mangling;
 #[path = "runtime_types.rs"]
@@ -48,6 +50,8 @@ pub(super) struct SymbolTable {
     terminate_pending: bool,
     bad_array_length: Option<SymbolId>,
     atexit: Option<SymbolId>,
+    thread_atexit: Option<SymbolId>,
+    dso_handle: Option<SymbolId>,
     runtime_roles: Vec<super::runtime_roles::RoleSymbol>,
     runtime_entries: HashMap<crate::lowir::vocabulary::Role, SymbolId>,
     entry_aliases: Vec<crate::lowir::model::ObjectAlias>,
@@ -184,6 +188,9 @@ pub(super) struct Symbols<'a, 'source> {
     pub(super) generated_definitions: Vec<u8>,
 }
 impl<'a, 'source> Symbols<'a, 'source> {
+    pub(super) fn object_mode(&self) -> bool {
+        self.table.object_mode
+    }
     pub(super) fn note_declaration_only_global(&mut self, entity: EntityId) {
         self.declaration_only_globals.insert(entity);
     }
@@ -1878,64 +1885,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
         ))?;
         builder.finish()?;
         Ok(true)
-    }
-    pub(super) fn local_destructor_symbol(
-        &mut self,
-        program: &mut Program,
-        global: SymbolId,
-    ) -> Result<SymbolId, Error> {
-        let spelling = format!(
-            "__cppgm_local_static_destructor__{}",
-            program.names.get(program.symbol(global).name)
-        );
-        self.table.allocate(program, &spelling, None, true)
-    }
-    pub(super) fn atexit_function(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
-        use crate::lowir::{
-            model::{Boundary, Linkage, Parameter, Signature},
-            vocabulary::{Binding, Type},
-        };
-        if let Some(symbol) = self.table.atexit {
-            return Ok(symbol);
-        }
-        let object = program.names.intern("atexit")?;
-        let symbol = self
-            .table
-            .allocate(program, "__cppgm_runtime_atexit", None, true)?;
-        let parameter = Parameter {
-            name: program.names.intern("arg0")?,
-            ty: Type::Ptr,
-            pass: None,
-            object_bytes: 0,
-            no_alias: false,
-            classes: None,
-        };
-        let signature = program.add_signature(Signature {
-            parameters: vec![parameter],
-            result: Type::I32,
-            boundary: Boundary {
-                unwind: crate::lowir::model::Unwind::No,
-                ..Boundary::default()
-            },
-        })?;
-        program.add(
-            symbol,
-            crate::lowir::model::Function {
-                name: program.symbol(symbol).name,
-                signature,
-                metadata: Metadata {
-                    linkage: Linkage::C,
-                    binding: Some(Binding::Strong),
-                    object: Some(object),
-                    ..Metadata::default()
-                },
-                body: None,
-                location: None,
-            },
-        )?;
-        self.table.atexit = Some(symbol);
-        program.publish_runtime_declaration(symbol);
-        Ok(symbol)
     }
     pub(super) fn existing_local_storage(&self, entity: EntityId) -> Option<Value> {
         self.local_statics

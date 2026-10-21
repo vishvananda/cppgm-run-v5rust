@@ -32,10 +32,11 @@ impl Function<'_, '_, '_, '_> {
         // A static reference registers its successfully initialized temporaries
         // together. A static object's reference-member temporary registers as
         // soon as it completes, before later members can throw.
-        if self
-            .static_temporaries
-            .as_ref()
-            .is_some_and(|local| !local.reference)
+        if self.symbols.object_mode()
+            || self
+                .static_temporaries
+                .as_ref()
+                .is_some_and(|local| !local.reference)
         {
             return self.register_static_destruction(global, ty);
         }
