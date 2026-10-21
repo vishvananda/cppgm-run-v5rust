@@ -167,6 +167,11 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         ty: TypeId,
     ) -> Result<(), Error> {
+        // The course view retains otherwise unreferenced RTTI and a zeroed
+        // placeholder for every thrown type. Native objects demand neither.
+        if self.table.object_mode {
+            return Ok(());
+        }
         let ty = self.graph.lower_rtti_type(ty)?;
         if !self.exception_information.thrown.insert(ty) {
             return Ok(());
@@ -189,6 +194,16 @@ impl Symbols<'_, '_> {
                 ))]),
             },
         )?;
+        Ok(())
+    }
+    pub(in crate::lower) fn caught_type(
+        &mut self,
+        program: &mut Program,
+        ty: TypeId,
+    ) -> Result<(), Error> {
+        if !self.table.object_mode {
+            self.defined_exception_information(program, ty)?;
+        }
         Ok(())
     }
 }

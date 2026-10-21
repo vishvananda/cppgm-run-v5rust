@@ -332,8 +332,7 @@ impl Function<'_, '_, '_, '_> {
                 TypeView::Reference { element, .. } => element,
                 _ => ty,
             };
-            self.symbols
-                .defined_exception_information(self.builder.program(), object)?;
+            self.symbols.caught_type(self.builder.program(), object)?;
             if let Some(entity) = entity {
                 self.catch_variable(entity, ty, caught, record)?;
             }
