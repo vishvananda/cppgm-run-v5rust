@@ -106,11 +106,24 @@ impl Graph {
         let Some(member) = self.expression_facts.get(id)?.member else {
             return Ok(false);
         };
-        Ok(self
-            .entity(self.binding(member).entity)
+        Ok(self.member_in_union(self.binding(member).entity))
+    }
+
+    pub(super) fn member_in_union(&self, member: EntityId) -> bool {
+        let mut owner = self
+            .entity(member)
             .home
-            .and_then(|scope| self.scope(scope).owner)
-            .is_some_and(|owner| self.entity(owner).key == Keyword::Union))
+            .and_then(|scope| self.scope(scope).owner);
+        while let Some(class) = owner {
+            if self.entity(class).key == Keyword::Union {
+                return true;
+            }
+            owner = self
+                .anonymous_member_storage(class)
+                .and_then(|object| self.entity(object).home)
+                .and_then(|scope| self.scope(scope).owner);
+        }
+        false
     }
 
     pub(crate) fn lower_first_named_member(&self, ty: TypeId) -> Option<NameId> {

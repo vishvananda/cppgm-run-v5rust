@@ -671,33 +671,9 @@ impl Analyzer<'_> {
                 return Ok((base, 1));
             } else if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
                 self.class_layout(class, location)?;
-                let mut next = None;
-                for index in 0..self.graph.entity(class).members.len() {
-                    let member = self.graph.entity(class).members[index];
-                    let member_type = self
-                        .graph
-                        .entity(member)
-                        .ty
-                        .ok_or(Error::Invariant("array bounds member without type"))?;
-                    if matches!(
-                        self.graph.types.get(member_type).kind,
-                        TypeKind::Reference { .. }
-                    ) {
-                        continue;
-                    }
-                    let start = integral::signed(
-                        self.graph
-                            .entity(member)
-                            .member_offset
-                            .ok_or(Error::Invariant("array bounds member without offset"))?,
-                    );
-                    let bytes = self.address_element_size(member_type, location)?;
-                    if offset >= start && offset < start.wrapping_add(bytes.max(1)) {
-                        next = Some((member_type, start));
-                        break;
-                    }
-                }
-                let Some((member_type, start)) = next else {
+                let Some((member_type, start)) =
+                    self.array_constant_subobject(class, offset, location)?
+                else {
                     break;
                 };
                 base = base.wrapping_add(start);
@@ -707,6 +683,49 @@ impl Analyzer<'_> {
             }
         }
         found.ok_or_else(|| nonconstant(location, "pointer arithmetic outside an array"))
+    }
+
+    fn array_constant_subobject(
+        &mut self,
+        class: EntityId,
+        offset: i64,
+        location: SourceOffset,
+    ) -> Result<Option<(TypeId, i64)>, Error> {
+        if self.graph.entity(class).key != Keyword::Union {
+            // Reuse the completed class's indexed ordinary-member spans and
+            // base traversal. Bit-fields cannot be array-addressable subobjects.
+            let next = self.ordered_constant_subobject(class, offset, location)?;
+            return Ok(next
+                .filter(|next| {
+                    !matches!(
+                        self.graph.types.get(next.ty).kind,
+                        TypeKind::Reference { .. }
+                    )
+                })
+                .map(|next| (next.ty, next.start)));
+        }
+        // Union alternatives retain declaration order at their shared offset.
+        for index in 0..self.graph.entity(class).members.len() {
+            let member = self.graph.entity(class).members[index];
+            if self.graph.entity(member).bit_field.is_some() {
+                continue;
+            }
+            let ty = self.graph.lower_entity_type(member)?;
+            if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
+                continue;
+            }
+            let start = integral::signed(
+                self.graph
+                    .entity(member)
+                    .member_offset
+                    .ok_or(Error::Invariant("array bounds member without offset"))?,
+            );
+            let bytes = self.address_element_size(ty, location)?.max(1);
+            if offset >= start && offset < start.wrapping_add(bytes) {
+                return Ok(Some((ty, start)));
+            }
+        }
+        Ok(None)
     }
 }
 

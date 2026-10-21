@@ -11,6 +11,85 @@ use super::{
     types::{Scalar, TypeId, TypeKind},
 };
 use crate::support::source::SourceOffset;
+use std::collections::HashMap;
+
+// A shared or straddling field contributes only the bytes its value covers.
+// Ordinary units keep their original width and stable declaration order.
+pub(super) fn bit_units(
+    storage: super::bit_fields::Storage,
+    width: u64,
+) -> Result<impl Iterator<Item = (u64, u8)>, Error> {
+    let split = storage.shared || storage.split != 0 || storage.bytes > 8;
+    let start = if split {
+        storage.bit / 8
+    } else {
+        storage.offset
+    };
+    let end = if split {
+        storage
+            .bit
+            .checked_add(width.min(128))
+            .and_then(|end| end.checked_add(7))
+            .map(|end| end / 8)
+    } else {
+        start.checked_add(1)
+    }
+    .ok_or(Error::Limit("constant field span"))?;
+    Ok((start..end).map(move |at| (at, if split { 1 } else { storage.bytes })))
+}
+
+#[derive(Default)]
+struct BitImage {
+    bytes: HashMap<u64, u8>,
+    units: Vec<(u64, u8)>,
+}
+impl BitImage {
+    fn add(
+        &mut self,
+        storage: super::bit_fields::Storage,
+        width: u64,
+        origin: u64,
+        bits: u64,
+    ) -> Result<(), Error> {
+        let first = origin
+            .checked_mul(8)
+            .and_then(|at| at.checked_add(storage.bit))
+            .ok_or(Error::Limit("constant field offset"))?;
+        for k in 0..width.min(128) {
+            let bit = first
+                .checked_add(k)
+                .ok_or(Error::Limit("constant field bit"))?;
+            let value = bits
+                .checked_shr(u32::try_from(k).map_err(|_| Error::Limit("field shift"))?)
+                .unwrap_or(0)
+                & 1;
+            *self.bytes.entry(bit / 8).or_default() |=
+                u8::try_from(value).map_err(|_| Error::Invariant("field bit value"))? << (bit % 8);
+        }
+        for (at, size) in bit_units(storage, width)? {
+            self.units.push((
+                origin
+                    .checked_add(at)
+                    .ok_or(Error::Limit("constant field unit"))?,
+                size,
+            ));
+        }
+        Ok(())
+    }
+    fn place(self, placements: &mut Vec<(u64, u64, Item)>) -> Result<(), Error> {
+        for (offset, size) in self.units {
+            let mut bits = 0_u64;
+            for i in 0..size {
+                let at = offset
+                    .checked_add(u64::from(i))
+                    .ok_or(Error::Limit("constant unit byte"))?;
+                bits |= u64::from(self.bytes.get(&at).copied().unwrap_or(0)) << (u32::from(i) * 8);
+            }
+            placements.push((offset, u64::from(size), Item::BitUnit(size, bits)));
+        }
+        Ok(())
+    }
+}
 
 impl Analyzer<'_> {
     pub(super) fn record_completed_image(&mut self, entity: EntityId) -> Result<bool, Error> {
@@ -39,7 +118,7 @@ impl Analyzer<'_> {
     ) -> Result<Option<Vec<Item>>, Error> {
         let mut placements = Vec::new();
         let mut tables = std::collections::HashSet::new();
-        let mut units = std::collections::HashMap::<u64, (u8, u64)>::new();
+        let mut bits = BitImage::default();
         for (ty, offset, field, value) in values {
             if let TypeKind::Class(class) = self.graph.types.get(ty).kind
                 && self.graph.lower_polymorphic(class)
@@ -64,25 +143,18 @@ impl Analyzer<'_> {
                     .bit_field
                     .ok_or(Error::Invariant("constant field without layout"))?;
                 let storage = self.graph.bit_fields.storage(field)?;
-                if storage.shared || storage.split != 0 || storage.bytes > 8 {
-                    return Ok(None);
-                }
                 let Some(TemporaryValue::Integer(value)) = value else {
                     return Ok(None);
                 };
                 let origin = offset
-                    .wrapping_sub(storage.bit / 8)
-                    .wrapping_add(storage.offset);
-                let unit = units.entry(origin).or_insert((storage.bytes, 0));
-                let bit = storage.bit.wrapping_sub(storage.offset.wrapping_mul(8));
-                let width = u32::try_from(self.graph.bit_fields.width(field).min(64))
-                    .map_err(|_| Error::Invariant("bounded constant field width"))?;
-                let mask = u64::MAX.checked_shr(64 - width).unwrap_or(0);
-                unit.1 |= (value.bits & mask)
-                    .checked_shl(
-                        u32::try_from(bit).map_err(|_| Error::Limit("constant field shift"))?,
-                    )
-                    .unwrap_or(0);
+                    .checked_sub(storage.bit / 8)
+                    .ok_or(Error::Invariant("constant field origin"))?;
+                bits.add(
+                    storage,
+                    self.graph.bit_fields.width(field),
+                    origin,
+                    value.bits,
+                )?;
                 continue;
             }
             let size = self.type_size(ty, SourceOffset(0))?.0;
@@ -110,7 +182,11 @@ impl Analyzer<'_> {
                 Some(TemporaryValue::Pointer(pointer)) => match pointer.root {
                     Root::Null => Item::Zero(size),
                     Root::Variable(root) | Root::Temporary(root) | Root::Function(root) => {
-                        Item::Scalar(ty, Value::Address(root, pointer.offset))
+                        let value = Value::Address(root, pointer.offset);
+                        if !self.static_storage_value(value) {
+                            return Ok(None);
+                        }
+                        Item::Scalar(ty, value)
                     }
                     Root::Published(root) => {
                         let Some(value) = self.graph.static_temporary_value(root, pointer.offset)
@@ -129,15 +205,16 @@ impl Analyzer<'_> {
             };
             placements.push((offset, size, item));
         }
-        for (offset, (size, bits)) in units {
-            placements.push((offset, u64::from(size), Item::BitUnit(size, bits)));
-        }
+        bits.place(&mut placements)?;
         placements.sort_by_key(|&(offset, _, _)| offset);
         let size = self.type_size(ty, SourceOffset(0))?.0;
         let mut cursor = 0;
         let mut image = Vec::new();
         for (offset, size, item) in placements {
             if offset < cursor {
+                if matches!(item, Item::BitUnit(..)) {
+                    continue;
+                }
                 return Ok(None);
             }
             append_zero(&mut image, offset - cursor)?;

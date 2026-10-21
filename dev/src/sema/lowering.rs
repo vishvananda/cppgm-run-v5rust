@@ -2151,28 +2151,6 @@ impl Graph {
         }
         false
     }
-    pub(crate) fn lower_contiguous_zero(&self, mut ty: TypeId) -> Result<bool, Error> {
-        while let TypeView::Array { element, .. } = self.lower_type(ty)? {
-            if self.lower_cv(ty) & 2 != 0 {
-                return Ok(false);
-            }
-            ty = element;
-        }
-        if self.lower_cv(ty) & 2 != 0 {
-            return Ok(false);
-        }
-        let TypeView::Class(class) = self.lower_type(ty)? else {
-            return Err(Error::Invariant("class zeroing without class"));
-        };
-        let super::layout::LayoutState::Value {
-            contains_volatile_or_union,
-            ..
-        } = self.entity(class).layout
-        else {
-            return Err(Error::Invariant("class zeroing without layout"));
-        };
-        Ok(!contains_volatile_or_union)
-    }
     pub(crate) fn lower_class_empty(&self, class: EntityId) -> Result<bool, Error> {
         if let super::layout::LayoutState::Value { empty, .. } = self.entity(class).layout {
             Ok(empty)
@@ -2231,10 +2209,16 @@ impl Graph {
         let binding = facts
             .member
             .ok_or(Error::Invariant("member without designation"))?;
+        if self.member_in_union(self.binding(binding).entity) {
+            return Ok(true);
+        }
         let holder = self.member_holder(self.binding(binding).entity, facts.member_naming)?;
         Ok(std::iter::once(holder)
             .chain(facts.member_naming)
             .any(|class| self.entity(class).key == crate::lex::vocabulary::Keyword::Union))
+    }
+    pub(crate) fn lower_member_union(&self, member: EntityId) -> bool {
+        self.member_in_union(member)
     }
     pub(crate) fn lower_class_members(
         &self,

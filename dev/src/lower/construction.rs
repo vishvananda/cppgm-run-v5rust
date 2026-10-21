@@ -3,7 +3,7 @@
 use super::{Error, conversions::Context, function::Function};
 use crate::{
     lowir::{
-        model::{Facts, InstructionKind as I, Value},
+        model::{InstructionKind as I, Value},
         vocabulary::{Projection, Type},
     },
     sema::{
@@ -15,11 +15,6 @@ use crate::{
     syntax::ast,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum EmptyValueZeroing {
-    Emit,
-    Omit,
-}
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum CopyCall {
     Expression,
@@ -129,20 +124,10 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         arguments: Option<ConstructorArguments>,
     ) -> Result<(), Error> {
-        self.construct_at_qualified(id, ty, object, arguments, false)
-    }
-    pub(super) fn construct_at_qualified(
-        &mut self,
-        id: ConstructorId,
-        ty: TypeId,
-        object: Value,
-        arguments: Option<ConstructorArguments>,
-        volatile: bool,
-    ) -> Result<(), Error> {
         if matches!(arguments, Some(ConstructorArguments::Value)) {
             if self.graph.lower_constructor(id).zero_before_value {
                 // Value-initialization zeroes storage before any nontrivial call.
-                self.zero_class_object_qualified(ty, object, None, volatile)?;
+                self.zero_class_object(ty, object, None)?;
             }
             if self.graph.lower_constructor_trivial(id) {
                 return Ok(());
@@ -458,55 +443,10 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         span: Option<u64>,
     ) -> Result<(), Error> {
-        self.zero_class_object_qualified(ty, object, span, false)
-    }
-    pub(super) fn zero_class_object_qualified(
-        &mut self,
-        ty: TypeId,
-        object: Value,
-        span: Option<u64>,
-        volatile: bool,
-    ) -> Result<(), Error> {
-        if self.empty_value_zeroing == EmptyValueZeroing::Omit
-            && matches!(self.graph.lower_type(ty)?, TypeView::Class(class)
-                if self.graph.lower_class_empty(class)?)
-        {
-            return Ok(());
-        }
+        // Preliminary value-initialization covers the complete storage span,
+        // including padding. Volatile scalar member writes remain distinct.
         let (size, alignment) = super::types::layout(self.graph, ty)?;
-        let size = span.unwrap_or(size);
-        if !volatile && self.graph.lower_contiguous_zero(ty)? {
-            self.effect(I::ZeroInit(size, alignment, object))?;
-            return self.null_data_members(ty, object, 0);
-        }
-        let mut offset = 0;
-        while offset < size {
-            let left = size - offset;
-            let (bytes, unit) = if left >= 8 {
-                (8, Type::I64)
-            } else if left >= 4 {
-                (4, Type::I32)
-            } else if left >= 2 {
-                (2, Type::I16)
-            } else {
-                (1, Type::I8)
-            };
-            let address = if offset == 0 {
-                object
-            } else {
-                let index = self.builder.integer(u128::from(offset))?;
-                self.emit(I::Index(Type::I8, None, object, index), ty)?
-                    .value
-            };
-            let zero = self.builder.integer(0)?;
-            self.effect(I::Store(
-                Facts::memory(false, bytes != 1),
-                unit,
-                zero,
-                address,
-            ))?;
-            offset += bytes;
-        }
+        self.effect(I::ZeroInit(span.unwrap_or(size), alignment, object))?;
         self.null_data_members(ty, object, 0)
     }
     pub(super) fn initialize_class_member(

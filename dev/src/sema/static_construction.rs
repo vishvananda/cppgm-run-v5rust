@@ -98,11 +98,18 @@ mod tests {
         assert!(graph.lower_static_construction(partial).is_none());
         assert!(matches!(graph.lower_static_construction_demands(partial),
             [Item::Table(_), Item::Scalar(_, Value::Address(root, 0))] if *root == entity(b"target")));
-        assert!(graph.lower_static_construction(entity(b"packed")).is_none());
-        assert!(matches!(
-            graph.lower_static_construction_demands(entity(b"packed")),
-            [Item::Table(_)]
-        ));
+        let packed = graph.lower_static_construction(entity(b"packed")).unwrap();
+        assert!(matches!(packed.first(), Some(Item::Table(_))));
+        assert!(
+            packed
+                .iter()
+                .any(|item| matches!(item, Item::BitUnit(1, 0)))
+        );
+        assert!(
+            graph
+                .lower_static_construction_demands(entity(b"packed"))
+                .is_empty()
+        );
         assert!(
             graph
                 .lower_static_construction(entity(b"over_budget"))

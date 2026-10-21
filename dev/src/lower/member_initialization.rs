@@ -58,6 +58,7 @@ impl Function<'_, '_, '_, '_> {
         let mut wrote = false;
         let mut children = plan.subobjects.iter().peekable();
         for &(member, initializer) in plan.members {
+            let union = union || self.graph.lower_member_union(member);
             let ty = self.graph.lower_entity_type(member)?;
             if !matches!(
                 self.graph.lower_type(ty)?,

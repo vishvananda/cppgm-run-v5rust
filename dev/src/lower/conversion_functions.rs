@@ -70,15 +70,7 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
     ) -> Result<crate::lowir::model::Value, Error> {
         let facts = self.graph.lower_expression(id)?;
-        let saved = self.empty_value_zeroing;
-        if self.initialization_context == super::class_results::InitializationContext::Return
-            && !self.graph.lower_builtin_operand(id)
-        {
-            self.empty_value_zeroing = super::construction::EmptyValueZeroing::Omit;
-        }
-        let place = self.original_scalar_place(self.without_parentheses(id));
-        self.empty_value_zeroing = saved;
-        let place = place?;
+        let place = self.original_scalar_place(self.without_parentheses(id))?;
         if !facts.is_place && self.symbols.class_destructor(facts.ty)?.is_none() {
             self.finish_inert_temporary(false)?;
         }

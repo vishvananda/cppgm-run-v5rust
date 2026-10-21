@@ -823,12 +823,11 @@ impl Function<'_, '_, '_, '_> {
                 input.next += 1;
                 self.materialize_class_qualified(id, ty, object, path.volatile)?;
             } else {
-                self.construct_at_qualified(
+                self.construct_at(
                     self.graph.lower_default_constructor(class)?,
                     ty,
                     object,
                     Some(crate::sema::lowering::ConstructorArguments::Value),
-                    path.volatile,
                 )?;
             }
             Some(object)

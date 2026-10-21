@@ -293,15 +293,12 @@ impl Function<'_, '_, '_, '_> {
                 let constructor = self.graph.lower_list_constructor(source)?.ok_or(
                     crate::sema::Error::Invariant("empty argument without constructor"),
                 )?;
-                if !self.graph.lower_constructor_trivial(constructor) {
-                    self.call_constructor(
-                        constructor,
-                        super::construction::Variant::Complete,
-                        object,
-                        None,
-                    )?;
-                }
-                Ok(())
+                self.construct_at(
+                    constructor,
+                    ty,
+                    object,
+                    Some(crate::sema::lowering::ConstructorArguments::Value),
+                )
             }
             Some(ClassInitialization::Aggregate(values)) if values.is_empty() => Ok(()),
             Some(ClassInitialization::FromExpression(inner)) => {
@@ -653,7 +650,7 @@ impl Function<'_, '_, '_, '_> {
                 {
                     return Ok(());
                 }
-                self.construct_at_qualified(constructor, ty, object, Some(arguments), volatile)
+                self.construct_at(constructor, ty, object, Some(arguments))
             }
             Some(ClassInitialization::Aggregate(arguments)) => {
                 self.aggregate_prvalue(ty, object, self.tree.expr_lists.get(arguments))

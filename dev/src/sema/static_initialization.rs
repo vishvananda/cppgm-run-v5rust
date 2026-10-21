@@ -28,6 +28,10 @@ pub(crate) struct ReferenceTemporary {
     pub value: TypeId,
 }
 impl Analyzer<'_> {
+    pub(super) fn static_storage_value(&self, value: Value) -> bool {
+        !matches!(value, Value::Address(entity, _) if self.graph.entity(entity).variable
+            .is_some_and(|variable| variable.thread_storage == super::specifiers::ThreadStorage::ThreadLocal))
+    }
     pub(super) fn finish_static_initializers(&mut self) -> Result<(), Error> {
         // A new unit-end initialization query may finish a reference whose
         // earlier declaration-time binding was unavailable. Preserve request
@@ -177,7 +181,8 @@ impl Analyzer<'_> {
                     Err(Error::NonConstant { .. } | Error::Missing(_)) => None,
                     Err(error) => return Err(error),
                 };
-                self.graph.entity_mut(entity).static_initializer = value;
+                self.graph.entity_mut(entity).static_initializer =
+                    value.filter(|value| self.static_storage_value(*value));
             }
             return Ok(());
         }
@@ -256,7 +261,8 @@ impl Analyzer<'_> {
                 .function_conversion(id)
                 .is_some()
         {
-            return self.static_converted_class(id, target, scope);
+            let value = self.static_converted_class(id, target, scope)?;
+            return Ok(value.filter(|value| self.static_storage_value(*value)));
         }
         let value = self.static_scalar_value(id, scope)?;
         value.map_or(Ok(None), |value| {
@@ -487,6 +493,9 @@ impl Analyzer<'_> {
         source: TypeId,
         target: TypeId,
     ) -> Result<Option<Value>, Error> {
+        if !self.static_storage_value(value) {
+            return Ok(None);
+        }
         if let Some(kind) = self.integral_kind(target) {
             let bits = match value {
                 Value::Integer(bits) => bits,

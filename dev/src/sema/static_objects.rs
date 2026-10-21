@@ -21,19 +21,7 @@ struct EvaluatedCall {
     zeroed: bool,
     primary: bool,
 }
-#[derive(Default)]
-struct Placements {
-    items: Vec<(u64, u64, Item)>,
-    failure: Option<usize>,
-}
-impl Placements {
-    fn push(&mut self, item: (u64, u64, Item)) {
-        self.items.push(item);
-    }
-    fn unsupported(&mut self) {
-        self.failure.get_or_insert(self.items.len());
-    }
-}
+type Placements = Vec<(u64, u64, Item)>;
 pub(super) struct EvaluatedImage {
     pub image: Option<Vec<Item>>,
     pub demands: Vec<Item>,
@@ -72,32 +60,13 @@ impl Analyzer<'_> {
         )? {
             return Ok(None);
         }
-        if let Some(first) = placements.failure {
-            return Ok(Some(EvaluatedImage {
-                image: None,
-                demands: placements.items[..first]
-                    .iter()
-                    .filter_map(|&(_, _, item)| {
-                        matches!(
-                            item,
-                            Item::Table(_)
-                                | Item::Scalar(
-                                    _,
-                                    Value::Address(..) | Value::Literal(..) | Value::Temporary(..)
-                                )
-                        )
-                        .then_some(item)
-                    })
-                    .collect(),
-            }));
-        }
-        placements.items.sort_by_key(|&(at, _, _)| at);
+        placements.sort_by_key(|&(at, _, _)| at);
         let size = self
             .type_size(self.graph.lower_entity_type(entity)?, SourceOffset(0))?
             .0;
         let mut cursor = 0;
-        let mut image = Vec::with_capacity(placements.items.len());
-        for (at, size, item) in placements.items {
+        let mut image = Vec::with_capacity(placements.len());
+        for (at, size, item) in placements {
             if at < cursor {
                 if matches!(item, Item::BitUnit(..)) {
                     continue;
@@ -477,15 +446,15 @@ impl Analyzer<'_> {
                     return Ok(false);
                 }
                 let storage = self.graph.bit_fields.storage(field)?;
-                if storage.shared || storage.split != 0 || storage.bytes > 8 {
-                    out.unsupported();
-                    continue;
+                for (offset, size) in
+                    super::evaluated_data::bit_units(storage, self.graph.bit_fields.width(field))?
+                {
+                    out.push((
+                        at.wrapping_add(offset),
+                        u64::from(size),
+                        Item::BitUnit(size, 0),
+                    ));
                 }
-                out.push((
-                    at.wrapping_add(storage.offset),
-                    u64::from(storage.bytes),
-                    Item::BitUnit(storage.bytes, 0),
-                ));
                 continue;
             }
             let offset = self
@@ -736,17 +705,15 @@ impl Analyzer<'_> {
                     let ty = self.graph.lower_entity_type(member)?;
                     if let Some(field) = self.graph.entity(member).bit_field {
                         let storage = self.graph.bit_fields.storage(field)?;
-                        if storage.shared || storage.split != 0 || storage.bytes > 8 {
-                            return Ok(false);
+                        for (offset, size) in super::evaluated_data::bit_units(
+                            storage,
+                            self.graph.bit_fields.width(field),
+                        )? {
+                            let at = origin
+                                .checked_add(offset)
+                                .ok_or(Error::Limit("static zero bit unit"))?;
+                            out.push((at, u64::from(size), Item::BitUnit(size, 0)));
                         }
-                        let at = origin
-                            .checked_add(storage.offset)
-                            .ok_or(Error::Limit("static zero bit unit"))?;
-                        out.push((
-                            at,
-                            u64::from(storage.bytes),
-                            Item::BitUnit(storage.bytes, 0),
-                        ));
                     } else {
                         let offset = self
                             .graph

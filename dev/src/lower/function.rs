@@ -48,7 +48,6 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     // conversion is active; the outer construction use must not recur.
     pub converting_source: Option<ast::ExprId>,
     pub initialization_context: super::class_results::InitializationContext,
-    pub empty_value_zeroing: super::construction::EmptyValueZeroing,
     pub reference_lifetimes: super::reference_lifetimes::Extensions,
     pub next_static: u32,
     pub next_block: u32,
@@ -378,7 +377,6 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             initialization_output: None,
             converting_source: None,
             initialization_context: super::class_results::InitializationContext::Ordinary,
-            empty_value_zeroing: super::construction::EmptyValueZeroing::Emit,
             reference_lifetimes: super::reference_lifetimes::Extensions::default(),
             next_static: 0,
             next_block: 0,
@@ -830,16 +828,7 @@ impl Function<'_, '_, '_, '_> {
                 "reference without initializer",
             )))?;
             let expr = self.initializer_expression(initializer)?;
-            let saved = self.empty_value_zeroing;
-            self.empty_value_zeroing = if self.graph.lower_function_conversion(expr)?.is_some()
-                || self.graph.lower_base_conversion(expr)?.is_none()
-            {
-                super::construction::EmptyValueZeroing::Omit
-            } else {
-                super::construction::EmptyValueZeroing::Emit
-            };
             let address = self.bind_extended_reference(expr, ty, entity);
-            self.empty_value_zeroing = saved;
             let address = address?;
             return self.effect(I::Store(
                 crate::lowir::model::Facts::memory(false, true),

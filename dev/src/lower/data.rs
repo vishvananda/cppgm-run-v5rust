@@ -141,6 +141,11 @@ fn constant_temporary<'a>(
         crate::sema::lowering::TypeView::Class(_) | crate::sema::lowering::TypeView::Array { .. }
     );
     let data = items(output, symbols, graph, tree, image)?;
+    let storage = if aggregate {
+        super::globals::structured_type(graph, ty, &data)?
+    } else {
+        Some(types::storage(graph, ty)?)
+    };
     let init = if aggregate {
         GlobalInit::Data(data)
     } else {
@@ -161,11 +166,7 @@ fn constant_temporary<'a>(
         symbol,
         Global {
             name,
-            ty: if aggregate {
-                None
-            } else {
-                Some(types::storage(graph, ty)?)
-            },
+            ty: storage,
             metadata: Metadata {
                 binding: Some(Binding::Internal),
                 storage: symbols.readonly_object(ty)?.then_some(Storage::ReadOnly),

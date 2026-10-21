@@ -594,7 +594,7 @@ mod tests {
         }
     }
     #[test]
-    fn published_values_without_static_images_keep_runtime_storage_demand() {
+    fn published_packed_values_keep_static_images_without_synthetic_syntax() {
         let source = SourceBuffer::new(
             br#"
             #pragma pack(push,1)
@@ -626,14 +626,14 @@ mod tests {
         let Root::Published(id) = address.root else {
             panic!("published backing");
         };
-        assert!(graph.aggregate_constants.temporary(id).image.is_none());
-        assert!(graph.static_temporary_value(id, 0).is_none());
+        assert!(graph.aggregate_constants.temporary(id).image.is_some());
+        assert!(graph.static_temporary_value(id, 0).is_some());
         assert!(
             graph
                 .lower_variable(reference)
                 .unwrap()
                 .initializer
-                .is_none()
+                .is_some()
         );
         assert_eq!(tree.expressions.mark(), mark);
     }
