@@ -456,3 +456,5 @@ with 431 source files and zero findings. No input or reference was edited.
 The change adds one constant-time dialect predicate with no new retained storage.
 This repairs an earlier-stage acceptance requirement of the active PA24 audit;
 it does not advance Ralph or certify the still-incomplete PA24 full-stage goal.
+
+Reviewed implementation for the refreshed preservation increment: `112f928b4721b299f70cf0ad4a7e82dff24b28ce`. The final PA1–PA23 rerun retains all earlier passing identities and records 5994/6229 overall; 235 failures in other owning groups remain required PA24 acceptance work.
