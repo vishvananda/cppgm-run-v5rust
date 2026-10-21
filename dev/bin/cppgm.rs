@@ -110,6 +110,24 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
 }
 fn run() -> Result<(), CliError> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if !args.iter().any(|arg| {
+        matches!(
+            arg.as_bytes(),
+            b"--emit-ast" | b"--emit-types" | b"--emit-semantics" | b"--emit-lowir"
+        )
+    }) {
+        use std::os::unix::fs::PermissionsExt;
+        let values = build_time::query().map_err(CliError::Message)?;
+        let budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
+            .map_err(CliError::Internal)?;
+        return cppgm_rust::driver::toolchain::run(
+            &args,
+            &values,
+            budget,
+            &std::fs::Permissions::from_mode(0o755),
+        )
+        .map_err(tool_error);
+    }
     let ast = args.iter().any(|arg| arg == "--emit-ast");
     let types = args.iter().any(|arg| arg == "--emit-types");
     let semantics = args.iter().any(|arg| arg == "--emit-semantics");
@@ -227,6 +245,24 @@ fn main() -> ExitCode {
             let _status = stderr.write_all(&bytes);
             let _status = stderr.write_all(b"\n");
             ExitCode::FAILURE
+        }
+    }
+}
+
+fn tool_error(error: AstToolError) -> CliError {
+    match error {
+        AstToolError::Missing(group)
+        | AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {
+            CliError::Missing(group)
+        }
+        AstToolError::Internal(message)
+        | AstToolError::Initialization(PreprocessError::Invariant(message)) => {
+            CliError::Internal(message)
+        }
+        AstToolError::Diagnostic(bytes) => CliError::Diagnostic(bytes),
+        AstToolError::Output(_) => CliError::Output,
+        AstToolError::Initialization(_) => {
+            CliError::Internal("unrendered source initialization error")
         }
     }
 }

@@ -36,6 +36,7 @@ use crate::{
 use std::{collections::HashMap, fmt::Write};
 #[derive(Default)]
 pub(super) struct SymbolTable {
+    pub(super) object_mode: bool,
     objects: HashMap<NameId, Option<SymbolId>>,
     suffixes: HashMap<NameId, u32>,
     source: Option<SourceId>,
@@ -369,7 +370,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         program: &mut Program,
         definitions: &mut super::definition_order::Definitions,
     ) -> Result<(), Error> {
-        super::runtime_roles::resolve(program, definitions, &self.table.runtime_roles)
+        super::runtime_roles::resolve(
+            program,
+            definitions,
+            &self.table.runtime_roles,
+            self.table.object_mode,
+        )
     }
     pub(super) fn bad_array_length(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
         if let Some(symbol) = self.table.bad_array_length {
@@ -1438,77 +1444,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         self.demand_entry(entry);
     }
-    pub(super) fn callee(
-        &mut self,
-        entity: EntityId,
-        builder: &mut crate::lowir::builder::FunctionBuilder<'_>,
-    ) -> Result<crate::lowir::model::Value, Error> {
-        if let Some(&value) = self.callees.get(&entity) {
-            return Ok(value);
-        }
-        let symbol = self.function_symbol(builder.program(), entity)?;
-        let value = Value::Symbol(symbol);
-        self.callees.insert(entity, value);
-        Ok(value)
-    }
-    pub(super) fn function_symbol(
-        &mut self,
-        program: &mut Program,
-        entity: EntityId,
-    ) -> Result<SymbolId, Error> {
-        let entity = self.graph.lower_function_entity(entity);
-        if let Some(Value::Symbol(symbol)) = self.callees.get(&entity) {
-            return Ok(*symbol);
-        }
-        let name = self.name(entity)?;
-        let facts = self.graph.lower_function(entity)?;
-        let metadata = self.metadata(program, entity, &name)?;
-        let object = if facts.builtin.is_some() {
-            metadata.object.or(Some(program.names.intern(&name)?))
-        } else if facts.c_linkage && !facts.internal
-            || metadata.role == Some(crate::lowir::vocabulary::Role::Entry)
-        {
-            Some(program.names.intern(&name)?)
-        } else {
-            metadata.object
-        };
-        let local_object = if facts.internal
-            && (facts.c_linkage
-                || object.is_some_and(|object| self.table.objects.contains_key(&object)))
-        {
-            None
-        } else {
-            metadata.object
-        };
-        let symbol = self
-            .table
-            .allocate(program, &name, object, facts.internal)?;
-        self.objects.insert(entity, local_object);
-        self.callees.insert(entity, Value::Symbol(symbol));
-        if let Some(
-            role @ (crate::lowir::vocabulary::Role::AllocateMemory
-            | crate::lowir::vocabulary::Role::FreeMemory
-            | crate::lowir::vocabulary::Role::Terminate),
-        ) = metadata.role
-        {
-            self.table
-                .runtime_roles
-                .push(super::runtime_roles::RoleSymbol {
-                    symbol,
-                    role,
-                    origin: if facts.allocation.is_some_and(|allocation| allocation.array)
-                        || matches!(
-                            facts.builtin,
-                            Some(crate::sema::lowering::BuiltinFunction::Abort)
-                        ) {
-                        super::runtime_roles::Origin::Secondary
-                    } else {
-                        super::runtime_roles::Origin::Primary
-                    },
-                });
-        }
-        Ok(symbol)
-    }
     pub(super) fn name(&mut self, entity: EntityId) -> Result<std::sync::Arc<str>, Error> {
         let entity = self.graph.lower_function_entity(entity);
         if let Some(name) = self.names.get(&entity) {
@@ -2261,7 +2196,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     metadata.object = Some(program.names.intern(object)?);
                 }
                 B::Abort => {
-                    metadata.role = Some(Role::Terminate);
+                    if !self.table.object_mode {
+                        metadata.role = Some(Role::Terminate);
+                    }
                     metadata.object = Some(program.names.intern("abort")?);
                 }
                 B::Memcmp | B::Memset | B::Unreachable | B::Expect | B::Floating(_) => {
@@ -2272,7 +2209,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(metadata);
         }
         if let Some(allocation) = facts.allocation
-            && (!allocation.array || facts.definition.is_none())
+            && (!allocation.array || !self.table.object_mode && facts.definition.is_none())
         {
             metadata.role = Some(match allocation.role {
                 crate::sema::lowering::AllocationRole::Allocate => Role::AllocateMemory,
@@ -2397,6 +2334,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .allocate(program, &name, metadata.object, facts.internal)?;
         self.entry_objects.insert(entry, object);
         self.entries.insert(entry, symbol);
+        if self.table.object_mode && !program.symbol(symbol).declared() {
+            let signature =
+                super::function::declaration_signature(program, self, self.graph, entry)?;
+            program.set_forward_boundary(symbol, signature, metadata);
+        }
         // An ancillary entry request may already have passed through the
         // worklist before this first actual use. Publish unavailable entries
         // here so a later synthesized body still gets its declaration.
@@ -2598,6 +2540,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         entry: super::construction::Entry,
     ) -> Result<(), Error> {
         output.generated(&mut self.generated_definitions);
+        if self.table.object_mode {
+            return output.stream(program, None);
+        }
         let destructor = if matches!(entry.facts(self.graph)?.name, FunctionName::Destructor(_)) {
             entry.entity(self.graph)
         } else {

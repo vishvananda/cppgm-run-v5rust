@@ -1022,8 +1022,44 @@ pub(super) fn declare(
     if program.symbol(symbol).declared() {
         return Ok(());
     }
-    let facts = entry.facts(graph)?;
     let name = program.names.get(program.symbol(symbol).name).to_owned();
+    let signature = if let Some(signature) = program.forward_boundary(symbol) {
+        signature
+    } else {
+        declaration_signature(program, symbols, graph, entry)?
+    };
+    let mut metadata = symbols.entry_metadata(program, entry, &name)?;
+    // A declared ABI entry carries its function metadata, not the object-root
+    // flag used to retain an emitted base or internal complete definition
+    // (symbol_lowering.cpp::entry_symbol, program_lowering.cpp::emit_definition).
+    if matches!(
+        entry,
+        super::construction::Entry::Constructor(_, _)
+            | super::construction::Entry::DestructorBase(_)
+    ) {
+        metadata.flags &= !4;
+    }
+    let name = program.symbol(symbol).name;
+    program.add(
+        symbol,
+        crate::lowir::model::Function {
+            name,
+            signature,
+            metadata,
+            body: None,
+            location: None,
+        },
+    )?;
+    Ok(())
+}
+
+pub(super) fn declaration_signature(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    entry: super::construction::Entry,
+) -> Result<crate::lowir::model::SignatureId, Error> {
+    let facts = entry.facts(graph)?;
     let signature = signature(program, symbols, graph, facts.ty, facts.nothrow)?;
     if let Some(class) = facts.object {
         let first = usize::from(
@@ -1080,27 +1116,5 @@ pub(super) fn declare(
             || parameter_no_alias(facts.builtin, index);
     }
     builtin_boundary(&mut boundary.boundary, facts.builtin);
-    let mut metadata = symbols.entry_metadata(program, entry, &name)?;
-    // A declared ABI entry carries its function metadata, not the object-root
-    // flag used to retain an emitted base or internal complete definition
-    // (symbol_lowering.cpp::entry_symbol, program_lowering.cpp::emit_definition).
-    if matches!(
-        entry,
-        super::construction::Entry::Constructor(_, _)
-            | super::construction::Entry::DestructorBase(_)
-    ) {
-        metadata.flags &= !4;
-    }
-    let name = program.symbol(symbol).name;
-    program.add(
-        symbol,
-        crate::lowir::model::Function {
-            name,
-            signature,
-            metadata,
-            body: None,
-            location: None,
-        },
-    )?;
-    Ok(())
+    Ok(signature)
 }

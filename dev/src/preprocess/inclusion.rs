@@ -22,7 +22,7 @@ pub(crate) fn read_name<'a>(
     definitions: &Definitions<'a>,
     expander: &mut Expander<'a>,
     tokens: &mut Vec<Token<'a>>,
-) -> Result<Vec<u8>, PreprocessError> {
+) -> Result<(Vec<u8>, bool), PreprocessError> {
     source.request_header_name();
     let first = source.next_in_line(names)?;
     let fail = |message| PreprocessError::at(directive.begin, message);
@@ -31,7 +31,7 @@ pub(crate) fn read_name<'a>(
         if source.next_in_line(names)?.kind != PpTokenKind::NewLine {
             return Err(fail("extra tokens at the end of the directive"));
         }
-        return Ok(text[1..text.len() - 1].to_vec());
+        return Ok((text[1..text.len() - 1].to_vec(), text[0] == b'<'));
     }
     if first.kind == PpTokenKind::NewLine {
         return Err(fail("#include requires a file name"));
@@ -46,6 +46,7 @@ pub(crate) fn read_name<'a>(
         tokens.push(token);
     }
     source.end_line_input()?;
+    let angle = tokens.len() != 1;
     let result = if tokens.len() == 1 {
         decode_ordinary_string(&tokens[0])?
     } else if tokens
@@ -67,5 +68,7 @@ pub(crate) fn read_name<'a>(
         None
     };
     tokens.clear();
-    result.ok_or_else(|| fail("#include requires a header name or string literal"))
+    result
+        .map(|name| (name, angle))
+        .ok_or_else(|| fail("#include requires a header name or string literal"))
 }

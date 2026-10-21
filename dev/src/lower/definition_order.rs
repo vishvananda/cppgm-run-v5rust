@@ -85,6 +85,10 @@ impl Definitions {
         program: &mut Program,
         entry: Option<(FamilyId, super::construction::Variant)>,
     ) -> Result<(), Error> {
+        if program.has_definition_sink() {
+            program.stream_last_definition(&mut io::sink())?;
+            return Ok(());
+        }
         let start = self.bytes.len();
         program.stream_last_definition(&mut self.bytes)?;
         self.spans.push(Definition {
@@ -166,6 +170,10 @@ impl Definitions {
         }
     }
     pub(super) fn defer_definition(&mut self, program: &mut Program) -> Result<(), Error> {
+        if program.has_definition_sink() {
+            program.stream_last_definition(&mut io::sink())?;
+            return Ok(());
+        }
         let start = self.bytes.len();
         let symbol = program.stream_last_body(&mut self.bytes)?;
         self.held.push(Definition {

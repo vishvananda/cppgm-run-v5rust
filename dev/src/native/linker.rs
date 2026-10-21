@@ -2,7 +2,7 @@
 use super::{
     executable,
     image::{Image, align_up},
-    object::{Binding, Definition, Object, RelocationKind, SectionId, SectionKind, SymbolId},
+    object::{Binding, Definition, Object, SectionId, SectionKind, SymbolId},
 };
 use crate::lowir::Error;
 use std::{
@@ -12,7 +12,7 @@ use std::{
 };
 const MAX_ALIGN: u64 = 1 << 24;
 const MAX_SEGMENT: u64 = 1 << 46;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct ObjectId(u32);
 impl ObjectId {
     fn index(self) -> usize {
@@ -42,6 +42,7 @@ enum Bound {
 #[derive(Clone, Copy)]
 enum State {
     Undefined,
+    Common,
     Weak(Reference),
     Strong(Reference),
     Linker(Bound),
@@ -52,6 +53,10 @@ struct Global {
     strong_reference: bool,
     referenced_from: Option<ObjectId>,
     address: u64,
+    common_size: u64,
+    common_align: u64,
+    offset: u64,
+    got: Option<u64>,
 }
 #[derive(Clone, Copy)]
 enum Segment {
@@ -86,6 +91,7 @@ struct Linker {
     image: Image,
     array_bounds: [u64; 4],
     got: u64,
+    local_got: HashMap<(ObjectId, SymbolId), u64>,
     align: [u64; 4],
 }
 fn error(parts: &[&[u8]]) -> Error {
@@ -126,7 +132,7 @@ fn pad(buffer: &mut Vec<u8>, align: u64, fill: u8) -> Result<u64, Error> {
     buffer.resize(count, fill);
     Ok(offset)
 }
-pub(super) fn link(
+pub(crate) fn link(
     objects: Vec<Object>,
     path: &Path,
     permissions: Option<&std::fs::Permissions>,
@@ -142,6 +148,7 @@ pub(super) fn link(
         image: Image::new(0),
         array_bounds: [0; 4],
         got: 0,
+        local_got: HashMap::new(),
         align: [1; 4],
     };
     for index in 0..linker.objects.len() {
@@ -177,7 +184,16 @@ impl Linker {
             .collect();
         for index in 0..file.groups().len() {
             let signature = self.objects[at].groups()[index].signature;
-            let name = self.objects[at].symbol_name(signature);
+            let symbol = self.objects[at].symbol(signature);
+            let name = if symbol.kind == super::object::SymbolKind::Section && symbol.name.0 == 0 {
+                if let Definition::Section(section) = symbol.definition {
+                    self.objects[at].name(self.objects[at].section(section).name)
+                } else {
+                    self.objects[at].symbol_name(signature)
+                }
+            } else {
+                self.objects[at].symbol_name(signature)
+            };
             if self.groups.insert(name.to_vec()) {
                 continue;
             }
@@ -209,12 +225,28 @@ impl Linker {
                     strong_reference: false,
                     referenced_from: None,
                     address: 0,
+                    common_size: 0,
+                    common_align: 0,
+                    offset: 0,
+                    got: None,
                 });
                 id
             };
             self.global_of[at][index] = Some(global);
-            if let Definition::Section(section) = symbol.definition
-                && self.kept[at][section.index()]
+            if symbol.definition == Definition::Common {
+                let global = &mut self.globals[global.index()];
+                if matches!(
+                    global.state,
+                    State::Undefined | State::Common | State::Weak(_)
+                ) {
+                    global.state = State::Common;
+                    global.common_size = global.common_size.max(symbol.size);
+                    global.common_align = global.common_align.max(symbol.value);
+                }
+                continue;
+            }
+            if symbol.definition == Definition::Absolute
+                || matches!(symbol.definition, Definition::Section(section) if self.kept[at][section.index()])
             {
                 let reference = Reference { object, symbol: id };
                 let state = if symbol.binding == Binding::Weak {
@@ -461,8 +493,59 @@ impl Linker {
             self.array_bounds[2 * array + 1] =
                 u64::try_from(self.image.rodata.len()).map_err(|_| Error::Limit)?;
         }
-        self.got = pad(&mut self.image.data, 8, 0)?;
+        self.place_common()?;
+        self.assign_got()
+    }
+    fn place_common(&mut self) -> Result<(), Error> {
+        for global in &mut self.globals {
+            if !matches!(global.state, State::Common) {
+                continue;
+            }
+            let align = global.common_align.max(1);
+            let offset = align_up(self.image.bss, align)?;
+            if align > MAX_ALIGN || global.common_size > MAX_SEGMENT.saturating_sub(offset) {
+                return Err(error(&[b"common symbol ", &global.name, b" is too large"]));
+            }
+            self.align[Segment::Bss.index()] = self.align[Segment::Bss.index()].max(align);
+            global.offset = offset;
+            self.image.bss = offset.checked_add(global.common_size).ok_or(Error::Limit)?;
+        }
         Ok(())
+    }
+    fn assign_got(&mut self) -> Result<(), Error> {
+        self.got = pad(&mut self.image.data, 8, 0)?;
+        for object in 0..self.objects.len() {
+            let oid = ObjectId(u32::try_from(object).map_err(|_| Error::Limit)?);
+            for section in 1..self.objects[object].section_count() {
+                let id = self.objects[object].section_id(section)?;
+                if self.locations[object][id.index()].is_none() {
+                    continue;
+                }
+                for index in 0..self.objects[object].section(id).relocations.len() {
+                    let relocation = self.objects[object].section(id).relocations[index];
+                    if !relocation.kind.got() {
+                        continue;
+                    }
+                    let at = pad(&mut self.image.data, 8, 0)?;
+                    self.reserve_got(oid, relocation.symbol, at);
+                }
+            }
+        }
+        Ok(())
+    }
+    fn reserve_got(&mut self, object: ObjectId, symbol: SymbolId, at: u64) {
+        if let Some(global) = self.global_of[object.index()][symbol.index()] {
+            if self.globals[global.index()].got.is_some() {
+                return;
+            }
+            self.globals[global.index()].got = Some(at);
+        } else {
+            if self.local_got.contains_key(&(object, symbol)) {
+                return;
+            }
+            self.local_got.insert((object, symbol), at);
+        }
+        self.image.data.extend_from_slice(&[0; 8]);
     }
     fn segment_address(layout: &executable::Layout, segment: Segment) -> u64 {
         match segment {
@@ -479,6 +562,9 @@ impl Linker {
     ) -> Result<u64, Error> {
         let file = &self.objects[reference.object.index()];
         let symbol = file.symbol(reference.symbol);
+        if symbol.definition == Definition::Absolute {
+            return Ok(symbol.value);
+        }
         let Definition::Section(section) = symbol.definition else {
             return Err(object_error(
                 file,
@@ -511,6 +597,7 @@ impl Linker {
         for index in 0..self.globals.len() {
             let address = match self.globals[index].state {
                 State::Undefined => 0,
+                State::Common => layout.bss_address.wrapping_add(self.globals[index].offset),
                 State::Weak(reference) | State::Strong(reference) => {
                     self.defined_address(reference, layout)?
                 }
@@ -523,8 +610,76 @@ impl Linker {
                 },
             };
             self.globals[index].address = address;
+            if let Some(at) = self.globals[index].got {
+                let at = usize::try_from(at).map_err(|_| Error::Limit)?;
+                self.image.data[at..at + 8].copy_from_slice(&address.to_le_bytes());
+            }
         }
         Ok(())
+    }
+    fn relocation_value(
+        &mut self,
+        object: ObjectId,
+        relocation: super::object::Relocation,
+        place: u64,
+        layout: &executable::Layout,
+    ) -> Result<Option<(u64, u64, bool)>, Error> {
+        let kind = relocation.kind.code();
+        if kind == 0 {
+            return Ok(None);
+        }
+        let mut symbol = self.target_address(object, relocation.symbol, layout)?;
+        if relocation.kind.got() {
+            let slot =
+                if let Some(global) = self.global_of[object.index()][relocation.symbol.index()] {
+                    self.globals[global.index()].got.ok_or(Error::Limit)?
+                } else {
+                    let at = *self
+                        .local_got
+                        .get(&(object, relocation.symbol))
+                        .ok_or(Error::Limit)?;
+                    let at_usize = usize::try_from(at).map_err(|_| Error::Limit)?;
+                    self.image.data[at_usize..at_usize + 8].copy_from_slice(&symbol.to_le_bytes());
+                    at
+                };
+            symbol = layout.data_address.wrapping_add(slot);
+        }
+        let got = layout.data_address.wrapping_add(self.got);
+        if kind == 25 {
+            symbol = symbol.wrapping_sub(got);
+        } else if matches!(kind, 26 | 29) {
+            symbol = got;
+        }
+        let value = symbol.wrapping_add_signed(relocation.addend);
+        let relative = value.wrapping_sub(place).cast_signed();
+        let result = match kind {
+            1 | 25 => (value, 8, true),
+            24 | 29 => (relative.cast_unsigned(), 8, true),
+            2 | 4 | 9 | 26 | 41 | 42 => {
+                (relative.cast_unsigned(), 4, i32::try_from(relative).is_ok())
+            }
+            10 => (value, 4, u32::try_from(value).is_ok()),
+            11 => (value, 4, i32::try_from(value.cast_signed()).is_ok()),
+            12 => (
+                value,
+                2,
+                u16::try_from(value).is_ok() || i16::try_from(value.cast_signed()).is_ok(),
+            ),
+            13 => (relative.cast_unsigned(), 2, i16::try_from(relative).is_ok()),
+            14 => (
+                value,
+                1,
+                u8::try_from(value).is_ok() || i8::try_from(value.cast_signed()).is_ok(),
+            ),
+            15 => (relative.cast_unsigned(), 1, i8::try_from(relative).is_ok()),
+            _ => {
+                return Err(object_error(
+                    &self.objects[object.index()],
+                    format!("unsupported relocation type {kind}").as_bytes(),
+                ));
+            }
+        };
+        Ok(Some(result))
     }
     fn relocate(&mut self, layout: &executable::Layout) -> Result<(), Error> {
         for object in 0..self.objects.len() {
@@ -552,18 +707,14 @@ impl Linker {
                             b"relocation outside its section",
                         ));
                     }
-                    let symbol = self.target_address(oid, relocation.symbol, layout)?;
-                    let value = symbol.wrapping_add_signed(relocation.addend);
                     let place = Self::segment_address(layout, location.segment)
                         .wrapping_add(location.offset)
                         .wrapping_add(relocation.offset);
-                    let (stored, bytes, fits) =
-                        if matches!(relocation.kind, RelocationKind::Absolute) {
-                            (value, 8, true)
-                        } else {
-                            let relative = value.wrapping_sub(place).cast_signed();
-                            (relative.cast_unsigned(), 4, i32::try_from(relative).is_ok())
-                        };
+                    let Some((stored, bytes, fits)) =
+                        self.relocation_value(oid, relocation, place, layout)?
+                    else {
+                        continue;
+                    };
                     if bytes > size - relocation.offset {
                         return Err(object_error(
                             &self.objects[object],

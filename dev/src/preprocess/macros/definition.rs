@@ -23,6 +23,7 @@ pub(crate) struct Replacement<'a> {
     pub(crate) role: Role,
 }
 pub(crate) struct Definition<'a> {
+    pub(crate) replaceable: bool,
     pub(crate) name: NameId,
     pub(crate) body: Vec<Replacement<'a>>,
     pub(crate) parameters: Vec<NameId>,
@@ -107,15 +108,17 @@ impl<'a> Definitions<'a> {
         at: crate::support::source::SourceOffset,
     ) -> Result<(), PreprocessError> {
         let name = definition.name;
-        if let Some(previous) = self.get(name) {
+        if let Some(previous) = self.get(name)
+            && !previous.replaceable
+        {
             if !previous.same_as(&definition) {
                 return Err(PreprocessError::at(at, "macro redefined differently"));
             }
-        } else {
-            self.slots
-                .resize_with(self.slots.len().max(name.index() + 1), || None);
-            self.slots[name.index()] = Some(Rc::new(definition));
+            return Ok(());
         }
+        self.slots
+            .resize_with(self.slots.len().max(name.index() + 1), || None);
+        self.slots[name.index()] = Some(Rc::new(definition));
         Ok(())
     }
     pub(crate) fn undefine(&mut self, name: NameId) {
@@ -139,6 +142,7 @@ impl<'a> Definition<'a> {
             function_like: false,
             variadic: false,
             builtin: None,
+            replaceable: false,
         }
     }
     fn same_as(&self, other: &Self) -> bool {
@@ -169,6 +173,7 @@ impl<'a> Definition<'a> {
         let function_like =
             token.is_punctuator(Punctuator::LeftParen) && token.flags & LEADING_SPACE == 0;
         let mut definition = Self {
+            replaceable: false,
             name,
             body: Vec::new(),
             parameters: Vec::new(),

@@ -58,12 +58,18 @@ pub(crate) struct SourceInput<'a> {
     peeked: Option<Token<'a>>,
     pub(crate) allow_va_args: bool,
     predefined: Option<FileId>,
+    command_line: std::ops::Range<u32>,
     tokens_read: u64,
     includes: u64,
     guarded_skips: u64,
     binary_exponents: bool,
+    include_paths: Vec<Vec<u8>>,
 }
 impl<'a> SourceInput<'a> {
+    pub(crate) fn set_include_paths(&mut self, paths: &[Vec<u8>]) {
+        self.include_paths = paths.to_vec();
+    }
+
     pub(crate) fn set_binary_exponents(&mut self, enabled: bool) {
         self.binary_exponents = enabled;
         self.frame.lexer.set_binary_exponents(enabled);
@@ -123,10 +129,12 @@ impl<'a> SourceInput<'a> {
             peeked: None,
             allow_va_args: false,
             predefined: None,
+            command_line: 0..0,
             tokens_read: 0,
             includes: 0,
             guarded_skips: 0,
             binary_exponents: false,
+            include_paths: Vec::new(),
         })
     }
     fn next_base(base: u32, source: &SourceBuffer) -> Result<u32, PreprocessError> {
@@ -472,27 +480,51 @@ impl<'a> SourceInput<'a> {
             .ok_or(PreprocessError::Invariant("missing parent source frame"))?;
         Ok(())
     }
+    fn find_include(
+        &mut self,
+        name: &[u8],
+        angle: bool,
+        at: SourceOffset,
+    ) -> Result<(FileId, Vec<u8>), PreprocessError> {
+        for paths in if angle { [true, false] } else { [false, true] } {
+            if paths {
+                for directory in &self.include_paths {
+                    let mut path = directory.clone();
+                    if !path.ends_with(b"/") {
+                        path.push(b'/');
+                    }
+                    path.extend_from_slice(name);
+                    if let Some(file) = self.files.open(&path)? {
+                        return Ok((file, path));
+                    }
+                }
+            } else {
+                let current = self.presumed_name();
+                let mut path = current
+                    .iter()
+                    .rposition(|&b| b == b'/')
+                    .map_or_else(Vec::new, |slash| current[..=slash].to_vec());
+                path.extend_from_slice(name);
+                if let Some(file) = self.files.open(&path)? {
+                    return Ok((file, path));
+                }
+            }
+        }
+        self.files
+            .open(name)?
+            .map(|file| (file, name.to_vec()))
+            .ok_or_else(|| PreprocessError::at(at, "include file not found"))
+    }
     pub(crate) fn include(
         &mut self,
         directive: &Token<'a>,
         name: &[u8],
+        angle: bool,
         depth: usize,
         definitions: &super::macros::definition::Definitions<'a>,
         pragmas: &super::pragmas::Pragmas,
     ) -> Result<(), PreprocessError> {
-        let current = self.presumed_name();
-        let mut path = current
-            .iter()
-            .rposition(|&byte| byte == b'/')
-            .map_or_else(Vec::new, |slash| current[..=slash].to_vec());
-        path.extend_from_slice(name);
-        let mut file = self.files.open(&path)?;
-        if file.is_none() {
-            path = name.to_vec();
-            file = self.files.open(&path)?;
-        }
-        let file =
-            file.ok_or_else(|| PreprocessError::at(directive.begin, "include file not found"))?;
+        let (file, path) = self.find_include(name, angle, directive.begin)?;
         if self
             .files
             .identity(file)
@@ -517,11 +549,29 @@ impl<'a> SourceInput<'a> {
         self.includes = self.includes.wrapping_add(1);
         self.enter(file, &path, depth, Some(directive.begin))
     }
-    pub(crate) fn enter_predefined(&mut self, text: Vec<u8>) -> Result<(), PreprocessError> {
+    pub(crate) fn enter_predefined(
+        &mut self,
+        text: Vec<u8>,
+        command_line_begin: usize,
+    ) -> Result<(), PreprocessError> {
         let file = self.files.add_text(text)?;
         self.predefined = Some(file);
-        self.enter(file, b"<predefined>", 0, None)
+        self.enter(file, b"<predefined>", 0, None)?;
+        let begin = self
+            .inclusion()
+            .base
+            .checked_add(
+                u32::try_from(command_line_begin)
+                    .map_err(|_| PreprocessError::Limit("command-line source space"))?,
+            )
+            .ok_or(PreprocessError::Limit("command-line source space"))?;
+        self.command_line = begin..self.next_base;
+        Ok(())
     }
+    pub(crate) fn command_line_definition(&self, at: SourceOffset) -> bool {
+        self.command_line.contains(&at.0)
+    }
+
     pub(crate) fn in_predefined(&self) -> bool {
         self.predefined == Some(self.frame.file)
     }

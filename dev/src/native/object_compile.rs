@@ -51,8 +51,8 @@ struct Pending {
     target: ImageSymbol,
     addend: i64,
 }
-struct Compilation<'a> {
-    program: &'a mut Program,
+pub(crate) struct ObjectBuilder {
+    level: u8,
     out: Object,
     image: Image,
     runtime: Symbols,
@@ -96,35 +96,26 @@ fn resize(bytes: &mut Vec<u8>, length: u64, fill: u8) -> Result<(), Error> {
     bytes.resize(length, fill);
     Ok(())
 }
-pub(super) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result<Object, Error> {
-    let mut image = Image::new(program.symbols().len());
-    let runtime = Symbols::imports(&mut image)?;
-    let mut compiler = Compilation {
-        program,
-        out: Object::new(path),
-        image,
-        runtime,
-        ranges: Vec::new(),
-        pending: Vec::new(),
-        placements: Vec::new(),
-        object_symbols: Vec::new(),
-        by_name: HashMap::new(),
-        shared: [None; 4],
-        own_names: [None; 4],
-        named: HashMap::new(),
-        grouped: Vec::new(),
-        addresses: Vec::new(),
+pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result<Object, Error> {
+    let mut compiler = if let Some(sink) = program.take_definition_sink() {
+        *sink
+            .into_any()
+            .downcast::<ObjectBuilder>()
+            .map_err(|_| Error::Construction("wrong object definition sink".into()))?
+    } else {
+        ObjectBuilder::new(level)?
     };
-    compiler.encode(level)?;
-    compiler.prune()?;
-    compiler.place_text()?;
-    compiler.place_globals()?;
-    compiler.place_startup()?;
-    compiler.add_symbols()?;
-    compiler.add_relocations()?;
+    compiler.out.path = path;
+    compiler.encode(program, level)?;
+    compiler.prune(program)?;
+    compiler.place_text(program)?;
+    compiler.place_globals(program)?;
+    compiler.place_startup(program)?;
+    compiler.add_symbols(program)?;
+    compiler.add_relocations(program)?;
     for index in 0..compiler.grouped.len() {
         let symbol = compiler.grouped[index];
-        let signature = compiler.object_symbol(ImageSymbol::Program(symbol))?;
+        let signature = compiler.object_symbol(program, ImageSymbol::Program(symbol))?;
         let section = compiler.placements[symbol.index()]
             .section
             .ok_or(Error::Limit)?;
@@ -135,47 +126,70 @@ pub(super) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result
     }
     Ok(compiler.out)
 }
-impl Compilation<'_> {
-    fn encode(&mut self, level: u8) -> Result<(), Error> {
-        let mut emitted = vec![false; self.program.symbols().len()];
-        for index in 0..self.program.publications().len() {
-            let symbol = self.program.publications()[index];
-            if emitted[symbol.index()] {
+impl ObjectBuilder {
+    pub(crate) fn new(level: u8) -> Result<Self, Error> {
+        let mut image = Image::new(0);
+        let runtime = Symbols::imports(&mut image)?;
+        Ok(Self {
+            level,
+            out: Object::new(Vec::new()),
+            image,
+            runtime,
+            ranges: Vec::new(),
+            pending: Vec::new(),
+            placements: Vec::new(),
+            object_symbols: Vec::new(),
+            by_name: HashMap::new(),
+            shared: [None; 4],
+            own_names: [None; 4],
+            named: HashMap::new(),
+            grouped: Vec::new(),
+            addresses: Vec::new(),
+        })
+    }
+    fn append(&mut self, program: &Program, symbol: SymbolId, level: u8) -> Result<(), Error> {
+        self.image.reserve_symbols(program.symbols().len());
+        let function = program
+            .function(program.symbol(symbol))
+            .ok_or(Error::Limit)?;
+        if !super::jump_thunk::emit(program, symbol, function, &mut self.image)? {
+            let mir = super::value_selection::select(program, symbol, function, level)?;
+            let _ = mir.emit(&mut self.image, Some(self.runtime))?;
+        }
+        let start = usize::try_from(self.image.definition(ImageSymbol::Program(symbol)).offset)
+            .map_err(|_| Error::Limit)?;
+        self.ranges.push(CodeRange {
+            symbol,
+            bytes: start..self.image.text.len(),
+            section: None,
+            base: 0,
+            dropped: false,
+        });
+        Ok(())
+    }
+
+    fn encode(&mut self, program: &mut Program, level: u8) -> Result<(), Error> {
+        self.image.reserve_symbols(program.symbols().len());
+        for index in 0..program.publications().len() {
+            let symbol = program.publications()[index];
+            if program
+                .function(program.symbol(symbol))
+                .is_none_or(|f| f.body.is_none())
+            {
                 continue;
             }
-            let Some(function) = self
-                .program
-                .function(self.program.symbol(symbol))
-                .filter(|f| f.body.is_some())
-            else {
-                continue;
-            };
-            if !super::jump_thunk::emit(self.program, symbol, function, &mut self.image)? {
-                let mir = super::value_selection::select(self.program, symbol, function, level)?;
-                let _ = mir.emit(&mut self.image, Some(self.runtime))?;
-            }
-            let start = usize::try_from(self.image.definition(ImageSymbol::Program(symbol)).offset)
-                .map_err(|_| Error::Limit)?;
-            self.ranges.push(CodeRange {
-                symbol,
-                bytes: start..self.image.text.len(),
-                section: None,
-                base: 0,
-                dropped: false,
-            });
-            emitted[symbol.index()] = true;
-            self.program.release_body(symbol)?;
+            self.append(program, symbol, level)?;
+            program.release_body(symbol)?;
         }
         // A declared TLS wrapper is a definition of the object's address in course mode.
-        for index in 0..self.program.symbols().len() {
-            let symbol = self
-                .program
-                .find_symbol(self.program.symbols()[index].name)
+        for index in 0..program.symbols().len() {
+            let symbol = program
+                .find_symbol(program.symbols()[index].name)
                 .ok_or(Error::Limit)?;
-            let Some(function) = self.program.function(self.program.symbol(symbol)) else {
+            let Some(function) = program.function(program.symbol(symbol)) else {
                 continue;
             };
-            if !self.program.function_defined(symbol)
+            if !program.function_defined(symbol)
                 && let Some(object) = function.metadata.tls_for
             {
                 super::runtime::emit_tls_wrapper(
@@ -197,19 +211,18 @@ impl Compilation<'_> {
         }
         Ok(())
     }
-    fn local_function(&self, symbol: SymbolId) -> bool {
-        let metadata = self
-            .program
-            .symbol_metadata(self.program.symbol(symbol))
+    fn local_function(program: &Program, symbol: SymbolId) -> bool {
+        let metadata = program
+            .symbol_metadata(program.symbol(symbol))
             .copied()
             .unwrap_or_default();
         metadata.role.is_none()
             && metadata.flags & 4 == 0
             && (metadata.binding == Some(SourceBinding::Internal)
-                || !self.program.function_defined(symbol))
+                || !program.function_defined(symbol))
     }
-    fn prune(&mut self) -> Result<(), Error> {
-        let mut range_of = vec![None; self.program.symbols().len()];
+    fn prune(&mut self, program: &Program) -> Result<(), Error> {
+        let mut range_of = vec![None; program.symbols().len()];
         let mut first = Vec::with_capacity(self.ranges.len() + 1);
         let mut next = 0;
         for (index, range) in self.ranges.iter_mut().enumerate() {
@@ -234,11 +247,11 @@ impl Compilation<'_> {
         };
         for index in 0..self.ranges.len() {
             let symbol = self.ranges[index].symbol;
-            if !self.local_function(symbol) {
+            if !Self::local_function(program, symbol) {
                 reach(symbol, &mut self.ranges, &mut work);
             }
         }
-        for global in self.program.globals_in_publication_order() {
+        for global in program.globals_in_publication_order() {
             match &global.init {
                 GlobalInit::Address(symbol, _) => reach(*symbol, &mut self.ranges, &mut work),
                 GlobalInit::Data(items) => {
@@ -251,7 +264,7 @@ impl Compilation<'_> {
                 _ => {}
             }
         }
-        for alias in self.program.aliases() {
+        for alias in program.aliases() {
             reach(alias.target, &mut self.ranges, &mut work);
         }
         while let Some(range) = work.pop() {
@@ -267,14 +280,19 @@ impl Compilation<'_> {
         }
         Ok(())
     }
-    fn comdat(&self, symbol: SymbolId) -> bool {
-        self.program
-            .symbol_metadata(self.program.symbol(symbol))
+    fn comdat(program: &Program, symbol: SymbolId) -> bool {
+        program
+            .symbol_metadata(program.symbol(symbol))
             .is_some_and(|m| m.binding == Some(SourceBinding::Weak) && m.flags & 64 == 0)
     }
-    fn section(&mut self, kind: SectionKind, symbol: SymbolId) -> Result<SectionId, Error> {
+    fn section(
+        &mut self,
+        program: &Program,
+        kind: SectionKind,
+        symbol: SymbolId,
+    ) -> Result<SectionId, Error> {
         let index = kind_slot(kind)?;
-        if self.comdat(symbol) {
+        if Self::comdat(program, symbol) {
             let name = if let Some(name) = self.own_names[index] {
                 name
             } else {
@@ -297,10 +315,9 @@ impl Compilation<'_> {
         self.shared[index] = Some(section);
         Ok(section)
     }
-    fn place_text(&mut self) -> Result<(), Error> {
+    fn place_text(&mut self, program: &Program) -> Result<(), Error> {
         let locals = self.image.local_definitions().count();
-        let count = self
-            .program
+        let count = program
             .symbols()
             .len()
             .checked_add(locals)
@@ -311,7 +328,7 @@ impl Compilation<'_> {
                 continue;
             }
             let symbol = self.ranges[index].symbol;
-            let section = self.section(SectionKind::Text, symbol)?;
+            let section = self.section(program, SectionKind::Text, symbol)?;
             let output = self.out.section_mut(section);
             output.align = 16;
             let base = align_up(
@@ -339,7 +356,7 @@ impl Compilation<'_> {
             output.align = 16;
             for (symbol, definition) in self.image.local_definitions() {
                 if definition.section == ImageSection::Rodata {
-                    self.placements[symbol.slot(self.program.symbols().len())] = Placement {
+                    self.placements[symbol.slot(program.symbols().len())] = Placement {
                         section: Some(section),
                         offset: definition.offset,
                         size: 0,
@@ -349,13 +366,12 @@ impl Compilation<'_> {
         }
         Ok(())
     }
-    fn place_globals(&mut self) -> Result<(), Error> {
+    fn place_globals(&mut self, program: &Program) -> Result<(), Error> {
         let mut scanner = FloatingScanner::default();
-        for index in 0..self.program.publications().len() {
-            let symbol = self.program.publications()[index];
-            let Some(global) = self
-                .program
-                .global(self.program.symbol(symbol))
+        for index in 0..program.publications().len() {
+            let symbol = program.publications()[index];
+            let Some(global) = program
+                .global(program.symbol(symbol))
                 .filter(|g| !matches!(g.init, GlobalInit::Declaration))
             else {
                 continue;
@@ -381,14 +397,12 @@ impl Compilation<'_> {
                     }
                     section
                 } else {
-                    let section = self
-                        .out
-                        .add_section(self.program.names.bytes(name), kind, 1)?;
+                    let section = self.out.add_section(program.names.bytes(name), kind, 1)?;
                     self.named.insert(name, section);
                     section
                 }
             } else {
-                self.section(kind, symbol)?
+                self.section(program, kind, symbol)?
             };
             kind = self.out.section(section).kind;
             let output = self.out.section_mut(section);
@@ -405,10 +419,7 @@ impl Compilation<'_> {
             }
             resize(&mut output.bytes, output.size, 0)?;
             self.addresses.clear();
-            let global = self
-                .program
-                .global(self.program.symbol(symbol))
-                .ok_or(Error::Limit)?;
+            let global = program.global(program.symbol(symbol)).ok_or(Error::Limit)?;
             global_data::write_global(
                 global,
                 &mut output.bytes,
@@ -427,18 +438,16 @@ impl Compilation<'_> {
         }
         Ok(())
     }
-    fn place_startup(&mut self) -> Result<(), Error> {
-        for index in 0..self.program.symbols().len() {
-            let symbol = self
-                .program
-                .find_symbol(self.program.symbols()[index].name)
+    fn place_startup(&mut self, program: &Program) -> Result<(), Error> {
+        for index in 0..program.symbols().len() {
+            let symbol = program
+                .find_symbol(program.symbols()[index].name)
                 .ok_or(Error::Limit)?;
-            if !self.program.function_defined(symbol) {
+            if !program.function_defined(symbol) {
                 continue;
             }
-            let role = self
-                .program
-                .symbol_metadata(self.program.symbol(symbol))
+            let role = program
+                .symbol_metadata(program.symbol(symbol))
                 .and_then(|m| m.role);
             let (name, kind) = match role {
                 Some(Role::Init) => (&b".init_array"[..], SectionKind::InitArray),
@@ -457,8 +466,12 @@ impl Compilation<'_> {
         }
         Ok(())
     }
-    fn object_symbol(&mut self, image_symbol: ImageSymbol) -> Result<object::SymbolId, Error> {
-        let slot = image_symbol.slot(self.program.symbols().len());
+    fn object_symbol(
+        &mut self,
+        program: &Program,
+        image_symbol: ImageSymbol,
+    ) -> Result<object::SymbolId, Error> {
+        let slot = image_symbol.slot(program.symbols().len());
         if let Some(symbol) = self.object_symbols[slot] {
             return Ok(symbol);
         }
@@ -488,12 +501,8 @@ impl Compilation<'_> {
         let ImageSymbol::Program(source) = image_symbol else {
             return Err(Error::Limit);
         };
-        let from = self.program.symbol(source);
-        let metadata = self
-            .program
-            .symbol_metadata(from)
-            .copied()
-            .unwrap_or_default();
+        let from = program.symbol(source);
+        let metadata = program.symbol_metadata(from).copied().unwrap_or_default();
         let defined = place.section.is_some();
         symbol.kind = if matches!(from.detail, SymbolDetail::Function(_)) {
             SymbolKind::Function
@@ -508,7 +517,7 @@ impl Compilation<'_> {
         if defined
             && (metadata.binding == Some(SourceBinding::Internal)
                 || matches!(from.detail, SymbolDetail::Function(_))
-                    && !self.program.function_defined(source))
+                    && !program.function_defined(source))
         {
             symbol.binding = Binding::Local;
         }
@@ -525,10 +534,10 @@ impl Compilation<'_> {
         }
         symbol.name = if symbol.binding == Binding::Local && metadata.object.is_none() {
             let mut spelling = vec![b'@'];
-            spelling.extend_from_slice(self.program.names.bytes(name));
+            spelling.extend_from_slice(program.names.bytes(name));
             self.out.add_name(&spelling)?
         } else {
-            self.out.add_name(self.program.names.bytes(name))?
+            self.out.add_name(program.names.bytes(name))?
         };
         let added = self.out.add_symbol(symbol)?;
         if symbol.binding != Binding::Local {
@@ -537,7 +546,12 @@ impl Compilation<'_> {
         self.object_symbols[slot] = Some(added);
         Ok(added)
     }
-    fn define_alias(&mut self, name: NameId, target: object::SymbolId) -> Result<(), Error> {
+    fn define_alias(
+        &mut self,
+        program: &Program,
+        name: NameId,
+        target: object::SymbolId,
+    ) -> Result<(), Error> {
         let mut alias = *self.out.symbol(target);
         if let Some(&existing) = self.by_name.get(&name) {
             if self.out.symbol(existing).definition == Definition::Undefined {
@@ -546,52 +560,51 @@ impl Compilation<'_> {
             }
             return Ok(());
         }
-        alias.name = self.out.add_name(self.program.names.bytes(name))?;
+        alias.name = self.out.add_name(program.names.bytes(name))?;
         let id = self.out.add_symbol(alias)?;
         if alias.binding != Binding::Local {
             self.by_name.insert(name, id);
         }
         Ok(())
     }
-    fn add_symbols(&mut self) -> Result<(), Error> {
+    fn add_symbols(&mut self, program: &Program) -> Result<(), Error> {
         self.object_symbols.resize(self.placements.len(), None);
         for index in 0..self.ranges.len() {
             if !self.ranges[index].dropped {
-                let _ = self.object_symbol(ImageSymbol::Program(self.ranges[index].symbol))?;
+                let _ =
+                    self.object_symbol(program, ImageSymbol::Program(self.ranges[index].symbol))?;
             }
         }
-        for index in 0..self.program.publications().len() {
-            let symbol = self.program.publications()[index];
+        for index in 0..program.publications().len() {
+            let symbol = program.publications()[index];
             if self.placements[symbol.index()].section.is_some() {
-                let _ = self.object_symbol(ImageSymbol::Program(symbol))?;
+                let _ = self.object_symbol(program, ImageSymbol::Program(symbol))?;
             }
         }
-        for index in 0..self.program.aliases().len() {
-            let name = self.program.aliases()[index].object;
-            let target = self.program.aliases()[index].target;
-            let target = self.object_symbol(ImageSymbol::Program(target))?;
-            self.define_alias(name, target)?;
+        for index in 0..program.aliases().len() {
+            let name = program.aliases()[index].object;
+            let target = program.aliases()[index].target;
+            let target = self.object_symbol(program, ImageSymbol::Program(target))?;
+            self.define_alias(program, name, target)?;
         }
-        for index in 0..self.program.symbols().len() {
+        for index in 0..program.symbols().len() {
             if self.placements[index].section.is_none() {
                 continue;
             }
-            let source = self
-                .program
-                .find_symbol(self.program.symbols()[index].name)
+            let source = program
+                .find_symbol(program.symbols()[index].name)
                 .ok_or(Error::Limit)?;
-            let metadata = self
-                .program
-                .symbol_metadata(self.program.symbol(source))
+            let metadata = program
+                .symbol_metadata(program.symbol(source))
                 .copied()
                 .unwrap_or_default();
-            let name = self.program.symbol(source).name;
+            let name = program.symbol(source).name;
             if metadata.flags & 1 != 0 && metadata.object.is_some_and(|object| object != name) {
-                let target = self.object_symbol(ImageSymbol::Program(source))?;
-                self.define_alias(name, target)?;
+                let target = self.object_symbol(program, ImageSymbol::Program(source))?;
+                self.define_alias(program, name, target)?;
             }
             if metadata.role == Some(Role::Entry) {
-                let target = self.object_symbol(ImageSymbol::Program(source))?;
+                let target = self.object_symbol(program, ImageSymbol::Program(source))?;
                 if self.out.symbol_name(target) != b"main" {
                     let mut entry = *self.out.symbol(target);
                     entry.name = self.out.add_name(b"main")?;
@@ -602,7 +615,7 @@ impl Compilation<'_> {
         }
         Ok(())
     }
-    fn add_relocations(&mut self) -> Result<(), Error> {
+    fn add_relocations(&mut self, program: &Program) -> Result<(), Error> {
         let mut range = 0;
         for index in 0..self.image.code_fixups().len() {
             let fixup = self.image.code_fixups()[index];
@@ -629,7 +642,7 @@ impl Compilation<'_> {
                         .map_err(|_| Error::Limit)?,
                 )
                 .ok_or(Error::Limit)?;
-            let symbol = self.object_symbol(fixup.target)?;
+            let symbol = self.object_symbol(program, fixup.target)?;
             self.out.section_mut(section).relocations.push(Relocation {
                 offset,
                 kind: if fixup.branch {
@@ -643,7 +656,7 @@ impl Compilation<'_> {
         }
         for index in 0..self.pending.len() {
             let target = self.pending[index].target;
-            let symbol = self.object_symbol(target)?;
+            let symbol = self.object_symbol(program, target)?;
             let pending = &self.pending[index];
             self.out
                 .section_mut(pending.section)
@@ -656,5 +669,14 @@ impl Compilation<'_> {
                 });
         }
         Ok(())
+    }
+}
+
+impl crate::lowir::model::DefinitionSink for ObjectBuilder {
+    fn append(&mut self, program: &Program, symbol: SymbolId) -> Result<(), Error> {
+        self.append(program, symbol, self.level)
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
     }
 }

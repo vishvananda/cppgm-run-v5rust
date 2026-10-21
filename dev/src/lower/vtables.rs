@@ -1015,7 +1015,9 @@ impl Symbols<'_, '_> {
             };
             builder.effect(I::Return(result, returned))?;
             builder.finish()?;
-            let family = if let Some((entity, object, variant)) = thunk.family {
+            let family = if let Some((entity, object, variant)) =
+                thunk.family.filter(|_| !self.table.object_mode)
+            {
                 let family = if let Some(&family) = families.get(&(entity, thunk.adjustment)) {
                     family
                 } else {

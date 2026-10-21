@@ -8,7 +8,7 @@ pub(super) struct SymbolId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct GroupId(u32);
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct Name(u32);
+pub(super) struct Name(pub(super) u32);
 impl SectionId {
     pub(super) fn index(self) -> usize {
         self.0 as usize
@@ -44,9 +44,13 @@ pub(super) enum SymbolKind {
     None,
     Object,
     Function,
+    Section,
+    File,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum Definition {
+    Absolute,
+    Common,
     #[default]
     Undefined,
     Section(SectionId),
@@ -56,6 +60,20 @@ pub(super) enum RelocationKind {
     Absolute,
     Relative,
     Branch,
+    Other(u32),
+}
+impl RelocationKind {
+    pub(super) fn code(self) -> u32 {
+        match self {
+            Self::Absolute => 1,
+            Self::Relative => 2,
+            Self::Branch => 4,
+            Self::Other(n) => n,
+        }
+    }
+    pub(super) fn got(self) -> bool {
+        matches!(self, Self::Other(9 | 41 | 42))
+    }
 }
 #[derive(Clone, Copy)]
 pub(super) struct Relocation {
@@ -81,17 +99,13 @@ pub(super) struct Symbol {
     pub(super) kind: SymbolKind,
     pub(super) definition: Definition,
     pub(super) value: u64,
-    #[expect(
-        dead_code,
-        reason = "ELF symbol size is retained for object serialization; course linking uses section and value"
-    )]
     pub(super) size: u64,
 }
 pub(super) struct Group {
     pub(super) signature: SymbolId,
     pub(super) sections: Vec<SectionId>,
 }
-pub(super) struct Object {
+pub(crate) struct Object {
     pub(super) path: Vec<u8>,
     names: Vec<u8>,
     sections: Vec<Section>,
@@ -99,6 +113,13 @@ pub(super) struct Object {
     groups: Vec<Group>,
 }
 impl Object {
+    pub(super) fn strings(&self) -> &[u8] {
+        &self.names
+    }
+    pub(super) fn set_strings(&mut self, mut bytes: Vec<u8>) {
+        bytes.push(0);
+        self.names = bytes;
+    }
     pub(super) fn new(path: Vec<u8>) -> Self {
         Self {
             path,

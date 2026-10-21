@@ -81,8 +81,15 @@ impl Names {
         &self.text[id.0 as usize]
     }
 }
+/// A consumer owns only its phase's encoded state, never front-end facts.
+pub(crate) trait DefinitionSink: std::any::Any {
+    fn append(&mut self, program: &Program, symbol: SymbolId) -> Result<(), Error>;
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
+}
 #[derive(Default)]
 pub(crate) struct Program {
+    definition_sink: Option<Box<dyn DefinitionSink>>,
+    forward_boundaries: Vec<Option<(SignatureId, Metadata)>>,
     immediate_declarations: Vec<SymbolId>,
     immediate_declaration_set: std::collections::HashSet<SymbolId>,
     pub(crate) names: Names,
@@ -99,6 +106,24 @@ pub(crate) struct Program {
     reader_vocabulary: bool,
 }
 impl Program {
+    pub(crate) fn set_definition_sink(
+        &mut self,
+        sink: Box<dyn DefinitionSink>,
+    ) -> Result<(), Error> {
+        if self.definition_sink.is_some() {
+            return Err(Error::Construction(
+                "definition sink already installed".into(),
+            ));
+        }
+        self.definition_sink = Some(sink);
+        Ok(())
+    }
+    pub(crate) fn take_definition_sink(&mut self) -> Option<Box<dyn DefinitionSink>> {
+        self.definition_sink.take()
+    }
+    pub(crate) fn has_definition_sink(&self) -> bool {
+        self.definition_sink.is_some()
+    }
     pub(crate) fn prepare_reader(&mut self) -> Result<(), Error> {
         if !self.reader_vocabulary {
             super::vocabulary::intern_reader_words(&mut self.names)?;
@@ -213,12 +238,48 @@ impl Program {
     pub(crate) fn signature(&self, id: SignatureId) -> &Signature {
         &self.signatures[id.0 as usize]
     }
+    pub(crate) fn set_forward_boundary(
+        &mut self,
+        symbol: SymbolId,
+        signature: SignatureId,
+        metadata: Metadata,
+    ) {
+        self.forward_boundaries.resize(self.symbols.len(), None);
+        self.forward_boundaries[symbol.index()] = Some((signature, metadata));
+    }
+    pub(crate) fn forward_boundary(&self, symbol: SymbolId) -> Option<SignatureId> {
+        self.forward_boundaries
+            .get(symbol.index())
+            .copied()
+            .flatten()
+            .map(|(signature, _)| signature)
+    }
+    pub(crate) fn callee_metadata(&self, value: Value) -> Option<&Metadata> {
+        if let Some(function) = self.callee_function(value) {
+            return Some(&function.metadata);
+        }
+        let Value::Symbol(symbol) = value else {
+            return None;
+        };
+        self.forward_boundaries
+            .get(symbol.index())
+            .and_then(Option::as_ref)
+            .map(|(_, metadata)| metadata)
+    }
     pub(crate) fn call_boundary(&self, call: &Call) -> Option<&Signature> {
         if let Some(id) = call.signature {
             return Some(self.signature(id));
         }
         self.callee_function(call.callee)
-            .map(|f| self.signature(f.signature))
+            .map(|f| f.signature)
+            .or_else(|| {
+                if let Value::Symbol(symbol) = call.callee {
+                    self.forward_boundary(symbol)
+                } else {
+                    None
+                }
+            })
+            .map(|signature| self.signature(signature))
     }
     pub(crate) fn callee_function(&self, value: Value) -> Option<&Function> {
         if let Value::Symbol(id) = value
@@ -253,15 +314,21 @@ impl Program {
             .functions
             .last()
             .ok_or(Error::Construction("missing completed definition".into()))?;
-        if body_only {
-            super::writer::write_definition_body(self, function, output)
-        } else {
-            super::writer::write_definition(self, function, output)
-        }
-        .map_err(Error::Output)?;
         let symbol = self
             .find_symbol(function.name)
             .ok_or_else(|| Error::Construction("completed definition without symbol".into()))?;
+        if let Some(mut sink) = self.definition_sink.take() {
+            let result = sink.append(self, symbol);
+            self.definition_sink = Some(sink);
+            result?;
+        } else {
+            if body_only {
+                super::writer::write_definition_body(self, function, output)
+            } else {
+                super::writer::write_definition(self, function, output)
+            }
+            .map_err(Error::Output)?;
+        }
         self.streamed_functions.insert(symbol);
         if let Some(function) = self.functions.last_mut() {
             function.body = None;

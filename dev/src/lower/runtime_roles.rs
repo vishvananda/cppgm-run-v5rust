@@ -26,8 +26,12 @@ pub(super) fn resolve(
     program: &mut Program,
     definitions: &mut Definitions,
     symbols: &[RoleSymbol],
+    object_mode: bool,
 ) -> Result<(), Error> {
     for role in [Role::AllocateMemory, Role::FreeMemory, Role::Terminate] {
+        if object_mode && role != Role::Terminate {
+            continue;
+        }
         let mut owner = None;
         let mut rank = 0;
         for symbol in symbols.iter().filter(|symbol| symbol.role == role) {

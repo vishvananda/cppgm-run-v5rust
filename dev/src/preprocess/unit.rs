@@ -84,10 +84,32 @@ impl<'a> Preprocessor<'a> {
         services: super::files::FileServices,
         values: &super::options::PredefinedValues,
     ) -> Result<Self, PreprocessError> {
+        Self::with_driver_options(
+            source,
+            name,
+            services,
+            values,
+            &super::options::DriverOptions::default(),
+        )
+    }
+    /// Construct a unit with explicit include search and command-line definitions.
+    /// # Errors
+    /// Returns source construction or compact-storage errors before token delivery.
+    pub fn with_driver_options(
+        source: &'a SourceBuffer,
+        name: &[u8],
+        services: super::files::FileServices,
+        values: &super::options::PredefinedValues,
+        options: &super::options::DriverOptions,
+    ) -> Result<Self, PreprocessError> {
         let mut names = Identifiers::default();
         let definitions = Definitions::new(&mut names)?;
         let mut input = SourceInput::with_file_services(source, name, services)?;
-        input.enter_predefined(values.text())?;
+        input.set_include_paths(&options.include_paths);
+        let mut predefined = values.text();
+        let command_line_begin = predefined.len();
+        predefined.extend_from_slice(&options.command_line);
+        input.enter_predefined(predefined, command_line_begin)?;
         Ok(Self {
             source: input,
             names,
@@ -146,7 +168,8 @@ impl<'a> Preprocessor<'a> {
         match directive.spelling.bytes() {
             b"define" => {
                 let name = self.read_macro_name(&directive)?;
-                let definition = Definition::parse(&mut self.source, &mut self.names, name)?;
+                let mut definition = Definition::parse(&mut self.source, &mut self.names, name)?;
+                definition.replaceable = self.source.command_line_definition(directive.begin);
                 self.definitions.define(definition, directive.begin)?;
             }
             b"undef" => {
@@ -170,7 +193,7 @@ impl<'a> Preprocessor<'a> {
                 )?;
             }
             b"include" => {
-                let name = super::inclusion::read_name(
+                let (name, angle) = super::inclusion::read_name(
                     &directive,
                     &mut self.source,
                     &mut self.names,
@@ -181,6 +204,7 @@ impl<'a> Preprocessor<'a> {
                 self.source.include(
                     &directive,
                     &name,
+                    angle,
                     self.conditionals.depth(),
                     &self.definitions,
                     &self.pragmas,

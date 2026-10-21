@@ -23,6 +23,23 @@ pub struct LowIrOutput {
     output: crate::lower::Output,
 }
 impl LowIrOutput {
+    pub(crate) fn for_object() -> Result<Self, crate::lowir::Error> {
+        let mut output = crate::lower::Output::default();
+        output
+            .program
+            .set_definition_sink(Box::new(crate::native::ObjectBuilder::new(0)?))?;
+        output.set_object_mode();
+        Ok(Self { output })
+    }
+    pub(crate) fn finish_object(
+        mut self,
+        path: Vec<u8>,
+    ) -> Result<crate::native::Object, AstToolError> {
+        self.output.finish_initialization().map_err(lower_error)?;
+        self.output.finish_entry_aliases();
+        crate::native::compile_object(&mut self.output.program, path, 0).map_err(native_error)
+    }
+
     /// Render the typed program accumulated across translation units.
     ///
     /// # Errors
@@ -84,6 +101,42 @@ pub fn emit_unit(
         values,
     )
     .map_err(AstToolError::Initialization)?;
+    emit_preprocessed(preprocessor, destination, ordinal, stack_budget, mode)
+}
+pub(crate) fn emit_compilation_unit(
+    source: &SourceBuffer,
+    path: &[u8],
+    values: &PredefinedValues,
+    options: &crate::preprocess::options::DriverOptions,
+    output: &mut LowIrOutput,
+    budget: crate::support::stack::StackBudget,
+) -> Result<(), AstToolError> {
+    let preprocessor = Preprocessor::with_driver_options(
+        source,
+        path,
+        crate::preprocess::files::FileServices {
+            identity: super::file_identity::query,
+            read: super::file_identity::read,
+        },
+        values,
+        options,
+    )
+    .map_err(AstToolError::Initialization)?;
+    emit_preprocessed(
+        preprocessor,
+        Destination::LowIr(output),
+        1,
+        budget,
+        EmitMode::LowIr,
+    )
+}
+fn emit_preprocessed(
+    preprocessor: Preprocessor<'_>,
+    destination: Destination<'_>,
+    ordinal: usize,
+    stack_budget: crate::support::stack::StackBudget,
+    mode: EmitMode,
+) -> Result<(), AstToolError> {
     let origin = if mode == EmitMode::LowIr {
         super::host_declarations::token_origin().map_err(AstToolError::Internal)?
     } else {
@@ -189,7 +242,13 @@ pub fn emit_unit(
                     crate::lowir::Error::NotImplemented(group) => AstToolError::Missing(group),
                     crate::lowir::Error::Output(error) => AstToolError::Output(error),
                     crate::lowir::Error::Limit => AstToolError::Internal("LowIR storage limit"),
-                    _ => AstToolError::Internal("typed LowIR construction failed"),
+                    crate::lowir::Error::Diagnostic(message) => {
+                        AstToolError::Diagnostic(message.into_bytes())
+                    }
+                    crate::lowir::Error::ByteDiagnostic(bytes) => AstToolError::Diagnostic(bytes),
+                    crate::lowir::Error::Construction(_) => {
+                        AstToolError::Internal("typed LowIR construction failed")
+                    }
                 },
             })?;
             return Ok(());
@@ -216,10 +275,63 @@ pub fn emit_unit(
     writeln!(output, "end translation unit").map_err(AstToolError::Output)
 }
 
+fn lower_error(error: crate::lower::Error) -> AstToolError {
+    match error {
+        crate::lower::Error::Ir(error) => native_error(error),
+        crate::lower::Error::Missing(group)
+        | crate::lower::Error::Semantic(crate::sema::Error::Missing(group)) => {
+            AstToolError::Missing(group)
+        }
+        _ => AstToolError::Internal("object startup finalization failed"),
+    }
+}
+pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
+    match error {
+        crate::lowir::Error::NotImplemented(group) => AstToolError::Missing(group),
+        crate::lowir::Error::Construction(_) => {
+            AstToolError::Internal("native construction invariant")
+        }
+        crate::lowir::Error::Diagnostic(message) => AstToolError::Diagnostic(message.into_bytes()),
+        crate::lowir::Error::ByteDiagnostic(bytes) => AstToolError::Diagnostic(bytes),
+        crate::lowir::Error::Output(error) => AstToolError::Output(error),
+        crate::lowir::Error::Limit => {
+            AstToolError::Diagnostic(b"LowIR storage limit exceeded".to_vec())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::support::stack::StackBudget;
+
+    #[test]
+    fn object_stream_releases_bodies_and_retains_forward_call_boundaries() {
+        let source =
+            SourceBuffer::new(b"int later(int); int main(){return later(7);}".to_vec()).unwrap();
+        let mut output = LowIrOutput::for_object().unwrap();
+        emit_compilation_unit(
+            &source,
+            b"object-stream",
+            &PredefinedValues::default(),
+            &crate::preprocess::options::DriverOptions::default(),
+            &mut output,
+            StackBudget::default(),
+        )
+        .unwrap();
+        let program = &output.output.program;
+        assert!(program.functions().iter().all(|f| f.body.is_none()));
+        let callee = program
+            .functions()
+            .iter()
+            .find(|f| program.names.get(f.name) == "later")
+            .unwrap();
+        let symbol = program.find_symbol(callee.name).unwrap();
+        assert_eq!(program.forward_boundary(symbol), Some(callee.signature));
+        assert!(program.has_definition_sink());
+        assert!(output.output.definitions.is_empty());
+        output.finish_object(b"object-stream".to_vec()).unwrap();
+    }
 
     #[test]
     fn inherited_inline_bodies_coalesce_across_units_and_internal_types_stay_local() {

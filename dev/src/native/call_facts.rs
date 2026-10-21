@@ -91,8 +91,8 @@ impl CallPlan {
         let builtin =
             if let super::value_facts::Alias::Symbol(symbol) = facts.resolve(body, call.callee) {
                 program
-                    .callee_function(Value::Symbol(symbol))
-                    .and_then(|f| f.metadata.object)
+                    .callee_metadata(Value::Symbol(symbol))
+                    .and_then(|metadata| metadata.object)
                     .map(|n| program.names.bytes(n))
             } else {
                 None

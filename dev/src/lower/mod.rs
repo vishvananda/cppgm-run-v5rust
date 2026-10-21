@@ -118,6 +118,10 @@ pub(crate) struct Output {
     finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
+    pub(crate) fn set_object_mode(&mut self) {
+        self.symbols.object_mode = true;
+    }
+
     pub(crate) fn finish_initialization(&mut self) -> Result<(), Error> {
         if let Some(symbol) = self.initializer {
             self.startup.finish(&mut self.program, symbol)?;

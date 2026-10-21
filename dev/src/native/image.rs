@@ -92,6 +92,9 @@ impl Image {
             constants: HashMap::new(),
         }
     }
+    pub(super) fn reserve_symbols(&mut self, count: usize) {
+        self.symbols.resize(count, Definition::default());
+    }
     pub(super) fn local(&mut self) -> Result<ImageSymbol, Error> {
         let id = LocalSymbol(u32::try_from(self.locals.len()).map_err(|_| Error::Limit)?);
         self.locals.push(Definition::default());
