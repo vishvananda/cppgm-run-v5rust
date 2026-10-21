@@ -18,7 +18,6 @@ pub(crate) enum RuntimeCast {
     },
     VoidPointer {
         from: EntityId,
-        void: TypeId,
     },
 }
 
@@ -108,15 +107,9 @@ impl Analyzer<'_> {
             }
             let value = self.decayed_type(source.ty)?;
             self.convert_scalar(operand, value, false)?;
-            let void = self.graph.types.scalar(Scalar::Void)?;
-            self.prepare_type_information(void)?;
-            self.graph.expression_facts.set_runtime_cast(
-                id,
-                RuntimeCast::VoidPointer {
-                    from: from_class,
-                    void,
-                },
-            );
+            self.graph
+                .expression_facts
+                .set_runtime_cast(id, RuntimeCast::VoidPointer { from: from_class });
             self.demand_runtime_cast(id)?;
             return self.new_expression_facts(target, V::Prvalue);
         }

@@ -3,7 +3,7 @@
 use super::{
     Error,
     function::Function,
-    handlers::{Context, ContextId},
+    handlers::{CatchRetirement, Context, ContextId},
     lifetime::Cleanup,
 };
 use crate::lowir::model::{BlockId, InstructionKind as I, RuntimeInstruction as R};
@@ -28,9 +28,11 @@ pub(super) enum Action {
     },
     Handler {
         marked: bool,
+        may_throw: bool,
         tail: BlockId,
     },
     LexicalHandler {
+        may_throw: bool,
         tail: BlockId,
     },
     Dispatch {
@@ -78,7 +80,7 @@ impl Marker {
 #[derive(Clone, Copy)]
 enum Element {
     Object(usize, Marker),
-    Handler(ContextId, Marker),
+    Handler(ContextId, Marker, bool),
 }
 struct Snapshot {
     exception: ObjectMemo,
@@ -139,7 +141,7 @@ impl Function<'_, '_, '_, '_> {
                 }
                 memo.blocks[marked.index()]
             }
-            Element::Handler(owner, marked) => self
+            Element::Handler(owner, marked, _) => self
                 .handlers
                 .unwind
                 .contexts
@@ -181,7 +183,12 @@ impl Function<'_, '_, '_, '_> {
                 && handler > first_handler
                 && self.handlers.contexts[handler - 1].floor == index
             {
-                let element = Element::Handler(self.handlers.contexts[handler - 1].stack, marked);
+                let context = self.handlers.contexts[handler - 1];
+                let element = Element::Handler(
+                    context.stack,
+                    marked,
+                    context.retirement == CatchRetirement::MayDestroy,
+                );
                 tail = self.context_node(element, stack);
                 if tail.is_none() {
                     missing.push(element);
@@ -282,13 +289,14 @@ impl Function<'_, '_, '_, '_> {
                         Action::Destroy { cleanup, tail },
                     )
                 }
-                Element::Handler(_, marked) => (
+                Element::Handler(_, marked, may_throw) => (
                     "cleanup_action",
                     if lexical {
-                        Action::LexicalHandler { tail }
+                        Action::LexicalHandler { may_throw, tail }
                     } else {
                         Action::Handler {
                             marked: marked == Marker::Pushed,
+                            may_throw,
                             tail,
                         }
                     },
@@ -300,7 +308,7 @@ impl Function<'_, '_, '_, '_> {
                 Element::Object(index, marked) => {
                     self.lifetime.cleanups[index].exception.blocks[marked.index()] = Some(block);
                 }
-                Element::Handler(owner, marked) => {
+                Element::Handler(owner, marked, _) => {
                     self.handlers
                         .unwind
                         .contexts
@@ -333,19 +341,13 @@ impl Function<'_, '_, '_, '_> {
             return Ok(None);
         }
         let tail = self.context_entry(count, true)?;
-        let block = self.new_block("lexical_cleanup_dispatch")?;
-        self.queue_lexical_context(
-            block,
-            Action::LexicalDispatch {
-                context: self.innermost_try(),
-                tail,
-                returned: self.lexical.returned,
-            },
-        );
-        Ok(Some(block))
+        self.lexical_dispatch(tail).map(Some)
     }
     pub(super) fn context_landing(&mut self, count: usize) -> Result<BlockId, Error> {
         let entry = self.context_entry(count, false)?;
+        self.unwind_dispatch(entry)
+    }
+    pub(super) fn unwind_dispatch(&mut self, entry: BlockId) -> Result<BlockId, Error> {
         if let Some(&block) = self.handlers.unwind.landings.get(&entry) {
             return Ok(block);
         }
@@ -368,17 +370,21 @@ impl Function<'_, '_, '_, '_> {
                 }
                 self.jump(tail)
             }
-            Action::Handler { marked, tail } => {
+            Action::Handler {
+                marked,
+                may_throw,
+                tail,
+            } => {
                 if marked {
                     self.effect(I::Runtime(R::EhEnd))?;
                 }
-                self.call_end_catch()?;
+                self.call_end_catch(may_throw)?;
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(tail)
             }
-            Action::LexicalHandler { tail } => {
+            Action::LexicalHandler { may_throw, tail } => {
                 self.effect(I::Runtime(R::EhEnd))?;
-                self.call_end_catch()?;
+                self.call_end_catch(may_throw)?;
                 self.jump(tail)
             }
             Action::LexicalDispatch {
@@ -399,8 +405,8 @@ impl Function<'_, '_, '_, '_> {
             Action::Dispatch { context, tail } => {
                 if let Some(context) = context {
                     self.emit_try_clauses(context)?;
-                    self.effect(I::Runtime(R::EhCleanup(None)))?;
                 }
+                self.effect(I::Runtime(R::EhCleanup(None)))?;
                 self.jump(tail)
             }
             Action::Destroy { cleanup, tail } => {

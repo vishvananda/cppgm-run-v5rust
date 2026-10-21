@@ -251,33 +251,6 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.exception_slot = Some(slot);
         Ok(slot)
     }
-    pub(super) fn terminate_unwinding(&mut self) -> Result<(), Error> {
-        self.effect(I::Runtime(R::EhCatchAll(Some(1))))?;
-        let slot = self.function_exception_slot()?;
-        let source = self
-            .result
-            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                "synthetic terminate result",
-            )))?;
-        let exception = self
-            .emit(I::Runtime(R::Exception(Type::Ptr)), source)?
-            .value;
-        self.effect(I::Store(
-            Facts::memory(false, true),
-            Type::Ptr,
-            exception,
-            slot,
-        ))?;
-        let exception = self
-            .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
-            .value;
-        self.terminate_exception(exception)?;
-        let ty = self.symbols.result_boundary(source)?.ty;
-        let guard = self.lifetime.function_guard.take();
-        let result = self.termination_return(source, ty);
-        self.lifetime.function_guard = guard;
-        result
-    }
     pub(super) fn begin_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
         if throws && self.lifetime.full_expression {
             self.ensure_insertion()?;
@@ -365,6 +338,16 @@ impl Function<'_, '_, '_, '_> {
                 .last()
                 .is_some_and(|mark| mark.regioned)
         {
+            let boundary = self.lifetime.full_expression
+                && self.lifetime.temporary_segment.is_present()
+                && self.handlers.contexts.last().is_some_and(|c| !c.attempt);
+            if !self.static_initializer
+                && self.handlers.explicit == 0
+                && (!self.lifetime_chain_empty() || boundary || self.lifetime.tracking.active)
+            {
+                let position = self.builder.position()?;
+                return self.open_temporary_region_at(Some(position));
+            }
             return Ok(());
         }
         if throws && self.lifetime.temporary_segment.floor() != 0 {

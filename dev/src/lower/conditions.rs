@@ -721,6 +721,9 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn discard_to_void(&mut self, id: ast::ExprId) -> Result<(), Error> {
         let id = self.without_parentheses(id);
+        if matches!(self.tree.expressions.get(id).kind, ExprKind::Call { .. }) {
+            return self.discard(id);
+        }
         let facts = self.graph.lower_expression(id)?;
         let kind = self.graph.lower_type(facts.ty)?;
         let class_or_array = matches!(

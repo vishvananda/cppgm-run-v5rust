@@ -92,7 +92,7 @@ impl Function<'_, '_, '_, '_> {
             let guard = if index != 0 && guarded {
                 let dispatch = self.new_block("call_unwind_dispatch")?;
                 let next = self.new_block("call_unwind_end")?;
-                self.effect(I::Runtime(R::EhTry(dispatch)))?;
+                self.effect(I::Runtime(R::EhCleanup(Some(dispatch))))?;
                 Some((dispatch, next))
             } else {
                 None
@@ -155,7 +155,7 @@ impl Function<'_, '_, '_, '_> {
         self.place(body)?;
         let cleanup = if throws && destroyed {
             let cleanup = self.new_block("constructor_array_cleanup")?;
-            self.effect(I::Runtime(R::EhTry(cleanup)))?;
+            self.effect(I::Runtime(R::EhCleanup(Some(cleanup))))?;
             Some(cleanup)
         } else {
             None

@@ -1,11 +1,27 @@
 // Translated from lower/lexical_cleanup_lowering.cpp and
 // object_lowering.cpp::destroy_local. See NOTICE.
 //! Lexical destruction has its own interned exceptional suffixes per body context.
-use super::{Error, function::Function, lifetime::Cleanup};
+use super::{
+    Error,
+    function::Function,
+    lifetime::{Cleanup, CleanupPlace},
+};
 use crate::{
-    lowir::model::{BlockId, InstructionKind as I, RuntimeInstruction as R},
+    lowir::model::{BlockId, InstructionKind as I, RuntimeInstruction as R, Value},
     sema::lowering::TypeId,
 };
+use std::collections::HashMap;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum ReturnedKey {
+    Storage(TypeId, Value),
+    Temporary(TypeId, Value),
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct DispatchKey {
+    tail: BlockId,
+    returned: Option<ReturnedKey>,
+}
 
 enum Block {
     Context {
@@ -35,6 +51,7 @@ pub(super) struct Lexical {
     pub resume: ResumeMemo,
     placing: bool,
     terminate: Option<BlockId>,
+    dispatches: HashMap<DispatchKey, BlockId>,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn destructor_throws(&mut self, ty: TypeId) -> Result<bool, Error> {
@@ -45,18 +62,19 @@ impl Function<'_, '_, '_, '_> {
             })
     }
     pub(super) fn cleanup_unwind_guard(&mut self) -> Result<BlockId, Error> {
-        if self.lexical.placing
-            && let Some(block) = self.lexical.terminate
-        {
-            // Emitted LowIR shares one terminate landing across lexical suffixes.
+        if self.lexical.placing {
+            return self.shared_cleanup_unwind_guard();
+        }
+        self.new_cleanup_terminate()
+    }
+    pub(super) fn shared_cleanup_unwind_guard(&mut self) -> Result<BlockId, Error> {
+        if let Some(block) = self.lexical.terminate {
             return Ok(block);
         }
         let block = self.new_cleanup_terminate()?;
-        // The caller opens the region around the complete cleanup, including
-        // any flag test. Keep guard allocation separate from region emission.
-        if self.lexical.placing {
-            self.lexical.terminate = Some(block);
-        }
+        // Serialized LowIR shares catch retirement and lexical destruction
+        // landings for this function, independently of their placement time.
+        self.lexical.terminate = Some(block);
         Ok(block)
     }
     pub(super) fn lexical_handler(&mut self, depth: usize) -> Result<Option<BlockId>, Error> {
@@ -100,13 +118,43 @@ impl Function<'_, '_, '_, '_> {
             self.lifetime.cleanups[index].lexical = Some(block);
             tail = block;
         }
+        self.lexical_dispatch(tail).map(Some)
+    }
+    pub(super) fn lexical_dispatch(&mut self, tail: BlockId) -> Result<BlockId, Error> {
+        let returned = self
+            .lexical
+            .returned
+            .map(|cleanup| match cleanup.place {
+                CleanupPlace::Storage(value) => Ok(ReturnedKey::Storage(cleanup.ty, value)),
+                CleanupPlace::Temporary(value) => Ok(ReturnedKey::Temporary(cleanup.ty, value)),
+                _ => Err(crate::sema::Error::Invariant(
+                    "return cleanup without result storage",
+                )),
+            })
+            .transpose()?;
+        let key = DispatchKey { tail, returned };
+        if let Some(&block) = self.lexical.dispatches.get(&key) {
+            return Ok(block);
+        }
         let block = self.new_block("lexical_cleanup_dispatch")?;
-        self.lexical.pending.push(Block::Dispatch {
-            block,
-            tail,
-            returned: self.lexical.returned,
-        });
-        Ok(Some(block))
+        if self.handlers.contexts.is_empty() {
+            self.lexical.pending.push(Block::Dispatch {
+                block,
+                tail,
+                returned: self.lexical.returned,
+            });
+        } else {
+            self.queue_lexical_context(
+                block,
+                super::exception_chains::Action::LexicalDispatch {
+                    context: self.innermost_try(),
+                    tail,
+                    returned: self.lexical.returned,
+                },
+            );
+        }
+        self.lexical.dispatches.insert(key, block);
+        Ok(block)
     }
     pub(super) fn queue_lexical_context(
         &mut self,
@@ -129,11 +177,8 @@ impl Function<'_, '_, '_, '_> {
                     if let Some(target) = target {
                         self.effect(I::Runtime(R::EhEnd))?;
                         self.jump(target)?;
-                    } else if self.lifetime.function_guard.is_some() {
-                        self.terminate_unwinding()?;
                     } else {
-                        self.effect(I::Runtime(R::Resume))?;
-                        self.terminated = true;
+                        self.handler_resume()?;
                     }
                 }
                 Block::Destroy {

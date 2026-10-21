@@ -117,7 +117,7 @@ impl Function<'_, '_, '_, '_> {
                 self.enclose_element_region(&mut covered)?;
                 let dispatch = self.new_block("call_unwind_dispatch")?;
                 let next = self.new_block("call_unwind_end")?;
-                self.effect(I::Runtime(R::EhTry(dispatch)))?;
+                self.effect(I::Runtime(R::EhCleanup(Some(dispatch))))?;
                 Some((dispatch, next))
             } else {
                 None
@@ -183,7 +183,7 @@ impl Function<'_, '_, '_, '_> {
             this.place(body)?;
             let cleanup = if guarded {
                 let block = this.new_block("copy_array_cleanup")?;
-                this.effect(I::Runtime(R::EhTry(block)))?;
+                this.effect(I::Runtime(R::EhCleanup(Some(block))))?;
                 Some(block)
             } else {
                 None
@@ -422,11 +422,8 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Runtime(R::EhEnd))?;
             self.effect(I::Runtime(R::EhEnd))?;
             self.jump(outer)?;
-        } else if self.lifetime.function_guard.is_some() {
-            self.terminate_unwinding()?;
         } else {
-            self.effect(I::Runtime(R::Resume))?;
-            self.terminated = true;
+            self.handler_resume()?;
         }
         Ok(())
     }

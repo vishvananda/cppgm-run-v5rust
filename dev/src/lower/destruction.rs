@@ -501,12 +501,7 @@ impl Function<'_, '_, '_, '_> {
         self.continue_destructor_unwind()
     }
     fn continue_destructor_unwind(&mut self) -> Result<(), Error> {
-        if self.lifetime.function_guard.is_some() && self.innermost_try().is_none() {
-            self.terminate_unwinding()?;
-        } else {
-            self.effect(I::Runtime(R::Resume))?;
-            self.terminated = true;
-        }
+        self.handler_resume()?;
         self.place_destructor_terminates()
     }
     fn close_destructor_body_cleanup(&mut self) -> Result<(), Error> {

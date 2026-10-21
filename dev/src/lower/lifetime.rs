@@ -250,6 +250,14 @@ impl Lifetime {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn lifetime_chain_empty(&self) -> bool {
+        self.lifetime.cleanups.len()
+            <= self
+                .lifetime
+                .temporary_segment
+                .floor()
+                .max(self.handler_floor())
+    }
     pub(super) fn drop_segment_floor(&mut self) {
         let floor = self.lifetime.temporary_segment.floor();
         if floor != 0 {
@@ -1144,6 +1152,9 @@ impl Function<'_, '_, '_, '_> {
         if unwinding && !late && self.lifetime.tracking.construction.active() {
             self.lifetime.pending[pending..].reverse();
         }
+        if unwinding && self.constructor_unwind_target().is_some() {
+            return self.unwind_dispatch(tail);
+        }
         Ok(tail)
     }
     pub(super) fn constructor_unwind_changed(&mut self) {
@@ -1388,11 +1399,8 @@ impl Function<'_, '_, '_, '_> {
                     self.effect(I::Runtime(R::EhEnd))?;
                     self.effect(I::Runtime(R::EhEnd))?;
                     self.jump(tail)?;
-                } else if self.lifetime.function_guard.is_some() {
-                    self.terminate_unwinding()?;
                 } else {
-                    self.effect(I::Runtime(R::Resume))?;
-                    self.terminated = true;
+                    self.handler_resume()?;
                 }
             } else {
                 let ty = types::storage(

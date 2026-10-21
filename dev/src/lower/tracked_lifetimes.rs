@@ -145,7 +145,7 @@ impl Function<'_, '_, '_, '_> {
         self.lifetime.tracking.head = None;
         self.lifetime.tracking.resets.clear();
         self.lifetime.tracking.floor = self.lifetime.cleanups.len();
-        if matches!(usage, ExpressionUse::Ordinary) && self.lifetime.cleanups.is_empty() {
+        if matches!(usage, ExpressionUse::Ordinary) && self.lifetime_chain_empty() {
             self.open_temporary_region()?;
         }
         Ok(())

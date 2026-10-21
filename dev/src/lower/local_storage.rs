@@ -218,17 +218,22 @@ impl Function<'_, '_, '_, '_> {
             crate::sema::Error::Invariant("local static lost temporary inventory"),
         )?;
         result?;
-        self.destroy_temporaries(first)?;
-        self.end_lifetime_expression(region)?;
+        if self.lifetime.tracking.active {
+            self.finish_tracking()?;
+        }
         if !temporaries.made.is_empty() {
             self.register_static_finalizers(symbol, &temporaries.made, facts.ty)?;
         }
-        self.close_lifetime_region()?;
         if destroyed {
             self.register_static_destruction(symbol, facts.ty)?;
         }
         let one = self.builder.integer(1)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, one, flag))?;
+        // Initialization has completed before its initializer temporaries are
+        // destroyed. Their failure must not retry or lose static destruction.
+        self.destroy_temporaries(first)?;
+        self.end_lifetime_expression(region)?;
+        self.close_lifetime_region()?;
         self.jump(ready)?;
         self.place(ready)
     }

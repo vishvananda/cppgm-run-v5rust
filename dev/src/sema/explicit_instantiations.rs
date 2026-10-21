@@ -371,10 +371,6 @@ impl Analyzer<'_> {
             .specializations
             .contains(entity)
         {
-            self.graph
-                .function_templates
-                .specializations
-                .note_instantiation(entity, is_extern);
             return Ok(());
         }
         self.graph.function_templates.instantiations.record(

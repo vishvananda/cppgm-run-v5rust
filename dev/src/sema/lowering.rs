@@ -617,20 +617,14 @@ impl Graph {
     }
     pub(crate) fn lower_explicit_function_root(&self, entity: EntityId) -> bool {
         self.entity(entity).defined
-            && if self.function_templates.specializations.contains(entity) {
-                (self
-                    .function_templates
-                    .specializations
-                    .instantiation_root(entity)
-                    || self.function_templates.instantiations.defined(entity))
-                    && self.entity(entity).inline != super::specifiers::InlinePreference::Inline
-            } else {
-                self.function_templates.instantiations.defined(entity)
+            && self.function_templates.instantiations.defined(entity)
+            && (self.entity(entity).inline != super::specifiers::InlinePreference::Inline
+                || !self.function_templates.specializations.contains(entity)
                     && (self.function_templates.bodies.member(entity)
-                        || self.function_templates.primary(entity).is_some()
-                        || self.entity(entity).inline
-                            != super::specifiers::InlinePreference::Inline)
-            }
+                        || self.function_templates.primary(entity).is_some()))
+    }
+    pub(crate) fn lower_explicit_variable_root(&self, entity: EntityId) -> bool {
+        self.variable_instances.explicit_definition(entity)
     }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
         self.lower_implicit_destructor(id)

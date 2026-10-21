@@ -14,6 +14,11 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(super) struct ContextId(u32);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CatchRetirement {
+    Scalar,
+    MayDestroy,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Context {
     pub clauses: List<ast::Handler>,
@@ -28,6 +33,7 @@ pub(super) struct Context {
     pub chains: (usize, usize),
     pub unwinds: bool,
     pub end_throws: bool,
+    pub retirement: CatchRetirement,
 }
 #[derive(Default)]
 pub(super) struct Handlers {
@@ -182,6 +188,7 @@ impl Function<'_, '_, '_, '_> {
             chains: (first, self.handlers.chains.len() - first),
             parent_try: self.handlers.innermost,
             end_throws: false,
+            retirement: CatchRetirement::Scalar,
             unwinds: floor > self.handler_floor()
                 || self.handlers.contexts.last().is_some_and(|c| !c.attempt)
                 || self.detached_body_target().is_some(),
@@ -246,7 +253,7 @@ impl Function<'_, '_, '_, '_> {
             if self.detached_body_target().is_some() {
                 self.effect(I::Runtime(R::EhCleanup(None)))?;
             }
-            self.call_end_catch()?;
+            self.call_end_catch(context.retirement == CatchRetirement::MayDestroy)?;
             self.effect(I::Runtime(R::EhEnd))?;
             self.leave_handler_contexts()?;
             self.place(next)?;
@@ -255,7 +262,7 @@ impl Function<'_, '_, '_, '_> {
             for _ in 0..self.handlers.contexts.len() {
                 self.effect(I::Runtime(R::EhEnd))?;
             }
-            self.handler_resume_in(true)?;
+            self.handler_resume()?;
         } else {
             self.leave_handler_contexts()?;
         }
@@ -291,17 +298,27 @@ impl Function<'_, '_, '_, '_> {
         };
         self.effect(I::Runtime(R::EhCleanup(Some(landing))))?;
         let stack = self.next_context_stack()?;
-        let end_throws = if let Some((ty, _)) = declaration {
-            let object = match self.graph.lower_type(ty)? {
+        let caught_type = if let Some((ty, _)) = declaration {
+            Some(match self.graph.lower_type(ty)? {
                 TypeView::Reference { element, .. } => element,
                 _ => ty,
-            };
-            self.destructor_throws(object)?
+            })
         } else {
-            false
+            None
+        };
+        let end_throws = caught_type.map_or(Ok(false), |ty| self.destructor_throws(ty))?;
+        let retirement = if caught_type
+            .map(|ty| self.graph.lower_type(ty))
+            .transpose()?
+            .is_none_or(|ty| matches!(ty, TypeView::Class(_)))
+        {
+            CatchRetirement::MayDestroy
+        } else {
+            CatchRetirement::Scalar
         };
         let context = Context {
             end_throws,
+            retirement,
             key: written.body,
             attempt: false,
             floor: self.lifetime.cleanups.len(),
@@ -438,24 +455,25 @@ impl Function<'_, '_, '_, '_> {
             Ok(self.emit(call, source)?.value)
         }
     }
-    pub(super) fn call_end_catch(&mut self) -> Result<(), Error> {
+    pub(super) fn call_end_catch(&mut self, unwinding: bool) -> Result<(), Error> {
+        if unwinding {
+            let guard = self.shared_cleanup_unwind_guard()?;
+            self.effect(I::Runtime(R::EhTry(guard)))?;
+        }
         let source = self
             .result
             .ok_or(crate::sema::Error::Invariant("end catch without function"))?;
         self.catch_runtime(Role::EhEndCatch, Type::Void, &[], source)?;
+        if unwinding {
+            self.effect(I::Runtime(R::EhEnd))?;
+        }
         Ok(())
     }
     pub(super) fn handler_resume(&mut self) -> Result<(), Error> {
-        self.handler_resume_in(false)
-    }
-    fn handler_resume_in(&mut self, outside: bool) -> Result<(), Error> {
-        if self.lifetime.function_guard.is_some() && (outside || self.innermost_try().is_none()) {
-            self.terminate_unwinding()
-        } else {
-            self.effect(I::Runtime(R::Resume))?;
-            self.terminated = true;
-            Ok(())
-        }
+        // Serialized LowIR resumes into the enclosing function guard.
+        self.effect(I::Runtime(R::Resume))?;
+        self.terminated = true;
+        Ok(())
     }
     fn leave_handler_contexts(&mut self) -> Result<(), Error> {
         let mut top = self.lifetime.cleanups.len();
@@ -478,7 +496,7 @@ impl Function<'_, '_, '_, '_> {
                 self.effect(I::Runtime(R::EhEnd))?;
                 return self.jump(context.entry);
             }
-            self.call_end_catch()?;
+            self.call_end_catch(context.retirement == CatchRetirement::MayDestroy)?;
             self.effect(I::Runtime(R::EhEnd))?;
         }
         for object in (0..top).rev() {
@@ -511,7 +529,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         if !context.end_throws {
-            return self.call_end_catch();
+            return self.call_end_catch(false);
         }
         let entry = self.with_handler_contexts(index, |this| {
             if context.floor > this.handler_floor() {
@@ -523,7 +541,7 @@ impl Function<'_, '_, '_, '_> {
         if let Some(entry) = entry {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         }
-        self.call_end_catch()?;
+        self.call_end_catch(false)?;
         if entry.is_some() {
             self.effect(I::Runtime(R::EhEnd))?;
         }

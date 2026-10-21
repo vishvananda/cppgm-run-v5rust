@@ -1978,7 +1978,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let signature = program.add_signature(Signature {
             parameters: vec![parameter],
             result: Type::I32,
-            boundary: Boundary::default(),
+            boundary: Boundary {
+                unwind: crate::lowir::model::Unwind::No,
+                ..Boundary::default()
+            },
         })?;
         program.add(
             symbol,
@@ -2193,6 +2196,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             storage: facts
                 .thread_local
                 .then_some(crate::lowir::vocabulary::Storage::ThreadLocal),
+            flags: if self.graph.lower_explicit_variable_root(entity) {
+                4
+            } else {
+                0
+            },
             ..Metadata::default()
         })
     }
@@ -2448,7 +2456,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             && let Some(entity) = entity
         {
             let mut metadata = self.metadata(program, entity, name)?;
-            if metadata.binding == Some(crate::lowir::vocabulary::Binding::Internal) {
+            if metadata.binding == Some(crate::lowir::vocabulary::Binding::Internal)
+                && !self.graph.lower_constexpr(entity)
+            {
                 metadata.flags |= 4;
             }
             return Ok(metadata);
@@ -2487,7 +2497,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 32
             } else {
                 0
-            } | if variant == Variant::Base || facts.internal && variant != Variant::Deleting
+            } | if (variant == Variant::Base
+                || facts.internal && variant != Variant::Deleting)
+                && !entity.is_some_and(|entity| self.graph.lower_constexpr(entity))
             {
                 4
             } else {

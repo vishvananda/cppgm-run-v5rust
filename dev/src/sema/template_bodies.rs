@@ -436,6 +436,24 @@ impl Analyzer<'_> {
     // A constant call demands only its selected definition. The unit-tail
     // worklist observes the same states, so it cannot copy/analyze it again.
     pub(super) fn constant_function_definition(&mut self, entity: EntityId) -> Result<bool, Error> {
+        let instantiated = self.graph.function_templates.primary(entity).is_some()
+            || self
+                .graph
+                .function_templates
+                .bodies
+                .source(entity)
+                .is_some();
+        if !instantiated
+            && let Some(home) = self.graph.entity(entity).home
+            && self.graph.scope(home).kind == ScopeKind::Class
+            && !self.graph.within_class_instance(home)
+            && let Some(owner) = self.graph.scope(home).owner
+            && !self.graph.entity(owner).complete
+        {
+            // A static member initializer is outside the complete-class
+            // context of an in-class constexpr function definition.
+            return Ok(false);
+        }
         let member = self
             .graph
             .function_templates

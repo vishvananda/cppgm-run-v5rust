@@ -49,6 +49,7 @@ pub(super) struct Variables {
     states: HashMap<EntityId, State>,
     demands: Vec<EntityId>,
     seen: HashSet<EntityId>,
+    explicit_definitions: HashSet<EntityId>,
     initializers: Vec<EntityId>,
     queued_initializers: HashSet<EntityId>,
     layout_uses: Vec<(EntityId, Option<EntityId>)>,
@@ -59,6 +60,9 @@ pub(super) struct Variables {
     next: usize,
 }
 impl Variables {
+    pub(super) fn explicit_definition(&self, entity: EntityId) -> bool {
+        self.explicit_definitions.contains(&entity)
+    }
     fn outside_definition(&self, entity: EntityId) -> Option<Pattern> {
         let mut source = *self.links.get(&entity)?;
         loop {
@@ -261,6 +265,10 @@ impl Analyzer<'_> {
             return Ok(());
         }
         self.instantiate_variable(entity)?;
+        self.graph
+            .variable_instances
+            .explicit_definitions
+            .insert(entity);
         self.graph.variable_instances.demand(entity);
         Ok(())
     }
@@ -647,6 +655,10 @@ impl Analyzer<'_> {
                 "an explicit instantiation of a variable whose template's definition is not available",
             ));
         }
+        self.graph
+            .variable_instances
+            .explicit_definitions
+            .insert(entity);
         self.graph.variable_instances.demand(entity);
         Ok(())
     }

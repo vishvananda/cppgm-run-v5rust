@@ -103,19 +103,10 @@ mod pattern_tests {
 #[derive(Default)]
 pub(super) struct Specializations {
     entities: HashSet<EntityId>,
-    instantiation_roots: HashSet<EntityId>,
 }
 impl Specializations {
     pub(super) fn contains(&self, entity: EntityId) -> bool {
         self.entities.contains(&entity)
-    }
-    pub(super) fn note_instantiation(&mut self, entity: EntityId, is_extern: bool) {
-        if !is_extern {
-            self.instantiation_roots.insert(entity);
-        }
-    }
-    pub(super) fn instantiation_root(&self, entity: EntityId) -> bool {
-        self.instantiation_roots.contains(&entity)
     }
 }
 
@@ -652,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_instantiation_of_an_own_definition_only_marks_noninline_roots() {
+    fn specialization_keeps_prior_roots_but_later_instantiation_has_no_effect() {
         let source = SourceBuffer::new(
             b"template<class T>int f(T){return 1;}\
               template<class T>int g(T){return 1;}\

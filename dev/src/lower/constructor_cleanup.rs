@@ -186,12 +186,8 @@ impl Function<'_, '_, '_, '_> {
             {
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(attempt.entry)?;
-            } else if self.lifetime.function_guard.is_some() && self.handlers.function_try.is_none()
-            {
-                self.terminate_unwinding()?;
             } else {
-                self.effect(I::Runtime(R::Resume))?;
-                self.terminated = true;
+                self.handler_resume()?;
             }
         }
         Ok(())

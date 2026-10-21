@@ -51,7 +51,7 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Branch(null.value, fail, scan))?;
             self.terminated = true;
             self.place(fail)?;
-            self.rtti_failure_return(Role::BadTypeId)?;
+            self.rtti_failure(Role::BadTypeId)?;
             self.place(scan)?;
         }
         let table = self
