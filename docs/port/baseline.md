@@ -1,5 +1,50 @@
 # Frozen preparation baseline
 
+## Current baseline — packed scalar images and wide operands (2026-10-21)
+
+The oracle is extended `90fd2d389975bb34fd12ec2cc644c9378b24332e`; the matching automatic assignments
+export is `f177cf3a39e69de6a4e330641f30d07162683696`. This replaces `3ef7bd2511b8aaf9695df14253047200b02a57c2`.
+Extended PR #79 passed CI before publication; main CI, inception and the
+matching assignments export passed before installing this reviewed snapshot.
+
+The reference preserves packed scalar byte offsets at aggregate/constant-
+temporary publication and rejects symbol addresses presented as i128 values
+before wide encoding. The audit's 182 accepted object-image probes now execute
+successfully, including all 50 former runtime failures. The nine wide-symbol
+probes reject normally, including the previous invalid truncation that read an
+unset immediate as zero. PA35 frozen-workload objects remain byte-identical;
+paired hardware instruction changes are within A/A variation.
+
+The source/input inventories, all nine oracle tools, both settings/manifests
+and both contracts are synchronized. Git-mode-aware atomic import preserves
+links, and every course symlink is checked independently against its Git blob.
+The earlier importer-created PA21 general file remains removed; its intended
+PA21 control and PA33 source alias are preserved. The immutable inventory
+changes from 7123 to 7133 cases. Rust-authored additions
+remain independently required. The Rust-authored PA24
+`900-audit-wide-truncation-carrier-fields` source is preserved, but its
+expected compiler status is regenerated from 0 to 1 against this oracle. Its
+invalid `i128 @value` operand must now reject instead of reading an unset
+immediate as zero; the old passing result froze that reference bug. The
+new immutable `900-reject-i128-symbol-trunc` case independently requires
+the same rejection. This is an owner baseline correction, not permission
+for the worker to regenerate frozen expectations. The Rust implementation, spec and AGENTS
+instructions are unchanged by owner maintenance.
+
+Preflight and the protected harness unit suite pass. All 10 newly
+added oracle routes through PA24 pass oracle self-comparison. The fresh Rust
+PA24 gate is 460/470; failures remain required implementation work.
+The normal prior/course gates must also pass. No stage or goal is completed
+by this update. Former blocked goals and raw audit receipts remain historical;
+restart normally for a fresh audit goal, without `--continue`. PA34 must rebuild
+its complete fixed-point proof against this seed.
+
+Owner evidence and before-state/tools/manifests:
+`~/work/maintenance/packed-data-wide-20261021/install/`.
+The separate symlink-repair receipt and importer regression tests are recorded
+in the owner correction below and upstream cppgm-ralph commit `8cf1b4f`.
+
+
 ## Owner correction: imported symlink identity (2026-10-21)
 
 The 3ef7bd25 baseline importer wrote a changed symlink blob through the old

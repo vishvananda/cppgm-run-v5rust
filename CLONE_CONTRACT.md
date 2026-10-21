@@ -1,7 +1,7 @@
 # Exact clone contract
 
 Implement all nine C++ compiler tools in idiomatic safe Rust. The oracle is
-cppgm-extended commit `3ef7bd2511b8aaf9695df14253047200b02a57c2`, available at
+cppgm-extended commit `90fd2d389975bb34fd12ec2cc644c9378b24332e`, available at
 `/home/vishvananda/work/references/v5rust-cpp`. Read its implementation freely;
 translate its behavior, including ordering and diagnostic details. Preserve
 NOTICE and inherited attribution. The candidate is not a student exercise
