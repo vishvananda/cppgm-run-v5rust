@@ -9,6 +9,7 @@ function @executor__require(%this : ptr [object_bytes=1], %__param1 : ptr [pass=
     store typed ptr %__param1, $__param1
     store typed i32 %__param2, $__param2
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {

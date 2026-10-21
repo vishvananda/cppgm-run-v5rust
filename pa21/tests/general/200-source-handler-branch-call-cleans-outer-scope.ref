@@ -82,6 +82,7 @@ function @exercise() -> void [binding=strong, object=_Z8exercisev] {
     jump ^cleanup_action_10
 
   block ^call_unwind_dispatch_12:
+    eh_cleanup
     jump ^cleanup_action_11
 
   block ^call_unwind_end_13:

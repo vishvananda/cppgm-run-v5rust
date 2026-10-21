@@ -196,6 +196,10 @@ C++11 `constexpr` forms that later template and library code expect:
 - lookup and reuse of previously computed constant values, including qualified lookup and
   static data members
 - function-local static objects over the supported LowIR subset:
+  - the standalone LowIR/native runtime uses single-threaded guards; concurrent
+    initialization is outside that execution boundary. Host-object compilation
+    uses the host's thread-safe `__cxa_guard_*` API. ABI guard calls alone do
+    not make the standalone runtime concurrent
   - constant initialization when the initializer is a constant expression
   - dynamic class-object local statics with the required guard/check behavior, including
     direct initialization from a class-prvalue factory call
@@ -227,6 +231,10 @@ particular, the compiler should enforce the C++11-facing rules that matter for t
 supported language subset, such as:
 
 - `constexpr` variables require a compile-time initializer and a literal type
+- a static data-member initializer is not a complete-class context: it cannot
+  evaluate a member function body of its still-incomplete enclosing class,
+  even when that body appears earlier in the class. Once the class closes,
+  those defined `constexpr` members may be used in constant expressions
 - `constexpr` function return and parameter types must be literal types
 - `constexpr` constructors must produce literal objects through valid base/member
   initialization

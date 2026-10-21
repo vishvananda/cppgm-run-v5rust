@@ -51,9 +51,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     jump ^if_end_8
 
   block ^if_end_8:
-    %t16 = load typed i32 $sum
-    %t17 = load typed i32 $value
-    %t18 = binary add nowrap i32 %t16, %t17
+    %t16 = load typed i32 $value
+    %t17 = load typed i32 $sum
+    %t18 = binary add nowrap i32 %t17, %t16
     store typed i32 %t18, $sum
     jump ^for_iter_3
 

@@ -127,7 +127,7 @@ function @case_0__check() -> i32 [binding=strong, object=_ZN6case_05checkEv] {
 
   block ^lor_rhs_7:
     %t9 = load typed i32 @case_0__bad
-    %t10 = cmp ne i64 %t9, 0
+    %t10 = cmp ne i32 %t9, 0
     store typed i64 %t10, $lor__2
     jump ^lor_end_9
 
@@ -277,7 +277,7 @@ function @case_1__check() -> i32 [binding=strong, object=_ZN6case_15checkEv] {
 
   block ^lor_rhs_7:
     %t8 = load typed i32 @case_1__bad
-    %t9 = cmp ne i64 %t8, 0
+    %t9 = cmp ne i32 %t8, 0
     store typed i64 %t9, $lor__2
     jump ^lor_end_9
 
@@ -434,7 +434,7 @@ function @case_2__value(%ret : ptr [pass=indirect_result, object_bytes=1], %mode
     eh_try ^cleanup_action_5
     call void @case_2__make(%ret)
     eh_end
-    eh_try ^lexical_cleanup_dispatch_13
+    eh_try ^lexical_cleanup_dispatch_8
     %t13 = addr $g
     call void @case_2__G___G(%t13)
     eh_end
@@ -442,46 +442,34 @@ function @case_2__value(%ret : ptr [pass=indirect_result, object_bytes=1], %mode
     call void @case_2__Earlier___Earlier(%t14)
     return void
 
-  block ^lexical_cleanup_dispatch_13:
-    eh_cleanup
-    eh_end
-    call void @case_2__R___R(%ret)
-    jump ^lexical_unwind_7
-
   block ^if_else_12:
-    jump ^if_end_14
+    jump ^if_end_13
 
-  block ^if_end_14:
+  block ^if_end_13:
     %t15 = load typed i32 $mode
     %t16 = cmp eq i32 %t15, 2
-    branch %t16, ^condobj_then_15, ^condobj_else_16
+    branch %t16, ^condobj_then_14, ^condobj_else_15
 
-  block ^condobj_then_15:
+  block ^condobj_then_14:
     eh_try ^cleanup_action_5
     call void @case_2__R__R(%ret)
     eh_end
-    jump ^condobj_end_17
+    jump ^condobj_end_16
 
-  block ^condobj_else_16:
+  block ^condobj_else_15:
     eh_try ^cleanup_action_5
     call void @case_2__R__R(%ret)
     eh_end
-    jump ^condobj_end_17
+    jump ^condobj_end_16
 
-  block ^condobj_end_17:
-    eh_try ^lexical_cleanup_dispatch_18
+  block ^condobj_end_16:
+    eh_try ^lexical_cleanup_dispatch_8
     %t17 = addr $g
     call void @case_2__G___G(%t17)
     eh_end
     %t18 = addr $earlier
     call void @case_2__Earlier___Earlier(%t18)
     return void
-
-  block ^lexical_cleanup_dispatch_18:
-    eh_cleanup
-    eh_end
-    call void @case_2__R___R(%ret)
-    jump ^lexical_unwind_7
 }
 function @case_2__check() -> i32 [binding=strong, object=_ZN6case_25checkEv] {
   slot $r : obj<1x1>

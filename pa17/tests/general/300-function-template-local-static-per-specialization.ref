@@ -18,10 +18,12 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t1 = addr $fn
     %t2 = addr $fn
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     %t4 = call i32 @function_n_void____assign_to(%t2, $argobj__1)
     store typed i32 %t4, $a
     %t5 = addr $fn
     %t6 = addr $argobj__2
+    zeroinit 1x1 %t6
     %t7 = call i32 @function_n_void____assign_to__2(%t5, $argobj__2)
     store typed i32 %t7, $b
     %t8 = load typed i32 $a

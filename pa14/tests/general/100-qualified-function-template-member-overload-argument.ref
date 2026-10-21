@@ -105,6 +105,7 @@ function @iterlib__iterator_category(%__param0 : ptr [pass=by_address, object_by
   block ^entry:
     store typed ptr %__param0, $__param0
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @iterlib__range_sink__construct(%this : ptr [object_bytes=4], %first : obj<4x4>, %last : obj<4x4>, %__param3 : obj<1x1> [classes=none]) -> void [binding=weak, object=_ZN7iterlib10range_sink9constructENS_4iterES1_NS_18input_iterator_tagE, inline_hint=yes] {

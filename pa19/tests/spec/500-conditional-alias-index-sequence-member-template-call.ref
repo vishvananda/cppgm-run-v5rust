@@ -11,6 +11,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t3 = addr $a
     %t4 = addr $l
     %t5 = addr $argobj__2
+    zeroinit 1x1 %t5
     %t6 = addr $f
     %t7 = addr $a
     %t8 = call i32 @list_int_int___operator__(%t4, $argobj__2, %t6, %t7)
@@ -43,9 +44,11 @@ function @list_int_int___operator__(%this : ptr [object_bytes=1], %__param1 : ob
     store typed ptr %a2, $a2
     %t1 = load typed ptr $this
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = load typed ptr $f
     %t4 = load typed ptr $a2
     %t5 = addr $argobj__2
+    zeroinit 1x1 %t5
     %t6 = call i32 @list_int_int___call_impl(%t1, $argobj__1, %t3, %t4, $argobj__2)
     return i32 %t6
 }

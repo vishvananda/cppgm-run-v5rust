@@ -18,7 +18,7 @@ function @f() -> i32 [binding=strong, object=_Z1fv] {
     branch %t3, ^land_rhs_4, ^land_short_5
 
   block ^land_rhs_4:
-    %t4 = cmp ne i64 1, 0
+    %t4 = cmp ne u8 1, 0
     store typed i64 %t4, $land__2
     jump ^land_end_6
 

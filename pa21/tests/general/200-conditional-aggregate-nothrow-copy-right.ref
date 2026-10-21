@@ -143,7 +143,9 @@ function @construction_probe() -> void [linkage=c, binding=strong] {
   block ^land_end_13:
     %t30 = load typed i64 $land__5
     %t31 = convert trunc i32 i64 %t30
+    eh_try ^cleanup_action_14
     call void @check(%t31)
+    eh_end
     eh_try ^cleanup_action_14
     %t32 = call i32 @step_value()
     store typed i32 %t32, $call__6

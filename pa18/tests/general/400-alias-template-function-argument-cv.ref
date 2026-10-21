@@ -5,6 +5,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   block ^entry:
     %t1 = addr $value
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     call void @function_box___cppgm_class_template_identity_2___function_box(%t1, $argobj__1)
     %t3 = addr $value
     return i32 0

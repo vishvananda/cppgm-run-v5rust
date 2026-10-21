@@ -634,14 +634,14 @@ function @H___H(%this : ptr [object_bytes=8]) -> void [binding=internal, object=
     eh_cleanup ^destructor_cleanup_1
     %t1 = addr $local
     call void @S__S(%t1, 2)
-    eh_try ^cleanup_action_4
+    eh_try ^call_unwind_dispatch_5
     %t2 = addr $local
     %t3 = call ptr @reference_value(%t2)
     store typed ptr %t3, $call__1
     %t4 = load typed ptr $call__1
     store typed ptr %t4, $s
     eh_end
-    jump ^call_unwind_end_5
+    jump ^call_unwind_end_6
 
   block ^cleanup_resume_3:
     eh_end
@@ -653,15 +653,19 @@ function @H___H(%this : ptr [object_bytes=8]) -> void [binding=internal, object=
     call void @S___S(%t5)
     jump ^cleanup_resume_3
 
-  block ^call_unwind_end_5:
-    eh_try ^cleanup_action_4
+  block ^call_unwind_dispatch_5:
+    eh_cleanup
+    jump ^cleanup_action_4
+
+  block ^call_unwind_end_6:
+    eh_try ^call_unwind_dispatch_5
     %t6 = load typed ptr $s
     %t7 = addr $local
     %t8 = cmp eq ptr %t6, %t7
     %t9 = convert trunc i32 i64 %t8
     call void @check(%t9)
     eh_end
-    eh_try ^cleanup_action_4
+    eh_try ^call_unwind_dispatch_5
     %t10 = call i32 @step_value()
     store typed i32 %t10, $call__2
     %t11 = load typed i32 $call__2
@@ -672,7 +676,7 @@ function @H___H(%this : ptr [object_bytes=8]) -> void [binding=internal, object=
     %t13 = load typed ptr $this
     %t14 = index i8 [projection=field] %t13, 0
     call void @S___S(%t14)
-    jump ^destructor_end_6
+    jump ^destructor_end_7
 
   block ^destructor_cleanup_1:
     eh_end
@@ -684,7 +688,7 @@ function @H___H(%this : ptr [object_bytes=8]) -> void [binding=internal, object=
     call void @S___S(%t16)
     resume
 
-  block ^destructor_end_6:
+  block ^destructor_end_7:
     return void
 }
 alias object _ZZ18construction_probeEN1HC2Ev = @H__H

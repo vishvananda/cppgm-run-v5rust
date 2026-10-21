@@ -18,8 +18,11 @@ function @run_fixed_arity() -> i32 [binding=strong, object=_Z15run_fixed_arityv]
     %t5 = addr $s
     %t6 = addr $p
     %t7 = addr $argobj__2
+    zeroinit 1x1 %t7
     %t8 = addr $argobj__3
+    zeroinit 1x1 %t8
     %t9 = addr $argobj__4
+    zeroinit 1x1 %t9
     %t10 = call i32 @fixed_dispatch(%t4, %t5, %t6, $argobj__2, $argobj__3, $argobj__4)
     %t11 = cmp eq i32 %t10, 1
     branch %t11, ^cond_then_1, ^cond_else_2
@@ -53,8 +56,11 @@ function @run_variadic_fallback() -> i32 [binding=strong, object=_Z21run_variadi
     %t5 = addr $s
     %t6 = addr $p
     %t7 = addr $argobj__2
+    zeroinit 1x1 %t7
     %t8 = addr $argobj__3
+    zeroinit 1x1 %t8
     %t9 = addr $argobj__4
+    zeroinit 1x1 %t9
     %t10 = call i32 @variadic_dispatch(%t4, %t5, %t6, $argobj__2, $argobj__3, $argobj__4)
     %t11 = cmp eq i32 %t10, 1
     branch %t11, ^cond_then_1, ^cond_else_2

@@ -228,7 +228,11 @@ To complete PA22, implement these goals:
 
 5. Remaining single-vptr RTTI case.
    `dynamic_cast<void*>` should lower for the existing polymorphic single-inheritance ABI
-   without introducing new LowIR operations.
+   without introducing new LowIR operations. A null operand stays null; otherwise
+   load the vtable's offset-to-top entry to obtain the complete-object address.
+   Evaluate the operand once and preserve its cv-qualification. This path needs
+   neither a class-target runtime search nor a void RTTI object, and should not
+   emit an unused runtime-search block.
 
 6. Ambiguity handling.
    Ambiguous inherited member names must not silently resolve.

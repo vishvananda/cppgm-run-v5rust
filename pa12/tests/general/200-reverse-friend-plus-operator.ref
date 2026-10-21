@@ -106,12 +106,12 @@ function @Iter__operator__(%this : ptr [object_bytes=8], %n : i64) -> ptr [bindi
   block ^entry:
     store typed ptr %this, $this
     store typed i64 %n, $n
-    %t1 = load typed ptr $this
-    %t2 = index i8 [projection=field] %t1, 0
-    %t3 = load typed i64 %t2
-    %t4 = load typed i64 $n
-    %t5 = binary add nowrap i64 %t3, %t4
-    store typed i64 %t5, %t2
+    %t1 = load typed i64 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    %t4 = load typed i64 %t3
+    %t5 = binary add nowrap i64 %t4, %t1
+    store typed i64 %t5, %t3
     %t6 = load typed ptr $this
     return ptr %t6
 }

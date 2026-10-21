@@ -23,6 +23,7 @@ function @Holder_int___run() -> i32 [binding=weak, object=_ZN6HolderIiE3runEv, i
 
   block ^entry:
     %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
     %t2 = call i32 @Holder_int___eval__ov2($argobj__1)
     return i32 %t2
 }

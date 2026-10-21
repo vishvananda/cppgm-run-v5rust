@@ -40,14 +40,14 @@ function @operator__(%s : ptr [pass=by_address, object_bytes=4], %f : ptr [pass=
   block ^entry:
     store typed ptr %s, $s
     store typed ptr %f, $f
-    %t1 = load typed ptr $s
+    %t1 = load typed ptr $f
     %t2 = index i8 [projection=field] %t1, 0
     %t3 = load typed i32 %t2
-    %t4 = load typed ptr $f
+    %t4 = load typed ptr $s
     %t5 = index i8 [projection=field] %t4, 0
     %t6 = load typed i32 %t5
-    %t7 = binary add nowrap i32 %t3, %t6
-    store typed i32 %t7, %t2
+    %t7 = binary add nowrap i32 %t6, %t3
+    store typed i32 %t7, %t5
     %t8 = load typed ptr $s
     return ptr %t8
 }

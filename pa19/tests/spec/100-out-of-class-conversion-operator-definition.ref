@@ -18,5 +18,6 @@ function @wrapper_int___operatorsink_result_type_(%this : ptr [object_bytes=1]) 
   block ^entry:
     store typed ptr %this, $this
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

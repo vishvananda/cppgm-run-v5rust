@@ -9,7 +9,6 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     store typed ptr %t1, $p
     %t2 = load typed ptr $p
     %t3 = call ptr @get(%t2)
-    %t4 = load typed i32 %t3
     return i32 0
 }
 function @get(%__param0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_Z3getILm0EJicEERKN13tuple_elementIXT_EJDpT0_EE4typeERK5tupleIJS2_EE] {

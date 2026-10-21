@@ -98,7 +98,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_14:
     %t28 = load typed i32 @live
-    %t29 = cmp ne i64 %t28, 0
+    %t29 = cmp ne i32 %t28, 0
     store typed i64 %t29, $lor__4
     jump ^lor_end_16
 

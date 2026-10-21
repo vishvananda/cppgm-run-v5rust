@@ -1,8 +1,14 @@
 declare global @value : i32 [storage=thread_local, binding=strong]
 
-global @address : ptr [binding=strong] = addr @value
+global @address : ptr [binding=strong] = zero
 
 function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   block ^entry:
     return i32 0
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = addr @value
+    store typed ptr %t1, @address
+    return void
 }

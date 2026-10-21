@@ -5,6 +5,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   block ^entry:
     %t1 = addr $discard__1
     %t2 = addr $argobj__2
+    zeroinit 1x1 %t2
     %t3 = call obj<1x1> @run_pack($argobj__2)
     return i32 0
 }

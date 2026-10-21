@@ -43,6 +43,7 @@ function @unsafe_get(%v : ptr [pass=by_address, object_bytes=4]) -> ptr [binding
     %t1 = load typed ptr $v
     %t2 = index i8 %t1, 0
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     %t4 = call ptr @detail__base_impl_false_int___get(%t2, $argobj__1)
     return ptr %t4
 }

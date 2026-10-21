@@ -21,6 +21,7 @@ function @S_char___cppgm_class_template_identity_1_int___operatorSelfView(%this 
     store typed ptr %this, $this
     %t1 = addr $retobj__1
     %t2 = addr $argobj__2
+    zeroinit 1x1 %t2
     %t3 = load typed ptr $this
     %t4 = call ptr @S_char___cppgm_class_template_identity_1_int___data(%t3)
     %t5 = load typed ptr $this

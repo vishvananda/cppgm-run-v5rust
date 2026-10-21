@@ -88,6 +88,10 @@ RESIDUAL = 'instantiation-dependent signature'
 # Documented differences: (fixture path relative to the repository root,
 # reference name) -> reason. Keep this list short and explained.
 DOCUMENTED = {
+    ('pa29/tests/run/800-out-of-class-nested-template-abi-tag-suppression-run.t',
+     '_ZN5outerIiE5inner6detachB11tagged_declEPS0_'):
+        'The out-of-class definition retains the declaration ABI tag '
+        '(Itanium 5.1.1; GCC agrees); Clang drops tagged_decl here.',
 }
 
 

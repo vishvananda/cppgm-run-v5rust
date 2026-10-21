@@ -64,13 +64,14 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     branch %t9, ^dyn_cast_fail_3, ^dyn_cast_found_4
 
   block ^dyn_cast_fail_3:
+    eh_try ^cleanup_action_6
     call void @__external_runtime____cxa_bad_cast()
-    return i32 0
+    unreachable
 
   block ^dyn_cast_found_4:
     jump ^dyn_cast_end_2
 
-  block ^block_5:
+  block ^block_7:
     jump ^dyn_cast_end_2
 
   block ^dyn_cast_end_2:
@@ -78,6 +79,14 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t11 = addr $d
     call void @YD___YD(%t11)
     return i32 0
+
+  block ^cleanup_resume_5:
+    resume
+
+  block ^cleanup_action_6:
+    %t12 = addr $d
+    call void @YD___YD(%t12)
+    jump ^cleanup_resume_5
 }
 function @YD__YD(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN2YDC1Ev, inline_hint=yes] {
   slot $this : ptr

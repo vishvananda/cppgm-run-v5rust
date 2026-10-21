@@ -7,6 +7,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t1 = addr $b
     %t2 = addr $b
     %t3 = addr $argobj__2
+    zeroinit 1x1 %t3
     %t4 = call i32 @box_int___pick(%t2, 0, 0, $argobj__2)
     %t5 = cmp eq i32 %t4, 2
     branch %t5, ^cond_then_1, ^cond_else_2

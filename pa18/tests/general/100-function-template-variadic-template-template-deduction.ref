@@ -5,8 +5,11 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
     %t2 = addr $argobj__2
+    zeroinit 1x1 %t2
     %t3 = addr $argobj__3
+    zeroinit 1x1 %t3
     %t4 = call i32 @dispatch($argobj__1, $argobj__2, $argobj__3)
     return i32 %t4
 }

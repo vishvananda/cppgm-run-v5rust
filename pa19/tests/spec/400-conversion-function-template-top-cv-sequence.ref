@@ -53,6 +53,7 @@ function @make_result() -> obj<4x4> [binding=weak, object=_Z11make_resultI6resul
   block ^entry:
     %t1 = addr $retobj__1
     %t2 = addr $tmpobj__2
+    zeroinit 1x1 %t2
     %t3 = call obj<4x4> @source__operatorType(%t2)
     copyobj 4x4 %t3, %t1
     return obj<4x4> $retobj__1
@@ -64,6 +65,7 @@ function @make_result__2() -> obj<4x4> [binding=weak, object=_Z11make_resultIK6r
   block ^entry:
     %t1 = addr $retobj__1
     %t2 = addr $tmpobj__2
+    zeroinit 1x1 %t2
     %t3 = call obj<4x4> @source__operatorType(%t2)
     copyobj 4x4 %t3, %t1
     return obj<4x4> $retobj__1

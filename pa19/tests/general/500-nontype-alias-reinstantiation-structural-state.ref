@@ -34,6 +34,7 @@ function @dispatch() -> i32 [binding=weak, object=_Z8dispatchIiLm2EET_v] {
 
   block ^entry:
     %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
     %t2 = call i32 @count($argobj__1)
     return i32 %t2
 }
@@ -42,6 +43,7 @@ function @dispatch__2() -> i32 [binding=weak, object=_Z8dispatchIiLm3EET_v] {
 
   block ^entry:
     %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
     %t2 = call i32 @count__2($argobj__1)
     return i32 %t2
 }

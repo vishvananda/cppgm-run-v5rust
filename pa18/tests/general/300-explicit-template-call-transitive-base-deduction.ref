@@ -7,7 +7,6 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t2 = addr $t
     %t3 = index i8 %t2, 0
     %t4 = call ptr @ns__helper(%t3)
-    %t5 = load typed i32 %t4
     return i32 0
 }
 function @ns__tuple_int__int___tuple(%this : ptr [object_bytes=16]) -> void [unwind=no, binding=weak, object=_ZN2ns5tupleIJPiiEEC1Ev, inline_hint=yes] {

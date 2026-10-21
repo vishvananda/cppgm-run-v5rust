@@ -91,6 +91,42 @@ class LowIrComparisonTest(unittest.TestCase):
         result = self.compare(REFERENCE, RENAMED)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_relaxed_compare_ignores_unused_local_slots_on_either_side(self):
+        for name, storage in (("throw_alloc__2", "ptr"), ("saved_extra", "obj<16x8>")):
+            with self.subTest(name=name):
+                padded = REFERENCE.replace(
+                    "  slot $saved : i64", f"  slot ${name} : {storage}\n  slot $saved : i64"
+                )
+                for reference, generated in ((padded, RENAMED), (REFERENCE, padded)):
+                    result = self.compare(reference, generated)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                result = self.compare(REFERENCE, padded, direct=True)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_relaxed_compare_keeps_slot_uses_local_to_each_function(self):
+        unused = """function @extra() -> void {
+  slot $saved : ptr
+  block ^entry:
+    return void
+}
+"""
+        result = self.compare(REFERENCE + unused, RENAMED + unused.replace("  slot $saved : ptr\n", ""))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_relaxed_compare_preserves_referenced_slot_types_and_declarations(self):
+        for generated in (REFERENCE.replace("slot $saved : i64", "slot $saved : ptr"),
+                          REFERENCE.replace("  slot $saved : i64\n", "")):
+            result = self.compare(REFERENCE, generated)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_relaxed_compare_validates_unused_slots_before_dropping_them(self):
+        duplicate = REFERENCE.replace(
+            "  slot $saved : i64", "  slot $unused : ptr\n  slot $unused : ptr\n  slot $saved : i64"
+        )
+        result = self.compare(REFERENCE, duplicate)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate slot", result.stdout + result.stderr)
+
     def test_lowir_sanity_accepts_phi_loop_backedge_value(self):
         program = """function @main() -> i64 {
   block ^entry:

@@ -10,7 +10,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     store typed i32 7, %t3
     %t4 = addr $tuple
     %t5 = addr $argobj__1
+    zeroinit 1x1 %t5
     %t6 = addr $argobj__2
+    zeroinit 1x1 %t6
     %t7 = call i32 @run(%t4, $argobj__1, $argobj__2)
     return i32 %t7
 }

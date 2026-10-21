@@ -16,7 +16,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t6 = addr $s
     %t7 = addr $p
     %t8 = call u8 @equal__2(%t6, %t7)
-    %t9 = cmp ne i64 %t8, 0
+    %t9 = cmp ne u8 %t8, 0
     store typed i64 %t9, $land__2
     jump ^land_end_6
 

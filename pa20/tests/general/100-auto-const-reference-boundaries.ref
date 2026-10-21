@@ -5,7 +5,7 @@ global @case_3__pick : i32 [binding=strong, object=_ZN6case_34pickE] = zero
 global @case_5__calls : i32 [binding=strong, object=_ZN6case_55callsE] = zero
 global @case_6__calls : i32 [binding=strong, object=_ZN6case_65callsE] = zero
 global @case_6__s : ptr [binding=strong, object=_ZN6case_61sE] = zero
-global @__cppgm_ref_temporary__case_6__s_0 [binding=internal, object=_ZGRN6case_61sE_] = {
+global @__cppgm_ref_temporary__case_6__s_0 : obj<4x4> [binding=internal, object=_ZGRN6case_61sE_] = {
   zero 4
 }
 global @__strlit__1 [storage=readonly, binding=internal] = {
@@ -17,7 +17,7 @@ global @case_9__calls : i32 [binding=strong, object=_ZN6case_95callsE] = zero
 global @case_11__calls : i32 [binding=strong, object=_ZN7case_115callsE] = zero
 global @__local_static__case_11__get__s__tokens713_720 : ptr [binding=internal, object=_ZZN7case_113getEvE1s] = zero
 global @__local_static__case_11__get__s__tokens713_720__guard : i64 [binding=internal, object=_ZGVZN7case_113getEvE1s] = zero
-global @__cppgm_ref_temporary____local_static__case_11__get__s__tokens713_720_0 [binding=internal, object=_ZGRZN7case_113getEvE1s_] = {
+global @__cppgm_ref_temporary____local_static__case_11__get__s__tokens713_720_0 : obj<4x4> [binding=internal, object=_ZGRZN7case_113getEvE1s_] = {
   zero 4
 }
 

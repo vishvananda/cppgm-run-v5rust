@@ -80,6 +80,7 @@ function @nonprimary_chained_lambda__first_void___old(%ret : ptr [pass=indirect_
   block ^entry:
     store typed ptr %this, $this
     store typed ptr %__param2, $__param2
+    zeroinit 1x1 %ret
     return void
 }
 function @nonprimary_chained_lambda__second_void___postcondition(%this : ptr [object_bytes=1], %f : ptr [pass=by_address, object_bytes=1]) -> i32 [binding=internal, object=_ZN25nonprimary_chained_lambda6secondIvE13postconditionIZNS_3runEvEUlvE0_EEiRKT_, inline_hint=yes] {

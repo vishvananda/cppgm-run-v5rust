@@ -6,6 +6,7 @@ function @test() -> void [binding=strong, object=_Z4testv] {
   block ^entry:
     %t1 = addr $object
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     call void @derived_value__derived_value(%t1, $argobj__1)
     %t3 = addr $object
     %t4 = call ptr @derived_value__get(%t3)

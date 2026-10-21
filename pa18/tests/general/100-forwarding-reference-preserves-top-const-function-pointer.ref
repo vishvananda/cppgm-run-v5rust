@@ -41,6 +41,7 @@ function @forwarding_top_const__manager_int______init(%out : ptr [pass=by_addres
     %t2 = load typed ptr $value
     %t3 = call ptr @forwarding_top_const__forward(%t2)
     %t4 = addr $argobj__1
+    zeroinit 1x1 %t4
     %t5 = call i32 @forwarding_top_const__manager_int______create(%t1, %t3, $argobj__1)
     return i32 %t5
 }

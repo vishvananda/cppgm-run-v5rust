@@ -41,7 +41,9 @@ function @pair_constint_char___pair(%this : ptr [object_bytes=1], %pc : obj<1x1>
     %t4 = addr $first_args
     %t5 = addr $second_args
     %t6 = addr $argobj__2
+    zeroinit 1x1 %t6
     %t7 = addr $argobj__3
+    zeroinit 1x1 %t7
     call void @pair_constint_char___pair__2(%t1, $argobj__1, %t4, %t5, $argobj__2, $argobj__3)
     return void
 }

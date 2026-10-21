@@ -72,6 +72,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t5 = addr $data
     %t6 = index i8 [projection=array_element] %t5, 0
     %t7 = addr $argobj__2
+    zeroinit 1x1 %t7
     %t8 = call i64 @count_chars(%t2, %t4, %t6, $argobj__2)
     %t9 = cmp eq i64 %t8, 2
     branch %t9, ^cond_then_1, ^cond_else_2

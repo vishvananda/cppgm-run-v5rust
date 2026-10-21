@@ -34,9 +34,11 @@ function @visit() -> i32 [binding=weak, object=_Z5visitIJciEEiv] {
     %t1 = addr $values
     %t2 = addr $initlist__1
     %t3 = addr $argobj__2
+    zeroinit 1x1 %t3
     %t4 = call i32 @touch($argobj__2)
     store typed i32 0, %t2
     %t5 = addr $argobj__3
+    zeroinit 1x1 %t5
     %t6 = call i32 @touch__2($argobj__3)
     %t7 = index i8 [projection=array_element] %t2, 4
     store typed i32 0, %t7

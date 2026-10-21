@@ -5,16 +5,16 @@ function @Holder__operator__(%this : ptr [object_bytes=8], %rhs : ptr [pass=by_a
   block ^entry:
     store typed ptr %this, $this
     store typed ptr %rhs, $rhs
-    %t1 = load typed ptr $this
+    %t1 = load typed ptr $rhs
     %t2 = index i8 [projection=field] %t1, 0
-    %t3 = index i8 [projection=field] %t2, 0
+    %t3 = call ptr @Property__operatorread_access_t(%t2)
     %t4 = load typed i64 %t3
-    %t5 = load typed ptr $rhs
+    %t5 = load typed ptr $this
     %t6 = index i8 [projection=field] %t5, 0
-    %t7 = call ptr @Property__operatorread_access_t(%t6)
+    %t7 = index i8 [projection=field] %t6, 0
     %t8 = load typed i64 %t7
-    %t9 = binary add i64 %t4, %t8
-    store typed i64 %t9, %t3
+    %t9 = binary add i64 %t8, %t4
+    store typed i64 %t9, %t7
     return void
 }
 function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {

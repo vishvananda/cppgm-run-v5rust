@@ -88,7 +88,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_1:
     %t2 = call i32 @case1__check()
-    %t3 = cmp ne i64 %t2, 0
+    %t3 = cmp ne i32 %t2, 0
     store typed i64 %t3, $lor__1
     jump ^lor_end_3
 

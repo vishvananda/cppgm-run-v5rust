@@ -173,6 +173,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     branch %t20, ^new_init_23, ^new_end_24
 
   block ^call_unwind_dispatch_38:
+    eh_cleanup
     jump ^conditional_cleanup_dispatch_37
 
   block ^cleanup_resume_35:
@@ -219,6 +220,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     jump ^cleanup_action_26
 
   block ^call_unwind_dispatch_28:
+    eh_cleanup
     jump ^construction_cleanup_27
 
   block ^call_unwind_end_29:
@@ -241,6 +243,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     jump ^construction_cleanup_27
 
   block ^call_unwind_dispatch_31:
+    eh_cleanup
     jump ^conditional_cleanup_dispatch_30
 
   block ^call_unwind_end_32:
@@ -263,6 +266,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     jump ^call_unwind_end_44
 
   block ^call_unwind_dispatch_41:
+    eh_cleanup
     jump ^cleanup_action_26
 
   block ^call_unwind_end_44:

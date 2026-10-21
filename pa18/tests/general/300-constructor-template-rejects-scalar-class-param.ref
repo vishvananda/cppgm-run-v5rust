@@ -7,6 +7,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   block ^entry:
     %t1 = addr $p
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     call void @pair_iter_bool___pair(%t1, $argobj__1, 1)
     %t3 = addr $p
     return i32 0

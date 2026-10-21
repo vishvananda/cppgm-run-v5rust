@@ -63,6 +63,7 @@ function @make_owner(%args : ptr [pass=by_address, object_bytes=4], %args__pack2
     store typed ptr %args__pack2, $args__pack2
     %t1 = addr $retobj__1
     %t2 = addr $argobj__2
+    zeroinit 1x1 %t2
     %t3 = load typed ptr $args
     %t4 = load typed ptr $args__pack2
     call void @owner_int___owner(%t1, $argobj__2, %t3, %t4)
@@ -81,6 +82,7 @@ function @make_owner__2(%args : ptr [pass=by_address, object_bytes=4], %args__pa
     store typed ptr %args__pack3, $args__pack3
     %t1 = addr $retobj__1
     %t2 = addr $argobj__2
+    zeroinit 1x1 %t2
     %t3 = load typed ptr $args
     %t4 = load typed ptr $args__pack2
     %t5 = load typed ptr $args__pack3

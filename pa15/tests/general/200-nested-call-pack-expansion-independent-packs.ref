@@ -19,12 +19,14 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     %t1 = addr $argobj__2
+    zeroinit 1x1 %t1
     %t2 = call i32 @transform($argobj__2, 4)
     %t3 = binary sub nowrap i32 %t2, 3
     branch %t3, ^lor_short_2, ^lor_rhs_1
 
   block ^lor_rhs_1:
     %t4 = addr $argobj__3
+    zeroinit 1x1 %t4
     %t5 = load typed ptr @transform_address
     %t6 = call i32 %t5($argobj__3, 4) as (%arg0 : obj<1x1> [classes=none], %arg1 : i32) -> i32
     %t7 = cmp ne i32 %t6, 3

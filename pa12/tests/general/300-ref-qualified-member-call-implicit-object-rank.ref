@@ -3,6 +3,7 @@ function @make_ref_pick() -> obj<1x1> [result_classes=none, binding=strong, obje
 
   block ^entry:
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {

@@ -179,19 +179,13 @@ function @copied(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32) ->
     call void @R___R(%t18)
     %t19 = addr $r
     call void @R___R(%t19)
-    eh_try ^lexical_cleanup_dispatch_16
+    eh_try ^lexical_cleanup_dispatch_14
     %t20 = addr $g
     call void @G___G(%t20)
     eh_end
     %t21 = addr $h
     call void @H___H(%t21)
     return void
-
-  block ^lexical_cleanup_dispatch_16:
-    eh_cleanup
-    eh_end
-    call void @R___R(%ret)
-    jump ^lexical_unwind_13
 }
 function @converted(%ret : ptr [pass=indirect_result, object_bytes=4], %m : i32) -> void [binding=strong, object=_Z9convertedi] {
   slot $m : i32

@@ -618,14 +618,14 @@ function @H__H(%this : ptr [object_bytes=8]) -> void [binding=internal, object=_
     eh_cleanup ^constructor_cleanup_1
     %t3 = addr $local
     call void @S__S(%t3, 2)
-    eh_try ^cleanup_action_4
+    eh_try ^call_unwind_dispatch_5
     %t4 = addr $local
     %t5 = call ptr @reference_value(%t4)
     store typed ptr %t5, $call__1
     %t6 = load typed ptr $call__1
     store typed ptr %t6, $s
     eh_end
-    jump ^call_unwind_end_5
+    jump ^call_unwind_end_6
 
   block ^constructor_cleanup_1:
     eh_end
@@ -647,15 +647,19 @@ function @H__H(%this : ptr [object_bytes=8]) -> void [binding=internal, object=_
     call void @S___S(%t9)
     jump ^cleanup_resume_3
 
-  block ^call_unwind_end_5:
-    eh_try ^cleanup_action_4
+  block ^call_unwind_dispatch_5:
+    eh_cleanup
+    jump ^cleanup_action_4
+
+  block ^call_unwind_end_6:
+    eh_try ^call_unwind_dispatch_5
     %t10 = load typed ptr $s
     %t11 = addr $local
     %t12 = cmp eq ptr %t10, %t11
     %t13 = convert trunc i32 i64 %t12
     call void @check(%t13)
     eh_end
-    eh_try ^cleanup_action_4
+    eh_try ^call_unwind_dispatch_5
     %t14 = call i32 @step_value()
     store typed i32 %t14, $call__2
     %t15 = load typed i32 $call__2

@@ -103,9 +103,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t19 = addr $__begin1
     %t20 = call i32 @model__iterator__operator_(%t19)
     store typed i32 %t20, $value
-    %t21 = load typed i32 $total
-    %t22 = load typed i32 $value
-    %t23 = binary add nowrap i32 %t21, %t22
+    %t21 = load typed i32 $value
+    %t22 = load typed i32 $total
+    %t23 = binary add nowrap i32 %t22, %t21
     store typed i32 %t23, $total
     jump ^for_iter_3
 

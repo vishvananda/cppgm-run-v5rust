@@ -33,21 +33,21 @@ function @sum_pack(%values : i32, %values__pack2 : i32, %values__pack3 : i32) ->
     %t1 = addr $discardarr__1
     store typed i32 0, %t1
     %t2 = index i8 [projection=array_element] %t1, 4
-    %t3 = load typed i32 $result
-    %t4 = load typed i32 $values
-    %t5 = binary add nowrap i32 %t3, %t4
+    %t3 = load typed i32 $values
+    %t4 = load typed i32 $result
+    %t5 = binary add nowrap i32 %t4, %t3
     store typed i32 %t5, $result
     store typed i32 0, %t2
     %t6 = index i8 [projection=array_element] %t1, 8
-    %t7 = load typed i32 $result
-    %t8 = load typed i32 $values__pack2
-    %t9 = binary add nowrap i32 %t7, %t8
+    %t7 = load typed i32 $values__pack2
+    %t8 = load typed i32 $result
+    %t9 = binary add nowrap i32 %t8, %t7
     store typed i32 %t9, $result
     store typed i32 0, %t6
     %t10 = index i8 [projection=array_element] %t1, 12
-    %t11 = load typed i32 $result
-    %t12 = load typed i32 $values__pack3
-    %t13 = binary add nowrap i32 %t11, %t12
+    %t11 = load typed i32 $values__pack3
+    %t12 = load typed i32 $result
+    %t13 = binary add nowrap i32 %t12, %t11
     store typed i32 %t13, $result
     store typed i32 0, %t10
     %t14 = load typed i32 $result

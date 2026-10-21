@@ -44,7 +44,7 @@ function @item__item(%this : ptr [object_bytes=12], %a : i32) -> void [binding=w
     store typed i32 %t6, %t8
     return void
 }
-function @marker__marker__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6markerC2Ev, object_root=yes, inline_hint=yes] {
+function @marker__marker__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN6markerC2Ev, inline_hint=yes] {
   slot $this : ptr
 
   block ^entry:

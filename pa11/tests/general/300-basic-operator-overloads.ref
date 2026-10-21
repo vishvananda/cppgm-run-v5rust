@@ -198,7 +198,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t69 = addr $b
     %t70 = addr $a
     %t71 = call u8 @operator___3(%t69, %t70)
-    %t72 = cmp ne i64 %t71, 0
+    %t72 = cmp ne u8 %t71, 0
     store typed i64 %t72, $land__9
     jump ^land_end_27
 
@@ -214,7 +214,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t74 = addr $a
     %t75 = addr $b
     %t76 = call u8 @operator___4(%t74, %t75)
-    %t77 = cmp ne i64 %t76, 0
+    %t77 = cmp ne u8 %t76, 0
     store typed i64 %t77, $land__10
     jump ^land_end_30
 
@@ -230,7 +230,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t79 = addr $a
     %t80 = addr $a
     %t81 = call u8 @operator____2(%t79, %t80)
-    %t82 = cmp ne i64 %t81, 0
+    %t82 = cmp ne u8 %t81, 0
     store typed i64 %t82, $land__11
     jump ^land_end_33
 
@@ -246,7 +246,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t84 = addr $a
     %t85 = addr $a
     %t86 = call u8 @operator____3(%t84, %t85)
-    %t87 = cmp ne i64 %t86, 0
+    %t87 = cmp ne u8 %t86, 0
     store typed i64 %t87, $land__12
     jump ^land_end_36
 
@@ -262,7 +262,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t89 = addr $a
     %t90 = addr $a
     %t91 = call u8 @operator____4(%t89, %t90)
-    %t92 = cmp ne i64 %t91, 0
+    %t92 = cmp ne u8 %t91, 0
     store typed i64 %t92, $land__13
     jump ^land_end_39
 
@@ -278,7 +278,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t94 = addr $a
     %t95 = addr $b
     %t96 = call u8 @operator____5(%t94, %t95)
-    %t97 = cmp ne i64 %t96, 0
+    %t97 = cmp ne u8 %t96, 0
     store typed i64 %t97, $land__14
     jump ^land_end_42
 

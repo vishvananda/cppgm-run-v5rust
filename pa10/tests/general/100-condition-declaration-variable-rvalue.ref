@@ -18,10 +18,10 @@ function @f(%p : ptr) -> i32 [binding=strong, object=_Z1fPKh] {
     branch %t4, ^while_body_2, ^while_end_3
 
   block ^while_body_2:
-    %t5 = load typed i32 $n
-    %t6 = load u8 $c
-    %t7 = convert zext i32 u8 %t6
-    %t8 = binary add nowrap i32 %t5, %t7
+    %t5 = load u8 $c
+    %t6 = convert zext i32 u8 %t5
+    %t7 = load typed i32 $n
+    %t8 = binary add nowrap i32 %t7, %t6
     store typed i32 %t8, $n
     jump ^while_cond_1
 

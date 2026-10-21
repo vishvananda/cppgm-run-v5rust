@@ -40,6 +40,7 @@ function @detail__expression_matcher_next___get_width(%this : ptr [object_bytes=
     %t1 = addr $retobj__1
     %t2 = load typed ptr $this
     %t3 = addr $argobj__2
+    zeroinit 1x1 %t3
     %t4 = call obj<8x8> @detail__expression_matcher_next___get_width_(%t2, $argobj__2)
     copyobj 8x8 %t4, %t1
     return obj<8x8> $retobj__1

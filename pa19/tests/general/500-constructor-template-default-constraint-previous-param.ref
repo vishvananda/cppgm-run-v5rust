@@ -10,8 +10,11 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t2 = addr $b
     %t3 = addr $s
     %t4 = addr $argobj__1
+    zeroinit 1x1 %t4
     %t5 = addr $argobj__2
+    zeroinit 1x1 %t5
     %t6 = addr $argobj__3
+    zeroinit 1x1 %t6
     call void @mutable_buffer__mutable_buffer(%t2, %t3, $argobj__1, $argobj__2, $argobj__3)
     return i32 0
 }

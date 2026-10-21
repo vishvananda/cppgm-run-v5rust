@@ -32,7 +32,7 @@ function @f() -> void [binding=strong, object=_Z1fv] {
     %t2 = binary mul i64 0, 4
     %t3 = index i8 [projection=array_element] %t1, %t2
     call void @G__G(%t3)
-    eh_try ^call_unwind_dispatch_1
+    eh_cleanup ^call_unwind_dispatch_1
     %t4 = addr $objects
     %t5 = binary mul i64 1, 4
     %t6 = index i8 [projection=array_element] %t4, %t5
@@ -56,7 +56,7 @@ function @f() -> void [binding=strong, object=_Z1fv] {
     unreachable
 
   block ^call_unwind_end_2:
-    eh_try ^call_unwind_dispatch_4
+    eh_cleanup ^call_unwind_dispatch_4
     %t11 = addr $objects
     %t12 = binary mul i64 2, 4
     %t13 = index i8 [projection=array_element] %t11, %t12
@@ -165,7 +165,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_7:
     %t8 = load typed i32 @bad
-    %t9 = cmp ne i64 %t8, 0
+    %t9 = cmp ne i32 %t8, 0
     store typed i64 %t9, $lor__2
     jump ^lor_end_9
 
@@ -179,7 +179,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_10:
     %t11 = load typed i32 @next
-    %t12 = cmp ne i64 %t11, 0
+    %t12 = cmp ne i32 %t11, 0
     store typed i64 %t12, $lor__3
     jump ^lor_end_12
 

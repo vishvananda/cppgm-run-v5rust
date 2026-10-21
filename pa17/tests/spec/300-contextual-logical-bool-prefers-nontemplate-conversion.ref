@@ -13,7 +13,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     branch %t2, ^land_rhs_4, ^land_short_5
 
   block ^land_rhs_4:
-    %t3 = cmp ne i64 1, 0
+    %t3 = cmp ne u8 1, 0
     store typed i64 %t3, $land__2
     jump ^land_end_6
 
@@ -32,7 +32,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     branch %t6, ^lor_short_11, ^lor_rhs_10
 
   block ^lor_rhs_10:
-    %t7 = cmp ne i64 0, 0
+    %t7 = cmp ne u8 0, 0
     store typed i64 %t7, $lor__5
     jump ^lor_end_12
 

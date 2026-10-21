@@ -38,6 +38,7 @@ function @matcher_traits_true____cppgm_class_template_identity_1___match(%this :
     %t3 = load i8 $ch
     %t4 = load typed ptr $tr
     %t5 = addr $argobj__1
+    zeroinit 1x1 %t5
     %t6 = call u8 @derived_set_traits___test(%t2, %t3, %t4, $argobj__1)
     return u8 %t6
 }

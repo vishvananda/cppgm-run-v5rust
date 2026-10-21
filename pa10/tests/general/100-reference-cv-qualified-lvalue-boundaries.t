@@ -16,7 +16,10 @@ int f(int(&)[2]){return 1;}int f(const int(&)[2]){return 2;}int check_case(){int
 
 // 100-reference-cv-pointer-deep-const-reference-middle-qualified
 namespace case_2 {
-// C++11 reference initialization: N3485 8.5.3.
+// Course rule (pa10/README.md): include CWG2352 beyond literal N3485 8.5.3.
+// Similar pointer types with a permitted qualification conversion bind directly:
+// r denotes pp itself, not a converted pointer temporary.
+// https://cplusplus.github.io/CWG/issues/2352.html
 int check_case(){int a=3;int*p=&a;int**pp=&p;const int*const*const& r=pp;return **r!=3;}
 
 }

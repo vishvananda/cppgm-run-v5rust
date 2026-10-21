@@ -2,6 +2,9 @@
 > qualification to native resource exhaustion. Match exact successful results
 > at a shared larger stack; do not imitate C++ physical exhaustion cutoffs.
 
+> Current oracle pins and update evidence are in `CLONE_CONTRACT.md` and
+> `docs/port/baseline.md`; the initial analysis revision below is historical.
+
 # Safe Rust compiler clone analysis and conversion plan
 
 Build a safe Rust implementation of all nine tools that preserves the current

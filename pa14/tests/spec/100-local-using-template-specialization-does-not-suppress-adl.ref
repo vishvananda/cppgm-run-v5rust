@@ -9,6 +9,7 @@ function @boost_no_using_breaks_adl__test() -> i32 [binding=strong, object=_ZN25
     %t1 = call i32 @boost_no_using_breaks_adl__user__f(0)
     store typed i32 %t1, $first
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = call i32 @boost_no_using_breaks_adl__user__f__2($argobj__1)
     store typed i32 %t3, $second
     %t4 = load typed i32 $first

@@ -564,7 +564,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_1:
     %t2 = call i32 @case1__check()
-    %t3 = cmp ne i64 %t2, 0
+    %t3 = cmp ne i32 %t2, 0
     store typed i64 %t3, $lor__1
     jump ^lor_end_3
 
@@ -578,7 +578,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_4:
     %t5 = call i32 @case2__check()
-    %t6 = cmp ne i64 %t5, 0
+    %t6 = cmp ne i32 %t5, 0
     store typed i64 %t6, $lor__2
     jump ^lor_end_6
 
@@ -592,7 +592,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_7:
     %t8 = call i32 @case3__check()
-    %t9 = cmp ne i64 %t8, 0
+    %t9 = cmp ne i32 %t8, 0
     store typed i64 %t9, $lor__3
     jump ^lor_end_9
 
@@ -606,7 +606,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_10:
     %t11 = call i32 @case4__check()
-    %t12 = cmp ne i64 %t11, 0
+    %t12 = cmp ne i32 %t11, 0
     store typed i64 %t12, $lor__4
     jump ^lor_end_12
 
@@ -620,7 +620,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_13:
     %t14 = call i32 @case5__check()
-    %t15 = cmp ne i64 %t14, 0
+    %t15 = cmp ne i32 %t14, 0
     store typed i64 %t15, $lor__5
     jump ^lor_end_15
 
@@ -634,7 +634,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_16:
     %t17 = call i32 @case6__check()
-    %t18 = cmp ne i64 %t17, 0
+    %t18 = cmp ne i32 %t17, 0
     store typed i64 %t18, $lor__6
     jump ^lor_end_18
 
@@ -648,7 +648,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_19:
     %t20 = call i32 @case7__check()
-    %t21 = cmp ne i64 %t20, 0
+    %t21 = cmp ne i32 %t20, 0
     store typed i64 %t21, $lor__7
     jump ^lor_end_21
 
@@ -662,7 +662,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_22:
     %t23 = call i32 @case8__check()
-    %t24 = cmp ne i64 %t23, 0
+    %t24 = cmp ne i32 %t23, 0
     store typed i64 %t24, $lor__8
     jump ^lor_end_24
 
@@ -676,7 +676,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_25:
     %t26 = call i32 @case9__check()
-    %t27 = cmp ne i64 %t26, 0
+    %t27 = cmp ne i32 %t26, 0
     store typed i64 %t27, $lor__9
     jump ^lor_end_27
 
@@ -690,7 +690,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^lor_rhs_28:
     %t29 = call i32 @case10__check()
-    %t30 = cmp ne i64 %t29, 0
+    %t30 = cmp ne i32 %t29, 0
     store typed i64 %t30, $lor__10
     jump ^lor_end_30
 

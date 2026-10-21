@@ -37,7 +37,7 @@ function @truthy(%value : ptr) -> i32 [unwind=no, binding=strong, object=_Z6trut
     %t3 = call i32 @use(%t2)
     store typed i32 %t3, $call__3
     %t4 = load typed i32 $call__3
-    %t5 = cmp ne i64 %t4, 0
+    %t5 = cmp ne i32 %t4, 0
     store typed i64 %t5, $land__1
     call void @Probe___Probe(%t2)
     eh_end

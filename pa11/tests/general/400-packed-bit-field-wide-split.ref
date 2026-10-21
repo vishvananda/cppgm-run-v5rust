@@ -1,5 +1,14 @@
 global @global [binding=strong] = {
-  zero 10
+  u8 122
+  u8 111
+  u8 94
+  u8 77
+  u8 60
+  u8 43
+  u8 26
+  u8 9
+  u8 0
+  i8 5
 }
 
 function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
@@ -443,37 +452,4 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^if_end_35:
     return i32 0
-}
-function @__cppgm_init() -> void [role=init, binding=internal] {
-  block ^entry:
-    %t1 = addr @global
-    %t2 = index i8 [projection=field] %t1, 0
-    %t3 = binary and i8 7, 2
-    %t4 = load i8 %t2
-    %t5 = binary and i8 %t4, -8
-    %t6 = binary or i8 %t5, %t3
-    store i8 %t6, %t2
-    %t7 = addr @global
-    %t8 = index i8 [projection=field] %t7, 0
-    %t9 = binary and i128 18446744073709551615, 81985529216486895
-    %t10 = binary shl i128 %t9, 3
-    %t11 = load i64 %t8
-    %t12 = convert zext i128 i64 %t11
-    %t13 = index i8 %t8, 8
-    %t14 = load u8 %t13
-    %t15 = convert zext i128 u8 %t14
-    %t16 = binary shl i128 %t15, 64
-    %t17 = binary or i128 %t12, %t16
-    %t18 = binary and i128 %t17, -147573952589676412921
-    %t19 = binary or i128 %t18, %t10
-    %t20 = convert trunc i64 i128 %t19
-    store i64 %t20, %t8
-    %t21 = binary ushr i128 %t19, 64
-    %t22 = convert trunc u8 i128 %t21
-    %t23 = index i8 %t8, 8
-    store u8 %t22, %t23
-    %t24 = addr @global
-    %t25 = index i8 [projection=field] %t24, 9
-    store i8 5, %t25
-    return void
 }

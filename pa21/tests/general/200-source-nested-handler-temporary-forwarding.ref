@@ -6,6 +6,7 @@ declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZT
 declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
 declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
 declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
 declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
 
 global @live : i32 [binding=strong] = zero
@@ -127,46 +128,60 @@ function @probe(%nested_handler : u8) -> i32 [binding=strong, object=_Z5probeb] 
     resume
 
   block ^cleanup_action_16:
+    eh_try ^lexical_cleanup_terminate_20
     call void @__external_runtime____cxa_end_catch()
+    eh_end
     eh_end
     jump ^cleanup_resume_15
 
+  block ^lexical_cleanup_terminate_20:
+    eh_catch_all, 3
+    %t16 = exception ptr
+    call void @cppgm_call_terminate(%t16)
+    unreachable
+
   block ^cleanup_action_17:
     eh_end
+    eh_try ^lexical_cleanup_terminate_20
     call void @__external_runtime____cxa_end_catch()
+    eh_end
     eh_end
     jump ^cleanup_action_16
 
   block ^call_unwind_dispatch_18:
+    eh_cleanup
     jump ^cleanup_action_17
 
   block ^call_unwind_end_19:
-    eh_try ^call_unwind_dispatch_21
-    %t16 = call i32 @use(%t15)
-    store typed i32 %t16, $call__2
-    %t17 = load typed i32 $call__2
+    eh_try ^call_unwind_dispatch_22
+    %t17 = call i32 @use(%t15)
+    store typed i32 %t17, $call__2
+    %t18 = load typed i32 $call__2
     call void @Argument___Argument(%t15)
     eh_end
-    jump ^call_unwind_end_22
+    jump ^call_unwind_end_23
 
-  block ^cleanup_action_20:
+  block ^cleanup_action_21:
     call void @Argument___Argument(%t15)
     jump ^cleanup_action_17
 
-  block ^call_unwind_dispatch_21:
-    jump ^cleanup_action_20
+  block ^call_unwind_dispatch_22:
+    eh_cleanup
+    jump ^cleanup_action_21
 
-  block ^call_unwind_end_22:
+  block ^call_unwind_end_23:
     eh_end
     call void @__external_runtime____cxa_end_catch()
     eh_end
     call void @__external_runtime____cxa_end_catch()
-    return i32 %t17
+    return i32 %t18
 
   block ^catch_cleanup_14:
     call void @__external_runtime____cxa_end_catch()
     eh_end
+    eh_try ^lexical_cleanup_terminate_20
     call void @__external_runtime____cxa_end_catch()
+    eh_end
     eh_end
     resume
 
@@ -175,87 +190,91 @@ function @probe(%nested_handler : u8) -> i32 [binding=strong, object=_Z5probeb] 
     resume
 
   block ^try_end_11:
-    jump ^if_end_23
+    jump ^if_end_24
 
   block ^if_else_8:
-    eh_try ^catch_dispatch_24
-    eh_try ^call_unwind_dispatch_28
-    %t18 = addr $arg__3
-    call void @Argument__Argument(%t18, 1)
+    eh_try ^catch_dispatch_25
+    eh_try ^call_unwind_dispatch_29
+    %t19 = addr $arg__3
+    call void @Argument__Argument(%t19, 1)
     eh_end
-    jump ^call_unwind_end_29
+    jump ^call_unwind_end_30
 
-  block ^cleanup_resume_27:
+  block ^cleanup_resume_28:
     eh_end
     eh_end
-    jump ^catch_entry_25
+    jump ^catch_entry_26
 
-  block ^call_unwind_dispatch_28:
-    eh_catch @__external_rtti__int, 3
+  block ^call_unwind_dispatch_29:
+    eh_catch @__external_rtti__int, 4
     eh_cleanup
-    jump ^cleanup_resume_27
+    jump ^cleanup_resume_28
 
-  block ^call_unwind_end_29:
-    eh_try ^call_unwind_dispatch_31
-    %t19 = call i32 @use(%t18)
-    store typed i32 %t19, $call__4
-    %t20 = load typed i32 $call__4
-    call void @Argument___Argument(%t18)
+  block ^call_unwind_end_30:
+    eh_try ^call_unwind_dispatch_32
+    %t20 = call i32 @use(%t19)
+    store typed i32 %t20, $call__4
+    %t21 = load typed i32 $call__4
+    call void @Argument___Argument(%t19)
     eh_end
-    jump ^call_unwind_end_32
+    jump ^call_unwind_end_33
 
-  block ^cleanup_action_30:
-    call void @Argument___Argument(%t18)
-    jump ^cleanup_resume_27
+  block ^cleanup_action_31:
+    call void @Argument___Argument(%t19)
+    jump ^cleanup_resume_28
 
-  block ^call_unwind_dispatch_31:
-    eh_catch @__external_rtti__int, 3
+  block ^call_unwind_dispatch_32:
+    eh_catch @__external_rtti__int, 4
     eh_cleanup
-    jump ^cleanup_action_30
+    jump ^cleanup_action_31
 
-  block ^call_unwind_end_32:
+  block ^call_unwind_end_33:
     eh_end
     eh_end
     call void @__external_runtime____cxa_end_catch()
-    return i32 %t20
+    return i32 %t21
 
-  block ^catch_dispatch_24:
-    eh_catch @__external_rtti__int, 3
+  block ^catch_dispatch_25:
+    eh_catch @__external_rtti__int, 4
     eh_cleanup
     eh_end
-    jump ^catch_entry_25
+    jump ^catch_entry_26
 
-  block ^catch_entry_25:
-    %t21 = exception ptr
-    %t22 = exception_selector i32
-    %t23 = cmp eq i32 %t22, 3
-    branch %t23, ^catch_body_33, ^catch_next_34
+  block ^catch_entry_26:
+    %t22 = exception ptr
+    %t23 = exception_selector i32
+    %t24 = cmp eq i32 %t23, 4
+    branch %t24, ^catch_body_34, ^catch_next_35
 
-  block ^catch_body_33:
-    %t24 = call ptr @__external_runtime____cxa_begin_catch(%t21)
-    eh_cleanup ^catch_cleanup_35
+  block ^catch_body_34:
+    %t25 = call ptr @__external_runtime____cxa_begin_catch(%t22)
+    eh_cleanup ^catch_cleanup_36
     eh_end
     call void @__external_runtime____cxa_end_catch()
     eh_end
     call void @__external_runtime____cxa_end_catch()
     return i32 2
 
-  block ^catch_cleanup_35:
+  block ^catch_cleanup_36:
     call void @__external_runtime____cxa_end_catch()
     eh_end
+    eh_try ^lexical_cleanup_terminate_20
     call void @__external_runtime____cxa_end_catch()
     eh_end
-    resume
-
-  block ^catch_next_34:
-    call void @__external_runtime____cxa_end_catch()
     eh_end
     resume
 
-  block ^try_end_26:
-    jump ^if_end_23
+  block ^catch_next_35:
+    eh_try ^lexical_cleanup_terminate_20
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    eh_end
+    resume
 
-  block ^if_end_23:
+  block ^try_end_27:
+    jump ^if_end_24
+
+  block ^if_end_24:
     eh_end
     call void @__external_runtime____cxa_end_catch()
     jump ^try_end_3
@@ -361,6 +380,12 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^for_end_4:
     return i32 0
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    return void
 }
 function @Error__Error(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN5ErrorC1Ev, inline_hint=yes] {
   slot $this : ptr

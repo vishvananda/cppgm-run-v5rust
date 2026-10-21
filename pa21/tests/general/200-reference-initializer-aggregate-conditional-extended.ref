@@ -157,7 +157,9 @@ function @construction_probe() -> void [linkage=c, binding=strong] {
   block ^land_end_11:
     %t24 = load typed i64 $land__5
     %t25 = convert trunc i32 i64 %t24
+    eh_try ^cleanup_action_12
     call void @check(%t25)
+    eh_end
     eh_try ^cleanup_action_12
     call void @check_live(3)
     eh_end

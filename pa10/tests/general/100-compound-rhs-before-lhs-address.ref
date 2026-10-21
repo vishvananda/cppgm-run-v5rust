@@ -1,0 +1,54 @@
+global @sequence : i32 [binding=strong] = zero
+global @value : i32 [binding=strong] = zero
+
+function @right() -> i32 [binding=strong, object=_Z5rightv] {
+  block ^entry:
+    store typed i32 1, @sequence
+    return i32 3
+}
+function @left() -> ptr [binding=strong, object=_Z4leftv] {
+  block ^entry:
+    %t1 = load typed i32 @sequence
+    %t2 = cmp ne i32 %t1, 1
+    branch %t2, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    store typed i32 9, @sequence
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t3 = addr @value
+    return ptr %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = call i32 @right()
+    %t2 = call ptr @left()
+    %t3 = load typed i32 %t2
+    %t4 = binary add nowrap i32 %t3, %t1
+    store typed i32 %t4, %t2
+    %t5 = load typed i32 @sequence
+    %t6 = cmp ne i32 %t5, 1
+    branch %t6, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t7 = load typed i32 @value
+    %t8 = cmp ne i32 %t7, 3
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t10 = load typed i64 $lor__1
+    %t11 = convert trunc i32 i64 %t10
+    return i32 %t11
+}

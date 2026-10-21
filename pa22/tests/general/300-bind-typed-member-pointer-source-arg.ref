@@ -8,6 +8,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t1 = addr $x
     %t2 = addr $selected
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     %t4 = addr @X__f0
     %t5 = copy i64 %t4
     %t6 = convert zext i128 i64 %t5
@@ -50,6 +51,7 @@ function @bind(%ret : ptr [pass=indirect_result, object_bytes=24], %__param1 : o
     store typed i128 %f, $f
     store typed ptr %a, $a
     %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
     %t2 = addr $argobj__2
     %t3 = load typed i128 $f
     %t4 = call obj<16x8> @mem_fn(%t3)

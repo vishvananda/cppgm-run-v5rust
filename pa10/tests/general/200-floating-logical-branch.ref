@@ -12,7 +12,7 @@ function @both(%lhs : f64, %rhs : i32) -> u8 [binding=strong, object=_Z4bothdi] 
 
   block ^land_rhs_1:
     %t3 = load typed i32 $rhs
-    %t4 = cmp ne i64 %t3, 0
+    %t4 = cmp ne i32 %t3, 0
     store typed i64 %t4, $land__1
     jump ^land_end_3
 

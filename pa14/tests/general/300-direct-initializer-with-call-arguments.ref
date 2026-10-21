@@ -21,6 +21,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     store typed i32 2, $b
     %t1 = addr $h
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = addr $a
     %t4 = call ptr @pass(%t3)
     %t5 = load typed i32 %t4
@@ -30,6 +31,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     call void @holder__holder(%t1, $argobj__1, %t5, %t8)
     %t9 = addr $k
     %t10 = addr $argobj__2
+    zeroinit 1x1 %t10
     %t11 = load typed i32 $a
     %t12 = call i32 @by_value(%t11)
     %t13 = load typed i32 $b

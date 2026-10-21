@@ -28,125 +28,149 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     store typed i32 0, $total
-    %t1 = load typed i32 $total
-    %t2 = addr $argobj__1
-    %t3 = call i32 @partition_size($argobj__1, 0)
-    %t4 = binary add nowrap i32 %t1, %t3
+    %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
+    %t2 = call i32 @partition_size($argobj__1, 0)
+    %t3 = load typed i32 $total
+    %t4 = binary add nowrap i32 %t3, %t2
     store typed i32 %t4, $total
-    %t5 = load typed i32 $total
-    %t6 = addr $argobj__2
-    %t7 = call i32 @partition_size__2($argobj__2, 0)
-    %t8 = binary add nowrap i32 %t5, %t7
+    %t5 = addr $argobj__2
+    zeroinit 1x1 %t5
+    %t6 = call i32 @partition_size__2($argobj__2, 0)
+    %t7 = load typed i32 $total
+    %t8 = binary add nowrap i32 %t7, %t6
     store typed i32 %t8, $total
-    %t9 = load typed i32 $total
-    %t10 = addr $argobj__3
-    %t11 = call i32 @partition_size__3($argobj__3, 0)
-    %t12 = binary add nowrap i32 %t9, %t11
+    %t9 = addr $argobj__3
+    zeroinit 1x1 %t9
+    %t10 = call i32 @partition_size__3($argobj__3, 0)
+    %t11 = load typed i32 $total
+    %t12 = binary add nowrap i32 %t11, %t10
     store typed i32 %t12, $total
-    %t13 = load typed i32 $total
-    %t14 = addr $argobj__4
-    %t15 = call i32 @partition_size__4($argobj__4, 0)
-    %t16 = binary add nowrap i32 %t13, %t15
+    %t13 = addr $argobj__4
+    zeroinit 1x1 %t13
+    %t14 = call i32 @partition_size__4($argobj__4, 0)
+    %t15 = load typed i32 $total
+    %t16 = binary add nowrap i32 %t15, %t14
     store typed i32 %t16, $total
-    %t17 = load typed i32 $total
-    %t18 = addr $argobj__5
-    %t19 = call i32 @partition_size__5($argobj__5, 0)
-    %t20 = binary add nowrap i32 %t17, %t19
+    %t17 = addr $argobj__5
+    zeroinit 1x1 %t17
+    %t18 = call i32 @partition_size__5($argobj__5, 0)
+    %t19 = load typed i32 $total
+    %t20 = binary add nowrap i32 %t19, %t18
     store typed i32 %t20, $total
-    %t21 = load typed i32 $total
-    %t22 = addr $argobj__6
-    %t23 = call i32 @partition_size__6($argobj__6, 0)
-    %t24 = binary add nowrap i32 %t21, %t23
+    %t21 = addr $argobj__6
+    zeroinit 1x1 %t21
+    %t22 = call i32 @partition_size__6($argobj__6, 0)
+    %t23 = load typed i32 $total
+    %t24 = binary add nowrap i32 %t23, %t22
     store typed i32 %t24, $total
-    %t25 = load typed i32 $total
-    %t26 = addr $argobj__7
-    %t27 = call i32 @partition_size__7($argobj__7, 0)
-    %t28 = binary add nowrap i32 %t25, %t27
+    %t25 = addr $argobj__7
+    zeroinit 1x1 %t25
+    %t26 = call i32 @partition_size__7($argobj__7, 0)
+    %t27 = load typed i32 $total
+    %t28 = binary add nowrap i32 %t27, %t26
     store typed i32 %t28, $total
-    %t29 = load typed i32 $total
-    %t30 = addr $argobj__8
-    %t31 = call i32 @partition_size__8($argobj__8, 0)
-    %t32 = binary add nowrap i32 %t29, %t31
+    %t29 = addr $argobj__8
+    zeroinit 1x1 %t29
+    %t30 = call i32 @partition_size__8($argobj__8, 0)
+    %t31 = load typed i32 $total
+    %t32 = binary add nowrap i32 %t31, %t30
     store typed i32 %t32, $total
-    %t33 = load typed i32 $total
-    %t34 = addr $argobj__9
-    %t35 = call i32 @partition_size__9($argobj__9, 0)
-    %t36 = binary add nowrap i32 %t33, %t35
+    %t33 = addr $argobj__9
+    zeroinit 1x1 %t33
+    %t34 = call i32 @partition_size__9($argobj__9, 0)
+    %t35 = load typed i32 $total
+    %t36 = binary add nowrap i32 %t35, %t34
     store typed i32 %t36, $total
-    %t37 = load typed i32 $total
-    %t38 = addr $argobj__10
-    %t39 = call i32 @partition_size__10($argobj__10, 0)
-    %t40 = binary add nowrap i32 %t37, %t39
+    %t37 = addr $argobj__10
+    zeroinit 1x1 %t37
+    %t38 = call i32 @partition_size__10($argobj__10, 0)
+    %t39 = load typed i32 $total
+    %t40 = binary add nowrap i32 %t39, %t38
     store typed i32 %t40, $total
-    %t41 = load typed i32 $total
-    %t42 = addr $argobj__11
-    %t43 = call i32 @partition_size__11($argobj__11, 0)
-    %t44 = binary add nowrap i32 %t41, %t43
+    %t41 = addr $argobj__11
+    zeroinit 1x1 %t41
+    %t42 = call i32 @partition_size__11($argobj__11, 0)
+    %t43 = load typed i32 $total
+    %t44 = binary add nowrap i32 %t43, %t42
     store typed i32 %t44, $total
-    %t45 = load typed i32 $total
-    %t46 = addr $argobj__12
-    %t47 = call i32 @partition_size__12($argobj__12, 0)
-    %t48 = binary add nowrap i32 %t45, %t47
+    %t45 = addr $argobj__12
+    zeroinit 1x1 %t45
+    %t46 = call i32 @partition_size__12($argobj__12, 0)
+    %t47 = load typed i32 $total
+    %t48 = binary add nowrap i32 %t47, %t46
     store typed i32 %t48, $total
-    %t49 = load typed i32 $total
-    %t50 = addr $argobj__13
-    %t51 = call i32 @partition_size__13($argobj__13, 0)
-    %t52 = binary add nowrap i32 %t49, %t51
+    %t49 = addr $argobj__13
+    zeroinit 1x1 %t49
+    %t50 = call i32 @partition_size__13($argobj__13, 0)
+    %t51 = load typed i32 $total
+    %t52 = binary add nowrap i32 %t51, %t50
     store typed i32 %t52, $total
-    %t53 = load typed i32 $total
-    %t54 = addr $argobj__14
-    %t55 = call i32 @partition_size__14($argobj__14, 0)
-    %t56 = binary add nowrap i32 %t53, %t55
+    %t53 = addr $argobj__14
+    zeroinit 1x1 %t53
+    %t54 = call i32 @partition_size__14($argobj__14, 0)
+    %t55 = load typed i32 $total
+    %t56 = binary add nowrap i32 %t55, %t54
     store typed i32 %t56, $total
-    %t57 = load typed i32 $total
-    %t58 = addr $argobj__15
-    %t59 = call i32 @partition_size__15($argobj__15, 0)
-    %t60 = binary add nowrap i32 %t57, %t59
+    %t57 = addr $argobj__15
+    zeroinit 1x1 %t57
+    %t58 = call i32 @partition_size__15($argobj__15, 0)
+    %t59 = load typed i32 $total
+    %t60 = binary add nowrap i32 %t59, %t58
     store typed i32 %t60, $total
-    %t61 = load typed i32 $total
-    %t62 = addr $argobj__16
-    %t63 = call i32 @partition_size__16($argobj__16, 0)
-    %t64 = binary add nowrap i32 %t61, %t63
+    %t61 = addr $argobj__16
+    zeroinit 1x1 %t61
+    %t62 = call i32 @partition_size__16($argobj__16, 0)
+    %t63 = load typed i32 $total
+    %t64 = binary add nowrap i32 %t63, %t62
     store typed i32 %t64, $total
-    %t65 = load typed i32 $total
-    %t66 = addr $argobj__17
-    %t67 = call i32 @partition_size__17($argobj__17, 0)
-    %t68 = binary add nowrap i32 %t65, %t67
+    %t65 = addr $argobj__17
+    zeroinit 1x1 %t65
+    %t66 = call i32 @partition_size__17($argobj__17, 0)
+    %t67 = load typed i32 $total
+    %t68 = binary add nowrap i32 %t67, %t66
     store typed i32 %t68, $total
-    %t69 = load typed i32 $total
-    %t70 = addr $argobj__18
-    %t71 = call i32 @partition_size__18($argobj__18, 0)
-    %t72 = binary add nowrap i32 %t69, %t71
+    %t69 = addr $argobj__18
+    zeroinit 1x1 %t69
+    %t70 = call i32 @partition_size__18($argobj__18, 0)
+    %t71 = load typed i32 $total
+    %t72 = binary add nowrap i32 %t71, %t70
     store typed i32 %t72, $total
-    %t73 = load typed i32 $total
-    %t74 = addr $argobj__19
-    %t75 = call i32 @partition_size__19($argobj__19, 0)
-    %t76 = binary add nowrap i32 %t73, %t75
+    %t73 = addr $argobj__19
+    zeroinit 1x1 %t73
+    %t74 = call i32 @partition_size__19($argobj__19, 0)
+    %t75 = load typed i32 $total
+    %t76 = binary add nowrap i32 %t75, %t74
     store typed i32 %t76, $total
-    %t77 = load typed i32 $total
-    %t78 = addr $argobj__20
-    %t79 = call i32 @partition_size__20($argobj__20, 0)
-    %t80 = binary add nowrap i32 %t77, %t79
+    %t77 = addr $argobj__20
+    zeroinit 1x1 %t77
+    %t78 = call i32 @partition_size__20($argobj__20, 0)
+    %t79 = load typed i32 $total
+    %t80 = binary add nowrap i32 %t79, %t78
     store typed i32 %t80, $total
-    %t81 = load typed i32 $total
-    %t82 = addr $argobj__21
-    %t83 = call i32 @partition_size__21($argobj__21, 0)
-    %t84 = binary add nowrap i32 %t81, %t83
+    %t81 = addr $argobj__21
+    zeroinit 1x1 %t81
+    %t82 = call i32 @partition_size__21($argobj__21, 0)
+    %t83 = load typed i32 $total
+    %t84 = binary add nowrap i32 %t83, %t82
     store typed i32 %t84, $total
-    %t85 = load typed i32 $total
-    %t86 = addr $argobj__22
-    %t87 = call i32 @partition_size__22($argobj__22, 0)
-    %t88 = binary add nowrap i32 %t85, %t87
+    %t85 = addr $argobj__22
+    zeroinit 1x1 %t85
+    %t86 = call i32 @partition_size__22($argobj__22, 0)
+    %t87 = load typed i32 $total
+    %t88 = binary add nowrap i32 %t87, %t86
     store typed i32 %t88, $total
-    %t89 = load typed i32 $total
-    %t90 = addr $argobj__23
-    %t91 = call i32 @partition_size__23($argobj__23, 0)
-    %t92 = binary add nowrap i32 %t89, %t91
+    %t89 = addr $argobj__23
+    zeroinit 1x1 %t89
+    %t90 = call i32 @partition_size__23($argobj__23, 0)
+    %t91 = load typed i32 $total
+    %t92 = binary add nowrap i32 %t91, %t90
     store typed i32 %t92, $total
-    %t93 = load typed i32 $total
-    %t94 = addr $argobj__24
-    %t95 = call i32 @partition_size__24($argobj__24, 0)
-    %t96 = binary add nowrap i32 %t93, %t95
+    %t93 = addr $argobj__24
+    zeroinit 1x1 %t93
+    %t94 = call i32 @partition_size__24($argobj__24, 0)
+    %t95 = load typed i32 $total
+    %t96 = binary add nowrap i32 %t95, %t94
     store typed i32 %t96, $total
     %t97 = load typed i32 $total
     %t98 = cmp eq i32 %t97, 300

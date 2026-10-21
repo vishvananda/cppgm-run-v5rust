@@ -178,6 +178,16 @@ run; PA24's backend can skip renormalizing a result that does not wrap.
 Stating them now costs one flag each; deriving them again after lowering is
 not possible.
 
+For reference initialization, the course includes the later
+[CWG2352 resolution](https://cplusplus.github.io/CWG/issues/2352.html):
+reference-related types include similar types, and a permitted qualification
+conversion can make them reference-compatible. Such a compatible lvalue binds
+directly; it does not require a converted pointer temporary. In case 2 of
+`tests/general/100-reference-cv-qualified-lvalue-boundaries.t`,
+`const int* const* const& r = pp` therefore makes `r` denote `pp` itself.
+This is an explicit compatibility rule beyond literal N3485 8.5.3, not a
+requirement to implement every later language change.
+
 For supported scalar conversions, PA10 may canonicalize widened integral immediates directly
 to their final LowIR literal value instead of spelling those same conversions through
 intermediate `binary shl` / `binary shr` sign-extension shells.

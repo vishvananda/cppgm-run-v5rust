@@ -76,6 +76,7 @@ function @Buffer__begin(%ret : ptr [pass=indirect_result, object_bytes=1], %this
 
   block ^entry:
     store typed ptr %this, $this
+    zeroinit 1x1 %ret
     return void
 }
 function @Buffer__end(%ret : ptr [pass=indirect_result, object_bytes=1], %this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN6Buffer3endEv, inline_hint=yes] {
@@ -83,6 +84,7 @@ function @Buffer__end(%ret : ptr [pass=indirect_result, object_bytes=1], %this :
 
   block ^entry:
     store typed ptr %this, $this
+    zeroinit 1x1 %ret
     return void
 }
 function @Iterator___Iterator(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN8IteratorD1Ev, inline_hint=yes] {

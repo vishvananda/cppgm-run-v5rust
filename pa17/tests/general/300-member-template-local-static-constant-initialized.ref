@@ -12,6 +12,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t1 = addr $fn
     %t2 = addr $fn
     %t3 = addr $argobj__2
+    zeroinit 1x1 %t3
     %t4 = call i32 @function_n_void___assign_to(%t2, $argobj__2, 1)
     %t5 = cmp eq i32 %t4, 11
     branch %t5, ^cond_then_1, ^cond_else_2

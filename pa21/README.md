@@ -127,7 +127,13 @@ their leading comment (`expect exit N` or `expect reject`) or in an
 `cppgm++ --emit-lowir -O0`, builds the LowIR with the supplied
 `lowir2native-ref -O0` and requires the stated exit status (and the output in
 `x.stdout`, when present), or requires your frontend to reject the program.
-The LowIR text of a control is not compared. `make test-controls` runs only
+The LowIR text of a control is not compared. Lifetime regression programs
+(construction prefixes, inner handlers, guarded statics and backing arrays)
+use this lane to check their construction/destruction traces, exception outcomes
+and live-object counts. Their complete storage and cleanup-block layout is not
+an additional requirement. The LowIR must still obey PA8's structural rules;
+focused LowIR/fact fixtures in `general/` and `spec/` retain their normal comparison.
+`make test-controls` runs only
 the controls; `make check TEST=tests/controls/<name>.t` runs one.
 
 ### PA21 Syntax Spec
@@ -214,6 +220,11 @@ To complete PA21, implement these goals:
    result used by an outer condition yields a value the outer condition tests.
    Guarded local-static initialization should destroy initializer temporaries
    on the initialization edge before that edge joins the already-initialized path.
+   The variable is initialized once its initialization completes, before those
+   temporary destructors run (6.7p4, 12.2p3). If a temporary destructor then
+   throws, the next entry does not initialize the variable again and its
+   destruction remains registered. If initialization itself throws, the next
+   entry retries it.
    An aggregate whose initialization may throw constructs each nontrivial
    member by a constructor call (not a representation copy), and the cleanup
    region after each call destroys exactly the members constructed so far.
@@ -226,6 +237,13 @@ To complete PA21, implement these goals:
    may catch the exception before that cleanup; a function-try handler runs
    after it. A delegating constructor destroys its completed target when its
    own body fails. A second exception during unwind destruction terminates.
+   Ending a catch can destroy its exception object, too. If retirement of a
+   class or unknown (`catch (...)`) exception occurs while another exception
+   unwinds, its `__cxa_end_catch` call runs under the cleanup terminate guard;
+   a second throw must not replace the active exception or reach an outer catch.
+   Scalar catches need no such guard. In assignment LowIR output, cleanup
+   handlers end in `resume`, leaving
+   a non-throwing definition's enclosing guard responsible for termination.
    A destructor declared without an exception specification has the one its
    implicit declaration would have (12.4p3, 15.4p14), normally non-throwing,
    and states `unwind=no` exactly when that one is non-throwing; a base's or

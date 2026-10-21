@@ -161,12 +161,15 @@ function @__cppgm_init() -> void [role=init, binding=internal] {
   block ^entry:
     %t1 = addr @placeholder_value
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     call void @lambda_functor_placeholder___lambda_functor(%t1, $argobj__1)
     %t3 = addr @increment_value
     %t4 = addr $argobj__2
     %t5 = addr $argobj__3
     %t6 = addr $argobj__4
+    zeroinit 1x1 %t6
     %t7 = addr $argobj__5
+    zeroinit 1x1 %t7
     call void @tuple___cppgm_class_template_identity_1_null_type___tuple(%t5, $argobj__4, $argobj__5)
     call void @lambda_functor_base___cppgm_class_template_identity_2___cppgm_class_template_identity_3___lambda_functor_base(%t4, $argobj__3)
     call void @lambda_functor___cppgm_class_template_identity_4___lambda_functor(%t3, $argobj__2)

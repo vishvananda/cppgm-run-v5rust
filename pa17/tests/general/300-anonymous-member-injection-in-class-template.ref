@@ -7,43 +7,39 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     %t1 = addr $made
-    store typed i64 0, %t1
-    %t2 = index i8 %t1, 8
-    store typed i64 0, %t2
-    %t3 = index i8 %t1, 16
-    store typed i64 0, %t3
+    zeroinit 24x8 %t1
+    %t2 = addr $made
+    %t3 = call i64 @str_char___total(%t2)
+    store typed i64 %t3, $through_member
     %t4 = addr $made
-    %t5 = call i64 @str_char___total(%t4)
-    store typed i64 %t5, $through_member
-    %t6 = addr $made
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = index i8 [projection=field] %t5, 0
     %t7 = index i8 [projection=field] %t6, 0
-    %t8 = index i8 [projection=field] %t7, 0
-    %t9 = index i8 [projection=field] %t8, 0
-    %t10 = load i64 %t9
-    %t11 = addr $made
-    %t12 = index i8 [projection=field] %t11, 0
-    %t13 = index i8 [projection=field] %t12, 0
-    %t14 = index i8 [projection=field] %t13, 8
-    %t15 = load i64 %t14
-    %t16 = binary add i64 %t10, %t15
-    %t17 = addr $made
-    %t18 = index i8 [projection=field] %t17, 0
-    %t19 = index i8 [projection=field] %t18, 0
-    %t20 = index i8 [projection=field] %t19, 16
-    %t21 = load i64 %t20
-    %t22 = binary add i64 %t16, %t21
-    store typed i64 %t22, $through_object
-    %t23 = load typed i64 $through_member
-    %t24 = convert sext i64 i32 0
-    %t25 = cmp eq i64 %t23, %t24
-    branch %t25, ^land_rhs_4, ^land_short_5
+    %t8 = load i64 %t7
+    %t9 = addr $made
+    %t10 = index i8 [projection=field] %t9, 0
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = index i8 [projection=field] %t11, 8
+    %t13 = load i64 %t12
+    %t14 = binary add i64 %t8, %t13
+    %t15 = addr $made
+    %t16 = index i8 [projection=field] %t15, 0
+    %t17 = index i8 [projection=field] %t16, 0
+    %t18 = index i8 [projection=field] %t17, 16
+    %t19 = load i64 %t18
+    %t20 = binary add i64 %t14, %t19
+    store typed i64 %t20, $through_object
+    %t21 = load typed i64 $through_member
+    %t22 = convert sext i64 i32 0
+    %t23 = cmp eq i64 %t21, %t22
+    branch %t23, ^land_rhs_4, ^land_short_5
 
   block ^land_rhs_4:
-    %t26 = load typed i64 $through_object
-    %t27 = convert sext i64 i32 0
-    %t28 = cmp eq i64 %t26, %t27
-    %t29 = cmp ne i64 %t28, 0
-    store typed i64 %t29, $land__2
+    %t24 = load typed i64 $through_object
+    %t25 = convert sext i64 i32 0
+    %t26 = cmp eq i64 %t24, %t25
+    %t27 = cmp ne i64 %t26, 0
+    store typed i64 %t27, $land__2
     jump ^land_end_6
 
   block ^land_short_5:
@@ -51,8 +47,8 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     jump ^land_end_6
 
   block ^land_end_6:
-    %t30 = load typed i64 $land__2
-    branch %t30, ^cond_then_1, ^cond_else_2
+    %t28 = load typed i64 $land__2
+    branch %t28, ^cond_then_1, ^cond_else_2
 
   block ^cond_then_1:
     store typed i32 0, $cond__1
@@ -63,8 +59,8 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     jump ^cond_end_3
 
   block ^cond_end_3:
-    %t31 = load typed i32 $cond__1
-    return i32 %t31
+    %t29 = load typed i32 $cond__1
+    return i32 %t29
 }
 function @str_char___total(%this : ptr [object_bytes=24]) -> i64 [binding=weak, object=_ZNK3strIcE5totalEv, inline_hint=yes] {
   slot $this : ptr

@@ -1,9 +1,14 @@
 // AUDIT: compile-time-only scalar and address initializers must not create
 // runtime emission demand for their selected constexpr functions.
+// The factory class is complete before its members are evaluated below.
+struct value_factory
+{
+  static constexpr int seven() { return 7; }
+  static constexpr int nine() { return 9; }
+};
 struct holder
 {
-  static constexpr int make() { return 7; }
-  static constexpr int value = make();
+  static constexpr int value = value_factory::seven();
 };
 
 static_assert(holder::value == 7, "constant value is retained by identity");
@@ -36,8 +41,7 @@ static_assert(object_holder::value.value == 5,
 
 struct stored
 {
-  static constexpr int make() { return 9; }
-  static constexpr int value = make();
+  static constexpr int value = value_factory::nine();
 };
 
 constexpr int stored::value;

@@ -1,4 +1,10 @@
 simple operator KW_OPERATOR
+invalid ""sv
+simple operator KW_OPERATOR
+user-defined-literal ""_valid _valid string array of 1 char 00
+simple operator KW_OPERATOR
 literal "" array of 1 char 00
 identifier sv
+simple operator KW_OPERATOR
+user-defined-literal ""_valid _valid string array of 1 char 00
 eof

@@ -9,7 +9,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t1 = convert sext i64 i32 1
     store typed i64 %t1, $mapped
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = addr $argobj__2
+    zeroinit 1x1 %t3
     %t4 = addr $value
     %t5 = addr $mapped
     %t6 = call i32 @api__v1____try_key_extraction($argobj__1, $argobj__2, %t4, %t5)
@@ -29,6 +31,7 @@ function @api__v1____try_key_extraction(%__with_key : obj<1x1> [classes=none], %
     store typed ptr %__args, $__args
     store typed ptr %__args__pack2, $__args__pack2
     %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
     %t2 = addr $argobj__2
     %t3 = addr $__with_key
     %t4 = addr $argobj__3

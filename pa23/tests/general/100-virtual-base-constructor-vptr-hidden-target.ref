@@ -1,8 +1,5 @@
 declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
 declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
-declare global @__external_rtti__void [role=rtti_data, binding=strong, object=_ZTIv]
-
-declare function @__external_runtime____dynamic_cast(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr, %arg3 : i64) -> ptr [role=dynamic_cast, linkage=c, binding=strong, object=__dynamic_cast]
 
 global @construction_error : i32 [binding=strong] = 0
 global @__typeinfo_name__struct_B [storage=readonly, binding=weak, object=_ZTS1B] = {
@@ -156,27 +153,20 @@ function @B__B__base_entry(%this : ptr [object_bytes=8], %__vtt : ptr) -> void [
     store typed ptr %t16, $dyn_cast__1
     jump ^dyn_cast_end_4
 
-  block ^block_5:
-    %t17 = addr @__rtti_struct_V
-    %t18 = addr @__external_rtti__void
-    %t19 = call ptr @__external_runtime____dynamic_cast(%t11, %t17, %t18, -2)
-    store typed ptr %t19, $dyn_cast__1
-    jump ^dyn_cast_end_4
-
   block ^dyn_cast_end_4:
-    %t20 = load typed ptr $dyn_cast__1
-    %t21 = load typed ptr $this
-    %t22 = cmp ne ptr %t20, %t21
-    branch %t22, ^if_then_1, ^if_else_2
+    %t17 = load typed ptr $dyn_cast__1
+    %t18 = load typed ptr $this
+    %t19 = cmp ne ptr %t17, %t18
+    branch %t19, ^if_then_1, ^if_else_2
 
   block ^if_then_1:
     store typed i32 1, @construction_error
-    jump ^if_end_6
+    jump ^if_end_5
 
   block ^if_else_2:
-    jump ^if_end_6
+    jump ^if_end_5
 
-  block ^if_end_6:
+  block ^if_end_5:
     return void
 }
 function @B__B(%this : ptr [object_bytes=8]) -> void [binding=strong, object=_ZN1BC1Ev] {
@@ -210,27 +200,20 @@ function @B__B(%this : ptr [object_bytes=8]) -> void [binding=strong, object=_ZN
     store typed ptr %t16, $dyn_cast__1
     jump ^dyn_cast_end_4
 
-  block ^block_5:
-    %t17 = addr @__rtti_struct_V
-    %t18 = addr @__external_rtti__void
-    %t19 = call ptr @__external_runtime____dynamic_cast(%t11, %t17, %t18, -2)
-    store typed ptr %t19, $dyn_cast__1
-    jump ^dyn_cast_end_4
-
   block ^dyn_cast_end_4:
-    %t20 = load typed ptr $dyn_cast__1
-    %t21 = load typed ptr $this
-    %t22 = cmp ne ptr %t20, %t21
-    branch %t22, ^if_then_1, ^if_else_2
+    %t17 = load typed ptr $dyn_cast__1
+    %t18 = load typed ptr $this
+    %t19 = cmp ne ptr %t17, %t18
+    branch %t19, ^if_then_1, ^if_else_2
 
   block ^if_then_1:
     store typed i32 1, @construction_error
-    jump ^if_end_6
+    jump ^if_end_5
 
   block ^if_else_2:
-    jump ^if_end_6
+    jump ^if_end_5
 
-  block ^if_end_6:
+  block ^if_end_5:
     return void
 }
 function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
@@ -250,7 +233,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t6 = load typed ptr %t5
     %t7 = load typed ptr %t6
     %t8 = call i32 %t7(%t5) as (%arg0 : ptr [object_bytes=8]) -> i32
-    %t9 = cmp ne i64 %t8, 0
+    %t9 = cmp ne i32 %t8, 0
     store typed i64 %t9, $lor__1
     jump ^lor_end_3
 

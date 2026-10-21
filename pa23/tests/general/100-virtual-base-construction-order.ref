@@ -415,60 +415,45 @@ function @Explicit___Explicit(%this : ptr [object_bytes=16]) -> void [unwind=no,
     %t9 = index i8 %t8, 8
     call void @Root___Root__base_entry(%t9)
     eh_end
-    eh_catch_all, 1
-    %t10 = exception ptr
-    store typed ptr %t10, $function_exception__1
-    %t11 = load typed ptr $function_exception__1
-    call void @cppgm_call_terminate(%t11)
-    return void
+    resume
 
   block ^destructor_suffix_next_5:
     eh_cleanup ^destructor_suffix_cleanup_6
-    %t12 = load typed ptr $this
-    %t13 = index i8 %t12, 0
-    %t14 = addr @Explicit____vtt
-    %t15 = index i8 %t14, 16
-    call void @Middle___Middle__base_entry(%t13, %t15)
+    %t10 = load typed ptr $this
+    %t11 = index i8 %t10, 0
+    %t12 = addr @Explicit____vtt
+    %t13 = index i8 %t12, 16
+    call void @Middle___Middle__base_entry(%t11, %t13)
     eh_end
     jump ^destructor_suffix_next_7
 
   block ^destructor_suffix_cleanup_6:
+    %t14 = load typed ptr $this
+    %t15 = index i8 %t14, 8
+    call void @Root___Root__base_entry(%t15)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_7:
     %t16 = load typed ptr $this
     %t17 = index i8 %t16, 8
     call void @Root___Root__base_entry(%t17)
-    eh_end
-    eh_catch_all, 1
-    %t18 = exception ptr
-    store typed ptr %t18, $function_exception__1
-    %t19 = load typed ptr $function_exception__1
-    call void @cppgm_call_terminate(%t19)
-    return void
-
-  block ^destructor_suffix_next_7:
-    %t20 = load typed ptr $this
-    %t21 = index i8 %t20, 8
-    call void @Root___Root__base_entry(%t21)
     jump ^destructor_end_3
 
   block ^destructor_cleanup_2:
-    %t22 = load typed ptr $this
-    %t23 = index i8 %t22, 0
-    call void @Side___Side__base_entry(%t23)
+    %t18 = load typed ptr $this
+    %t19 = index i8 %t18, 0
+    call void @Side___Side__base_entry(%t19)
+    %t20 = load typed ptr $this
+    %t21 = index i8 %t20, 0
+    %t22 = addr @Explicit____vtt
+    %t23 = index i8 %t22, 16
+    call void @Middle___Middle__base_entry(%t21, %t23)
     %t24 = load typed ptr $this
-    %t25 = index i8 %t24, 0
-    %t26 = addr @Explicit____vtt
-    %t27 = index i8 %t26, 16
-    call void @Middle___Middle__base_entry(%t25, %t27)
-    %t28 = load typed ptr $this
-    %t29 = index i8 %t28, 8
-    call void @Root___Root__base_entry(%t29)
+    %t25 = index i8 %t24, 8
+    call void @Root___Root__base_entry(%t25)
     eh_end
-    eh_catch_all, 1
-    %t30 = exception ptr
-    store typed ptr %t30, $function_exception__1
-    %t31 = load typed ptr $function_exception__1
-    call void @cppgm_call_terminate(%t31)
-    return void
+    resume
 
   block ^destructor_end_3:
     eh_end
@@ -476,13 +461,13 @@ function @Explicit___Explicit(%this : ptr [object_bytes=16]) -> void [unwind=no,
 
   block ^function_exception_landing_1:
     eh_catch_all, 1
-    %t32 = exception ptr
-    store typed ptr %t32, $function_exception__1
+    %t26 = exception ptr
+    store typed ptr %t26, $function_exception__1
     jump ^function_exception_action_8
 
   block ^function_exception_action_8:
-    %t33 = load typed ptr $function_exception__1
-    call void @cppgm_call_terminate(%t33)
+    %t27 = load typed ptr $function_exception__1
+    call void @cppgm_call_terminate(%t27)
     return void
 }
 function @Implicit__Implicit(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN8ImplicitC1Ev, inline_hint=yes] {

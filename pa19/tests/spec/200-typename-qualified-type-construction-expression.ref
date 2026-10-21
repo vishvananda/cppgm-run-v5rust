@@ -38,6 +38,7 @@ function @f(%it : ptr [pass=by_address, object_bytes=1], %n : i32, %end : ptr [p
     %t2 = load typed i32 $n
     %t3 = load typed ptr $end
     %t4 = addr $argobj__1
+    zeroinit 1x1 %t4
     %t5 = call i32 @iter_ops__adv(%t1, %t2, %t3, $argobj__1)
     return i32 %t5
 }

@@ -51,7 +51,7 @@ function @member_template_cast_arg__check_stream(%tests : ptr [pass=by_address, 
     %t12 = addr $refarg__3
     %t13 = addr @__strlit__1
     %t14 = call u8 @member_template_cast_arg__suite__expect__2(%t8, %t12, %t13, 0)
-    %t15 = cmp ne i64 %t14, 0
+    %t15 = cmp ne u8 %t14, 0
     store typed i64 %t15, $land__1
     jump ^land_end_3
 

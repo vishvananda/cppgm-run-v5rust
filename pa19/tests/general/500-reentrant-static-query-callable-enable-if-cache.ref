@@ -59,5 +59,6 @@ function @api__executor__query(%this : ptr [object_bytes=1], %__param1 : obj<1x1
   block ^entry:
     store typed ptr %this, $this
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

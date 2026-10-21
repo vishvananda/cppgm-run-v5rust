@@ -20,6 +20,7 @@ function @fusion__clear(%s : ptr [pass=by_address, object_bytes=1]) -> obj<1x1> 
   block ^entry:
     store typed ptr %s, $s
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @fusion__operators__operator__(%os : ptr [pass=by_address, object_bytes=1], %seq : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=weak, object=_ZN6fusion9operatorslsINS_6vectorIJEEEEER6streamS5_RKT_] {

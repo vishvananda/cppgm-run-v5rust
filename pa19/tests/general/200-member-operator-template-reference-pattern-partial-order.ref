@@ -36,6 +36,7 @@ function @keyword__operator_(%this : ptr [object_bytes=1], %__param1 : ptr [pass
     store typed ptr %this, $this
     store typed ptr %__param1, $__param1
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @nonconst_default_visitor___value() -> i32 [binding=weak, object=_ZN16nonconst_defaultI7visitorE5valueEv, inline_hint=yes] {

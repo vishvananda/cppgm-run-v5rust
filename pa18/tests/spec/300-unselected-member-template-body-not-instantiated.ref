@@ -33,6 +33,7 @@ function @range__range(%this : ptr [object_bytes=1], %first : obj<1x1> [classes=
     %t4 = addr $argobj__2
     %t5 = addr $last
     %t6 = addr $argobj__3
+    zeroinit 1x1 %t6
     call void @range__initialize(%t1, $argobj__1, $argobj__2, $argobj__3)
     return void
 }

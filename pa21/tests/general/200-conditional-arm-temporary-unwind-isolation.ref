@@ -382,7 +382,7 @@ function @exercise(%first : u8, %fail : u8, %same_type : u8) -> i32 [binding=str
 
   block ^lor_rhs_51:
     %t52 = load u8 $same_type
-    %t53 = cmp ne i64 %t52, 0
+    %t53 = cmp ne u8 %t52, 0
     store typed i64 %t53, $lor__19
     jump ^lor_end_53
 
@@ -424,7 +424,7 @@ function @exercise(%first : u8, %fail : u8, %same_type : u8) -> i32 [binding=str
 
   block ^lor_rhs_60:
     %t61 = load u8 $same_type
-    %t62 = cmp ne i64 %t61, 0
+    %t62 = cmp ne u8 %t61, 0
     store typed i64 %t62, $lor__22
     jump ^lor_end_62
 
@@ -502,7 +502,7 @@ function @exercise(%first : u8, %fail : u8, %same_type : u8) -> i32 [binding=str
 
   block ^lor_rhs_78:
     %t77 = load u8 $same_type
-    %t78 = cmp ne i64 %t77, 0
+    %t78 = cmp ne u8 %t77, 0
     store typed i64 %t78, $lor__28
     jump ^lor_end_80
 

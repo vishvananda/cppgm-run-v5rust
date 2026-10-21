@@ -9,7 +9,7 @@ local_defined_symbol_canonical 1 _ZZL4sfunvE1k
 local_defined_symbol_canonical 1 _ZGVZL4sfunvE1k
 local_defined_symbol_canonical 1 _ZZNK1S1mEvE1x
 local_defined_symbol_canonical 1 _ZGVZNK1S1mEvE1x
-local_defined_symbol_canonical 1 _ZZ2b1vEN1L1fEv
+local_defined_symbol_pattern 1 ^_ZZ2b1vEN1L1fE(_0)?v$
 local_defined_symbol_canonical 1 _ZZ2b4vE1k
 local_defined_symbol_canonical 1 _ZGVZ2b4vE1k
 local_defined_symbol_canonical 1 _ZZ2b4vEN1k1fE_0v

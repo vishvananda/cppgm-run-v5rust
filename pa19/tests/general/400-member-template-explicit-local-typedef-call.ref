@@ -21,6 +21,7 @@ function @Worker__run(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object
     store typed ptr %this, $this
     %t1 = load typed ptr $this
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     call void @Worker__select(%t1, $argobj__1)
     %t3 = const i64 4
     %t4 = const i64 4

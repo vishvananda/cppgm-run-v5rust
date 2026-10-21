@@ -168,6 +168,20 @@ PA19 owns integration among already-introduced template features, including:
 - library-shaped reductions that do not require hosted headers, vendor
   builtins, or later language features
 
+The course includes the later
+[CWG1315 resolution](https://cplusplus.github.io/CWG/issues/1315.html) for
+dependent non-type arguments in partial specializations: an argument expression
+may involve a specialization's template parameter when that parameter is
+deducible outside non-deduced contexts. Do not reject the declaration solely
+because the expression is more than a simple parameter name, as literal N3485
+14.5.5p8 would require. Substitution still checks the dependent expression.
+In `tests/general/300-incomplete-sizeof-partial-specialization-sfinae.t`,
+`T` is deduced from the first argument; `sizeof(comparator<T>)` then fails
+because the class is incomplete. That substitution failure removes the
+`has_comparator` specialization instead of rejecting the program, and
+`lazy<X>::value()` selects the fallback and returns zero. This selected
+compatibility rule does not bring other post-C++11 features into scope.
+
 ### Out Of Scope
 
 The following are explicitly out of scope for PA19:

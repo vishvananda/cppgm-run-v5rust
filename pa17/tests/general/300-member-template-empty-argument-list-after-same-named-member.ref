@@ -40,7 +40,7 @@ function @pair_like_int_longint___check_args__enable_explicit_default() -> u8 [b
   slot $land__1 : i64
 
   block ^entry:
-    %t1 = cmp ne i64 1, 0
+    %t1 = cmp ne u8 1, 0
     branch %t1, ^land_rhs_1, ^land_short_2
 
   block ^land_rhs_1:

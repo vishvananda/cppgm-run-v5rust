@@ -73,9 +73,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     eh_cleanup ^catch_cleanup_6
     %t6 = load typed i32 %t5
     store typed i32 %t6, $value
-    %t7 = load typed i32 $caught
-    %t8 = load typed i32 $value
-    %t9 = binary add nowrap i32 %t7, %t8
+    %t7 = load typed i32 $value
+    %t8 = load typed i32 $caught
+    %t9 = binary add nowrap i32 %t8, %t7
     store typed i32 %t9, $caught
     eh_end
     call void @__external_runtime____cxa_end_catch()
@@ -111,9 +111,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     eh_cleanup ^catch_cleanup_12
     %t15 = load typed i32 %t14
     store typed i32 %t15, $value__shadow2
-    %t16 = load typed i32 $caught
-    %t17 = load typed i32 $value__shadow2
-    %t18 = binary add nowrap i32 %t16, %t17
+    %t16 = load typed i32 $value__shadow2
+    %t17 = load typed i32 $caught
+    %t18 = binary add nowrap i32 %t17, %t16
     store typed i32 %t18, $caught
     eh_end
     call void @__external_runtime____cxa_end_catch()

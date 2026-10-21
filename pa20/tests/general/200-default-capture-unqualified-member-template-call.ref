@@ -80,14 +80,14 @@ function @parser_test__parse(%this : ptr [object_bytes=4], %message : i32, %chec
     branch %t2, ^if_then_1, ^if_else_2
 
   block ^if_then_1:
-    %t3 = load typed ptr $this
-    %t4 = index i8 [projection=field] %t3, 0
-    %t5 = load typed i32 %t4
-    %t6 = load typed ptr $check
-    %t7 = load typed i32 $message
-    %t8 = call i32 @parser_test____lambda_parser_test__run_t68_72____lambda_nested_t83_87__operator__(%t6, %t7)
-    %t9 = binary add nowrap i32 %t5, %t8
-    store typed i32 %t9, %t4
+    %t3 = load typed ptr $check
+    %t4 = load typed i32 $message
+    %t5 = call i32 @parser_test____lambda_parser_test__run_t68_72____lambda_nested_t83_87__operator__(%t3, %t4)
+    %t6 = load typed ptr $this
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load typed i32 %t7
+    %t9 = binary add nowrap i32 %t8, %t5
+    store typed i32 %t9, %t7
     jump ^if_end_3
 
   block ^if_else_2:

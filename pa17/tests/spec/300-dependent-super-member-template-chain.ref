@@ -16,6 +16,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t4 = load typed ptr $position
     %t5 = addr $value
     %t6 = addr $argobj__1
+    zeroinit 1x1 %t6
     %t7 = call i32 @layer_second___insert_(%t3, 0, %t4, %t5, $argobj__1)
     store typed i32 %t7, $result
     %t8 = load typed i32 $result

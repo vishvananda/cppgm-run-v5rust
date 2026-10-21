@@ -39,9 +39,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t18 = load typed ptr $__begin1
     %t19 = load typed i32 %t18
     store typed i32 %t19, $x
-    %t20 = load typed i32 $sum
-    %t21 = load typed i32 $x
-    %t22 = binary add nowrap i32 %t20, %t21
+    %t20 = load typed i32 $x
+    %t21 = load typed i32 $sum
+    %t22 = binary add nowrap i32 %t21, %t20
     store typed i32 %t22, $sum
     jump ^for_iter_3
 

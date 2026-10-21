@@ -13,7 +13,7 @@ function @library__both(%left : ptr [pass=by_address, object_bytes=1], %right : 
   block ^land_rhs_1:
     %t3 = load typed ptr $right
     %t4 = call u8 @library__match__operatorbool(%t3)
-    %t5 = cmp ne i64 %t4, 0
+    %t5 = cmp ne u8 %t4, 0
     store typed i64 %t5, $land__1
     jump ^land_end_3
 

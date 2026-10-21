@@ -7,6 +7,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t2 = addr $d
     %t3 = index i8 %t2, 0
     %t4 = addr $argobj__1
+    zeroinit 1x1 %t4
     call void @B__f(%t3, $argobj__1)
     return i32 0
 }

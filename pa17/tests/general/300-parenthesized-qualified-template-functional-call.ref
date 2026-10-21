@@ -14,6 +14,7 @@ function @run() -> i32 [binding=strong, object=_Z3runv] {
     call void @outer__inner__dispatch_int___dispatch(%t1, %t2)
     %t3 = addr @handler
     %t4 = addr $argobj__2
+    zeroinit 1x1 %t4
     call void @outer__inner__dispatch_int___operator__(%t1, %t3, $argobj__2)
     return i32 0
 }

@@ -62,7 +62,7 @@ function @detail__compiler___cppgm_class_template_identity_1___term(%this : ptr 
     store typed ptr %this, $this
     store typed ptr %__param1, $__param1
     store typed ptr %__param2, $__param2
-    %t1 = cmp ne i64 0, 0
+    %t1 = cmp ne u8 0, 0
     %t2 = convert trunc u8 i64 %t1
     return u8 %t2
 }

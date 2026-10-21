@@ -1,3 +1,10 @@
+// Course rule (pa19/README.md): include CWG1315 beyond literal N3485 14.5.5p8.
+// The dependent non-type partial argument is permitted because T is deducible
+// from the first argument. sizeof(comparator<T>) on the incomplete class fails
+// substitution, removing that specialization without rejecting this program.
+// Required outcome: accept; lazy<X>::value() uses the fallback and returns zero.
+// https://cplusplus.github.io/CWG/issues/1315.html
+
 template<bool B, class T = void>
 struct enable_if {};
 

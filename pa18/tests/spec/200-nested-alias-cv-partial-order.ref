@@ -4,6 +4,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     %t1 = addr $argobj__2
+    zeroinit 1x1 %t1
     %t2 = call i8 @select($argobj__2)
     %t3 = convert sext i32 i8 %t2
     %t4 = cmp eq i32 %t3, 2

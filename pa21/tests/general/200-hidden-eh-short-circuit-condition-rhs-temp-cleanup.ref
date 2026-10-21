@@ -27,7 +27,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t2 = call i32 @use(%t1)
     store typed i32 %t2, $call__2
     %t3 = load typed i32 $call__2
-    %t4 = cmp ne i64 %t3, 0
+    %t4 = cmp ne i32 %t3, 0
     call void @Probe___Probe(%t1)
     eh_end
     jump ^call_unwind_end_6

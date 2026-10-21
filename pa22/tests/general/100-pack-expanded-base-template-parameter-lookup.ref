@@ -31,6 +31,7 @@ function @vector_int_shortint_longint___vector(%this : ptr [object_bytes=16], %u
     %t1 = load typed ptr $this
     %t2 = index i8 %t1, 0
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     %t4 = load typed ptr $u
     %t5 = load typed ptr $u__pack2
     %t6 = load typed ptr $u__pack3

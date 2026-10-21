@@ -65,7 +65,7 @@ function @object__object(%this : ptr [object_bytes=8]) -> void [binding=weak, ob
     store typed ptr %t5, %t3
     return void
 }
-function @base__base__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN4baseC2Ev, object_root=yes, inline_hint=yes] {
+function @base__base__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN4baseC2Ev, inline_hint=yes] {
   slot $this : ptr
 
   block ^entry:

@@ -28,7 +28,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^land_rhs_4:
     %t3 = load u8 $b
-    %t4 = cmp ne i64 %t3, 0
+    %t4 = cmp ne u8 %t3, 0
     store typed i64 %t4, $land__2
     jump ^land_end_6
 
@@ -57,7 +57,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^land_rhs_10:
     %t10 = load u8 $d
-    %t11 = cmp ne i64 %t10, 0
+    %t11 = cmp ne u8 %t10, 0
     store typed i64 %t11, $land__4
     jump ^land_end_12
 
@@ -86,7 +86,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^land_rhs_16:
     %t17 = load u8 $f
-    %t18 = cmp ne i64 %t17, 0
+    %t18 = cmp ne u8 %t17, 0
     store typed i64 %t18, $land__6
     jump ^land_end_18
 

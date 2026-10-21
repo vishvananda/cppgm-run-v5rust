@@ -12,7 +12,9 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^land_rhs_4:
     %t2 = addr $argobj__3
+    zeroinit 1x1 %t2
     %t3 = addr $argobj__4
+    zeroinit 1x1 %t3
     %t4 = call i32 @call_deleted_query($argobj__3, $argobj__4, 0)
     %t5 = cmp eq i32 %t4, 2
     %t6 = cmp ne i64 %t5, 0

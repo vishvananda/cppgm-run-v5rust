@@ -44,7 +44,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^land_rhs_4:
     %t23 = load typed i32 $ok_dec
-    %t24 = cmp ne i64 %t23, 0
+    %t24 = cmp ne i32 %t23, 0
     store typed i64 %t24, $land__2
     jump ^land_end_6
 

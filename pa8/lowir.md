@@ -1732,24 +1732,28 @@ diff of code they did not write.
 - Names of temporaries, slots, blocks and parameters: each is renamed
   positionally within its function.
 - The order of slot declarations.
+- A slot declaration with no use in its function. Referenced slots, their
+  types, and every instruction that accesses them still compare exactly.
 - The order of top-level entries: Program Structure above defines the
   canonical presentation, and the comparison canonicalizes it.
 - A declaration nothing uses, and a declaration the output makes that the
   reference does not.
 - A definition of a function the reference only declares: the entity was
   emitted, and its body is not compared.
-- What the output does not emit: a reference declaration, or a weak or
-  internal reference definition, that nothing else in the reference names
-  and that the output has no function of the same name or `object` for.
-  Emission is demand-driven, and an output that emits less of what nothing
-  needs compares equal; it may not emit a definition the reference lacks.
+- Omitting a reference declaration, or a weak or internal reference definition,
+  that no retained entry needs. This includes globals and transitive or cyclic optional
+  support graphs. Strong definitions, `object_root=yes`, `replaceable=yes`,
+  entry/init/fini roles and dependencies of retained entries remain required.
+  Emission is demand-driven; a definition that is emitted still compares in
+  full, and the output may not emit a definition the reference lacks.
 - `alias object` lines.
 - The `resume` of a function stated `unwind=no`: the comparison drops the
   instruction from both sides, since the backend ends such a function's
   unwinding in termination either way.
 - Internal symbol names: functions and globals that are not externally
   visible are paired by their `role` and `object` metadata, then by shape,
-  then by position.
+  ordered references from paired anchors, and finally position. Pairing is
+  bijective; it does not ignore initializer values or referenced targets.
 - The order of items inside a metadata group, and whether they share one
   group or stand in several: `[unwind=no, inline_hint=yes]` and
   `[inline_hint=yes] [unwind=no]` are one.

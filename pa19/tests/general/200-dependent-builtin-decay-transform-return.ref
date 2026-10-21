@@ -26,5 +26,6 @@ function @decay_copy(%__param0 : ptr [pass=by_address, object_bytes=1]) -> obj<1
   block ^entry:
     store typed ptr %__param0, $__param0
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

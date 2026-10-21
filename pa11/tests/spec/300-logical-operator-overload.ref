@@ -63,7 +63,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t13 = addr $one
     %t14 = addr $three
     %t15 = call u8 @operator____2(%t13, %t14)
-    %t16 = cmp ne i64 %t15, 0
+    %t16 = cmp ne u8 %t15, 0
     store typed i64 %t16, $land__2
     jump ^land_end_6
 

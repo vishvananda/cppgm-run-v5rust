@@ -155,6 +155,14 @@ In the case of `string` and `character`, `<type> <hexdump>` have the same meanin
 
 A `ud-suffix` that does not begin with `_` is reserved (17.6.4.3.5); the course defines such a token as `invalid` (for example `123yyy` and `"abc"yyy`).
 
+Keep the phase-3 maximal-munch token even immediately after `operator`:
+`operator""sv` produces the keyword followed by `invalid ""sv`, and
+`operator""_valid` produces the keyword followed by a user-defined string
+literal with suffix `_valid`. A space before the suffix changes tokenization:
+`operator "" sv` has an ordinary empty string followed by identifier `sv`.
+Interpreting a literal-operator declaration belongs to the later parser, not
+this standalone post-token output.
+
 For example:
 
     123_foo 4.2_bar 0x3_baz "abc"_qux 'a'_quux

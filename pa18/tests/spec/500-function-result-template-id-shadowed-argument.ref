@@ -7,6 +7,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t1 = addr $g
     %t2 = addr $m
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     %t4 = addr $g
     %t5 = call obj<1x1> @get($argobj__1, %t4)
     %t6 = addr $m
@@ -26,6 +27,7 @@ function @get(%__param0 : obj<1x1> [classes=none], %g : ptr [pass=by_address, ob
     %t3 = index i8 %t2, 0
     %t4 = addr $arg__2
     %t5 = addr $argobj__3
+    zeroinit 1x1 %t5
     %t6 = load typed ptr $g
     %t7 = call obj<1x1> @get__2($argobj__3, %t6)
     %t8 = call obj<1x1> @indexed_vertex_properties___cppgm_class_template_identity_3___get_vertex_bundle(%t3, %t4)
@@ -39,6 +41,7 @@ function @get__2(%__param0 : obj<1x1> [classes=none], %__param1 : ptr [pass=by_a
   block ^entry:
     store typed ptr %__param1, $__param1
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @indexed_vertex_properties___cppgm_class_template_identity_3___get_vertex_bundle(%this : ptr [object_bytes=1], %index : ptr [pass=by_address, object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN25indexed_vertex_propertiesI5graphI9directedS6Vertex4Edge11no_propertymmES2_m12identity_mapImEE17get_vertex_bundleERKS7_, inline_hint=yes] {
@@ -51,5 +54,6 @@ function @indexed_vertex_properties___cppgm_class_template_identity_3___get_vert
     store typed ptr %index, $index
     %t1 = load typed ptr $index
     %t2 = addr $retobj__1
+    zeroinit 1x1 %t2
     return obj<1x1> $retobj__1
 }

@@ -5,10 +5,10 @@ function @scale(%den : i64) -> f80 [binding=strong, object=_Z5scaley] {
   block ^entry:
     store typed i64 %den, $den
     store typed f80 12L, $t
-    %t1 = load typed f80 $t
-    %t2 = load typed i64 $den
-    %t3 = convert uitofp f80 i64 %t2
-    %t4 = binary div f80 %t1, %t3
+    %t1 = load typed i64 $den
+    %t2 = convert uitofp f80 i64 %t1
+    %t3 = load typed f80 $t
+    %t4 = binary div f80 %t3, %t2
     store typed f80 %t4, $t
     %t5 = load typed f80 $t
     return f80 %t5

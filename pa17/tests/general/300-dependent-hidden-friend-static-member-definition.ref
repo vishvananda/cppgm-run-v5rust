@@ -31,6 +31,7 @@ function @operator_(%__param0 : i64, %__param1 : ptr [pass=by_address, object_by
     store typed i64 %__param0, $__param0
     store typed ptr %__param1, $__param1
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @hidden_friend_current_instantiation__operator__(%left : ptr [pass=by_address, object_bytes=1], %right : ptr [pass=by_address, object_bytes=1]) -> u8 [binding=weak, object=_ZN35hidden_friend_current_instantiationneERKNS_4iterIiEES3_, inline_hint=yes] {

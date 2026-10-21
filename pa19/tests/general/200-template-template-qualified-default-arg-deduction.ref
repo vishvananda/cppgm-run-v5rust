@@ -9,11 +9,15 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   block ^entry:
     %t1 = addr $first
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     call void @box_int___box(%t1, $argobj__1)
     %t3 = addr $second
     %t4 = addr $argobj__2
+    zeroinit 1x1 %t4
     %t5 = addr $argobj__3
+    zeroinit 1x1 %t5
     %t6 = addr $argobj__4
+    zeroinit 1x1 %t6
     call void @box_int___box__2(%t3, $argobj__2, $argobj__3, $argobj__4)
     %t7 = addr $first
     %t8 = call i32 @box_int___value(%t7)

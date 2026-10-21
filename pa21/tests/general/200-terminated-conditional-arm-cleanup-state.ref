@@ -290,7 +290,7 @@ function @exercise(%first : u8, %second : u8) -> i32 [binding=strong, object=_Z8
 
   block ^lor_rhs_44:
     %t43 = load u8 $second
-    %t44 = cmp ne i64 %t43, 0
+    %t44 = cmp ne u8 %t43, 0
     store typed i64 %t44, $lor__16
     jump ^lor_end_46
 

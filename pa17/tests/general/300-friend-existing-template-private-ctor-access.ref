@@ -45,6 +45,7 @@ function @n__operator_(%lhs : ptr, %rhs : ptr [pass=by_address, object_bytes=1])
     store typed i32 %t4, $rhs_sz
     %t5 = addr $r
     %t6 = addr $argobj__1
+    zeroinit 1x1 %t6
     %t7 = load typed i32 $lhs_sz
     %t8 = load typed i32 $rhs_sz
     %t9 = binary add nowrap i32 %t7, %t8
@@ -79,6 +80,7 @@ function @n__basic_string_char___cppgm_class_template_identity_1___cppgm_class_t
   block ^entry:
     store typed ptr %this, $this
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @n__basic_string_char___cppgm_class_template_identity_1___cppgm_class_template_identity_2_____alloc_traits__select_on_container_copy_construction(%a : ptr [pass=by_address, object_bytes=1]) -> obj<1x1> [result_classes=none, binding=weak, object=_ZN1n12basic_stringIcNS_6traitsIcEENS_5allocIcEEE14__alloc_traits37select_on_container_copy_constructionERKS4_, inline_hint=yes] {

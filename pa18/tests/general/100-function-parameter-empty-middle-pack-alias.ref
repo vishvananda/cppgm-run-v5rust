@@ -63,6 +63,7 @@ function @arg_list_factory_arg_list____reverse(%reversed_args : ptr [pass=by_add
     store typed ptr %reversed_args__pack2, $reversed_args__pack2
     %t1 = addr $retobj__1
     %t2 = addr $argobj__2
+    zeroinit 1x1 %t2
     %t3 = load typed ptr $reversed_args
     %t4 = call ptr @forward(%t3)
     %t5 = load typed ptr $reversed_args__pack2

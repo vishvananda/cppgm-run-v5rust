@@ -10,6 +10,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     %t1 = addr $argobj__1
+    zeroinit 1x1 %t1
     call void @expand($argobj__1)
     return i32 0
 }
@@ -31,6 +32,7 @@ function @make_tag() -> obj<1x1> [result_classes=none, binding=weak, object=_Z8m
 
   block ^entry:
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @make_tag__2() -> obj<1x1> [result_classes=none, binding=weak, object=_Z8make_tagILi2EE3tagIXT_EEv] {
@@ -38,5 +40,6 @@ function @make_tag__2() -> obj<1x1> [result_classes=none, binding=weak, object=_
 
   block ^entry:
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

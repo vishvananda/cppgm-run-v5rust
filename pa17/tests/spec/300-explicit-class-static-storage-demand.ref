@@ -1,5 +1,5 @@
 global @calls : i32 [binding=strong] = zero
-global @explicit_value_int___value : i32 [binding=weak, object=_ZN14explicit_valueIiE5valueE] = zero
+global @explicit_value_int___value : i32 [binding=weak, object=_ZN14explicit_valueIiE5valueE, object_root=yes] = zero
 global @__cppgm_guard__explicit_value_int___value : i64 [binding=weak, object=_ZGVN14explicit_valueIiE5valueE] = zero
 
 function @initialize() -> i32 [binding=strong, object=_Z10initializev] {

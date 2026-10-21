@@ -18,6 +18,7 @@ function @S__g(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1S
     %t1 = load typed ptr $this
     %t2 = index i8 [projection=field] %t1, 0
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     %t4 = call ptr @function_void_int_____operator_(%t2, $argobj__1)
     return void
 }

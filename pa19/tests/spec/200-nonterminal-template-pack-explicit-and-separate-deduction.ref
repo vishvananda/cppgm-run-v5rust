@@ -6,12 +6,14 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     %t1 = addr $argobj__3
+    zeroinit 1x1 %t1
     %t2 = call i32 @explicit_pack($argobj__3)
     %t3 = cmp eq i32 %t2, 2
     branch %t3, ^land_rhs_4, ^land_short_5
 
   block ^land_rhs_4:
     %t4 = addr $argobj__4
+    zeroinit 1x1 %t4
     %t5 = call i32 @separate_pack($argobj__4, 1, 2)
     %t6 = cmp eq i32 %t5, 2
     %t7 = cmp ne i64 %t6, 0

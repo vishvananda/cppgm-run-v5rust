@@ -46,6 +46,7 @@ function @str__build(%this : ptr [object_bytes=4], %first : i32, %second : i32) 
     store typed i32 %second, $second
     %t1 = addr $temp
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = load typed i32 $first
     %t4 = load typed i32 $second
     %t5 = addr $argobj__2

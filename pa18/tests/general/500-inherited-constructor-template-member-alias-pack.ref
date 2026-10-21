@@ -52,6 +52,7 @@ function @tuple_like_first_second_third___tuple_like__base_entry(%this : ptr [ob
     store typed ptr %args__pack3, $args__pack3
     %t1 = load typed ptr $this
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = load typed ptr $args
     %t4 = load typed ptr $args__pack2
     %t5 = load typed ptr $args__pack3

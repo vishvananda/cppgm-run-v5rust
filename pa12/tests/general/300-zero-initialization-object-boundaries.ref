@@ -72,9 +72,7 @@ function @YVolatileValue__YVolatileValue(%this : ptr [object_bytes=16]) -> void 
     store typed ptr %this, $this
     %t1 = load typed ptr $this
     %t2 = index i8 %t1, 0
-    store typed i64 0, %t2
-    %t3 = index i8 %t2, 8
-    store typed i64 0, %t3
+    zeroinit 16x8 %t2
     return void
 }
 function @YChoiceOwner__YChoiceOwner(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN12YChoiceOwnerC1Ev, inline_hint=yes] {
@@ -84,9 +82,7 @@ function @YChoiceOwner__YChoiceOwner(%this : ptr [object_bytes=16]) -> void [bin
     store typed ptr %this, $this
     %t1 = load typed ptr $this
     %t2 = index i8 [projection=field] %t1, 0
-    store typed i64 0, %t2
-    %t3 = index i8 %t2, 8
-    store typed i64 0, %t3
+    zeroinit 16x8 %t2
     return void
 }
 alias object _ZN14YVolatileValueC2Ev = @YVolatileValue__YVolatileValue

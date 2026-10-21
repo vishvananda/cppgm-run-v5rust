@@ -2,6 +2,7 @@ global @destroyed : i32 [binding=strong] = zero
 
 function @make(%ret : ptr [pass=indirect_result, object_bytes=1]) -> void [binding=strong, object=_Z4makev] {
   block ^entry:
+    zeroinit 1x1 %ret
     return void
 }
 function @operator__(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : ptr [pass=by_address, object_bytes=1]) -> u8 [binding=strong, object=_ZeqRK6objectS1_] {
@@ -65,7 +66,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     branch %t6, ^lor_short_4, ^lor_rhs_3
 
   block ^lor_rhs_3:
-    %t7 = cmp ne i64 0, 0
+    %t7 = cmp ne u8 0, 0
     store typed i64 %t7, $lor__1
     jump ^lor_end_5
 
@@ -137,7 +138,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t16 = call u8 @use_after()
     store u8 %t16, $call__8
     %t17 = load u8 $call__8
-    %t18 = cmp ne i64 %t17, 0
+    %t18 = cmp ne u8 %t17, 0
     store typed i64 %t18, $land__5
     eh_end
     jump ^land_end_23

@@ -86,19 +86,19 @@ function @__lambda2___FUN() -> i32 [binding=internal, object=_ZN3$_18__invokeEv,
 }
 function @store____lambda3___FUN() -> i32 [binding=internal, object=_ZN5store3$_28__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
   block ^entry:
-    %t1 = load typed i32 @__local_static__store____lambda3___FUN__decl0__calls
-    %t2 = const i64 2
-    %t3 = convert trunc i32 i64 %t2
-    %t4 = binary add nowrap i32 %t1, %t3
+    %t1 = const i64 2
+    %t2 = convert trunc i32 i64 %t1
+    %t3 = load typed i32 @__local_static__store____lambda3___FUN__decl0__calls
+    %t4 = binary add nowrap i32 %t3, %t2
     store typed i32 %t4, @__local_static__store____lambda3___FUN__decl0__calls
     return i32 %t4
 }
 function @store____lambda4___FUN() -> i32 [binding=internal, object=_ZN5store3$_38__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
   block ^entry:
-    %t1 = load typed i32 @__local_static__store____lambda4___FUN__decl0__calls
-    %t2 = const i64 1
-    %t3 = convert trunc i32 i64 %t2
-    %t4 = binary add nowrap i32 %t1, %t3
+    %t1 = const i64 1
+    %t2 = convert trunc i32 i64 %t1
+    %t3 = load typed i32 @__local_static__store____lambda4___FUN__decl0__calls
+    %t4 = binary add nowrap i32 %t3, %t2
     store typed i32 %t4, @__local_static__store____lambda4___FUN__decl0__calls
     return i32 %t4
 }

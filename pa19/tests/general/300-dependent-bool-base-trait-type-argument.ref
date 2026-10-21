@@ -27,6 +27,7 @@ function @std___Hashtable_int_int_int_int____Hashtable__base_entry(%this : ptr [
     %t1 = load typed ptr $this
     %t2 = index i8 %t1, 0
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     call void @std___Enable_default_constructor_true__Hash_node_base____Enable_default_constructor__ov2__base_entry(%t2, $argobj__1)
     return void
 }

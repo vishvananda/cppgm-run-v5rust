@@ -3,11 +3,11 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   slot $land__2 : i64
 
   block ^entry:
-    %t1 = cmp ne i64 1, 0
+    %t1 = cmp ne u8 1, 0
     branch %t1, ^land_rhs_4, ^land_short_5
 
   block ^land_rhs_4:
-    %t2 = cmp ne i64 1, 0
+    %t2 = cmp ne u8 1, 0
     store typed i64 %t2, $land__2
     jump ^land_end_6
 

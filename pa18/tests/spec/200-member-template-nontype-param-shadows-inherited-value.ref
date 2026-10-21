@@ -32,6 +32,7 @@ function @detail__expression___cppgm_class_template_identity_1___get_width(%this
     store typed ptr %this, $this
     %t1 = load typed ptr $this
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = call i64 @detail__expression___cppgm_class_template_identity_1___get_width_(%t1, $argobj__1)
     return i64 %t3
 }

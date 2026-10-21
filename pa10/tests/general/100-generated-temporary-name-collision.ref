@@ -20,16 +20,16 @@ function @use(%t3 : i32, %other : i32) -> i32 [binding=strong, object=_Z3useii] 
     branch %t8, ^if_then_1, ^if_else_2
 
   block ^if_then_1:
-    %t9 = load typed i32 $t7
-    %t10 = load typed i32 @t5
-    %t11 = binary add nowrap i32 %t9, %t10
+    %t9 = load typed i32 @t5
+    %t10 = load typed i32 $t7
+    %t11 = binary add nowrap i32 %t10, %t9
     store typed i32 %t11, $t7
     jump ^if_end_3
 
   block ^if_else_2:
-    %t12 = load typed i32 $t7
-    %t13 = load typed i32 $adjustment
-    %t14 = binary sub nowrap i32 %t12, %t13
+    %t12 = load typed i32 $adjustment
+    %t13 = load typed i32 $t7
+    %t14 = binary sub nowrap i32 %t13, %t12
     store typed i32 %t14, $t7
     jump ^if_end_3
 
@@ -43,9 +43,9 @@ function @use(%t3 : i32, %other : i32) -> i32 [binding=strong, object=_Z3useii] 
     branch %t16, ^for_body_5, ^for_end_7
 
   block ^for_body_5:
-    %t17 = load typed i32 $t7
-    %t18 = load typed i32 $t2
-    %t19 = binary add nowrap i32 %t17, %t18
+    %t17 = load typed i32 $t2
+    %t18 = load typed i32 $t7
+    %t19 = binary add nowrap i32 %t18, %t17
     store typed i32 %t19, $t7
     jump ^for_iter_6
 

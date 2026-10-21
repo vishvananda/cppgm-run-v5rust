@@ -1,4 +1,4 @@
-declare function @__cppgm_runtime_atexit(%arg0 : ptr) -> i32 [linkage=c, binding=strong, object=atexit]
+declare function @__cppgm_runtime_atexit(%arg0 : ptr) -> i32 [unwind=no, linkage=c, binding=strong, object=atexit]
 
 global @destroyed : i32 [binding=strong] = 0
 global @__local_static__get_value__decl0__item : obj<4x4> [binding=internal, object=_ZZ9get_valuevE4item] = {

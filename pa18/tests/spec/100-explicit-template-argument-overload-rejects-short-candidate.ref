@@ -45,5 +45,6 @@ function @holder_int___pick(%this : ptr [object_bytes=1], %__param1 : i32) -> ob
     store typed ptr %this, $this
     store typed i32 %__param1, $__param1
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

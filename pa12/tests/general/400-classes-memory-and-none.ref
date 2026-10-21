@@ -9,6 +9,7 @@ function @make_empty() -> obj<1x1> [result_classes=none, binding=strong, object=
 
   block ^entry:
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @take_double_empty(%p : obj<16x8> [classes=sse_none]) -> f64 [binding=strong, object=_Z17take_double_empty11DoubleEmpty] {

@@ -9,6 +9,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     store typed i32 0, $tuple
     %t1 = addr $context
     %t2 = addr $argobj__2
+    zeroinit 1x1 %t2
     %t3 = addr $tuple
     %t4 = call i32 @dispatch(%t1, $argobj__2, %t3)
     %t5 = cmp eq i32 %t4, 1

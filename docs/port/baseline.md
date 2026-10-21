@@ -1,5 +1,47 @@
 # Frozen preparation baseline
 
+## Current baseline — extended main (2026-10-21)
+
+The frozen C++ oracle is `3ef7bd2511b8aaf9695df14253047200b02a57c2`; the matching assignments export is
+`a3fb65a673d46e3ba81215749b6f3a8fff1d9a59`. This supersedes the v5.1 oracle `3438f5aea24d8fcc9a0113316f7e27c890cd5ac6`.
+PR #78 passed its complete CI matrix before publication to extended main;
+main CI and the matching automatic assignments export passed before installation.
+
+The reference now dispatches memory-class operands by kind before literal
+lookup, preserves integer-carrier bits in floating copies, and rejects the
+unsupported operand/constant-stack forms with ordinary input errors. The update
+also imports all reviewed course changes since v5.1, including PA21 lifetime
+controls and newer earlier-stage regressions. The immutable inventory grows
+from 7090 to 7123 cases. Reviewed moves/retirements
+are listed individually in the owner receipt; additional Rust-authored cases
+remain required and are not absorbed into the immutable manifest.
+
+All nine oracle tools and their source hashes, both settings/manifests and
+both clone contracts are synchronized. The original Rust implementation, spec,
+AGENTS instructions and source responsibility records are preserved. The
+protected-input preflight and clone harness unit suite pass. All
+59 new/moved oracle routes through PA24 pass self-comparison.
+The fresh Rust PA24 comparison is **442/458**. These results record
+the new baseline; failures remain implementation work. Earlier stages must be
+rechecked and repaired by the normal required prior/course gates. No goal or
+stage is completed or advanced by this maintenance.
+
+The previous blocked audit and its native goal remain historical. Restart
+Ralph normally, with a fresh thread/goal for the required audit; do not use
+`--continue`, waive comparisons or mark the old blocked goal complete. Existing
+bootstrap/fixed-point receipts are historical and must be rebuilt for the new
+seed at PA34.
+
+The missing forwarded SSH agent also left 18 implementation commits awaiting
+push. This checkout now uses the account's existing GitHub CLI login for its
+HTTPS remote; the previous Git transport configuration is backed up alongside
+the maintenance receipts.
+
+Owner evidence: `~/work/maintenance/native-values-20261021/install/`.
+The receipt includes exact changed/added/retired paths, old/new pins and all
+new tool digests; before-state, manifests and tool binaries are retained.
+
+
 ## Current oracle and course refresh — v5.1 (2026-10-14)
 
 The oracle is cppgm-extended `3438f5aea24d8fcc9a0113316f7e27c890cd5ac6` (v5.1); the matching

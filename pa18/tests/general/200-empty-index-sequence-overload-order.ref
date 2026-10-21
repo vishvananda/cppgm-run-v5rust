@@ -4,6 +4,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
 
   block ^entry:
     %t1 = addr $argobj__2
+    zeroinit 1x1 %t1
     %t2 = call i32 @pick(0, $argobj__2)
     %t3 = cmp eq i32 %t2, 2
     branch %t3, ^cond_then_1, ^cond_else_2

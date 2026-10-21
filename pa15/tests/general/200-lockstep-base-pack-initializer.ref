@@ -16,10 +16,12 @@ function @tuple_0_1___tuple(%this : ptr [object_bytes=1]) -> void [binding=weak,
     %t1 = load typed ptr $this
     %t2 = index i8 %t1, 0
     %t3 = addr $argobj__1
+    zeroinit 1x1 %t3
     call void @base_0___base__base_entry(%t2, $argobj__1, 0)
     %t4 = load typed ptr $this
     %t5 = index i8 %t4, 0
     %t6 = addr $argobj__2
+    zeroinit 1x1 %t6
     call void @base_1___base__base_entry(%t5, $argobj__2, 0)
     return void
 }

@@ -21,5 +21,6 @@ function @select(%__param0 : ptr [pass=by_address, object_bytes=1], %__param1 : 
     store typed i64 %__param1, $__param1
     store typed i32 %__param2, $__param2
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

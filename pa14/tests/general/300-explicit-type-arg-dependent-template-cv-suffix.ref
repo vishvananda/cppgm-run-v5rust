@@ -41,6 +41,7 @@ function @proto__terminal___cppgm_class_template_identity_2___type__make(%__para
 
   block ^entry:
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 alias object _ZN17reference_wrapperIK11basic_regexIiEEC2ERS2_ = @reference_wrapper_const__cppgm_class_template_identity_1___reference_wrapper

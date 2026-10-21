@@ -2885,7 +2885,6 @@ sub canonicalize_lowir_function_locals_for_compare
 	return $entry if $entry !~ /^(?:declare\s+)?function /;
 
 	my (%values, %slots, %blocks, %declared_slots);
-	my @declared_slot_order;
 	my ($next_value, $next_slot, $next_block) = (0, 0, 0);
 	my @lines = split(/\n/, $entry, -1);
 	if (scalar(@lines) != 0)
@@ -2901,7 +2900,6 @@ sub canonicalize_lowir_function_locals_for_compare
 		if ($line =~ /^\s*slot \$([A-Za-z0-9_]+)\s*:/)
 		{
 			$declared_slots{$1} = 1;
-			push @declared_slot_order, $1;
 		}
 		if ($line =~ /^\s*block \^([A-Za-z0-9_]+):/)
 		{
@@ -2924,12 +2922,13 @@ sub canonicalize_lowir_function_locals_for_compare
 			++$next_slot;
 		}
 	}
-	for my $name (@declared_slot_order)
-	{
-		next if exists($slots{$name});
-		$slots{$name} = '<slot' . $next_slot . '>';
-		++$next_slot;
-	}
+	# A local declaration with no use in this function is presentation only.
+	# Validation runs before comparison, so duplicate or malformed declarations
+	# cannot disappear here to make an invalid program compare equal.
+	@lines = grep {
+		!/^\s*slot \$([A-Za-z0-9_]+)\s*:/ || exists($slots{$1})
+	} @lines;
+	$entry = join("\n", @lines);
 
 	$entry =~ s/%([A-Za-z0-9_]+)\b/
 		exists($values{$1}) ? '%' . $values{$1} : '%' . $1/gex;
@@ -3718,6 +3717,33 @@ sub paired_lowir_global_symbol_maps
 			$ref_by_shape{$shape}[0], $my_by_shape{$shape}[0], \$next);
 	}
 
+	# Follow the ordered references of already paired anchors before the
+	# positional tail. A top-level permutation must not swap two identical
+	# secondary construction tables that point at different RTTI objects.
+	# This only chooses a bijective symbol renaming; all data and references
+	# still pass the ordinary exact canonical comparison below.
+	my $ref_entries = lowir_top_level_entry_map($ref_data);
+	my $my_entries = lowir_top_level_entry_map($my_data);
+	my %my_by_placeholder = reverse(%my_map);
+	my @queue = map { [$_, $my_by_placeholder{$ref_map{$_}}] }
+		sort { lowir_placeholder_index($ref_map{$a}) <=> lowir_placeholder_index($ref_map{$b}) }
+		keys(%ref_map);
+	for (my $cursor = 0; $cursor < scalar(@queue); ++$cursor)
+	{
+		my ($ref_anchor, $my_anchor) = @{$queue[$cursor]};
+		my @ref_refs = lowir_entry_function_references($ref_entries->{$ref_anchor}, $ref_records);
+		my @my_refs = lowir_entry_function_references($my_entries->{$my_anchor}, $my_records);
+		my $count = scalar(@ref_refs) < scalar(@my_refs) ? scalar(@ref_refs) : scalar(@my_refs);
+		for (my $i = 0; $i < $count; ++$i)
+		{
+			next if exists($ref_map{$ref_refs[$i]}) || exists($my_map{$my_refs[$i]});
+			assign_lowir_global_symbol_pair(\%ref_map, \%my_map,
+				$ref_refs[$i], $my_refs[$i], \$next);
+			push @queue, [$ref_refs[$i], $my_refs[$i]];
+		}
+	}
+
+
 	my @remaining_ref = grep { !exists($ref_map{$_}) } @$ref_order;
 	my @remaining_my = grep { !exists($my_map{$_}) } @$my_order;
 	my $pairs = scalar(@remaining_ref) < scalar(@remaining_my) ?
@@ -4001,6 +4027,9 @@ sub canonicalize_lowir_pair_for_compare
 	$ref_data =~ s/\bpass\s*=\s*reference\b/pass=by_address/g;
 	$ref_data = canonicalize_lowir_tls_accesses_for_compare($ref_data);
 	$my_data = canonicalize_lowir_tls_accesses_for_compare($my_data);
+	# Reference declarations must survive for declaration-to-definition
+	# refinement; TLS metadata must be consumed before pruning either side.
+	$my_data = canonicalize_lowir_unused_declarations_for_compare($my_data);
 	($ref_data, $my_data) = canonicalize_lowir_pair_nothrow_resume_for_compare(
 		$ref_data, $my_data);
 	$ref_data = canonicalize_lowir_reference_liveness_for_compare(
@@ -4025,6 +4054,35 @@ sub canonicalize_lowir_pair_for_compare
 		canonicalize_lowir_top_level_order_for_compare(
 			canonicalize_lowir_for_compare($my_data, \%my_symbols));
 	return ($ref_compare_data, $my_compare_data);
+}
+
+sub canonicalize_lowir_unused_declarations_for_compare
+{
+	my ($data) = @_;
+	my @entries = split_lowir_top_level_entries($data);
+	my $mentions = lowir_symbol_reference_counts(\@entries);
+	# LowIR's comparison contract absorbs a declaration nothing uses, for
+	# globals as well as functions. Do this before pairing anonymous symbols:
+	# an unused declaration must not consume a live definition's pairing.
+	@entries = grep {
+		!/^declare\s+(?:global|function)\s+\@([A-Za-z0-9_]+)\b/ ||
+		$mentions->{$1} != 1
+	} @entries;
+	return join("\n\n", @entries) . (scalar(@entries) ? "\n" : "");
+}
+
+sub lowir_symbol_reference_counts
+{
+	my ($entries) = @_;
+	my %counts;
+	for my $entry (@$entries)
+	{
+		next if $entry =~ /^alias object /;
+		my %seen;
+		$seen{$1} = 1 while $entry =~ /\@([A-Za-z0-9_]+)\b/g;
+		++$counts{$_} for keys(%seen);
+	}
+	return \%counts;
 }
 
 sub canonicalize_lowir_tls_accesses_for_compare
@@ -4108,58 +4166,74 @@ sub lowir_function_entry_object
 	return undef;
 }
 
-sub lowir_function_referenced_outside_entry
+sub lowir_emission_entry_name
 {
-	my ($name, $entries, $entry_index) = @_;
-	for (my $i = 0; $i < @$entries; ++$i)
-	{
-		next if $i == $entry_index || $entries->[$i] =~ /^alias object /;
-		return 1 if $entries->[$i] =~ /\@\Q$name\E\b/;
-	}
-	return 0;
+	my ($entry) = @_;
+	return $1 if $entry =~ /^(?:declare\s+)?(?:function|global) \@([A-Za-z0-9_]+)\b/;
+	return undef;
+}
+
+sub lowir_emission_entry_object
+{
+	my ($entry) = @_;
+	return $1 if $entry =~ /^(?:declare\s+)?(?:function|global) \@[^\n]*\[[^\]\n]*\bobject=([^,\]\s]+)[^\]\n]*\]/;
+	return undef;
 }
 
 sub canonicalize_lowir_reference_liveness_for_compare
 {
 	my ($ref_data, $my_data) = @_;
+	my ($ref_globals, $my_globals) = paired_lowir_global_symbol_maps($ref_data, $my_data);
+	my %present_globals = map { $_ => 1 } values(%$my_globals);
 	my (%my_names, %my_objects);
 	for my $entry (split_lowir_top_level_entries($my_data))
 	{
-		my $name = lowir_function_entry_name($entry);
+		my $name = lowir_emission_entry_name($entry);
 		next if !defined($name);
 		$my_names{$name} = 1;
-		my $object = lowir_function_entry_object($entry);
+		my $object = lowir_emission_entry_object($entry);
 		$my_objects{$object} = 1 if defined($object);
 	}
-
+	# Mark from retained entries rather than dropping leaves once. Optional
+	# constexpr support can be a transitive (even cyclic) definition graph.
 	my @entries = split_lowir_top_level_entries($ref_data);
-	my @kept;
-	for (my $i = 0; $i < @entries; ++$i)
+	my (%by_name, %live, @pending);
+	for my $i (0 .. $#entries)
 	{
 		my $entry = $entries[$i];
-		my $name = lowir_function_entry_name($entry);
-		if (!defined($name))
+		my $name = lowir_emission_entry_name($entry);
+		$by_name{$name} = $i if defined($name);
+		my $object = lowir_emission_entry_object($entry);
+		my $optional = defined($name) &&
+			($entry =~ /^declare\s+(?:function|global) / ||
+			 ($entry =~ /^(?:function|global) / &&
+			  $entry =~ /\[[^\]\n]*\bbinding=(?:weak|internal)\b[^\]\n]*\]/ &&
+			  $entry !~ /\[[^\]\n]*\breplaceable=yes\b[^\]\n]*\]/ &&
+			  $entry !~ /\[[^\]\n]*\bobject_root=yes\b[^\]\n]*\]/ &&
+			  $entry !~ /\[[^\]\n]*\brole=(?:entry|init|fini)\b[^\]\n]*\]/));
+		if (!$optional || exists($my_names{$name // ''}) ||
+			(defined($object) && exists($my_objects{$object})) ||
+			(defined($name) && exists($ref_globals->{$name}) &&
+			 exists($present_globals{$ref_globals->{$name}})))
 		{
-			push @kept, $entry;
-			next;
+			$live{$i} = 1;
+			push @pending, $i;
 		}
-		my $object = lowir_function_entry_object($entry);
-		my $present = exists($my_names{$name}) ||
-			(defined($object) && exists($my_objects{$object}));
-		if (!$present &&
-			!lowir_function_referenced_outside_entry($name, \@entries, $i))
-		{
-			my $declaration = $entry =~ /^declare\s+function /;
-			my $discardable_definition =
-				$entry =~ /^function / &&
-				$entry =~ /\[[^\]\n]*\bbinding=(?:weak|internal)\b[^\]\n]*\]/ &&
-				$entry !~ /\[[^\]\n]*\bobject_root=yes\b[^\]\n]*\]/ &&
-				$entry !~ /\[[^\]\n]*\brole=(?:entry|init|fini)\b[^\]\n]*\]/;
-			next if $declaration || $discardable_definition;
-		}
-		push @kept, $entry;
 	}
-	return join("\n\n", @kept) . (scalar(@kept) ? "\n" : "");
+	while (@pending)
+	{
+		my $entry = $entries[pop @pending];
+		next if $entry =~ /^alias object /;
+		while ($entry =~ /\@([A-Za-z0-9_]+)\b/g)
+		{
+			next if !exists($by_name{$1});
+			my $i = $by_name{$1};
+			next if $live{$i}++;
+			push @pending, $i;
+		}
+	}
+	my @kept = @entries[grep { $live{$_} } 0 .. $#entries];
+	return join("\n\n", @kept) . (@kept ? "\n" : "");
 }
 
 sub lowir_compare_entry_identity
@@ -4303,74 +4377,190 @@ sub lowir_reference_entry_is_projection
 	return 1;
 }
 
-# A finalizer's destructor actions: each void call whose one argument is a
-# global's address or a constant offset into it (an array element), as
-# [global, offset, callee]. A dynamic offset, as a destruction loop computes,
-# is recorded as '*'.
-sub lowir_finalizer_actions
+# Execute only the bounded, side-effect-free bookkeeping subset used by a
+# finalizer. This proves normal-path actions, including counted array loops;
+# a textual call in a skipped block is not evidence that destruction runs.
+# Slot arithmetic is bounded i64 only: narrower wrapping arithmetic needs its
+# own proof, and must not accidentally be evaluated as mathematical integers.
+# Reference constructed flags are armed because registration replaces their
+# guards. Candidate callbacks must prove their own path without that assumption.
+sub lowir_executed_finalizer_actions
 {
-	my ($entry) = @_;
-	my (%address, %constant, @actions);
-	for my $line (split(/\n/, $entry))
+	my ($body, $reference) = @_;
+	my (%blocks, @order, $block);
+	for my $line (lowir_nonempty_trimmed_lines($body))
 	{
-		if ($line =~ /^\s*(%<value\d+>)\s*=\s*addr\s+(\@<global\d+>)\s*$/)
+		if ($line =~ /^block (\^\S+):$/)
 		{
-			$address{$1} = [$2, 0];
+			$block = $1;
+			push @order, $block;
 		}
-		elsif ($line =~ /^\s*(%<value\d+>)\s*=\s*binary\s+(mul|add)\s+\S+\s+(-?\d+),\s*(-?\d+)\s*$/)
+		elsif (defined($block) && $line ne '}')
 		{
-			$constant{$1} = $2 eq 'mul' ? $3 * $4 : $3 + $4;
-		}
-		elsif ($line =~ /^\s*(%<value\d+>)\s*=\s*index\s+\S+(?:\s+\[[^\]]*\])?\s+(%<value\d+>),\s*(\S+)\s*$/ &&
-			exists($address{$2}))
-		{
-			my ($value, $base, $operand) = ($1, $2, $3);
-			my ($global, $offset) = @{$address{$base}};
-			my $step = exists($constant{$operand}) ? $constant{$operand} : $operand;
-			$address{$value} = [$global,
-				$offset ne '*' && $step =~ /^-?\d+$/ ? $offset + $step : '*'];
-		}
-		elsif ($line =~ /^\s*call\s+void\s+(\@<fn\d+>)\((%<value\d+>)\)\s*$/ &&
-			exists($address{$2}))
-		{
-			push @actions, [$address{$2}[0], $address{$2}[1], $1];
+			push @{$blocks{$block}}, $line;
 		}
 	}
-	return @actions;
+	return undef if !@order;
+	my (%value, %slot, %called, @actions);
+	my $read = sub {
+		my ($operand) = @_;
+		return abs($operand) <= 2147483647 ? 0 + $operand : undef
+			if $operand =~ /^-?\d+$/;
+		return $value{$operand};
+	};
+	$block = $order[0];
+	my $steps = 0;
+	while (exists($blocks{$block}))
+	{
+		my $next;
+		for my $i (0 .. $#{$blocks{$block}})
+		{
+			return undef if ++$steps > 100000;
+			my $line = $blocks{$block}[$i];
+			if ($line =~ /^(%\S+) = addr (\@<global\d+>)$/)
+			{
+				$value{$1} = [$2, 0];
+			}
+			elsif ($line =~ /^(%\S+) = index \S+(?: \[[^\]]*\])? (%\S+), (\S+)$/)
+			{
+				my ($out, $base, $step) = ($1, $read->($2), $read->($3));
+				return undef if ref($base) ne 'ARRAY' || !defined($step) || ref($step);
+				$value{$out} = [$base->[0], $base->[1] + $step];
+			}
+			elsif ($line =~ /^store (?:typed )?i64 (\S+), (\$\S+)$/)
+			{
+				my ($in, $out) = ($read->($1), $2);
+				return undef if !defined($in) || ref($in);
+				$slot{$out} = $in;
+			}
+			elsif ($line =~ /^(%\S+) = load (?:typed )?\S+ (\S+)$/)
+			{
+				my ($out, $from) = ($1, $2);
+				my $in = $reference && $from =~ /^\@<global\d+>$/ ? 1 :
+					$line =~ /load (?:typed )?i64 / ? $slot{$from} : undef;
+				return undef if !defined($in);
+				$value{$out} = $in;
+			}
+			elsif ($line =~ /^(%\S+) = (binary|cmp) (add|sub|mul|eq|ne|ult|slt|ule|sle) (?:nowrap )?(\S+) (\S+), (\S+)$/)
+			{
+				my ($out, $kind, $op, $type, $a, $b) = ($1, $2, $3, $4, $read->($5), $read->($6));
+				return undef if $type ne 'i64' && (!$reference || $kind eq 'binary');
+				return undef if !defined($a) || !defined($b) || ref($a) || ref($b);
+				$value{$out} = $op eq 'add' ? $a + $b : $op eq 'sub' ? $a - $b : $op eq 'mul' ? $a * $b :
+					$op eq 'eq' ? 0 + ($a == $b) : $op eq 'ne' ? 0 + ($a != $b) :
+					$op =~ /^u/ && (($a < 0) != ($b < 0)) ? 0 + ($a >= 0) :
+					$op =~ /le$/ ? 0 + ($a <= $b) : 0 + ($a < $b);
+				return undef if abs($value{$out}) > 2147483647;
+			}
+			elsif ($line =~ /^call void (\@<fn\d+>)\((%\S+)\)$/)
+			{
+				my ($callee, $address) = ($1, $read->($2));
+				return undef if ref($address) ne 'ARRAY';
+				push @actions, [$address->[0], $address->[1], $callee];
+				$called{"$block $i"} = 1;
+			}
+			elsif ($line =~ /^branch (\S+), (\^\S+), (\^\S+)$/)
+			{
+				my ($condition, $yes, $no) = ($read->($1), $2, $3);
+				return undef if !defined($condition) || ref($condition);
+				$next = $condition ? $yes : $no;
+				last;
+			}
+			elsif ($line =~ /^jump (\^\S+)$/)
+			{
+				$next = $1;
+				last;
+			}
+			elsif ($line eq 'return void')
+			{
+				# An unreachable extra call is not absorbed either.
+				my @calls = $body =~ /^\s*(?:%\S+\s*=\s*)?call\b[^\n]*/mg;
+				return undef if !$reference && @calls != keys(%called);
+				return \@actions;
+			}
+			else
+			{
+				return undef;
+			}
+		}
+		return undef if !defined($next);
+		$block = $next;
+	}
+	return undef;
+}
+
+sub lowir_same_finalizer_actions
+{
+	my ($expected, $actual) = @_;
+	return 0 if !defined($expected) || !defined($actual) || !@$expected;
+	return join(';', map { join(',', @$_) } @$expected) eq
+		join(';', map { join(',', @$_) } @$actual);
 }
 
 # A static finalizer may instead be a registered destructor function: the
-# candidate must destroy the same objects with the same destructors, the
-# same elements of each in the same order (a destruction loop stands for
-# any count), and keep the groups in the reference's destruction order.
+# candidate must execute the same destructor/object/element sequence.
+# Counted loops are expanded by the bounded execution proof above.
 sub lowir_static_finalizer_action_is_projection
 {
 	my ($ref_entry, $my_entry) = @_;
 	return 0 if $ref_entry !~ /^function [^\n]*\[[^\]\n]*\brole=fini\b[^\]\n]*\]/;
 	return 0 if $my_entry !~ /^function /;
-	my (%expected, %actual, @expected_order, @actual_order);
-	for my $action (lowir_finalizer_actions($ref_entry))
+	return lowir_same_finalizer_actions(
+		lowir_executed_finalizer_actions($ref_entry, 1),
+		lowir_executed_finalizer_actions($my_entry, 0));
+}
+
+sub lowir_finalizer_callback_has_only_actions
+{
+	my ($body) = @_;
+	return defined(lowir_executed_finalizer_actions($body, 0));
+}
+
+# Recognize the same documented finalization projection split over callbacks.
+# Only callbacks actually registered by an init body participate; reverse their
+# registration order, then compare every object/destructor group and element.
+# This does not admit arbitrary extra helper definitions or startup actions.
+sub lowir_split_registered_finalizers
+{
+	my ($ref_fini, $entries, $extra_declaration) = @_;
+	my %definitions = map { /^function\s+(\@[^\s(]+)/ ? ($1 => $_) : () } @$entries;
+	my (@callbacks, @actual, %seen);
+	for my $entry (@$entries)
 	{
-		my $key = "$action->[0] $action->[2]";
-		push @expected_order, $key if !exists($expected{$key});
-		push @{$expected{$key}}, $action->[1];
+		next if $entry !~ /^function [^\n]*\[[^\]\n]*\brole=init\b[^\]\n]*\]/;
+		for my $line (split(/\n/, $entry))
+		{
+			next if $line !~ /^\s*(?:%\S+\s*=\s*)?call\s+\S+\s+\@([^\s(]+)\((\@[^\s()]+)\)\s*$/;
+			my ($registration, $callback) = ($1, $2);
+			next if !exists($extra_declaration->{$registration}) || !exists($definitions{$callback});
+			my $body = $definitions{$callback};
+			next if $body !~ /^function \S+\(\) -> void(?: \[[^\]\n]*\])? \{/;
+			return () if $seen{$callback}++;
+			push @callbacks, $callback;
+		}
 	}
-	return 0 if scalar(@expected_order) == 0;
-	for my $action (lowir_finalizer_actions($my_entry))
+	return () if !@callbacks;
+	for my $callback (reverse(@callbacks))
 	{
-		my $key = "$action->[0] $action->[2]";
-		push @actual_order, $key if !exists($actual{$key});
-		push @{$actual{$key}}, $action->[1];
+		my $actions = lowir_executed_finalizer_actions($definitions{$callback}, 0);
+		return () if !defined($actions);
+		push @actual, @$actions;
 	}
-	for my $key (@expected_order)
-	{
-		return 0 if !exists($actual{$key});
-		next if grep { $_ eq '*' } (@{$actual{$key}}, @{$expected{$key}});
-		return 0 if join(',', @{$actual{$key}}) ne join(',', @{$expected{$key}});
-	}
-	my @order = grep { exists($expected{$_}) } @actual_order;
-	return 0 if join(';', @order) ne join(';', @expected_order);
-	return $my_entry =~ /return void/;
+	return () if !lowir_same_finalizer_actions(
+		lowir_executed_finalizer_actions($ref_fini, 1), \@actual);
+	return map { ($_, $definitions{$_}) } @callbacks;
+}
+
+# An init entry absent from the reference may only register those callbacks.
+# Its call results must be unused, and no other instruction is absorbed.
+sub lowir_registration_only_init
+{
+	my ($entry, $inserted_ok) = @_;
+	my @lines = lowir_nonempty_trimmed_lines($entry);
+	return 0 if @lines < 5 || $lines[0] !~ /^function \S+\(\) -> void \[role=init\] \{$/;
+	return 0 if $lines[1] !~ /^block \^\S+:$/ || $lines[-2] ne 'return void' || $lines[-1] ne '}';
+	for my $line (@lines[2 .. $#lines-2]) { return 0 if !$inserted_ok->($line); }
+	return 1;
 }
 
 # When the canonical texts differ, the generated output still matches the
@@ -4409,42 +4599,57 @@ sub lowir_reference_matches_after_canonicalization
 	# entries and whose destructor actions are the fini's.
 	my @ref_fini = grep { /^function / && /\[[^\]]*\brole=fini\b/ } @ref_entries;
 	my %ref_text = map { $_ => 1 } @ref_entries;
-	my ($registered, $registered_name);
-	if (@ref_fini == 1)
-	{
-		($registered) = grep {
-			/^function / && !$ref_text{$_} &&
-			lowir_static_finalizer_action_is_projection($ref_fini[0], $_)
-		} @my_entries;
-		($registered_name) = $registered =~ /^function\s+(\@[^\s(]+)/ if defined($registered);
-	}
 	my %extra_declaration = map { /^declare\s+function\s+\@([^\s(]+)/ ? ($1 => 1) : () }
 		grep { /^declare\s+function / && !$ref_identity{lowir_compare_entry_identity($_)} } @my_entries;
+	my %registered;
+	if (@ref_fini == 1)
+	{
+		%registered = lowir_split_registered_finalizers($ref_fini[0], \@my_entries, \%extra_declaration);
+		# Preserve the existing single-callback allowance (including a
+		# registration in a reference-owned function rather than an init).
+		if (!%registered)
+		{
+			my ($body) = grep {
+				/^function / && !$ref_text{$_} &&
+				lowir_static_finalizer_action_is_projection($ref_fini[0], $_)
+			} @my_entries;
+			my ($name) = $body =~ /^function\s+(\@[^\s(]+)/ if defined($body);
+			if (defined($name) && lowir_finalizer_callback_has_only_actions($body))
+			{
+				my $registrations = 0;
+				for my $entry (@my_entries) {
+					for my $line (split(/\n/, $entry)) {
+						++$registrations if $line =~ /^\s*(?:%\S+\s*=\s*)?call\s+\S+\s+\@([^\s(]+)\(\Q$name\E\)\s*$/ &&
+							exists($extra_declaration{$1});
+					}
+				}
+				$registered{$name} = $body if $registrations == 1;
+			}
+		}
+	}
 	my $inserted_ok = sub {
 		my ($line) = @_;
-		return 0 if !defined($registered_name);
-		return $line =~ /^\s*(?:%\S+\s*=\s*)?call\s+\S+\s+\@([^\s(]+)\(\Q$registered_name\E\)\s*$/ &&
-			exists($extra_declaration{$1});
+		return $line =~ /^\s*(?:%\S+\s*=\s*)?call\s+\S+\s+\@([^\s(]+)\((\@[^\s()]+)\)\s*$/ &&
+			exists($extra_declaration{$1}) && exists($registered{$2});
 	};
 
 	for my $ref_entry (@ref_entries)
 	{
 		my $identity = lowir_compare_entry_identity($ref_entry);
 		my $matched = 0;
-		if (defined($registered) && $ref_entry eq $ref_fini[0])
+		if (%registered && $ref_entry eq $ref_fini[0])
 		{
-			for my $candidate_identity (keys(%my_entries))
+			my %bodies = map { $_ => 1 } values(%registered);
+			my $removed = 0;
+			for my $list (values(%my_entries))
 			{
-				my $list = $my_entries{$candidate_identity};
-				for (my $i = 0; $i < @$list; ++$i)
-				{
-					next if $list->[$i] ne $registered;
-					splice(@$list, $i, 1);
-					$matched = 1;
-					last;
+				my @keep;
+				for my $entry (@$list) {
+					if ($bodies{$entry}) { ++$removed; } else { push @keep, $entry; }
 				}
-				last if $matched;
+				@$list = @keep;
 			}
+			$matched = $removed == keys(%registered);
 		}
 		elsif (exists($my_entries{$identity}))
 		{
@@ -4452,7 +4657,11 @@ sub lowir_reference_matches_after_canonicalization
 			for (my $i = 0; $i < @$list; ++$i)
 			{
 				next if $ref_entry ne $list->[$i] &&
-					!lowir_reference_entry_is_projection($ref_entry, $list->[$i], $inserted_ok);
+					!lowir_reference_entry_is_projection($ref_entry, $list->[$i], $inserted_ok) &&
+					!($ref_entry =~ /\brole=fini\b/ && $list->[$i] =~ /\brole=fini\b/ &&
+					  lowir_function_signature_line((lowir_nonempty_trimmed_lines($ref_entry))[0]) eq
+					  lowir_function_signature_line((lowir_nonempty_trimmed_lines($list->[$i]))[0]) &&
+					  lowir_static_finalizer_action_is_projection($ref_entry, $list->[$i]));
 				splice(@$list, $i, 1);
 				$matched = 1;
 				last;
@@ -4460,10 +4669,11 @@ sub lowir_reference_matches_after_canonicalization
 		}
 		return 0 if !$matched;
 	}
-	# What the output has beyond the reference may only be declarations.
+	# Extra entries are declarations or an init consisting only of the
+	# verified registrations (needed for constant-initialized objects).
 	for my $leftover (map { @{$_} } values(%my_entries))
 	{
-		return 0 if $leftover !~ /^declare\s+/;
+		return 0 if $leftover !~ /^declare\s+/ && !lowir_registration_only_init($leftover, $inserted_ok);
 	}
 	return 1;
 }

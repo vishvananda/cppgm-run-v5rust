@@ -38,6 +38,7 @@ function @example__fast_mem_fn_maker_int__target______make_fast_mem_fn(%this : p
   block ^entry:
     store typed ptr %this, $this
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }
 function @make_holder(%value : obj<1x1> [classes=none]) -> obj<1x1> [result_classes=none, binding=weak, object=_Z11make_holderIN7example11fast_mem_fnIM6targetKFivEXadL_ZNKS2_2idEvEELi1EEEE6holderIT_ES7_] {

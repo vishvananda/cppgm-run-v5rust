@@ -508,6 +508,17 @@ To complete PA24, implement these goals:
    sign-changing conversions remain explicit. Such a copy should not add a
    machine move.
 
+   A slot used as a copy or store value supplies its contents, including
+   `i128`, `f80`, and object storage. A symbol supplies an address, not a
+   numeric literal: a wide or floating value requiring numeric bits must not
+   interpret its symbol ID as a literal-pool index. Reject an unsupported
+   operand with an ordinary input error. Object copy/store sources must name
+   storage; numeric object immediates are unsupported. Integer carriers copied
+   into `f32`/`f64` retain their low representation bits; numeric conversion
+   uses `convert`. A `switch` selector must be integral. Constant
+   `stack_alloc` sizes outside the nonnegative, aligned signed-32-bit native
+   adjustment range may be rejected before emission.
+
    A compiler-created scalar that is live across one adjacent block edge
    should remain in its selected register when the source has only that
    successor, the destination has only that predecessor, and the register

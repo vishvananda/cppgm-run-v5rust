@@ -54,6 +54,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
     %t3 = addr $value
     copyobj 4x4 %t3, %t2
     %t4 = addr $argobj__3
+    zeroinit 1x1 %t4
     %t5 = call u8 @logic__indeterminate($argobj__2, $argobj__3)
     branch %t5, ^cond_then_1, ^cond_else_2
 

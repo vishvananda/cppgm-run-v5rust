@@ -1,4 +1,4 @@
-global @facet_id_info___id : i32 [binding=weak, object=_ZN8facet_idI4infoE2idE] = zero
+global @facet_id_info___id : i32 [binding=weak, object=_ZN8facet_idI4infoE2idE, object_root=yes] = zero
 
 function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   block ^entry:

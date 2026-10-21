@@ -22,5 +22,6 @@ function @library__detail__class_template_name() -> obj<1x1> [result_classes=non
 
   block ^entry:
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

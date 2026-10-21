@@ -33,6 +33,7 @@ function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
   block ^entry:
     %t1 = addr $out
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = call obj<2x1> @make_options__2($argobj__1)
     copyobj 2x1 %t3, %t1
     %t4 = addr $out

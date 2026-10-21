@@ -1,17 +1,17 @@
 global @calls : i32 [binding=strong] = zero
 global @__local_static__whole__held__tokens66_73 : ptr [binding=internal, object=_ZZ5wholevE4held] = zero
 global @__local_static__whole__held__tokens66_73__guard : i64 [binding=internal, object=_ZGVZ5wholevE4held] = zero
-global @__cppgm_ref_temporary____local_static__whole__held__tokens66_73_0 [binding=internal, object=_ZGRZ5wholevE4held_] = {
+global @__cppgm_ref_temporary____local_static__whole__held__tokens66_73_0 : obj<16x8> [binding=internal, object=_ZGRZ5wholevE4held_] = {
   zero 16
 }
 global @__local_static__member__decl0__held : ptr [binding=internal, object=_ZZ6membervE4held] = zero
 global @__local_static__member__decl0__held__guard : i64 [binding=internal, object=_ZGVZ6membervE4held] = zero
-global @__cppgm_ref_temporary____local_static__member__decl0__held_0 [binding=internal, object=_ZGRZ6membervE4held_] = {
+global @__cppgm_ref_temporary____local_static__member__decl0__held_0 : obj<16x8> [binding=internal, object=_ZGRZ6membervE4held_] = {
   zero 16
 }
 global @__local_static__chosen__held__tokens112_128 : ptr [binding=internal, object=_ZZ6chosenvE4held] = zero
 global @__local_static__chosen__held__tokens112_128__guard : i64 [binding=internal, object=_ZGVZ6chosenvE4held] = zero
-global @__cppgm_ref_temporary____local_static__chosen__held__tokens112_128_0 [binding=internal, object=_ZGRZ6chosenvE4held_] = {
+global @__cppgm_ref_temporary____local_static__chosen__held__tokens112_128_0 : obj<16x8> [binding=internal, object=_ZGRZ6chosenvE4held_] = {
   zero 16
 }
 global @__local_static__scalar__held__tokens143_149 : ptr [binding=internal, object=_ZZ6scalarvE4held] = zero

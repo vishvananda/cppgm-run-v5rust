@@ -48,5 +48,6 @@ function @action_helper_false_true___apply(%__param0 : ptr [pass=by_address, obj
     store typed ptr %__param0, $__param0
     store typed ptr %__param1, $__param1
     %t1 = addr $retobj__1
+    zeroinit 1x1 %t1
     return obj<1x1> $retobj__1
 }

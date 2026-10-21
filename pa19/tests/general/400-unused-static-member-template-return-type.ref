@@ -15,6 +15,7 @@ function @convert_iterator___cppgm_class_template_identity_1___call__ov3(%x : pt
     store typed ptr %x, $x
     %t1 = load typed ptr $x
     %t2 = addr $argobj__1
+    zeroinit 1x1 %t2
     %t3 = call ptr @convert_iterator___cppgm_class_template_identity_1___call(%t1, $argobj__1)
     return ptr %t3
 }
