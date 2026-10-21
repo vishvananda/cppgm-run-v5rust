@@ -43,6 +43,8 @@ pub(super) struct Tables {
     offsets: HashMap<EntityId, Vec<u64>>,
     address_points: HashMap<EntityId, Vec<u64>>,
     thunks: Vec<Thunk>,
+    pending_thunk: usize,
+    thunk_families: HashMap<(EntityId, ThisAdjustment), crate::lower::definition_order::FamilyId>,
     thunk_symbols: HashMap<ThunkKey, usize>,
     definition_classes: std::collections::HashSet<EntityId>,
     definitions_indexed: bool,
@@ -948,8 +950,7 @@ impl Symbols<'_, '_> {
             builder::FunctionBuilder,
             model::{Boundary, Call, InstructionKind as I, Value},
         };
-        let mut families = HashMap::new();
-        for thunk in &self.vtables.thunks {
+        for thunk in &self.vtables.thunks[self.vtables.pending_thunk..] {
             if program.function_defined(thunk.symbol) {
                 continue;
             }
@@ -1087,11 +1088,15 @@ impl Symbols<'_, '_> {
             let family = if let Some((entity, object, variant)) =
                 thunk.family.filter(|_| !self.table.object_mode)
             {
-                let family = if let Some(&family) = families.get(&(entity, thunk.adjustment)) {
+                let family = if let Some(&family) =
+                    self.vtables.thunk_families.get(&(entity, thunk.adjustment))
+                {
                     family
                 } else {
                     let family = definitions.family(object)?;
-                    families.insert((entity, thunk.adjustment), family);
+                    self.vtables
+                        .thunk_families
+                        .insert((entity, thunk.adjustment), family);
                     family
                 };
                 Some((family, variant))
@@ -1100,6 +1105,7 @@ impl Symbols<'_, '_> {
             };
             definitions.stream(program, family)?;
         }
+        self.vtables.pending_thunk = self.vtables.thunks.len();
         Ok(())
     }
     pub(super) fn rtti_vtable(

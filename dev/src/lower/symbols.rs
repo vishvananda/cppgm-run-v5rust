@@ -2311,18 +2311,36 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let name = program.names.get(program.symbol(symbol).name).to_owned();
         let mut metadata = self.entry_metadata(program, entry, &name)?;
         let facts = self.entry_facts(entry)?;
+        let base = matches!(
+            entry,
+            super::construction::Entry::Constructor(_, super::construction::Variant::Base)
+                | super::construction::Entry::DestructorBase(_)
+        );
         if entry
             .entity(self.graph)
             .is_some_and(|entity| self.graph.lower_explicit_function_root(entity))
         {
             metadata.flags |= 4;
         }
-        if facts.internal
+        let special = matches!(
+            facts.name,
+            FunctionName::Constructor(_) | FunctionName::Destructor(_)
+        );
+        let shared_complete = special
+            && !base
             && !matches!(entry, super::construction::Entry::DestructorDeleting(_))
-            && (matches!(facts.name, FunctionName::Destructor(_))
-                || entry
+            && facts
+                .object
+                .is_none_or(|class| self.graph.lower_virtual_bases(class).is_empty());
+        let constexpr = entry
+            .entity(self.graph)
+            .is_some_and(|entity| self.graph.lower_constexpr(entity));
+        if (base || facts.internal && shared_complete) && !constexpr
+            || facts.internal
+                && !matches!(facts.name, FunctionName::Destructor(_))
+                && entry
                     .entity(self.graph)
-                    .is_some_and(|entity| self.graph.lower_virtual_slot(entity).is_some()))
+                    .is_some_and(|entity| self.graph.lower_virtual_slot(entity).is_some())
         {
             metadata.flags |= 4;
         }
@@ -2347,13 +2365,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if variant == Variant::Complete
             && let Some(entity) = entity
         {
-            let mut metadata = self.metadata(program, entity, name)?;
-            if metadata.binding == Some(crate::lowir::vocabulary::Binding::Internal)
-                && !self.graph.lower_constexpr(entity)
-            {
-                metadata.flags |= 4;
-            }
-            return Ok(metadata);
+            return self.metadata(program, entity, name);
         }
         let facts = self.entry_facts(entry)?;
         let object = if let Some(&object) = self.entry_objects.get(&entry) {
@@ -2387,13 +2399,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 0
             } | if entity.is_some_and(|entity| self.graph.lower_no_inline(entity)) {
                 32
-            } else {
-                0
-            } | if (variant == Variant::Base
-                || facts.internal && variant != Variant::Deleting)
-                && !entity.is_some_and(|entity| self.graph.lower_constexpr(entity))
-            {
-                4
             } else {
                 0
             } | if facts

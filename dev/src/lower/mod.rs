@@ -372,6 +372,42 @@ fn emit_source_definitions<'a>(
     Ok(())
 }
 
+// Explicit definitions root their own ABI entries, independently of calls.
+fn demand_explicit_definitions(
+    program: &mut Program,
+    symbols: &mut symbols::Symbols<'_, '_>,
+    graph: &Graph,
+) -> Result<(), Error> {
+    for entity in graph.lower_explicit_functions() {
+        if !graph.lower_function_defined(entity) {
+            continue;
+        }
+        let base = if let Some(id) = graph.lower_construction(entity) {
+            Some(construction::Entry::Constructor(
+                id,
+                construction::Variant::Base,
+            ))
+        } else if matches!(
+            graph.lower_function(entity)?.name,
+            sema::lowering::FunctionName::Destructor(_)
+        ) {
+            Some(construction::Entry::DestructorBase(entity))
+        } else {
+            None
+        };
+        if let Some(base) = base
+            && base.hidden_vtt(graph)?
+        {
+            symbols.demand_entry(base);
+        }
+        symbols.demand(entity);
+    }
+    for &class in graph.lower_explicit_classes() {
+        symbols.construction_table(program, class)?;
+    }
+    Ok(())
+}
+
 // The unit's demand worklist owns emission identity; each emitted body is
 // streamed and released before the next one is lowered.
 fn emit_pending<'a>(
@@ -390,20 +426,14 @@ fn emit_pending<'a>(
     loop {
         globals::emit_instance_variables(output, symbols, (graph, tree))?;
         let Some(entry) = symbols.pending.next() else {
+            // Each C++ emit_demanded drain finishes its thunks before the
+            // next explicit-instantiation or variable-root demand boundary.
+            symbols.emit_thunks(output.program, output.definitions)?;
             if explicit == 2 {
                 break;
             }
             if explicit == 0 {
-                for entity in graph.lower_explicit_functions() {
-                    if graph.lower_function_defined(entity) {
-                        symbols.demand(entity);
-                    }
-                }
-                for &class in graph.lower_explicit_classes() {
-                    if graph.lower_polymorphic(class) {
-                        symbols.vtable_symbol(output.program, class)?;
-                    }
-                }
+                demand_explicit_definitions(output.program, symbols, graph)?;
             } else {
                 for &entity in graph.lower_demanded_variables() {
                     symbols.variable_symbol(output.program, entity)?;
