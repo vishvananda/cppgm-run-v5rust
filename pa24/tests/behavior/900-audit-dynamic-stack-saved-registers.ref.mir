@@ -1,0 +1,64 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @identity
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret rdi
+
+function @allocate
+  abi
+    param %size -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    stack_alloc rbx, rdi
+    store.i64 [rbx], 17
+    stack_alloc r12, 17
+    store.i64 [r12], 25
+    mov rdi, 3
+    call @identity [args=(rdi)]
+    load.i64 rbx, [rbx]
+    add rbx, [r12]
+    add rbx, rax
+    ret rbx
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rdi, 31
+    call @allocate [args=(rdi)]
+    mov rbx, rax
+    mov rdi, 64
+    call @allocate [args=(rdi)]
+    add rbx, rax
+    cmp.i64 rbx, 90
+    setne rbx
+    movzx rbx, rbx
+    ret rbx

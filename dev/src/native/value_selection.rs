@@ -18,6 +18,25 @@ use crate::lowir::{
 pub(super) fn unsupported() -> Error {
     Error::NotImplemented("native instruction selection and placement")
 }
+fn emit_runtime(
+    selection: &mut Selection<'_>,
+    result: Option<crate::lowir::model::TempId>,
+    runtime: &crate::lowir::model::RuntimeInstruction,
+    targets: &[Option<super::mir::BlockId>],
+) -> Result<(), Error> {
+    use crate::lowir::model::RuntimeInstruction as Runtime;
+    match *runtime {
+        Runtime::VaStart(list) => selection.va_start(list),
+        Runtime::VaArg(ty, list) => selection.va_arg(result.ok_or(Error::Limit)?, ty, list),
+        Runtime::StackAlloc(size) => selection.stack_alloc(result.ok_or(Error::Limit)?, size),
+        Runtime::AtomicLoad(..)
+        | Runtime::AtomicStore(..)
+        | Runtime::AtomicUpdate(..)
+        | Runtime::AtomicCompareExchange { .. }
+        | Runtime::Fence(..) => selection.atomic(result, runtime),
+        _ => selection.exception(result, runtime, targets),
+    }
+}
 fn floating_scratch(
     program: &Program,
     function: &Function,
@@ -232,22 +251,8 @@ pub(super) fn select(
             selection.location = body.location(inst);
             match inst.kind {
                 I::Phi(..) => {}
-                I::Runtime(crate::lowir::model::RuntimeInstruction::VaStart(list)) => {
-                    selection.va_start(list)?;
-                }
-                I::Runtime(
-                    ref runtime @ (crate::lowir::model::RuntimeInstruction::AtomicLoad(..)
-                    | crate::lowir::model::RuntimeInstruction::AtomicStore(..)
-                    | crate::lowir::model::RuntimeInstruction::AtomicUpdate(..)
-                    | crate::lowir::model::RuntimeInstruction::AtomicCompareExchange {
-                        ..
-                    }
-                    | crate::lowir::model::RuntimeInstruction::Fence(..)),
-                ) => {
-                    selection.atomic(inst.result, runtime)?;
-                }
                 I::Runtime(ref runtime) => {
-                    selection.exception(inst.result, runtime, &control.targets)?;
+                    emit_runtime(&mut selection, inst.result, runtime, &control.targets)?;
                 }
                 I::Load(_, Type::I128, address) => {
                     selection.wide_load(inst.result.ok_or(Error::Limit)?, address)?;
@@ -392,12 +397,6 @@ fn emit_return(
         }
         Alias::Temporary(temp) => {
             let own = selection.body.temp(temp).ty.ok_or(Error::Limit)?;
-            if own.float_rank() != 0
-                || matches!(own, Type::Object { .. } | Type::I128)
-                || matches!(ty, Type::I128 | Type::F80)
-            {
-                return Err(unsupported());
-            }
             let source = selection.operand(value, ty, R::R10)?;
             let reg = if selection.facts.level >= 1
                 && source.register().is_some()

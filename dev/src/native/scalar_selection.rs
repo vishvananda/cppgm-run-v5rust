@@ -55,7 +55,11 @@ impl Selection<'_> {
                     self.temp_operand(temp)?
                 };
                 let own = self.body.temp(temp).ty.ok_or(Error::Limit)?;
-                if op.is_memory() && super::abi::value_bytes(own)? != super::abi::value_bytes(ty)? {
+                if op.is_memory()
+                    && own.float_rank() == 0
+                    && !matches!(own, Type::I128 | Type::Object { .. })
+                    && super::abi::value_bytes(own)? != super::abi::value_bytes(ty)?
+                {
                     self.load(scratch, op, own);
                     Ok(Operand::Register(scratch))
                 } else {
@@ -84,7 +88,7 @@ impl Selection<'_> {
         if source.register() == Some(r) {
             return;
         }
-        if r.code() >= 16 {
+        if r.code() >= 16 && !matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
             self.mir.instructions.push(Instruction {
                 op: Op::FloatCopy(super::float_transport::FloatCopy {
                     ty,

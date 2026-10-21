@@ -1,0 +1,57 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @test
+  abi
+    param %value -> xmm0 : f64
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    param-slot %value -> [rbp-8] : f64
+
+  block ^entry
+    fmov.f64 [rbp-8], xmm0
+    cmp.f64 [rbp-8], 0
+    jne ^yes
+    jmp ^no
+
+  block ^yes
+    mov rax, 1
+    ret rax
+
+  block ^no
+    mov rax, 0
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12
+
+  block ^entry
+    fmov.f64 xmm0, 0.0
+    call @test [args=(xmm0)]
+    mov rbx, rax
+    fmov.f64 xmm0, -0.0
+    call @test [args=(xmm0)]
+    mov r12, rax
+    fmov.f64 xmm0, 1.0
+    call @test [args=(xmm0)]
+    add rbx, r12
+    add rbx, rax
+    cmp.i64 rbx, 2
+    setne rbx
+    movzx rbx, rbx
+    ret rbx

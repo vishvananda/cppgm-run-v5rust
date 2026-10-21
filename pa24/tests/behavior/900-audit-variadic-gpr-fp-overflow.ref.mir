@@ -1,0 +1,129 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @read
+  abi
+    param %tag -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 352
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13 r14 r15
+    slot $arguments -> [rbp-24] : obj<24x8>
+    temp %va-register-save -> [rbp-208] : obj<176x16>
+    temp %c5 -> [rbp-216] : i64
+    temp %c6 -> [rbp-224] : i64
+    temp %c7 -> [rbp-232] : i64
+    temp %c8 -> [rbp-240] : i64
+    temp %c9 -> [rbp-248] : i64
+
+  block ^entry
+    store.i64 [rbp-208], rdi
+    store.i64 [rbp-200], rsi
+    store.i64 [rbp-192], rdx
+    store.i64 [rbp-184], rcx
+    store.i64 [rbp-176], r8
+    store.i64 [rbp-168], r9
+    fmov.i128 [rbp-160], xmm0
+    fmov.i128 [rbp-144], xmm1
+    fmov.i128 [rbp-128], xmm2
+    fmov.i128 [rbp-112], xmm3
+    fmov.i128 [rbp-96], xmm4
+    fmov.i128 [rbp-80], xmm5
+    fmov.i128 [rbp-64], xmm6
+    fmov.i128 [rbp-48], xmm7
+    va_start [rbp-24], [rbp-208]
+    va_arg.i64 r8, [rbp-24]
+    va_arg.i64 r9, [rbp-24]
+    va_arg.i64 rdi, [rbp-24]
+    va_arg.i64 rsi, [rbp-24]
+    va_arg.i64 rdx, [rbp-24]
+    va_arg.i64 rcx, [rbp-24]
+    va_arg.i64 rax, [rbp-24]
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 rbx, xmm0
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r12, xmm0
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r13, xmm0
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r14, xmm0
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r15, xmm0
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r10, xmm0
+    store.i64 [rbp-216], r10
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r10, xmm0
+    store.i64 [rbp-224], r10
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r10, xmm0
+    store.i64 [rbp-232], r10
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r10, xmm0
+    store.i64 [rbp-240], r10
+    va_arg.f64 xmm0, [rbp-24]
+    fptosi.f64.i64 r10, xmm0
+    store.i64 [rbp-248], r10
+    add r8, r9
+    add r8, rdi
+    add r8, rsi
+    add r8, rdx
+    add r8, rcx
+    add r8, rax
+    add r8, rbx
+    add r8, r12
+    add r8, r13
+    add r8, r14
+    add r8, r15
+    add r8, [rbp-216]
+    add r8, [rbp-224]
+    add r8, [rbp-232]
+    add r8, [rbp-240]
+    add r8, [rbp-248]
+    ret r8
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    sub rsp, 32
+    fmov.f64 [rsp+16], 19.0
+    fmov.f64 [rsp+24], 2e+01
+    mov rdi, 0
+    mov rsi, 1
+    mov rdx, 2
+    mov rcx, 3
+    mov r8, 4
+    mov r9, 5
+    fmov.f64 xmm0, 11.0
+    fmov.f64 xmm1, 12.0
+    fmov.f64 xmm2, 13.0
+    fmov.f64 xmm3, 14.0
+    fmov.f64 xmm4, 15.0
+    fmov.f64 xmm5, 16.0
+    fmov.f64 xmm6, 17.0
+    fmov.f64 xmm7, 18.0
+    mov rax, 8
+    mov r11, 6
+    store.i64 [rsp], r11
+    mov r11, 7
+    store.i64 [rsp+8], r11
+    call @read [args=(rax,rcx,rdx,rsi,rdi,r8,r9,xmm0,xmm1,xmm2,xmm3,xmm4,xmm5,xmm6,xmm7), stack=32, variadic]
+    add rsp, 32
+    cmp.i64 rax, 183
+    setne rax
+    movzx rax, rax
+    ret rax

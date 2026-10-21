@@ -241,6 +241,16 @@ impl<'a> Pass<'a> {
             }
         }
         self.assembler.bind(self.epilogue);
+        if f.preserve != 0
+            && f.instructions
+                .iter()
+                .any(|inst| matches!(inst.op, Op::StackAlloc(_)))
+        {
+            self.assembler.lea(
+                R::RSP,
+                Rm::mem(R::RBP, f.stack_size.cast_signed().wrapping_neg()),
+            )?;
+        }
         for reg in super::placement::SAVED {
             if f.preserve & (1 << reg.code()) != 0 {
                 self.assembler.pop(reg);
@@ -284,6 +294,8 @@ impl<'a> Pass<'a> {
             }
             Op::Call(site) => site.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
             Op::VaStart(op) => op.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
+            Op::VaArg(op) => op.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
+            Op::StackAlloc(op) => op.emit(&mut self.assembler)?,
             Op::DynamicCopy => {
                 self.assembler.mov_rr(R::RCX, R::RDX)?;
                 self.assembler.byte(0xf3);

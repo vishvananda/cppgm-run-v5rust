@@ -1,0 +1,38 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @value
+  storage scalar obj<32x8>
+  init obj<32x8> 651345242494996240
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    load.i64 r8, @value
+    load.i64 r9, @value+8
+    load.i64 rdi, @value+24
+    mov rdx, 651345242494996240
+    cmp.i64 r8, rdx
+    setne r8
+    movzx r8, r8
+    mov rdx, 0
+    cmp.i64 r9, rdx
+    setne rsi
+    movzx rsi, rsi
+    cmp.i64 rdi, r9
+    setne rdi
+    movzx rdi, rdi
+    or r8, rsi
+    or r8, rdi
+    ret r8

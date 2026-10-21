@@ -167,12 +167,14 @@ fn store(
 ) -> Result<(), Error> {
     let bytes = constant_bytes(scanner, ty, value)?;
     let size = usize::try_from(value_bytes(ty)?).map_err(|_| Error::Limit)?;
-    if size > bytes.len() {
-        return Err(Error::NotImplemented("native object constant payload"));
+    let destination = out
+        .get_mut(offset..offset.checked_add(size).ok_or(Error::Limit)?)
+        .ok_or(Error::Limit)?;
+    // The frozen x86 host masks the high-word shift for object spans beyond
+    // sixteen bytes. Preserve its repeated high word with deliberate indexing.
+    for (at, byte) in destination.iter_mut().enumerate() {
+        *byte = bytes[if at < 8 { at } else { 8 + (at - 8) % 8 }];
     }
-    out.get_mut(offset..offset.checked_add(size).ok_or(Error::Limit)?)
-        .ok_or(Error::Limit)?
-        .copy_from_slice(&bytes[..size]);
     Ok(())
 }
 pub(super) fn is_zero(global: &Global, scanner: &mut FloatingScanner) -> Result<bool, Error> {
@@ -180,7 +182,7 @@ pub(super) fn is_zero(global: &Global, scanner: &mut FloatingScanner) -> Result<
         let bytes = constant_bytes(scanner, ty, value)?;
         let size = usize::try_from(value_bytes(ty)?).map_err(|_| Error::Limit)?;
         Ok(bytes
-            .get(..size)
+            .get(..size.min(bytes.len()))
             .ok_or(Error::Limit)?
             .iter()
             .all(|&byte| byte == 0))

@@ -10,6 +10,7 @@ use std::io::Write;
 #[derive(Clone, Copy)]
 pub(super) enum FlagOp {
     Compare(Type, Operand, Operand),
+    CompareFloatLiteral(crate::lowir::literals::FloatKind, Operand, u128),
     Test(Type, R),
     Set(Condition, R),
     Move(Condition, R, Operand),
@@ -17,8 +18,19 @@ pub(super) enum FlagOp {
 impl FlagOp {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         match self {
+            Self::CompareFloatLiteral(kind, left, bits) => {
+                write!(out, "cmp.{} ", kind.ty())?;
+                left.write(program, out)?;
+                write!(out, ", ")?;
+                let mut floating = crate::types::floating::FloatingScanner::default();
+                out.write_all(
+                    crate::lowir::literals::mir_text(&mut floating, kind, bits)
+                        .map_err(|_| std::io::Error::other("floating compare literal"))?
+                        .as_bytes(),
+                )
+            }
             Self::Compare(ty, a, b) => {
-                write!(out, "cmp.{ty} ")?;
+                write!(out, "cmp.{} ", super::scalar_mir::Kind(ty))?;
                 a.write(program, out)?;
                 write!(out, ", ")?;
                 b.write(program, out)
@@ -33,6 +45,9 @@ impl FlagOp {
     }
     pub(super) fn rebase(self, begin: i32, size: u32) -> Self {
         match self {
+            Self::CompareFloatLiteral(kind, left, bits) => {
+                Self::CompareFloatLiteral(kind, left.rebase(begin, size), bits)
+            }
             Self::Compare(t, a, b) => {
                 Self::Compare(t, a.rebase(begin, size), b.rebase(begin, size))
             }
@@ -42,6 +57,12 @@ impl FlagOp {
     }
     pub(super) fn emit(self, a: &mut Assembler) -> Result<(), Error> {
         match self {
+            // The frozen scalar CMP encoder requires a register, memory or
+            // integer immediate. A floating switch case remains a typed FImm
+            // in the MIR view and fails only when encoding is demanded.
+            Self::CompareFloatLiteral(..) => Err(Error::Construction(
+                "operand is not a register or memory location".into(),
+            )),
             Self::Set(cc, r) => a.op(
                 0,
                 false,
@@ -77,6 +98,9 @@ impl FlagOp {
     }
     pub(super) fn operands(self) -> [Option<Operand>; 2] {
         match self {
+            Self::CompareFloatLiteral(_, left, bits) => {
+                [Some(left), Some(Operand::Immediate(bits))]
+            }
             Self::Compare(_, a, b) => [Some(a), Some(b)],
             Self::Test(_, r) => [Some(Operand::Register(r)), Some(Operand::Register(r))],
             Self::Set(_, r) => [Some(Operand::Register(r)), None],

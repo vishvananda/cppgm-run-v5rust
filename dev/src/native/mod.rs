@@ -43,6 +43,7 @@ mod runtime_link;
 mod scalar_mir;
 mod scalar_selection;
 mod slot_analysis;
+mod stack;
 mod startup;
 mod value_facts;
 mod value_selection;

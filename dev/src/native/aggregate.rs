@@ -199,10 +199,10 @@ impl Selection<'_> {
             let source = part_source(source, part);
             if register.code() >= 16 {
                 self.load(register, source, part.move_type());
-            } else if source.is_memory() {
-                self.emit(ScalarOp::Load(register, Type::I64, source));
-            } else {
+            } else if matches!(source, Operand::Immediate(_)) {
                 self.load(register, source, Type::I64);
+            } else {
+                self.emit(ScalarOp::Load(register, Type::I64, source));
             }
         }
         self.mir.instructions.push(Instruction {

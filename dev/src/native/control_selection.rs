@@ -119,7 +119,6 @@ impl Selection<'_> {
                             self.wide_condition(*value, yes, no)?;
                             return Ok(());
                         }
-                        super::memory::scalar(ty)?;
                         let source = self.operand(*value, ty, super::x86::Register::R10)?;
                         if let Operand::Immediate(bits) = source {
                             self.jump(if bits != 0 { yes } else { no });
@@ -166,19 +165,29 @@ impl Selection<'_> {
                     self.jump(control.target(from, *fallback)?);
                     return Ok(());
                 }
-                super::memory::scalar(ty)?;
                 let mut source = self.operand(*value, ty, super::x86::Register::R10)?;
                 if source.register().is_none() {
                     self.load(super::x86::Register::R10, source, ty);
                     source = Operand::Register(super::x86::Register::R10);
                 }
                 for &(value, to) in cases {
-                    let mut case = self.operand(value, ty, super::x86::Register::R11)?;
+                    let mut case = if ty.float_rank() == 0 {
+                        self.operand(value, ty, super::x86::Register::R11)?
+                    } else {
+                        self.float_operand(value, ty)?
+                    };
                     if matches!(case, Operand::Symbol(_)) {
                         self.load(super::x86::Register::R11, case, Type::Ptr);
                         case = Operand::Register(super::x86::Register::R11);
                     }
-                    self.emit(ScalarOp::Condition(FlagOp::Compare(ty, source, case)));
+                    let compare = if let Operand::Immediate(bits) = case
+                        && let Some(kind) = crate::lowir::literals::FloatKind::from_type(ty)
+                    {
+                        FlagOp::CompareFloatLiteral(kind, source, bits)
+                    } else {
+                        FlagOp::Compare(ty, source, case)
+                    };
+                    self.emit(ScalarOp::Condition(compare));
                     self.branch(Condition::Equal, control.target(from, to)?);
                 }
                 self.jump(control.target(from, *fallback)?);

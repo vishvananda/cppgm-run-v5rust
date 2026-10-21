@@ -1,0 +1,67 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @low_word
+  abi
+    param %value -> rdi : i64
+    param %value -> rsi : i64
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %value -> [rbp-16] : i128
+
+  block ^entry
+    store.i64 [rbp-16], rdi
+    store.i64 [rbp-8], rsi
+    load.i64 rax, [rbp-16]
+    ret rax
+
+function @float_bits
+  abi
+    param %value -> xmm0 : f64
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    param-slot %value -> [rbp-8] : f64
+
+  block ^entry
+    fmov.f64 [rbp-8], xmm0
+    load.i64 rax, [rbp-8]
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx
+
+  block ^entry
+    mov rdi, 7
+    mov rsi, 1
+    call @low_word [args=(rsi,rdi)]
+    mov rdx, 7
+    cmp.i64 rax, rdx
+    setne rbx
+    movzx rbx, rbx
+    fmov.f64 xmm0, 42.0
+    call @float_bits [args=(xmm0)]
+    mov rdx, 4631107791820423168
+    cmp.i64 rax, rdx
+    setne rax
+    movzx rax, rax
+    or rbx, rax
+    ret rbx

@@ -192,6 +192,9 @@ impl Selection<'_> {
         } else {
             Type::Ptr
         };
+        if ty == Type::I128 || ty.float_rank() != 0 || matches!(ty, Type::Object { .. }) {
+            return Err(Error::Diagnostic("unsupported select condition".into()));
+        }
         super::memory::scalar(ty)?;
         let source = self.operand(value, ty, R::R10)?;
         let width = if matches!(resolved,Alias::Temporary(t) if super::value_facts::Facts::known_boolean(self.body,t,0))

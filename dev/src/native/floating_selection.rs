@@ -6,7 +6,6 @@ use super::{
     scalar_mir::Operand,
     scalar_selection::Selection,
     value_facts::Alias,
-    value_selection::unsupported,
     x86::Register as R,
 };
 use crate::{
@@ -159,12 +158,13 @@ impl Selection<'_> {
         address: Value,
     ) -> Result<(), Error> {
         if let Alias::Temporary(t) = self.facts.resolve(self.body, value)
-            && self.body.temp(t).ty != Some(ty)
+            && self
+                .body
+                .temp(t)
+                .ty
+                .is_some_and(|own| own.float_rank() != 0 && own != ty)
         {
             let from = self.body.temp(t).ty.ok_or(Error::Limit)?;
-            if from.float_rank() == 0 {
-                return Err(unsupported());
-            }
             let source = self.temp_operand(t)?;
             let destination = self.address(address, R::R10)?;
             if ty == Type::F80 {
@@ -175,7 +175,13 @@ impl Selection<'_> {
             }
             return Ok(());
         }
-        let source = self.float_operand(value, ty)?;
+        let source = if ty != Type::F80
+            && matches!(self.facts.resolve(self.body, value), Alias::Temporary(_))
+        {
+            self.operand(value, ty, R::R11)?
+        } else {
+            self.float_operand(value, ty)?
+        };
         let destination = self.address(address, R::R10)?;
         self.float_copy(ty, destination, source);
         Ok(())
@@ -188,7 +194,13 @@ impl Selection<'_> {
     ) -> Result<(), Error> {
         let source = self.float_operand(value, ty)?;
         let destination = self.float_destination(result, ty, [self.dying(source, false), None])?;
-        self.float_copy(ty, destination, source);
+        if let Some(register) = destination.register()
+            && matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..))
+        {
+            self.load(register, source, ty);
+        } else {
+            self.float_copy(ty, destination, source);
+        }
         if let Some(r) = destination.register() {
             self.finish(result, r)?;
         }
@@ -261,12 +273,13 @@ impl Selection<'_> {
     }
     pub(super) fn float_return(&mut self, ty: Type, value: Value) -> Result<(), Error> {
         if let Alias::Temporary(t) = self.facts.resolve(self.body, value)
-            && self.body.temp(t).ty != Some(ty)
+            && self
+                .body
+                .temp(t)
+                .ty
+                .is_some_and(|own| own.float_rank() != 0 && own != ty)
         {
             let from = self.body.temp(t).ty.ok_or(Error::Limit)?;
-            if from.float_rank() == 0 {
-                return Err(unsupported());
-            }
             if ty == Type::F80 {
                 let home = Operand::Frame(self.placement.frame_alloc(16, 16)?);
                 let source = self.temp_operand(t)?;
@@ -282,7 +295,11 @@ impl Selection<'_> {
             }
             return Ok(());
         }
-        let source = self.float_operand(value, ty)?;
+        let source = if matches!(self.facts.resolve(self.body, value), Alias::Temporary(_)) {
+            self.operand(value, ty, R::R10)?
+        } else {
+            self.float_operand(value, ty)?
+        };
         if ty == Type::F80 {
             self.floating(FloatingOp::Return(source));
             return Ok(());

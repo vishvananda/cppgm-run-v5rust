@@ -38,6 +38,107 @@ pub(super) fn extensions(function: &mut Function) {
         }
     }
     compact(function, &removed);
+    redundant_constants(function);
+}
+
+// simple_inst and written_reg from the frozen cleanup: only explicit GPR
+// writes may preserve other holders. Calls, runtime operations, symbolic
+// accesses, wide immediates and non-scalar operations forget every holder.
+enum SimpleWrite {
+    None,
+    Register(R),
+}
+fn simple_write(op: Op) -> Option<SimpleWrite> {
+    use super::condition_mir::FlagOp;
+    use crate::lowir::vocabulary::Unary;
+    let (writer, operands) = match op {
+        Op::Move(r, bits) => (
+            Some(r),
+            [Some(Operand::Register(r)), Some(Operand::Immediate(bits))],
+        ),
+        Op::Scalar(op) => match op {
+            ScalarOp::Move(r, source)
+            | ScalarOp::Load(r, _, source)
+            | ScalarOp::Lea(r, source)
+            | ScalarOp::Lea32(r, source)
+            | ScalarOp::Binary(_, _, r, source)
+            | ScalarOp::Shift(_, r, source) => {
+                (Some(r), [Some(Operand::Register(r)), Some(source)])
+            }
+            ScalarOp::Store(destination, _, source) => (None, [Some(destination), Some(source)]),
+            ScalarOp::Extend(_, r)
+            | ScalarOp::Movzx(r)
+            | ScalarOp::SetEqual(r)
+            | ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, r) => {
+                (Some(r), [Some(Operand::Register(r)), None])
+            }
+            ScalarOp::ExtendMove(_, r, source) => (
+                Some(r),
+                [Some(Operand::Register(r)), Some(Operand::Register(source))],
+            ),
+            ScalarOp::CompareZero(_, source) => (None, [Some(source), Some(Operand::Immediate(0))]),
+            ScalarOp::Condition(flag) => (
+                match flag {
+                    FlagOp::Set(_, r) | FlagOp::Move(_, r, _) => Some(r),
+                    _ => None,
+                },
+                flag.operands(),
+            ),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    operands
+        .into_iter()
+        .flatten()
+        .all(|operand| match operand {
+            Operand::Register(r) => r.code() < 16,
+            Operand::Immediate(bits) => {
+                super::mir::low_word(bits).is_ok_and(|v| i32::try_from(v).is_ok())
+            }
+            Operand::Memory(memory) => {
+                !matches!(memory.base, super::memory::Base::Symbol(_))
+                    && memory.index.is_none_or(|r| r.code() < 16)
+            }
+            Operand::Frame(_) => true,
+            Operand::Symbol(_) | Operand::SymbolOffset(..) => false,
+        })
+        .then_some(writer.map_or(SimpleWrite::None, SimpleWrite::Register))
+}
+
+fn redundant_constants(function: &mut Function) {
+    let mut removed = vec![false; function.instructions.len()];
+    for block in &function.blocks {
+        // Both scalar immediate-move variants have the frozen Void width.
+        // The high word is not part of this scalar register-holding key.
+        let mut held = [None; 16];
+        for i in block.range.clone() {
+            let op = function.instructions[i].op;
+            if matches!(op, Op::Branch(..)) {
+                continue;
+            }
+            if let Op::Move(r, bits) | Op::Scalar(ScalarOp::Move(r, Operand::Immediate(bits))) = op
+                && r.code() < 16
+            {
+                let Ok(value) = super::mir::low_word(bits) else {
+                    continue;
+                };
+                let holder = &mut held[usize::from(r.code())];
+                if *holder == Some(value) {
+                    removed[i] = true;
+                } else {
+                    *holder = Some(value);
+                }
+                continue;
+            }
+            match simple_write(op) {
+                Some(SimpleWrite::Register(writer)) => held[usize::from(writer.code())] = None,
+                Some(SimpleWrite::None) => {}
+                None => held.fill(None),
+            }
+        }
+    }
+    compact(function, &removed);
 }
 
 fn flags_dead_after(function: &Function, at: usize, end: usize) -> bool {

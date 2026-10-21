@@ -10,6 +10,16 @@ use crate::lowir::{
     vocabulary::{Binary, Type, Unary},
 };
 use std::io::Write;
+// MIR carries the scalar kind independently from a LowIR object's full size.
+pub(super) struct Kind(pub(super) Type);
+impl std::fmt::Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Type::Object { .. } => f.write_str("obj"),
+            ty => std::fmt::Display::fmt(&ty, f),
+        }
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Operand {
     Memory(super::memory::Memory),
@@ -167,7 +177,7 @@ impl ScalarOp {
                 operand = Some(src);
             }
             Self::Load(r, ty, d) => {
-                write!(out, "load.{ty} {}, ", r.spelling())?;
+                write!(out, "load.{} {}, ", Kind(ty), r.spelling())?;
                 operand = Some(d);
             }
             Self::Store(d, ty, r) => {

@@ -10,7 +10,7 @@ use super::{
 };
 use crate::lowir::{
     Error,
-    model::{Program, Value},
+    model::{Program, TempId, Value},
     vocabulary::Type,
 };
 use std::io::Write;
@@ -28,6 +28,70 @@ pub(super) struct Start {
     gp: u32,
     fp: u32,
     overflow: i32,
+}
+#[derive(Clone, Copy)]
+pub(super) struct Argument {
+    ty: Type,
+    destination: R,
+    list: Operand,
+}
+impl Argument {
+    pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
+        write!(
+            out,
+            "    va_arg.{} {}, ",
+            self.ty,
+            self.destination.spelling()
+        )?;
+        self.list.write(program, out)
+    }
+    pub(super) fn emit(self, a: &mut Assembler, begin: i32, bytes: u32) -> Result<(), Error> {
+        use super::x86::Rm;
+        let floating = self.ty == Type::F64;
+        let scratch_result = !floating && matches!(self.destination, R::R10 | R::R11);
+        let address = if floating {
+            R::R10
+        } else if scratch_result {
+            R::RAX
+        } else {
+            self.destination
+        };
+        let offset = if floating { R::RAX } else { R::R10 };
+        a.lea(R::R11, self.list.rebase(begin, bytes).rm()?)?;
+        if floating || scratch_result {
+            a.push(R::RAX);
+        }
+        let (field, limit, step) = if floating { (4, 176, 16) } else { (0, 48, 8) };
+        let stack = a.label()?;
+        let load = a.label()?;
+        a.load(offset, Rm::mem(R::R11, field), 4, false)?;
+        a.alu_ri(7, Rm::Reg(offset), limit, 4)?;
+        a.branch(Some(3), stack, true);
+        a.load(address, Rm::mem(R::R11, 16), 8, false)?;
+        a.alu_rr(0, address, Rm::Reg(offset), 8)?;
+        a.alu_ri(0, Rm::Reg(offset), step, 4)?;
+        a.store(Rm::mem(R::R11, field), offset, 4)?;
+        a.branch(None, load, true);
+        a.bind(stack);
+        a.load(address, Rm::mem(R::R11, 8), 8, false)?;
+        a.lea(offset, Rm::mem(address, 8))?;
+        a.store(Rm::mem(R::R11, 8), offset, 8)?;
+        a.bind(load);
+        if floating {
+            a.pop(R::RAX);
+            return a.sse(0xf2, 0x10, self.destination, Rm::mem(address, 0));
+        }
+        a.load(
+            self.destination,
+            Rm::mem(address, 0),
+            super::scalar_mir::bytes(self.ty),
+            super::scalar_mir::signed(self.ty) || self.ty == Type::Ptr,
+        )?;
+        if scratch_result {
+            a.pop(R::RAX);
+        }
+        Ok(())
+    }
 }
 impl Start {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
@@ -104,6 +168,19 @@ impl SaveArea {
     }
 }
 impl Selection<'_> {
+    pub(super) fn va_arg(&mut self, result: TempId, ty: Type, list: Value) -> Result<(), Error> {
+        let list = self.address(list, R::R10)?;
+        let destination = self.result(result, [None, None], list.mask());
+        self.mir.instructions.push(Instruction {
+            op: Op::VaArg(Argument {
+                ty,
+                destination,
+                list,
+            }),
+            location: self.location,
+        });
+        self.finish(result, destination)
+    }
     pub(super) fn va_start(&mut self, list: Value) -> Result<(), Error> {
         let save = self
             .placement

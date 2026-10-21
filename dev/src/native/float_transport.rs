@@ -76,6 +76,11 @@ impl FloatCopy {
         };
         if let Some(destination) = self.destination.register() {
             if let Some(source) = self.source.register() {
+                if source.code() < 16 {
+                    return Err(Error::Construction(
+                        "floating move from a general register".into(),
+                    ));
+                }
                 if destination != source {
                     a.sse(0, 0x28, destination, Rm::Reg(source))?;
                 }
@@ -93,7 +98,7 @@ impl FloatCopy {
             return Ok(());
         }
         let to = self.destination.rm()?;
-        if let Some(source) = self.source.register() {
+        if let Some(source) = self.source.register().filter(|r| r.code() >= 16) {
             return a.sse(prefix, 0x11, source, to);
         }
         let width = if self.ty == Type::F32 { 4 } else { 8 };
