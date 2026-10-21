@@ -1,5 +1,28 @@
 # Frozen preparation baseline
 
+## Owner correction: imported symlink identity (2026-10-21)
+
+The 3ef7bd25 baseline importer wrote a changed symlink blob through the old
+link instead of replacing the link. This created a literal link-target file
+at the retired PA21 general-fixture path. The resulting discovered case had no
+reference sidecar and was the sole remaining required prior-gate failure.
+
+Restore PA33's symlink exactly as the pinned extended Git tree records it,
+targeting the existing PA21 control, and remove the importer-created file at
+the retired general path. Both protected manifests now hash the intended
+control source through the corrected link. All course symlink modes/targets
+are verified against Git independently of their content hashes. The oracle
+revision, reference tools, expected outcomes and Rust implementation are
+unchanged. Preflight passes; PA21 passes 283/283 and its full course target.
+
+The importer now uses atomic Git-mode-aware file replacement, with regression
+tests upstream in cppgm-ralph `8cf1b4f`. Before-state, manifests and validation
+are retained in `~/work/maintenance/packed-data-wide-20261021/link-repair/`.
+The previous audit and blocked goal remain historical. Packed scalar images
+and i128-symbol oracle defects are separately under review in extended PR #79;
+this input repair does not certify those probes or advance PA24.
+
+
 ## Current baseline — extended main (2026-10-21)
 
 The frozen C++ oracle is `3ef7bd2511b8aaf9695df14253047200b02a57c2`; the matching assignments export is

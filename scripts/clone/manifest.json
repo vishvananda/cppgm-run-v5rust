@@ -26533,7 +26533,7 @@
     "pa33/tests/driver/200-o2-landing-pad-values.t": "502daaf7a0ed65be149c940815688108c1b43dbff70e6759dee5c98b61724b65",
     "pa33/tests/driver/200-source-lexical-return-unwind-tail.t": "8428529938d6ab0fcf6fd07af049004daf93b672ebb440732a3e86d6d9b10595",
     "pa33/tests/driver/200-source-nested-handler-lifetime-forwarding.t": "e25401da33e2c65a85a7c85900d3092a90e9e8a4b0bd187a4bb68480536e70c7",
-    "pa33/tests/driver/200-synthesized-copy-move-construction-prefix.t": "2d362d8a3f6ebf29bbb7f672a1696350682307ee712a5a1cefeab7f8d73ba6c7",
+    "pa33/tests/driver/200-synthesized-copy-move-construction-prefix.t": "4bea0f8cb7ba6672566698586f24778d556e0c9d81957a56f7f8cfed2bc991bd",
     "pa33/tests/driver/300-catch-rejoined-reload.t": "229a74254f048b88df2f68b815ac11bec78e3ecb3fcfb12d71f4ab645bb04894",
     "pa33/tests/driver/300-defined-nonvoid-control-flow.t": "aed13f8db5ed19fde0e0f5e07d08a45519758b1de3c34d82d73d2d55933b4f02",
     "pa33/tests/driver/300-licm-freed-reference-load.t": "251c87ee3f7e6ffd39210916592b9498c42a62665c77786e6af875148da5dfc0",
