@@ -2,6 +2,7 @@
 mod abi;
 mod address_facts;
 mod aggregate;
+mod atomic;
 mod builtins;
 mod bulk;
 mod call_facts;

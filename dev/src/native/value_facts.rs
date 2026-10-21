@@ -504,7 +504,27 @@ impl Facts {
                 self.intervals[result.index()].forbid =
                     mask(&self.intervals[result.index()], &late, &early);
             }
-            let fixed = if let I::Binary(
+            let fixed = if matches!(
+                inst.kind,
+                I::Runtime(
+                    Runtime::AtomicCompareExchange { .. }
+                        | Runtime::AtomicLoad(Type::I128, ..)
+                        | Runtime::AtomicStore(Type::I128, ..)
+                )
+            ) {
+                if matches!(
+                    inst.kind,
+                    I::Runtime(
+                        Runtime::AtomicCompareExchange { ty: Type::I128, .. }
+                            | Runtime::AtomicLoad(Type::I128, ..)
+                            | Runtime::AtomicStore(Type::I128, ..)
+                    )
+                ) {
+                    (1 << R::RAX.code()) | (1 << R::RDX.code()) | (1 << R::RCX.code())
+                } else {
+                    1 << R::RAX.code()
+                }
+            } else if let I::Binary(
                 op @ (Binary::Div | Binary::Mod | Binary::UDiv | Binary::UMod),
                 _,
                 ty,

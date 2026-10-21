@@ -44,15 +44,19 @@ pub(super) struct Addresses {
     pub(super) folded_count: usize,
 }
 fn record_value_uses(body: &Body, facts: &Facts, kind: &I, value_use: &mut [bool]) {
+    use crate::lowir::model::RuntimeInstruction as Runtime;
     match *kind {
         I::Load(..)
         | I::CopyObject(..)
         | I::ZeroInit(..)
+        | I::Runtime(Runtime::VaStart(_) | Runtime::VaArg(..) | Runtime::AtomicLoad(..)) => {}
+        I::Index(_, _, _, v)
+        | I::Store(_, _, v, _)
         | I::Runtime(
-            crate::lowir::model::RuntimeInstruction::VaStart(_)
-            | crate::lowir::model::RuntimeInstruction::VaArg(..),
-        ) => {}
-        I::Index(_, _, _, v) | I::Store(_, _, v, _) => {
+            Runtime::AtomicStore(_, v, ..)
+            | Runtime::AtomicUpdate(_, _, _, v, _)
+            | Runtime::AtomicCompareExchange { desired: v, .. },
+        ) => {
             if let Alias::Temporary(t) = facts.resolve(body, v) {
                 value_use[t.index()] = true;
             }

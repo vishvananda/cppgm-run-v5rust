@@ -27,6 +27,12 @@ const ORDER: [R; 12] = [
     R::R15,
 ];
 pub(super) const SAVED: [R; 5] = [R::RBX, R::R12, R::R13, R::R14, R::R15];
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RegisterClass {
+    Gpr,
+    Vector,
+    Memory,
+}
 #[derive(Default)]
 struct Location {
     reg: Option<R>,
@@ -48,7 +54,7 @@ pub(super) struct Placement {
     available_in: u32,
     locations: Vec<Location>,
     owners: [Option<TempId>; 32],
-    vectors: Vec<bool>,
+    classes: Vec<RegisterClass>,
     frame: u32,
     slots: Vec<Option<i32>>,
     pub(super) preserve: u32,
@@ -96,10 +102,14 @@ impl Placement {
                 .map(|_| Location::default())
                 .collect(),
             owners: [None; 32],
-            vectors: body
+            classes: body
                 .temps()
                 .iter()
-                .map(|t| matches!(t.ty, Some(Type::F32 | Type::F64)))
+                .map(|t| match t.ty {
+                    Some(Type::I128 | Type::F80 | Type::Object { .. }) => RegisterClass::Memory,
+                    Some(Type::F32 | Type::F64) => RegisterClass::Vector,
+                    _ => RegisterClass::Gpr,
+                })
                 .collect(),
             frame: 0,
             slots: vec![None; body.slots().len()],
@@ -126,13 +136,16 @@ impl Placement {
         prefs: [Option<R>; 2],
         exclude: u32,
     ) -> Option<R> {
+        if self.classes[temp.index()] == RegisterClass::Memory {
+            return None;
+        }
         let allowed = |r: R| {
             self.owners[usize::from(r.code())].is_none()
                 && (facts.intervals[temp.index()].forbid | exclude | self.excluded | self.pinned)
                     & (1 << r.code())
                     == 0
         };
-        let vector = self.vectors[temp.index()];
+        let vector = self.classes[temp.index()] == RegisterClass::Vector;
         for reg in prefs
             .into_iter()
             .chain([facts.intervals[temp.index()].hint])
@@ -186,6 +199,49 @@ impl Placement {
             }
         }
         None
+    }
+    pub(super) fn atomic_staging(
+        &mut self,
+        addresses: u32,
+        mir: &Function,
+    ) -> Result<(R, Option<i32>), Error> {
+        let allocatable = ORDER.iter().fold(0, |mask, r| mask | (1 << r.code()));
+        let occupied = self.owners.iter().enumerate().fold(0, |mask, (i, owner)| {
+            mask | if owner.is_some() { 1 << i } else { 0 }
+        });
+        // Staging follows emit_atomic's reserved_gprs, independently of the
+        // ordinary allocator's vector-boundary exclusion of R8.
+        let reserved = if mir.aligned_base == 0 {
+            0
+        } else {
+            1 << R::R12.code()
+        };
+        let busy = occupied | self.pinned | addresses | reserved;
+        let mut free = allocatable & !busy;
+        if free == 0 {
+            free = ((1 << R::R10.code()) | (1 << R::R11.code())) & !busy;
+        }
+        let mut home = None;
+        if free == 0 {
+            free = allocatable & !(addresses | reserved);
+            if free == 0 {
+                return Err(Error::Construction(
+                    "no register for atomic compare-exchange".into(),
+                ));
+            }
+            home = Some(self.frame_alloc(8, 8)?);
+        }
+        let code = free.trailing_zeros();
+        let r = ORDER
+            .into_iter()
+            .chain([R::R10, R::R11])
+            .find(|r| u32::from(r.code()) == code)
+            .ok_or(Error::Limit)?;
+        if SAVED.contains(&r) {
+            self.preserve |= 1 << r.code();
+        }
+        self.written |= 1 << r.code();
+        Ok((r, home))
     }
     pub(super) fn frame_alloc(&mut self, bytes: u64, align: u32) -> Result<i32, Error> {
         let align = u64::from(align.clamp(1, 16));
@@ -678,7 +734,7 @@ impl Placement {
             {
                 mir.spills += 1;
             }
-            if self.vectors[temp.index()] {
+            if self.classes[temp.index()] == RegisterClass::Vector {
                 // The selector reserves xmm14 as its result scratch.
                 R::XMM14
             } else if exclude & (1 << R::R10.code()) != 0 {
@@ -750,6 +806,64 @@ impl Placement {
         frame = (frame + 8 * u64::from(self.preserve.count_ones()) + 15) & !15;
         mir.stack_size = u32::try_from(frame).map_err(|_| Error::Limit)?;
         mir.preserve = self.preserve;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowir::{
+        builder::FunctionBuilder,
+        model::{InstructionKind as I, Program},
+    };
+
+    #[test]
+    fn atomic_borrowing_preserves_owners_and_reserves_only_the_aligned_base() -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut builder =
+            FunctionBuilder::new(&mut program, "staging", &[("value", Type::I64)], Type::I64)?;
+        builder.block("entry")?;
+        let value = builder.parameter(0)?;
+        builder.effect(I::Return(Type::I64, Some(value)))?;
+        builder.finish()?;
+        let function = &program.functions()[0];
+        let body = function.body.as_ref().ok_or(Error::Limit)?;
+        let layout = abi::Layout::classify(program.signature(function.signature))?;
+        let flow = super::super::control_flow::Flow::analyze(body)?;
+        let slots = super::super::slot_analysis::analyze(body, &flow)?;
+        let mut facts = Facts::analyze(body, &slots, flow)?;
+        let addresses = super::super::address_facts::Addresses::analyze(body, &mut facts)?;
+        let globals =
+            super::super::global_placement::Globals::analyze(body, &facts, &addresses, &layout, 0)?;
+        let mut mir = Function::new(
+            program.find_symbol(function.name).ok_or(Error::Limit)?,
+            function.signature,
+            body.block(body.layout[0]).name,
+            layout,
+        );
+        let mut placement = Placement::new(body, &mir.layout, globals, true, 1 << R::R8.code());
+        let temp = body.temp_id(0).ok_or(Error::Limit)?;
+        for r in ORDER {
+            placement.owners[usize::from(r.code())] = Some(temp);
+        }
+        placement.owners[usize::from(R::R8.code())] = None;
+        placement.owners[usize::from(R::R12.code())] = None;
+        mir.aligned_base = 64;
+        let addresses = (1 << R::RAX.code()) | (1 << R::R10.code()) | (1 << R::R11.code());
+        let owners = placement.owners;
+        assert_eq!(placement.atomic_staging(addresses, &mir)?, (R::R8, None));
+        assert_eq!(placement.owners, owners);
+        placement.owners[usize::from(R::R8.code())] = Some(temp);
+        let owners = placement.owners;
+        assert_eq!(
+            placement.atomic_staging(addresses, &mir)?,
+            (R::RCX, Some(-8))
+        );
+        assert_eq!(placement.owners, owners);
+        placement.owners[usize::from(R::RBX.code())] = None;
+        assert_eq!(placement.atomic_staging(addresses, &mir)?, (R::RBX, None));
+        assert_ne!(placement.preserve & (1 << R::RBX.code()), 0);
         Ok(())
     }
 }

@@ -311,6 +311,9 @@ impl<'a> Pass<'a> {
                 f.scratch_offset,
                 self.runtime,
             )?,
+            Op::Atomic(op) => op
+                .rebase(f.aligned_disp, f.aligned_bytes)
+                .emit(&mut self.assembler, f.scratch_offset)?,
             Op::Wide(op) => op
                 .rebase(f.aligned_disp, f.aligned_bytes)
                 .emit(&mut self.assembler, self.runtime)?,

@@ -103,6 +103,7 @@ pub(super) enum Op {
     Trap,
     Call(CallSite),
     DynamicCopy,
+    Atomic(super::atomic::Atomic),
     VaStart(super::variadic::Start),
     Bulk(super::bulk::Bulk),
     FloatCopy(super::float_transport::FloatCopy),
@@ -391,6 +392,7 @@ impl Function {
             Op::Exception(op) => {
                 op.write(program, out, |target, out| self.label(program, target, out))?;
             }
+            Op::Atomic(op) => op.write(program, out)?,
             Op::Wide(op) => op.write(program, out)?,
             Op::WideCompare(op) => {
                 op.write(program, out, |target, out| self.label(program, target, out))?;

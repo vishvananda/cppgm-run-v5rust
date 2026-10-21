@@ -191,6 +191,17 @@ pub(super) fn select(
                 I::Runtime(crate::lowir::model::RuntimeInstruction::VaStart(list)) => {
                     selection.va_start(list)?;
                 }
+                I::Runtime(
+                    ref runtime @ (crate::lowir::model::RuntimeInstruction::AtomicLoad(..)
+                    | crate::lowir::model::RuntimeInstruction::AtomicStore(..)
+                    | crate::lowir::model::RuntimeInstruction::AtomicUpdate(..)
+                    | crate::lowir::model::RuntimeInstruction::AtomicCompareExchange {
+                        ..
+                    }
+                    | crate::lowir::model::RuntimeInstruction::Fence(..)),
+                ) => {
+                    selection.atomic(inst.result, runtime)?;
+                }
                 I::Runtime(ref runtime) => {
                     selection.exception(inst.result, runtime, &control.targets)?;
                 }
