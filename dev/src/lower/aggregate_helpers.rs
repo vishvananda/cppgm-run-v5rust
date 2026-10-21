@@ -491,21 +491,18 @@ fn emit(program: &mut Program, graph: &Graph, key: Key, symbol: SymbolId) -> Res
         .ok_or(crate::sema::Error::Invariant(
             "aggregate helper without boundary",
         ))?;
-    let names: Vec<_> = program
-        .signature(signature)
-        .parameters
-        .iter()
-        .map(|parameter| (program.names.get(parameter.name).to_owned(), parameter.ty))
-        .collect();
+    let count = program.signature(signature).parameters.len();
     let mut builder = FunctionBuilder::from_forward_boundary(program, symbol)?;
     builder.block("entry")?;
-    let mut slots = Vec::with_capacity(names.len());
-    for (index, (name, ty)) in names.iter().enumerate() {
-        let slot = builder.slot(name, *ty)?;
+    let mut slots = Vec::with_capacity(count);
+    for index in 0..count {
+        let parameter = &builder.program().signature(signature).parameters[index];
+        let (name, ty) = (parameter.name, parameter.ty);
+        let slot = builder.named_slot(name, ty)?;
         let incoming = builder.parameter(index)?;
         builder.effect(I::Store(
             Facts::memory(false, !matches!(ty, Type::I8 | Type::U8)),
-            *ty,
+            ty,
             incoming,
             slot,
         ))?;

@@ -1,0 +1,10 @@
+int observed;
+struct A {
+  A(int n) { if (n) throw n; }
+  ~A() {}
+};
+struct B {
+  A a;
+  B(int n) noexcept try : a(n) {} catch (int) { ++observed; }
+};
+int main() { B b(0); return observed; }

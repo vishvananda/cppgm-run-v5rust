@@ -3,8 +3,8 @@ use super::{
     Error,
     literals::Constant,
     model::{
-        BlockId, Body, Boundary, Function, Instruction, InstructionKind, Metadata, Parameter,
-        Program, Signature, SymbolId, Value,
+        BlockId, Body, Boundary, Function, Instruction, InstructionKind, Metadata, NameId,
+        Parameter, Program, Signature, SymbolId, Value,
     },
     vocabulary::Type,
 };
@@ -247,8 +247,14 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
     pub(crate) fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {
-        let range_for = matches!(name, "__range" | "__begin" | "__end" | "__idx");
         let name = self.program.names.intern(name)?;
+        self.named_slot(name, ty)
+    }
+    pub(crate) fn named_slot(&mut self, name: NameId, ty: Type) -> Result<Value, Error> {
+        let range_for = matches!(
+            self.program.names.get(name),
+            "__range" | "__begin" | "__end" | "__idx"
+        );
         self.slot_names.push(if range_for {
             super::construction_names::SlotName::RangeFor(name)
         } else {

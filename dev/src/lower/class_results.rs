@@ -97,7 +97,17 @@ impl Function<'_, '_, '_, '_> {
                 self.effect(I::ZeroInit(bytes, align, slot))?;
                 Ok(Some(slot))
             }
-            _ => Ok(Some(self.zero(source)?.value)),
+            ty => {
+                // zero_result uses literal zero for an unreachable continuation,
+                // including a data-member pointer whose language null is -1.
+                let value = if let Some(kind) = crate::lowir::literals::FloatKind::from_type(ty) {
+                    self.builder
+                        .constant(crate::lowir::literals::Constant::Float(kind, 0))?
+                } else {
+                    self.builder.integer(0)?
+                };
+                Ok(Some(value))
+            }
         }
     }
     fn class_result_storage(&mut self, ty: Type) -> Result<Value, Error> {

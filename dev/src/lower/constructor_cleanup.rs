@@ -17,7 +17,6 @@ struct Deferred {
     object: CompletedObject,
     previous: Option<BlockId>,
     entry: Option<BlockId>,
-    attempt: Option<super::handlers::Context>,
     contexts: usize,
 }
 enum CompletedObject {
@@ -75,7 +74,6 @@ impl Function<'_, '_, '_, '_> {
             object,
             previous,
             entry,
-            attempt: self.innermost_try(),
             contexts: self.handlers.contexts.len(),
         });
         self.effect(I::Runtime(R::EhCleanup(Some(block))))?;
@@ -153,7 +151,6 @@ impl Function<'_, '_, '_, '_> {
             object,
             previous,
             entry,
-            attempt,
             contexts: _,
         }: Deferred,
     ) -> Result<(), Error> {
@@ -161,6 +158,7 @@ impl Function<'_, '_, '_, '_> {
         // placement, rather than the next landing, flushes terminate guards.
         self.builder.place_block(landing)?;
         self.terminated = false;
+        let attempt = self.innermost_try();
         if let Some(entry) = entry {
             if let Some(attempt) = attempt {
                 self.emit_try_clauses(attempt)?;
@@ -186,6 +184,11 @@ impl Function<'_, '_, '_, '_> {
             {
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(attempt.entry)?;
+            } else if entry.is_none() && self.handlers.function_try.is_some() {
+                // flush_deferred: a constructor's function-try still encloses
+                // subobject initialization after its source context was popped.
+                self.effect(I::Runtime(R::Resume))?;
+                self.terminated = true;
             } else {
                 self.handler_resume()?;
             }
