@@ -171,7 +171,7 @@ impl Definitions {
     }
     pub(super) fn defer_definition(&mut self, program: &mut Program) -> Result<(), Error> {
         if program.has_definition_sink() {
-            program.stream_last_definition(&mut io::sink())?;
+            program.defer_last_definition()?;
             return Ok(());
         }
         let start = self.bytes.len();
@@ -184,7 +184,8 @@ impl Definitions {
         });
         Ok(())
     }
-    pub(super) fn release_held(&mut self) {
+    pub(super) fn release_held(&mut self, program: &mut Program) {
+        program.release_held_definitions();
         self.spans.append(&mut self.held);
     }
 }

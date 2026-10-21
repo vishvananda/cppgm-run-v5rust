@@ -57,6 +57,10 @@ pub(crate) struct ObjectBuilder {
     image: Image,
     runtime: Symbols,
     ranges: Vec<CodeRange>,
+    // Encoding and relocation ranges stay in physical order. Only completed
+    // definition placement waits for the unit's inert-destructor release.
+    order: Vec<RangeId>,
+    held: Vec<RangeId>,
     pending: Vec<Pending>,
     placements: Vec<Placement>,
     object_symbols: Vec<Option<object::SymbolId>>,
@@ -136,6 +140,8 @@ impl ObjectBuilder {
             image,
             runtime,
             ranges: Vec::new(),
+            order: Vec::new(),
+            held: Vec::new(),
             pending: Vec::new(),
             placements: Vec::new(),
             object_symbols: Vec::new(),
@@ -165,6 +171,7 @@ impl ObjectBuilder {
             base: 0,
             dropped: false,
         });
+        self.order.push(RangeId::new(self.ranges.len() - 1)?);
         Ok(())
     }
 
@@ -207,6 +214,7 @@ impl ObjectBuilder {
                     base: 0,
                     dropped: false,
                 });
+                self.order.push(RangeId::new(self.ranges.len() - 1)?);
             }
         }
         Ok(())
@@ -323,7 +331,8 @@ impl ObjectBuilder {
             .checked_add(locals)
             .ok_or(Error::Limit)?;
         self.placements.resize(count, Placement::default());
-        for index in 0..self.ranges.len() {
+        for position in 0..self.order.len() {
+            let index = self.order[position].index();
             if self.ranges[index].dropped {
                 continue;
             }
@@ -569,7 +578,8 @@ impl ObjectBuilder {
     }
     fn add_symbols(&mut self, program: &Program) -> Result<(), Error> {
         self.object_symbols.resize(self.placements.len(), None);
-        for index in 0..self.ranges.len() {
+        for position in 0..self.order.len() {
+            let index = self.order[position].index();
             if !self.ranges[index].dropped {
                 let _ =
                     self.object_symbol(program, ImageSymbol::Program(self.ranges[index].symbol))?;
@@ -673,10 +683,60 @@ impl ObjectBuilder {
 }
 
 impl crate::lowir::model::DefinitionSink for ObjectBuilder {
-    fn append(&mut self, program: &Program, symbol: SymbolId) -> Result<(), Error> {
-        self.append(program, symbol, self.level)
+    fn append(&mut self, program: &Program, symbol: SymbolId, held: bool) -> Result<(), Error> {
+        self.append(program, symbol, self.level)?;
+        if held {
+            let range = self.order.pop().ok_or(Error::Limit)?;
+            self.held.push(range);
+        }
+        Ok(())
+    }
+    fn release_held(&mut self) {
+        self.order.append(&mut self.held);
     }
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowir::{
+        builder::FunctionBuilder,
+        model::{InstructionKind as I, Metadata},
+        vocabulary::Type,
+    };
+
+    #[test]
+    fn held_definitions_release_ir_before_ordered_object_placement() -> Result<(), Error> {
+        let mut program = Program::default();
+        program.set_definition_sink(Box::new(ObjectBuilder::new(0)?))?;
+        for (name, held) in [("held", true), ("first", false), ("last", false)] {
+            let mut builder = FunctionBuilder::new(&mut program, name, &[], Type::Void)?;
+            builder.metadata(Metadata {
+                binding: Some(SourceBinding::Weak),
+                ..Metadata::default()
+            });
+            builder.block("entry")?;
+            builder.effect(I::Return(Type::Void, None))?;
+            builder.finish()?;
+            if held {
+                program.defer_last_definition()?;
+            } else {
+                program.stream_last_definition(&mut std::io::sink())?;
+            }
+            assert!(program.functions().iter().all(|f| f.body.is_none()));
+            if name == "first" {
+                program.release_held_definitions();
+            }
+        }
+        program.release_held_definitions();
+        let object = compile(&mut program, Vec::new(), 0)?;
+        let names: Vec<_> = (0..object.symbol_count())
+            .map(|index| object.symbol_id(index).map(|id| object.symbol_name(id)))
+            .collect::<Result<_, _>>()?;
+        assert_eq!(names, [b"".as_slice(), b"first", b"held", b"last"]);
+        Ok(())
     }
 }

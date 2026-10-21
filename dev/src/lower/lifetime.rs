@@ -379,6 +379,18 @@ impl Function<'_, '_, '_, '_> {
             }
             return Ok(());
         }
+        self.register_local_cleanup(entity, ty)
+    }
+    /// Unlike ordinary locals, catch copies retain even inert destructor calls
+    /// (`exception_lowering.cpp::catch_variable`).
+    pub(super) fn register_catch_destruction(&mut self, entity: EntityId) -> Result<(), Error> {
+        let ty = self.local_object_type(entity)?;
+        if self.symbols.storage_destructor(ty)?.is_none() {
+            return Ok(());
+        }
+        self.register_local_cleanup(entity, ty)
+    }
+    fn register_local_cleanup(&mut self, entity: EntityId, ty: TypeId) -> Result<(), Error> {
         let storage =
             *self
                 .locals

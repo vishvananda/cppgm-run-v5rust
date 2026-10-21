@@ -401,7 +401,7 @@ impl Function<'_, '_, '_, '_> {
                     self.construct_from(constructor, address, caught)?;
                     self.handlers.explicit -= 1;
                 }
-                self.register_local_destruction(entity)?;
+                self.register_catch_destruction(entity)?;
                 return Ok(());
             }
             _ => {

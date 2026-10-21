@@ -136,6 +136,42 @@ impl<'a> FunctionBuilder<'a> {
             publish: true,
         })
     }
+    /// Complete a generated callable whose boundary was published at demand.
+    /// Its named parameters and ABI facts are shared with earlier callers.
+    pub(crate) fn from_forward_boundary(
+        program: &'a mut Program,
+        symbol: SymbolId,
+    ) -> Result<Self, Error> {
+        let signature = program.forward_boundary(symbol).ok_or_else(|| {
+            Error::Construction("generated function without forward boundary".into())
+        })?;
+        let metadata = program
+            .callee_metadata(Value::Symbol(symbol))
+            .copied()
+            .ok_or(Error::Limit)?;
+        let parameters = &program.signature(signature).parameters;
+        let mut body = Body::new(None, parameters.len());
+        for parameter in parameters {
+            let temp = body.use_temp(parameter.name, 0)?;
+            body.temp_mut(temp).ty = Some(parameter.ty);
+        }
+        let function = Function {
+            name: program.symbol(symbol).name,
+            signature,
+            metadata,
+            body: None,
+            location: None,
+        };
+        Ok(Self {
+            program,
+            symbol,
+            function,
+            body,
+            block: None,
+            slot_names: Vec::new(),
+            publish: true,
+        })
+    }
     pub(crate) fn complete(program: &'a mut Program, symbol: SymbolId) -> Result<Self, Error> {
         let source = program
             .function(program.symbol(symbol))
@@ -953,7 +989,13 @@ mod tests {
     fn late_declarations_do_not_replace_the_completed_definition() -> Result<(), Error> {
         struct Sink;
         impl crate::lowir::model::DefinitionSink for Sink {
-            fn append(&mut self, program: &Program, symbol: SymbolId) -> Result<(), Error> {
+            fn append(
+                &mut self,
+                program: &Program,
+                symbol: SymbolId,
+                held: bool,
+            ) -> Result<(), Error> {
+                assert!(!held);
                 assert_eq!(program.names.get(program.symbol(symbol).name), "body");
                 assert!(
                     program
@@ -964,6 +1006,7 @@ mod tests {
                 );
                 Ok(())
             }
+            fn release_held(&mut self) {}
             fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
                 self
             }

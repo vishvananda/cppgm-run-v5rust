@@ -457,6 +457,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 .map_err(|_| Error::Missing("helper label formatting"))?;
         }
         let symbol = self.table.allocate(program, &spelling, None, true)?;
+        super::aggregate_helpers::declare(program, self, self.graph, key, symbol)?;
         self.aggregate_helpers.insert(key, symbol);
         Ok(symbol)
     }
@@ -2490,6 +2491,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
     ) -> Result<(), Error> {
         output.generated(&mut self.generated_definitions);
         if self.table.object_mode {
+            if let super::construction::Entry::Function(entity) = entry
+                && self.destructor_inert(entity)?
+            {
+                return output.defer_definition(program);
+            }
             return output.stream(program, None);
         }
         let destructor = if matches!(self.entry_facts(entry)?.name, FunctionName::Destructor(_)) {

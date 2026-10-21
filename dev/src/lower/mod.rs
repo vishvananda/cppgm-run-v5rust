@@ -147,7 +147,7 @@ fn finish_unit(
 ) -> Result<Option<crate::lowir::model::SymbolId>, Error> {
     symbols.emit_thunks(program, definitions)?;
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
-    definitions.release_held();
+    definitions.release_held(program);
     globals::finish(program, symbols, graph)?;
     symbols.finish_class_declarations(program, None)?;
     symbols.resolve_runtime_roles(program, definitions)?;

@@ -83,7 +83,8 @@ impl Names {
 }
 /// A consumer owns only its phase's encoded state, never front-end facts.
 pub(crate) trait DefinitionSink: std::any::Any {
-    fn append(&mut self, program: &Program, symbol: SymbolId) -> Result<(), Error>;
+    fn append(&mut self, program: &Program, symbol: SymbolId, held: bool) -> Result<(), Error>;
+    fn release_held(&mut self);
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
 }
 #[derive(Default)]
@@ -301,24 +302,34 @@ impl Program {
         &mut self,
         output: &mut impl std::io::Write,
     ) -> Result<(), Error> {
-        self.stream_last_function(output, false).map(|_| ())
+        self.stream_last_function(output, false, false).map(|_| ())
     }
     pub(crate) fn stream_last_body(
         &mut self,
         output: &mut impl std::io::Write,
     ) -> Result<SymbolId, Error> {
-        self.stream_last_function(output, true)
+        self.stream_last_function(output, true, false)
+    }
+    pub(crate) fn defer_last_definition(&mut self) -> Result<(), Error> {
+        self.stream_last_function(&mut std::io::sink(), false, true)
+            .map(|_| ())
+    }
+    pub(crate) fn release_held_definitions(&mut self) {
+        if let Some(sink) = self.definition_sink.as_mut() {
+            sink.release_held();
+        }
     }
     fn stream_last_function(
         &mut self,
         output: &mut impl std::io::Write,
         body_only: bool,
+        held: bool,
     ) -> Result<SymbolId, Error> {
         let symbol = self
             .completed_definition
             .ok_or_else(|| Error::Construction("missing completed definition".into()))?;
         if let Some(mut sink) = self.definition_sink.take() {
-            let result = sink.append(self, symbol);
+            let result = sink.append(self, symbol, held);
             self.definition_sink = Some(sink);
             result?;
         } else {

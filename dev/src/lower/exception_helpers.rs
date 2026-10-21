@@ -75,6 +75,32 @@ pub(super) fn declare(program: &mut Program, symbols: Helpers) -> Result<(), Err
         },
     )?;
     program.publish_runtime_declaration(symbols.terminate);
+    let exception = program.names.intern("exception_object")?;
+    let signature = program.add_signature(crate::lowir::model::Signature {
+        parameters: vec![crate::lowir::model::Parameter {
+            name: exception,
+            ty: Type::Ptr,
+            pass: None,
+            object_bytes: 0,
+            no_alias: false,
+            classes: None,
+        }],
+        result: Type::Void,
+        boundary: Boundary {
+            unwind: Unwind::No,
+            returns: Returns::NoReturn,
+            ..Boundary::default()
+        },
+    })?;
+    program.set_forward_boundary(
+        symbols.helper,
+        signature,
+        Metadata {
+            binding: Some(Binding::Internal),
+            flags: 32,
+            ..Metadata::default()
+        },
+    );
     Ok(())
 }
 pub(super) fn emit_pending(
@@ -85,26 +111,7 @@ pub(super) fn emit_pending(
     let Some(helpers) = symbols.take_terminate_helper() else {
         return Ok(());
     };
-    let name = program
-        .names
-        .get(program.symbol(helpers.helper).name)
-        .to_owned();
-    let mut builder = FunctionBuilder::new(
-        program,
-        &name,
-        &[("exception_object", Type::Ptr)],
-        Type::Void,
-    )?;
-    builder.metadata(Metadata {
-        binding: Some(Binding::Internal),
-        flags: 32,
-        ..Metadata::default()
-    });
-    builder.boundary(Boundary {
-        unwind: Unwind::No,
-        returns: Returns::NoReturn,
-        ..Boundary::default()
-    });
+    let mut builder = FunctionBuilder::from_forward_boundary(program, helpers.helper)?;
     builder.block("entry")?;
     let parameter = builder.parameter(0)?;
     let arguments = builder.arguments(&[parameter])?;

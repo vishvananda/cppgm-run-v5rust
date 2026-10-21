@@ -419,28 +419,40 @@ pub(super) fn emit_pending(
         .get(symbols.aggregate_helpers.next)
     {
         symbols.aggregate_helpers.next += 1;
-        emit(program, symbols, graph, key, symbol)?;
+        emit(program, graph, key, symbol)?;
         output.stream(program, None)?;
     }
     Ok(())
 }
-fn emit(
+pub(super) fn declare(
     program: &mut Program,
     symbols: &Symbols<'_, '_>,
     graph: &Graph,
     key: Key,
     symbol: SymbolId,
 ) -> Result<(), Error> {
-    let (members, _) = graph.lower_class_members(key.class)?;
-    let mut names = vec![("this".to_owned(), Type::Ptr)];
-    for &member in members.iter().take(key.count) {
-        let name = graph.lower_local_name(member).ok_or(Error::Semantic(
-            crate::sema::Error::Invariant("helper unnamed member"),
-        ))?;
+    let mut parameters = vec![crate::lowir::model::Parameter {
+        name: program.names.intern("this")?,
+        ty: Type::Ptr,
+        pass: None,
+        object_bytes: graph.lower_class_layout(key.class)?.0,
+        no_alias: false,
+        classes: None,
+    }];
+    for &member in graph
+        .lower_class_member_entities(key.class)
+        .iter()
+        .take(key.count)
+    {
+        let name = graph
+            .lower_local_name(member)
+            .ok_or(crate::sema::Error::Invariant("helper unnamed member"))?;
+        let name = program.names.intern(symbols.identifier(name)?)?;
         let ty = graph.lower_entity_type(member)?;
-        names.push((
-            symbols.identifier(name)?.to_owned(),
-            if matches!(
+        let (pass, object_bytes) = super::function::reference_boundary(graph, ty)?;
+        parameters.push(crate::lowir::model::Parameter {
+            name,
+            ty: if matches!(
                 graph.lower_type(ty)?,
                 TypeView::Array { .. } | TypeView::Reference { .. }
             ) {
@@ -448,28 +460,44 @@ fn emit(
             } else {
                 types::storage(graph, ty)?
             },
-        ));
+            pass,
+            object_bytes,
+            no_alias: false,
+            classes: None,
+        });
     }
-    let parameters: Vec<_> = names
+    let signature = program.add_signature(crate::lowir::model::Signature {
+        parameters,
+        result: Type::Void,
+        boundary: Boundary {
+            unwind: Unwind::No,
+            ..Boundary::default()
+        },
+    })?;
+    program.set_forward_boundary(
+        symbol,
+        signature,
+        Metadata {
+            binding: Some(Binding::Internal),
+            ..Metadata::default()
+        },
+    );
+    Ok(())
+}
+fn emit(program: &mut Program, graph: &Graph, key: Key, symbol: SymbolId) -> Result<(), Error> {
+    let (members, _) = graph.lower_class_members(key.class)?;
+    let signature = program
+        .forward_boundary(symbol)
+        .ok_or(crate::sema::Error::Invariant(
+            "aggregate helper without boundary",
+        ))?;
+    let names: Vec<_> = program
+        .signature(signature)
+        .parameters
         .iter()
-        .map(|(name, ty)| (name.as_str(), *ty))
+        .map(|parameter| (program.names.get(parameter.name).to_owned(), parameter.ty))
         .collect();
-    let name = program.names.get(program.symbol(symbol).name).to_owned();
-    let mut builder = FunctionBuilder::new(program, &name, &parameters, Type::Void)?;
-    builder.metadata(Metadata {
-        binding: Some(Binding::Internal),
-        ..Metadata::default()
-    });
-    builder.boundary(Boundary {
-        unwind: Unwind::No,
-        ..Boundary::default()
-    });
-    builder.parameter_boundary(0, None, graph.lower_class_layout(key.class)?.0, false)?;
-    for (index, &member) in members.iter().take(key.count).enumerate() {
-        let (pass, bytes) =
-            super::function::reference_boundary(graph, graph.lower_entity_type(member)?)?;
-        builder.parameter_boundary(index + 1, pass, bytes, false)?;
-    }
+    let mut builder = FunctionBuilder::from_forward_boundary(program, symbol)?;
     builder.block("entry")?;
     let mut slots = Vec::with_capacity(names.len());
     for (index, (name, ty)) in names.iter().enumerate() {
