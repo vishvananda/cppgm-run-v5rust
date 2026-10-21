@@ -71,6 +71,18 @@ impl Symbols<'_, '_> {
 }
 
 impl Symbols<'_, '_> {
+    pub(in crate::lower) fn function_facts(
+        &self,
+        entity: EntityId,
+    ) -> Result<crate::sema::lowering::FunctionFacts, Error> {
+        self.entry_facts(crate::lower::construction::Entry::Function(entity))
+    }
+    pub(in crate::lower) fn entry_facts(
+        &self,
+        entry: crate::lower::construction::Entry,
+    ) -> Result<crate::sema::lowering::FunctionFacts, Error> {
+        entry.facts_in_mode(self.graph, self.object_mode())
+    }
     pub(in crate::lower) fn callee(
         &mut self,
         entity: EntityId,
@@ -94,7 +106,7 @@ impl Symbols<'_, '_> {
             return Ok(*symbol);
         }
         let name = self.name(entity)?;
-        let facts = self.graph.lower_function(entity)?;
+        let facts = self.function_facts(entity)?;
         let metadata = self.metadata(program, entity, &name)?;
         let object = if facts.builtin.is_some() {
             metadata.object.or(Some(program.names.intern(&name)?))

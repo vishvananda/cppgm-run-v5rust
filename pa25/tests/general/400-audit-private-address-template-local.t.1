@@ -1,0 +1,1 @@
+static int n=7; struct I{virtual int f()=0;}; template<int* P>I* make(){struct L:I{int f(){return *P;}};return new L;} int other();int main(){return make<&n>()->f()+other()==16?0:1;}

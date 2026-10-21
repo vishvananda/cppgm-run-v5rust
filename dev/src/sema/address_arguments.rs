@@ -52,6 +52,28 @@ impl Graph {
         }
         Ok(self.lower_variable(entity)?.locality == super::lowering::Locality::Unit)
     }
+    pub(super) fn address_argument_object_local(&self, entity: EntityId) -> Result<bool, Error> {
+        let node = self.entity(entity);
+        if node.function.is_some() {
+            return self.lower_function_local_in_mode(entity, true);
+        }
+        let variable = node
+            .variable
+            .ok_or(Error::Invariant("address argument without variable"))?;
+        if variable.internal_linkage {
+            return Ok(true);
+        }
+        if let Some(class) = node
+            .home
+            .filter(|&home| self.scope(home).kind == ScopeKind::Class)
+            .and_then(|home| self.scope(home).owner)
+            && self.lower_object_type_unit_local(self.lower_entity_type(class)?)?
+        {
+            return Ok(true);
+        }
+        Ok(variable.language != super::linkage::Language::C
+            && self.lower_object_type_unit_local(self.lower_entity_type(entity)?)?)
+    }
     pub(super) fn reference_argument_entity(&self, binding: EntityId) -> Option<EntityId> {
         let argument = self.constant_addresses.argument(binding)?;
         if let TypeKind::Address { ty, entity } = self.types.get(argument).kind

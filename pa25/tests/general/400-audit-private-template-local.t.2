@@ -1,0 +1,1 @@
+namespace {struct P{}; int n=9;} struct I{virtual int f()=0;}; template<class T>I* make(){struct L:I{int f(){return n;}};return new L;} int other(){return make<P>()->f();}

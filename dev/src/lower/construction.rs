@@ -36,11 +36,22 @@ pub(super) enum Entry {
 }
 impl Entry {
     pub(super) fn facts(self, graph: &Graph) -> Result<FunctionFacts, Error> {
+        self.facts_in_mode(graph, false)
+    }
+    pub(super) fn facts_in_mode(
+        self,
+        graph: &Graph,
+        object_mode: bool,
+    ) -> Result<FunctionFacts, Error> {
         Ok(match self {
             Self::Function(entity)
             | Self::DestructorBase(entity)
-            | Self::DestructorDeleting(entity) => graph.lower_function(entity)?,
-            Self::Constructor(id, _) => graph.lower_constructor_function(id)?,
+            | Self::DestructorDeleting(entity) => {
+                graph.lower_function_in_mode(entity, object_mode)?
+            }
+            Self::Constructor(id, _) => {
+                graph.lower_constructor_function_in_mode(id, object_mode)?
+            }
         })
     }
     pub(super) fn hidden_vtt(self, graph: &Graph) -> Result<bool, Error> {

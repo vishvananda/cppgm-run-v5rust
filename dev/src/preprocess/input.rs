@@ -490,7 +490,7 @@ impl<'a> SourceInput<'a> {
             if paths {
                 for directory in &self.include_paths {
                     let mut path = directory.clone();
-                    if !path.ends_with(b"/") {
+                    if !path.is_empty() && !path.ends_with(b"/") {
                         path.push(b'/');
                     }
                     path.extend_from_slice(name);

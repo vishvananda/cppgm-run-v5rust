@@ -543,9 +543,16 @@ impl Graph {
         &self,
         id: ConstructorId,
     ) -> Result<FunctionFacts, Error> {
+        self.lower_constructor_function_in_mode(id, false)
+    }
+    pub(crate) fn lower_constructor_function_in_mode(
+        &self,
+        id: ConstructorId,
+        object_mode: bool,
+    ) -> Result<FunctionFacts, Error> {
         let plan = self.constructors.get(id);
         if let Some(entity) = self.lower_constructor_entity(id) {
-            return self.lower_function(entity);
+            return self.lower_function_in_mode(entity, object_mode);
         }
         let class = self.entity(plan.class);
         Ok(FunctionFacts {
@@ -557,8 +564,11 @@ impl Graph {
                 .ok_or(Error::Invariant("constructor without class scope"))?,
             ty: plan.callable_type,
             scope: None,
-            internal: self.lower_entity_unit_local(plan.class)?
-                && !self.lower_shared_local(plan.class)?,
+            internal: (if object_mode {
+                self.lower_object_type_unit_local(self.lower_entity_type(plan.class)?)?
+            } else {
+                self.lower_entity_unit_local(plan.class)?
+            }) && !self.lower_shared_local_in_mode(plan.class, object_mode)?,
             declared_linkage: DeclaredLinkage::External,
             c_linkage: false,
             emission: Emission::Demanded,
@@ -1151,7 +1161,7 @@ impl Graph {
         self.lower_type_entity_locality(
             ty,
             |graph, entity| graph.lower_entity_scope_local(entity, true),
-            Self::address_argument_unit_local,
+            Self::address_argument_object_local,
         )
     }
     pub(super) fn lower_type_entity_locality(
@@ -1639,6 +1649,13 @@ impl Graph {
             .ok_or(Error::Invariant("lowering declarator without binding"))
     }
     pub(crate) fn lower_function(&self, id: EntityId) -> Result<FunctionFacts, Error> {
+        self.lower_function_in_mode(id, false)
+    }
+    pub(crate) fn lower_function_in_mode(
+        &self,
+        id: EntityId,
+        object_mode: bool,
+    ) -> Result<FunctionFacts, Error> {
         let id = self.lower_function_entity(id);
         let entity = self.entity(id);
         if self.function_templates.primary(id).is_some()
@@ -1731,7 +1748,7 @@ impl Graph {
             )?,
             ty: entity.ty.ok_or(Error::Invariant("function without type"))?,
             scope: entity.scope,
-            internal: self.lower_function_unit_local(id)?,
+            internal: self.lower_function_local_in_mode(id, object_mode)?,
             declared_linkage: if function.internal_linkage {
                 DeclaredLinkage::Internal
             } else {

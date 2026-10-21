@@ -436,7 +436,7 @@ impl Symbols<'_, '_> {
             return Ok(symbol);
         }
         if let Some(key) = key
-            && self.graph.lower_function(key)?.emission == Emission::Always
+            && self.function_facts(key)?.emission == Emission::Always
             && metadata.binding != Some(Binding::Internal)
         {
             metadata.binding = Some(Binding::Strong);
@@ -778,7 +778,7 @@ impl Symbols<'_, '_> {
             }
             return Ok(self.vtables.thunks[index].symbol);
         }
-        let facts = entry.facts(self.graph)?;
+        let facts = self.entry_facts(entry)?;
         let target = self.entry_symbol(program, entry)?;
         let variant = if matches!(entry, Entry::DestructorDeleting(_)) {
             super::super::construction::Variant::Deleting
@@ -1318,7 +1318,7 @@ impl Symbols<'_, '_> {
         if let Some(&signature) = self.vtables.signatures.get(&entity) {
             return Ok(signature);
         }
-        let facts = self.graph.lower_function(entity)?;
+        let facts = self.function_facts(entity)?;
         let signature = function::signature(program, self, self.graph, facts.ty, facts.nothrow)?;
         let class = facts
             .object
@@ -1582,7 +1582,7 @@ impl Symbols<'_, '_> {
         table: EntityId,
         slot: usize,
     ) -> Result<Option<EntityId>, Error> {
-        let owner = self.graph.lower_function(function)?.object;
+        let owner = self.function_facts(function)?.object;
         let mut below = true;
         let mut link = Some(table);
         while let Some(class) = link {
@@ -1625,9 +1625,9 @@ impl Symbols<'_, '_> {
     ) -> Result<(), Error> {
         if let Entry::Function(entity) = entry
             && self.graph.lower_virtual_slot(entity).is_some()
-            && !self.graph.lower_function(entity)?.internal
+            && !self.function_facts(entity)?.internal
             && !self.graph.lower_virtual_pure(entity)
-            && let Some(class) = self.graph.lower_function(entity)?.object
+            && let Some(class) = self.function_facts(entity)?.object
         {
             self.prepare_definition_thunks(class)?;
             let symbol = self.entry_symbol(program, entry)?;

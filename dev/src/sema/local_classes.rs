@@ -113,7 +113,7 @@ impl Graph {
         self.lower_type_entity_locality(
             ty,
             Self::lower_private_entity_name,
-            Self::address_argument_unit_local,
+            Self::address_argument_object_local,
         )
     }
     fn lower_private_entity_name(&self, mut class: EntityId) -> Result<bool, Error> {
@@ -187,9 +187,6 @@ impl Graph {
             return self.lower_types_local_in_mode(parameters, true);
         }
     }
-    pub(super) fn lower_shared_local(&self, class: EntityId) -> Result<bool, Error> {
-        self.lower_shared_local_in_mode(class, false)
-    }
     pub(super) fn lower_shared_local_in_mode(
         &self,
         mut class: EntityId,
@@ -229,6 +226,9 @@ impl Graph {
             {
                 return Ok(false);
             }
+            if self.lower_function_arguments_local_in_mode(function, object_mode)? {
+                return Ok(false);
+            }
             if node
                 .function
                 .is_some_and(|facts| facts.language != super::linkage::Language::C)
@@ -258,18 +258,28 @@ impl Graph {
     }
 
     pub(super) fn lower_function_unit_local(&self, function: EntityId) -> Result<bool, Error> {
+        self.lower_function_local_in_mode(function, false)
+    }
+    pub(crate) fn lower_function_local_in_mode(
+        &self,
+        function: EntityId,
+        object_mode: bool,
+    ) -> Result<bool, Error> {
         let node = self.entity(function);
         let facts = node
             .function
             .ok_or(Error::Invariant("function locality without function"))?;
         if facts.internal_linkage
-            || self.lower_function_arguments_unit_local(function)?
+            || self.lower_function_arguments_local_in_mode(function, object_mode)?
             || node
                 .home
                 .filter(|&home| self.scope(home).kind == ScopeKind::Class)
                 .and_then(|home| self.scope(home).owner)
                 .map(|class| {
-                    Ok(self.lower_entity_unit_local(class)? && !self.lower_shared_local(class)?)
+                    Ok(self.lower_types_local_in_mode(
+                        &[self.lower_entity_type(class)?],
+                        object_mode,
+                    )? && !self.lower_shared_local_in_mode(class, object_mode)?)
                 })
                 .transpose()?
                 .unwrap_or(false)
@@ -290,7 +300,7 @@ impl Graph {
         else {
             return Err(Error::Invariant("function locality without signature"));
         };
-        if self.lower_types_unit_local(parameters)? {
+        if self.lower_types_local_in_mode(parameters, object_mode)? {
             return Ok(true);
         }
         let mut bare = result;
@@ -302,7 +312,7 @@ impl Graph {
         }
         if let super::types::TypeKind::Class(class) | super::types::TypeKind::Enum(class) =
             self.types.get(bare).kind
-            && (self.lower_shared_local(class)?
+            && (self.lower_shared_local_in_mode(class, object_mode)?
                 || self
                     .entity(class)
                     .home
@@ -311,12 +321,9 @@ impl Graph {
         {
             return Ok(false);
         }
-        self.lower_type_unit_local(result)
+        self.lower_types_local_in_mode(&[result], object_mode)
     }
 
-    fn lower_types_unit_local(&self, types: &[super::types::TypeId]) -> Result<bool, Error> {
-        self.lower_types_local_in_mode(types, false)
-    }
     fn lower_types_local_in_mode(
         &self,
         types: &[super::types::TypeId],
@@ -334,16 +341,17 @@ impl Graph {
         Ok(false)
     }
 
-    pub(super) fn lower_function_arguments_unit_local(
+    fn lower_function_arguments_local_in_mode(
         &self,
         function: EntityId,
+        object_mode: bool,
     ) -> Result<bool, Error> {
         // symbol_lowering.cpp::argument_locality: only this specialization's
         // canonical arguments determine its argument locality.
         self.function_templates
             .arguments
             .get(&function)
-            .map(|arguments| self.lower_types_unit_local(arguments))
+            .map(|arguments| self.lower_types_local_in_mode(arguments, object_mode))
             .transpose()
             .map(|local| local.unwrap_or(false))
     }

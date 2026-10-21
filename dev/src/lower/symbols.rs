@@ -992,7 +992,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(id);
         }
         if let Some(function) = self.graph.lower_local_scope(scope) {
-            let facts = self.graph.lower_function(function)?;
+            let facts = self.function_facts(function)?;
             let node = if facts.c_linkage
                 || matches!(facts.name,
                 FunctionName::Identifier(name) if self.cursor.name(name) == b"main")
@@ -1273,7 +1273,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     let terminal = if let Some(closure) = self.graph.lower_closure(entity)
                         && self.graph.lower_numbered_closure(entity)
                     {
-                        let facts = self.graph.lower_function(closure.call)?;
+                        let facts = self.function_facts(closure.call)?;
                         let TypeView::Function { parameters, .. } =
                             self.graph.lower_type(facts.ty)?
                         else {
@@ -1457,7 +1457,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(std::sync::Arc::clone(name));
         }
         if !self.ordinals.contains_key(&entity) {
-            let facts = self.graph.lower_function(entity)?;
+            let facts = self.function_facts(entity)?;
             if matches!(facts.name, FunctionName::Constructor(_)) {
                 let class = facts
                     .object
@@ -1480,7 +1480,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 }
             }
         }
-        let facts = self.graph.lower_function(entity)?;
+        let facts = self.function_facts(entity)?;
         let own = match facts.builtin {
             _ if self.graph.lower_is_closure_invoker(entity) => "_FUN".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memcmp) => "memcmp".to_owned(),
@@ -2096,7 +2096,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
     ) -> Result<Metadata, Error> {
         use crate::lowir::vocabulary::{Binding, Role};
         let entity = self.graph.lower_function_entity(entity);
-        let facts = self.graph.lower_function(entity)?;
+        let facts = self.function_facts(entity)?;
         if name == "main" && self.graph.lower_presentation_scope(facts.home).0.is_none() {
             return Ok(Metadata {
                 role: Some(Role::Entry),
@@ -2250,7 +2250,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.entries.insert(entry, symbol);
             return Ok(symbol);
         }
-        let facts = entry.facts(self.graph)?;
+        let facts = self.entry_facts(entry)?;
         let mut components = vec![self.function_label(facts.name, facts.label)?];
         let mut scope = facts.home;
         while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
@@ -2309,7 +2309,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
     ) -> Result<Metadata, Error> {
         let name = program.names.get(program.symbol(symbol).name).to_owned();
         let mut metadata = self.entry_metadata(program, entry, &name)?;
-        let facts = entry.facts(self.graph)?;
+        let facts = self.entry_facts(entry)?;
         if entry
             .entity(self.graph)
             .is_some_and(|entity| self.graph.lower_explicit_function_root(entity))
@@ -2354,7 +2354,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
             return Ok(metadata);
         }
-        let facts = entry.facts(self.graph)?;
+        let facts = self.entry_facts(entry)?;
         let object = if let Some(&object) = self.entry_objects.get(&entry) {
             object
         } else {
@@ -2429,7 +2429,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         if let Entry::Function(entity) = entry
             && matches!(
-                self.graph.lower_function(entity)?.name,
+                self.function_facts(entity)?.name,
                 FunctionName::Destructor(_)
             )
         {
@@ -2440,7 +2440,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             {
                 return Ok(());
             }
-            let facts = self.graph.lower_function(entity)?;
+            let facts = self.function_facts(entity)?;
             let encoding = self.encode_function(&facts, Variant::Base)?;
             let mut bytes = Vec::new();
             abi::encoder::Encoder::encode(
@@ -2463,7 +2463,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             {
                 return Ok(());
             }
-            let facts = entry.facts(self.graph)?;
+            let facts = self.entry_facts(entry)?;
             let encoding = self.encode_function(&facts, Variant::Base)?;
             let mut object = Vec::new();
             abi::encoder::Encoder::encode(
@@ -2492,7 +2492,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if self.table.object_mode {
             return output.stream(program, None);
         }
-        let destructor = if matches!(entry.facts(self.graph)?.name, FunctionName::Destructor(_)) {
+        let destructor = if matches!(self.entry_facts(entry)?.name, FunctionName::Destructor(_)) {
             entry.entity(self.graph)
         } else {
             None
@@ -2501,7 +2501,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let family = if let Some(&family) = self.entry_families.get(&id) {
                 family
             } else {
-                let facts = entry.facts(self.graph)?;
+                let facts = self.entry_facts(entry)?;
                 let object = if facts.internal {
                     None
                 } else {
@@ -2525,7 +2525,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let family = if let Some(&family) = self.destructor_families.get(&entity) {
                 family
             } else {
-                let facts = entry.facts(self.graph)?;
+                let facts = self.entry_facts(entry)?;
                 let object = if facts.internal {
                     None
                 } else {
@@ -2598,7 +2598,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
     }
     pub(super) fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
-        let facts = self.graph.lower_function(entity)?;
+        let facts = self.function_facts(entity)?;
         self.encode_function(&facts, super::construction::Variant::Complete)
     }
     fn encode_function(
