@@ -24,7 +24,8 @@ pub(crate) enum BuiltinFunction {
     Strlen,
     Unreachable,
     Invoke,
-    Floating(super::floating_intrinsics::FloatingIntrinsic),
+    Floating(super::floating_intrinsics::FloatingOperation),
+    LibraryNan(F),
 }
 
 #[cfg(test)]
@@ -115,7 +116,7 @@ pub(super) struct BuiltinNames {
     pub memset: NameId,
     pub strlen: NameId,
     pub unreachable: NameId,
-    pub floating: Vec<(NameId, super::floating_intrinsics::FloatingIntrinsic)>,
+    pub floating: Vec<(NameId, super::floating_intrinsics::FloatingOperation)>,
 }
 impl Analyzer<'_> {
     pub(super) fn ensure_builtin(
@@ -213,6 +214,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Strlen
                     | BuiltinFunction::Unreachable
                     | BuiltinFunction::Invoke
+                    | BuiltinFunction::LibraryNan(_)
                     | BuiltinFunction::Floating(_) => {
                         return Err(Error::Invariant("memory builtin signature"));
                     }
@@ -304,9 +306,7 @@ impl Analyzer<'_> {
                 .entity(self.graph.binding(binding).entity)
                 .builtin
         {
-            return self
-                .floating_intrinsic(id, arguments, kind, scope)
-                .map(Some);
+            return self.floating_builtin(id, arguments, kind, scope).map(Some);
         }
         if components.len() != 1 || found.binding.is_some() {
             return Ok(None);
@@ -318,6 +318,16 @@ impl Analyzer<'_> {
             *found = builtin;
             if key == self.builtin_names.invoke {
                 return self.builtin_invoke(id, arguments, scope).map(Some);
+            }
+            if let Some(binding) = found.binding
+                && let Some(BuiltinFunction::Floating(operation)) = self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .builtin
+            {
+                return self
+                    .floating_builtin(id, arguments, operation, scope)
+                    .map(Some);
             }
             return Ok(None);
         }

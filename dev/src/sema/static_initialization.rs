@@ -524,12 +524,12 @@ impl Analyzer<'_> {
                     return Ok(None);
                 }
                 Value::Floating(ty, bits) => {
+                    if kind.bits == 1 {
+                        return Ok(Some(Value::Integer(u64::from(bits & !float_sign(ty) != 0))));
+                    }
                     let Some((significand, exponent, negative)) = float_parts(ty, bits) else {
                         return Ok(None);
                     };
-                    if kind.bits == 1 {
-                        return Ok(Some(Value::Integer(u64::from(significand != 0))));
-                    }
                     let magnitude = if exponent < 0 {
                         significand
                             .checked_shr(
@@ -566,6 +566,23 @@ impl Analyzer<'_> {
         if let TypeKind::Scalar(Scalar::Basic(target)) = self.graph.types.get(target).kind
             && matches!(target, F::Float | F::Double | F::LongDouble)
         {
+            if let Value::Floating(from, bits) = value
+                && from != target
+            {
+                use crate::types::float_value::{BinaryFloat, Format};
+                let from = Format::of(from).ok_or(Error::Invariant("static floating source"))?;
+                let format =
+                    Format::of(target).ok_or(Error::Invariant("static floating target"))?;
+                let floating = BinaryFloat::from_bits(from, bits)
+                    .ok_or(Error::Invariant("static floating encoding"))?;
+                if floating.is_nan() || floating.is_infinite() {
+                    let bits = floating
+                        .converted(format)
+                        .and_then(|value| value.bits(format))
+                        .ok_or(Error::Invariant("static nonfinite floating conversion"))?;
+                    return Ok(Some(Value::Floating(target, bits)));
+                }
+            }
             let (significand, exponent, negative) = match value {
                 Value::Floating(from, _) if from == target => return Ok(Some(value)),
                 Value::Floating(from, bits) => {

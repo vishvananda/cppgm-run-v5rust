@@ -149,6 +149,16 @@ impl BinaryFloat {
         let (significand, exponent) = self.parts();
         Self::round(self.negative(), significand, exponent, format)
     }
+    /// A constant scalar conversion uses the oracle's hardware precision
+    /// change. Narrow destinations quiet a signaling NaN and keep the top
+    /// payload bits, while an x87 destination retains its representation.
+    pub(crate) fn converted(self, format: Format) -> Option<Self> {
+        if self.is_nan() && format != Format::Extended {
+            let quiet = if format == Format::Single { 22 } else { 51 };
+            return Self::from_bits(format, self.bits(format)? | (1 << quiet));
+        }
+        self.rounded(format)
+    }
     pub(crate) fn bits(self, format: Format) -> Option<u128> {
         let value = self.rounded(format)?;
         if format == Format::Extended {
@@ -343,6 +353,34 @@ fn round_shift(value: u128, shift: u64) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn precision_changes_quiet_signaling_nans_without_losing_the_sign() {
+        let negative = BinaryFloat::from_bits(Format::Double, 0xfff0_0000_0000_0001).unwrap();
+        assert_eq!(
+            negative
+                .converted(Format::Single)
+                .unwrap()
+                .bits(Format::Single),
+            Some(0xffc0_0000)
+        );
+        let extended = negative.bits(Format::Extended).unwrap();
+        assert_eq!(
+            negative
+                .converted(Format::Extended)
+                .unwrap()
+                .bits(Format::Extended),
+            Some(extended)
+        );
+        let infinity = BinaryFloat::from_bits(Format::Double, 0xfff0_0000_0000_0000).unwrap();
+        assert_eq!(
+            infinity
+                .converted(Format::Single)
+                .unwrap()
+                .bits(Format::Single),
+            Some(0xff80_0000)
+        );
+    }
     #[test]
     fn target_rounding_range_signed_zero_and_extended_precision() {
         let one = BinaryFloat::integer(1, false);

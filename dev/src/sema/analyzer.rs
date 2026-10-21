@@ -90,6 +90,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) template_arguments: u32,
     pub(super) decltype_call: Option<ast::ExprId>,
     pub(super) builtin_names: super::builtin_calls::BuiltinNames,
+    pub(super) library_nans: [Option<super::graph::BindingId>; 3],
     pub(super) pretyped_callable: Option<ast::ExprId>,
     pub(super) callee_name: Option<ast::ExprId>,
     pub(super) operator_scratch: super::operator_resolution::OperatorScratch,
@@ -202,6 +203,7 @@ impl<'tree> Analyzer<'tree> {
             floating: super::floating_intrinsics::names(cursor)?,
         };
         let mut analyzer = Self {
+            library_nans: [None; 3],
             deduced_pack_element: None,
             decltype_name: cursor
                 .intern_name(b"decltype(...)")

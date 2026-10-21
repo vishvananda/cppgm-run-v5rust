@@ -88,11 +88,13 @@ impl CallPlan {
             passes.push(sig.parameters.get(index).and_then(|p| p.pass));
         }
         let layout = Layout::classify_call(sig, &types)?;
+        // Intrinsic call selection observes emitted declarations, not the
+        // signature-only forward boundary of an O0 streaming definition.
         let builtin =
             if let super::value_facts::Alias::Symbol(symbol) = facts.resolve(body, call.callee) {
                 program
-                    .callee_metadata(Value::Symbol(symbol))
-                    .and_then(|metadata| metadata.object)
+                    .function(program.symbol(symbol))
+                    .and_then(|function| function.metadata.object)
                     .map(|n| program.names.bytes(n))
             } else {
                 None

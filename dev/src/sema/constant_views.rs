@@ -20,6 +20,22 @@ fn without_parentheses(tree: &ast::Tree, mut id: ast::ExprId) -> ast::ExprId {
 }
 
 impl Graph {
+    pub(crate) fn lower_builtin_floating(&self, id: ast::ExprId) -> Result<u128, Error> {
+        let value = self.expression_facts.floating_value(id)?;
+        let value = self.floating_constants.get(value);
+        let super::types::TypeKind::Scalar(super::types::Scalar::Basic(ty)) =
+            self.types.get(value.ty).kind
+        else {
+            return Err(Error::Invariant("floating builtin type"));
+        };
+        value
+            .value
+            .bits(
+                crate::types::float_value::Format::of(ty)
+                    .ok_or(Error::Invariant("floating builtin format"))?,
+            )
+            .ok_or(Error::Invariant("floating builtin encoding"))
+    }
     pub(crate) fn lower_member_argument(
         &self,
         tree: &ast::Tree,

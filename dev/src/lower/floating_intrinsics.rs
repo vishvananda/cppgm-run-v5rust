@@ -23,6 +23,22 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
         let arguments = self.tree.expr_lists.get(arguments);
+        if matches!(kind, Intrinsic::Constant | Intrinsic::SignalingConstant) {
+            let bits = self.graph.lower_builtin_floating(id)?;
+            if kind == Intrinsic::SignalingConstant {
+                self.discard(arguments[0])?;
+            }
+            let ty = super::types::storage(self.graph, source)?;
+            let kind = FloatKind::from_type(ty)
+                .ok_or(crate::sema::Error::Invariant("floating builtin storage"))?;
+            return Ok(RValue {
+                value: self.builder.constant(Constant::Float(kind, bits))?,
+                ty,
+                source,
+                literal: false,
+                bits: None,
+            });
+        }
         if kind.comparison() {
             let x = self.operand(arguments[0], Context::Operand)?;
             let y = self.operand(arguments[1], Context::Operand)?;

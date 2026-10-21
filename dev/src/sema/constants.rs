@@ -1256,7 +1256,7 @@ impl Analyzer<'_> {
                 self.graph.types.get(object).kind,
                 TypeKind::Scalar(Scalar::Bool)
             )
-            && self.is_address_expression(expr)
+            && (self.is_address_expression(expr) || self.floating_expression(expr))
         {
             match self.constant_truth(expr, scope, false) {
                 Ok(value) => Some(Constant {

@@ -287,6 +287,9 @@ struct ClassConversion {
 }
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    // Allocated only when a floating builtin publishes a value. Its compact
+    // handle is indexed directly without enlarging every expression record.
+    floating_values: Vec<Option<super::constant_floats::FloatingId>>,
     call_object_effects: std::collections::HashMap<ast::ExprId, super::call_tables::ObjectEffect>,
     initializer_arrays: std::collections::HashMap<ast::ExprId, TypeId>,
     runtime_casts: std::collections::HashMap<ast::ExprId, super::dynamic_casts::RuntimeCast>,
@@ -318,6 +321,24 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn floating_value(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<super::constant_floats::FloatingId, Error> {
+        self.floating_values
+            .get(self.root(id).index())
+            .copied()
+            .flatten()
+            .ok_or(Error::Invariant("floating builtin without constant value"))
+    }
+    pub(super) fn set_floating_value(
+        &mut self,
+        id: ast::ExprId,
+        value: super::constant_floats::FloatingId,
+    ) {
+        let id = self.root(id);
+        super::record(&mut self.floating_values, id.index(), value);
+    }
     pub(super) fn call_object_effect(
         &self,
         id: ast::ExprId,

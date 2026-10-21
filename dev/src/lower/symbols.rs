@@ -1555,6 +1555,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
             _ if self.graph.lower_is_closure_invoker(entity) => "_FUN".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memcmp) => "memcmp".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memset) => "memset".to_owned(),
+            Some(crate::sema::lowering::BuiltinFunction::LibraryNan(ty)) => match ty {
+                F::Float => "nanf",
+                F::LongDouble => "nanl",
+                _ => "nan",
+            }
+            .to_owned(),
             _ if facts.c_linkage && !facts.internal => self.source_function_spelling(facts.name)?,
             _ => self.function_label(facts.name, facts.label)?,
         };
@@ -2224,6 +2230,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 }
                 B::Memcmp | B::Memset | B::Unreachable | B::Expect | B::Floating(_) => {
                     metadata.linkage = Linkage::C;
+                }
+                B::LibraryNan(_) => {
+                    metadata.linkage = Linkage::C;
+                    metadata.object = Some(program.names.intern(name)?);
                 }
                 B::Invoke => {}
             }

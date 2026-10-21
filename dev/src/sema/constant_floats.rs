@@ -23,20 +23,24 @@ pub(super) struct Floating {
     pub ty: TypeId,
     pub value: BinaryFloat,
 }
-#[derive(Clone, Copy, Debug)]
-pub(super) struct FloatingId(u32);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct FloatingId(std::num::NonZeroU32);
 #[derive(Default)]
 pub(super) struct Floats(Vec<Floating>);
 impl Floats {
-    fn insert(&mut self, value: Floating) -> Result<FloatingId, Error> {
+    pub(super) fn insert(&mut self, value: Floating) -> Result<FloatingId, Error> {
         let id = FloatingId(
-            u32::try_from(self.0.len()).map_err(|_| Error::Limit("floating constant limit"))?,
+            u32::try_from(self.0.len())
+                .ok()
+                .and_then(|index| index.checked_add(1))
+                .and_then(std::num::NonZeroU32::new)
+                .ok_or(Error::Limit("floating constant limit"))?,
         );
         self.0.push(value);
         Ok(id)
     }
     pub(super) fn get(&self, id: FloatingId) -> Floating {
-        self.0[id.0 as usize]
+        self.0[(id.0.get() - 1) as usize]
     }
 }
 impl Analyzer<'_> {
@@ -159,6 +163,7 @@ impl Analyzer<'_> {
     ) -> Result<Value, Error> {
         let target = self.bare_type(target)?;
         if let Some(format) = self.float_format(target) {
+            let changes_precision = matches!(value, Value::Floating(value) if self.float_format(value.ty) != Some(format));
             let value = match value {
                 Value::Floating(value) => value.value,
                 Value::Integer(value) => BinaryFloat::integer(
@@ -174,9 +179,12 @@ impl Analyzer<'_> {
                     ));
                 }
             };
-            let value = value
-                .rounded(format)
-                .ok_or_else(|| nonconstant(location, "a floating conversion out of range"))?;
+            let value = if changes_precision {
+                value.converted(format)
+            } else {
+                value.rounded(format)
+            }
+            .ok_or_else(|| nonconstant(location, "a floating conversion out of range"))?;
             return Ok(Value::Floating(Floating { ty: target, value }));
         }
         if let Some(kind) = self.integral_kind(target) {
@@ -227,6 +235,16 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         self.constant_step(node.location)?;
         let facts = self.graph.expression_facts.get(id)?;
+        if matches!(
+            facts.intrinsic,
+            Some(
+                super::floating_intrinsics::FloatingIntrinsic::Constant
+                    | super::floating_intrinsics::FloatingIntrinsic::SignalingConstant
+            )
+        ) {
+            let value = self.graph.expression_facts.floating_value(id)?;
+            return Ok(self.graph.floating_constants.get(value));
+        }
         if facts.literal_call.is_some()
             || facts.call_form == super::expression_facts::CallForm::Operator
         {
