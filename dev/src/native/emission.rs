@@ -292,6 +292,11 @@ impl<'a> Pass<'a> {
                     }
                 }
             }
+            Op::Convert(op) => op.rebase(f.aligned_disp, f.aligned_bytes).emit(
+                &mut self.assembler,
+                image,
+                f.scratch_offset,
+            )?,
             Op::WideMove {
                 destination,
                 source,
@@ -308,6 +313,24 @@ impl<'a> Pass<'a> {
                     }
                     self.assembler
                         .store(destination.displaced(offset).rm()?, R::R11, 8)?;
+                }
+            }
+            Op::WideExtend {
+                signed,
+                destination,
+                source,
+            } => {
+                let to = destination.rebase(f.aligned_disp, f.aligned_bytes).rm()?;
+                if signed {
+                    self.assembler.mov_rr(R::R11, source)?;
+                    self.assembler.store(to, R::R11, 8)?;
+                    self.assembler
+                        .op(0, true, 0xc1, 1, 7, Rm::Reg(R::R11), false, 1)?;
+                    self.assembler.imm(63, 1);
+                    self.assembler.store(to.displaced(8), R::R11, 8)?;
+                } else {
+                    self.assembler.store(to, source, 8)?;
+                    self.assembler.store_imm(to.displaced(8), 0, 8)?;
                 }
             }
             Op::Scalar(op) => op

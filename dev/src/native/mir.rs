@@ -106,9 +106,15 @@ pub(super) enum Op {
     Bulk(super::bulk::Bulk),
     FloatCopy(super::float_transport::FloatCopy),
     Floating(super::floating_mir::FloatingOp),
+    Convert(super::conversion::Conversion),
     WideMove {
         destination: Operand,
         source: Operand,
+    },
+    WideExtend {
+        signed: bool,
+        destination: Operand,
+        source: R,
     },
     Scalar(super::scalar_mir::ScalarOp),
 }
@@ -151,6 +157,7 @@ pub(super) struct Function {
     pub(super) layout: Layout,
     pub(super) instructions: Vec<Instruction>,
     pub(super) scratch_bytes: u32,
+    pub(super) scratch_offset: i32,
     pub(super) stack_size: u32,
     pub(super) aligned_base: u32,
     pub(super) aligned_disp: i32,
@@ -188,6 +195,7 @@ impl Function {
             layout,
             instructions: Vec::new(),
             scratch_bytes: 0,
+            scratch_offset: 0,
             stack_size: 0,
             aligned_base: 0,
             aligned_disp: 0,
@@ -370,6 +378,7 @@ impl Function {
             Op::Bulk(op) => op.write(program, out)?,
             Op::FloatCopy(op) => op.write(program, out)?,
             Op::Floating(op) => op.write(program, out)?,
+            Op::Convert(op) => op.write(program, out)?,
             Op::WideMove {
                 destination,
                 source,
@@ -378,6 +387,15 @@ impl Function {
                 destination.write(program, out)?;
                 write!(out, ", ")?;
                 source.write(program, out)?;
+            }
+            Op::WideExtend {
+                signed,
+                destination,
+                source,
+            } => {
+                write!(out, "    {}.i128 ", if signed { "sext" } else { "zext" })?;
+                destination.write(program, out)?;
+                write!(out, ", {}", source.spelling())?;
             }
             Op::Scalar(op) => {
                 write!(out, "    ")?;

@@ -492,6 +492,24 @@ impl Assembler {
     pub(super) fn x87(&mut self, opcode: u8, digit: u8, memory: Rm) -> Result<(), Error> {
         self.op(0, false, u32::from(opcode), 1, digit, memory, false, 0)
     }
+    pub(super) fn sse_wide(
+        &mut self,
+        prefix: u8,
+        opcode: u8,
+        dst: Register,
+        src: Rm,
+    ) -> Result<(), Error> {
+        self.op(
+            prefix,
+            true,
+            0x0f00 | u32::from(opcode),
+            2,
+            dst.0 & 15,
+            src,
+            false,
+            0,
+        )
+    }
 }
 
 #[cfg(test)]

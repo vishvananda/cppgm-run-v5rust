@@ -735,6 +735,12 @@ impl Placement {
         let mut frame = u64::from(self.frame);
         if mir.scratch_bytes != 0 {
             frame = (frame + 48 + 15) & !15;
+            if frame > 0x7fff_0000 {
+                return Err(Error::Diagnostic(
+                    "stack frame exceeds the 32-bit displacement range".into(),
+                ));
+            }
+            mir.scratch_offset = -i32::try_from(frame).map_err(|_| Error::Limit)?;
         }
         frame = (frame + 8 * u64::from(self.preserve.count_ones()) + 15) & !15;
         mir.stack_size = u32::try_from(frame).map_err(|_| Error::Limit)?;

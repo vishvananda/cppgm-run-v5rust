@@ -12,7 +12,7 @@ use crate::lowir::{
     Error,
     literals::Constant,
     model::{TempId, Value},
-    vocabulary::Type,
+    vocabulary::{Convert, Type},
 };
 
 pub(super) fn memory_value(ty: Type) -> bool {
@@ -27,6 +27,71 @@ pub(super) fn part_source(source: Operand, part: abi::Part) -> Operand {
     }
 }
 impl Selection<'_> {
+    pub(super) fn wide_convert(
+        &mut self,
+        result: TempId,
+        operation: Convert,
+        to: Type,
+        from: Type,
+        value: Value,
+    ) -> Result<(), Error> {
+        if !matches!(
+            operation,
+            Convert::SignExtend | Convert::ZeroExtend | Convert::Truncate
+        ) {
+            return Err(super::value_selection::unsupported());
+        }
+        let source = if from == Type::I128 {
+            self.aggregate_operand(value, from)?
+        } else {
+            self.operand(value, from, R::R11)?
+        };
+        if to == Type::I128 {
+            let mut r = if let Some(r) = source.register() {
+                r
+            } else {
+                self.load(R::R11, source, from);
+                R::R11
+            };
+            if operation == Convert::ZeroExtend && matches!(from, Type::I8 | Type::I16 | Type::I32)
+                || operation == Convert::SignExtend
+                    && matches!(from, Type::U8 | Type::U16 | Type::U32)
+            {
+                self.load(R::R11, Operand::Register(r), Type::I64);
+                self.normalize(R::R11, super::scalar_mir::flip_sign(from));
+                r = R::R11;
+            }
+            let destination =
+                Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?);
+            self.mir.instructions.push(Instruction {
+                op: Op::WideExtend {
+                    signed: operation != Convert::ZeroExtend && from != Type::I1,
+                    destination,
+                    source: r,
+                },
+                location: self.location,
+            });
+        } else {
+            super::memory::scalar(to)?;
+            let r = self.result(result, [None, None], 0);
+            if source.is_memory() {
+                self.load(r, source, to);
+                if to == Type::I1 {
+                    self.normalize(r, to);
+                }
+            } else {
+                let source = if let Operand::Immediate(bits) = source {
+                    Operand::Immediate(bits & u128::from(u64::MAX))
+                } else {
+                    source
+                };
+                self.load(r, source, Type::I64);
+                self.normalize(r, to);
+            }
+            self.finish(result, r)?;
+        }
+        Ok(())
+    }
     pub(super) fn aggregate_operand(&mut self, value: Value, ty: Type) -> Result<Operand, Error> {
         let source = self.aggregate_source(value)?;
         if matches!(ty, Type::Object { .. })

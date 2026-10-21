@@ -18,6 +18,35 @@ use crate::lowir::{
 pub(super) fn unsupported() -> Error {
     Error::NotImplemented("native instruction selection and placement")
 }
+fn floating_scratch(
+    program: &Program,
+    function: &Function,
+    body: &crate::lowir::model::Body,
+) -> bool {
+    let signature = program.signature(function.signature);
+    let mut floating = signature.result.float_rank() != 0
+        || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
+    for inst in body.instructions() {
+        if floating {
+            break;
+        }
+        floating |= matches!(inst.kind, I::Call(_)) && function.metadata.flags & 1 != 0;
+        floating |= match inst.kind {
+            I::Store(_, ty, _, _) | I::Compare(_, ty, _, _) => ty,
+            _ => inst.kind.result_type(),
+        }
+        .float_rank()
+            != 0;
+        body.visit_values(&inst.kind, |v| floating |= matches!(v, Value::Float(..)) || matches!(v, Value::Temp(t) if body.temp(t).ty.is_some_and(|ty| ty.float_rank() != 0)));
+        if let I::Call(call) = &inst.kind
+            && let Some(signature) = program.call_boundary(call)
+        {
+            floating |= signature.result.float_rank() != 0
+                || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
+        }
+    }
+    floating
+}
 pub(super) fn select(
     program: &Program,
     symbol: SymbolId,
@@ -110,24 +139,7 @@ pub(super) fn select(
     selection.mir.lazy_addresses = selection.addresses.lazy_count;
     selection.mir.folded_loads = selection.addresses.folded_count;
     selection.mir.fused_compares = selection.facts.fused.iter().filter(|&&v| v).count();
-    let mut floating = signature.result.float_rank() != 0
-        || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
-    for inst in body.instructions() {
-        floating |= matches!(inst.kind, I::Call(_)) && function.metadata.flags & 1 != 0;
-        floating |= match inst.kind {
-            I::Store(_, ty, _, _) | I::Compare(_, ty, _, _) => ty,
-            _ => inst.kind.result_type(),
-        }
-        .float_rank()
-            != 0;
-        body.visit_values(&inst.kind, |v| floating |= matches!(v, Value::Float(..)) || matches!(v, Value::Temp(t) if body.temp(t).ty.is_some_and(|ty| ty.float_rank() != 0)));
-        if let I::Call(call) = &inst.kind
-            && let Some(signature) = program.call_boundary(call)
-        {
-            floating |= signature.result.float_rank() != 0
-                || signature.parameters.iter().any(|p| p.ty.float_rank() != 0);
-        }
-    }
+    let floating = floating_scratch(program, function, body);
     selection.mir.blocks.clear();
     if control.entry_loop {
         let entry = body.layout[0];
@@ -259,7 +271,11 @@ pub(super) fn select(
         selection.mir.end_block();
         selection.placement.finish_block(block);
     }
-    selection.mir.scratch_bytes = if floating { 48 } else { 0 };
+    selection.mir.scratch_bytes = if floating || selection.mir.scratch_bytes != 0 {
+        48
+    } else {
+        0
+    };
     selection.placement.finish_frame(&mut selection.mir)?;
     Ok(selection.mir)
 }

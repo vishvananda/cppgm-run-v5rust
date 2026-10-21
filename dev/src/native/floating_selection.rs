@@ -122,7 +122,7 @@ impl Selection<'_> {
             location: self.location,
         });
     }
-    fn float_destination(
+    pub(super) fn float_destination(
         &mut self,
         result: TempId,
         ty: Type,
@@ -161,7 +161,19 @@ impl Selection<'_> {
         if let Alias::Temporary(t) = self.facts.resolve(self.body, value)
             && self.body.temp(t).ty != Some(ty)
         {
-            return Err(unsupported());
+            let from = self.body.temp(t).ty.ok_or(Error::Limit)?;
+            if from.float_rank() == 0 {
+                return Err(unsupported());
+            }
+            let source = self.temp_operand(t)?;
+            let destination = self.address(address, R::R10)?;
+            if ty == Type::F80 {
+                self.width_conversion(from, ty, destination, source);
+            } else {
+                self.width_conversion(from, ty, Operand::Register(R::XMM14), source);
+                self.float_copy(ty, destination, Operand::Register(R::XMM14));
+            }
+            return Ok(());
         }
         let source = self.float_operand(value, ty)?;
         let destination = self.address(address, R::R10)?;
@@ -251,7 +263,24 @@ impl Selection<'_> {
         if let Alias::Temporary(t) = self.facts.resolve(self.body, value)
             && self.body.temp(t).ty != Some(ty)
         {
-            return Err(unsupported());
+            let from = self.body.temp(t).ty.ok_or(Error::Limit)?;
+            if from.float_rank() == 0 {
+                return Err(unsupported());
+            }
+            if ty == Type::F80 {
+                let home = Operand::Frame(self.placement.frame_alloc(16, 16)?);
+                let source = self.temp_operand(t)?;
+                self.width_conversion(from, ty, home, source);
+                self.floating(FloatingOp::Return(home));
+            } else {
+                let source = self.temp_operand(t)?;
+                self.width_conversion(from, ty, Operand::Register(R::XMM0), source);
+                self.mir.instructions.push(Instruction {
+                    op: Op::Return(Some(R::XMM0)),
+                    location: self.location,
+                });
+            }
+            return Ok(());
         }
         let source = self.float_operand(value, ty)?;
         if ty == Type::F80 {

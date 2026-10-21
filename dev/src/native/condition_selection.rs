@@ -102,6 +102,12 @@ impl Selection<'_> {
         from: Type,
         value: Value,
     ) -> Result<(), Error> {
+        if from.float_rank() != 0 || to.float_rank() != 0 {
+            return self.float_convert(temp, op, to, from, value);
+        }
+        if from == Type::I128 || to == Type::I128 {
+            return self.wide_convert(temp, op, to, from, value);
+        }
         super::memory::scalar(to)?;
         super::memory::scalar(from)?;
         if !matches!(

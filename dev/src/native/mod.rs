@@ -11,6 +11,8 @@ mod condition_mir;
 mod condition_selection;
 mod control_flow;
 mod control_selection;
+mod conversion;
+mod conversion_selection;
 mod division;
 mod emission;
 mod executable;

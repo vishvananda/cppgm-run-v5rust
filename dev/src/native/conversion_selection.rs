@@ -1,0 +1,132 @@
+//! Primitive floating conversion selection and implicit width changes. See NOTICE.
+use super::{
+    conversion::{Conversion, Kind},
+    mir::{Instruction, Op},
+    scalar_mir::{Operand, flip_sign},
+    scalar_selection::Selection,
+    value_selection::unsupported,
+    x86::Register as R,
+};
+use crate::lowir::{
+    Error,
+    model::{TempId, Value},
+    vocabulary::{Convert, Type},
+};
+fn bits(ty: Type) -> u32 {
+    if ty == Type::Ptr { 64 } else { ty.bits() }
+}
+impl Selection<'_> {
+    pub(super) fn conversion(
+        &mut self,
+        kind: Kind,
+        from: Type,
+        to: Type,
+        destination: Operand,
+        source: Operand,
+    ) {
+        if from == Type::F80 || to == Type::F80 {
+            self.mir.scratch_bytes = 48;
+        }
+        self.mir.instructions.push(Instruction {
+            op: Op::Convert(Conversion {
+                kind,
+                from,
+                to,
+                destination,
+                source,
+            }),
+            location: self.location,
+        });
+    }
+    pub(super) fn width_conversion(
+        &mut self,
+        from: Type,
+        to: Type,
+        destination: Operand,
+        source: Operand,
+    ) {
+        self.mir.scratch_bytes = 48;
+        let kind = if to.float_rank() > from.float_rank() {
+            Kind::Extend
+        } else {
+            Kind::Truncate
+        };
+        self.conversion(kind, from, to, destination, source);
+    }
+    pub(super) fn float_convert(
+        &mut self,
+        result: TempId,
+        operation: Convert,
+        to: Type,
+        from: Type,
+        value: Value,
+    ) -> Result<(), Error> {
+        if from == Type::I128 || to == Type::I128 {
+            return Err(unsupported());
+        }
+        match operation {
+            Convert::SignedToFloat | Convert::UnsignedToFloat => {
+                super::memory::scalar(from)?;
+                let mut source = self.operand(value, from, R::R11)?;
+                let adjust = operation == Convert::SignedToFloat
+                    && matches!(from, Type::U8 | Type::U16 | Type::U32)
+                    || operation == Convert::UnsignedToFloat
+                        && matches!(from, Type::I8 | Type::I16 | Type::I32);
+                if source.register().is_none() || adjust {
+                    self.load(
+                        R::R11,
+                        source,
+                        if source.is_memory() { from } else { Type::I64 },
+                    );
+                    if adjust {
+                        self.normalize(R::R11, flip_sign(from));
+                    }
+                    source = Operand::Register(R::R11);
+                }
+                let kind = if operation == Convert::UnsignedToFloat && bits(from) == 64 {
+                    Kind::UnsignedToFloat
+                } else {
+                    Kind::SignedToFloat
+                };
+                let destination = self.float_destination(result, to, [None, None])?;
+                self.conversion(kind, from, to, destination, source);
+                if let Some(r) = destination.register() {
+                    self.finish(result, r)?;
+                }
+            }
+            Convert::FloatToSigned | Convert::FloatToUnsigned => {
+                super::memory::scalar(to)?;
+                let source = self.float_operand(value, from)?;
+                let destination = self.result(result, [None, None], 0);
+                let kind = if operation == Convert::FloatToUnsigned && bits(to) == 64 {
+                    Kind::FloatToUnsigned
+                } else {
+                    Kind::FloatToSigned
+                };
+                self.conversion(kind, from, to, Operand::Register(destination), source);
+                self.normalize(destination, to);
+                self.finish(result, destination)?;
+            }
+            Convert::FloatExtend | Convert::FloatTruncate => {
+                let source = self.float_operand(value, from)?;
+                let prefer = if from == Type::F80 {
+                    None
+                } else {
+                    self.dying(source, false)
+                };
+                let destination = self.float_destination(result, to, [prefer, None])?;
+                let kind = if operation == Convert::FloatExtend {
+                    Kind::Extend
+                } else {
+                    Kind::Truncate
+                };
+                self.conversion(kind, from, to, destination, source);
+                if let Some(r) = destination.register() {
+                    self.finish(result, r)?;
+                }
+            }
+            _ => return Err(unsupported()),
+        }
+        Ok(())
+    }
+}
