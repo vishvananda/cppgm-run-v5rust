@@ -107,7 +107,7 @@ impl Symbols<'_, '_> {
         }
         let name = self.name(entity)?;
         let facts = self.function_facts(entity)?;
-        let metadata = self.metadata(program, entity, &name)?;
+        let mut metadata = self.metadata(program, entity, &name)?;
         let object = if facts.builtin.is_some() {
             metadata.object.or(Some(program.names.intern(&name)?))
         } else if facts.c_linkage && !facts.internal
@@ -128,6 +128,14 @@ impl Symbols<'_, '_> {
         let symbol = self
             .table
             .allocate(program, &name, object, facts.internal)?;
+        let local_object = if facts.c_linkage && !facts.internal {
+            local_object.or(object.filter(|&object| program.symbol(symbol).name != object))
+        } else {
+            local_object
+        };
+        if facts.c_linkage && !facts.internal && local_object.is_some() {
+            metadata.object = local_object;
+        }
         self.objects.insert(entity, local_object);
         self.callees.insert(entity, Value::Symbol(symbol));
         if let Some(

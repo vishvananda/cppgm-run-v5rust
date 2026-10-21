@@ -496,10 +496,15 @@ impl Analyzer<'_> {
         };
         let variadic = *variadic;
         let mut signature = parameters.clone();
-        let parameter_key = self
-            .graph
-            .types
-            .intern(TypeKind::Pack(signature.clone()), Cv::default())?;
+        let context_key = if let Some(context) = naming_context {
+            let parameters = self
+                .graph
+                .types
+                .intern(TypeKind::Pack(signature.clone()), Cv::default())?;
+            Some((context, parameters, variadic))
+        } else {
+            None
+        };
         if let ClosureContext::MemberSpecification(class) = context
             && self.graph.class_templates.instance(class).is_none()
         {
@@ -533,14 +538,8 @@ impl Analyzer<'_> {
             u16::try_from(u32::from(course_number).saturating_sub(*earlier_variadic))
                 .map_err(|_| Error::Invariant("closure number range"))?
         };
-        let object_number = if let Some(context) = naming_context {
-            next_closure_number(
-                self.graph
-                    .closures
-                    .context_numbers
-                    .entry((context, parameter_key, variadic))
-                    .or_default(),
-            )?
+        let object_number = if let Some(key) = context_key {
+            next_closure_number(self.graph.closures.context_numbers.entry(key).or_default())?
         } else {
             object_number
         };

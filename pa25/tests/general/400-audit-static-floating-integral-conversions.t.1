@@ -1,0 +1,13 @@
+// Frozen static conversion uses an i64/u64 intermediate before target truncation.
+int nan_value = __builtin_nan("0x123");
+long infinite = __builtin_infl();
+unsigned long positive_infinite = __builtin_inff();
+unsigned long negative_infinite = -__builtin_inf();
+unsigned long nan_unsigned = __builtin_nanl("0x456");
+unsigned char negative_fraction = -3.75;
+long signaling = __builtin_nansl("0x789");
+constexpr double named_nan = __builtin_nan("0x123");
+int named_value = named_nan;
+constexpr double floating_call() { return __builtin_inf(); }
+int called_value = floating_call();
+int main() { return 0; }

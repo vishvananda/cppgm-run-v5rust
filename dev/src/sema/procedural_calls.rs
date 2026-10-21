@@ -630,7 +630,7 @@ impl Analyzer<'_> {
         ));
         Ok(facts)
     }
-    fn publish_named_callee(
+    pub(super) fn publish_named_callee(
         &mut self,
         callee: ast::ExprId,
         named: ast::ExprId,

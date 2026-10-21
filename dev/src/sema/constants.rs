@@ -538,6 +538,16 @@ impl Analyzer<'_> {
             });
         }
         if let Some(kind) = facts.intrinsic {
+            if matches!(
+                kind,
+                super::floating_intrinsics::FloatingIntrinsic::Constant
+                    | super::floating_intrinsics::FloatingIntrinsic::SignalingConstant
+            ) {
+                return Err(not_constant(
+                    self.tree.expressions.get(id).location,
+                    "not an integral constant expression",
+                ));
+            }
             return self.constant_floating_intrinsic(id, kind, scope);
         }
         if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
@@ -1252,17 +1262,17 @@ impl Analyzer<'_> {
             inner = id;
         }
         let value = if self.semantic()
-            && matches!(
-                self.graph.types.get(object).kind,
-                TypeKind::Scalar(Scalar::Bool)
-            )
-            && (self.is_address_expression(expr) || self.floating_expression(expr))
+            && (self.floating_expression(expr)
+                || matches!(
+                    self.graph.types.get(object).kind,
+                    TypeKind::Scalar(Scalar::Bool)
+                ) && self.is_address_expression(expr))
         {
-            match self.constant_truth(expr, scope, false) {
-                Ok(value) => Some(Constant {
-                    bits: u64::from(value),
-                    ty: self.bare_type(object)?,
-                }),
+            let result = self.constant_operand_value(expr, object, scope);
+            self.graph.entity_mut(entity).constant = ConstantState::None;
+            match result {
+                Ok(super::constant_addresses::TemporaryValue::Integer(value)) => Some(value),
+                Ok(_) => return Err(Error::Invariant("nonintegral converted initializer")),
                 Err(Error::NonConstant { location, message })
                     if self.graph.entity(entity).constexpr =>
                 {

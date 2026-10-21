@@ -10,7 +10,11 @@ use super::{
 use crate::{
     lex::{PostTokenKind, pp_lexer::Punctuator as P, vocabulary::Keyword},
     syntax::ast::{self, ExprKind},
-    types::{FundamentalType as F, floating::FloatingScanner},
+    types::{
+        FundamentalType as F,
+        float_value::{BinaryFloat, Format},
+        floating::FloatingScanner,
+    },
 };
 #[derive(Clone, Copy)]
 pub(crate) enum Value {
@@ -265,8 +269,89 @@ impl Analyzer<'_> {
             return Ok(value.filter(|value| self.static_storage_value(*value)));
         }
         let value = self.static_scalar_value(id, scope)?;
+        if let Some(Value::Floating(ty, bits)) = value
+            && let Some(kind) = self.integral_kind(target)
+            && kind.bits != 1
+        {
+            let floating = Format::of(ty)
+                .and_then(|format| BinaryFloat::from_bits(format, bits))
+                .ok_or(Error::Invariant("static floating integer value"))?;
+            if floating.integral(kind.bits, kind.signed).is_none()
+                && !self.static_floating_fallback(id, scope)?
+            {
+                return Ok(None);
+            }
+        }
         value.map_or(Ok(None), |value| {
             self.static_conversion(value, source, target)
+        })
+    }
+    // When constant conversion fails, global_lowering.cpp::static_value
+    // folds only its explicit expression forms. In particular a signaling
+    // builtin, a named floating object or a constexpr call is not this fallback.
+    fn static_floating_fallback(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<bool, Error> {
+        self.check_stack()?;
+        let id = self.graph.expression_facts.root(id);
+        let facts = self.graph.expression_facts.get(id)?;
+        if facts.literal_call.is_some()
+            || facts.call_form == super::expression_facts::CallForm::Operator
+        {
+            return Ok(false);
+        }
+        Ok(match self.tree.expressions.get(id).kind {
+            ExprKind::Literal(_) => true,
+            ExprKind::Paren(inner) | ExprKind::Cast { operand: inner, .. } => {
+                self.static_floating_fallback(inner, scope)?
+            }
+            ExprKind::Unary { operand, op }
+                if matches!(op.token.as_punctuator(), Some(P::Add | P::Subtract)) =>
+            {
+                self.static_floating_fallback(operand, scope)?
+            }
+            ExprKind::Binary {
+                left,
+                right,
+                op,
+                assignment: false,
+            } if matches!(
+                op.token.as_punctuator(),
+                Some(P::Add | P::Subtract | P::Multiply | P::Divide)
+            ) =>
+            {
+                self.static_floating_fallback(left, scope)?
+                    && self.static_floating_fallback(right, scope)?
+            }
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => match self.constant_value(condition, scope, false)? {
+                Some(value) => self.static_floating_fallback(
+                    if value.bits != 0 {
+                        then_expr
+                    } else {
+                        else_expr
+                    },
+                    scope,
+                )?,
+                None => false,
+            },
+            ExprKind::Call { .. } if facts.intrinsic.is_some() => {
+                facts.intrinsic == Some(super::floating_intrinsics::FloatingIntrinsic::Constant)
+            }
+            ExprKind::FunctionalCast { arguments, .. } | ExprKind::Call { arguments, .. }
+                if facts.functional_call
+                    || matches!(
+                        self.tree.expressions.get(id).kind,
+                        ExprKind::FunctionalCast { .. }
+                    ) =>
+            {
+                match self.tree.expr_lists.get(arguments) {
+                    [operand] => self.static_floating_fallback(*operand, scope)?,
+                    _ => false,
+                }
+            }
+            _ => false,
         })
     }
     fn static_converted_class(
@@ -527,37 +612,18 @@ impl Analyzer<'_> {
                     if kind.bits == 1 {
                         return Ok(Some(Value::Integer(u64::from(bits & !float_sign(ty) != 0))));
                     }
-                    let Some((significand, exponent, negative)) = float_parts(ty, bits) else {
-                        return Ok(None);
-                    };
-                    let magnitude = if exponent < 0 {
-                        significand
-                            .checked_shr(
-                                u32::try_from(-exponent)
-                                    .map_err(|_| Error::Limit("floating exponent"))?,
-                            )
-                            .unwrap_or(0)
+                    let format =
+                        Format::of(ty).ok_or(Error::Invariant("static floating integer source"))?;
+                    let value = BinaryFloat::from_bits(format, bits)
+                        .ok_or(Error::Invariant("static floating integer encoding"))?;
+                    // global_lowering.cpp converts through a host x87 i64/u64,
+                    // then truncates to the target width. Model its indefinite
+                    // result explicitly; constexpr range checks stay separate.
+                    let high = BinaryFloat::integer(1 << 63, false);
+                    if !kind.signed && value.compare(high).is_some_and(|order| !order.is_lt()) {
+                        value.integral(64, false).unwrap_or(0)
                     } else {
-                        let shift = u32::try_from(exponent)
-                            .map_err(|_| Error::Limit("floating exponent"))?;
-                        if shift >= 128 || significand > u128::from(u64::MAX) >> shift {
-                            return Ok(None);
-                        }
-                        significand << shift
-                    };
-                    let magnitude = u64::try_from(magnitude)
-                        .map_err(|_| Error::Limit("floating integer range"))?;
-                    if kind.signed
-                        && ((!negative && magnitude >= 1 << 63)
-                            || (negative && magnitude > 1 << 63))
-                        || !kind.signed && negative && magnitude != 0
-                    {
-                        return Ok(None);
-                    }
-                    if negative {
-                        magnitude.wrapping_neg()
-                    } else {
-                        magnitude
+                        value.integral(64, true).unwrap_or(1 << 63)
                     }
                 }
             };
@@ -569,7 +635,6 @@ impl Analyzer<'_> {
             if let Value::Floating(from, bits) = value
                 && from != target
             {
-                use crate::types::float_value::{BinaryFloat, Format};
                 let from = Format::of(from).ok_or(Error::Invariant("static floating source"))?;
                 let format =
                     Format::of(target).ok_or(Error::Invariant("static floating target"))?;

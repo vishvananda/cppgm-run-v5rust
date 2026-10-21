@@ -509,7 +509,11 @@ impl Analyzer<'_> {
         let ast::ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("library nan without call syntax"));
         };
-        self.graph.expression_facts.set(callee, facts);
+        let mut named = callee;
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
+            named = inner;
+        }
+        self.publish_named_callee(callee, named, facts, scope)?;
         let mut scratch = std::mem::take(&mut self.call_scratch);
         let selected = self.resolve_call(
             self.tree.expressions.get(id).location,

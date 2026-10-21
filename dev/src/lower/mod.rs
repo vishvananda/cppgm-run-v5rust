@@ -423,23 +423,24 @@ fn emit_pending<'a>(
     exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
     aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;
     let mut explicit = 0;
+    let mut variable = 0;
     loop {
         globals::emit_instance_variables(output, symbols, (graph, tree))?;
         let Some(entry) = symbols.pending.next() else {
             // Each C++ emit_demanded drain finishes its thunks before the
             // next explicit-instantiation or variable-root demand boundary.
             symbols.emit_thunks(output.program, output.definitions)?;
-            if explicit == 2 {
-                break;
-            }
             if explicit == 0 {
                 demand_explicit_definitions(output.program, symbols, graph)?;
+                explicit = 1;
+            } else if let Some(&entity) = graph.lower_demanded_variables().get(variable) {
+                // Each variable root owns a complete demand drain, including
+                // functions and thunks its initializer requests.
+                variable += 1;
+                symbols.variable_symbol(output.program, entity)?;
             } else {
-                for &entity in graph.lower_demanded_variables() {
-                    symbols.variable_symbol(output.program, entity)?;
-                }
+                break;
             }
-            explicit += 1;
             continue;
         };
         if !entries.insert(entry) {

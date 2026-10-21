@@ -1,0 +1,2 @@
+// A nonfinite floating value cannot initialize a constexpr integer.
+constexpr int value = __builtin_nansl("0x456");

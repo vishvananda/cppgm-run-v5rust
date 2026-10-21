@@ -2231,9 +2231,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 B::Memcmp | B::Memset | B::Unreachable | B::Expect | B::Floating(_) => {
                     metadata.linkage = Linkage::C;
                 }
-                B::LibraryNan(_) => {
+                B::LibraryNan(ty) => {
                     metadata.linkage = Linkage::C;
-                    metadata.object = Some(program.names.intern(name)?);
+                    let object = match ty {
+                        F::Float => "nanf",
+                        F::LongDouble => "nanl",
+                        _ => "nan",
+                    };
+                    if name != object {
+                        metadata.object = Some(program.names.intern(object)?);
+                    }
                 }
                 B::Invoke => {}
             }
@@ -2251,6 +2258,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             metadata.linkage = Linkage::C;
         }
         if facts.c_linkage && !facts.internal {
+            metadata.object = self.objects.get(&entity).copied().flatten();
             return Ok(metadata);
         }
         if let Some(&object) = self.objects.get(&entity) {

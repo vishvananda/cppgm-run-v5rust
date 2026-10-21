@@ -1,0 +1,12 @@
+double nan(int n) { return n; }
+float nanf(int n) { return n; }
+long double nanl(int n) { return n; }
+extern "C" double nan(const char* p) { return p[0] == 'x' ? __builtin_nan("1") : 0; }
+extern "C" float nanf(const char* p) { return p[0] == 'x' ? __builtin_nanf("1") : 0; }
+extern "C" long double nanl(const char* p) { return p[0] == 'x' ? __builtin_nanl("1") : 0; }
+int main() {
+  const char* p = "x";
+  return __builtin_isnan((::__builtin_nan)(p))
+      && __builtin_isnan(((__builtin_nanf))(p))
+      && __builtin_isnan((__builtin_nanl)(p)) && nan(3) == 3 && nanf(4) == 4 && nanl(5) == 5 ? 0 : 1;
+}

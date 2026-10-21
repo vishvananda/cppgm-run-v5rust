@@ -1,0 +1,11 @@
+int constructed;
+struct V { virtual ~V() {} };
+struct W { virtual ~W() {} };
+struct A : V, W { A() { ++constructed; } ~A() { ++constructed; } };
+struct B : V, W { B() { ++constructed; } ~B() { ++constructed; } };
+template<class T> struct X { static A a; static B b; };
+template<class T> A X<T>::a;
+template<class T> B X<T>::b;
+template A X<int>::a;
+template B X<int>::b;
+int main() { return constructed == 2 ? 0 : 1; }
