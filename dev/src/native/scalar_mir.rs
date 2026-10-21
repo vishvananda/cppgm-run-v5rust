@@ -95,15 +95,18 @@ impl Operand {
 #[derive(Clone, Copy)]
 pub(super) enum ScalarOp {
     SignDividend,
+    MultiplyWide { unsigned: bool, source: R },
     Divide { unsigned: bool, source: Operand },
     Condition(super::condition_mir::FlagOp),
     Move(R, Operand),
     Lea(R, Operand),
+    Lea32(R, Operand),
     Load(R, Type, Operand),
     Store(Operand, Type, Operand),
     Binary(Binary, Type, R, Operand),
     Unary(Unary, Type, R),
     Extend(Type, R),
+    ExtendMove(Type, R, R),
     Scan(Unary, Type, R, Operand),
     CompareZero(Type, Operand),
     SetEqual(R),
@@ -139,12 +142,22 @@ impl ScalarOp {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         let mut operand = None;
         match self {
+            Self::MultiplyWide { unsigned, source } => write!(
+                out,
+                "{} {}",
+                if unsigned { "mul" } else { "imul" },
+                source.spelling()
+            )?,
             Self::SignDividend => write!(out, "cqo")?,
             Self::Divide { unsigned, source } => {
                 write!(out, "{} ", if unsigned { "div" } else { "idiv" })?;
                 operand = Some(source);
             }
             Self::Condition(op) => op.write(program, out)?,
+            Self::Lea32(r, src) => {
+                write!(out, "lea.i32 {}, ", r.spelling())?;
+                operand = Some(src);
+            }
             Self::Lea(r, src) => {
                 write!(out, "lea {}, ", r.spelling())?;
                 operand = Some(src);
@@ -193,6 +206,16 @@ impl ScalarOp {
                     write!(out, ".{ty}")?;
                 }
                 write!(out, " {}", r.spelling())?;
+            }
+            Self::ExtendMove(ty, r, source) => {
+                write!(
+                    out,
+                    "{}.i{} {}, {}",
+                    if signed(ty) { "sext" } else { "zext" },
+                    bytes(ty) * 8,
+                    r.spelling(),
+                    source.spelling()
+                )?;
             }
             Self::Extend(ty, r) => {
                 write!(
@@ -251,6 +274,7 @@ impl ScalarOp {
             Self::Load(r, t, m) => Self::Load(r, t, m.rebase(begin, bytes)),
             Self::Store(m, t, s) => Self::Store(m.rebase(begin, bytes), t, s.rebase(begin, bytes)),
             Self::Lea(r, m) => Self::Lea(r, m.rebase(begin, bytes)),
+            Self::Lea32(r, m) => Self::Lea32(r, m.rebase(begin, bytes)),
             Self::Move(r, m) => Self::Move(r, m.rebase(begin, bytes)),
             Self::Binary(op, t, r, m) => Self::Binary(op, t, r, m.rebase(begin, bytes)),
             Self::Scan(op, t, r, m) => Self::Scan(op, t, r, m.rebase(begin, bytes)),
@@ -260,6 +284,16 @@ impl ScalarOp {
     }
     pub(super) fn emit(self, a: &mut Assembler, keep_flags: bool) -> Result<(), Error> {
         match self {
+            Self::MultiplyWide { unsigned, source } => a.op(
+                0,
+                true,
+                0xf7,
+                1,
+                if unsigned { 4 } else { 5 },
+                Rm::Reg(source),
+                false,
+                0,
+            ),
             Self::SignDividend => {
                 a.byte(0x48);
                 a.byte(0x99);
@@ -306,12 +340,14 @@ impl ScalarOp {
                 }
             }
             Self::Lea(r, src) => a.lea(r, src.rm()?),
+            Self::Lea32(r, src) => a.op(0, false, 0x8d, 1, r.code(), src.rm()?, false, 0),
+            Self::ExtendMove(ty, r, source) => a.load(r, Rm::Reg(source), bytes(ty), signed(ty)),
             Self::Extend(ty, r) => a.load(r, Rm::Reg(r), bytes(ty), signed(ty)),
             Self::Binary(op, ty, r, src) => binary(a, op, ty, r, src),
             Self::Unary(op, ty, r) => match op {
                 Unary::Neg | Unary::BitNot => a.op(
                     0,
-                    true,
+                    !matches!(ty, Type::I32 | Type::U32),
                     0xf7,
                     1,
                     if op == Unary::Neg { 3 } else { 2 },

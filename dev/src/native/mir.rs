@@ -158,6 +158,8 @@ pub(super) struct Block {
 pub(super) struct Function {
     pub(super) symbol: SymbolId,
     signature: SignatureId,
+    pub(super) optimized: bool,
+    pub(super) removed_instructions: usize,
     pub(super) variadic: bool,
     pub(super) blocks: Vec<Block>,
     pub(super) layout: Layout,
@@ -194,6 +196,8 @@ impl Function {
         Self {
             symbol,
             signature,
+            optimized: false,
+            removed_instructions: 0,
             variadic: false,
             blocks: vec![Block {
                 name: BlockName::Named(block),
@@ -260,8 +264,14 @@ impl Function {
         };
         writeln!(
             out,
-            "    return {result} -> {reg}\n  frame\n    stack_size {}\n    scratch_bytes {}\n    frame_pointer keep\n    epilogues shared",
-            self.stack_size, self.scratch_bytes
+            "    return {result} -> {reg}\n  frame\n    stack_size {}\n    scratch_bytes {}\n    frame_pointer keep\n    epilogues {}",
+            self.stack_size,
+            self.scratch_bytes,
+            if self.optimized {
+                "duplicated"
+            } else {
+                "shared"
+            }
         )?;
         if self.aligned_base != 0 {
             writeln!(

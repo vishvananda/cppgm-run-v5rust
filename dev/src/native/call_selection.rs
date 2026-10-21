@@ -430,13 +430,18 @@ impl Selection<'_> {
             if super::aggregate::memory_value(call.result) {
                 self.aggregate_call_result(result, &plan.layout)?;
             } else {
-                self.call_result(result, call.result, staged.mask)?;
+                let own = self.facts.level >= 1
+                    && matches!(self.facts.resolve(self.body, call.callee), Alias::Symbol(symbol)
+                        if program.function(program.symbol(symbol)).is_some_and(|function|
+                            function.body.is_some() && function.metadata.binding != Some(crate::lowir::vocabulary::Binding::Weak)
+                                && function.metadata.flags & 64 == 0));
+                self.call_result(result, call.result, staged.mask, own)?;
             }
         }
         self.outgoing = staged;
         Ok(())
     }
-    fn call_result(&mut self, temp: TempId, ty: Type, args: u32) -> Result<(), Error> {
+    fn call_result(&mut self, temp: TempId, ty: Type, args: u32, own: bool) -> Result<(), Error> {
         if matches!(ty, Type::F32 | Type::F64) {
             let destination = self.result(temp, [Some(R::XMM0), None], 0);
             self.load(destination, Operand::Register(R::XMM0), ty);
@@ -466,10 +471,11 @@ impl Selection<'_> {
             || interval.uses == 1
                 && interval.consumer == Some(self.pos + 1)
                 && consumer.is_some_and(|i| matches!(i.kind,I::Return(t,_) if t==ty));
-        let preference = (self.body.layout.len() == 1 || terminal).then_some(R::RAX);
+        let preference =
+            (self.facts.level >= 1 || self.body.layout.len() == 1 || terminal).then_some(R::RAX);
         let destination = self.result(temp, [preference, None], 0);
         self.load(destination, Operand::Register(R::RAX), Type::I64);
-        if !stored {
+        if !stored && !own {
             self.normalize(destination, ty);
         }
         self.finish(temp, destination)

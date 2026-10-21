@@ -1,4 +1,4 @@
-//! Frozen O0 integer divide forms, fixed-register demands and selection. See NOTICE.
+//! Frozen integer divide forms, fixed-register demands and selection. See NOTICE.
 use super::{
     scalar_mir::{Operand, ScalarOp, flip_sign, signed},
     scalar_selection::Selection,
@@ -8,7 +8,7 @@ use super::{
 use crate::lowir::{
     Error,
     literals::Constant,
-    model::{Body, TempId, Value},
+    model::{Body, Facts as Flags, TempId, Value},
     vocabulary::{Binary, Type},
 };
 
@@ -16,28 +16,71 @@ use crate::lowir::{
 pub(super) enum Form {
     Hardware,
     UnsignedShift(u64),
+    SignedShift(i64),
+    Exact(i64),
+    UnsignedMagic(i64),
+    SignedMagic(i64),
 }
 impl Form {
-    pub(super) fn at(facts: &Facts, body: &Body, op: Binary, right: Value) -> Self {
-        if matches!(op, Binary::UDiv | Binary::UMod)
-            && let Alias::Constant(Constant::Integer(bits)) = facts.resolve(body, right)
-        {
-            // C++ inspects the literal's low word before interpreting its type.
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "The frozen divide classifier reads the literal's low target word."
-            )]
-            let low = bits as u64;
-            if low.is_power_of_two() && low.cast_signed() > 0 {
-                return Self::UnsignedShift(low);
+    pub(super) fn at(
+        facts: &Facts,
+        body: &Body,
+        op: Binary,
+        flags: Flags,
+        ty: Type,
+        right: Value,
+    ) -> Self {
+        let Alias::Constant(Constant::Integer(bits)) = facts.resolve(body, right) else {
+            return Self::Hardware;
+        };
+        let bytes = bits.to_le_bytes();
+        let mut word = [0; 8];
+        word.copy_from_slice(&bytes[..8]);
+        let low = u64::from_le_bytes(word);
+        let unsigned = matches!(op, Binary::UDiv | Binary::UMod);
+        if unsigned && low.is_power_of_two() && low.cast_signed() > 0 {
+            return Self::UnsignedShift(low);
+        }
+        if facts.level == 0 || ty == Type::I1 {
+            return Self::Hardware;
+        }
+        let width = ty.bits();
+        let mut bits = low;
+        if width != 0 && width < 64 {
+            let mask = (1_u64 << width) - 1;
+            bits &= mask;
+            if !unsigned && bits >> (width - 1) != 0 {
+                bits |= !mask;
             }
         }
-        Self::Hardware
+        let divisor = bits.cast_signed();
+        if unsigned {
+            return if bits <= 1 {
+                Self::Hardware
+            } else if bits.is_power_of_two() {
+                Self::UnsignedShift(bits)
+            } else {
+                Self::UnsignedMagic(divisor)
+            };
+        }
+        if matches!(divisor, 0 | 1 | -1 | i64::MIN) {
+            return Self::Hardware;
+        }
+        if flags.exact() && op == Binary::Div {
+            return Self::Exact(divisor);
+        }
+        if divisor.unsigned_abs().is_power_of_two() {
+            Self::SignedShift(divisor)
+        } else {
+            Self::SignedMagic(divisor)
+        }
     }
     pub(super) fn clobbers(self) -> u32 {
         match self {
-            Self::Hardware => (1 << R::RAX.code()) | (1 << R::RDX.code()),
-            Self::UnsignedShift(_) => 0,
+            Self::Hardware | Self::UnsignedMagic(_) | Self::SignedMagic(_) => {
+                (1 << R::RAX.code()) | (1 << R::RDX.code())
+            }
+            Self::UnsignedShift(_) | Self::SignedShift(_) | Self::Exact(_) => 0,
         }
     }
 }
@@ -52,12 +95,19 @@ impl Selection<'_> {
         &mut self,
         temp: TempId,
         op: Binary,
+        flags: Flags,
         ty: Type,
         left: Value,
         right: Value,
     ) -> Result<(), Error> {
         let remainder = matches!(op, Binary::Mod | Binary::UMod);
-        let form = Form::at(&self.facts, self.body, op, right);
+        let form = Form::at(&self.facts, self.body, op, flags, ty, right);
+        if matches!(
+            form,
+            Form::SignedShift(_) | Form::Exact(_) | Form::UnsignedMagic(_) | Form::SignedMagic(_)
+        ) {
+            return self.constant_divide(temp, op, ty, left, form);
+        }
         let a = self.operand(left, ty, R::R10)?;
         if let Form::UnsignedShift(divisor) = form {
             let r = self.result(temp, [self.dying(a, false), None], 0);

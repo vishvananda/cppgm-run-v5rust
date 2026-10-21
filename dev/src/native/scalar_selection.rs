@@ -121,6 +121,20 @@ impl Selection<'_> {
             .dying(&self.facts, op, self.pos, self.body, skip_params)
     }
     pub(super) fn normalize(&mut self, r: R, ty: Type) {
+        if self.facts.level >= 1
+            && matches!(
+                ty,
+                Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32
+            )
+            && self.mir.instructions.len() > self.mir.blocks.last().map_or(0, |b| b.range.start)
+            && let Some(last) = self.mir.instructions.last_mut()
+            && let Op::Scalar(ScalarOp::Move(d, Operand::Register(source))) = last.op
+            && d == r
+            && source.code() < 16
+        {
+            last.op = Op::Scalar(ScalarOp::ExtendMove(ty, r, source));
+            return;
+        }
         match ty {
             Type::I1 => self.emit(ScalarOp::Binary(
                 Binary::And,
@@ -160,6 +174,7 @@ impl Selection<'_> {
         &mut self,
         temp: TempId,
         op: Binary,
+        flags: crate::lowir::model::Facts,
         ty: Type,
         left: Value,
         right: Value,
@@ -182,7 +197,7 @@ impl Selection<'_> {
             return self.shift(temp, op, ty, left, right);
         }
         if matches!(op, Binary::Div | Binary::Mod | Binary::UDiv | Binary::UMod) {
-            return self.divide(temp, op, ty, left, right);
+            return self.divide(temp, op, flags, ty, left, right);
         }
         if !matches!(
             op,
@@ -295,7 +310,15 @@ impl Selection<'_> {
             }
         } else {
             self.load(r, source, ty);
-            self.emit(ScalarOp::Unary(op, ty, r));
+            self.emit(ScalarOp::Unary(
+                op,
+                if matches!(op, Unary::Neg | Unary::BitNot) {
+                    Type::I64
+                } else {
+                    ty
+                },
+                r,
+            ));
             if op != Unary::BitNot || !signed(ty) {
                 self.normalize(r, ty);
             }

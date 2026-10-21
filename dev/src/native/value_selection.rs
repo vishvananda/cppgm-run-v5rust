@@ -48,6 +48,56 @@ fn floating_scratch(
     }
     floating
 }
+// Signature register classes and aligned local storage jointly reserve the
+// physical entry pool before either allocator or selector consumes it.
+struct EntryRegisters {
+    vector_boundary: bool,
+    excluded: u32,
+    reserved: u32,
+}
+impl EntryRegisters {
+    fn analyze(
+        body: &crate::lowir::model::Body,
+        slots: &[Slot],
+        mir: &MirFunction,
+        program: &Program,
+        function: &Function,
+    ) -> Self {
+        let signature = program.signature(function.signature);
+        let vector_boundary =
+            signature
+                .parameters
+                .iter()
+                .zip(&mir.layout.arguments)
+                .any(|(p, arg)| {
+                    matches!(p.ty, Type::F32 | Type::F64)
+                        && mir
+                            .layout
+                            .parts(arg)
+                            .iter()
+                            .any(|part| part.register.is_some())
+                });
+        let gprs = mir.layout.arguments.iter().filter(|arg| matches!(mir.layout.parts(arg), [part] if part.register.is_some_and(|r| r.code() < 16))).count();
+        let reserved = if slots.iter().zip(body.slots()).any(|(state, slot)| {
+            matches!(state, Slot::Memory)
+                && matches!(slot.ty, Type::Object { .. })
+                && abi::value_align(slot.ty).is_ok_and(|align| align > 16)
+        }) {
+            1 << R::R12.code()
+        } else {
+            0
+        };
+        Self {
+            vector_boundary,
+            reserved,
+            excluded: if vector_boundary && gprs >= 2 {
+                1 << R::R8.code()
+            } else {
+                0
+            },
+        }
+    }
+}
 pub(super) fn select(
     program: &Program,
     symbol: SymbolId,
@@ -55,14 +105,27 @@ pub(super) fn select(
     level: u8,
 ) -> Result<MirFunction, Error> {
     let body = function.body.as_ref().ok_or(Error::Limit)?;
-    if level != 0 {
-        return Err(unsupported());
-    }
     let signature = program.signature(function.signature);
     let layout = abi::Layout::classify(signature)?;
     let flow = super::control_flow::Flow::analyze(body)?;
+    // Optimized function-level allocation and branch layout have separate
+    // owners. Until translated, do not substitute the O0 hull policy.
+    if level >= 1
+        && (flow
+            .reachable
+            .iter()
+            .filter(|&&reachable| reachable)
+            .count()
+            > 1
+            || flow
+                .predecessors(body.layout[0])
+                .iter()
+                .any(|p| flow.reachable[p.index()]))
+    {
+        return Err(unsupported());
+    }
     let slots = slot_analysis::analyze(body, &flow)?;
-    let mut facts = Facts::analyze(body, &slots, flow)?;
+    let mut facts = Facts::analyze(body, &slots, flow, level)?;
     let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
     let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
     facts.apply_calls(body, &calls)?;
@@ -72,6 +135,7 @@ pub(super) fn select(
         body.block(body.layout[0]).name,
         layout,
     );
+    mir.optimized = level >= 1;
     mir.variadic = signature.boundary.arity == Arity::Variadic;
     mir.lowir_instructions = body.instructions().len();
     mir.dead_slots = slots.iter().filter(|s| matches!(s, Slot::Dead)).count();
@@ -79,30 +143,14 @@ pub(super) fn select(
         .iter()
         .filter(|s| matches!(s, Slot::Promoted(_)))
         .count();
-    let vector_boundary = signature
-        .parameters
-        .iter()
-        .zip(&mir.layout.arguments)
-        .any(|(p, arg)| {
-            matches!(p.ty, Type::F32 | Type::F64)
-                && mir
-                    .layout
-                    .parts(arg)
-                    .iter()
-                    .any(|part| part.register.is_some())
-        });
-    let gprs = mir.layout.arguments.iter().filter(|arg| matches!(mir.layout.parts(arg), [part] if part.register.is_some_and(|r| r.code() < 16))).count();
-    let reserved = if slots.iter().zip(body.slots()).any(|(state, slot)| {
-        matches!(state, Slot::Memory)
-            && matches!(slot.ty, Type::Object { .. })
-            && abi::value_align(slot.ty).is_ok_and(|align| align > 16)
-    }) {
-        1 << R::R12.code()
-    } else {
-        0
-    };
-    let globals =
-        super::global_placement::Globals::analyze(body, &facts, &addresses, &mir.layout, reserved)?;
+    let registers = EntryRegisters::analyze(body, &slots, &mir, program, function);
+    let globals = super::global_placement::Globals::analyze(
+        body,
+        &facts,
+        &addresses,
+        &mir.layout,
+        registers.reserved,
+    )?;
     mir.global_registers = globals.count;
     mir.liveness_steps = globals.steps;
     mir.hull_fallbacks = globals.fallbacks;
@@ -112,12 +160,8 @@ pub(super) fn select(
         body,
         &mir.layout,
         globals,
-        vector_boundary,
-        if vector_boundary && gprs >= 2 {
-            1 << R::R8.code()
-        } else {
-            0
-        },
+        registers.vector_boundary,
+        registers.excluded,
     );
     let mut selection = Selection {
         phis: super::control_selection::PhiInputs::default(),
@@ -247,8 +291,8 @@ pub(super) fn select(
                 I::Copy(ty, value) => {
                     selection.copy(inst.result.ok_or(Error::Limit)?, ty, value)?;
                 }
-                I::Binary(op, _, ty, a, b) => {
-                    selection.binary(inst.result.ok_or(Error::Limit)?, op, ty, a, b)?;
+                I::Binary(op, flags, ty, a, b) => {
+                    selection.binary(inst.result.ok_or(Error::Limit)?, op, flags, ty, a, b)?;
                 }
                 I::Unary(op, ty, value) => {
                     selection.unary(inst.result.ok_or(Error::Limit)?, op, ty, value)?;
@@ -293,6 +337,9 @@ pub(super) fn select(
         0
     };
     selection.placement.finish_frame(&mut selection.mir)?;
+    if level >= 1 {
+        super::mir_cleanup::extensions(&mut selection.mir);
+    }
     Ok(selection.mir)
 }
 fn emit_return(
@@ -352,7 +399,17 @@ fn emit_return(
                 return Err(unsupported());
             }
             let source = selection.operand(value, ty, R::R10)?;
-            let reg = if let Some(reg) = source.register() {
+            let reg = if selection.facts.level >= 1
+                && source.register().is_some()
+                && ty != own
+                && ty.bits() > 0
+                && ty.bits() < 64
+                && selection.facts.fits[temp.index()] > super::integer_facts::capacity(ty)
+            {
+                selection.load(R::RAX, source, Type::I64);
+                selection.normalize(R::RAX, ty);
+                R::RAX
+            } else if let Some(reg) = source.register() {
                 reg
             } else {
                 selection.load(R::RAX, source, ty);

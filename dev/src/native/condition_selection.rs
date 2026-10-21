@@ -336,7 +336,7 @@ mod tests {
         let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
         let flow = super::super::control_flow::Flow::analyze(body)?;
         let slots = super::super::slot_analysis::analyze(body, &flow)?;
-        let facts = super::super::value_facts::Facts::analyze(body, &slots, flow)?;
+        let facts = super::super::value_facts::Facts::analyze(body, &slots, flow, 0)?;
         assert_ne!(facts.intervals[2].forbid & (1 << R::RDX.code()), 0);
         Ok(())
     }

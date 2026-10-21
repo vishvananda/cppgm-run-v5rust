@@ -262,9 +262,17 @@ impl Addresses {
             {
                 continue;
             }
-            let Some(next) = consumers[temp.index()]
-                .filter(|&p| p == pos + 1 && facts.flow.blocks[p] == facts.flow.blocks[pos])
-            else {
+            let Some(next) = consumers[temp.index()].filter(|&p| {
+                facts.flow.blocks[p] == facts.flow.blocks[pos]
+                    && (p == pos + 1
+                        || facts.level >= 1
+                            && p > pos
+                            && p - pos <= 8
+                            && ids[pos + 1..p].iter().enumerate().all(|(offset, &id)| {
+                                !facts.active[pos + 1 + offset]
+                                    || quiet_load_motion(&body.instruction(id).kind)
+                            }))
+            }) else {
                 continue;
             };
             let consumer = body.instruction(ids[next]);
@@ -366,5 +374,23 @@ impl Addresses {
         }
         facts.refresh_clobbers(body)?;
         Ok(out)
+    }
+}
+
+// The frozen fold window permits reads but never a volatile read or division.
+fn quiet_load_motion(kind: &I) -> bool {
+    match kind {
+        I::Load(flags, ..) => !flags.volatile(),
+        I::Binary(Binary::Div | Binary::Mod | Binary::UDiv | Binary::UMod, ..) => false,
+        I::Binary(..)
+        | I::Unary(..)
+        | I::Convert(..)
+        | I::Compare(..)
+        | I::Copy(..)
+        | I::Const(..)
+        | I::Index(..)
+        | I::Addr(..)
+        | I::Select(..) => true,
+        _ => false,
     }
 }

@@ -14,6 +14,7 @@ mod control_flow;
 mod control_selection;
 mod conversion;
 mod conversion_selection;
+mod divide_sequences;
 mod division;
 mod emission;
 mod exception;
@@ -25,11 +26,13 @@ mod frame_carries;
 mod global_data;
 mod global_placement;
 mod image;
+mod integer_facts;
 mod jump_thunk;
 mod linker;
 mod memory;
 mod memory_selection;
 mod mir;
+mod mir_cleanup;
 mod mir_globals;
 mod object;
 mod object_compile;
@@ -200,7 +203,14 @@ impl Statistics {
             (&mut self.fused_compares, function.fused_compares),
             (&mut self.dynamic_copies, function.dynamic_copies),
             (&mut self.lowir_instructions, function.lowir_instructions),
-            (&mut self.mir_instructions, function.instructions.len()),
+            (
+                &mut self.mir_instructions,
+                function
+                    .instructions
+                    .len()
+                    .checked_add(function.removed_instructions)
+                    .ok_or(Error::Limit)?,
+            ),
             (&mut self.dead_slots, function.dead_slots),
             (&mut self.promoted_slots, function.promoted_slots),
         ] {

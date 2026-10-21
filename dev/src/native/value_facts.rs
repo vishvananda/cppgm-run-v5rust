@@ -27,6 +27,8 @@ enum Identity {
     Normalized(TempId),
 }
 pub(super) struct Facts {
+    pub(super) level: u8,
+    pub(super) fits: Vec<u32>,
     pub(super) flow: super::control_flow::Flow,
     pub(super) global: Vec<bool>,
     pub(super) definitions: Vec<Option<usize>>,
@@ -96,6 +98,7 @@ impl Facts {
         body: &Body,
         slots: &[Slot],
         flow: super::control_flow::Flow,
+        level: u8,
     ) -> Result<Self, Error> {
         let ids = flow.instructions.clone();
         let mut definitions = vec![None; body.temps().len()];
@@ -108,6 +111,8 @@ impl Facts {
             global: vec![false; body.temps().len()],
             definitions,
             clobbers: vec![(0, 0); ids.len()],
+            level,
+            fits: Vec::new(),
             reads: (0..ids.len()).collect(),
             active: flow
                 .blocks
@@ -120,6 +125,7 @@ impl Facts {
             fused: vec![false; body.temps().len()],
             intervals: vec![Interval::default(); body.temps().len()],
         };
+        let fits = super::integer_facts::analyze(body, &facts);
         for (pos, &id) in ids.iter().enumerate() {
             let inst = body.instruction(id);
             if !facts.active[pos] {
@@ -150,7 +156,10 @@ impl Facts {
                                 alias_compatible(ty, from)
                                     || (ty.bits() != 0
                                         && ty != Type::I128
-                                        && Self::known_boolean(body, temp, 0))
+                                        && (Self::known_boolean(body, temp, 0)
+                                            || fits[temp.index()]
+                                                <= super::integer_facts::capacity(ty)
+                                                    .min(super::integer_facts::capacity(from))))
                             }) =>
                         {
                             Some(source)
@@ -193,7 +202,17 @@ impl Facts {
                             || op == Convert::SignExtend
                                 && matches!(from, Type::I8 | Type::I16 | Type::I32))
                             && alias_compatible(to, from);
-                        if ints && (boolean || extension) {
+                        let kept = match op {
+                            Convert::ZeroExtend => super::integer_facts::width(from),
+                            Convert::SignExtend => {
+                                super::integer_facts::width(from).saturating_sub(1)
+                            }
+                            Convert::Truncate => 64,
+                            _ => 0,
+                        };
+                        let same =
+                            fits[temp.index()] <= kept.min(super::integer_facts::capacity(to));
+                        if ints && (boolean || extension || same) {
                             Some(source)
                         } else {
                             None
@@ -289,6 +308,7 @@ impl Facts {
             }
         }
         facts.refresh_clobbers(body)?;
+        facts.fits = fits;
         Ok(facts)
     }
     fn note_use(&mut self, body: &Body, value: Value, at: usize, consumer: usize) {
@@ -396,6 +416,9 @@ impl Facts {
                 if matches!(self.resolve(body, value), Alias::Temporary(t) if t == result))
     }
     pub(super) fn compare_scratch(&self, body: &Body, pos: usize) -> bool {
+        if self.level >= 1 {
+            return false;
+        }
         let inst = body.instruction(self.flow.instructions[pos]);
         let I::Compare(_, ty, a, b) = inst.kind else {
             return false;
@@ -526,7 +549,7 @@ impl Facts {
                 }
             } else if let I::Binary(
                 op @ (Binary::Div | Binary::Mod | Binary::UDiv | Binary::UMod),
-                _,
+                flags,
                 ty,
                 _,
                 right,
@@ -534,7 +557,7 @@ impl Facts {
                 && ty.float_rank() == 0
                 && ty != Type::I128
             {
-                super::division::Form::at(self, body, op, right).clobbers()
+                super::division::Form::at(self, body, op, flags, ty, right).clobbers()
             } else if let I::CopyObject(bytes, align, ..) = inst.kind {
                 if super::bulk::direct_copy(bytes, super::bulk::alignment(align)) {
                     0
