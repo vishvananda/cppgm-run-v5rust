@@ -75,14 +75,25 @@ impl Selection<'_> {
                 .map_err(|_| Error::Limit)?,
         );
         let mut mem = match expr.base {
-            AddressBase::Slot(slot) => Memory::frame(self.placement.slot(slot)?.wrapping_add(disp)),
+            AddressBase::Slot(slot) => {
+                let bytes = u64::from(abi::value_bytes(self.body.slot(slot).ty)?).div_ceil(8) * 8;
+                self.mir.frame_pinned |=
+                    expr.displacement < 0 || expr.displacement.cast_unsigned() >= bytes.max(8);
+                Memory::frame(self.placement.slot(slot)?.wrapping_add(disp))
+            }
             AddressBase::Symbol(id) => Memory::new(Base::Symbol(id), disp),
             AddressBase::Absolute => Memory::new(Base::Absolute, disp),
-            AddressBase::Home(temp) => Memory::frame(
-                self.placement
-                    .home(self.body, temp, &mut self.mir)?
-                    .wrapping_add(disp),
-            ),
+            AddressBase::Home(temp) => {
+                let ty = self.body.temp(temp).ty.ok_or(Error::Limit)?;
+                let bytes = u64::from(abi::value_bytes(ty)?).div_ceil(8) * 8;
+                self.mir.frame_pinned |=
+                    expr.displacement < 0 || expr.displacement.cast_unsigned() >= bytes.max(8);
+                Memory::frame(
+                    self.placement
+                        .home(self.body, temp, &mut self.mir)?
+                        .wrapping_add(disp),
+                )
+            }
             AddressBase::Temporary(temp) => {
                 let source = self.temp_operand(temp)?;
                 if source.register().is_none()

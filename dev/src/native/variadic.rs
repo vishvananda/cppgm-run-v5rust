@@ -36,6 +36,9 @@ pub(super) struct Argument {
     list: Operand,
 }
 impl Argument {
+    pub(super) fn map_list(&mut self, mut visit: impl FnMut(&mut Operand, u32)) {
+        visit(&mut self.list, u32::from(super::scalar_mir::bytes(self.ty)));
+    }
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         write!(
             out,

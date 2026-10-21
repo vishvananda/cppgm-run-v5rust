@@ -140,6 +140,16 @@ impl Selection<'_> {
                 } else {
                     Type::I64
                 };
+                if ty.float_rank() != 0
+                    || matches!(
+                        self.facts.resolve(self.body, *value),
+                        Alias::Constant(Constant::Float(..))
+                    )
+                {
+                    return Err(Error::Diagnostic(
+                        "switch requires an integer selector".into(),
+                    ));
+                }
                 if ty == Type::I128 {
                     let source = self.wide_operand(*value, super::x86::Register::R10)?;
                     for &(value, to) in cases {

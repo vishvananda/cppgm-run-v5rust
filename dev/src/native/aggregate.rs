@@ -115,7 +115,9 @@ impl Selection<'_> {
             Alias::Constant(Constant::Integer(bits) | Constant::Float(_, bits)) => {
                 Ok(Operand::Immediate(bits))
             }
-            Alias::Symbol(_) => Err(super::value_selection::unsupported()),
+            Alias::Symbol(_) => Err(Error::Diagnostic(
+                "operand requires a numeric literal, not a storage location or symbol".into(),
+            )),
         }
     }
     pub(super) fn wide_load(&mut self, result: TempId, address: Value) -> Result<(), Error> {

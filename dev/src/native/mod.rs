@@ -23,6 +23,7 @@ mod float_transport;
 mod floating_mir;
 mod floating_selection;
 mod frame_carries;
+mod frame_layout;
 mod global_data;
 mod global_placement;
 mod image;
@@ -188,11 +189,13 @@ pub(crate) struct Statistics {
     fixups: usize,
     code_bytes: usize,
     carried_reloads: usize,
+    ordered_frames: usize,
 }
 impl Statistics {
     fn selected(&mut self, function: &mir::Function) -> Result<(), Error> {
         for (counter, increment) in [
             (&mut self.functions, 1),
+            (&mut self.ordered_frames, function.ordered_frames),
             (&mut self.global_registers, function.global_registers),
             (&mut self.liveness_steps, function.liveness_steps),
             (&mut self.hull_fallbacks, function.hull_fallbacks),
@@ -239,7 +242,7 @@ impl Statistics {
         // Counters follow the selected function plans and final native encoding.
         writeln!(
             out,
-            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers={} liveness_steps={} hull_fallbacks={} edge_blocks={} threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies={} jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames=0 dead_frame_stores=0 native_returns={} short_branches={} long_branches={} fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
+            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers={} liveness_steps={} hull_fallbacks={} edge_blocks={} threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies={} jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames={} dead_frame_stores=0 native_returns={} short_branches={} long_branches={} fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
             self.functions,
             self.lowir_instructions,
             self.mir_instructions,
@@ -255,6 +258,7 @@ impl Statistics {
             self.hull_fallbacks,
             self.edge_blocks,
             self.dynamic_copies,
+            self.ordered_frames,
             self.native_returns,
             self.short_branches,
             self.long_branches,

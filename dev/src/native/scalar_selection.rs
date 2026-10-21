@@ -34,11 +34,19 @@ impl Selection<'_> {
         });
     }
     pub(super) fn operand(&mut self, value: Value, ty: Type, scratch: R) -> Result<Operand, Error> {
+        if ty.float_rank() != 0
+            && matches!(self.facts.resolve(self.body, value), Alias::Constant(_))
+        {
+            return self.float_operand(value, ty);
+        }
         match self.facts.resolve(self.body, value) {
             Alias::Constant(Constant::Integer(bits)) => Ok(Operand::Immediate(
                 i128::from(super::mir::low_word(normalize(bits, ty))?).cast_unsigned(),
             )),
             Alias::Constant(Constant::Float(_, bits)) => Ok(Operand::Immediate(bits)),
+            Alias::Symbol(_) if ty.float_rank() != 0 => Err(Error::Diagnostic(
+                "floating value requires a numeric value or storage operand".into(),
+            )),
             Alias::Symbol(id) => Ok(Operand::Symbol(id)),
             Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
             Alias::Temporary(temp) => {

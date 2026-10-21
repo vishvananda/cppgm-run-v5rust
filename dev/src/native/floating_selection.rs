@@ -102,7 +102,14 @@ impl Selection<'_> {
             }
             Alias::Temporary(temp) => self.temp_operand(temp),
             Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
-            Alias::Symbol(id) => Ok(Operand::Symbol(id)),
+            Alias::Symbol(_) => Err(Error::Diagnostic(
+                if ty == Type::F80 {
+                    "operand requires a numeric literal, not a storage location or symbol"
+                } else {
+                    "floating value requires a numeric value or storage operand"
+                }
+                .into(),
+            )),
         }
     }
     pub(super) fn float_copy(&mut self, ty: Type, destination: Operand, source: Operand) {
@@ -192,12 +199,25 @@ impl Selection<'_> {
         ty: Type,
         value: Value,
     ) -> Result<(), Error> {
-        let source = self.float_operand(value, ty)?;
+        let source = if ty == Type::F80 {
+            self.float_operand(value, ty)?
+        } else {
+            let own = if let Value::Temp(temp) = value {
+                self.body.temp(temp).ty.ok_or(Error::Limit)?
+            } else {
+                Type::Ptr
+            };
+            self.operand(value, own, R::R10)?
+        };
+        if matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
+            return Err(Error::Diagnostic(
+                "floating copy requires a numeric value or storage operand".into(),
+            ));
+        }
         let destination = self.float_destination(result, ty, [self.dying(source, false), None])?;
-        if let Some(register) = destination.register()
-            && matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..))
-        {
-            self.load(register, source, ty);
+        if ty != Type::F80 && matches!(source, Operand::Immediate(_)) {
+            self.load(R::R10, source, Type::I64);
+            self.float_copy(ty, destination, Operand::Register(R::R10));
         } else {
             self.float_copy(ty, destination, source);
         }
@@ -295,11 +315,7 @@ impl Selection<'_> {
             }
             return Ok(());
         }
-        let source = if matches!(self.facts.resolve(self.body, value), Alias::Temporary(_)) {
-            self.operand(value, ty, R::R10)?
-        } else {
-            self.float_operand(value, ty)?
-        };
+        let source = self.operand(value, ty, R::R10)?;
         if ty == Type::F80 {
             self.floating(FloatingOp::Return(source));
             return Ok(());

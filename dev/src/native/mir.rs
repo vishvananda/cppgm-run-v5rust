@@ -161,6 +161,8 @@ pub(super) struct Function {
     pub(super) symbol: SymbolId,
     signature: SignatureId,
     pub(super) optimized: bool,
+    pub(super) frame_pinned: bool,
+    pub(super) ordered_frames: usize,
     pub(super) removed_instructions: usize,
     pub(super) variadic: bool,
     pub(super) blocks: Vec<Block>,
@@ -199,6 +201,8 @@ impl Function {
             symbol,
             signature,
             optimized: false,
+            frame_pinned: false,
+            ordered_frames: 0,
             removed_instructions: 0,
             variadic: false,
             blocks: vec![Block {

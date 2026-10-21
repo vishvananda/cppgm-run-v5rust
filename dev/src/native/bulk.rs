@@ -45,6 +45,9 @@ pub(super) struct Bulk {
     align: u32,
 }
 impl Bulk {
+    pub(super) fn bytes(self) -> u32 {
+        self.bytes
+    }
     pub(super) fn new(
         destination: Operand,
         source: Option<Operand>,
@@ -255,15 +258,6 @@ fn bulk_address(operand: Operand) -> Operand {
     }
 }
 impl Selection<'_> {
-    fn object_value(&mut self, value: Value) -> Result<Operand, Error> {
-        match self.facts.resolve(self.body, value) {
-            super::value_facts::Alias::Temporary(temp) => self.temp_operand(temp),
-            super::value_facts::Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
-            super::value_facts::Alias::Symbol(_) | super::value_facts::Alias::Constant(_) => {
-                Err(super::value_selection::unsupported())
-            }
-        }
-    }
     fn object_transfer(
         &mut self,
         ty: Type,
@@ -297,7 +291,12 @@ impl Selection<'_> {
         value: Value,
         address: Value,
     ) -> Result<(), Error> {
-        let source = self.object_value(value)?;
+        let source = self.aggregate_operand(value, ty)?;
+        if !source.is_memory() && source.register().is_none() {
+            return Err(Error::Diagnostic(
+                "object store requires a storage operand".into(),
+            ));
+        }
         let destination = self.address(address, R::R10)?;
         self.object_transfer(ty, destination, source)
     }
@@ -307,7 +306,12 @@ impl Selection<'_> {
         ty: Type,
         value: Value,
     ) -> Result<(), Error> {
-        let source = self.object_value(value)?;
+        let source = self.aggregate_operand(value, ty)?;
+        if !source.is_memory() && source.register().is_none() {
+            return Err(Error::Diagnostic(
+                "object copy requires a storage operand".into(),
+            ));
+        }
         let destination = Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?);
         self.object_transfer(ty, destination, source)
     }

@@ -25,7 +25,7 @@ impl Allocation {
     pub(super) fn emit(self, a: &mut Assembler) -> Result<(), Error> {
         if let Operand::Immediate(bits) = self.size {
             let size = low_word(bits)?.wrapping_add(15) & !15;
-            // The frozen encoder rejects non-encodable imm64 ALU operands.
+            // Selection has checked the native nonnegative adjustment range.
             i32::try_from(size).map_err(|_| {
                 Error::Construction("immediate does not fit its instruction encoding".into())
             })?;
@@ -37,19 +37,9 @@ impl Allocation {
                     (self.size.mask() | (1 << self.destination.code())) & (1 << r.code()) == 0
                 })
                 .ok_or(Error::Limit)?;
-            // emitter.cpp reads Operand::reg even for a memory size. Keep
-            // that observable raw-field encoding: kFrame (0xfd) encodes r13,
-            // and the absent base (0xff) encodes r15. Do not dereference it.
-            let source = match self.size {
-                Operand::Register(r) => r,
-                Operand::Frame(_) => R::R13,
-                Operand::Memory(memory) => match memory.base {
-                    super::memory::Base::Register(r) => r,
-                    super::memory::Base::Frame => R::R13,
-                    _ => R::R15,
-                },
-                _ => R::R15,
-            };
+            let source = self.size.register().ok_or_else(|| {
+                Error::Construction("stack allocation size is not a register".into())
+            })?;
             a.mov_rr(scratch, source)?;
             a.alu_ri(0, Rm::Reg(scratch), 15, 8)?;
             a.alu_ri(4, Rm::Reg(scratch), -16, 8)?;
@@ -60,9 +50,8 @@ impl Allocation {
 }
 impl Selection<'_> {
     pub(super) fn stack_alloc(&mut self, result: TempId, value: Value) -> Result<(), Error> {
-        // rm_operand widens GPR homes at their own width; a memory-class
-        // i128 keeps its location, including the frozen raw-field behavior.
-        let size = if let super::value_facts::Alias::Temporary(temp) =
+        // Read the size at its own storage width before choosing the result.
+        let mut size = if let super::value_facts::Alias::Temporary(temp) =
             self.facts.resolve(self.body, value)
             && self.body.temp(temp).ty == Some(Type::I128)
         {
@@ -70,6 +59,17 @@ impl Selection<'_> {
         } else {
             self.operand(value, Type::I64, R::R10)?
         };
+        if let Operand::Immediate(bits) = size {
+            let bytes = low_word(bits)?;
+            if !(0..=0x7fff_fff0).contains(&bytes) {
+                return Err(Error::Diagnostic(
+                    "constant stack_alloc size exceeds the native stack adjustment range".into(),
+                ));
+            }
+        } else if size.register().is_none() {
+            self.load(R::R10, size, Type::I64);
+            size = Operand::Register(R::R10);
+        }
         let exclude = if size.register().is_some() {
             0
         } else {

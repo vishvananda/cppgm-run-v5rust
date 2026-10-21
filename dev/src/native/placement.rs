@@ -56,6 +56,7 @@ pub(super) struct Placement {
     owners: [Option<TempId>; 32],
     classes: Vec<RegisterClass>,
     frame: u32,
+    frame_objects: Vec<super::frame_layout::Object>,
     slots: Vec<Option<i32>>,
     pub(super) preserve: u32,
     vector_boundary: bool,
@@ -112,6 +113,7 @@ impl Placement {
                 })
                 .collect(),
             frame: 0,
+            frame_objects: Vec::new(),
             slots: vec![None; body.slots().len()],
             preserve: 0,
             vector_boundary,
@@ -256,7 +258,13 @@ impl Placement {
             ));
         }
         self.frame = u32::try_from(size).map_err(|_| Error::Limit)?;
-        Ok(-i32::try_from(size).map_err(|_| Error::Limit)?)
+        let offset = -i32::try_from(size).map_err(|_| Error::Limit)?;
+        self.frame_objects.push(super::frame_layout::Object::new(
+            offset,
+            u32::try_from(bytes).map_err(|_| Error::Limit)?,
+            u32::try_from(align).map_err(|_| Error::Limit)?,
+        ));
+        Ok(offset)
     }
     pub(super) fn slot(&self, slot: crate::lowir::model::SlotId) -> Result<i32, Error> {
         self.slots[slot.index()].ok_or(Error::Limit)
@@ -792,21 +800,17 @@ impl Placement {
     pub(super) fn force_home(&mut self, temp: TempId) {
         self.locations[temp.index()].homed = true;
     }
-    pub(super) fn finish_frame(&self, mir: &mut Function) -> Result<(), Error> {
-        let mut frame = u64::from(self.frame);
+    pub(super) fn finish_frame(&mut self, mir: &mut Function) -> Result<(), Error> {
         if mir.scratch_bytes != 0 {
-            frame = (frame + 48 + 15) & !15;
-            if frame > 0x7fff_0000 {
-                return Err(Error::Diagnostic(
-                    "stack frame exceeds the 32-bit displacement range".into(),
-                ));
-            }
-            mir.scratch_offset = -i32::try_from(frame).map_err(|_| Error::Limit)?;
+            mir.scratch_offset = self.frame_alloc(48, 16)?;
         }
-        frame = (frame + 8 * u64::from(self.preserve.count_ones()) + 15) & !15;
+        let frame = (u64::from(self.frame) + 8 * u64::from(self.preserve.count_ones()) + 15) & !15;
         mir.stack_size = u32::try_from(frame).map_err(|_| Error::Limit)?;
         mir.preserve = self.preserve;
         Ok(())
+    }
+    pub(super) fn order_frame(&self, mir: &mut Function) {
+        super::frame_layout::order(mir, &self.frame_objects);
     }
 }
 

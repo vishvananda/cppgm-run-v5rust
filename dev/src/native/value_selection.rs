@@ -344,6 +344,7 @@ pub(super) fn select(
     selection.placement.finish_frame(&mut selection.mir)?;
     if level >= 1 {
         super::mir_cleanup::extensions(&mut selection.mir);
+        selection.placement.order_frame(&mut selection.mir);
     }
     Ok(selection.mir)
 }
