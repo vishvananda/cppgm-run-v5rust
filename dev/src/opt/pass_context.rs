@@ -1,8 +1,8 @@
 //! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
 use super::{
-    aggregate_slots, condition_placement, control_flow::Cfg, dead_code, definition_order,
-    exception_regions, flow_cleanup, jump_threading, memory_forward, slot_promotion,
-    sparse_constants, value_reuse,
+    aggregate_slots, coalescing, condition_placement, control_flow::Cfg, dead_code,
+    definition_order, exception_regions, flow_cleanup, jump_threading, memory_forward,
+    returned_storage, slot_promotion, sparse_constants, value_reuse,
 };
 use crate::lowir::{
     Error,
@@ -245,6 +245,8 @@ impl<'a> Context<'a> {
             Pass::ForwardMemory => memory_forward::forward(self),
             Pass::SplitSlots => aggregate_slots::split(self),
             Pass::PromoteSlots => slot_promotion::promote(self),
+            Pass::CoalesceCopies => coalescing::coalesce(self),
+            Pass::NameReturnedSlot => returned_storage::name(self),
             Pass::ThreadJumps => jump_threading::thread(self),
             Pass::SplitOrBranches => condition_placement::split_or_branches(self),
             Pass::SpecializePhiCompares => condition_placement::specialize_phi_compares(self),

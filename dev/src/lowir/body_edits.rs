@@ -756,11 +756,14 @@ impl LinkEditor {
         }
         ids
     }
-    pub(crate) fn commit(self, body: &mut Body) -> Result<(), Error> {
+    pub(crate) fn write_links(&self, body: &mut Body) -> Result<(), Error> {
         for block in body.layout.clone() {
             body.replace_links(block, self.ids(block))?;
         }
         Ok(())
+    }
+    pub(crate) fn commit(self, body: &mut Body) -> Result<(), Error> {
+        self.write_links(body)
     }
 }
 
