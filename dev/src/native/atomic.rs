@@ -141,12 +141,12 @@ impl Atomic {
                 source,
             } => {
                 a.lea(R::R11, source.rm()?)?;
-                a.store(Rm::mem(R::RBP, scratch), R::RBX, 8)?;
+                a.store(Rm::frame(scratch), R::RBX, 8)?;
                 for r in [R::RAX, R::RDX, R::RCX, R::RBX] {
                     a.op(0, false, 0x33, 1, r.code(), Rm::Reg(r), false, 0)?;
                 }
                 compare16(a)?;
-                a.load(R::RBX, Rm::mem(R::RBP, scratch), 8, false)?;
+                a.load(R::RBX, Rm::frame(scratch), 8, false)?;
                 a.store(destination.rm()?, R::RAX, 8)?;
                 a.store(destination.displaced(8).rm()?, R::RDX, 8)
             }
@@ -159,7 +159,7 @@ impl Atomic {
                 address_into(a, R::RCX, expected)?;
                 address_into(a, R::R11, target)?;
                 a.mov_rr(R::R10, R::RCX)?;
-                a.store(Rm::mem(R::RBP, scratch), R::RBX, 8)?;
+                a.store(Rm::frame(scratch), R::RBX, 8)?;
                 a.load(R::RAX, Rm::mem(R::R10, 0), 8, false)?;
                 a.load(R::RDX, Rm::mem(R::R10, 8), 8, false)?;
                 super::wide_mir::half(a, R::RBX, desired, false)?;
@@ -167,7 +167,7 @@ impl Atomic {
                 compare16(a)?;
                 a.store(Rm::mem(R::R10, 0), R::RAX, 8)?;
                 a.store(Rm::mem(R::R10, 8), R::RDX, 8)?;
-                a.load(R::RBX, Rm::mem(R::RBP, scratch), 8, false)?;
+                a.load(R::RBX, Rm::frame(scratch), 8, false)?;
                 ScalarOp::SetEqual(result).emit(a, true)?;
                 ScalarOp::Movzx(result).emit(a, true)
             }

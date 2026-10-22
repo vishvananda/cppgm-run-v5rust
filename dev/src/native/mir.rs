@@ -164,6 +164,7 @@ pub(super) struct Function {
     pub(super) symbol: SymbolId,
     signature: SignatureId,
     pub(super) optimized: bool,
+    pub(super) frame_policy: super::frame_encoding::Policy,
     pub(super) object_model: super::object_compile::ObjectModel,
     pub(super) eh: super::region_flow::Tables,
     pub(super) frame_pinned: bool,
@@ -206,6 +207,7 @@ impl Function {
             symbol,
             signature,
             optimized: false,
+            frame_policy: super::frame_encoding::Policy::default(),
             object_model: super::object_compile::ObjectModel::Course,
             eh: super::region_flow::Tables::default(),
             frame_pinned: false,
@@ -278,9 +280,14 @@ impl Function {
         };
         writeln!(
             out,
-            "    return {result} -> {reg}\n  frame\n    stack_size {}\n    scratch_bytes {}\n    frame_pointer keep\n    epilogues {}",
+            "    return {result} -> {reg}\n  frame\n    stack_size {}\n    scratch_bytes {}\n    frame_pointer {}\n    epilogues {}",
             self.stack_size,
             self.scratch_bytes,
+            if self.frame_policy.omit_pointer {
+                "omit"
+            } else {
+                "keep"
+            },
             if self.optimized {
                 "duplicated"
             } else {

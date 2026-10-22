@@ -26,6 +26,7 @@ mod float_transport;
 mod floating_mir;
 mod floating_selection;
 mod frame_carries;
+mod frame_encoding;
 mod frame_layout;
 mod global_data;
 mod global_placement;
@@ -46,6 +47,7 @@ mod mir_globals;
 mod object;
 mod object_compile;
 mod region_flow;
+mod unwind_rules;
 pub(crate) use elf_reader::read as read_object;
 #[cfg(test)]
 pub(crate) use elf_writer::bytes as object_bytes;

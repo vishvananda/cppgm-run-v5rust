@@ -4,6 +4,13 @@ use crate::lowir::Error;
 
 #[derive(Default)]
 pub(super) struct Frame {
+    pub(super) frameless: bool,
+    pub(super) reserve: u32,
+    pub(super) reserve_end: u32,
+    pub(super) pop_end: [u32; 6],
+    pub(super) returns: Vec<Epilogue>,
+    pub(super) prologues: Vec<Prologue>,
+    pub(super) adjusts: Vec<Adjust>,
     pub(super) push_end: u32,
     pub(super) established_end: u32,
     pub(super) saves: Vec<(u32, Register, i32)>,
@@ -12,6 +19,23 @@ pub(super) struct Frame {
     pub(super) size: u32,
     pub(super) calls: Vec<Call>,
     pub(super) pads: Vec<u32>,
+}
+#[derive(Default, Clone, Copy)]
+pub(super) struct Epilogue {
+    pub(super) released: u32,
+    pub(super) returned: u32,
+    pub(super) pops: [u32; 6],
+}
+#[derive(Default, Clone, Copy)]
+pub(super) struct Prologue {
+    pub(super) start: u32,
+    pub(super) reserve_end: u32,
+    pub(super) save_end: [u32; 6],
+}
+#[derive(Clone, Copy)]
+pub(super) struct Adjust {
+    pub(super) end: u32,
+    pub(super) args: u32,
 }
 #[derive(Clone, Copy)]
 pub(super) struct Call {
@@ -38,10 +62,10 @@ fn finish(out: &mut Vec<u8>, start: usize) -> Result<(), Error> {
     out[start..start + 4].copy_from_slice(&length.to_le_bytes());
     Ok(())
 }
-fn advance(out: &mut Vec<u8>, at: &mut u32, to: u32) -> Result<(), Error> {
-    let delta = to
-        .checked_sub(*at)
-        .ok_or_else(|| Error::Construction("unordered frame offsets".into()))?;
+pub(super) fn advance(out: &mut Vec<u8>, at: &mut u32, to: u32) -> Result<(), Error> {
+    // The frozen CFI cursor uses target u32 arithmetic, including when
+    // separately recorded prologue/body events revisit an earlier offset.
+    let delta = to.wrapping_sub(*at);
     match delta {
         0 => {}
         1..64 => out.push(0x40 | u8::try_from(delta).map_err(|_| Error::Limit)?),
@@ -67,47 +91,7 @@ fn advance(out: &mut Vec<u8>, at: &mut u32, to: u32) -> Result<(), Error> {
 }
 impl Frame {
     pub(super) fn encode(&self, lsda: bool) -> Result<Vec<u8>, Error> {
-        const DWARF: [u8; 16] = [0, 2, 1, 3, 7, 6, 4, 5, 8, 9, 10, 11, 12, 13, 14, 15];
-        let mut out = Vec::new();
-        if self.established_end == 0 {
-            return Ok(out);
-        }
-        let mut at = 0;
-        advance(&mut out, &mut at, self.push_end)?;
-        out.extend_from_slice(&[0x0e, 16, 0x86, 2]);
-        advance(&mut out, &mut at, self.established_end)?;
-        out.extend_from_slice(&[0x0d, 6]);
-        for &(end, reg, offset) in &self.saves {
-            advance(&mut out, &mut at, end)?;
-            out.push(0x80 | DWARF[usize::from(reg.code())]);
-            uleb(
-                &mut out,
-                u64::from(16_u32.wrapping_sub(offset.cast_unsigned()) / 8),
-            );
-        }
-        let mut args = 0;
-        for call in &self.calls {
-            if !lsda || call.landing.is_none() || call.args == args || call.begin >= self.ret_end {
-                continue;
-            }
-            advance(&mut out, &mut at, call.begin)?;
-            out.push(0x2e);
-            uleb(&mut out, call.args.into());
-            args = call.args;
-        }
-        advance(&mut out, &mut at, self.leave_end)?;
-        if self.size > self.ret_end {
-            out.push(0x0a);
-        }
-        out.extend_from_slice(&[0x0c, 7, 8, 0xc6]);
-        for &(_, reg, _) in &self.saves {
-            out.push(0xc0 | DWARF[usize::from(reg.code())]);
-        }
-        if self.size > self.ret_end {
-            advance(&mut out, &mut at, self.ret_end)?;
-            out.push(0x0b);
-        }
-        Ok(out)
+        super::unwind_rules::encode(self, lsda)
     }
 }
 pub(super) fn cie(out: &mut Vec<u8>, personality: bool) -> Result<Option<u32>, Error> {

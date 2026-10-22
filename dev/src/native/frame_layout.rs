@@ -33,7 +33,7 @@ fn access_bytes(ty: Type) -> u32 {
 }
 // Visit the actual MIR operands; implicit scratch/frame metadata is relocated
 // separately. False is the frozen VaStart/EhPush prohibition on frame ordering.
-fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) -> bool {
+pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) -> bool {
     match op {
         Op::Scalar(scalar) => match scalar {
             ScalarOp::Load(_, ty, source)
@@ -222,7 +222,11 @@ pub(super) fn order(function: &mut Function, objects: &[Object]) {
     order.sort_by(|&x, &y| {
         let dx = u128::from(weights[x]) * u128::from(objects[y].bytes);
         let dy = u128::from(weights[y]) * u128::from(objects[x].bytes);
-        dy.cmp(&dx)
+        if function.frame_policy.omit_pointer {
+            dx.cmp(&dy)
+        } else {
+            dy.cmp(&dx)
+        }
     });
     let mut moved = vec![0_i32; objects.len()];
     let mut size = 0_u32;

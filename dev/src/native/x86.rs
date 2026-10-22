@@ -46,6 +46,12 @@ impl Register {
 #[derive(Clone, Copy)]
 pub(super) enum Rm {
     Reg(Register),
+    Frame {
+        index: Option<Register>,
+        scale: u8,
+        disp: i32,
+        incoming: bool,
+    },
     Memory {
         base: Option<Register>,
         index: Option<Register>,
@@ -65,7 +71,7 @@ impl Rm {
         }
     }
     pub(super) fn displaced(mut self, offset: i32) -> Self {
-        if let Self::Memory { disp, .. } = &mut self {
+        if let Self::Memory { disp, .. } | Self::Frame { disp, .. } = &mut self {
             *disp = disp.wrapping_add(offset);
         }
         self
@@ -73,7 +79,16 @@ impl Rm {
     pub(super) fn uses(self, reg: Register) -> bool {
         match self {
             Self::Reg(value) => value == reg,
+            Self::Frame { index, .. } => index == Some(reg),
             Self::Memory { base, index, .. } => base == Some(reg) || index == Some(reg),
+        }
+    }
+    pub(super) fn frame(disp: i32) -> Self {
+        Self::Frame {
+            index: None,
+            scale: 1,
+            disp,
+            incoming: disp >= 0,
         }
     }
     pub(super) fn mem(base: Register, disp: i32) -> Self {
@@ -133,11 +148,15 @@ pub(super) struct Assembler {
     pub(super) fixups: Vec<CodeFixup>,
     labels: Vec<Option<usize>>,
     references: Vec<LabelReference>,
+    frame: super::frame_encoding::Addressing,
 }
 pub(super) fn invariant(message: &str) -> Error {
     Error::Construction(message.into())
 }
 impl Assembler {
+    pub(super) fn frame_addressing(&mut self, frame: super::frame_encoding::Addressing) {
+        self.frame = frame;
+    }
     pub(super) fn position(&self) -> Result<u32, Error> {
         u32::try_from(self.code.len()).map_err(|_| Error::Limit)
     }
@@ -190,12 +209,14 @@ impl Assembler {
         byte_regs: bool,
         imm_bytes: u8,
     ) -> Result<(), Error> {
+        let rm = self.frame.resolve(rm);
         if prefix != 0 {
             self.byte(prefix);
         }
         let mut rex = 0x40 | if wide { 8 } else { 0 } | if reg & 8 != 0 { 4 } else { 0 };
         let mut force = false;
         match rm {
+            Rm::Frame { .. } => return Err(invariant("unresolved virtual frame")),
             Rm::Reg(r) => {
                 rex |= u8::from(r.0 & 8 != 0);
                 force = byte_regs && (4..=7).contains(&(r.0 & 15)) && r.0 < 16;

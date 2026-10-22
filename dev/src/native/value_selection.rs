@@ -434,6 +434,7 @@ pub(super) fn select_for_object(
         0
     };
     selection.placement.finish_frame(&mut selection.mir)?;
+    selection.mir.frame_policy.omit_pointer = super::frame_encoding::can_omit(&selection.mir);
     if level >= 1 {
         super::mir_cleanup::extensions(&mut selection.mir);
         selection.placement.order_frame(&mut selection.mir);

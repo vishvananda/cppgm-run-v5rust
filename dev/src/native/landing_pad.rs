@@ -54,35 +54,31 @@ impl Effect {
         let slot = tables.slot;
         match self {
             Self::Landing { copy_selector } => {
-                a.store(Rm::mem(R::RBP, slot), R::RAX, 8)?;
-                a.store(
-                    Rm::mem(R::RBP, slot + if tables.raw { 16 } else { 8 }),
-                    R::RDX,
-                    8,
-                )?;
+                a.store(Rm::frame(slot), R::RAX, 8)?;
+                a.store(Rm::frame(slot + if tables.raw { 16 } else { 8 }), R::RDX, 8)?;
                 if copy_selector {
-                    a.store(Rm::mem(R::RBP, slot + 8), R::RDX, 8)?;
+                    a.store(Rm::frame(slot + 8), R::RDX, 8)?;
                 }
             }
             Self::Select(index) => {
                 let done = a.label()?;
-                a.load(R::R10, Rm::mem(R::RBP, slot + 16), 8, false)?;
+                a.load(R::R10, Rm::frame(slot + 16), 8, false)?;
                 for &(filter, selector) in &tables.map[tables.landings[index.index()].map.clone()] {
                     let next = a.label()?;
                     a.alu_ri(7, Rm::Reg(R::R10), i64::from(filter), 4)?;
                     a.branch(Some(5), next, false);
-                    a.store_imm(Rm::mem(R::RBP, slot + 8), i64::from(selector), 8)?;
+                    a.store_imm(Rm::frame(slot + 8), i64::from(selector), 8)?;
                     a.branch(None, done, false);
                     a.bind(next);
                 }
-                a.store_imm(Rm::mem(R::RBP, slot + 8), 0, 8)?;
+                a.store_imm(Rm::frame(slot + 8), 0, 8)?;
                 a.bind(done);
             }
             Self::CatchAll(selector) => {
                 let skip = a.label()?;
-                a.alu_ri(7, Rm::mem(R::RBP, slot + 8), 0, 8)?;
+                a.alu_ri(7, Rm::frame(slot + 8), 0, 8)?;
                 a.branch(Some(5), skip, true);
-                a.store_imm(Rm::mem(R::RBP, slot + 8), selector, 8)?;
+                a.store_imm(Rm::frame(slot + 8), selector, 8)?;
                 a.bind(skip);
             }
             Self::Resume => {

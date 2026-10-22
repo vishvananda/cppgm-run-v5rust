@@ -60,6 +60,14 @@ impl Memory {
         if let Base::Symbol(id) = self.base {
             return Rm::rip(ImageSymbol::Program(id), self.displacement);
         }
+        if self.base == Base::Frame {
+            return Rm::Frame {
+                index: self.index,
+                scale: self.scale,
+                disp: self.displacement,
+                incoming: self.displacement >= 0,
+            };
+        }
         Rm::Memory {
             base: match self.base {
                 Base::Frame => Some(R::RBP),

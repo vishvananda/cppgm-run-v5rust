@@ -130,6 +130,7 @@ struct Pass<'a> {
     carries: Carries,
     stats: Emission,
     frame: super::host_unwind::Frame,
+    plan: super::frame_encoding::Plan,
     record_frame: bool,
 }
 impl<'a> Pass<'a> {
@@ -171,7 +172,9 @@ impl<'a> Pass<'a> {
             carries: Carries::new(&function.bindings),
             stats: Emission::default(),
             frame: super::host_unwind::Frame::default(),
-            record_frame,
+            plan: super::frame_encoding::Plan::new(function),
+            record_frame: record_frame
+                && function.object_model == super::object_compile::ObjectModel::Host,
         })
     }
     fn branch(&mut self, condition: Option<u8>, label: Label) {
@@ -188,46 +191,20 @@ impl<'a> Pass<'a> {
     }
     fn run(&mut self, image: &mut Image, order: &Order) -> Result<(), Error> {
         let f = self.function;
-        let a = &mut self.assembler;
-        a.push(R::RBP);
-        self.frame.push_end = a.position()?;
-        a.mov_rr(R::RBP, R::RSP)?;
-        self.frame.established_end = a.position()?;
-        let saved = f.preserve.count_ones() * 8;
-        if f.stack_size != saved {
-            a.alu_ri(5, Rm::Reg(R::RSP), i64::from(f.stack_size - saved), 8)?;
-        }
-        let mut offset = f
-            .stack_size
-            .cast_signed()
-            .wrapping_neg()
-            .wrapping_add(saved.cast_signed());
-        for reg in super::placement::SAVED.into_iter().rev() {
-            if f.preserve & (1 << reg.code()) != 0 {
-                a.push(reg);
-                offset = offset.wrapping_sub(8);
-                if self.record_frame {
-                    self.frame.saves.push((a.position()?, reg, offset));
-                }
-            }
-        }
-        if f.aligned_base != 0 {
-            a.lea(
-                R::R12,
-                Rm::mem(
-                    R::RBP,
-                    f.aligned_disp
-                        .wrapping_add(f.aligned_base.cast_signed())
-                        .wrapping_sub(1),
-                ),
-            )?;
-            a.alu_ri(4, Rm::Reg(R::R12), -i64::from(f.aligned_base), 8)?;
-        }
+        self.prologue()?;
+        self.assembler.frame_addressing(self.plan.address);
         for block in 0..f.blocks.len() {
             if order.targets[block] != block {
                 continue;
             }
             self.assembler.bind(self.labels[block]);
+            if self.plan.omit && self.plan.address.reset_area() {
+                self.assembler.frame_addressing(self.plan.address);
+                self.frame.adjusts.push(super::host_unwind::Adjust {
+                    end: self.assembler.position()?,
+                    args: 0,
+                });
+            }
             self.carries.clear();
             let next = order.next[block + 1];
             let range = if f.blocks.len() == 1 {
@@ -269,29 +246,14 @@ impl<'a> Pass<'a> {
             }
         }
         self.assembler.bind(self.epilogue);
-        if f.preserve != 0
-            && f.instructions
-                .iter()
-                .any(|inst| matches!(inst.op, Op::StackAlloc(_)))
-        {
-            self.assembler.lea(
-                R::RSP,
-                Rm::mem(R::RBP, f.stack_size.cast_signed().wrapping_neg()),
-            )?;
-        }
-        for reg in super::placement::SAVED {
-            if f.preserve & (1 << reg.code()) != 0 {
-                self.assembler.pop(reg);
-            }
-        }
-        self.assembler.byte(0xc9);
-        self.frame.leave_end = self.assembler.position()?;
-        self.assembler.ret();
-        self.frame.ret_end = self.assembler.position()?;
+        let shared = self.epilogue_body()?;
+        self.frame.leave_end = shared.released;
+        self.frame.ret_end = shared.returned;
+        self.frame.pop_end = shared.pops;
         if let Some(terminal) = self.terminal {
             self.assembler.bind(terminal);
             self.assembler
-                .load(R::RDI, Rm::mem(R::RBP, f.eh.slot), 8, false)?;
+                .load(R::RDI, Rm::frame(f.eh.slot), 8, false)?;
             let begin = self.assembler.position()?;
             self.assembler
                 .call_symbol(self.runtime.ok_or(Error::Limit)?.unwind_resume)?;
@@ -316,6 +278,129 @@ impl<'a> Pass<'a> {
                     0
                 });
             }
+        }
+        Ok(())
+    }
+    fn prologue(&mut self) -> Result<(), Error> {
+        let f = self.function;
+        let a = &mut self.assembler;
+        self.frame.frameless = self.plan.omit;
+        self.frame.reserve = self.plan.reserve;
+        if self.plan.omit {
+            if self.plan.reserve != 0 {
+                a.alu_ri(5, Rm::Reg(R::RSP), self.plan.reserve.into(), 8)?;
+            }
+            self.frame.reserve_end = a.position()?;
+        } else {
+            a.push(R::RBP);
+            self.frame.push_end = a.position()?;
+            a.mov_rr(R::RBP, R::RSP)?;
+            self.frame.established_end = a.position()?;
+        }
+        let saved = f.preserve.count_ones() * 8;
+        if !self.plan.omit && f.stack_size != saved {
+            a.alu_ri(5, Rm::Reg(R::RSP), i64::from(f.stack_size - saved), 8)?;
+        }
+        let mut offset = if self.plan.omit {
+            8_i32.wrapping_sub(self.plan.reserve.cast_signed())
+        } else {
+            f.stack_size
+                .cast_signed()
+                .wrapping_neg()
+                .wrapping_add(saved.cast_signed())
+        };
+        for reg in super::frame_encoding::SAVES.into_iter().rev() {
+            if f.preserve & (1 << reg.code()) != 0 {
+                a.push(reg);
+                offset = offset.wrapping_sub(8);
+                if self.record_frame {
+                    self.frame.saves.push((a.position()?, reg, offset));
+                }
+            }
+        }
+        if f.aligned_base != 0 {
+            a.lea(
+                R::R12,
+                Rm::mem(
+                    R::RBP,
+                    f.aligned_disp
+                        .wrapping_add(f.aligned_base.cast_signed())
+                        .wrapping_sub(1),
+                ),
+            )?;
+            a.alu_ri(4, Rm::Reg(R::R12), -i64::from(f.aligned_base), 8)?;
+        }
+        Ok(())
+    }
+    fn epilogue_body(&mut self) -> Result<super::host_unwind::Epilogue, Error> {
+        let f = self.function;
+        if f.preserve != 0 && self.plan.dynamic {
+            self.assembler.lea(
+                R::RSP,
+                Rm::mem(R::RBP, f.stack_size.cast_signed().wrapping_neg()),
+            )?;
+        }
+        let mut record = super::host_unwind::Epilogue::default();
+        let mut popped = 0;
+        for reg in super::frame_encoding::SAVES {
+            if f.preserve & (1 << reg.code()) != 0 {
+                self.assembler.pop(reg);
+                record.pops[popped] = self.assembler.position()?;
+                popped += 1;
+            }
+        }
+        if !self.plan.omit {
+            self.assembler.byte(0xc9);
+        } else if self.plan.reserve != 0 {
+            self.assembler
+                .alu_ri(0, Rm::Reg(R::RSP), self.plan.reserve.into(), 8)?;
+        }
+        record.released = self.assembler.position()?;
+        self.assembler.ret();
+        record.returned = self.assembler.position()?;
+        Ok(record)
+    }
+    fn return_jump(&mut self, last: bool) -> Result<(), Error> {
+        if !last {
+            if self.function.optimized {
+                let record = self.epilogue_body()?;
+                self.frame.returns.push(record);
+            } else {
+                self.branch(None, self.epilogue);
+            }
+        }
+        Ok(())
+    }
+    fn argument_area(&mut self, op: super::scalar_mir::ScalarOp) -> Result<(), Error> {
+        use super::{scalar_mir::Operand, scalar_mir::ScalarOp};
+        use crate::lowir::vocabulary::Binary;
+        let ScalarOp::Binary(
+            kind @ (Binary::Add | Binary::Sub),
+            _,
+            R::RSP,
+            Operand::Immediate(bits),
+        ) = op
+        else {
+            return Ok(());
+        };
+        if self.plan.omit {
+            let bytes = low_word(bits)?;
+            let value = if kind == Binary::Sub {
+                bytes
+            } else {
+                bytes.wrapping_neg()
+            };
+            let delta = i32::from_le_bytes(
+                value.to_le_bytes()[..4]
+                    .try_into()
+                    .map_err(|_| Error::Limit)?,
+            );
+            self.plan.address.adjust(delta);
+            self.assembler.frame_addressing(self.plan.address);
+            self.frame.adjusts.push(super::host_unwind::Adjust {
+                end: self.assembler.position()?,
+                args: self.plan.address.area(),
+            });
         }
         Ok(())
     }
@@ -351,9 +436,7 @@ impl<'a> Pass<'a> {
                     return_register(&mut self.assembler, reg)?;
                 }
                 self.stats.returns += 1;
-                if !last {
-                    self.branch(None, self.epilogue);
-                }
+                self.return_jump(last)?;
             }
             Op::Call(site) => {
                 let begin = self.assembler.position()?;
@@ -386,9 +469,7 @@ impl<'a> Pass<'a> {
                     .emit(&mut self.assembler, image)?;
                 if matches!(op, super::floating_mir::FloatingOp::Return(_)) {
                     self.stats.returns += 1;
-                    if !last {
-                        self.branch(None, self.epilogue);
-                    }
+                    self.return_jump(last)?;
                 }
             }
             Op::Convert(op) => op.rebase(f.aligned_disp, f.aligned_bytes).emit(
@@ -455,9 +536,11 @@ impl<'a> Pass<'a> {
                     self.assembler.store_imm(to.displaced(8), 0, 8)?;
                 }
             }
-            Op::Scalar(op) => op
-                .rebase(f.aligned_disp, f.aligned_bytes)
-                .emit(&mut self.assembler, self.flags[index])?,
+            Op::Scalar(op) => {
+                op.rebase(f.aligned_disp, f.aligned_bytes)
+                    .emit(&mut self.assembler, self.flags[index])?;
+                self.argument_area(op)?;
+            }
             Op::Trap => {
                 self.assembler.byte(0x0f);
                 self.assembler.byte(0x0b);
@@ -577,5 +660,39 @@ mod tests {
         assert_eq!(stats.short_branches, 2);
         assert_eq!(stats.long_branches, 0);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+    #[test]
+    fn optimized_returns_emit_their_own_epilogue_and_record_each_teardown() {
+        let program=crate::lowir::test_program(b"function @f(%c : i64) -> i64 { block ^entry: branch %c, ^yes, ^no block ^yes: return i64 1 block ^no: return i64 2 }").unwrap();
+        let symbol = program.publications()[0];
+        let mut function = super::super::value_selection::select_for_object(
+            &program,
+            symbol,
+            program.function(program.symbol(symbol)).unwrap(),
+            0,
+            super::super::object_compile::ObjectModel::Host,
+        )
+        .unwrap();
+        function.optimized = true;
+        function.frame_policy.omit_pointer = true;
+        let mut image = Image::new(program.symbols().len());
+        let mut frame = super::super::host_unwind::Frame::default();
+        emit_with_frame(&function, &mut image, None, Some(&mut frame)).unwrap();
+        assert_eq!(frame.returns.len(), 1);
+        assert!(frame.frameless);
+        assert_eq!(
+            image.text[usize::try_from(frame.ret_end - 1).unwrap()],
+            0xc3
+        );
+        assert_eq!(
+            image.text[usize::try_from(frame.returns[0].returned - 1).unwrap()],
+            0xc3
+        );
+        assert!(frame.encode(false).unwrap().is_empty());
     }
 }

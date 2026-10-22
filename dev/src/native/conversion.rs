@@ -65,7 +65,7 @@ impl Conversion {
         if self.from == Type::I128 || self.to == Type::I128 {
             return self.emit_wide(a, image, runtime.ok_or(Error::Limit)?);
         }
-        let scratch = Rm::mem(R::RBP, scratch);
+        let scratch = Rm::frame(scratch);
         match self.kind {
             Kind::SignedToFloat => {
                 let s = self.source.register().ok_or(Error::Limit)?;

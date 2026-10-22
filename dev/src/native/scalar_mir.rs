@@ -81,7 +81,7 @@ impl Operand {
     pub(super) fn rm(self) -> Result<Rm, Error> {
         match self {
             Self::Register(r) => Ok(Rm::Reg(r)),
-            Self::Frame(d) => Ok(Rm::mem(R::RBP, d)),
+            Self::Frame(d) => Ok(Rm::frame(d)),
             Self::Memory(m) => Ok(m.rm()),
             _ => Err(Error::Construction(
                 "scalar operand is not register/memory".into(),
@@ -347,7 +347,7 @@ impl ScalarOp {
                 Operand::Register(s) => a.mov_rr(r, s),
                 Operand::Immediate(v) => a.mov_ri_flags(r, low_word(v)?, keep_flags),
                 Operand::Symbol(s) => a.lea(r, Rm::rip(ImageSymbol::Program(s), 0)),
-                Operand::Frame(d) => a.load(r, Rm::mem(R::RBP, d), 8, false),
+                Operand::Frame(d) => a.load(r, Rm::frame(d), 8, false),
                 Operand::Memory(m) => a.load(r, m.rm(), 8, false),
                 Operand::SymbolOffset(s, d) => a.lea(r, Rm::rip(ImageSymbol::Program(s), d)),
                 Operand::AccessedSymbol(s, d, access) => a.symbol_address(r, s, d, access),
