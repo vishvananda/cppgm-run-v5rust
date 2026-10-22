@@ -1,0 +1,68 @@
+extern "C" int printf(const char*, ...);
+struct A
+{
+	int n;
+	A(int x) : n(x) {}
+	~A() { printf("~%d\n", n); }
+};
+const A& reference(bool b)
+{
+	static const A& value = b ? A(1) : A(2);
+	return value;
+}
+const A (&array())[2]
+{
+	static const A (&value)[2] = {5, 6};
+	return value;
+}
+namespace std
+{
+	template<class T> class initializer_list
+	{
+		const T* p;
+		unsigned long n;
+	public:
+		initializer_list(const T*, unsigned long);
+	};
+}
+void list()
+{
+	static std::initializer_list<A> value{3, 4};
+}
+struct T
+{
+	T() { printf("T\n"); }
+	~T() { printf("~T\n"); }
+};
+struct B
+{
+	B(const T&) { printf("B\n"); }
+	~B() { printf("~B\n"); }
+};
+void object(bool b)
+{
+	static B value(b ? T() : T());
+}
+struct Empty
+{
+	Empty(int) {}
+	~Empty() { printf("~E\n"); }
+};
+void empty()
+{
+	static const Empty (&value)[2] = {7, 8};
+}
+int main()
+{
+	int first = reference(false).n;
+	int second = reference(true).n;
+	printf("ref %d %d\n", first, second);
+	printf("array %d\n", array()[1].n);
+	empty();
+	empty();
+	list();
+	list();
+	object(true);
+	object(false);
+	return first != 2 || second != 2;
+}

@@ -53,6 +53,7 @@ pub(super) struct SymbolTable {
     terminate_pending: bool,
     bad_array_length: Option<SymbolId>,
     atexit: Option<SymbolId>,
+    guard_functions: [Option<SymbolId>; 3],
     thread_atexit: Option<SymbolId>,
     dso_handle: Option<SymbolId>,
     runtime_roles: Vec<super::runtime_roles::RoleSymbol>,

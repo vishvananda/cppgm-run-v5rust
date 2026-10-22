@@ -1,0 +1,5 @@
+retry 7
+scalar 41 41 attempts 2
+complete 9
+object 1
+destroy 1

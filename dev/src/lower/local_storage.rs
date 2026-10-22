@@ -19,7 +19,58 @@ pub(super) struct StaticTemporaries {
     pub reference: bool,
     pub made: Vec<super::shutdown::Finalizer>,
 }
+#[derive(Clone, Copy)]
+pub(super) enum GuardCall {
+    Acquire,
+    Release,
+    Abort,
+}
+impl GuardCall {
+    pub(super) fn index(self) -> usize {
+        match self {
+            Self::Acquire => 0,
+            Self::Release => 1,
+            Self::Abort => 2,
+        }
+    }
+    pub(super) fn result(self) -> Type {
+        match self {
+            Self::Acquire => Type::I32,
+            Self::Release | Self::Abort => Type::Void,
+        }
+    }
+}
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn guard_call(
+        &mut self,
+        call: GuardCall,
+        guard: crate::lowir::model::SymbolId,
+        ty: crate::sema::lowering::TypeId,
+    ) -> Result<(), Error> {
+        self.emit_guard_call(call, guard, ty).map(|_| ())
+    }
+    fn emit_guard_call(
+        &mut self,
+        call: GuardCall,
+        guard: crate::lowir::model::SymbolId,
+        ty: crate::sema::lowering::TypeId,
+    ) -> Result<Value, Error> {
+        let address = self.emit(I::Addr(Value::Symbol(guard)), ty)?.value;
+        let callee = self.symbols.guard_function(self.builder.program(), call)?;
+        let arguments = self.builder.arguments(&[address])?;
+        self.before_lifetime_call(false)?;
+        let value = self.emit(
+            I::Call(crate::lowir::model::Call {
+                result: call.result(),
+                callee: Value::Symbol(callee),
+                arguments,
+                signature: None,
+                copy_elision: false,
+            }),
+            ty,
+        )?;
+        Ok(self.finish_lifetime_call(value, false)?.value)
+    }
     pub(super) fn local_static(
         &mut self,
         entity: EntityId,
@@ -139,20 +190,10 @@ impl Function<'_, '_, '_, '_> {
         let flag = Value::Symbol(guard);
         let ready = self.new_block("local_static_ready")?;
         let initialize = self.new_block("local_static_init")?;
-        let loaded = self.emit(
-            I::Load(Facts::memory(false, true), Type::I64, flag),
-            facts.ty,
-        )?;
-        let zero = self.builder.integer(0)?;
-        let test = self.emit(
-            I::Compare(Compare::Ne, Type::I64, loaded.value, zero),
-            facts.ty,
-        )?;
-        self.effect(I::Branch(test.value, ready, initialize))?;
-        self.terminated = true;
-        self.place(initialize)?;
+        let thread_safe = self.symbols.host_objects() && !facts.thread_local;
+        let aborting = self.begin_static_guard(guard, facts.ty, ready, initialize, thread_safe)?;
         let address = self.emit(I::Addr(Value::Symbol(symbol)), facts.ty)?.value;
-        let first = self.lifetime.cleanups.len();
+        let mut first = self.lifetime.cleanups.len();
         let persistent = self.persistent_references;
         self.persistent_references = true;
         let previous = self.static_temporaries.replace(StaticTemporaries {
@@ -169,30 +210,45 @@ impl Function<'_, '_, '_, '_> {
         let saved = self.symbols.replace_temporary_owner(Some((entity, 0)));
         let mut region = false;
         let construction = self.lifetime.construction;
+        let construction_flow = self.lifetime.construction_flow;
+        let construction_start = self.lifetime.construction_start;
         self.lifetime.construction |= aggregate;
-        let result = (|| {
-            if aggregate {
-                let temporaries = self.local_initializer_temporaries(initializer, facts.ty)?;
-                region = self.begin_local_initializer(entity, initializer, true, temporaries)?;
+        let root = initializer.and_then(|initializer| match initializer.kind {
+            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => Some(id),
+            ast::InitializerKind::Parenthesized(args) => {
+                let arguments = self.tree.expr_lists.get(args);
+                (arguments.len() == 1).then(|| arguments[0])
             }
-            match self.graph.lower_type(facts.ty)? {
+            _ => None,
+        });
+        let result = self.with_full_root(root, |this| {
+            if aggregate {
+                let temporaries = this.local_initializer_temporaries(initializer, facts.ty)?;
+                region = this.begin_local_initializer(entity, initializer, true, temporaries)?;
+                if !region && !this.lifetime.full_expression {
+                    this.lifetime.construction_flow = this.initializer_branches(initializer)?;
+                    this.lifetime.construction_start =
+                        Some((this.builder.position()?, this.lifetime.cleanups.len()));
+                }
+            }
+            match this.graph.lower_type(facts.ty)? {
                 TypeView::Array { .. } => {
-                    self.local_array(entity, facts.ty, address, initializer)?;
+                    this.local_array(entity, facts.ty, address, initializer)?;
                 }
                 TypeView::Class(_) => {
-                    self.local_aggregate(entity, facts.ty, address, initializer)?;
+                    this.local_aggregate(entity, facts.ty, address, initializer)?;
                 }
                 TypeView::Reference { .. } => {
                     let written = initializer.ok_or(crate::sema::Error::Invariant(
                         "static reference without initializer",
                     ))?;
-                    let expr = self.initializer_expression(written)?;
-                    region = self.begin_full_expression(
+                    let expr = this.initializer_expression(written)?;
+                    region = this.begin_full_expression(
                         Some(expr),
                         super::temporary_scan::ExpressionUse::Ordinary,
                     )?;
-                    let target = self.bind_static_reference(expr, facts.ty)?;
-                    self.effect(I::Store(
+                    let target = this.bind_static_reference(expr, facts.ty)?;
+                    this.effect(I::Store(
                         Facts::memory(false, true),
                         Type::Ptr,
                         target,
@@ -201,18 +257,20 @@ impl Function<'_, '_, '_, '_> {
                 }
                 _ => {
                     let expr = initializer
-                        .map(|written| self.initializer_expression(written))
+                        .map(|written| this.initializer_expression(written))
                         .transpose()?;
-                    region = self.begin_full_expression(
+                    region = this.begin_full_expression(
                         expr,
                         super::temporary_scan::ExpressionUse::Ordinary,
                     )?;
-                    self.initialize_scalar(facts.ty, address, initializer)?;
+                    this.initialize_scalar(facts.ty, address, initializer)?;
                 }
             }
             Ok::<(), Error>(())
-        })();
+        });
         self.lifetime.construction = construction;
+        self.lifetime.construction_flow = construction_flow;
+        self.lifetime.construction_start = construction_start;
         self.persistent_references = persistent;
         self.symbols.replace_temporary_owner(saved);
         let temporaries = std::mem::replace(&mut self.static_temporaries, previous).ok_or(
@@ -221,6 +279,10 @@ impl Function<'_, '_, '_, '_> {
         result?;
         if self.lifetime.tracking.active {
             self.finish_tracking()?;
+        }
+        if let Some(aborting) = aborting {
+            self.complete_static_guard(aborting)?;
+            first -= 1;
         }
         if !temporaries.made.is_empty() {
             self.register_static_finalizers(symbol, &temporaries.made, facts.ty)?;
@@ -232,8 +294,12 @@ impl Function<'_, '_, '_, '_> {
                 facts.thread_local && self.symbols.object_mode(),
             )?;
         }
-        let one = self.builder.integer(1)?;
-        self.effect(I::Store(Facts::memory(false, true), Type::I64, one, flag))?;
+        if thread_safe {
+            self.guard_call(GuardCall::Release, guard, facts.ty)?;
+        } else {
+            let one = self.builder.integer(1)?;
+            self.effect(I::Store(Facts::memory(false, true), Type::I64, one, flag))?;
+        }
         // Initialization has completed before its initializer temporaries are
         // destroyed. Their failure must not retry or lose static destruction.
         self.destroy_temporaries(first)?;
@@ -241,6 +307,74 @@ impl Function<'_, '_, '_, '_> {
         self.close_lifetime_region()?;
         self.jump(ready)?;
         self.place(ready)
+    }
+
+    fn complete_static_guard(&mut self, aborting: usize) -> Result<(), Error> {
+        // Retire the acquired guard before registering destruction or running
+        // initializer temporaries. Later failures must not abort this guard.
+        self.close_lifetime_region()?;
+        self.lifetime.cleanups.remove(aborting);
+        if self.lifetime.tracking.floor > aborting {
+            self.lifetime.tracking.floor -= 1;
+        }
+        if let super::lifetime::TemporarySegment::Nothrow { floor } =
+            &mut self.lifetime.temporary_segment
+            && *floor > aborting
+        {
+            *floor -= 1;
+        }
+        for cleanup in self.lifetime.cleanups.iter_mut().skip(aborting) {
+            cleanup.clear_unwind_memos();
+        }
+        Ok(())
+    }
+
+    fn begin_static_guard(
+        &mut self,
+        guard: crate::lowir::model::SymbolId,
+        ty: crate::sema::lowering::TypeId,
+        ready: crate::lowir::model::BlockId,
+        initialize: crate::lowir::model::BlockId,
+        thread_safe: bool,
+    ) -> Result<Option<usize>, Error> {
+        let flag = Value::Symbol(guard);
+        if thread_safe {
+            let acquire = self.new_block("local_static_ctor_run")?;
+            let address = self.emit(I::Addr(flag), ty)?.value;
+            let loaded = self.emit(I::Load(Facts::default(), Type::I8, address), ty)?;
+            let zero = self.builder.integer(0)?;
+            let test = self.emit(I::Compare(Compare::Ne, Type::I8, loaded.value, zero), ty)?;
+            self.effect(I::Branch(test.value, ready, acquire))?;
+            self.terminated = true;
+            self.place(acquire)?;
+            let acquired = self.emit_guard_call(GuardCall::Acquire, guard, ty)?;
+            let zero = self.builder.integer(0)?;
+            let test = self.emit(I::Compare(Compare::Ne, Type::I32, acquired, zero), ty)?;
+            self.effect(I::Branch(test.value, initialize, ready))?;
+            self.terminated = true;
+            self.place(initialize)?;
+            let aborting = self.lifetime.cleanups.len();
+            let mut cleanup = super::lifetime::Cleanup::temporary(ty, flag);
+            cleanup.place = super::lifetime::CleanupPlace::AbortGuard(guard);
+            self.lifetime.cleanups.push(cleanup);
+            let split = self.lifetime.region;
+            self.close_lifetime_region()?;
+            if split {
+                let position = self.builder.position()?;
+                self.open_temporary_region_at(Some(position))?;
+            } else {
+                self.lifetime.storage_split = Some(self.builder.position()?);
+            }
+            Ok(Some(aborting))
+        } else {
+            let loaded = self.emit(I::Load(Facts::memory(false, true), Type::I64, flag), ty)?;
+            let zero = self.builder.integer(0)?;
+            let test = self.emit(I::Compare(Compare::Ne, Type::I64, loaded.value, zero), ty)?;
+            self.effect(I::Branch(test.value, ready, initialize))?;
+            self.terminated = true;
+            self.place(initialize)?;
+            Ok(None)
+        }
     }
 
     fn define_static_storage(

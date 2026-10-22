@@ -1,0 +1,46 @@
+extern "C" int printf(const char*, ...);
+int attempts;
+int constructions;
+int temporary_throws = 1;
+int make()
+{
+	if (++attempts == 1)
+		throw 7;
+	return 41;
+}
+int scalar()
+{
+	static int value = make();
+	return value;
+}
+struct Temporary
+{
+	~Temporary() noexcept(false)
+	{
+		if (temporary_throws)
+		{
+			temporary_throws = 0;
+			throw 9;
+		}
+	}
+};
+struct Object
+{
+	Object(Temporary = Temporary()) { ++constructions; }
+	~Object() { printf("destroy %d\n", constructions); }
+};
+int object()
+{
+	static Object value;
+	return constructions;
+}
+int main()
+{
+	try { scalar(); } catch (int e) { printf("retry %d\n", e); }
+	int first = scalar();
+	int second = scalar();
+	printf("scalar %d %d attempts %d\n", first, second, attempts);
+	try { object(); } catch (int e) { printf("complete %d\n", e); }
+	printf("object %d\n", object());
+	return attempts != 2 || constructions != 1;
+}

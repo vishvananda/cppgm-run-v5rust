@@ -2,6 +2,59 @@
 //! Runtime destruction registration shares one typed declaration per translation unit.
 use super::{Error, Metadata, Program, SymbolId, Symbols};
 impl Symbols<'_, '_> {
+    pub(in crate::lower) fn guard_function(
+        &mut self,
+        program: &mut Program,
+        call: super::super::local_storage::GuardCall,
+    ) -> Result<SymbolId, Error> {
+        use crate::lowir::{
+            model::{Boundary, Function, Linkage, Parameter, Signature},
+            vocabulary::{Binding, Type},
+        };
+        if let Some(symbol) = self.table.guard_functions[call.index()] {
+            return Ok(symbol);
+        }
+        let stem = match call {
+            super::super::local_storage::GuardCall::Acquire => "cxa_guard_acquire",
+            super::super::local_storage::GuardCall::Release => "cxa_guard_release",
+            super::super::local_storage::GuardCall::Abort => "cxa_guard_abort",
+        };
+        let symbol =
+            self.table
+                .allocate(program, &format!("__cppgm_runtime_{stem}"), None, true)?;
+        let parameter = Parameter {
+            name: program.names.intern("arg0")?,
+            ty: Type::Ptr,
+            pass: None,
+            object_bytes: 0,
+            no_alias: false,
+            classes: None,
+        };
+        let signature = program.add_signature(Signature {
+            parameters: vec![parameter],
+            result: call.result(),
+            boundary: Boundary::default(),
+        })?;
+        let object = program.names.intern(&format!("__{stem}"))?;
+        program.add(
+            symbol,
+            Function {
+                name: program.symbol(symbol).name,
+                signature,
+                metadata: Metadata {
+                    linkage: Linkage::C,
+                    binding: Some(Binding::Strong),
+                    object: Some(object),
+                    ..Metadata::default()
+                },
+                body: None,
+                location: None,
+            },
+        )?;
+        self.table.guard_functions[call.index()] = Some(symbol);
+        program.publish_runtime_declaration(symbol);
+        Ok(symbol)
+    }
     pub(in crate::lower) fn thread_atexit_function(
         &mut self,
         program: &mut Program,

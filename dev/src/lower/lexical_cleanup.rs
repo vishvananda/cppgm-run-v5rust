@@ -54,6 +54,12 @@ pub(super) struct Lexical {
     dispatches: HashMap<DispatchKey, BlockId>,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn cleanup_throws(&mut self, cleanup: Cleanup) -> Result<bool, Error> {
+        if matches!(cleanup.place, CleanupPlace::AbortGuard(_)) {
+            return Ok(false);
+        }
+        self.destructor_throws(cleanup.ty)
+    }
     pub(super) fn destructor_throws(&mut self, ty: TypeId) -> Result<bool, Error> {
         self.symbols
             .class_destructor(ty)?
@@ -83,7 +89,7 @@ impl Function<'_, '_, '_, '_> {
         Ok(block)
     }
     pub(super) fn lexical_handler(&mut self, depth: usize) -> Result<Option<BlockId>, Error> {
-        if !self.destructor_throws(self.lifetime.cleanups[depth].ty)? {
+        if !self.cleanup_throws(self.lifetime.cleanups[depth])? {
             return Ok(None);
         }
         if !self.handlers.contexts.is_empty() {

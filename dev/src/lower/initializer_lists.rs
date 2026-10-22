@@ -166,7 +166,8 @@ impl Function<'_, '_, '_, '_> {
         storage: Value,
         owner: Option<EntityId>,
     ) -> Result<(), Error> {
-        if owner.is_none()
+        if self.symbols.object_mode()
+            || owner.is_none()
             || self
                 .static_temporaries
                 .as_ref()

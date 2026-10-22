@@ -86,18 +86,25 @@ impl Function<'_, '_, '_, '_> {
         reference: TypeId,
         context: Context,
     ) -> Result<Value, Error> {
-        self.check_stack()?;
-        let TypeView::Reference { element, .. } = self.graph.lower_type(reference)? else {
-            return Err(Error::Semantic(crate::sema::Error::Invariant(
-                "binding without reference type",
-            )));
-        };
-        let facts = self.graph.lower_expression(id)?;
         let persistent = self.persistent_references
             && matches!(
                 context,
                 Context::Initialization | Context::MemberInitialization
             );
+        self.bind_reference_with_persistence(id, reference, context, persistent)
+    }
+    fn bind_reference_with_persistence(
+        &mut self,
+        id: ast::ExprId,
+        reference: TypeId,
+        context: Context,
+        persistent: bool,
+    ) -> Result<Value, Error> {
+        self.check_stack()?;
+        let TypeView::Reference { element, .. } = self.graph.lower_type(reference)? else {
+            return Err(crate::sema::Error::Invariant("binding without reference type").into());
+        };
+        let facts = self.graph.lower_expression(id)?;
         if self.class_conversion(id).is_some() {
             return self.converting_reference_temporary(id, element, context, persistent);
         }
@@ -199,7 +206,20 @@ impl Function<'_, '_, '_, '_> {
             ))?;
             return Ok(self.emit(I::Addr(slot), target)?.value);
         }
-        let address = self.address(id)?;
+        // bind_converted forwards the outer lifetime to the temporary made
+        // by a reference cast's binding, independently of its Cast context.
+        let root = self.without_parentheses(id);
+        let address = if let Some(reference) = facts.reference_cast
+            && self.graph.lower_runtime_cast(root)?.is_none()
+            && let ExprKind::Cast { operand, .. } = self.tree.expressions.get(root).kind
+            && (self.graph.lower_expression(operand)?.temporary.is_some()
+                || self.class_conversion(operand).is_some()
+                || self.graph.lower_function_conversion(operand)?.is_some())
+        {
+            self.bind_reference_with_persistence(operand, reference, Context::Cast, persistent)?
+        } else {
+            self.address(id)?
+        };
         if let Some(offset) = self.graph.lower_base_conversion(id)? {
             self.project_base_access(
                 address,

@@ -490,7 +490,9 @@ impl Function<'_, '_, '_, '_> {
         }
         let slot = self.temporary_storage(ty, persistent, use_.stem())?;
         let object = self.emit(I::Addr(slot), ty)?.value;
-        self.storage_region_event()?;
+        if !persistent && !branched {
+            self.storage_region_event()?;
+        }
         if deferred_region {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;

@@ -947,6 +947,9 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
+            // Prefix cleanup belongs to an enclosing aggregate construction
+            // or a constructor's members, not a persistent array's Storage root.
+            && (self.aggregation.floor.is_some() || matches!(path.root, Root::This(_)))
             && !(field && matches!(path.root, Root::Address(_)))
             && self.counts_aggregate_elements(ty, &input.values[input.next..])?
         {
@@ -1169,9 +1172,7 @@ impl Function<'_, '_, '_, '_> {
         let mut untyped = false;
         for step in &path.steps {
             let mut offset = self.builder.integer(u128::from(step.offset))?;
-            if let Some(bytes) = step.scale
-                && (bytes != 1 || !matches!(path.root, Root::ArrayStorage(_)))
-            {
+            if let Some(bytes) = step.scale.filter(|&bytes| bytes != 1) {
                 let size = self.builder.integer(u128::from(bytes))?;
                 offset = self
                     .emit(

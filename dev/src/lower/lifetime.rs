@@ -31,6 +31,7 @@ struct Completion {
 }
 #[derive(Clone, Copy)]
 pub(super) enum CleanupPlace {
+    AbortGuard(crate::lowir::model::SymbolId),
     Storage(Value),
     Subobject(Value),
     Extended(Value),
@@ -711,6 +712,10 @@ impl Function<'_, '_, '_, '_> {
         below: Option<BlockId>,
         unwinding: bool,
     ) -> Result<(), Error> {
+        if let CleanupPlace::AbortGuard(guard) = cleanup.place {
+            self.guard_call(super::local_storage::GuardCall::Abort, guard, cleanup.ty)?;
+            return Ok(());
+        }
         // Automatic storage owns the entry family; temporaries, members and
         // delete[] demand only the complete entry their direct calls name.
         if let Some(variable) = cleanup.variable
@@ -768,6 +773,11 @@ impl Function<'_, '_, '_, '_> {
             self.before_lifetime_call(false)?;
         }
         let result = match cleanup.place {
+            CleanupPlace::AbortGuard(_) => {
+                return Err(
+                    crate::sema::Error::Invariant("guard cleanup reached destruction").into(),
+                );
+            }
             CleanupPlace::Storage(storage) => {
                 self.destroy_storage_guarded(cleanup.ty, storage, !unwinding)
             }
@@ -1129,7 +1139,7 @@ impl Function<'_, '_, '_, '_> {
             })?;
             let below = if !unwinding
                 && index != 0
-                && self.destructor_throws(self.lifetime.cleanups[index].ty)?
+                && self.cleanup_throws(self.lifetime.cleanups[index])?
             {
                 Some(self.cleanup_prefix(true, index)?)
             } else {
