@@ -1,4 +1,4 @@
-//! Temporary copy forwarding and slot contents from `opt/coalescing.cpp`.
+//! Temporary copy forwarding and slot contents from `opt/copy_coalescing.cpp`.
 //! See NOTICE.
 use super::{
     alias_facts,
