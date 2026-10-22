@@ -1,8 +1,8 @@
 //! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
 use super::{
     aggregate_slots, coalescing, condition_placement, control_flow::Cfg, dead_code,
-    definition_order, exception_regions, flow_cleanup, jump_threading, memory_forward,
-    returned_storage, slot_promotion, sparse_constants, value_reuse,
+    definition_order, exception_regions, flow_cleanup, jump_threading, loop_removal,
+    memory_forward, returned_storage, slot_promotion, sparse_constants, value_reuse,
 };
 use crate::lowir::{
     Error,
@@ -66,6 +66,7 @@ pub(super) struct Context<'a> {
     pub(super) level: u8,
     pub(super) nounwind: &'a [bool],
     pub(super) dead: u64,
+    pub(super) loops_removed: u64,
     pub(super) propagated: u64,
     pub(super) unwritten: &'a [bool],
     pub(super) branches_folded: u64,
@@ -107,6 +108,7 @@ impl<'a> Context<'a> {
             level,
             nounwind,
             dead: 0,
+            loops_removed: 0,
             propagated: 0,
             unwritten,
             branches_folded: 0,
@@ -246,6 +248,7 @@ impl<'a> Context<'a> {
             Pass::SplitSlots => aggregate_slots::split(self),
             Pass::PromoteSlots => slot_promotion::promote(self),
             Pass::CoalesceCopies => coalescing::coalesce(self),
+            Pass::RemoveLoops => loop_removal::remove(self),
             Pass::NameReturnedSlot => returned_storage::name(self),
             Pass::ThreadJumps => jump_threading::thread(self),
             Pass::SplitOrBranches => condition_placement::split_or_branches(self),

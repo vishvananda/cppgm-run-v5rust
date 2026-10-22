@@ -813,12 +813,14 @@ enum BlockName {
 pub(crate) enum OptimizerBlock {
     Thread,
     Split,
+    LoopExit,
 }
 impl OptimizerBlock {
     pub(crate) fn spelling(self) -> &'static str {
         match self {
             Self::Thread => "thread",
             Self::Split => "split",
+            Self::LoopExit => "loop_exit",
         }
     }
 }
