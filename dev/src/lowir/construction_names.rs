@@ -12,6 +12,7 @@ pub(super) enum SlotName {
     Anonymous,
     RangeFor(NameId),
     Generated(&'static str),
+    GeneratedName(NameId),
     Parameter(usize),
 }
 pub(super) fn record_shadows(labels: &mut [SlotName]) {
@@ -53,6 +54,13 @@ pub(super) fn slots(
             SlotName::Generated(stem) => loop {
                 generated = generated.checked_add(1).ok_or(Error::Limit)?;
                 let text = format!("{stem}__{generated}");
+                if !taken.contains(&names.intern(&text)?) {
+                    break text;
+                }
+            },
+            SlotName::GeneratedName(stem) => loop {
+                generated = generated.checked_add(1).ok_or(Error::Limit)?;
+                let text = format!("{}__{generated}", names.get(*stem));
                 if !taken.contains(&names.intern(&text)?) {
                     break text;
                 }

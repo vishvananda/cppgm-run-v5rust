@@ -7,12 +7,12 @@ use crate::lowir::construction_names::SlotName;
 use crate::lowir::literals::Constant;
 use std::collections::HashSet;
 
-trait Remap {
+pub(super) trait Remap {
     fn value(&mut self, value: Value) -> Result<Value, Error>;
     fn block(&mut self, block: BlockId) -> Result<BlockId, Error>;
     fn arguments(&mut self, arguments: Arguments) -> Result<Arguments, Error>;
 }
-fn rewrite(kind: &mut InstructionKind, map: &mut impl Remap) -> Result<(), Error> {
+pub(super) fn rewrite(kind: &mut InstructionKind, map: &mut impl Remap) -> Result<(), Error> {
     use InstructionKind as I;
     match kind {
         I::Const(_, v)
@@ -632,7 +632,9 @@ impl Body {
                 block.name = name;
             } else {
                 let mut text = match block.origin {
-                    BlockName::Generated(stem) => format!("{}_{index}", names.get(stem)),
+                    BlockName::Generated(stem) | BlockName::CopiedSource(stem) => {
+                        format!("{}_{index}", names.get(stem))
+                    }
                     BlockName::Optimizer(kind) => format!("{}_{index}", kind.spelling()),
                     _ => index.to_string(),
                 };

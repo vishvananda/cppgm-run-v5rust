@@ -27,11 +27,15 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
                 write_global(program, global, &mut floating, &mut out)?;
             }
         } else {
-            for function in program
-                .functions()
-                .iter()
-                .filter(|f| f.body.is_some() == (phase == 3))
-            {
+            let functions = program
+                .function_declarations()
+                .filter(|_| phase == 1)
+                .chain(program.publications().iter().filter_map(|&id| {
+                    program
+                        .function(program.symbol(id))
+                        .filter(|f| phase == 3 && f.body.is_some())
+                }));
+            for function in functions {
                 if written && !phase_written {
                     writeln!(out)?;
                 }
@@ -312,6 +316,12 @@ fn temporary_names(program: &Program, body: &Body) -> io::Result<Vec<String>> {
             program.names.get(temp.name).to_owned()
         } else if index < body.parameter_count {
             let mut name = format!("__param{index}");
+            while taken.contains(name.as_str()) {
+                name.push('_');
+            }
+            name
+        } else if !program.names.bytes(temp.name).is_empty() {
+            let mut name = format!("{}_{ordinal}", program.names.get(temp.name));
             while taken.contains(name.as_str()) {
                 name.push('_');
             }

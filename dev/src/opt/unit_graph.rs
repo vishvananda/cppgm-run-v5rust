@@ -8,7 +8,7 @@ use crate::lowir::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct FunctionIndex(u32);
 impl FunctionIndex {
-    fn index(self) -> usize {
+    pub(super) fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -55,6 +55,24 @@ impl CallGraph {
     }
     pub(super) fn symbol(&self, index: FunctionIndex) -> SymbolId {
         self.functions[index.index()]
+    }
+    pub(super) fn position(&self, symbol: SymbolId) -> Option<FunctionIndex> {
+        self.index_of.get(symbol.index()).copied().flatten()
+    }
+    pub(super) fn calls(&self, f: FunctionIndex) -> u32 {
+        self.calls_in[f.index()]
+    }
+    pub(super) fn callers(&self, f: FunctionIndex) -> u32 {
+        self.callers_in[f.index()]
+    }
+    pub(super) fn observed(&self, f: FunctionIndex) -> bool {
+        self.observed[f.index()]
+    }
+    pub(super) fn recursive(&self, f: FunctionIndex) -> bool {
+        self.recursive[f.index()]
+    }
+    pub(super) fn consume_call(&mut self, f: FunctionIndex) {
+        self.calls_in[f.index()] = self.calls_in[f.index()].wrapping_sub(1);
     }
     fn observe(&mut self, symbol: SymbolId) {
         if let Some(index) = self.index_of[symbol.index()] {
@@ -213,7 +231,7 @@ fn data_references(program: &Program, mut mark: impl FnMut(SymbolId)) {
         }
     }
 }
-fn discardable(metadata: &Metadata) -> bool {
+pub(super) fn discardable(metadata: &Metadata) -> bool {
     matches!(metadata.binding, Some(Binding::Weak | Binding::Internal))
         && metadata.role.is_none()
         && metadata.flags & (4 | 64) == 0

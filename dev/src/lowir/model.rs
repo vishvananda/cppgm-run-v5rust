@@ -14,6 +14,11 @@ use std::sync::Arc;
 #[path = "body_edits.rs"]
 mod body_edits;
 pub(crate) use body_edits::LinkEditor;
+#[path = "body_import.rs"]
+mod body_import;
+pub(crate) use body_import::ImportMap;
+#[path = "program_copies.rs"]
+mod program_copies;
 macro_rules! identity {
     ($($name:ident),+ ) => { $(
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -100,6 +105,7 @@ pub(crate) struct Program {
     immediate_declaration_set: std::collections::HashSet<SymbolId>,
     pub(crate) names: Names,
     functions: Vec<Function>,
+    unpublished_functions: HashSet<SymbolId>,
     completed_definition: Option<SymbolId>,
     publications: Vec<SymbolId>,
     streamed_functions: HashSet<SymbolId>,
@@ -472,7 +478,8 @@ impl Program {
                         let function = &self.functions[id.0 as usize];
                         (function.body.is_none()
                             && !self.streamed_functions.contains(&symbol_id)
-                            && !self.immediate_declaration_set.contains(&symbol_id))
+                            && !self.immediate_declaration_set.contains(&symbol_id)
+                            && !self.unpublished_functions.contains(&symbol_id))
                         .then_some(function)
                     }),
             )
@@ -511,6 +518,7 @@ impl Program {
     pub(crate) fn discard_function_definition(&mut self, symbol: SymbolId) -> Result<(), Error> {
         let body = self.take_body(symbol)?.ok_or(Error::Limit)?;
         drop(body);
+        self.unpublished_functions.insert(symbol);
         if self.completed_definition == Some(symbol) {
             self.completed_definition = None;
         }
@@ -791,10 +799,12 @@ pub(crate) struct Temp {
     pub(crate) first_use: u32,
     pub(crate) uses: u32,
 }
+#[derive(Clone)]
 pub(crate) struct Slot {
     pub(crate) name: NameId,
     pub(crate) ty: Type,
 }
+#[derive(Clone)]
 pub(crate) struct Block {
     pub(crate) name: NameId,
     pub(crate) placed: bool,
@@ -806,6 +816,7 @@ pub(crate) struct Block {
 enum BlockName {
     Source(NameId),
     Generated(NameId),
+    CopiedSource(NameId),
     Anonymous,
     Optimizer(OptimizerBlock),
 }
@@ -814,6 +825,9 @@ pub(crate) enum OptimizerBlock {
     Thread,
     Split,
     LoopExit,
+    InlineEntry,
+    InlineContinuation,
+    InlineCopy,
 }
 impl OptimizerBlock {
     pub(crate) fn spelling(self) -> &'static str {
@@ -821,6 +835,9 @@ impl OptimizerBlock {
             Self::Thread => "thread",
             Self::Split => "split",
             Self::LoopExit => "loop_exit",
+            Self::InlineEntry => "inline_entry",
+            Self::InlineContinuation => "inline_cont",
+            Self::InlineCopy => "inline_copy",
         }
     }
 }
@@ -830,6 +847,8 @@ pub(crate) enum OptimizerSlot {
     Aggregate,
     Phi,
     Demote,
+    ReturnMerge,
+    ReturnMergeObject,
 }
 impl OptimizerSlot {
     fn spelling(self) -> &'static str {
@@ -838,6 +857,8 @@ impl OptimizerSlot {
             Self::Aggregate => "aggregate",
             Self::Phi => "phi",
             Self::Demote => "demote",
+            Self::ReturnMerge => "retmerge",
+            Self::ReturnMergeObject => "retmergeobj",
         }
     }
 }
@@ -988,6 +1009,11 @@ impl Body {
     pub(crate) fn temp_id(&self, index: usize) -> Option<TempId> {
         (index < self.temps.len())
             .then(|| u32::try_from(index).ok().map(TempId))
+            .flatten()
+    }
+    pub(crate) fn block_id(&self, index: usize) -> Option<BlockId> {
+        (index < self.blocks.len())
+            .then(|| u32::try_from(index).ok().map(BlockId))
             .flatten()
     }
     pub(crate) fn slot_id(&self, index: usize) -> Option<SlotId> {

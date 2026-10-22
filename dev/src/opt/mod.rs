@@ -2,6 +2,7 @@
 mod aggregate_slots;
 mod algebra;
 mod alias_facts;
+mod body_expansion;
 mod branch_ranges;
 mod coalescing;
 mod condition_placement;
@@ -18,6 +19,10 @@ mod flow_cleanup;
 mod global_contents;
 mod handler_liveness;
 mod induction;
+mod inline_arguments;
+mod inline_policy;
+mod inline_shape;
+mod inline_wave;
 mod iteration_values;
 mod jump_threading;
 mod load_placement;
@@ -28,9 +33,11 @@ mod memory_contents;
 mod memory_forward;
 mod natural_loops;
 mod numeric_fold;
+mod partial_inline;
 mod pass_context;
 mod phi_threading;
 mod range_threading;
+mod return_values;
 mod returned_storage;
 mod slot_copies;
 mod slot_promotion;
@@ -63,32 +70,72 @@ pub(crate) fn optimize(program: &mut Program, level: u8) -> Result<(), Error> {
     if level == 0 {
         return Ok(());
     }
+    let mut original = vec![0; program.symbols().len()];
+    let mut input = 0_u64;
+    for (index, symbol) in program.symbols().iter().enumerate() {
+        if let Some(body) = program.function(symbol).and_then(|f| f.body.as_ref()) {
+            let size = inline_wave::instruction_count(body)?;
+            original[index] = size;
+            input = input.checked_add(u64::from(size)).ok_or(Error::Limit)?;
+        }
+    }
     let unwritten = global_contents::find_unwritten(program);
+    let mut nounwind = vec![false; program.symbols().len()];
+    let mut budgets = inline_policy::Budgets::new(input);
+    let options = inline_policy::Options::new(level);
+    let mut stats = inline_wave::Stats::default();
     storage_arguments::materialize(program)?;
-    optimize_functions(program, level, &unwritten)?;
-    unit_graph::prune_unreachable(program)?;
-    Err(Error::NotImplemented("LowIR remaining inline waves"))
+    for wave in [
+        inline_policy::Wave::Ordinary,
+        inline_policy::Wave::Once,
+        inline_policy::Wave::Late,
+    ] {
+        let mut simplify = |program: &mut Program, symbol, nounwind: &mut Vec<bool>| {
+            simplify_function(program, symbol, level, nounwind, &unwritten)
+        };
+        inline_wave::Runner::new(
+            program,
+            options,
+            wave,
+            inline_wave::Shared {
+                budgets: &mut budgets,
+                original: &original,
+                nounwind: &mut nounwind,
+                stats: &mut stats,
+            },
+            &mut simplify,
+        )?
+        .run()?;
+        unit_graph::prune_unreachable(program)?;
+    }
+    if level >= 2 {
+        return Err(Error::NotImplemented(
+            "LowIR argument specialization and finishing passes",
+        ));
+    }
+    Ok(())
 }
 
-fn optimize_functions(program: &mut Program, level: u8, unwritten: &[bool]) -> Result<(), Error> {
-    let graph = unit_graph::CallGraph::build(program)?;
-    let mut nounwind = vec![false; program.symbols().len()];
-    for &index in &graph.bottom_up {
-        let symbol = graph.symbol(index);
-        let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
-        let result = {
-            let mut context =
-                pass_context::Context::new(program, symbol, &mut body, level, &nounwind, unwritten);
-            local_pipeline::simplify(&mut context)
-        }
-        .and_then(|proven| {
-            nounwind[symbol.index()] = proven;
-            body.compact(&mut program.names)
-        });
-        program.restore_body(symbol, body)?;
-        result?;
+fn simplify_function(
+    program: &mut Program,
+    symbol: crate::lowir::model::SymbolId,
+    level: u8,
+    nounwind: &mut Vec<bool>,
+    unwritten: &[bool],
+) -> Result<(), Error> {
+    let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
+    let result = {
+        let mut context =
+            pass_context::Context::new(program, symbol, &mut body, level, nounwind, unwritten);
+        local_pipeline::simplify(&mut context)
     }
-    Err(Error::NotImplemented("LowIR inlining and function passes"))
+    .and_then(|proven| {
+        nounwind.resize(program.symbols().len(), false);
+        nounwind[symbol.index()] = proven;
+        body.compact(&mut program.names)
+    });
+    program.restore_body(symbol, body)?;
+    result
 }
 
 #[cfg(test)]
