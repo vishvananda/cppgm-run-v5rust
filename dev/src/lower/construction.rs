@@ -359,7 +359,10 @@ impl Function<'_, '_, '_, '_> {
                         == super::aggregate_cleanup::CallScope::FullExpression,
         )?;
         self.symbols.demand_entry(entry);
-        if publish_table && let Entry::Constructor(id, _) = entry {
+        if publish_table
+            && !self.symbols.host_objects()
+            && let Entry::Constructor(id, _) = entry
+        {
             self.symbols.construction_table(
                 self.builder.program(),
                 self.graph.lower_constructor(id).class,

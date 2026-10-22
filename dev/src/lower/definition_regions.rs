@@ -10,6 +10,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(super) struct FunctionTry {
     pub body: ast::StmtId,
+    pub clauses: crate::syntax::storage::List<ast::Handler>,
     pub rethrow: bool,
 }
 
@@ -26,6 +27,7 @@ impl Function<'_, '_, '_, '_> {
             body.handlers.map(|clauses| {
                 self.handlers.function_try = Some(FunctionTry {
                     body: body.compound,
+                    clauses,
                     rethrow: destructor || matches!(entry, Entry::Constructor(..)),
                 });
                 (body.compound, clauses)

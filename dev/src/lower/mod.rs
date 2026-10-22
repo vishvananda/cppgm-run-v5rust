@@ -119,8 +119,9 @@ pub(crate) struct Output {
     finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
-    pub(crate) fn set_object_mode(&mut self) {
+    pub(crate) fn set_object_mode(&mut self, host_objects: bool) {
         self.symbols.object_mode = true;
+        self.symbols.host_objects = host_objects;
     }
 
     pub(crate) fn finish_initialization(&mut self) -> Result<(), Error> {

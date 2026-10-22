@@ -401,6 +401,23 @@ impl Function<'_, '_, '_, '_> {
             spine.push((node, left, right, op == Some(P::LogicalAnd)));
             node = self.without_parentheses(left);
         }
+        // Inner logical operands can outlive their branch. Clear their
+        // completion flags before the entire chain, as begin_guard_scope does.
+        let guards = !self.branch_local(id) || spine.len() > 1;
+        let guard_start = self.lifetime.guard_start;
+        if guards && guard_start.is_none() {
+            self.lifetime.guard_start = Some(self.builder.position()?);
+        }
+        let result = self.logical_chain(spine);
+        if guards && guard_start.is_none() {
+            self.lifetime.guard_start = None;
+        }
+        result
+    }
+    fn logical_chain(
+        &mut self,
+        spine: Vec<(ast::ExprId, ast::ExprId, ast::ExprId, bool)>,
+    ) -> Result<RValue, Error> {
         let mut result = None;
         for (node, left, right, conjunction) in spine.into_iter().rev() {
             let source = self.graph.lower_expression(node)?.ty;

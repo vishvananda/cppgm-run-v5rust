@@ -164,6 +164,7 @@ impl Function<'_, '_, '_, '_> {
                 self.with_enclosing_region(true, |this| {
                     if enclosing.is_some()
                         && !this.handlers.contexts.is_empty()
+                        && !this.symbols.host_objects()
                         && let Some(attempt) = this.innermost_try()
                     {
                         this.emit_try_clauses(attempt)?;
@@ -231,6 +232,10 @@ impl Function<'_, '_, '_, '_> {
             .value)
     }
     pub(super) fn resume_list_element(&mut self, enclosing: Option<BlockId>) -> Result<(), Error> {
+        if enclosing.is_some() && !self.handlers.contexts.is_empty() && self.symbols.host_objects()
+        {
+            return self.handler_resume();
+        }
         if let Some(enclosing) = enclosing {
             self.effect(I::Runtime(R::EhEnd))?;
             if self.handlers.contexts.is_empty() {

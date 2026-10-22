@@ -480,7 +480,7 @@ impl Symbols<'_, '_> {
         if !self.graph.lower_virtual_bases(class).is_empty() {
             self.vtt_symbol(program, class)?;
         }
-        if self.graph.lower_vtable_group(class).is_some() {
+        if !self.host_objects() && self.graph.lower_vtable_group(class).is_some() {
             for (base, _) in self.graph.lower_inheritance_edges(class) {
                 self.construction_table(program, base)?;
             }

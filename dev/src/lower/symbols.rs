@@ -41,6 +41,7 @@ use std::{collections::HashMap, fmt::Write};
 #[derive(Default)]
 pub(super) struct SymbolTable {
     pub(super) object_mode: bool,
+    pub(super) host_objects: bool,
     objects: HashMap<NameId, Option<SymbolId>>,
     suffixes: HashMap<NameId, u32>,
     source: Option<SourceId>,
@@ -192,6 +193,9 @@ pub(super) struct Symbols<'a, 'source> {
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn object_mode(&self) -> bool {
         self.table.object_mode
+    }
+    pub(super) fn host_objects(&self) -> bool {
+        self.table.host_objects
     }
     pub(super) fn note_declaration_only_global(&mut self, entity: EntityId) {
         self.declaration_only_globals.insert(entity);
@@ -1501,6 +1505,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         Ok(id)
     }
     pub(super) fn demand_destruction(&mut self, entity: EntityId) -> Result<(), Error> {
+        // Host objects demand the called complete entry. A vtable or a base
+        // destruction call independently demands the other ABI entries.
+        if self.host_objects() {
+            self.demand(entity);
+            return Ok(());
+        }
         if self.graph.lower_virtual_slot(entity).is_some()
             || self
                 .graph

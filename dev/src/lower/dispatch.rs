@@ -12,6 +12,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn demand_virtual_call_table(&mut self) -> Result<(), Error> {
         if let Some(class) = self.call_object_class
             && !self.graph.lower_virtual_bases(class).is_empty()
+            && !self.symbols.host_objects()
         {
             self.symbols
                 .construction_table(self.builder.program(), class)?;
@@ -193,6 +194,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok((self.symbols.callee(entity, &mut self.builder)?, None));
         }
         if !self.graph.lower_virtual_pure(entity)
+            && !self.symbols.host_objects()
             && (self.graph.lower_function_defined(entity)
                 || self.graph.lower_has_synthesized_body(entity))
         {

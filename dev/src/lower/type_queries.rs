@@ -38,6 +38,7 @@ impl Function<'_, '_, '_, '_> {
         let object = self.address(operand)?;
         if let crate::sema::lowering::TypeView::Class(class) =
             self.graph.lower_type(query.target)?
+            && !self.symbols.host_objects()
         {
             self.symbols
                 .construction_table(self.builder.program(), class)?;

@@ -11,7 +11,9 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         self.lifetime.scan = super::lifetime::ScanState::Complete;
-        if let Some(body) = self.lifetime.body {
+        if let Some(attempt) = self.handlers.function_try {
+            self.count_try_live(attempt.body, attempt.clauses, None, 0)?;
+        } else if let Some(body) = self.lifetime.body {
             self.count_live(body, None, 0, None)?;
         }
         Ok(())
@@ -175,23 +177,7 @@ impl Function<'_, '_, '_, '_> {
                 return self.count_live(body, live, contexts, context);
             }
             StmtKind::Try { body, handlers } => {
-                self.count_live(body, live, contexts + 1, Some(body))?;
-                for handler in self.tree.handlers.get(handlers) {
-                    let mut inner = live;
-                    if !matches!(handler.exception, ast::ExceptionDeclaration::Ellipsis) {
-                        let (ty, variable) = self.graph.lower_handler(handler.body)?;
-                        if let Some(variable) = variable
-                            && matches!(
-                                self.graph.lower_type(ty)?,
-                                crate::sema::lowering::TypeView::Class(_)
-                            )
-                            && self.automatic_destructor(variable)?.is_some()
-                        {
-                            inner = Some(self.lifetime.add_live(variable, live)?);
-                        }
-                    }
-                    self.count_live(handler.body, inner, contexts + 1, Some(handler.body))?;
-                }
+                self.count_try_live(body, handlers, live, contexts)?;
             }
             StmtKind::Do { body, .. } => {
                 self.count_live(body, live, contexts, context)?;
@@ -199,6 +185,32 @@ impl Function<'_, '_, '_, '_> {
             _ => {}
         }
         Ok(live)
+    }
+    fn count_try_live(
+        &mut self,
+        body: ast::StmtId,
+        handlers: crate::syntax::storage::List<ast::Handler>,
+        live: Option<LiveId>,
+        contexts: usize,
+    ) -> Result<(), Error> {
+        self.count_live(body, live, contexts + 1, Some(body))?;
+        for handler in self.tree.handlers.get(handlers) {
+            let mut inner = live;
+            if !matches!(handler.exception, ast::ExceptionDeclaration::Ellipsis) {
+                let (ty, variable) = self.graph.lower_handler(handler.body)?;
+                if let Some(variable) = variable
+                    && matches!(
+                        self.graph.lower_type(ty)?,
+                        crate::sema::lowering::TypeView::Class(_)
+                    )
+                    && self.automatic_destructor(variable)?.is_some()
+                {
+                    inner = Some(self.lifetime.add_live(variable, live)?);
+                }
+            }
+            self.count_live(handler.body, inner, contexts + 1, Some(handler.body))?;
+        }
+        Ok(())
     }
     pub(super) fn goto_cleanup(
         &mut self,

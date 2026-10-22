@@ -59,14 +59,18 @@ impl Function<'_, '_, '_, '_> {
         self.effect(I::Branch(null.value, end, scan))?;
         self.terminated = true;
         self.place(scan)?;
-        self.symbols
-            .construction_table(self.builder.program(), from_class)?;
+        if !self.symbols.host_objects() {
+            self.symbols
+                .construction_table(self.builder.program(), from_class)?;
+        }
         let from = self
             .symbols
             .typeinfo_symbol(self.builder.program(), from_class)?;
         let from = self.emit(I::Addr(Value::Symbol(from)), source)?.value;
-        self.symbols
-            .construction_table(self.builder.program(), to_class)?;
+        if !self.symbols.host_objects() {
+            self.symbols
+                .construction_table(self.builder.program(), to_class)?;
+        }
         let to = self
             .symbols
             .typeinfo_symbol(self.builder.program(), to_class)?;

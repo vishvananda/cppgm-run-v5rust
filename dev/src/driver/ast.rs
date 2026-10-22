@@ -36,7 +36,7 @@ impl LowIrOutput {
             .set_definition_sink(Box::new(crate::native::ObjectBuilder::with_model(
                 0, model,
             )?))?;
-        output.set_object_mode();
+        output.set_object_mode(model == crate::native::ObjectModel::Host);
         Ok(Self { output })
     }
     pub(crate) fn finish_object(
@@ -312,6 +312,22 @@ pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
 mod tests {
     use super::*;
     use crate::support::stack::StackBudget;
+
+    #[test]
+    fn host_catch_copy_retires_throwing_default_argument_before_handler() {
+        let source = SourceBuffer::new(b"struct T{T();~T()noexcept(false);};struct E{E(const E&,T=T());~E()noexcept(false);};void g();void f(){try{g();}catch(E e){g();}}".to_vec()).unwrap();
+        let mut streamed = LowIrOutput::for_object_model(crate::native::ObjectModel::Host).unwrap();
+        emit_compilation_unit(
+            &source,
+            b"host-catch-copy",
+            &PredefinedValues::default(),
+            &crate::preprocess::options::DriverOptions::default(),
+            &mut streamed,
+            StackBudget::default(),
+        )
+        .unwrap();
+        streamed.finish_object(b"host-catch-copy".to_vec()).unwrap();
+    }
 
     #[test]
     fn object_stream_releases_bodies_and_retains_forward_call_boundaries() {

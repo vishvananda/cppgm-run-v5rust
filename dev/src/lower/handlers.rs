@@ -395,13 +395,7 @@ impl Function<'_, '_, '_, '_> {
             }
             TypeView::Reference { .. } | TypeView::Pointer(_) => caught,
             TypeView::Class(_) => {
-                let address = self.emit(I::Addr(slot), ty)?.value;
-                if let Some(constructor) = self.graph.lower_construction(entity) {
-                    self.handlers.explicit += 1;
-                    self.construct_from(constructor, address, caught)?;
-                    self.handlers.explicit -= 1;
-                }
-                self.register_catch_destruction(entity)?;
+                self.initialize_catch_object(entity, ty, slot, caught)?;
                 return Ok(());
             }
             _ => {
@@ -427,6 +421,50 @@ impl Function<'_, '_, '_, '_> {
                 .depths
                 .insert(entity, self.lifetime.cleanups.len());
         }
+        Ok(())
+    }
+    fn initialize_catch_object(
+        &mut self,
+        entity: crate::sema::lowering::EntityId,
+        ty: TypeId,
+        slot: Value,
+        caught: Value,
+    ) -> Result<(), Error> {
+        let first = self.lifetime.cleanups.len();
+        if let Some(constructor) = self.graph.lower_construction(entity) {
+            // The host handler becomes active only after its copy
+            // completes. A throw before then must terminate (15.3p7).
+            let guarded = self.symbols.host_objects()
+                && (!self.graph.lower_constructor_function(constructor)?.nothrow
+                    || self.lifetime.temporary_segment.allows_eager_arguments());
+            let region = if guarded {
+                let guard = self.new_block("lexical_cleanup_terminate")?;
+                let next = self.new_block("call_unwind_end")?;
+                self.effect(I::Runtime(R::EhTry(guard)))?;
+                self.lifetime.region = true;
+                Some((guard, next))
+            } else {
+                None
+            };
+            let address = self.emit(I::Addr(slot), ty)?.value;
+            self.handlers.explicit += 1;
+            self.construct_from(constructor, address, caught)?;
+            self.handlers.explicit -= 1;
+            if let Some((guard, next)) = region {
+                self.lifetime.region = false;
+                self.effect(I::Runtime(R::EhEnd))?;
+                self.jump(next)?;
+                self.place(guard)?;
+                self.terminate_current_exception()?;
+                self.place(next)?;
+            }
+        }
+        if self.symbols.host_objects() {
+            // Default-argument temporaries end with initialization,
+            // before the handler's statements (1.9p10).
+            self.destroy_temporaries(first)?;
+        }
+        self.register_catch_destruction(entity)?;
         Ok(())
     }
     pub(super) fn catch_runtime(

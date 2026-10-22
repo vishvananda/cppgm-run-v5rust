@@ -68,6 +68,11 @@ impl Function<'_, '_, '_, '_> {
         self.new_cleanup_terminate()
     }
     pub(super) fn shared_cleanup_unwind_guard(&mut self) -> Result<BlockId, Error> {
+        // Object landings have one enclosing region state. Serialized course
+        // LowIR alone shares this landing across distinct destructions.
+        if self.symbols.object_mode() {
+            return self.new_cleanup_terminate();
+        }
         if let Some(block) = self.lexical.terminate {
             return Ok(block);
         }

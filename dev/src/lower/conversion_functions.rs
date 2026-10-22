@@ -259,8 +259,13 @@ impl Function<'_, '_, '_, '_> {
         let guarded = self.lifetime_call_throws(CallTarget::Direct(call.function))?
             && !self.lifetime.cleanups.is_empty()
             && !self.lifetime.full_expression;
+        let contexts = !self.handlers.contexts.is_empty();
         let dispatch = if guarded {
-            let block = self.new_block("call_unwind_dispatch")?;
+            let block = if contexts {
+                self.context_landing(self.lifetime.cleanups.len())?
+            } else {
+                self.new_block("call_unwind_dispatch")?
+            };
             self.effect(I::Runtime(R::EhTry(block)))?;
             Some(block)
         } else {
@@ -303,15 +308,17 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Runtime(R::EhEnd))?;
             let next = self.new_block("call_unwind_end")?;
             self.jump(next)?;
-            self.place(dispatch)?;
-            let depth = self.lifetime.cleanups.len();
-            let cleanup = self.lifetime.cleanups[depth - 1];
-            self.destroy_cleanup_in(cleanup, None, true)?;
-            if depth > 1 {
-                let tail = self.cleanup_prefix(true, depth - 1)?;
-                self.jump(tail)?;
-            } else {
-                self.handler_resume()?;
+            if !contexts {
+                self.place(dispatch)?;
+                let depth = self.lifetime.cleanups.len();
+                let cleanup = self.lifetime.cleanups[depth - 1];
+                self.destroy_cleanup_in(cleanup, None, true)?;
+                if depth > 1 {
+                    let tail = self.cleanup_prefix(true, depth - 1)?;
+                    self.jump(tail)?;
+                } else {
+                    self.handler_resume()?;
+                }
             }
             self.place_cleanup_chains(false)?;
             self.place(next)?;

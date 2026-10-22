@@ -79,6 +79,7 @@ impl Function<'_, '_, '_, '_> {
             this.place(cleanup)?;
             if enclosing.is_some()
                 && !this.handlers.contexts.is_empty()
+                && !this.symbols.host_objects()
                 && let Some(attempt) = this.innermost_try()
             {
                 this.emit_try_clauses(attempt)?;
