@@ -342,7 +342,10 @@ impl MemoryPass<'_, '_> {
                 while at < range.end && at < end {
                     let index = usize::try_from(at.wrapping_sub(source.offset))
                         .map_err(|_| Error::Limit)?;
-                    covered[index] = true;
+                    let entry = covered.get_mut(index).ok_or_else(|| {
+                        Error::Construction("constant-copy zero index outside image".into())
+                    })?;
+                    *entry = true;
                     at = at.wrapping_add(1);
                 }
             }
@@ -364,8 +367,13 @@ impl MemoryPass<'_, '_> {
             let offset = usize::try_from(offset).map_err(|_| Error::Limit)?;
             let width = usize::try_from(width).map_err(|_| Error::Limit)?;
             for (index, &byte) in low.iter().take(width).enumerate() {
-                covered[offset + index] = true;
-                image[offset + index] = byte;
+                let position = offset.checked_add(index).ok_or(Error::Limit)?;
+                let covered = covered.get_mut(position).ok_or_else(|| {
+                    Error::Construction("constant-copy byte index outside image".into())
+                })?;
+                let output = image.get_mut(position).ok_or(Error::Limit)?;
+                *covered = true;
+                *output = byte;
             }
         }
         Ok(covered.iter().all(|&b| b).then_some(image))
@@ -585,6 +593,16 @@ mod tests {
         let mut text = Vec::new();
         crate::lowir::writer::write(&program, &mut text).unwrap();
         (String::from_utf8(text).unwrap(), changed, loads, stores)
+    }
+    #[test]
+    fn a_wrapped_constant_copy_index_returns_a_structured_error() {
+        let mut program=crate::lowir::test_program(b"function @f(%out : ptr)->void {slot $a : obj<1x1> block ^entry:%base = addr $a %at = index i8 %base, 9223372036854775807 store u8 7, %at zeroinit 1x1 %base copyobj 1x1 %base, %out return void}").unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let mut context = Context::new(&program, symbol, &mut body, 2, &[], &[]);
+        assert!(
+            matches!(forward(&mut context),Err(Error::Construction(message))if message=="constant-copy byte index outside image")
+        );
     }
     #[test]
     fn forwarding_crosses_region_markers_but_never_reuses_volatile_loads() {

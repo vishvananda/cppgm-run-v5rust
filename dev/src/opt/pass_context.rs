@@ -1,7 +1,8 @@
 //! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
 use super::{
-    condition_placement, control_flow::Cfg, dead_code, definition_order, exception_regions,
-    flow_cleanup, jump_threading, memory_forward, slot_promotion, sparse_constants, value_reuse,
+    aggregate_slots, condition_placement, control_flow::Cfg, dead_code, definition_order,
+    exception_regions, flow_cleanup, jump_threading, memory_forward, slot_promotion,
+    sparse_constants, value_reuse,
 };
 use crate::lowir::{
     Error,
@@ -32,7 +33,6 @@ pub(super) enum Pass {
 impl Pass {
     fn missing(self) -> &'static str {
         match self {
-            Self::SplitSlots => "LowIR aggregate slot splitting",
             Self::SimplifyValues => "LowIR scalar simplification",
             Self::ForwardMemory => "LowIR memory forwarding",
             Self::Constants => "LowIR constant propagation",
@@ -43,7 +43,8 @@ impl Pass {
             Self::FormSwitches => "LowIR switch formation",
             Self::NameReturnedSlot => "LowIR returned-slot naming",
             Self::DefinitionOrder => "LowIR definition order restoration",
-            Self::DeadCode
+            Self::SplitSlots
+            | Self::DeadCode
             | Self::StripRegions
             | Self::PromoteSlots
             | Self::ThreadJumps
@@ -242,6 +243,7 @@ impl<'a> Context<'a> {
             Pass::SimplifyValues => value_reuse::simplify(self),
             Pass::CleanupCfg => flow_cleanup::cleanup(self),
             Pass::ForwardMemory => memory_forward::forward(self),
+            Pass::SplitSlots => aggregate_slots::split(self),
             Pass::PromoteSlots => slot_promotion::promote(self),
             Pass::ThreadJumps => jump_threading::thread(self),
             Pass::SplitOrBranches => condition_placement::split_or_branches(self),

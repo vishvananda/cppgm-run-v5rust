@@ -824,12 +824,16 @@ impl OptimizerBlock {
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OptimizerSlot {
+    Field,
+    Aggregate,
     Phi,
     Demote,
 }
 impl OptimizerSlot {
     fn spelling(self) -> &'static str {
         match self {
+            Self::Field => "field",
+            Self::Aggregate => "aggregate",
             Self::Phi => "phi",
             Self::Demote => "demote",
         }

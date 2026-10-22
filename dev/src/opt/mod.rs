@@ -1,4 +1,5 @@
 //! Typed unit optimization, translated from opt/optimizer.cpp. See NOTICE.
+mod aggregate_slots;
 mod algebra;
 mod alias_facts;
 mod branch_ranges;
@@ -10,6 +11,8 @@ mod diamond_reuse;
 mod dominating_facts;
 mod edge_demotion;
 mod exception_regions;
+mod field_expansion;
+mod field_layout;
 mod flow_cleanup;
 mod global_contents;
 mod handler_liveness;
@@ -83,7 +86,16 @@ fn optimize_functions(program: &mut Program, level: u8, unwritten: &[bool]) -> R
 #[cfg(test)]
 fn pass_view(source: &str, level: u8, pass: pass_context::Pass) -> (String, (bool, u64, u64, u64)) {
     let mut program = crate::lowir::test_program(source.as_bytes()).unwrap();
-    let symbol = program.publications()[0];
+    let symbol = program
+        .publications()
+        .iter()
+        .copied()
+        .find(|&symbol| {
+            program
+                .function(program.symbol(symbol))
+                .is_some_and(|function| function.body.is_some())
+        })
+        .unwrap();
     let mut body = program.take_body(symbol).unwrap().unwrap();
     let facts = {
         let mut context = pass_context::Context::new(&program, symbol, &mut body, level, &[], &[]);
