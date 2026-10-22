@@ -1,0 +1,4 @@
+extern int sequence;
+template<class T>struct X{static thread_local int n;};
+template<class T>thread_local int X<T>::n=++sequence;
+int first(){return ++X<int>::n;}

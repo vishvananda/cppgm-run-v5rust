@@ -1,0 +1,4 @@
+int sequence; int next(){return ++sequence;}
+thread_local int first=next();
+thread_local int second=next();
+thread_local int constant=7;

@@ -146,22 +146,22 @@ fn define_variable_contents<'a>(
     budget: crate::support::stack::StackBudget,
 ) -> Result<(), Error> {
     let initialization = define(output, symbols, graph, tree, entity, initializer, location)?;
-    // Namespace TLS uses its separate first-use scheduler. Until that object
-    // dialect is translated, retain the existing guarded finalization path.
     let registered = symbols.object_mode()
-        && !graph.lower_variable(entity)?.thread_local
         && symbols
             .storage_destructor(graph.lower_entity_type(entity)?)?
             .is_some();
     let mut thread_initialization = None;
     let mut constructed = None;
-    if initialization == Initialization::Dynamic && graph.lower_variable(entity)?.thread_local {
+    if (initialization == Initialization::Dynamic || registered)
+        && graph.lower_variable(entity)?.thread_local
+    {
         thread_initialization = Some(super::thread_local::initialize(
             output,
             symbols,
             (graph, tree),
             entity,
             initializer,
+            initialization == Initialization::Dynamic,
             budget,
         )?);
     } else if initialization == Initialization::Dynamic || registered {
@@ -176,7 +176,7 @@ fn define_variable_contents<'a>(
                 constructed = Some(symbols.instance_constructed(output.program, entity)?);
             }
             Some(super::startup::Guard {
-                shared: symbols.instance_guard(output.program, entity)?,
+                shared: symbols.instance_guard(output.program, entity, false)?,
                 constructed,
             })
         } else {
@@ -207,7 +207,7 @@ fn define_variable_contents<'a>(
                 graph,
                 global,
                 facts.ty,
-                thread_initialization.map(|(guard, _)| guard),
+                thread_initialization.and_then(|(guard, _)| guard),
             )?
         {
             finalizer.constructed = constructed;
@@ -220,6 +220,9 @@ fn define_variable_contents<'a>(
         thread_initialization.map(|(_, init)| init),
     )? {
         output.definitions.stream(output.program, None)?;
+    }
+    if thread_initialization.is_none() {
+        symbols.tls_static_entry(output.program, entity)?;
     }
     Ok(())
 }

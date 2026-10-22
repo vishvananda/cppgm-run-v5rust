@@ -27,6 +27,10 @@ struct Input {
     kind: Kind,
     path: PathBuf,
 }
+enum OptionCheck<'a> {
+    Target(&'a OsStr),
+    Optimization(&'a OsStr),
+}
 #[derive(Default)]
 struct Invocation {
     compile: bool,
@@ -88,6 +92,7 @@ fn target(arg: &OsStr) -> Result<(), AstToolError> {
 }
 fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
     let mut invocation = Invocation::default();
+    let mut checks = Vec::new();
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
@@ -104,10 +109,10 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             }
             b"--target" => {
                 index += 1;
-                target(
+                checks.push(OptionCheck::Target(
                     args.get(index)
                         .ok_or_else(|| message("missing target after --target"))?,
-                )?;
+                ));
             }
             b"-pedantic"
             | b"-pedantic-errors"
@@ -115,19 +120,12 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             | b"-fvisibility=hidden"
             | b"-fvisibility-inlines-hidden" => {}
             b"-E" => return Err(AstToolError::Missing("hosted preprocessing mode")),
-            _ if bytes.starts_with(b"--target=") => target(OsStr::from_bytes(&bytes[9..]))?,
+            b"--target=" => return Err(message("missing target after --target")),
+            _ if bytes.starts_with(b"--target=") => {
+                checks.push(OptionCheck::Target(OsStr::from_bytes(&bytes[9..])));
+            }
             _ if bytes.starts_with(b"-O") => {
-                let text = &bytes[2..];
-                invocation.level = match text {
-                    b"" | b"g" => 1,
-                    b"s" | b"z" => 2,
-                    b"fast" => 3,
-                    _ if !text.is_empty() && text.iter().all(u8::is_ascii_digit) => text
-                        .iter()
-                        .fold(0_u8, |n, b| n.saturating_mul(10).saturating_add(b - b'0'))
-                        .min(3),
-                    _ => return Err(argument("unsupported option: ", arg)),
-                };
+                checks.push(OptionCheck::Optimization(arg));
             }
             _ if bytes.starts_with(b"-I") => {
                 let dir = value(args, &mut index, "-I")?
@@ -206,10 +204,31 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             "cannot specify -o when generating multiple output files",
         ));
     }
+    // cppgm++.cpp checks the invocation's shape before toolchain.cpp checks
+    // option meanings. Preserve that failure precedence without rereading argv.
+    for check in checks {
+        match check {
+            OptionCheck::Target(arg) => target(arg)?,
+            OptionCheck::Optimization(arg) => invocation.level = optimization_level(arg)?,
+        }
+    }
     if invocation.level != 0 {
         return Err(AstToolError::Missing("optimized source objects"));
     }
     Ok(invocation)
+}
+fn optimization_level(arg: &OsStr) -> Result<u8, AstToolError> {
+    let text = &arg.as_bytes()[2..];
+    match text {
+        b"" | b"g" => Ok(1),
+        b"s" | b"z" => Ok(2),
+        b"fast" => Ok(3),
+        _ if !text.is_empty() && text.iter().all(u8::is_ascii_digit) => Ok(text
+            .iter()
+            .fold(0_u8, |n, b| n.saturating_mul(10).saturating_add(b - b'0'))
+            .min(3)),
+        _ => Err(argument("unsupported option: ", arg)),
+    }
 }
 fn check_output(invocation: &Invocation, path: &Path) -> Result<(), AstToolError> {
     if let Ok(out) = std::fs::metadata(path) {
@@ -368,4 +387,36 @@ pub fn run(
         let _ = std::fs::remove_file(path);
         ast::native_error(error)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invocation_shape_precedes_option_meaning() {
+        let cases: &[(&[&str], &[u8])] = &[
+            (&["--target=invalid"], b"invalid usage"),
+            (&["-Oinvalid"], b"invalid usage"),
+            (&["--target="], b"missing target after --target"),
+            (&["--target=invalid", "-I"], b"missing path after -I"),
+            (
+                &["-c", "--target=invalid", "-o", "out.obj", "a.cpp", "b.cpp"],
+                b"cannot specify -o when generating multiple output files",
+            ),
+            (
+                &["--target=invalid", "a.cpp"],
+                b"unsupported target: invalid",
+            ),
+            (&["-Oinvalid", "a.cpp"], b"unsupported option: -Oinvalid"),
+        ];
+        for &(args, expected) in cases {
+            let args: Vec<_> = args.iter().map(OsString::from).collect();
+            assert!(
+                matches!(parse(&args), Err(AstToolError::Diagnostic(actual))
+                if actual == expected),
+                "{args:?}"
+            );
+        }
+    }
 }

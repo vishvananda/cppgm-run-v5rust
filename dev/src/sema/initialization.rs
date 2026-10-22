@@ -670,7 +670,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<Option<Constant>, Error> {
         Ok(match self.narrowing_value(id, scope)? {
-            Some(TemporaryValue::Integer(value)) => Some(value),
+            Some(TemporaryValue::Integer(value)) if self.held_integral_constant(value) => {
+                Some(value)
+            }
             _ => None,
         })
     }

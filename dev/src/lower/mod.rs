@@ -139,16 +139,19 @@ impl Output {
         self.symbols.finish_entry_aliases(&mut self.program);
     }
 }
-fn finish_unit(
+fn finish_unit<'a>(
     program: &mut Program,
     definitions: &mut definition_order::Definitions,
     finalizers: &mut Vec<shutdown::Finalizer>,
-    symbols: &mut symbols::Symbols<'_, '_>,
-    graph: &Graph,
+    symbols: &mut symbols::Symbols<'a, '_>,
+    graph: &'a Graph,
+    tree: &'a ast::Tree,
+    budget: StackBudget,
 ) -> Result<Option<crate::lowir::model::SymbolId>, Error> {
     symbols.emit_thunks(program, definitions)?;
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     definitions.release_held(program);
+    thread_local::finish_unit(program, definitions, symbols, graph, tree, budget)?;
     globals::finish(program, symbols, graph)?;
     symbols.finish_class_declarations(program, None)?;
     symbols.resolve_runtime_roles(program, definitions)?;
@@ -185,6 +188,8 @@ pub(crate) fn lower_unit(
         &mut output.finalizers,
         &mut symbols,
         graph,
+        tree,
+        budget,
     )?
     .or(output.initializer);
     Ok(())

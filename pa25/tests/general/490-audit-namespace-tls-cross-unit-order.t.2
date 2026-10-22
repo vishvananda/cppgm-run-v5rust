@@ -1,0 +1,4 @@
+extern thread_local int first;
+extern thread_local int second;
+extern thread_local int constant;
+int main(){return second==2 && first==1 && constant==7 ? 0:1;}

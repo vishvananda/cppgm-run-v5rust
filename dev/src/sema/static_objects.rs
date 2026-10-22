@@ -650,7 +650,7 @@ impl Analyzer<'_> {
         // Base tail padding and empty bases do not occupy a second span.
         let size = self.type_size(target, SourceOffset(0))?.0;
         let mut placements = Vec::new();
-        if !self.static_zero_placements(target, 0, &mut placements)? {
+        if !self.static_zero_placements(target, 0, 0, &mut placements)? {
             return Ok(false);
         }
         placements.sort_by_key(|&(offset, _, _)| offset);
@@ -679,9 +679,15 @@ impl Analyzer<'_> {
         &mut self,
         target: TypeId,
         origin: u64,
+        depth: u32,
         out: &mut Vec<(u64, u64, Item)>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
+        // This projects an evaluated zero value just like constant_placements.
+        // Keep its data-representation bound even when no scalar is nonzero.
+        if depth > 256 {
+            return Ok(false);
+        }
         match self.graph.types.get(target).kind {
             TypeKind::Class(class) => {
                 for index in 0..self.graph.entity(class).bases.len() {
@@ -693,7 +699,7 @@ impl Analyzer<'_> {
                     let at = origin
                         .checked_add(offset)
                         .ok_or(Error::Limit("static zero base span"))?;
-                    if !self.static_zero_placements(ty, at, out)? {
+                    if !self.static_zero_placements(ty, at, depth + 1, out)? {
                         return Ok(false);
                     }
                 }
@@ -724,7 +730,7 @@ impl Analyzer<'_> {
                         let at = origin
                             .checked_add(offset)
                             .ok_or(Error::Limit("static zero member span"))?;
-                        if !self.static_zero_placements(ty, at, out)? {
+                        if !self.static_zero_placements(ty, at, depth + 1, out)? {
                             return Ok(false);
                         }
                     }
@@ -740,7 +746,7 @@ impl Analyzer<'_> {
                         .checked_mul(size)
                         .and_then(|offset| origin.checked_add(offset))
                         .ok_or(Error::Limit("static zero array span"))?;
-                    if !self.static_zero_placements(element, at, out)? {
+                    if !self.static_zero_placements(element, at, depth + 1, out)? {
                         return Ok(false);
                     }
                 }

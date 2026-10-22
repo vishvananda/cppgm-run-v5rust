@@ -1,0 +1,5 @@
+int sequence;
+template<class T>struct X{static thread_local int n;};
+template<class T>thread_local int X<T>::n=++sequence;
+int first();
+int main(){int a=first();int b=++X<int>::n;return a==2 && b==3 && sequence==1 ? 0:1;}

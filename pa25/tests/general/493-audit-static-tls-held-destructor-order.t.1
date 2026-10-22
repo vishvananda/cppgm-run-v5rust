@@ -1,0 +1,3 @@
+struct Probe { int n; constexpr Probe(int value):n(value){} ~Probe(){} };
+thread_local Probe probe(7);
+int main() { return probe.n == 7 ? 0 : 1; }

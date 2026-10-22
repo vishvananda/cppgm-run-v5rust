@@ -26,6 +26,7 @@ pub enum Target {
         base: NodeId,
     },
     TlsWrapper(NodeId),
+    TlsInit(NodeId),
     GuardVariable(NodeId),
     ReferenceTemporary {
         owner: NodeId,
@@ -969,8 +970,12 @@ impl<'a> Encoder<'a> {
                 }
                 self.put(b"_");
             }
-            Target::TlsWrapper(id) => {
-                self.put(b"_ZTW");
+            Target::TlsWrapper(id) | Target::TlsInit(id) => {
+                self.put(if matches!(target, Target::TlsInit(_)) {
+                    b"_ZTH"
+                } else {
+                    b"_ZTW"
+                });
                 self.name(id, Qualifiers::default())?;
             }
             Target::GuardVariable(id) => {

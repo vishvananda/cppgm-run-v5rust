@@ -975,6 +975,9 @@ impl Analyzer<'_> {
             let kind = self
                 .integral_kind(left.ty)
                 .ok_or(Error::Invariant("enum without underlying type"))?;
+            if kind.bits > 64 && self.semantic() {
+                return self.wide_arithmetic(op, left, right, (left.ty, right.ty), skipping, id);
+            }
             return self.boolean(
                 integral::comparison(op, kind.signed, left.bits, right.bits)
                     .ok_or(Error::Invariant("noncomparison operator"))?,

@@ -14,6 +14,8 @@ mod placeholder_mangling;
 mod runtime_types;
 #[path = "specialization_labels.rs"]
 mod specialization_labels;
+#[path = "thread_local_symbols.rs"]
+mod thread_local_symbols;
 #[path = "type_information.rs"]
 mod type_information;
 #[path = "virtual_bases.rs"]
@@ -172,7 +174,7 @@ pub(super) struct Symbols<'a, 'source> {
     temporary_owner: Option<(EntityId, u32)>,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
     local_discriminators: HashMap<EntityId, u32>,
-    tls_wrappers: HashMap<EntityId, SymbolId>,
+    tls: thread_local_symbols::State,
     variable_names: HashMap<EntityId, NodeId>,
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
     empty_list_constructions: HashMap<EntityId, bool>,
@@ -253,7 +255,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             temporary_owner: None,
             local_counts: HashMap::new(),
             local_discriminators: HashMap::new(),
-            tls_wrappers: HashMap::new(),
+            tls: thread_local_symbols::State::default(),
             variable_names: HashMap::new(),
             class_storage: HashMap::new(),
             empty_list_constructions: HashMap::new(),
@@ -1743,6 +1745,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         &mut self,
         program: &mut Program,
         entity: EntityId,
+        thread: bool,
     ) -> Result<SymbolId, Error> {
         let global = self.variable_symbol(program, entity)?;
         let base = program.names.get(program.symbol(global).name).to_owned();
@@ -1769,6 +1772,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 metadata: Metadata {
                     binding: Some(crate::lowir::vocabulary::Binding::Weak),
                     object: Some(guard_name),
+                    storage: thread.then_some(crate::lowir::vocabulary::Storage::ThreadLocal),
                     ..Metadata::default()
                 },
                 init: crate::lowir::model::GlobalInit::Zero,
@@ -1810,160 +1814,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         self.variable_names.insert(entity, name);
         Ok(name)
-    }
-    pub(super) fn tls_wrapper(
-        &mut self,
-        program: &mut Program,
-        entity: EntityId,
-        global: SymbolId,
-    ) -> Result<Option<SymbolId>, Error> {
-        if let Some(&wrapper) = self.tls_wrappers.get(&entity) {
-            return Ok(Some(wrapper));
-        }
-        if program.symbol(global).declared()
-            || self.graph.lower_variable(entity)?.definition.is_none()
-        {
-            return Ok(None);
-        }
-        self.tls_wrapper_symbol(program, entity, global).map(Some)
-    }
-    pub(super) fn tls_wrapper_symbol(
-        &mut self,
-        program: &mut Program,
-        entity: EntityId,
-        global: SymbolId,
-    ) -> Result<SymbolId, Error> {
-        if let Some(&wrapper) = self.tls_wrappers.get(&entity) {
-            return Ok(wrapper);
-        }
-        let spelling = format!(
-            "__cppgm_tls_wrapper__{}",
-            program.names.get(program.symbol(global).name)
-        );
-        let name = self.variable_abi_name(entity)?;
-        let mut bytes = Vec::new();
-        abi::encoder::Encoder::encode(
-            &self.abi,
-            abi::encoder::Target::TlsWrapper(name),
-            &mut bytes,
-            self.budget,
-        )?;
-        let object = program.names.intern_bytes(&bytes)?;
-        let internal =
-            self.graph.lower_variable(entity)?.locality == crate::sema::lowering::Locality::Unit;
-        let local_object =
-            (!internal || !self.table.objects.contains_key(&object)).then_some(object);
-        let wrapper = self
-            .table
-            .allocate(program, &spelling, Some(object), internal)?;
-        let object = local_object;
-        self.tls_wrappers.insert(entity, wrapper);
-        // The wrapper's ABI identity is retained on its own symbol declaration.
-        let signature = program.add_signature(crate::lowir::model::Signature {
-            parameters: Vec::new(),
-            result: crate::lowir::vocabulary::Type::Ptr,
-            boundary: crate::lowir::model::Boundary::default(),
-        })?;
-        let name = program.symbol(wrapper).name;
-        program.add(
-            wrapper,
-            crate::lowir::model::Function {
-                name,
-                signature,
-                metadata: Metadata {
-                    binding: Some(if internal {
-                        crate::lowir::vocabulary::Binding::Internal
-                    } else {
-                        crate::lowir::vocabulary::Binding::Weak
-                    }),
-                    object,
-                    tls_for: Some(global),
-                    ..Metadata::default()
-                },
-                body: None,
-                location: None,
-            },
-        )?;
-        Ok(wrapper)
-    }
-    pub(super) fn tls_initialization_symbols(
-        &mut self,
-        program: &mut Program,
-        entity: EntityId,
-    ) -> Result<(SymbolId, SymbolId), Error> {
-        use crate::lowir::{
-            model::{Global, GlobalInit},
-            vocabulary::{Binding, Storage},
-        };
-        let global = self.variable_symbol(program, entity)?;
-        let base = program.names.get(program.symbol(global).name).to_owned();
-        let guard =
-            self.table
-                .allocate(program, &format!("__cppgm_tls_guard__{base}"), None, true)?;
-        program.add_global(
-            guard,
-            Global {
-                name: program.symbol(guard).name,
-                ty: Some(crate::lowir::vocabulary::Type::I64),
-                init: GlobalInit::Zero,
-                metadata: Metadata {
-                    binding: Some(Binding::Internal),
-                    storage: Some(Storage::ThreadLocal),
-                    ..Metadata::default()
-                },
-            },
-        )?;
-        let init =
-            self.table
-                .allocate(program, &format!("__cppgm_tls_init__{base}"), None, true)?;
-        Ok((guard, init))
-    }
-    pub(super) fn emit_tls_wrapper(
-        &mut self,
-        program: &mut Program,
-        entity: EntityId,
-        initializer: Option<SymbolId>,
-    ) -> Result<bool, Error> {
-        let Some(&wrapper) = self.tls_wrappers.get(&entity) else {
-            return Ok(false);
-        };
-        let global = self.variable_symbol(program, entity)?;
-        let name = program.names.get(program.symbol(wrapper).name).to_owned();
-        let metadata = program
-            .function(program.symbol(wrapper))
-            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                "TLS wrapper without declaration",
-            )))?
-            .metadata;
-        let mut builder = crate::lowir::builder::FunctionBuilder::new(
-            program,
-            &name,
-            &[],
-            crate::lowir::vocabulary::Type::Ptr,
-        )?;
-        builder.metadata(metadata);
-        builder.block("entry")?;
-        if let Some(initializer) = initializer {
-            let arguments = builder.arguments(&[])?;
-            builder.effect(crate::lowir::model::InstructionKind::Call(
-                crate::lowir::model::Call {
-                    result: crate::lowir::vocabulary::Type::Void,
-                    callee: Value::Symbol(initializer),
-                    arguments,
-                    signature: None,
-                    copy_elision: false,
-                },
-            ))?;
-        }
-        let address = builder.generated(crate::lowir::model::InstructionKind::Addr(
-            Value::Symbol(global),
-        ))?;
-        builder.effect(crate::lowir::model::InstructionKind::Return(
-            crate::lowir::vocabulary::Type::Ptr,
-            Some(address),
-        ))?;
-        builder.finish()?;
-        Ok(true)
     }
     pub(super) fn existing_local_storage(&self, entity: EntityId) -> Option<Value> {
         self.local_statics

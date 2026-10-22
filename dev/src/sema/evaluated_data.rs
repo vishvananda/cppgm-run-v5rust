@@ -50,7 +50,7 @@ impl BitImage {
         storage: super::bit_fields::Storage,
         width: u64,
         origin: u64,
-        bits: u64,
+        bits: u128,
     ) -> Result<(), Error> {
         let first = origin
             .checked_mul(8)
@@ -183,7 +183,7 @@ impl Analyzer<'_> {
                     storage,
                     self.graph.bit_fields.width(field),
                     origin,
-                    value.bits,
+                    value.wide(),
                 )?;
                 continue;
             }

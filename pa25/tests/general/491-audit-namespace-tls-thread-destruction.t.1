@@ -1,0 +1,7 @@
+extern "C" int atexit(void (*)());
+int constructed; int destroyed;
+struct Probe{int n; Probe():n(++constructed){} ~Probe(){destroyed=destroyed*10+n;}};
+thread_local Probe first;
+thread_local Probe second;
+void check(){if(destroyed!=21)__builtin_abort();}
+int main(){atexit(check);return second.n==2 && first.n==1 ? 0:1;}

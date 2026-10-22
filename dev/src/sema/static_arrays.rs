@@ -158,6 +158,9 @@ impl Analyzer<'_> {
         out: &mut Vec<Item>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
+        if expr.is_none() && !self.zero_value_initialized(target, 0)? {
+            return Ok(false);
+        }
         if let TypeKind::Class(class) = self.graph.types.get(target).kind {
             if expr.is_none() && !self.graph.aggregate_class(class) {
                 // An omitted nonaggregate subobject with trivial default
@@ -339,6 +342,35 @@ impl Analyzer<'_> {
             append_zero(out, 8)?;
         } else {
             out.push(Item::Scalar(target, value));
+        }
+        Ok(true)
+    }
+    // global_lowering.cpp::missing_element first checks whether omitted
+    // value-initialization is representable without running a constructor.
+    // This bounded type query is distinct from evaluated-value placement.
+    fn zero_value_initialized(&self, mut ty: TypeId, depth: u32) -> Result<bool, Error> {
+        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+            return Ok(true);
+        };
+        if !self.graph.aggregate_class(class) {
+            return Ok(self
+                .graph
+                .lower_ready_default_constructor(class)
+                .is_some_and(|constructor| self.graph.lower_constructor_trivial(constructor)));
+        }
+        if depth > 64 {
+            return Ok(false);
+        }
+        for &member in &self.graph.entity(class).members {
+            let ty = self.graph.lower_entity_type(member)?;
+            if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+                && !self.zero_value_initialized(ty, depth + 1)?
+            {
+                return Ok(false);
+            }
         }
         Ok(true)
     }

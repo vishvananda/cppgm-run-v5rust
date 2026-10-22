@@ -98,6 +98,7 @@ pub(crate) struct Program {
     completed_definition: Option<SymbolId>,
     publications: Vec<SymbolId>,
     streamed_functions: HashSet<SymbolId>,
+    optional_references: HashSet<SymbolId>,
     symbols: Vec<Symbol>,
     index: HashMap<NameId, SymbolId>,
     signatures: Vec<Signature>,
@@ -451,6 +452,9 @@ impl Program {
     /// wrappers carry a generated address definition, even before encoding.
     pub(crate) fn require_object_definitions(&mut self) {
         for symbol in &self.symbols {
+            if self.optional_references.contains(&self.index[&symbol.name]) {
+                continue;
+            }
             let metadata = match symbol.detail {
                 SymbolDetail::Function(id) => {
                     let function = &mut self.functions[id.0 as usize];
@@ -475,6 +479,9 @@ impl Program {
                 metadata.binding = Some(super::vocabulary::Binding::Strong);
             }
         }
+    }
+    pub(crate) fn optional_reference(&mut self, symbol: SymbolId) {
+        self.optional_references.insert(symbol);
     }
     pub(crate) fn root_function(&mut self, symbol: SymbolId) {
         if let SymbolDetail::Function(id) = self.symbol(symbol).detail {
