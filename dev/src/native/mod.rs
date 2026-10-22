@@ -61,6 +61,7 @@ mod scalar_selection;
 mod slot_analysis;
 mod stack;
 mod startup;
+mod symbol_access;
 mod value_facts;
 mod value_selection;
 mod variadic;

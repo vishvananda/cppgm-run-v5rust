@@ -93,8 +93,8 @@ pub(crate) struct ObjectBuilder {
     object_symbols: Vec<Option<object::SymbolId>>,
     by_name: HashMap<NameId, object::SymbolId>,
     host_names: HashMap<NameId, NameId>,
-    shared: [Option<SectionId>; 4],
-    own_names: [Option<Name>; 4],
+    shared: [Option<SectionId>; 6],
+    own_names: [Option<Name>; 6],
     named: HashMap<NameId, SectionId>,
     grouped: Vec<SymbolId>,
     relro: Option<SectionId>,
@@ -107,6 +107,8 @@ fn kind_slot(kind: SectionKind) -> Result<usize, Error> {
         SectionKind::Rodata => Ok(1),
         SectionKind::Data => Ok(2),
         SectionKind::Bss => Ok(3),
+        SectionKind::TlsData => Ok(4),
+        SectionKind::TlsBss => Ok(5),
         _ => Err(Error::Construction("invalid shared course section".into())),
     }
 }
@@ -116,6 +118,8 @@ fn section_name(kind: SectionKind) -> &'static [u8] {
         SectionKind::Rodata => b".rodata",
         SectionKind::Data => b".data",
         SectionKind::Bss => b".bss",
+        SectionKind::TlsData => b".tdata",
+        SectionKind::TlsBss => b".tbss",
         _ => b"",
     }
 }
@@ -205,8 +209,8 @@ impl ObjectBuilder {
             object_symbols: Vec::new(),
             by_name: HashMap::new(),
             host_names: HashMap::new(),
-            shared: [None; 4],
-            own_names: [None; 4],
+            shared: [None; 6],
+            own_names: [None; 6],
             named: HashMap::new(),
             grouped: Vec::new(),
             relro: None,
@@ -511,6 +515,13 @@ impl ObjectBuilder {
             } else {
                 SectionKind::Data
             };
+            if self.model == ObjectModel::Host && metadata.storage == Some(Storage::ThreadLocal) {
+                kind = if kind == SectionKind::Bss {
+                    SectionKind::TlsBss
+                } else {
+                    SectionKind::TlsData
+                };
+            }
             let section = if let Some(name) = metadata.section {
                 kind = if metadata.storage == Some(Storage::ReadOnly) && !relro {
                     SectionKind::Rodata
@@ -542,7 +553,7 @@ impl ObjectBuilder {
                 offset: at,
                 size,
             };
-            if kind == SectionKind::Bss {
+            if matches!(kind, SectionKind::Bss | SectionKind::TlsBss) {
                 continue;
             }
             resize(&mut output.bytes, output.size, 0)?;
@@ -817,6 +828,9 @@ impl ObjectBuilder {
         if self.model == ObjectModel::Host && !defined {
             symbol.kind = SymbolKind::None;
         }
+        if self.model == ObjectModel::Host && metadata.storage == Some(Storage::ThreadLocal) {
+            symbol.kind = SymbolKind::Tls;
+        }
         symbol.binding = if metadata.binding == Some(SourceBinding::Weak) {
             Binding::Weak
         } else {
@@ -968,11 +982,37 @@ impl ObjectBuilder {
                 )
                 .ok_or(Error::Limit)?;
             let symbol = self.object_symbol(program, fixup.target)?;
-            let mut got = false;
+            let mut kind = match fixup.kind {
+                super::x86::FixupKind::Relative if fixup.branch => RelocationKind::Branch,
+                super::x86::FixupKind::Relative => RelocationKind::Relative,
+                super::x86::FixupKind::Got => RelocationKind::Other(42),
+                super::x86::FixupKind::TpOff => RelocationKind::Other(23),
+                super::x86::FixupKind::GotTpOff => RelocationKind::Other(22),
+            };
+            if matches!(fixup.kind, super::x86::FixupKind::Got)
+                && fixup.addend == 0
+                && let ImageSymbol::Program(target) = fixup.target
+                && self.placements[target.index()].section.is_some()
+                && super::symbol_access::host_symbol_access(program, target)
+                    == super::symbol_access::SymbolAccess::Direct
+            {
+                let at = usize::try_from(offset).map_err(|_| Error::Limit)?;
+                let bytes = &mut self.out.section_mut(section).bytes;
+                if at >= 3
+                    && bytes[at - 3] & 0xf8 == 0x48
+                    && bytes[at - 2] == 0x8b
+                    && bytes[at - 1] & 0xc7 == 0x05
+                {
+                    bytes[at - 2] = 0x8d;
+                    kind = RelocationKind::Relative;
+                }
+            }
             if self.model == ObjectModel::Host
                 && !fixup.branch
+                && matches!(fixup.kind, super::x86::FixupKind::Relative)
                 && let ImageSymbol::Program(target) = fixup.target
                 && self.placements[target.index()].section.is_none()
+                && matches!(program.symbol(target).detail, SymbolDetail::Function(_))
             {
                 let at = usize::try_from(offset).map_err(|_| Error::Limit)?;
                 let bytes = &mut self.out.section_mut(section).bytes;
@@ -982,22 +1022,23 @@ impl ObjectBuilder {
                     || bytes[at - 1] & 0xc7 != 0x05
                     || fixup.addend != 0
                 {
-                    return Err(Error::NotImplemented("host imported data memory operands"));
+                    return Err(Error::Construction(
+                        "an external function's address outside a lea".into(),
+                    ));
                 }
                 bytes[at - 2] = 0x8b;
-                got = true;
+                kind = RelocationKind::Other(42);
             }
             self.out.section_mut(section).relocations.push(Relocation {
                 offset,
-                kind: if got {
-                    RelocationKind::Other(42)
-                } else if fixup.branch {
-                    RelocationKind::Branch
-                } else {
-                    RelocationKind::Relative
-                },
+                kind,
                 symbol,
-                addend: i64::from(fixup.addend) - i64::from(fixup.end),
+                addend: i64::from(fixup.addend)
+                    - if matches!(fixup.kind, super::x86::FixupKind::TpOff) {
+                        0
+                    } else {
+                        i64::from(fixup.end)
+                    },
             });
         }
         for index in 0..self.pending.len() {
@@ -1060,6 +1101,129 @@ mod tests {
         model::{InstructionKind as I, Metadata},
         vocabulary::Type,
     };
+
+    #[test]
+    fn streamed_data_addresses_relax_only_for_final_direct_definitions() -> Result<(), Error> {
+        use crate::lowir::model::{ForwardGlobal, Global, Value};
+        for (defined, replaceable) in [(false, false), (true, false), (true, true)] {
+            let mut program = Program::default();
+            program
+                .set_definition_sink(Box::new(ObjectBuilder::with_model(0, ObjectModel::Host)?))?;
+            let name = program.names.intern("data")?;
+            let source = program.add_source(std::path::Path::new(""))?;
+            let data = program.reference(name, source, 0)?;
+            program.set_forward_global(
+                data,
+                ForwardGlobal {
+                    binding: Some(SourceBinding::Strong),
+                    storage: None,
+                    defined: false,
+                },
+            );
+            let mut builder = FunctionBuilder::new(&mut program, "address", &[], Type::Ptr)?;
+            builder.block("entry")?;
+            builder.effect(I::Return(Type::Ptr, Some(Value::Symbol(data))))?;
+            builder.finish()?;
+            program.stream_last_definition(&mut std::io::sink())?;
+            assert!(program.functions().iter().all(|f| f.body.is_none()));
+            program.add_global(
+                data,
+                Global {
+                    name,
+                    ty: Some(Type::I32),
+                    metadata: Metadata {
+                        binding: Some(if replaceable {
+                            SourceBinding::Weak
+                        } else {
+                            SourceBinding::Strong
+                        }),
+                        flags: if replaceable { 64 } else { 0 },
+                        ..Metadata::default()
+                    },
+                    init: if defined {
+                        GlobalInit::Zero
+                    } else {
+                        GlobalInit::Declaration
+                    },
+                },
+            )?;
+            let object = compile(&mut program, Vec::new(), 0)?;
+            let (_, text) = object
+                .sections()
+                .find(|(_, s)| s.kind == SectionKind::Text)
+                .ok_or(Error::Limit)?;
+            let [relocation] = text.relocations.as_slice() else {
+                return Err(Error::Limit);
+            };
+            let direct = defined && !replaceable;
+            assert_eq!(relocation.kind.code(), if direct { 2 } else { 42 });
+            let field = usize::try_from(relocation.offset).map_err(|_| Error::Limit)?;
+            assert_eq!(text.bytes[field - 2], if direct { 0x8d } else { 0x8b });
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn host_lazy_array_index_observes_the_full_signed_parameter() -> Result<(), Error> {
+        use crate::lowir::{
+            model::{ForwardGlobal, Global, Value},
+            vocabulary::Convert,
+        };
+        let mut program = Program::default();
+        program.set_definition_sink(Box::new(ObjectBuilder::with_model(0, ObjectModel::Host)?))?;
+        let name = program.names.intern("data")?;
+        let source = program.add_source(std::path::Path::new(""))?;
+        let data = program.reference(name, source, 0)?;
+        program.set_forward_global(
+            data,
+            ForwardGlobal {
+                binding: Some(SourceBinding::Strong),
+                storage: None,
+                defined: false,
+            },
+        );
+        let mut builder =
+            FunctionBuilder::new(&mut program, "read", &[("i", Type::I32)], Type::I32)?;
+        builder.block("entry")?;
+        let index = builder.parameter(0)?;
+        let index = builder.value(
+            I::Convert(Convert::SignExtend, Type::I64, Type::I32, index),
+            "extended",
+        )?;
+        let base = builder.value(I::Addr(Value::Symbol(data)), "base")?;
+        let address = builder.value(I::Index(Type::I32, None, base, index), "address")?;
+        let value = builder.value(
+            I::Load(crate::lowir::model::Facts::default(), Type::I32, address),
+            "value",
+        )?;
+        builder.effect(I::Return(Type::I32, Some(value)))?;
+        builder.finish()?;
+        program.stream_last_definition(&mut std::io::sink())?;
+        program.add_global(
+            data,
+            Global {
+                name,
+                ty: None,
+                metadata: Metadata {
+                    binding: Some(SourceBinding::Strong),
+                    ..Metadata::default()
+                },
+                init: GlobalInit::Declaration,
+            },
+        )?;
+        let object = compile(&mut program, Vec::new(), 0)?;
+        let (_, text) = object
+            .sections()
+            .find(|(_, s)| s.kind == SectionKind::Text)
+            .ok_or(Error::Limit)?;
+        // Host int indices arrive with only their low 32 bits specified. The
+        // lazy address consumes a 64-bit index, so entry must sign-extend it.
+        assert!(
+            text.bytes
+                .starts_with(&[0x55, 0x48, 0x8b, 0xec, 0x48, 0x63, 0xff])
+        );
+        Ok(())
+    }
 
     #[test]
     fn held_definitions_release_ir_before_ordered_object_placement() -> Result<(), Error> {

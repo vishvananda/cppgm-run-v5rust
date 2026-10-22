@@ -28,8 +28,19 @@ pub(super) enum Operand {
     Immediate(u128),
     Frame(i32),
     Symbol(crate::lowir::model::SymbolId),
+    AccessedSymbol(
+        crate::lowir::model::SymbolId,
+        i32,
+        super::symbol_access::SymbolAccess,
+    ),
 }
 impl Operand {
+    pub(super) fn is_symbol(self) -> bool {
+        matches!(
+            self,
+            Self::Symbol(_) | Self::SymbolOffset(..) | Self::AccessedSymbol(..)
+        )
+    }
     pub(super) fn displaced(self, offset: i32) -> Self {
         self.memory().map_or(self, |mut memory| {
             memory.displacement = memory.displacement.wrapping_add(offset);
@@ -90,6 +101,18 @@ impl Operand {
                 Ok(())
             }
             Self::Symbol(id) => write!(out, "@{}", program.names.get(program.symbol(id).name)),
+            Self::AccessedSymbol(id, addend, access) => {
+                write!(
+                    out,
+                    "@{}@{}",
+                    program.names.get(program.symbol(id).name),
+                    access.suffix()
+                )?;
+                if addend != 0 {
+                    write!(out, "{addend:+}")?;
+                }
+                Ok(())
+            }
             Self::Immediate(bits) => {
                 let low = low_word(bits)
                     .map_err(|_| std::io::Error::other("invalid scalar immediate"))?;
@@ -327,6 +350,7 @@ impl ScalarOp {
                 Operand::Frame(d) => a.load(r, Rm::mem(R::RBP, d), 8, false),
                 Operand::Memory(m) => a.load(r, m.rm(), 8, false),
                 Operand::SymbolOffset(s, d) => a.lea(r, Rm::rip(ImageSymbol::Program(s), d)),
+                Operand::AccessedSymbol(s, d, access) => a.symbol_address(r, s, d, access),
             },
             Self::Load(r, ty, d) => a.load(r, d.rm()?, bytes(ty), signed(ty)),
             Self::Store(d, ty, src) => {

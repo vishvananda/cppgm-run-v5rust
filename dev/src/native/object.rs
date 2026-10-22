@@ -28,6 +28,8 @@ pub(super) enum SectionKind {
     Rodata,
     Data,
     Bss,
+    TlsData,
+    TlsBss,
     InitArray,
     FiniArray,
 }
@@ -46,6 +48,7 @@ pub(super) enum SymbolKind {
     Function,
     Section,
     File,
+    Tls,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum Definition {

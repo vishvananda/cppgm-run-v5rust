@@ -177,6 +177,13 @@ pub(super) fn select_for_object(
     } else {
         Facts::analyze_for_object(body, &slots, flow, level, model)?
     };
+    // Address folding suppresses emission, not the typed reads that decide
+    // host parameter normalization (notably a lazy array index).
+    let host_parameters = if model == super::object_compile::ObjectModel::Host {
+        super::host_parameters::observe(body, &facts)
+    } else {
+        Vec::new()
+    };
     let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
     let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
     facts.apply_calls(body, &calls)?;
@@ -219,6 +226,7 @@ pub(super) fn select_for_object(
         registers.vector_boundary,
         registers.excluded,
     );
+    placement.host_parameters = host_parameters;
     if let Some(plan) = &mut region_flow {
         if !plan.tables.landings.is_empty() {
             plan.tables.slot = placement.frame_alloc(if plan.tables.raw { 24 } else { 16 }, 8)?;
@@ -226,6 +234,7 @@ pub(super) fn select_for_object(
         mir.eh = std::mem::take(&mut plan.tables);
     }
     let mut selection = Selection {
+        program,
         phis: super::control_selection::PhiInputs::default(),
         edge_moves: Vec::new(),
         parallel: super::parallel_transfer::Workspace::default(),
@@ -513,6 +522,7 @@ fn emit_return(
             });
         }
         Alias::Symbol(symbol) => {
+            let source = selection.symbol_operand(symbol, 0);
             let mut emit = |op| {
                 selection
                     .mir
@@ -522,7 +532,14 @@ fn emit_return(
             if ty == Type::I128 || ty.float_rank() != 0 {
                 return Err(unsupported());
             }
-            emit(Op::SymbolMove(R::RAX, symbol));
+            if matches!(source, super::scalar_mir::Operand::AccessedSymbol(..)) {
+                emit(Op::Scalar(super::scalar_mir::ScalarOp::Move(
+                    R::RAX,
+                    source,
+                )));
+            } else {
+                emit(Op::SymbolMove(R::RAX, symbol));
+            }
             emit(Op::Return(Some(R::RAX)));
         }
     }

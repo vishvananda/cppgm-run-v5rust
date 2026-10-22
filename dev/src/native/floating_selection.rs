@@ -204,7 +204,7 @@ impl Selection<'_> {
             };
             self.operand(value, own, R::R10)?
         };
-        if matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
+        if source.is_symbol() {
             return Err(Error::Diagnostic(
                 "floating copy requires a numeric value or storage operand".into(),
             ));

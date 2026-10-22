@@ -14,6 +14,7 @@ use crate::lowir::{
     vocabulary::{Binary, Type, Unary},
 };
 pub(super) struct Selection<'a> {
+    pub(super) program: &'a crate::lowir::model::Program,
     pub(super) phis: super::control_selection::PhiInputs,
     pub(super) edge_moves: Vec<super::parallel_transfer::Transfer>,
     pub(super) parallel: super::parallel_transfer::Workspace,
@@ -53,7 +54,7 @@ impl Selection<'_> {
             Alias::Symbol(_) if ty == Type::I128 => Err(Error::Diagnostic(
                 "i128 value requires numeric bits or stored contents, not a symbol address".into(),
             )),
-            Alias::Symbol(id) => Ok(Operand::Symbol(id)),
+            Alias::Symbol(id) => Ok(self.symbol_operand(id, 0)),
             Alias::Slot(slot) => Ok(Operand::Frame(self.placement.slot(slot)?)),
             Alias::Temporary(temp) => {
                 let op = if let Some(address) = self.addresses.folded[temp.index()] {
@@ -102,7 +103,7 @@ impl Selection<'_> {
         if source.register() == Some(r) {
             return;
         }
-        if r.code() >= 16 && !matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
+        if r.code() >= 16 && !source.is_symbol() {
             self.mir.instructions.push(Instruction {
                 op: Op::FloatCopy(super::float_transport::FloatCopy {
                     ty,
@@ -225,11 +226,11 @@ impl Selection<'_> {
         }
         let mut a = self.operand(left, ty, R::R10)?;
         let mut b = self.operand(right, ty, R::R11)?;
-        if matches!(b, Operand::Symbol(_)) {
+        if b.is_symbol() {
             self.load(R::R11, b, Type::Ptr);
             b = Operand::Register(R::R11);
         }
-        if matches!(a, Operand::Symbol(_)) {
+        if a.is_symbol() {
             self.load(R::R10, a, Type::Ptr);
             a = Operand::Register(R::R10);
         }

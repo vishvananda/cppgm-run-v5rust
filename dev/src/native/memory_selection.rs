@@ -29,7 +29,7 @@ impl Selection<'_> {
     pub(super) fn address(&mut self, value: Value, scratch: R) -> Result<Operand, Error> {
         let mem = match self.facts.resolve(self.body, value) {
             Alias::Slot(slot) => Memory::frame(self.placement.slot(slot)?),
-            Alias::Symbol(id) => Memory::new(Base::Symbol(id), 0),
+            Alias::Symbol(id) => self.symbol_memory(id, 0, scratch),
             Alias::Constant(Constant::Integer(bits)) => Memory::new(
                 Base::Absolute,
                 i32::from_le_bytes(
@@ -81,7 +81,7 @@ impl Selection<'_> {
                     expr.displacement < 0 || expr.displacement.cast_unsigned() >= bytes.max(8);
                 Memory::frame(self.placement.slot(slot)?.wrapping_add(disp))
             }
-            AddressBase::Symbol(id) => Memory::new(Base::Symbol(id), disp),
+            AddressBase::Symbol(id) => self.symbol_memory(id, disp, scratch),
             AddressBase::Absolute => Memory::new(Base::Absolute, disp),
             AddressBase::Home(temp) => {
                 let ty = self.body.temp(temp).ty.ok_or(Error::Limit)?;
@@ -137,7 +137,7 @@ impl Selection<'_> {
                 AddressBase::Symbol(id) => {
                     self.emit(ScalarOp::Move(
                         destination,
-                        Operand::SymbolOffset(
+                        self.symbol_operand(
                             id,
                             i32::try_from(expr.displacement).map_err(|_| Error::Limit)?,
                         ),
@@ -212,7 +212,7 @@ impl Selection<'_> {
         super::memory::scalar(ty)?;
         let mut source = self.operand(value, ty, R::R11)?;
         let mem = self.address(address, R::R10)?;
-        if source.is_memory() || matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
+        if source.is_memory() || source.is_symbol() {
             self.load(R::R11, source, ty);
             source = Operand::Register(R::R11);
         }
@@ -267,7 +267,7 @@ impl Selection<'_> {
                 Operand::Immediate(u128::from(size)),
             ));
         }
-        let a = if matches!(a, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
+        let a = if a.is_symbol() {
             let scratch = if r == R::R10 { R::R11 } else { R::R10 };
             self.load(scratch, a, Type::Ptr);
             Operand::Register(scratch)

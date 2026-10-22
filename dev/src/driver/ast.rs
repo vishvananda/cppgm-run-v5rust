@@ -314,6 +314,56 @@ mod tests {
     use crate::support::stack::StackBudget;
 
     #[test]
+    fn host_incomplete_rtti_owns_descriptors_but_shares_name_objects() {
+        use crate::lowir::{
+            literals::Constant,
+            model::{DataItem, GlobalInit},
+            vocabulary::{Binding, Type},
+        };
+        let source = SourceBuffer::new(b"namespace std{class type_info;}struct A;const std::type_info*f(){return &typeid(A**);}".to_vec()).unwrap();
+        let mut output = LowIrOutput::for_object_model(crate::native::ObjectModel::Host).unwrap();
+        emit_compilation_unit(
+            &source,
+            b"incomplete-rtti",
+            &PredefinedValues::default(),
+            &crate::preprocess::options::DriverOptions::default(),
+            &mut output,
+            StackBudget::default(),
+        )
+        .unwrap();
+        let program = &output.output.program;
+        for (name, binding) in [
+            ("_ZTI1A", Binding::Internal),
+            ("_ZTIP1A", Binding::Internal),
+            ("_ZTIPP1A", Binding::Internal),
+            ("_ZTS1A", Binding::Weak),
+            ("_ZTSP1A", Binding::Weak),
+            ("_ZTSPP1A", Binding::Weak),
+        ] {
+            let global = program
+                .globals()
+                .iter()
+                .find(|g| {
+                    g.metadata
+                        .object
+                        .is_some_and(|object| program.names.get(object) == name)
+                })
+                .unwrap();
+            assert!(global.metadata.binding == Some(binding), "{name}");
+            if name.starts_with("_ZTIP") {
+                let GlobalInit::Data(items) = &global.init else {
+                    panic!("pointer descriptor must be defined")
+                };
+                assert!(matches!(
+                    items[2],
+                    DataItem::Constant(Type::I32, Constant::Integer(8))
+                ));
+            }
+        }
+        output.finish_object(b"incomplete-rtti".to_vec()).unwrap();
+    }
+
+    #[test]
     fn host_catch_copy_retires_throwing_default_argument_before_handler() {
         let source = SourceBuffer::new(b"struct T{T();~T()noexcept(false);};struct E{E(const E&,T=T());~E()noexcept(false);};void g();void f(){try{g();}catch(E e){g();}}".to_vec()).unwrap();
         let mut streamed = LowIrOutput::for_object_model(crate::native::ObjectModel::Host).unwrap();

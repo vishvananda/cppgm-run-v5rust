@@ -223,10 +223,7 @@ impl Selection<'_> {
                 let target = self.address(address, R::R10)?;
                 let mut value = self.operand(value, ty, R::R11)?;
                 let sequential = matches!(order, MemoryOrder::SequentiallyConsistent);
-                if sequential
-                    || value.is_memory()
-                    || matches!(value, Operand::Symbol(_) | Operand::SymbolOffset(..))
-                {
+                if sequential || value.is_memory() || value.is_symbol() {
                     self.load(R::R11, value, ty);
                     value = Operand::Register(R::R11);
                 }
@@ -266,7 +263,7 @@ impl Selection<'_> {
         } else {
             self.operand(delta, ty, R::R11)?
         };
-        if value.is_memory() || matches!(value, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
+        if value.is_memory() || value.is_symbol() {
             self.load(R::R11, value, ty);
             value = Operand::Register(R::R11);
         }
@@ -291,9 +288,7 @@ impl Selection<'_> {
                 } else {
                     self.operand(delta, ty, scratch)?
                 };
-                if value.is_memory()
-                    || matches!(value, Operand::Symbol(_) | Operand::SymbolOffset(..))
-                {
+                if value.is_memory() || value.is_symbol() {
                     self.load(scratch, value, ty);
                     value = Operand::Register(scratch);
                 }

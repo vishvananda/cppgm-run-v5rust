@@ -1,6 +1,6 @@
 //! Direct x86 encoding, local labels and typed image fixups. See NOTICE.
-use super::image::ImageSymbol;
-use crate::lowir::Error;
+use super::{image::ImageSymbol, symbol_access::SymbolAccess};
+use crate::lowir::{Error, model::SymbolId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Register(u8);
@@ -55,6 +55,15 @@ pub(super) enum Rm {
     },
 }
 impl Rm {
+    pub(super) fn absolute(disp: i32) -> Self {
+        Self::Memory {
+            base: None,
+            index: None,
+            scale: 1,
+            disp,
+            target: None,
+        }
+    }
     pub(super) fn displaced(mut self, offset: i32) -> Self {
         if let Self::Memory { disp, .. } = &mut self {
             *disp = disp.wrapping_add(offset);
@@ -98,12 +107,20 @@ impl Rm {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Label(u32);
 #[derive(Clone, Copy)]
+pub(super) enum FixupKind {
+    Relative,
+    Got,
+    TpOff,
+    GotTpOff,
+}
+#[derive(Clone, Copy)]
 pub(super) struct CodeFixup {
     pub(super) offset: u32,
     pub(super) target: ImageSymbol,
     pub(super) addend: i32,
     pub(super) end: u8,
     pub(super) branch: bool,
+    pub(super) kind: FixupKind,
 }
 struct LabelReference {
     offset: usize,
@@ -222,6 +239,7 @@ impl Assembler {
                 addend: disp,
                 end: 4 + imm_bytes,
                 branch: false,
+                kind: FixupKind::Relative,
             });
             self.imm(0, 4);
             return Ok(());
@@ -469,6 +487,7 @@ impl Assembler {
             addend: 0,
             end: 4,
             branch: true,
+            kind: FixupKind::Relative,
         });
         self.imm(0, 4);
         Ok(())
@@ -523,6 +542,77 @@ impl Assembler {
             false,
             0,
         )
+    }
+}
+
+impl Assembler {
+    pub(super) fn symbol_address(
+        &mut self,
+        destination: Register,
+        symbol: SymbolId,
+        addend: i32,
+        access: SymbolAccess,
+    ) -> Result<(), Error> {
+        let target = ImageSymbol::Program(symbol);
+        match access {
+            SymbolAccess::Direct => return self.lea(destination, Rm::rip(target, addend)),
+            SymbolAccess::TlsLocal => {
+                self.op(
+                    0x64,
+                    true,
+                    0x8b,
+                    1,
+                    destination.code(),
+                    Rm::absolute(0),
+                    false,
+                    0,
+                )?;
+                self.op(0, true, 0x81, 1, 0, Rm::Reg(destination), false, 4)?;
+                self.fixups.push(CodeFixup {
+                    offset: self.position()?,
+                    target,
+                    addend,
+                    end: 4,
+                    branch: false,
+                    kind: FixupKind::TpOff,
+                });
+                self.imm(0, 4);
+                return Ok(());
+            }
+            SymbolAccess::Got | SymbolAccess::TlsInitial => {
+                self.op(
+                    0,
+                    true,
+                    0x8b,
+                    1,
+                    destination.code(),
+                    Rm::rip(target, 0),
+                    false,
+                    0,
+                )?;
+                self.fixups.last_mut().ok_or(Error::Limit)?.kind = if access == SymbolAccess::Got {
+                    FixupKind::Got
+                } else {
+                    FixupKind::GotTpOff
+                };
+                if access == SymbolAccess::TlsInitial {
+                    self.op(
+                        0x64,
+                        true,
+                        0x03,
+                        1,
+                        destination.code(),
+                        Rm::absolute(0),
+                        false,
+                        0,
+                    )?;
+                }
+            }
+        }
+        if addend != 0 {
+            self.lea(destination, Rm::mem(destination, addend))?;
+        }
+        Ok(())
     }
 }
 

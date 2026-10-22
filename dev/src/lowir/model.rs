@@ -91,6 +91,7 @@ pub(crate) trait DefinitionSink: std::any::Any {
 pub(crate) struct Program {
     definition_sink: Option<Box<dyn DefinitionSink>>,
     forward_boundaries: Vec<Option<(SignatureId, Metadata)>>,
+    forward_globals: Vec<Option<ForwardGlobal>>,
     immediate_declarations: Vec<SymbolId>,
     immediate_declaration_set: std::collections::HashSet<SymbolId>,
     pub(crate) names: Names,
@@ -109,6 +110,15 @@ pub(crate) struct Program {
     reader_vocabulary: bool,
 }
 impl Program {
+    pub(crate) fn set_forward_global(&mut self, symbol: SymbolId, facts: ForwardGlobal) {
+        self.forward_globals.resize(self.symbols.len(), None);
+        if self.forward_globals[symbol.index()].is_none() {
+            self.forward_globals[symbol.index()] = Some(facts);
+        }
+    }
+    pub(crate) fn forward_global(&self, symbol: SymbolId) -> Option<ForwardGlobal> {
+        self.forward_globals.get(symbol.index()).copied().flatten()
+    }
     pub(crate) fn set_definition_sink(
         &mut self,
         sink: Box<dyn DefinitionSink>,
@@ -561,6 +571,13 @@ pub(crate) struct Global {
     pub(crate) ty: Option<Type>,
     pub(crate) metadata: Metadata,
     pub(crate) init: GlobalInit,
+}
+/// Address-selection facts stated before a streamed global is published.
+#[derive(Clone, Copy)]
+pub(crate) struct ForwardGlobal {
+    pub(crate) binding: Option<Binding>,
+    pub(crate) storage: Option<Storage>,
+    pub(crate) defined: bool,
 }
 pub(crate) enum GlobalInit {
     Declaration,

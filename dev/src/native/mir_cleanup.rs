@@ -101,7 +101,7 @@ fn simple_write(op: Op) -> Option<SimpleWrite> {
                     && memory.index.is_none_or(|r| r.code() < 16)
             }
             Operand::Frame(_) => true,
-            Operand::Symbol(_) | Operand::SymbolOffset(..) => false,
+            Operand::Symbol(_) | Operand::SymbolOffset(..) | Operand::AccessedSymbol(..) => false,
         })
         .then_some(writer.map_or(SimpleWrite::None, SimpleWrite::Register))
 }

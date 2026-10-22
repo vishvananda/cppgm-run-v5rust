@@ -37,7 +37,7 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
 fn plain(op: &Op) -> bool {
     operands(op).is_some_and(|ops| {
         ops.into_iter().flatten().all(|operand| match operand {
-            Operand::Symbol(_) | Operand::SymbolOffset(..) => false,
+            Operand::Symbol(_) | Operand::SymbolOffset(..) | Operand::AccessedSymbol(..) => false,
             Operand::Memory(m) if matches!(m.base, super::memory::Base::Symbol(_)) => false,
             Operand::Immediate(v) => {
                 super::mir::low_word(v).is_ok_and(|v| i32::try_from(v).is_ok())

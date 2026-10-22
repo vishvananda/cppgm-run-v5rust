@@ -141,7 +141,7 @@ impl<'a> Encoder<'a> {
         for (_, from) in self.object.sections().skip(1) {
             let name = self.section_name(false, from.name)?;
             let kind = match from.kind {
-                SectionKind::Bss => 8,
+                SectionKind::Bss | SectionKind::TlsBss => 8,
                 SectionKind::InitArray => 14,
                 SectionKind::FiniArray => 15,
                 _ => 1,
@@ -151,7 +151,12 @@ impl<'a> Encoder<'a> {
                 SectionKind::Text => 6,
                 SectionKind::Rodata => 2,
                 _ => 3,
-            } | if from.group.is_some() { 0x200 } else { 0 };
+            } | if from.group.is_some() { 0x200 } else { 0 }
+                | if matches!(from.kind, SectionKind::TlsData | SectionKind::TlsBss) {
+                    0x400
+                } else {
+                    0
+                };
             self.sections.push(Section {
                 name,
                 kind,
@@ -240,6 +245,7 @@ impl<'a> Encoder<'a> {
                 SymbolKind::Function => 2,
                 SymbolKind::Section => 3,
                 SymbolKind::File => 4,
+                SymbolKind::Tls => 6,
             };
             s.built.push((bind << 4) | kind);
             s.built.push(0);

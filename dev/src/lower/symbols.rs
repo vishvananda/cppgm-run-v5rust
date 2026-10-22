@@ -1671,6 +1671,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
         )?;
         self.callees.insert(entity, Value::Symbol(symbol));
         self.objects.insert(entity, local_object);
+        let metadata = self.variable_metadata(program, entity, symbol)?;
+        program.set_forward_global(
+            symbol,
+            crate::lowir::model::ForwardGlobal {
+                binding: metadata.binding,
+                storage: metadata.storage,
+                defined: facts.definition.is_some() && metadata.flags & 64 == 0,
+            },
+        );
         self.globals.push(entity);
         if facts.emission == crate::sema::lowering::Emission::Demanded
             && self.graph.lower_demanded_initializer(entity).is_some()

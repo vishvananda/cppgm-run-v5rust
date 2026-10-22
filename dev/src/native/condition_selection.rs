@@ -41,11 +41,11 @@ impl Selection<'_> {
         let mut cc = Condition::from_predicate(pred);
         let mut a = self.operand(left, ty, R::R10)?;
         let mut b = self.operand(right, ty, R::R11)?;
-        if matches!(b, Operand::Symbol(_)) {
+        if b.is_symbol() {
             self.load(R::R11, b, Type::Ptr);
             b = Operand::Register(R::R11);
         }
-        if matches!(a, Operand::Symbol(_)) {
+        if a.is_symbol() {
             self.load(R::R10, a, Type::Ptr);
             a = Operand::Register(R::R10);
         }
@@ -163,7 +163,7 @@ impl Selection<'_> {
             I::Unary(Unary::Not, ty, v) => {
                 let src = self.operand(v, ty, R::R10)?;
                 let mut src = src;
-                if matches!(src, Operand::Immediate(_) | Operand::Symbol(_)) {
+                if matches!(src, Operand::Immediate(_)) || src.is_symbol() {
                     self.load(R::R10, src, ty);
                     src = Operand::Register(R::R10);
                 }
@@ -217,7 +217,7 @@ impl Selection<'_> {
                 None
             }
             Operand::Immediate(bits) => Some(bits != 0),
-            _ => Some(matches!(source, Operand::Symbol(_))),
+            _ => Some(source.is_symbol()),
         };
         Ok((Condition::NotEqual, known))
     }

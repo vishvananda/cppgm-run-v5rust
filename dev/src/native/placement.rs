@@ -40,6 +40,7 @@ struct Location {
     homed: bool,
 }
 pub(super) struct Placement {
+    pub(super) host_parameters: Vec<bool>,
     pub(super) sret_home: Option<i32>,
     pub(super) variadic: Option<super::variadic::SaveArea>,
     pub(super) globals: super::global_placement::Globals,
@@ -72,6 +73,7 @@ impl Placement {
         excluded: u32,
     ) -> Self {
         Self {
+            host_parameters: Vec::new(),
             sret_home: None,
             variadic: None,
             globals,
@@ -510,7 +512,7 @@ impl Placement {
             area.entry(mir)?;
         }
         if mir.object_model == super::object_compile::ObjectModel::Host {
-            super::host_parameters::normalize(body, facts, mir)?;
+            super::host_parameters::normalize(body, facts, mir, &self.host_parameters)?;
         }
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
             if facts.intervals[index].uses == 0 {

@@ -346,6 +346,9 @@ impl Symbols<'_, '_> {
                 .graph
                 .lower_object_type_unit_local(self.graph.lower_entity_type(class)?)?;
         }
+        internal |= matches!(kind, ClassObject::Typeinfo)
+            && self.host_objects()
+            && !self.graph.lower_class_complete(class);
         let prefix = match kind {
             ClassObject::Table => "__vtable_",
             ClassObject::Vtt => "__vtt_",
@@ -407,6 +410,18 @@ impl Symbols<'_, '_> {
             ..Metadata::default()
         };
         if !program.symbol(symbol).declared() {
+            program.set_forward_global(
+                symbol,
+                crate::lowir::model::ForwardGlobal {
+                    binding: Some(if internal {
+                        Binding::Internal
+                    } else {
+                        Binding::Strong
+                    }),
+                    storage: None,
+                    defined: false,
+                },
+            );
             self.vtables.pending.push_back((symbol, metadata));
         }
         Ok((symbol, metadata))

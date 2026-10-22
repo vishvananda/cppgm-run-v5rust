@@ -65,7 +65,7 @@ impl Selection<'_> {
                 integer,
                 Operand::Register(R::R11),
             ));
-        } else if matches!(source, Operand::Symbol(_) | Operand::SymbolOffset(..)) {
+        } else if source.is_symbol() {
             self.load(R::R11, source, Type::I64);
             self.emit(ScalarOp::Store(
                 destination,
@@ -235,10 +235,7 @@ impl Selection<'_> {
                     });
                 } else if !address
                     && ty.float_rank() == 0
-                    && matches!(
-                        source,
-                        Operand::Immediate(_) | Operand::Symbol(_) | Operand::SymbolOffset(..)
-                    )
+                    && (matches!(source, Operand::Immediate(_)) || source.is_symbol())
                 {
                     out.constants.push((dst, ty, source));
                 } else {
@@ -297,21 +294,27 @@ impl Selection<'_> {
             _ => None,
         };
         if let Some((s, disp)) = storage {
-            return Ok(Operand::Memory(Memory::new(
-                Base::Symbol(s),
-                i32::try_from(disp).map_err(|_| Error::Limit)?,
-            )));
+            let disp = i32::try_from(disp).map_err(|_| Error::Limit)?;
+            if self.symbol_access(s) != super::symbol_access::SymbolAccess::Direct {
+                moves.push(Transfer {
+                    destination: Operand::Register(R::R11),
+                    source: self.symbol_operand(s, disp),
+                    ty: Type::Void,
+                    source_type: None,
+                    address: false,
+                });
+                return Ok(Operand::Memory(Memory::new(Base::Register(R::R11), 0)));
+            }
+            return Ok(Operand::Memory(Memory::new(Base::Symbol(s), disp)));
         }
         if let Alias::Symbol(s) = callee {
             return Ok(Operand::Symbol(s));
         }
         let target = self.operand(call.callee, Type::Ptr, R::R10)?;
-        if matches!(
-            target,
-            Operand::Immediate(_) | Operand::Symbol(_) | Operand::SymbolOffset(..)
-        ) || moves
-            .iter()
-            .any(|m| target.mask() & m.destination.mask() != 0)
+        if (matches!(target, Operand::Immediate(_)) || target.is_symbol())
+            || moves
+                .iter()
+                .any(|m| target.mask() & m.destination.mask() != 0)
         {
             moves.push(Transfer {
                 destination: Operand::Register(R::R11),

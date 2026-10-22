@@ -136,7 +136,7 @@ impl Observation<'_> {
         false
     }
 }
-pub(super) fn normalize(body: &Body, facts: &Facts, mir: &mut Function) -> Result<(), Error> {
+pub(super) fn observe(body: &Body, facts: &Facts) -> Vec<bool> {
     let mut query = Observation {
         body,
         facts,
@@ -163,7 +163,15 @@ pub(super) fn normalize(body: &Body, facts: &Facts, mir: &mut Function) -> Resul
             }
         }
     }
-    for (p, &observed) in query.observed.iter().enumerate() {
+    query.observed
+}
+pub(super) fn normalize(
+    body: &Body,
+    facts: &Facts,
+    mir: &mut Function,
+    observed: &[bool],
+) -> Result<(), Error> {
+    for (p, &observed) in observed.iter().enumerate() {
         if !observed || facts.intervals[p].uses == 0 {
             continue;
         }

@@ -21,7 +21,10 @@ pub(super) struct Information {
     thrown: HashSet<TypeId>,
 }
 impl Symbols<'_, '_> {
-    fn runtime_information_base(&self, ty: TypeId) -> Result<Option<(Scalar, bool, u8)>, Error> {
+    pub(super) fn runtime_information_base(
+        &self,
+        ty: TypeId,
+    ) -> Result<Option<(Scalar, bool, u8)>, Error> {
         let (base, pointer) = if let TypeView::Pointer(base) = self.graph.lower_type(ty)? {
             (base, true)
         } else {

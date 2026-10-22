@@ -137,7 +137,8 @@ impl Selection<'_> {
         let unsigned = matches!(op, Binary::UDiv | Binary::UMod);
         let convert = narrow(ty) && unsigned == signed(ty);
         let mut b = self.operand(right, ty, R::R11)?;
-        if matches!(b, Operand::Immediate(_) | Operand::Symbol(_))
+        if matches!(b, Operand::Immediate(_))
+            || b.is_symbol()
             || b.is_memory() && narrow(ty)
             || convert && b.register().is_some()
         {

@@ -211,7 +211,7 @@ impl Selection<'_> {
                     } else {
                         self.float_operand(value, ty)?
                     };
-                    if matches!(case, Operand::Symbol(_)) {
+                    if case.is_symbol() {
                         self.load(super::x86::Register::R11, case, Type::Ptr);
                         case = Operand::Register(super::x86::Register::R11);
                     }
@@ -287,7 +287,7 @@ impl Selection<'_> {
                     )
                 }
                 Alias::Slot(slot) => (Operand::Frame(self.placement.slot(slot)?), None, true),
-                Alias::Symbol(symbol) => (Operand::Symbol(symbol), None, false),
+                Alias::Symbol(symbol) => (self.symbol_operand(symbol, 0), None, false),
                 Alias::Constant(_) if ty.float_rank() != 0 => {
                     (self.float_operand(value, *ty)?, None, false)
                 }

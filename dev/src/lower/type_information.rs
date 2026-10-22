@@ -29,6 +29,27 @@ pub(super) enum TypeObject {
     Name,
 }
 impl Symbols<'_, '_> {
+    pub(super) fn local_type_information(&self, mut ty: TypeId) -> Result<bool, Error> {
+        if !self.host_objects() {
+            return Ok(false);
+        }
+        loop {
+            if let Some((owner, element)) = self.graph.lower_member_pointer_type(ty) {
+                if let TypeView::Class(class) = self.graph.lower_type(owner)?
+                    && !self.graph.lower_class_complete(class)
+                {
+                    return Ok(true);
+                }
+                ty = element;
+            } else {
+                match self.graph.lower_type(ty)? {
+                    TypeView::Class(class) => return Ok(!self.graph.lower_class_complete(class)),
+                    TypeView::Pointer(element) => ty = element,
+                    _ => return Ok(false),
+                }
+            }
+        }
+    }
     pub(super) fn type_encoding(&mut self, ty: TypeId, kind: TypeObject) -> Result<String, Error> {
         let node = self.abi_type(ty)?;
         let mut bytes = Vec::new();
@@ -62,6 +83,9 @@ impl Symbols<'_, '_> {
         let ty = self.graph.lower_rtti_type(ty)?;
         if let TypeView::Class(class) = self.graph.lower_type(ty)? {
             return self.typeinfo_symbol(program, class);
+        }
+        if self.host_objects() && self.runtime_information_base(ty)?.is_some() {
+            return self.exception_type_information(program, ty);
         }
         if let Some(&symbol) = self.type_information.objects.get(&ty) {
             return Ok(symbol);
@@ -106,9 +130,13 @@ impl Symbols<'_, '_> {
         } else {
             self.graph.lower_type_unit_local(ty)?
         };
-        let symbol =
-            self.table
-                .allocate(program, &format!("__rtti_{label}"), Some(object), internal)?;
+        let local_information = self.local_type_information(ty)?;
+        let symbol = self.table.allocate(
+            program,
+            &format!("__rtti_{label}"),
+            Some(object),
+            internal || local_information,
+        )?;
         self.type_information.objects.insert(ty, symbol);
         if program.symbol(symbol).declared() {
             return Ok(symbol);
@@ -129,9 +157,11 @@ impl Symbols<'_, '_> {
         let target_object = pointee
             .map(|pointee| {
                 let symbol = self.type_information(program, pointee)?;
-                if program
-                    .global(program.symbol(symbol))
-                    .is_some_and(|global| matches!(global.init, GlobalInit::Declaration))
+                if !self.host_objects()
+                    && self.runtime_information_base(pointee)?.is_some()
+                    && program
+                        .global(program.symbol(symbol))
+                        .is_some_and(|global| matches!(global.init, GlobalInit::Declaration))
                 {
                     self.defined_exception_information(program, pointee)
                 } else {
@@ -199,7 +229,7 @@ impl Symbols<'_, '_> {
             symbol,
             Metadata {
                 object: Some(object),
-                binding: Some(if internal {
+                binding: Some(if internal || local_information {
                     Binding::Internal
                 } else {
                     Binding::Weak
