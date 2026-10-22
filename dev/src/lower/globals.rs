@@ -165,9 +165,13 @@ fn define_variable_contents<'a>(
             budget,
         )?);
     } else if initialization == Initialization::Dynamic || registered {
-        let guard = if graph.lower_variable(entity)?.emission
-            == crate::sema::lowering::Emission::Demanded
-        {
+        let global = symbols.variable_symbol(output.program, entity)?;
+        let guard = if output
+            .program
+            .global(output.program.symbol(global))
+            .is_some_and(|global| {
+                global.metadata.binding == Some(crate::lowir::vocabulary::Binding::Weak)
+            }) {
             if !registered
                 && symbols
                     .storage_destructor(graph.lower_entity_type(entity)?)?

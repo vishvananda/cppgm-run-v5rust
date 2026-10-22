@@ -59,16 +59,25 @@ impl Function<'_, '_, '_, '_> {
         let callee = self.symbols.guard_function(self.builder.program(), call)?;
         let arguments = self.builder.arguments(&[address])?;
         self.before_lifetime_call(false)?;
-        let value = self.emit(
-            I::Call(crate::lowir::model::Call {
-                result: call.result(),
-                callee: Value::Symbol(callee),
-                arguments,
-                signature: None,
-                copy_elision: false,
-            }),
-            ty,
-        )?;
+        let instruction = I::Call(crate::lowir::model::Call {
+            result: call.result(),
+            callee: Value::Symbol(callee),
+            arguments,
+            signature: None,
+            copy_elision: false,
+        });
+        let value = if call.result() == Type::Void {
+            self.effect(instruction)?;
+            super::function::RValue {
+                value: self.builder.integer(0)?,
+                ty: Type::Void,
+                source: ty,
+                literal: false,
+                bits: None,
+            }
+        } else {
+            self.emit(instruction, ty)?
+        };
         Ok(self.finish_lifetime_call(value, false)?.value)
     }
     pub(super) fn local_static(

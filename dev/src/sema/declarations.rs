@@ -101,6 +101,7 @@ impl Analyzer<'_> {
             self.resume_declaration_access(scope);
             self.declare_init(specs, *init, scope, location, &mut deduced)?;
             self.apply_storage_attributes(init.declarator, attributes)?;
+            self.declarator_symbol_attributes(init.declarator, declaration.attributes)?;
             if init
                 .initializer
                 .is_some_and(|i| matches!(i.kind, ast::InitializerKind::Default))

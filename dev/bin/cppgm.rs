@@ -73,6 +73,7 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
             || arg == "--emit-types"
             || arg == "--emit-semantics"
             || arg == "--emit-lowir"
+            || lowir && arg == "-g0"
             || lowir && arg == "-O0"
         {
             continue;
@@ -157,7 +158,14 @@ fn run() -> Result<(), CliError> {
     };
     let failed = !lowir && file.is_none();
     let mut output = Output { file, failed };
-    let mut lowir_output = LowIrOutput::default();
+    let mut lowir_output = if lowir
+        && args.iter().any(|arg| arg == "-g0")
+        && destination.as_bytes().ends_with(b".lowir")
+    {
+        LowIrOutput::host_object_view()
+    } else {
+        LowIrOutput::default()
+    };
     if !lowir {
         writeln!(output, "{} translation units", inputs.len()).map_err(|_| CliError::Output)?;
     }

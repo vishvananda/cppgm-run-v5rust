@@ -1883,13 +1883,21 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 } else {
                     Binding::Internal
                 }),
+                section: self
+                    .graph
+                    .lower_variable_section(entity)
+                    .map(|name| program.names.intern_bytes(name))
+                    .transpose()?,
                 ..Metadata::default()
             };
             let guard = if dynamic {
                 Some((
                     self.table
                         .allocate(program, &format!("{spelling}__guard"), None, !weak)?,
-                    metadata,
+                    Metadata {
+                        section: None,
+                        ..metadata
+                    },
                 ))
             } else {
                 None
@@ -1962,6 +1970,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }),
             storage: facts.thread_local.then_some(Storage::ThreadLocal),
             object: local_object,
+            section: self
+                .graph
+                .lower_variable_section(entity)
+                .map(|name| program.names.intern_bytes(name))
+                .transpose()?,
             ..Metadata::default()
         };
         let guard = if dynamic {
@@ -1982,6 +1995,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 guard,
                 Metadata {
                     object: local_object,
+                    section: None,
                     ..metadata
                 },
             ))
@@ -1996,9 +2010,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.local_statics.insert(entity, symbols);
         Ok(symbols)
     }
+    fn apply_weak_attribute(&self, entity: EntityId, metadata: &mut Metadata) {
+        if self.graph.lower_symbol_weak(entity)
+            && metadata.binding != Some(crate::lowir::vocabulary::Binding::Internal)
+        {
+            metadata.binding = Some(crate::lowir::vocabulary::Binding::Weak);
+            metadata.flags |= 64;
+        }
+    }
     pub(super) fn variable_metadata(
         &self,
-        program: &Program,
+        program: &mut Program,
         entity: EntityId,
         symbol: SymbolId,
     ) -> Result<Metadata, Error> {
@@ -2012,7 +2034,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 facts.locality == crate::sema::lowering::Locality::Unit
                     || object != program.symbol(symbol).name
             });
-        Ok(Metadata {
+        let mut metadata = Metadata {
             linkage: if facts.c_linkage {
                 Linkage::C
             } else {
@@ -2037,7 +2059,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 0
             },
             ..Metadata::default()
-        })
+        };
+        self.apply_weak_attribute(entity, &mut metadata);
+        metadata.section = self
+            .graph
+            .lower_variable_section(entity)
+            .map(|name| program.names.intern_bytes(name))
+            .transpose()?;
+        Ok(metadata)
     }
     pub(super) fn metadata(
         &mut self,
@@ -2072,6 +2101,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             ..Metadata::default()
         };
+        self.apply_weak_attribute(entity, &mut metadata);
         if self.graph.lower_no_inline(entity) {
             metadata.flags |= 32;
         }
@@ -2343,7 +2373,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )?;
             Some(program.names.intern_bytes(&object)?)
         };
-        Ok(Metadata {
+        let mut metadata = Metadata {
             object,
             binding: Some(if facts.internal {
                 crate::lowir::vocabulary::Binding::Internal
@@ -2374,7 +2404,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 0
             },
             ..Metadata::default()
-        })
+        };
+        if let Some(entity) = entity {
+            self.apply_weak_attribute(entity, &mut metadata);
+        }
+        Ok(metadata)
     }
     pub(super) fn finish_entry(
         &mut self,

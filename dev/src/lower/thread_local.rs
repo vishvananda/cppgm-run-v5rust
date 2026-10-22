@@ -85,6 +85,9 @@ pub(super) fn initialize<'a>(
     function.place(done)?;
     function.effect(I::Return(Type::Void, None))?;
     function.builder.finish()?;
+    output
+        .definitions
+        .generated(&mut symbols.generated_definitions)?;
     output.definitions.stream(output.program, None)?;
     let mut entry = init;
     if symbols.object_mode() && !unordered {
@@ -149,10 +152,9 @@ pub(super) fn finish_unit<'a>(
     let address = function
         .builder
         .generated(I::Addr(Value::Symbol(unit.guard)))?;
-    let loaded =
-        function
-            .builder
-            .generated(I::Load(Facts::memory(false, true), Type::I8, address))?;
+    let loaded = function
+        .builder
+        .generated(I::Load(Facts::default(), Type::I8, address))?;
     let zero = function.builder.integer(0)?;
     let ready = function
         .builder
@@ -161,7 +163,7 @@ pub(super) fn finish_unit<'a>(
     function.place(run)?;
     let one = function.builder.integer(1)?;
     function.effect(I::Store(
-        Facts::memory(false, true),
+        Facts::default(),
         Type::I8,
         one,
         Value::Symbol(unit.guard),

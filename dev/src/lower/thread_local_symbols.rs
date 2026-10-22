@@ -25,20 +25,23 @@ impl Symbols<'_, '_> {
         if let Some(&wrapper) = self.tls.wrappers.get(&entity) {
             return Ok((!self.object_mode() || self.tls.used.contains(&entity)).then_some(wrapper));
         }
-        if program.symbol(global).declared()
-            || self.graph.lower_variable(entity)?.definition.is_none()
-        {
-            if self.object_mode() {
-                let wrapper = self.tls_wrapper_symbol(program, entity, global)?;
-                let init = self.tls_init_entry(program, entity, false)?;
-                self.emit_tls_wrapper(program, entity, Some(init))?;
-                program.stream_last_definition(&mut self.generated_definitions)?;
-                return Ok(Some(wrapper));
+        let facts = self.graph.lower_variable(entity)?;
+        if facts.definition.is_some() {
+            // A definition not published yet needs its future initializer's
+            // wrapper. A completed static definition is addressed directly.
+            if !program.symbol(global).declared() {
+                return self.tls_wrapper_symbol(program, entity, global).map(Some);
             }
-            return Ok(None);
+        } else if self.object_mode() && facts.locality != crate::sema::lowering::Locality::Unit {
+            let wrapper = self.tls_wrapper_symbol(program, entity, global)?;
+            let init = self.tls_init_entry(program, entity, false)?;
+            self.emit_tls_wrapper(program, entity, Some(init))?;
+            program.stream_last_definition(&mut self.generated_definitions)?;
+            return Ok(Some(wrapper));
         }
-        self.tls_wrapper_symbol(program, entity, global).map(Some)
+        Ok(None)
     }
+
     pub(in crate::lower) fn tls_wrapper_symbol(
         &mut self,
         program: &mut Program,
@@ -259,6 +262,13 @@ impl Symbols<'_, '_> {
                 Metadata {
                     binding: Some(binding),
                     object: Some(object),
+                    flags: if define {
+                        program
+                            .global(program.symbol(global))
+                            .map_or(0, |g| g.metadata.flags & 64)
+                    } else {
+                        0
+                    },
                     ..Metadata::default()
                 },
             )?;

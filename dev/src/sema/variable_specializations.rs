@@ -36,6 +36,10 @@ pub(super) struct Specializations {
     instances: HashMap<EntityId, Instance>,
 }
 impl Specializations {
+    pub(super) fn primary(&self, entity: EntityId) -> Option<EntityId> {
+        self.instances.get(&entity).map(|instance| instance.primary)
+    }
+
     pub(super) fn contains(&self, entity: EntityId) -> bool {
         self.instances.contains_key(&entity)
     }

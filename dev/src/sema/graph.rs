@@ -237,6 +237,7 @@ struct FunctionSignature {
 
 pub(crate) struct Graph {
     pub(super) hosted: bool,
+    pub(super) symbol_attributes: super::symbol_attributes::SymbolAttributes,
     pub(super) closures: Box<super::lambdas::Closures>,
     pub(super) range_loops: Box<super::range_for::RangeLoops>,
     pub(super) virtuals: Box<super::virtual_members::Virtuals>,
@@ -436,6 +437,7 @@ impl Graph {
     pub(super) fn new() -> Self {
         Self {
             hosted: false,
+            symbol_attributes: super::symbol_attributes::SymbolAttributes::default(),
             closures: Box::default(),
             range_loops: Box::default(),
             virtuals: Box::default(),

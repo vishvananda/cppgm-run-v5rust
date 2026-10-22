@@ -25,6 +25,14 @@ pub struct LowIrOutput {
     object: Option<(crate::native::ObjectModel, u8)>,
 }
 impl LowIrOutput {
+    /// Create the textual `LowIR` half of a host object compilation.
+    #[must_use]
+    pub fn host_object_view() -> Self {
+        let mut result = Self::default();
+        result.output.set_object_mode(true);
+        result
+    }
+
     #[cfg(test)]
     pub(crate) fn for_object() -> Result<Self, crate::lowir::Error> {
         Self::for_object_model(crate::native::ObjectModel::Course)

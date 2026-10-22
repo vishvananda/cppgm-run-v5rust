@@ -168,6 +168,7 @@ fn finish_unit<'a>(
     symbols.emit_thunks(program, definitions)?;
     aggregate_helpers::emit_pending(program, symbols, graph, definitions)?;
     definitions.release_held(program);
+    definitions.generated(&mut symbols.generated_definitions)?;
     thread_local::finish_unit(program, definitions, symbols, graph, tree, budget)?;
     globals::finish(program, symbols, graph)?;
     symbols.finish_class_declarations(program, None)?;

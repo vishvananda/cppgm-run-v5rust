@@ -150,6 +150,7 @@ impl Analyzer<'_> {
             ))?;
         self.graph
             .note_no_inline(self.graph.binding(binding).entity, attributes.no_inline)?;
+        self.declarator_symbol_attributes(declarator, declaration.attributes)?;
         self.note_instantiation_policy(
             self.graph.binding(binding).entity,
             declarator,

@@ -718,6 +718,10 @@ impl<'tree> Analyzer<'tree> {
             false,
         )?;
         self.graph.note_no_inline(entity, attributes.no_inline)?;
+        self.declarator_symbol_attributes(
+            declarator,
+            self.tree.declarations.get(declaration).attributes,
+        )?;
         self.note_instantiation_policy(entity, declarator, attributes.instantiation);
         self.graph.entity_mut(entity).definition_emission = if self.class_depth != 0
             || specs.constexpr
