@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[path = "body_edits.rs"]
 mod body_edits;
+pub(crate) use body_edits::LinkEditor;
 macro_rules! identity {
     ($($name:ident),+ ) => { $(
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1142,6 +1143,7 @@ pub(crate) struct Instruction {
     pub(crate) line: u32,
     location: Option<LocationId>,
     switch_type: Option<Type>,
+    copy_memory: Facts,
 }
 impl Instruction {
     pub(crate) fn new(result: Option<TempId>, kind: InstructionKind, line: u32) -> Self {
@@ -1151,7 +1153,19 @@ impl Instruction {
             line,
             location: None,
             switch_type: None,
+            copy_memory: Facts::default(),
         }
+    }
+    pub(crate) fn copy_memory_facts(&self) -> Facts {
+        self.copy_memory
+    }
+    pub(crate) fn reuse_load(&mut self, value: Value) -> Result<(), Error> {
+        let InstructionKind::Load(facts, ty, _) = self.kind else {
+            return Err(Error::Limit);
+        };
+        self.copy_memory = facts;
+        self.kind = InstructionKind::Copy(ty, value);
+        Ok(())
     }
     pub(crate) fn switch_type(&self) -> Option<Type> {
         self.switch_type

@@ -648,6 +648,116 @@ impl Body {
     }
 }
 
+/// A function-local edit view over instruction IDs. Records and operands stay
+/// in Body; commit materializes block order once after constant-time link edits.
+pub(crate) struct LinkEditor {
+    next: Vec<Option<super::InstId>>,
+    previous: Vec<Option<super::InstId>>,
+    block_of: Vec<Option<BlockId>>,
+    first: Vec<Option<super::InstId>>,
+    last: Vec<Option<super::InstId>>,
+}
+impl LinkEditor {
+    pub(crate) fn new(body: &Body) -> Result<Self, Error> {
+        let mut out = Self {
+            next: vec![None; body.instructions.len()],
+            previous: vec![None; body.instructions.len()],
+            block_of: vec![None; body.instructions.len()],
+            first: vec![None; body.blocks.len()],
+            last: vec![None; body.blocks.len()],
+        };
+        for &block in &body.layout {
+            let mut prev = None;
+            for &id in &body.block(block).instructions {
+                out.insert_after(block, prev, id)?;
+                prev = Some(id);
+            }
+        }
+        Ok(out)
+    }
+    pub(crate) fn first(&self, block: BlockId) -> Option<super::InstId> {
+        self.first[block.index()]
+    }
+    pub(crate) fn last(&self, block: BlockId) -> Option<super::InstId> {
+        self.last[block.index()]
+    }
+    pub(crate) fn next(&self, id: super::InstId) -> Option<super::InstId> {
+        self.next[id.index()]
+    }
+    pub(crate) fn previous(&self, id: super::InstId) -> Option<super::InstId> {
+        self.previous[id.index()]
+    }
+    pub(crate) fn unlink(&mut self, block: BlockId, id: super::InstId) -> Result<(), Error> {
+        if self.block_of.get(id.index()) != Some(&Some(block)) {
+            return Err(Error::Limit);
+        }
+        let prev = self.previous[id.index()];
+        let next = self.next[id.index()];
+        if let Some(prev) = prev {
+            self.next[prev.index()] = next;
+        } else {
+            self.first[block.index()] = next;
+        }
+        if let Some(next) = next {
+            self.previous[next.index()] = prev;
+        } else {
+            self.last[block.index()] = prev;
+        }
+        self.previous[id.index()] = None;
+        self.next[id.index()] = None;
+        self.block_of[id.index()] = None;
+        Ok(())
+    }
+    pub(crate) fn insert_after(
+        &mut self,
+        block: BlockId,
+        prev: Option<super::InstId>,
+        id: super::InstId,
+    ) -> Result<(), Error> {
+        let size = id.index().checked_add(1).ok_or(Error::Limit)?;
+        if self.next.len() < size {
+            self.next.resize(size, None);
+            self.previous.resize(size, None);
+            self.block_of.resize(size, None);
+        }
+        if self.block_of[id.index()].is_some()
+            || prev.is_some_and(|p| self.block_of.get(p.index()) != Some(&Some(block)))
+        {
+            return Err(Error::Limit);
+        }
+        let next = prev.map_or(self.first[block.index()], |p| self.next[p.index()]);
+        self.previous[id.index()] = prev;
+        self.next[id.index()] = next;
+        self.block_of[id.index()] = Some(block);
+        if let Some(prev) = prev {
+            self.next[prev.index()] = Some(id);
+        } else {
+            self.first[block.index()] = Some(id);
+        }
+        if let Some(next) = next {
+            self.previous[next.index()] = Some(id);
+        } else {
+            self.last[block.index()] = Some(id);
+        }
+        Ok(())
+    }
+    pub(crate) fn ids(&self, block: BlockId) -> Vec<super::InstId> {
+        let mut ids = Vec::new();
+        let mut next = self.first(block);
+        while let Some(id) = next {
+            ids.push(id);
+            next = self.next(id);
+        }
+        ids
+    }
+    pub(crate) fn commit(self, body: &mut Body) -> Result<(), Error> {
+        for block in body.layout.clone() {
+            body.replace_links(block, self.ids(block))?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{Facts, Program, SymbolId, Unwind};
@@ -907,5 +1017,28 @@ function @f() -> void {
         assert!(
             matches!(body.instructions[0].kind,InstructionKind::Binary(_,facts,Type::I128,_,_) if facts.nowrap() && !facts.exact())
         );
+    }
+    #[test]
+    fn linked_edits_reject_wrong_owners_and_commit_ordered_movement() {
+        let mut program=crate::lowir::test_program(b"function @f(%v : i64, %p : ptr) -> void {block ^entry: store i64 %v, %p jump ^exit block ^exit: return void}").unwrap();
+        let symbol = symbol(&program);
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let entry = body.layout[0];
+        let exit = body.layout[1];
+        let store = body.block(entry).instructions[0];
+        let original = body.block(entry).instructions.clone();
+        let mut links = LinkEditor::new(&body).unwrap();
+        assert!(links.unlink(exit, store).is_err());
+        assert_eq!(links.ids(entry), original);
+        links.unlink(entry, store).unwrap();
+        links.insert_after(exit, None, store).unwrap();
+        assert!(links.insert_after(exit, None, store).is_err());
+        assert_eq!(links.first(exit), Some(store));
+        links.commit(&mut body).unwrap();
+        assert_eq!(body.block(exit).instructions[0], store);
+        assert!(matches!(
+            body.instruction(store).kind,
+            InstructionKind::Store(..)
+        ));
     }
 }

@@ -1,7 +1,7 @@
 //! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
 use super::{
     control_flow::Cfg, dead_code, definition_order, exception_regions, flow_cleanup,
-    sparse_constants, value_reuse,
+    memory_forward, sparse_constants, value_reuse,
 };
 use crate::lowir::{
     Error,
@@ -71,6 +71,8 @@ pub(super) struct Context<'a> {
     pub(super) blocks_merged: u64,
     pub(super) folded: u64,
     pub(super) reused: u64,
+    pub(super) loads_reused: u64,
+    pub(super) stores_removed: u64,
     pub(super) passed: Vec<u32>,
     pub(super) passed_stamp: u32,
     cfg: CachedCfg,
@@ -108,6 +110,8 @@ impl<'a> Context<'a> {
             blocks_merged: 0,
             folded: 0,
             reused: 0,
+            loads_reused: 0,
+            stores_removed: 0,
             passed: Vec::new(),
             passed_stamp: 0,
             cfg: CachedCfg::Empty,
@@ -183,6 +187,17 @@ impl<'a> Context<'a> {
             self.block_of_key = share.then_some(key);
         }
     }
+    pub(super) fn record_instruction_block(
+        &mut self,
+        id: crate::lowir::model::InstId,
+        block: BlockId,
+    ) {
+        if self.block_of.len() <= id.index() {
+            self.block_of.resize(id.index() + 1, None);
+        }
+        self.block_of[id.index()] = Some(block);
+        self.invalidate_block_map();
+    }
     pub(super) fn block_map(&self) -> &[Option<BlockId>] {
         &self.block_of
     }
@@ -209,7 +224,8 @@ impl<'a> Context<'a> {
             Pass::Constants => sparse_constants::propagate(self),
             Pass::SimplifyValues => value_reuse::simplify(self),
             Pass::CleanupCfg => flow_cleanup::cleanup(self),
-            Pass::PromoteSlots | Pass::ForwardMemory => {
+            Pass::ForwardMemory => memory_forward::forward(self),
+            Pass::PromoteSlots => {
                 self.ensure_cfg()?;
                 Err(Error::NotImplemented(pass.missing()))
             }

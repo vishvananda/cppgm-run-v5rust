@@ -4,11 +4,7 @@ use super::{numeric_fold as fold, pure, value_reuse::Simplifier};
 use crate::lowir::{
     Error,
     literals::Constant,
-    model::{
-        BlockId, Body, InstId, Instruction, InstructionKind as I, Program, RuntimeInstruction as R,
-        Value,
-    },
-    vocabulary::Effects,
+    model::{BlockId, Body, InstId, Instruction, InstructionKind as I, Program, Value},
 };
 #[derive(Clone, Copy)]
 struct Diamond {
@@ -55,23 +51,11 @@ fn diamond(s: &Simplifier<'_, '_>, head: BlockId) -> Result<Option<Diamond>, Err
         }),
     )
 }
-fn writes(program: &Program, kind: &I) -> bool {
-    match kind {
-        I::Call(call) => program.call_boundary(call).is_none_or(|right| {
-            !matches!(
-                right.boundary.effects,
-                Some(Effects::ReadNone | Effects::ReadOnly)
-            )
-        }),
-        I::Runtime(R::StackAlloc(_)) => false,
-        I::Store(..) | I::CopyObject(..) | I::ZeroInit(..) | I::Runtime(_) => true,
-        _ => false,
-    }
-}
 fn write_free(program: &Program, body: &Body, block: BlockId) -> bool {
     body.block(block).instructions.iter().all(|&id| {
         let kind = &body.instruction(id).kind;
-        !writes(program, kind) && !matches!(kind,I::Load(facts,..) if facts.volatile())
+        !super::alias_facts::writes(program, kind)
+            && !matches!(kind,I::Load(facts,..) if facts.volatile())
     })
 }
 fn phis(body: &Body, block: BlockId) -> impl Iterator<Item = InstId> + '_ {
@@ -158,7 +142,11 @@ fn same_computation(
             .is_some_and(|right| quiet.contains(&right))
     };
     let load = matches!(p.kind,I::Load(facts,..) if !facts.volatile()) && holds(ai) && holds(bi);
-    if !same_shape(&p.kind, &q.kind) || !(pure(&p.kind) || load) || matches!(p.kind, I::Phi(..)) {
+    if p.copy_memory_facts() != q.copy_memory_facts()
+        || !same_shape(&p.kind, &q.kind)
+        || !(pure(&p.kind) || load)
+        || matches!(p.kind, I::Phi(..))
+    {
         return false;
     }
     let mut pa = [None; 3];
