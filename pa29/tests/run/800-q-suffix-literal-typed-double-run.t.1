@@ -1,4 +1,4 @@
 // PA29 README (GNU literal forms hosted headers use): a floating literal with
-// the Q suffix has a type wider than double, so it keeps 0x1.0p-16382Q
+// q/Q suffixes select __float128, while l/L select long double.
 int f(double) { return 3; } int f(long double) { return 1; } int f(__float128) { return 2; }
-int main() { return sizeof(1.0Q) == 16 && sizeof(0x1p3Q) == 16 && f(1.0Q) != 3 ? 0 : 1; }
+int main() { return sizeof(1.0Q) == 16 && sizeof(0x1p3Q) == 16 && f(1.0Q) == 2 && f(0x1p3q) == 2 && f(1.0L) == 1 && f(0x1p3l) == 1 ? 0 : 1; }

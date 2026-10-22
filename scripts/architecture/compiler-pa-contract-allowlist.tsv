@@ -25,10 +25,8 @@ comment	dev/src/driver/toolchain.h	pa26	handout or fixture cross-reference in a 
 comment	dev/src/lex/gnu_builtins.h	PA26	handout or fixture cross-reference in a comment
 comment	dev/src/lex/gnu_builtins.h	PA29	handout or fixture cross-reference in a comment
 comment	dev/src/lex/gnu_builtins.h	pa28	handout or fixture cross-reference in a comment
-comment	dev/src/lex/number_literal.cpp	pa29	handout or fixture cross-reference in a comment
 comment	dev/src/lex/number_literal.h	PA2	handout or fixture cross-reference in a comment
 comment	dev/src/lex/number_literal.h	PA4	handout or fixture cross-reference in a comment
-comment	dev/src/lex/number_literal.h	pa29	handout or fixture cross-reference in a comment
 comment	dev/src/lex/post_token.h	PA2	handout or fixture cross-reference in a comment
 comment	dev/src/lex/post_token_writer.cpp	PA2	handout or fixture cross-reference in a comment; inherited CPPGM starter-code attribution
 comment	dev/src/lex/post_token_writer.h	PA2	handout or fixture cross-reference in a comment; inherited CPPGM starter-code attribution

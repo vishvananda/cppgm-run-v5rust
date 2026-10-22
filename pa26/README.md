@@ -150,10 +150,9 @@ surface:
 - call-site coalescing safety across unprotected unwind barriers and distinct
   cleanup or catch continuations
 
-The cases compile at `-O0`. `make test` then builds one of them,
-`300-host-eh-nested-catch-forward-at-o1`, again at `-O1`, where its handler
-tables describe a function after optimization, and compares the program's
-output and exit status again; `make check` runs only the `-O0` build.
+The cases compile at `-O0`, including nested catch forwarding. Optimization
+is introduced in PA32; its host-object lane checks that forwarding and unwind
+metadata remain correct after optimization. PA26 requires no optimized build.
 
 For each test anchor `x.t`, companion C++ sources are named:
 

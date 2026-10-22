@@ -1,7 +1,7 @@
 # Exact clone contract
 
 Implement all nine C++ compiler tools in idiomatic safe Rust. The oracle is
-cppgm-extended commit `90fd2d389975bb34fd12ec2cc644c9378b24332e`, available at
+cppgm-extended commit `c2b0d41791ad702b70f01f346b36a390b35b3077`, available at
 `/home/vishvananda/work/references/v5rust-cpp`. Read its implementation freely;
 translate its behavior, including ordering and diagnostic details. Preserve
 NOTICE and inherited attribution. The candidate is not a student exercise
@@ -157,3 +157,5 @@ tools and helper compiler/optimizer/backend invocations use that generation.
 PA35's GCC instruction budgets and seed/self optimization targets are outside
 this clone's objective. Reuse correctness workloads and record Rust throughput
 and RSS separately. PA32/PA33 transformations and tie-breaks must still match.
+
+Reviewed test identity relocations are frozen in case_identity_relocations. Renamed cases must still pass; moved cases are required at their new assignment. PA26 requires O0 exception handling; IR optimization belongs to PA32 and optimized native code to PA33.

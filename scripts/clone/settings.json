@@ -2,9 +2,9 @@
   "checkout": "/home/vishvananda/work/private/v5rust/checkout",
   "reference": "/home/vishvananda/work/references/v5rust-cpp",
   "artifacts": "/home/vishvananda/work/private/v5rust/artifacts/clone",
-  "revision": "90fd2d389975bb34fd12ec2cc644c9378b24332e",
+  "revision": "c2b0d41791ad702b70f01f346b36a390b35b3077",
   "state_dir": "/home/vishvananda/work/.ralph/v5rust-gpt-6.1-sol-high",
-  "assignment_revision": "f177cf3a39e69de6a4e330641f30d07162683696",
+  "assignment_revision": "a2807f14edf0297173eb52c960b86f20d113d566",
   "assignment_tag": "main",
   "course_workers": 8
 }

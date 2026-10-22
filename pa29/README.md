@@ -229,6 +229,12 @@ The default preprocessor references are intentionally host-agnostic. The test ha
 pin local host macro values such as platform-specific integer or floating-point
 limits.
 
+GNU `q`/`Q` floating suffixes denote `__float128`, as specified in
+[GCC's floating-type extensions](https://gcc.gnu.org/onlinedocs/gcc/Floating-Types.html),
+in both normal compilation and the typed `cppgm++ -E` stream. Emit binary128
+bytes for these literals; `l`/`L` still denote `long double`. This PA29
+extension does not change the strict C++11 literal grammar of PA2–PA4.
+
 ### Hosted ABI Name Guidance
 
 PA29 is mostly about accepting hosted headers, but compile-only hosted tests can

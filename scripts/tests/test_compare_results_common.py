@@ -1084,6 +1084,48 @@ class CompareResultsCommonTests(unittest.TestCase):
             result = run_compare("lowir_t", root, "tests")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_lowir_compare_tracks_object_load_types(self) -> None:
+        lowir = textwrap.dedent(
+            """\
+            function @main() -> i64 [role=entry] {
+              slot $source : obj<8x8>
+              slot $destination : obj<8x8>
+              block ^entry:
+                store i64 7, $source
+                %object = load obj<8x8> $source
+                %out = addr $destination
+                copyobj 8x8 %object, %out
+                %value = load i64 %out
+                %bad = cmp ne i64 %value, 7
+                return i64 %bad
+            }
+            """
+        )
+        cases = {
+            "object-load": (lowir, True),
+            "size-mismatch": (lowir.replace("copyobj 8x8", "copyobj 16x8"), False),
+            "alignment-mismatch": (lowir.replace("copyobj 8x8", "copyobj 8x4"), False),
+            "undefined-storage": (lowir.replace("obj<8x8> $source\n", "obj<8x8> $missing\n"), False),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            for name, (generated, accepted) in cases.items():
+                with self.subTest(case=name):
+                    testbase = root / name / "case"
+                    for suffix, text in {
+                        ".t": lowir,
+                        ".ref": lowir,
+                        ".my": generated,
+                        ".ref.exit_status": "EXIT_SUCCESS\n",
+                        ".my.exit_status": "EXIT_SUCCESS\n",
+                    }.items():
+                        write_text(testbase.with_suffix(suffix), text)
+                    result = run_compare("lowir_optimized_t", root, name)
+                    output = result.stdout + result.stderr
+                    self.assertEqual(result.returncode, 0 if accepted else 1, output)
+                    if not accepted:
+                        self.assertIn("generated LowIR failed sanity validation", output)
+
     def test_lowir_compare_rejects_bad_storage_op_alignment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp) / "pa14"

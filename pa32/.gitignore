@@ -2,6 +2,7 @@
 *.my
 *.my.exit_status
 *.stdout
+!tests/host/**/*.ref.program.stdout
 *.stderr
 lowiropt
 lowiropt-debug

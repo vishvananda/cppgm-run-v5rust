@@ -13,6 +13,7 @@ function @main() -> void {
     return void
 
   block ^landing:
+    eh_cleanup
     call void @leaf()
     eh_end
     resume

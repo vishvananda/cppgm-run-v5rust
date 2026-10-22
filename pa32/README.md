@@ -164,7 +164,7 @@ preserves the behaviour of every defined input program; each higher level
 may do everything the lower one does and more.  What the levels do is
 your design.
 
-What the course fixtures then check, for each `x.t`:
+For each LowIR or `--emit-lowir` driver fixture `x.t`, the course checks:
 
 - the tool's exit status agrees with `x.ref.exit_status`;
 - a successful output passes the LowIR structural validator;
@@ -244,6 +244,9 @@ pass:
   solution inlines such a callee only when constant arguments fold its
   exception instructions away; an optimizer that tracks the handler stack can
   admit a callee whose regions leave it balanced.
+  An `eh_try` landing that pops its own record with `eh_end` needs a
+  targetless `eh_cleanup` to retain that record on entry, as specified in
+  [LowIR's exception-handling contract](../pa8/lowir.md#exception-instructions).
 - Keep the optimizer's own work bounded. PA34 compiles the whole compiler
   at `-O3` with this optimizer; [the design notes](design-notes.md) describe
   how the course solution avoids repeating work.
@@ -290,6 +293,7 @@ Before moving on, run `make test-report-through-pa32` from the repository root.
 - `tests/driver/o1`
 - `tests/driver/o2`
 - `tests/driver/o3`
+- `tests/host/o1`
 - `tests/object-roundtrip`
 
 
@@ -307,6 +311,11 @@ source-language clauses.
 - `tests/driver/o1` runs `cppgm++ --emit-lowir -g0 -O1` on source programs.
 - `tests/driver/o2` runs `cppgm++ --emit-lowir -g0 -O2` on source programs.
 - `tests/driver/o3` runs `cppgm++ --emit-lowir -g0 -O3` on source programs.
+- `tests/host/o1` builds host-compatible objects with `cppgm++ -c -O1`,
+  links them with the host compiler and checks program output and exit status.
+  It covers nested catch forwarding after optimization; PA26 retains the
+  corresponding unoptimized EH coverage. These `.t` anchors use `.t.N`
+  companion sources and the ordinary host-link result sidecars.
 - `tests/object-roundtrip` compares direct `cppgm++ -c` output against an
   object produced by `cppgm++ --emit-lowir -O0` followed by `cppgm++ -c` on
   the generated LowIR file. This checks that object emission can be
@@ -348,7 +357,7 @@ survive the source-to-LowIR optimizer path: the locations of
 `../pa8/lowir.md` "Debug Locations", which each surviving, moved or copied
 instruction keeps.
 
-For each `.t` test, the harness records the tool exit status and compares the
+For each LowIR `.t` test, the harness records the tool exit status and compares the
 generated output against the oracle for that test directory. Failed reference
 cases are judged by exit status; successful reference cases are judged by the
 directory's LowIR validation mode. Outside `tests/driver/o0`, the comparison

@@ -1,5 +1,22 @@
 # Frozen preparation baseline
 
+## Current baseline — optimization test placement (2026-10-22)
+
+Extended main is `c2b0d41791ad702b70f01f346b36a390b35b3077`, advanced from `90fd2d389975bb34fd12ec2cc644c9378b24332e` through all
+three intervening commits. Matching assignments export: `a2807f14edf0297173eb52c960b86f20d113d566`.
+PRs #80 and #81 passed CI. This refresh includes GNU Q/q binary128 typed
+streams, the LowIR typed-object checker correction, the PA32 EH edge fixture,
+and the complete test placement/options audit.
+
+PA26's nested-catch host case runs at O0; its O1 counterpart belongs to PA32.
+Five optimized PA24 behavior controls now belong to PA33's O2/O3 lanes.
+The frozen relocation map preserves same-stage renamed case obligations and
+places later optimization obligations at their new stages. Historical audit
+notes below describe the former baseline and do not add current requirements.
+Rust implementation edits and source ownership records are retained. Clone
+preflight, harness tests, changed oracle routes, current-stage and earlier-stage
+results are recorded under `~/work/maintenance/v5rust-placement-update-20261022`.
+
 ## Current baseline — packed scalar images and wide operands (2026-10-21)
 
 The oracle is extended `90fd2d389975bb34fd12ec2cc644c9378b24332e`; the matching automatic assignments

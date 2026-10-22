@@ -1707,7 +1707,7 @@ sub validate_lowir_instruction
 		$state->{temps}{$1} = 'ptr';
 		return 0;
 	}
-	if ($line =~ /^%([A-Za-z0-9_]+)\s*=\s*load\s+(?:volatile\s+)?(?:typed\s+)?([A-Za-z0-9_]+)\s+(.+)$/)
+	if ($line =~ /^%([A-Za-z0-9_]+)\s*=\s*load\s+(?:volatile\s+)?(?:typed\s+)?($type_pattern)\s+(.+)$/)
 	{
 		validate_lowir_storage_operand($3, $2, $state, $errors, "$context load");
 		$state->{temps}{$1} = $2;

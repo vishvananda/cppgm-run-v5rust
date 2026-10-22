@@ -210,6 +210,8 @@ It also checks the machine-IR dump:
   header normalization, and `tests/structural/` compares `.ref.cmir` after
   canonicalization. These cases check ABI and other required relationships.
 - `tests/behavior/` checks program results. Its reference MIR is informational.
+  These course inputs use unoptimized native compilation; optimized division,
+  register allocation and carrier regressions live in PA33's behavior lanes.
 - `tests/controls/` checks focused MIR, ABI and native execution properties,
   each named by its file: a shift, or an indexed address and a shift, for a
   multiply by a constant; a small copy's frame operands; a direct access of a

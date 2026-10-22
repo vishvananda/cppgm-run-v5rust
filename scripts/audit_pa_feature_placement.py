@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from audit_test_requirements import scan_optimization_requirements
+
 
 DEFAULT_TRACKER = Path("scripts/architecture/pa-feature-placement.md")
 COURSE_PA_COUNT = 35
@@ -2950,6 +2952,8 @@ def main(argv: list[str]) -> int:
                 tests.extend(suite_test_files(root / pa / "tests" / "controls"))
     rows = [row_for(path, root, features) for path in tests]
     hygiene_findings = scan_test_hygiene(root, hygiene_pas)
+    hygiene_findings.extend(HygieneFinding(**finding) for finding in
+                            scan_optimization_requirements(root, hygiene_pas))
     lowir_eh_findings = scan_lowir_eh_review(root, hygiene_pas)
     if args.probe_lowir_test:
         if args.lowir_probe_app is None:

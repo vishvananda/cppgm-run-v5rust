@@ -36,7 +36,6 @@ endif
 VPATH = $(SRC)
 RDEPDIR = $(OBJ)/release/.d
 DDEPDIR = $(OBJ)/debug/.d
-O1_TEST = $(wildcard tests/general/300-host-eh-nested-catch-forward-at-o1.t)
 
 $(shell mkdir -p $(RDEPDIR) $(DDEPDIR) >/dev/null)
 
@@ -96,10 +95,6 @@ else
 	@scripts/run_all_tests.pl $(CPPGM_TEST_APP) my tests
 endif
 	@scripts/compare_results.pl ref my tests
-ifneq ($(O1_TEST),)
-	@CPPGM_APP_ARGS='-O1' perl ../scripts/run_cpphostinterop_tests_worker.pl $(CPPGM_TEST_APP) my $(O1_TEST)
-	@scripts/compare_results.pl ref my $(O1_TEST)
-endif
 
 ref-test:
 	@$(REF_TEST_RUN)

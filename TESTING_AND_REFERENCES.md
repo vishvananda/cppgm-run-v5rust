@@ -57,6 +57,16 @@ input, a companion named after one (`x.ref*`, `x.t.N`, `x.lib.*`, ...), nor
 a header or note that a fixture uses. Lanes a Makefile cannot show, such as
 PA35's, are listed in the script with their reason.
 
+The feature placement audit also checks required course commands, their local
+runner/wrapper scripts and per-test `.flags`/`.env` options. Positive compiler
+optimization levels require PA32; direct `lowir2native` optimization requires
+PA33. It expands Makefile variables in both batch modes and checks fixture
+guards in shared runners. Host compiler build/link flags, reference evaluators,
+separate maintainer regression targets and deferred debug-preservation lanes
+are not early student requirements. Put cross-stage regressions in a later
+assignment's executed lane, rather than adding a later-level rerun to an early
+assignment's default `test` target.
+
 Controls are `.t` cases in `tests/controls/`, run as the `control_t` shape by
 `run_all_tests_common.pl` and `compare_results_common.pl`. They use the ordinary
 run/check commands, result files, per-lane counts and failure reporting. Their

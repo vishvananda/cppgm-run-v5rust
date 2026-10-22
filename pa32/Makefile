@@ -45,6 +45,7 @@ DRIVER_O1_TEST_ROOT ?= tests/driver/o1
 DRIVER_O2_TEST_ROOT ?= tests/driver/o2
 DRIVER_O3_TEST_ROOT ?= tests/driver/o3
 OBJECT_ROUNDTRIP_TEST_ROOT ?= tests/object-roundtrip
+HOST_O1_TEST_ROOT ?= tests/host/o1
 DEBUGINFO_O2_TEST_ROOT ?= tests/debuginfo/o2
 DEBUGINFO_O3_TEST_ROOT ?= tests/debuginfo/o3
 DEBUGINFO_DRIVER_O2_TEST_ROOT ?= tests/debuginfo/driver/o2
@@ -198,6 +199,8 @@ test-course: $(TEST_DEPS)
 	@scripts/compare_results.pl ref my $(DRIVER_O2_TEST_ROOT)
 	$(call run_text_course_bucket,--emit-lowir -g0 -O3,$(CPPGM_DRIVER_APP),$(DRIVER_O3_TEST_ROOT))
 	$(call run_object_roundtrip_bucket,$(OBJECT_ROUNDTRIP_TEST_ROOT))
+	@CPPGM_APP_ARGS='-O1' perl ../scripts/run_cpphostinterop_tests_worker.pl $(CPPGM_DRIVER_APP) my $(HOST_O1_TEST_ROOT)
+	@scripts/compare_results.pl ref my $(HOST_O1_TEST_ROOT)
 
 test-regression: $(TEST_DEPS)
 	$(call run_text_course_bucket,-O0,$(LOWIROPT_APP),$(REGRESSION_O0_TEST_ROOT))
@@ -228,6 +231,7 @@ ref-test:
 ifneq ($(strip $(TEST)),)
 	@$(REF_TEST_RUN)
 else
+	@CPPGM_APP_ARGS='-O1' perl ../scripts/run_cpphostinterop_tests_worker.pl $(CPPGM_DRIVER_REF_APP) ref $(HOST_O1_TEST_ROOT)
 	@if [ -d "$(O0_TEST_ROOT)" ]; then CPPGM_APP_ARGS='-O0' scripts/run_all_tests.pl $(LOWIROPT_REF_APP) ref $(O0_TEST_ROOT); fi
 	@if [ -d "$(O1_TEST_ROOT)" ]; then CPPGM_APP_ARGS='-O1' scripts/run_all_tests.pl $(LOWIROPT_REF_APP) ref $(O1_TEST_ROOT); fi
 	@if [ -d "$(O2_TEST_ROOT)" ]; then CPPGM_APP_ARGS='-O2' scripts/run_all_tests.pl $(LOWIROPT_REF_APP) ref $(O2_TEST_ROOT); fi
@@ -254,6 +258,7 @@ ref-test-debuginfo:
 	@if [ -d "$(DEBUGINFO_DRIVER_O3_TEST_ROOT)" ]; then CPPGM_APP_ARGS='--emit-lowir -gline-tables-only -O3' scripts/run_all_tests.pl $(CPPGM_DRIVER_REF_APP) ref $(DEBUGINFO_DRIVER_O3_TEST_ROOT); fi
 
 REF_TEST_RUN = case "$(TEST)" in \
+	$(HOST_O1_TEST_ROOT)/*) CPPGM_APP_ARGS='-O1' perl ../scripts/run_cpphostinterop_tests_worker.pl $(CPPGM_DRIVER_REF_APP) ref "$(TEST)" ;; \
 	$(CONTROL_TEST_ROOT)/*) echo "$(TEST): structural inline-control predicate has no reference sidecar" ;; \
 	$(O0_TEST_ROOT)/*) CPPGM_APP_ARGS='-O0' scripts/run_all_tests.pl $(LOWIROPT_REF_APP) ref "$(TEST)" ;; \
 	$(O1_TEST_ROOT)/*|$(DEBUGINFO_O1_TEST_ROOT)/*) CPPGM_APP_ARGS='-O1' scripts/run_all_tests.pl $(LOWIROPT_REF_APP) ref "$(TEST)" ;; \
@@ -270,6 +275,7 @@ REF_TEST_RUN = case "$(TEST)" in \
 esac
 
 CHECK_RUN = perl ../scripts/run_routed_test_spec.pl "$(TEST)" \
+		'$(HOST_O1_TEST_ROOT)/*::CPPGM_APP_ARGS="-O1" perl ../scripts/run_cpphostinterop_tests_worker.pl $(CPPGM_DRIVER_APP) check {tests}' \
 		'$(CONTROL_TEST_ROOT)/*o3-fast-path-versioning*.t::perl ../scripts/check_lowir_fast_path_versioning.pl $(LOWIROPT_APP) $(CPPGM_DRIVER_APP) {tests}' \
 		'$(CONTROL_TEST_ROOT)/*o3-bounded-object-memory*.t::perl ../scripts/check_lowir_bounded_object_memory.pl $(LOWIROPT_APP) $(CPPGM_DRIVER_APP) {tests}' \
 		'$(CONTROL_TEST_ROOT)/*o3-terminal-staged-object-swap*.t::perl ../scripts/check_lowir_terminal_object_swap.pl $(LOWIROPT_APP) $(CPPGM_DRIVER_APP) {tests}' \
@@ -303,6 +309,7 @@ CHECK_RUN = perl ../scripts/run_routed_test_spec.pl "$(TEST)" \
 		'$(DEBUGINFO_DRIVER_O2_TEST_ROOT)/*::CPPGM_APP_ARGS="--emit-lowir -gline-tables-only -O2" scripts/run_all_tests.pl $(CPPGM_DRIVER_APP) check {tests}' \
 		'$(DEBUGINFO_DRIVER_O3_TEST_ROOT)/*::CPPGM_APP_ARGS="--emit-lowir -gline-tables-only -O3" scripts/run_all_tests.pl $(CPPGM_DRIVER_APP) check {tests}'
 CHECK_COMPARE = perl ../scripts/run_routed_test_spec.pl "$(TEST)" \
+		'$(HOST_O1_TEST_ROOT)/*::scripts/compare_results.pl ref check {tests}' \
 		'$(CONTROL_TEST_ROOT)/*|$(OBJECT_ROUNDTRIP_TEST_ROOT)/*::true' \
 		'$(O0_TEST_ROOT)/*|$(O1_TEST_ROOT)/*|$(O2_TEST_ROOT)/*|$(O3_TEST_ROOT)/*|$(DRIVER_O0_TEST_ROOT)/*|$(DRIVER_O1_TEST_ROOT)/*|$(DRIVER_O2_TEST_ROOT)/*|$(DRIVER_O3_TEST_ROOT)/*|$(DEBUGINFO_O1_TEST_ROOT)/*|$(DEBUGINFO_O2_TEST_ROOT)/*|$(DEBUGINFO_O3_TEST_ROOT)/*|$(DEBUGINFO_DRIVER_O1_TEST_ROOT)/*|$(DEBUGINFO_DRIVER_O2_TEST_ROOT)/*|$(DEBUGINFO_DRIVER_O3_TEST_ROOT)/*::scripts/compare_results.pl ref check {tests}'
 include ../scripts/pa_run_check_targets.mk

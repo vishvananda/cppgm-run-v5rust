@@ -13,6 +13,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "audit_pa_feature_placement.py"
 
 
 def load_module():
+    sys.path.insert(0, str(SCRIPT_PATH.parent))
     spec = importlib.util.spec_from_file_location("audit_pa_feature_placement", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -30,6 +31,114 @@ def write(path: Path, text: str) -> None:
 
 
 class AuditPAFeaturePlacementTests(unittest.TestCase):
+    def test_optimization_requirement_in_expanded_course_recipe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / 'pa26/Makefile', '''LEVEL = -O1
+test:
+	@CPPGM_HOST_CXX=g++ CPPGM_APP_ARGS='$(LEVEL)' perl ../scripts/runner.pl ../dev/cppgm++ my tests
+''')
+            findings = audit.scan_optimization_requirements(root, ['pa26'])
+            self.assertEqual([(f['path'], f['kind']) for f in findings],
+                             [('pa26/Makefile', 'early-optimization')])
+            self.assertIn('-O1', findings[0]['message'])
+            self.assertIn('CPPGM_APP_ARGS', findings[0]['evidence'])
+
+    def test_optimization_scan_distinguishes_host_reference_and_deferred_lanes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / 'pa24/Makefile', '''test: test-course test-regression
+test-course:
+	@g++ -O3 -o host-helper helper.cpp
+	@CPPGM_APP_ARGS=-O0 scripts/run_all_tests.pl ../dev/lowir2native my tests
+	@CPPGM_APP_ARGS=-O2 scripts/run_all_tests.pl ../dev/lowir2native-ref ref tests
+test-regression:
+	@CPPGM_APP_ARGS=-O1 scripts/run_all_tests.pl ../dev/lowir2native my tests/regression
+test-debuginfo:
+	@CPPGM_APP_ARGS=-O2 scripts/debug.sh
+''')
+            self.assertEqual(audit.scan_optimization_requirements(root, ['pa24']), [])
+
+    def test_optimization_scan_follows_wrappers_and_fixture_guards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / 'pa24/Makefile', '''test:
+	@perl ../scripts/control.pl ../dev/lowir2native tests/controls
+''')
+            write(root / 'pa24/tests/controls/900-plain.t', 'return\n')
+            write(root / 'pa24/tests/regression/900-optimized.t', 'return\n')
+            write(root / 'scripts/control.pl', '''my @tests = collect_tests($root, qr/\\.t$/);
+for my $test (@tests) {
+    if ($test =~ /optimized/) {
+        run_command(cmd => [$app, '-O1', $test]);
+    }
+}
+''')
+            self.assertEqual(audit.scan_optimization_requirements(root, ['pa24']), [])
+            write(root / 'pa24/tests/controls/900-optimized.t', 'return\n')
+            findings = audit.scan_optimization_requirements(root, ['pa24'])
+            self.assertEqual(len(findings), 1)
+            self.assertEqual(findings[0]['path'], 'scripts/control.pl')
+            self.assertIn('900-optimized.t', findings[0]['evidence'])
+
+    def test_optimization_scan_checks_nested_shell_wrappers_and_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / 'pa26/Makefile', '''test:
+	@scripts/run_all_tests.pl scripts/wrapper.sh my tests
+''')
+            write(root / 'pa26/scripts/run_all_tests.pl', '# generic runner\n')
+            write(root / 'pa26/scripts/wrapper.sh', '#!/bin/sh\nexec scripts/optimized.sh "$@"\n')
+            write(root / 'pa26/scripts/optimized.sh', '#!/bin/sh\nexec ../dev/cppgm++ -O2 "$@"\n')
+            write(root / 'pa26/tests/general/300-catch.t', 'int main() {}\n')
+            write(root / 'pa26/tests/general/300-catch.env', 'CPPGM_APP_ARGS=-O3\n')
+            findings = audit.scan_optimization_requirements(root, ['pa26'])
+            self.assertEqual({f['path'] for f in findings},
+                             {'pa26/scripts/optimized.sh', 'pa26/tests/general/300-catch.env'})
+            write(root / 'pa32/Makefile', (root / 'pa26/Makefile').read_text())
+            self.assertEqual(audit.scan_optimization_requirements(root, ['pa32']), [])
+
+    def test_native_optimization_flags_belong_to_pa33(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for pa in ('pa24', 'pa32', 'pa33'):
+                write(root / pa / 'Makefile', '''test:
+	@perl ../scripts/native.pl ../dev/lowir2native my tests/behavior
+''')
+                write(root / 'scripts/native.pl', 'my @tests = collect_tests($root, qr/\\.t$/);\n')
+                write(root / pa / 'tests/behavior/900-native.t', 'function @main() {}\n')
+                write(root / pa / 'tests/behavior/900-native.flags', '-O3\n')
+                write(root / pa / 'tests/behavior/900-native.link.flags', '-O2\n')
+            findings = audit.scan_optimization_requirements(root, ['pa24', 'pa32', 'pa33'])
+            self.assertEqual([f['path'] for f in findings],
+                             ['pa24/tests/behavior/900-native.flags',
+                              'pa32/tests/behavior/900-native.flags'])
+            self.assertTrue(all('PA33' in f['message'] for f in findings))
+
+    def test_optimization_scan_checks_batch_branch_and_else_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / 'pa26/Makefile', '''test:
+ifneq ($(CPPGM_BATCH_TESTS),)
+	@CPPGM_APP_ARGS=-O1 ../dev/cppgm++ tests/general/300-catch.t
+else
+	@perl ../scripts/control.pl ../dev/cppgm++ tests/general
+endif
+''')
+            write(root / 'pa26/tests/general/300-catch.t', 'int main() {}\n')
+            write(root / 'scripts/control.pl', '''my @tests = collect_tests($root, qr/\\.t$/);
+for my $test (@tests) {
+    if ($test =~ /other/) {
+        run_command(cmd => [$app, '-O0', $test]);
+    } else {
+        run_command(cmd => [$app, '-O2', $test]);
+    }
+}
+''')
+            findings = audit.scan_optimization_requirements(root, ['pa26'])
+            self.assertEqual({f['path'] for f in findings},
+                             {'pa26/Makefile', 'scripts/control.pl'})
+
     def test_required_controls_participate_in_placement_and_numbering(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cppgm-placement-controls.") as temp_dir:
             root = Path(temp_dir)

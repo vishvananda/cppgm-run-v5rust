@@ -12,6 +12,7 @@ function @main() -> void [role=entry] {
     return void
 
   block ^landing:
+    eh_cleanup
     eh_end
     resume
 }
