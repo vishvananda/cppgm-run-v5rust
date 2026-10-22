@@ -22,23 +22,41 @@ pub enum EmitMode {
 #[derive(Default)]
 pub struct LowIrOutput {
     output: crate::lower::Output,
+    object: Option<(crate::native::ObjectModel, u8)>,
 }
 impl LowIrOutput {
     #[cfg(test)]
     pub(crate) fn for_object() -> Result<Self, crate::lowir::Error> {
         Self::for_object_model(crate::native::ObjectModel::Course)
     }
+    #[cfg(test)]
     pub(crate) fn for_object_model(
         model: crate::native::ObjectModel,
     ) -> Result<Self, crate::lowir::Error> {
+        Self::for_object_level(model, 0)
+    }
+    pub(crate) fn for_object_level(
+        model: crate::native::ObjectModel,
+        level: u8,
+    ) -> Result<Self, crate::lowir::Error> {
         let mut output = crate::lower::Output::default();
-        output
-            .program
-            .set_definition_sink(Box::new(crate::native::ObjectBuilder::with_model(
-                0, model,
-            )?))?;
-        output.set_object_mode(model == crate::native::ObjectModel::Host);
-        Ok(Self { output })
+        if level == 0 {
+            output.program.set_definition_sink(Box::new(
+                crate::native::ObjectBuilder::with_model(0, model)?,
+            ))?;
+            output.set_object_mode(model == crate::native::ObjectModel::Host);
+        } else {
+            output
+                .retain_object_definitions(model == crate::native::ObjectModel::Host)
+                .map_err(|error| match error {
+                    crate::lower::Error::Ir(error) => error,
+                    _ => crate::lowir::Error::Construction("retained object setup".into()),
+                })?;
+        }
+        Ok(Self {
+            output,
+            object: Some((model, level)),
+        })
     }
     pub(crate) fn finish_object(
         mut self,
@@ -46,7 +64,19 @@ impl LowIrOutput {
     ) -> Result<crate::native::Object, AstToolError> {
         self.output.finish_initialization().map_err(lower_error)?;
         self.output.finish_entry_aliases();
-        crate::native::compile_object(&mut self.output.program, path, 0).map_err(native_error)
+        let (model, level) = self
+            .object
+            .ok_or(AstToolError::Internal("object output without model"))?;
+        if level != 0 {
+            crate::opt::optimize(&mut self.output.program, level).map_err(native_error)?;
+            self.output
+                .program
+                .set_definition_sink(Box::new(
+                    crate::native::ObjectBuilder::with_model(level, model).map_err(native_error)?,
+                ))
+                .map_err(native_error)?;
+        }
+        crate::native::compile_object(&mut self.output.program, path, level).map_err(native_error)
     }
 
     /// Render the typed program accumulated across translation units.
@@ -317,6 +347,77 @@ pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
 mod tests {
     use super::*;
     use crate::support::stack::StackBudget;
+
+    #[test]
+    fn retained_object_bodies_outlive_frontends_without_a_text_transport() {
+        for source in [
+            "int later();int first(){return later();}int later(){return 7;}",
+            "struct A{A();~A(){}};void g();void f(){A a;g();}void h(){A a;}",
+            "struct T{~T();};int g();int f(){T t;try{return g();}catch(int){return 9;}}",
+            "struct A{A(int);~A();};const A&f(int n){static const A&a=static_cast<const A&>(n);return a;}",
+            "struct A{A();~A();};A global;int main(){A a;return 0;}",
+            "struct A{virtual ~A(){};};struct B:A{~B(){}};void f(){B b;}",
+        ] {
+            let mut results = Vec::new();
+            for retained in [false, true] {
+                let model = crate::native::ObjectModel::Host;
+                let mut output = if retained {
+                    LowIrOutput::for_object_level(model, 1).unwrap()
+                } else {
+                    LowIrOutput::for_object_model(model).unwrap()
+                };
+                let source = SourceBuffer::new(source.as_bytes().to_vec()).unwrap();
+                emit_compilation_unit(
+                    &source,
+                    b"retained-test",
+                    &PredefinedValues::default(),
+                    &crate::preprocess::options::DriverOptions::default(),
+                    &mut output,
+                    StackBudget::default(),
+                )
+                .unwrap();
+                drop(source);
+                if retained {
+                    assert!(
+                        output.output.definitions.is_empty(),
+                        "no serialized definitions are retained"
+                    );
+                    assert!(
+                        output
+                            .output
+                            .program
+                            .functions()
+                            .iter()
+                            .any(|function| function.body.is_some())
+                    );
+                    assert!(!output.output.program.has_definition_sink());
+                    output.output.finish_initialization().unwrap();
+                    output.output.finish_entry_aliases();
+                    output
+                        .output
+                        .program
+                        .set_definition_sink(Box::new(
+                            crate::native::ObjectBuilder::with_model(0, model).unwrap(),
+                        ))
+                        .unwrap();
+                }
+                // This test isolates ownership from transforms: both encoders
+                // run the unchanged O0 policy, over the same typed source facts.
+                let object = if retained {
+                    crate::native::compile_object(
+                        &mut output.output.program,
+                        b"retained-test".to_vec(),
+                        0,
+                    )
+                    .unwrap()
+                } else {
+                    output.finish_object(b"retained-test".to_vec()).unwrap()
+                };
+                results.push(crate::native::object_bytes(&object).unwrap());
+            }
+            assert_eq!(results[0], results[1], "{source}");
+        }
+    }
 
     #[test]
     fn host_incomplete_rtti_owns_descriptors_but_shares_name_objects() {

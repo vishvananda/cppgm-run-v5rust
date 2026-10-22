@@ -16,6 +16,19 @@ mod runtime;
 mod statistics;
 pub use statistics::Statistics;
 mod validator;
+#[cfg(test)]
+pub(crate) fn test_program(source: &[u8]) -> Result<model::Program, Error> {
+    let mut program = model::Program::default();
+    reader::Parser::new(&mut program, source, Path::new("optimizer-test"))?.parse()?;
+    program.finish_symbols()?;
+    program.legacy_roles();
+    validator::validate(&program)?;
+    Ok(program)
+}
+#[cfg(test)]
+pub(crate) fn validate_test_program(program: &model::Program) -> Result<(), Error> {
+    validator::validate_constructed(program)
+}
 pub(crate) mod vocabulary;
 pub(crate) mod writer;
 

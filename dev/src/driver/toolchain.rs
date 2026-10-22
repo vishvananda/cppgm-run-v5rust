@@ -212,9 +212,6 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             OptionCheck::Optimization(arg) => invocation.level = optimization_level(arg)?,
         }
     }
-    if invocation.level != 0 {
-        return Err(AstToolError::Missing("optimized source objects"));
-    }
     Ok(invocation)
 }
 fn optimization_level(arg: &OsStr) -> Result<u8, AstToolError> {
@@ -284,7 +281,8 @@ fn compile(
     } else {
         native::ObjectModel::Course
     };
-    let mut output = LowIrOutput::for_object_model(model).map_err(ast::native_error)?;
+    let mut output =
+        LowIrOutput::for_object_level(model, invocation.level).map_err(ast::native_error)?;
     ast::emit_compilation_unit(
         &source,
         input.path.as_os_str().as_bytes(),
@@ -310,6 +308,9 @@ fn compile(
         }
         error => error,
     })?;
+    // Optimization owns typed LowIR alone; source storage ends with the front
+    // end, before the retained unit reaches its optimizer/backend consumers.
+    drop(source);
     output
         .finish_object(input.path.as_os_str().as_bytes().to_vec())
         .map_err(|error| match error {

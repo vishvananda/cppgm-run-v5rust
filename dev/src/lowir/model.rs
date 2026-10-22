@@ -90,6 +90,7 @@ pub(crate) trait DefinitionSink: std::any::Any {
 #[derive(Default)]
 pub(crate) struct Program {
     definition_sink: Option<Box<dyn DefinitionSink>>,
+    retained_definitions: Option<RetainedDefinitions>,
     forward_boundaries: Vec<Option<(SignatureId, Metadata)>>,
     forward_globals: Vec<Option<ForwardGlobal>>,
     immediate_declarations: Vec<SymbolId>,
@@ -109,7 +110,28 @@ pub(crate) struct Program {
     alias_names: HashSet<NameId>,
     reader_vocabulary: bool,
 }
+#[derive(Default)]
+struct RetainedDefinitions {
+    completed: Vec<SymbolId>,
+    held: Vec<SymbolId>,
+}
 impl Program {
+    pub(crate) fn retain_definitions(&mut self) -> Result<(), Error> {
+        if self.definition_sink.is_some() || self.retained_definitions.is_some() {
+            return Err(Error::Construction(
+                "definition delivery already configured".into(),
+            ));
+        }
+        self.retained_definitions = Some(RetainedDefinitions::default());
+        Ok(())
+    }
+    pub(crate) fn finish_retained_definitions(&mut self, startup: [Option<SymbolId>; 2]) {
+        if let Some(mut retained) = self.retained_definitions.take() {
+            retained.completed.append(&mut retained.held);
+            retained.completed.extend(startup.into_iter().flatten());
+            self.order_retained_definitions(&retained.completed);
+        }
+    }
     pub(crate) fn set_forward_global(&mut self, symbol: SymbolId, facts: ForwardGlobal) {
         self.forward_globals.resize(self.symbols.len(), None);
         if self.forward_globals[symbol.index()].is_none() {
@@ -123,7 +145,7 @@ impl Program {
         &mut self,
         sink: Box<dyn DefinitionSink>,
     ) -> Result<(), Error> {
-        if self.definition_sink.is_some() {
+        if self.definition_sink.is_some() || self.retained_definitions.is_some() {
             return Err(Error::Construction(
                 "definition sink already installed".into(),
             ));
@@ -321,11 +343,43 @@ impl Program {
     ) -> Result<SymbolId, Error> {
         self.stream_last_function(output, true, false)
     }
+    /// Replace only function-definition positions, as `ProgramLowering`'s retained
+    /// order does; globals and declarations retain their publication positions.
+    pub(crate) fn order_retained_definitions(&mut self, completed: &[SymbolId]) {
+        let mut seen = HashSet::new();
+        let completed: Vec<_> = completed
+            .iter()
+            .copied()
+            .filter(|&symbol| {
+                self.function(self.symbol(symbol))
+                    .is_some_and(|function| function.body.is_some())
+                    && seen.insert(symbol)
+            })
+            .collect();
+        let definitions: Vec<_> = self
+            .publications
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &symbol)| {
+                self.function(self.symbol(symbol))
+                    .is_some_and(|function| function.body.is_some())
+                    .then_some(index)
+            })
+            .collect();
+        if completed.len() == definitions.len() {
+            for (index, symbol) in definitions.into_iter().zip(completed) {
+                self.publications[index] = symbol;
+            }
+        }
+    }
     pub(crate) fn defer_last_definition(&mut self) -> Result<(), Error> {
         self.stream_last_function(&mut std::io::sink(), false, true)
             .map(|_| ())
     }
     pub(crate) fn release_held_definitions(&mut self) {
+        if let Some(retained) = &mut self.retained_definitions {
+            retained.completed.append(&mut retained.held);
+        }
         if let Some(sink) = self.definition_sink.as_mut() {
             sink.release_held();
         }
@@ -339,6 +393,15 @@ impl Program {
         let symbol = self
             .completed_definition
             .ok_or_else(|| Error::Construction("missing completed definition".into()))?;
+        if let Some(retained) = &mut self.retained_definitions {
+            if held {
+                retained.held.push(symbol);
+            } else {
+                retained.completed.push(symbol);
+            }
+            self.completed_definition = None;
+            return Ok(symbol);
+        }
         if let Some(mut sink) = self.definition_sink.take() {
             let result = sink.append(self, symbol, held);
             self.definition_sink = Some(sink);
@@ -504,6 +567,29 @@ impl Program {
         } else {
             None
         }
+    }
+    pub(crate) fn take_body(&mut self, symbol: SymbolId) -> Result<Option<Body>, Error> {
+        let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
+            return Err(Error::Construction(
+                "body mutation for a non-function".into(),
+            ));
+        };
+        Ok(self.functions[id.0 as usize].body.take())
+    }
+    pub(crate) fn restore_body(&mut self, symbol: SymbolId, body: Body) -> Result<(), Error> {
+        let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
+            return Err(Error::Construction(
+                "body restoration for a non-function".into(),
+            ));
+        };
+        let slot = &mut self.functions[id.0 as usize].body;
+        if slot.is_some() {
+            return Err(Error::Construction(
+                "body restored over an existing definition".into(),
+            ));
+        }
+        *slot = Some(body);
+        Ok(())
     }
     pub(crate) fn global(&self, symbol: &Symbol) -> Option<&Global> {
         if let SymbolDetail::Global(id) = symbol.detail {
@@ -700,6 +786,7 @@ pub(crate) struct Body {
     operands: Vec<Value>,
     temps: Vec<Temp>,
     slots: Vec<Slot>,
+    slot_names: Vec<super::construction_names::SlotName>,
     blocks: Vec<Block>,
     instructions: Vec<Instruction>,
     locations: Vec<DebugLocation>,
@@ -791,6 +878,33 @@ impl Body {
     }
     pub(crate) fn arguments(&self, arguments: Arguments) -> &[Value] {
         arguments.slice(&self.operands)
+    }
+    pub(crate) fn replace_argument(
+        &mut self,
+        arguments: Arguments,
+        index: usize,
+        value: Value,
+    ) -> Result<(), Error> {
+        if index >= arguments.count as usize {
+            return Err(Error::Limit);
+        }
+        let position = arguments.first as usize + index;
+        let previous = self.operands[position];
+        if previous == value {
+            return Ok(());
+        }
+        if let Value::Temp(temp) = value {
+            self.temp_mut(temp).uses = self.temp(temp).uses.checked_add(1).ok_or(Error::Limit)?;
+        }
+        if let Value::Temp(temp) = previous {
+            self.temp_mut(temp).uses = self.temp(temp).uses.checked_sub(1).ok_or(Error::Limit)?;
+        }
+        self.operands[position] = value;
+        Ok(())
+    }
+    pub(crate) fn inherit_location(&mut self, destination: InstId, source: InstId) {
+        self.instructions[destination.index()].location =
+            self.instructions[source.index()].location;
     }
     pub(crate) fn visit_values(&self, kind: &InstructionKind, visit: impl FnMut(Value)) {
         kind.visit_values(&self.operands, visit);
@@ -894,6 +1008,37 @@ impl Body {
             ty,
         });
         Ok(Value::Slot(id))
+    }
+    pub(super) fn retain_slot_names(&mut self, names: Vec<super::construction_names::SlotName>) {
+        self.slot_names = names;
+    }
+    pub(crate) fn refarg_slot(&mut self, ty: Type) -> Result<Value, Error> {
+        if self.slot_names.is_empty() {
+            self.slot_names.extend(
+                self.slots
+                    .iter()
+                    .map(|slot| super::construction_names::SlotName::Source(slot.name)),
+            );
+        }
+        let slot = self.constructed_slot(ty)?;
+        self.slot_names
+            .push(super::construction_names::SlotName::Generated("refarg"));
+        Ok(slot)
+    }
+    pub(crate) fn name_optimizer_slots(
+        &mut self,
+        names: &mut Names,
+        parameters: &[NameId],
+    ) -> Result<(), Error> {
+        let mut explicit = parameters.to_vec();
+        explicit.extend(
+            self.temps
+                .iter()
+                .filter(|temp| !temp.generated)
+                .map(|temp| temp.name),
+        );
+        let labels = super::construction_names::slots(names, &self.slot_names, &explicit)?;
+        self.name_constructed_slots(&labels)
     }
     pub(crate) fn name_constructed_slots(&mut self, names: &[NameId]) -> Result<(), Error> {
         if self.slots.len() != names.len() {

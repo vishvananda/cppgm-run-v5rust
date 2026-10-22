@@ -24,6 +24,7 @@ struct Definition {
 }
 #[derive(Default)]
 pub(crate) struct Definitions {
+    retained: bool,
     bytes: Vec<u8>,
     spans: Vec<Definition>,
     held: Vec<Definition>,
@@ -31,6 +32,18 @@ pub(crate) struct Definitions {
     next_family: u32,
 }
 impl Definitions {
+    pub(super) fn retain(&mut self) {
+        self.retained = true;
+    }
+    pub(super) fn finish_retained(
+        &mut self,
+        program: &mut Program,
+        startup: [Option<SymbolId>; 2],
+    ) {
+        if self.retained {
+            program.finish_retained_definitions(startup);
+        }
+    }
     pub(crate) fn is_empty(&self) -> bool {
         self.spans.is_empty() && self.held.is_empty()
     }
@@ -67,9 +80,15 @@ impl Definitions {
         }
         Ok(id)
     }
-    pub(super) fn generated(&mut self, bytes: &mut Vec<u8>) {
+    pub(super) fn generated(&mut self, bytes: &mut Vec<u8>) -> Result<(), Error> {
         if bytes.is_empty() {
-            return;
+            return Ok(());
+        }
+        if self.retained {
+            return Err(crate::lowir::Error::Construction(
+                "serialized generated definition in retained mode".into(),
+            )
+            .into());
         }
         let start = self.bytes.len();
         self.bytes.append(bytes);
@@ -79,12 +98,17 @@ impl Definitions {
             entry: None,
             form: None,
         });
+        Ok(())
     }
     pub(super) fn stream(
         &mut self,
         program: &mut Program,
         entry: Option<(FamilyId, super::construction::Variant)>,
     ) -> Result<(), Error> {
+        if self.retained {
+            program.stream_last_definition(&mut io::sink())?;
+            return Ok(());
+        }
         if program.has_definition_sink() {
             program.stream_last_definition(&mut io::sink())?;
             return Ok(());
@@ -109,6 +133,9 @@ impl Definitions {
         Ok(())
     }
     pub(super) fn note_form(&mut self, family: FamilyId, moving: bool) -> Result<(), Error> {
+        if self.retained {
+            return Ok(());
+        }
         self.spans
             .last_mut()
             .ok_or(crate::sema::Error::Invariant(
@@ -170,6 +197,10 @@ impl Definitions {
         }
     }
     pub(super) fn defer_definition(&mut self, program: &mut Program) -> Result<(), Error> {
+        if self.retained {
+            program.defer_last_definition()?;
+            return Ok(());
+        }
         if program.has_definition_sink() {
             program.defer_last_definition()?;
             return Ok(());

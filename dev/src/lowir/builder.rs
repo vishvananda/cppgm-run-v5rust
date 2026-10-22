@@ -566,6 +566,7 @@ impl<'a> FunctionBuilder<'a> {
             &parameters,
         )?;
         self.body.name_constructed_slots(&names)?;
+        self.body.retain_slot_names(self.slot_names);
         self.function.body = Some(self.body);
         self.program.add(self.symbol, self.function)
     }

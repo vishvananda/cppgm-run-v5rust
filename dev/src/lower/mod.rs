@@ -120,6 +120,12 @@ pub(crate) struct Output {
     finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
+    pub(crate) fn retain_object_definitions(&mut self, host_objects: bool) -> Result<(), Error> {
+        self.program.retain_definitions()?;
+        self.set_object_mode(host_objects);
+        self.definitions.retain();
+        Ok(())
+    }
     pub(crate) fn set_object_mode(&mut self, host_objects: bool) {
         self.symbols.object_mode = true;
         self.symbols.host_objects = host_objects;
@@ -135,6 +141,8 @@ impl Output {
             self.finalizer = Some(symbol);
             self.finalizers.clear();
         }
+        self.definitions
+            .finish_retained(&mut self.program, [self.initializer, self.finalizer]);
         Ok(())
     }
     pub(crate) fn finish_entry_aliases(&mut self) {

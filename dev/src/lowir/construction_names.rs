@@ -5,6 +5,7 @@ use super::{
     model::{NameId, Names},
 };
 use std::collections::{HashMap, HashSet};
+#[derive(Clone, Copy)]
 pub(super) enum SlotName {
     Source(NameId),
     RangeFor(NameId),

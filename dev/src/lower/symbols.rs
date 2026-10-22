@@ -2456,7 +2456,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         output: &mut super::definition_order::Definitions,
         entry: super::construction::Entry,
     ) -> Result<(), Error> {
-        output.generated(&mut self.generated_definitions);
+        output.generated(&mut self.generated_definitions)?;
         if self.table.object_mode {
             if let super::construction::Entry::Function(entity) = entry
                 && self.destructor_inert(entity)?
