@@ -269,6 +269,45 @@ impl Analyzer<'_> {
         }
         Ok(Some(binding))
     }
+    /// Check an existing object's lifetime end without requiring that its
+    /// static class can be instantiated. Abstract base subobjects can be deleted.
+    pub(super) fn check_class_destruction(
+        &mut self,
+        mut ty: super::types::TypeId,
+        scope: super::graph::ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+            ty = element;
+        }
+        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
+            return Ok(());
+        };
+        if !self.graph.entity(class).bases.is_empty() {
+            self.prepare_destruction(class)?;
+        }
+        let Some(binding) = self.destructor_callable(class)? else {
+            return Ok(());
+        };
+        self.prepare_destruction(class)?;
+        if self
+            .graph
+            .entity(self.graph.binding(binding).entity)
+            .availability
+            == super::graph::FunctionAvailability::Deleted
+        {
+            return Err(Error::at(location, "use of a deleted function"));
+        }
+        self.check_special_use_access(binding, class, scope, location)?;
+        if self.unevaluated == 0
+            && self.template_depth == 0
+            && !self.graph.destructor_trivial(class)?
+        {
+            self.demand_instance_member(self.graph.binding(binding).entity);
+        }
+        Ok(())
+    }
+
     pub(super) fn check_temporary_destruction(
         &mut self,
         facts: super::expression_facts::ExprFacts,

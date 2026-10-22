@@ -1148,31 +1148,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
-            return Ok(());
-        };
-        if !self.graph.entity(class).bases.is_empty() {
-            self.prepare_destruction(class)?;
-        }
-        let Some(binding) = self.destructor_callable(class)? else {
-            return self.check_abstract_object(ty, location);
-        };
-        self.prepare_destruction(class)?;
-        if self
-            .graph
-            .entity(self.graph.binding(binding).entity)
-            .availability
-            == super::graph::FunctionAvailability::Deleted
-        {
-            return Err(Error::at(location, "use of a deleted function"));
-        }
-        self.check_special_use_access(binding, class, scope, location)?;
-        if self.unevaluated == 0
-            && self.template_depth == 0
-            && !self.graph.destructor_trivial(class)?
-        {
-            self.demand_instance_member(self.graph.binding(binding).entity);
-        }
+        self.check_class_destruction(ty, scope, location)?;
         self.check_abstract_object(ty, location)
     }
 

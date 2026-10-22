@@ -1496,6 +1496,44 @@ mod tests {
     };
 
     #[test]
+    fn pure_declaration_survives_its_definition_and_concrete_override() {
+        let source = SourceBuffer::new(
+            b"struct B{virtual int f()=0;virtual ~B(){}};int B::f(){return 3;}struct D:B{int f(){int x=0;return x+7;}};int main(){B*b=new D;int v=b->f();delete b;return v==7?0:1;}".to_vec(),
+        ).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"pure-declaration-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [
+            cursor.intern_name(b"B").unwrap(),
+            cursor.intern_name(b"D").unwrap(),
+        ];
+        let function_name = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        for (index, name) in names.into_iter().enumerate() {
+            let class = graph
+                .binding(
+                    graph
+                        .own(graph.global, name, super::super::lookup::Filter::Elaborated)
+                        .unwrap(),
+                )
+                .entity;
+            let scope = graph.entity(class).scope.unwrap();
+            let member = graph
+                .binding(
+                    graph
+                        .own(scope, function_name, super::super::lookup::Filter::Ordinary)
+                        .unwrap(),
+                )
+                .entity;
+            assert_eq!(graph.virtuals.function(member).pure, index == 0);
+            assert_eq!(graph.virtuals.abstract_class(class), index == 0);
+        }
+    }
+
+    #[test]
     fn deleting_entry_prepares_only_its_selected_deallocator_body() {
         let source = SourceBuffer::new(
             br#"

@@ -221,7 +221,7 @@ impl Analyzer<'_> {
         };
         let class = class.filter(|_| !incomplete);
         if let Some(class) = class {
-            self.class_parameter_destruction(element, scope, location)?;
+            self.check_class_destruction(element, scope, location)?;
             if !self.graph.destructor_trivial(class)?
                 && let Some(binding) = self.destructor_callable(class)?
             {
