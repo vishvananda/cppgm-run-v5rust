@@ -67,6 +67,20 @@ pub(super) struct Cfg {
     children: Edges,
 }
 impl Cfg {
+    pub(super) fn common_dominator(&self, mut a: BlockId, mut b: BlockId) -> Option<BlockId> {
+        while a != b {
+            while self.rpo_index[a.index()]? > self.rpo_index[b.index()]? {
+                a = self.idom[a.index()]?;
+            }
+            while self.rpo_index[b.index()]? > self.rpo_index[a.index()]? {
+                b = self.idom[b.index()]?;
+            }
+        }
+        Some(a)
+    }
+    pub(super) fn placed(&self, block: BlockId) -> bool {
+        self.flags[block.index()] & PLACED != 0
+    }
     pub(super) fn successor_edges(&self) -> (&[usize], &[BlockId]) {
         (&self.successors.first, &self.successors.targets)
     }

@@ -129,6 +129,15 @@ fn stored(kind: FloatKind, value: BinaryFloat) -> Option<Constant> {
     }
     Some(Constant::Float(kind, bits))
 }
+pub(super) fn phi_input(ty: Type, value: Constant) -> Option<Constant> {
+    if let Some(kind) = FloatKind::from_type(ty)
+        && matches!(value, Constant::Integer(_))
+    {
+        stored(kind, floating(value)?)
+    } else {
+        Some(value)
+    }
+}
 pub(super) fn copy(ty: Type, value: Constant) -> Option<Constant> {
     if let Some(kind) = FloatKind::from_type(ty) {
         return matches!(value, Constant::Float(k, _) if k == kind).then_some(value);

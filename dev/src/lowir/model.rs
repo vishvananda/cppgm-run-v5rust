@@ -807,6 +807,33 @@ enum BlockName {
     Source(NameId),
     Generated(NameId),
     Anonymous,
+    Optimizer(OptimizerBlock),
+}
+#[derive(Clone, Copy)]
+pub(crate) enum OptimizerBlock {
+    Thread,
+    Split,
+}
+impl OptimizerBlock {
+    pub(crate) fn spelling(self) -> &'static str {
+        match self {
+            Self::Thread => "thread",
+            Self::Split => "split",
+        }
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OptimizerSlot {
+    Phi,
+    Demote,
+}
+impl OptimizerSlot {
+    fn spelling(self) -> &'static str {
+        match self {
+            Self::Phi => "phi",
+            Self::Demote => "demote",
+        }
+    }
 }
 #[derive(Default)]
 pub(crate) struct Body {
@@ -957,6 +984,11 @@ impl Body {
             .then(|| u32::try_from(index).ok().map(TempId))
             .flatten()
     }
+    pub(crate) fn slot_id(&self, index: usize) -> Option<SlotId> {
+        (index < self.slots.len())
+            .then(|| u32::try_from(index).ok().map(SlotId))
+            .flatten()
+    }
     pub(crate) fn parameter_value(&self, index: usize) -> Result<Value, Error> {
         if index >= self.parameter_count || index >= self.temps.len() {
             return Err(Error::Limit);
@@ -975,6 +1007,29 @@ impl Body {
             instructions: Vec::new(),
         });
         Ok(id)
+    }
+    pub(crate) fn optimizer_block(&mut self, kind: OptimizerBlock) -> Result<BlockId, Error> {
+        let id = self.generated_block()?;
+        self.blocks[id.index()].origin = BlockName::Optimizer(kind);
+        Ok(id)
+    }
+    pub(crate) fn optimizer_slot(&mut self, ty: Type, kind: OptimizerSlot) -> Result<Value, Error> {
+        if self.slot_names.len() < self.slots.len() {
+            self.slot_names
+                .extend(self.slots[self.slot_names.len()..].iter().map(|s| {
+                    if s.name == NameId(0) {
+                        super::construction_names::SlotName::Anonymous
+                    } else {
+                        super::construction_names::SlotName::Source(s.name)
+                    }
+                }));
+        }
+        let slot = self.constructed_slot(ty)?;
+        self.slot_names
+            .push(super::construction_names::SlotName::Generated(
+                kind.spelling(),
+            ));
+        Ok(slot)
     }
     pub(crate) fn generated_temp(&mut self, ty: Type) -> Result<TempId, Error> {
         let id = TempId(u32::try_from(self.temps.len()).map_err(|_| Error::Limit)?);

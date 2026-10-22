@@ -1,7 +1,7 @@
 //! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
 use super::{
-    control_flow::Cfg, dead_code, definition_order, exception_regions, flow_cleanup,
-    memory_forward, sparse_constants, value_reuse,
+    condition_placement, control_flow::Cfg, dead_code, definition_order, exception_regions,
+    flow_cleanup, jump_threading, memory_forward, slot_promotion, sparse_constants, value_reuse,
 };
 use crate::lowir::{
     Error,
@@ -33,22 +33,23 @@ impl Pass {
     fn missing(self) -> &'static str {
         match self {
             Self::SplitSlots => "LowIR aggregate slot splitting",
-            Self::PromoteSlots => "LowIR slot promotion",
             Self::SimplifyValues => "LowIR scalar simplification",
             Self::ForwardMemory => "LowIR memory forwarding",
             Self::Constants => "LowIR constant propagation",
             Self::CleanupCfg => "LowIR CFG cleanup",
-            Self::ThreadJumps => "LowIR jump threading",
             Self::CoalesceCopies => "LowIR copy coalescing",
             Self::RemoveLoops => "LowIR loop removal",
             Self::UnrollLoops => "LowIR loop unrolling",
             Self::FormSwitches => "LowIR switch formation",
             Self::NameReturnedSlot => "LowIR returned-slot naming",
-            Self::SplitOrBranches => "LowIR branch splitting",
-            Self::SpecializePhiCompares => "LowIR phi comparison specialization",
-            Self::SplitBranchCompares => "LowIR comparison placement",
             Self::DefinitionOrder => "LowIR definition order restoration",
-            Self::DeadCode | Self::StripRegions => "implemented function pass",
+            Self::DeadCode
+            | Self::StripRegions
+            | Self::PromoteSlots
+            | Self::ThreadJumps
+            | Self::SplitOrBranches
+            | Self::SpecializePhiCompares
+            | Self::SplitBranchCompares => "implemented function pass",
         }
     }
 }
@@ -73,6 +74,8 @@ pub(super) struct Context<'a> {
     pub(super) reused: u64,
     pub(super) loads_reused: u64,
     pub(super) stores_removed: u64,
+    pub(super) slots_promoted: u64,
+    pub(super) phis_inserted: u64,
     pub(super) passed: Vec<u32>,
     pub(super) passed_stamp: u32,
     cfg: CachedCfg,
@@ -112,6 +115,8 @@ impl<'a> Context<'a> {
             reused: 0,
             loads_reused: 0,
             stores_removed: 0,
+            slots_promoted: 0,
+            phis_inserted: 0,
             passed: Vec::new(),
             passed_stamp: 0,
             cfg: CachedCfg::Empty,
@@ -174,6 +179,18 @@ impl<'a> Context<'a> {
     pub(super) fn invalidate_cfg(&mut self) {
         self.cfg = CachedCfg::Empty;
     }
+    pub(super) fn running_pass(&self) -> Option<Pass> {
+        self.running
+    }
+    pub(super) fn body_is_ordered(&self) -> bool {
+        self.ordered_version == Some(self.version)
+    }
+    pub(super) fn keep_body(&mut self, pass: Pass, ordered: bool) {
+        self.kept_body = Some(pass);
+        if ordered {
+            self.ordered_version = Some(self.version);
+        }
+    }
     pub(super) fn prepare_block_map(&mut self, pass: Pass, fresh: bool) {
         let share = fresh && self.running == Some(pass);
         let key = (self.version, self.body.instructions().len());
@@ -225,10 +242,11 @@ impl<'a> Context<'a> {
             Pass::SimplifyValues => value_reuse::simplify(self),
             Pass::CleanupCfg => flow_cleanup::cleanup(self),
             Pass::ForwardMemory => memory_forward::forward(self),
-            Pass::PromoteSlots => {
-                self.ensure_cfg()?;
-                Err(Error::NotImplemented(pass.missing()))
-            }
+            Pass::PromoteSlots => slot_promotion::promote(self),
+            Pass::ThreadJumps => jump_threading::thread(self),
+            Pass::SplitOrBranches => condition_placement::split_or_branches(self),
+            Pass::SpecializePhiCompares => condition_placement::specialize_phi_compares(self),
+            Pass::SplitBranchCompares => condition_placement::split_branch_compares(self),
             Pass::DefinitionOrder => definition_order::restore(self),
             _ => Err(Error::NotImplemented(pass.missing())),
         }
@@ -372,5 +390,27 @@ mod tests {
         assert_eq!(context.uses_key, Some((1, 2)));
         context.prepare_uses(Pass::ForwardMemory, true).unwrap();
         assert_eq!(context.uses_key, None);
+    }
+}
+
+#[cfg(test)]
+mod promotion_tests {
+    use super::*;
+    #[test]
+    fn unused_slot_reports_settle_without_changing_the_body_version() {
+        let mut program = crate::lowir::test_program(
+            b"function @f()->void {slot $unused : i64 block ^entry:return void}",
+        )
+        .unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        context.ordered_version = Some(0);
+        assert!(context.run(Pass::PromoteSlots).unwrap());
+        assert_eq!(context.version, 0);
+        assert_eq!(context.slots_promoted, 1);
+        assert!(context.run(Pass::PromoteSlots).unwrap());
+        assert_eq!(context.slots_promoted, 1);
+        assert_eq!(context.ordered_version, Some(0));
     }
 }

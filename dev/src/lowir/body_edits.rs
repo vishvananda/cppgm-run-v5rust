@@ -633,6 +633,7 @@ impl Body {
             } else {
                 let mut text = match block.origin {
                     BlockName::Generated(stem) => format!("{}_{index}", names.get(stem)),
+                    BlockName::Optimizer(kind) => format!("{}_{index}", kind.spelling()),
                     _ => index.to_string(),
                 };
                 while taken.contains(&names.intern(&text)?) {
@@ -714,6 +715,11 @@ impl LinkEditor {
         prev: Option<super::InstId>,
         id: super::InstId,
     ) -> Result<(), Error> {
+        let blocks = block.index().checked_add(1).ok_or(Error::Limit)?;
+        if self.first.len() < blocks {
+            self.first.resize(blocks, None);
+            self.last.resize(blocks, None);
+        }
         let size = id.index().checked_add(1).ok_or(Error::Limit)?;
         if self.next.len() < size {
             self.next.resize(size, None);
@@ -1040,5 +1046,40 @@ function @f() -> void {
             body.instruction(store).kind,
             InstructionKind::Store(..)
         ));
+    }
+}
+
+#[cfg(test)]
+mod optimizer_name_tests {
+    use super::*;
+    use crate::lowir::model::{Instruction, OptimizerBlock};
+    #[test]
+    fn generated_block_stems_skip_explicit_names_after_compaction() {
+        let mut program = crate::lowir::test_program(
+            b"function @f()->void {block ^entry:jump ^thread_1 block ^thread_1:return void}",
+        )
+        .unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let entry = body.layout[0];
+        let exit = body.layout[1];
+        let block = body.optimizer_block(OptimizerBlock::Thread).unwrap();
+        body.append(
+            block,
+            Instruction::new(None, InstructionKind::Jump(exit), 0),
+        )
+        .unwrap();
+        let tail = *body.block(entry).instructions.last().unwrap();
+        body.redirect_successors(tail, exit, block);
+        body.layout.insert(1, block);
+        body.compact(&mut program.names).unwrap();
+        assert_eq!(
+            program.names.get(body.block(body.layout[1]).name),
+            "thread_1_"
+        );
+        assert_eq!(
+            program.names.get(body.block(body.layout[2]).name),
+            "thread_1"
+        );
     }
 }

@@ -1,13 +1,19 @@
 //! Typed unit optimization, translated from opt/optimizer.cpp. See NOTICE.
 mod algebra;
 mod alias_facts;
+mod branch_ranges;
+mod condition_placement;
 mod control_flow;
 mod dead_code;
 mod definition_order;
 mod diamond_reuse;
+mod dominating_facts;
+mod edge_demotion;
 mod exception_regions;
 mod flow_cleanup;
 mod global_contents;
+mod handler_liveness;
+mod jump_threading;
 mod load_placement;
 mod local_pipeline;
 mod memory_calls;
@@ -15,6 +21,9 @@ mod memory_contents;
 mod memory_forward;
 mod numeric_fold;
 mod pass_context;
+mod phi_threading;
+mod range_threading;
+mod slot_promotion;
 mod sparse_constants;
 mod storage_arguments;
 mod store_liveness;
@@ -69,4 +78,26 @@ fn optimize_functions(program: &mut Program, level: u8, unwritten: &[bool]) -> R
         result?;
     }
     Err(Error::NotImplemented("LowIR inlining and function passes"))
+}
+
+#[cfg(test)]
+fn pass_view(source: &str, level: u8, pass: pass_context::Pass) -> (String, (bool, u64, u64, u64)) {
+    let mut program = crate::lowir::test_program(source.as_bytes()).unwrap();
+    let symbol = program.publications()[0];
+    let mut body = program.take_body(symbol).unwrap().unwrap();
+    let facts = {
+        let mut context = pass_context::Context::new(&program, symbol, &mut body, level, &[], &[]);
+        let changed = context.run(pass).unwrap();
+        (
+            changed,
+            context.branches_folded,
+            context.slots_promoted,
+            context.phis_inserted,
+        )
+    };
+    body.compact(&mut program.names).unwrap();
+    program.restore_body(symbol, body).unwrap();
+    let mut output = Vec::new();
+    crate::lowir::writer::write(&program, &mut output).unwrap();
+    (String::from_utf8(output).unwrap(), facts)
 }
