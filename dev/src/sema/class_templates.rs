@@ -337,8 +337,16 @@ impl Analyzer<'_> {
             .known();
         if named_in.is_none()
             && self.template_depth != 0
-            && arguments.iter().any(|&ty| self.graph.dependent_type(ty))
+            && (arguments.iter().any(|&ty| self.graph.dependent_type(ty))
+                || std::iter::successors(self.graph.scope(default.scope).parent, |&scope| {
+                    self.graph.scope(scope).parent
+                })
+                .take_while(|&scope| self.graph.scope(scope).kind != ScopeKind::Namespace)
+                .any(|scope| self.templated_class_scope(scope)))
         {
+            // A member default can name an enclosing template parameter even
+            // when none of its own earlier arguments is dependent (or exists).
+            // Keep that operand in its declaration scope until substitution.
             // Copied member template heads share syntax, but their enclosing
             // argument frames differ. Pattern facts belong to this formation.
             let copy = self.copy_template_pattern(default.syntax)?;
@@ -626,6 +634,85 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn enclosing_defaults_keep_dependent_patterns_and_distinct_concrete_shells() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{\
+                template<int N=sizeof(T)>struct Q;\
+                typedef Q<> One;\
+                template<class U,int N=sizeof(T)+sizeof(U)>struct R;\
+                typedef R<char> Two;};\
+              typedef A<int>::One Int;typedef A<double>::One Double;\
+              typedef A<int>::Two Extra;typedef A<int>::One Again;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"enclosing-defaults").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::template_bodies::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let mut concrete = Vec::new();
+        for (name, expected) in [(b"Int".as_slice(), 4), (b"Double", 8), (b"Extra", 5)] {
+            let name = cursor.intern_name(name).unwrap();
+            let binding = graph
+                .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            let ty = graph.binding(binding).ty.unwrap();
+            let TypeKind::Class(entity) = graph.types.get(ty).kind else {
+                panic!("member specialization")
+            };
+            let instance = graph.class_templates.instance(entity).unwrap();
+            assert!(!instance.dependent);
+            assert!(graph.entity(entity).scope.is_none());
+            let argument = *instance.arguments.last().unwrap();
+            assert!(matches!(graph.types.get(argument).kind,
+                TypeKind::Value { bits, .. } if bits == expected));
+            concrete.push(ty);
+        }
+        assert_ne!(concrete[0], concrete[1]);
+        let again = cursor.intern_name(b"Again").unwrap();
+        let binding = graph
+            .own(graph.global, again, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        assert_eq!(graph.binding(binding).ty, Some(concrete[0]));
+        let mut patterns = 0;
+        for instance in graph.class_templates.instances.values() {
+            let Some(head) = graph.entity(instance.primary).template_head else {
+                continue;
+            };
+            let index = instance.arguments.len() - 1;
+            let Some(default) = graph.templates.default_argument(head, index) else {
+                continue;
+            };
+            let ast::TemplateArgumentKind::Expression(expression) = default.syntax else {
+                panic!("value default")
+            };
+            assert!(graph.expression_facts.known(expression).is_none());
+            if instance.dependent {
+                assert!(graph.dependent_type(instance.arguments[index]));
+                assert!(graph.entity(instance.primary).home.is_some());
+                assert!(
+                    graph
+                        .entity(graph.binding(instance.binding).entity)
+                        .scope
+                        .is_none()
+                );
+                patterns += 1;
+            }
+        }
+        assert_eq!(patterns, 2);
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
 
     #[test]
     fn copied_member_defaults_keep_shared_syntax_free_of_enclosing_facts() {
