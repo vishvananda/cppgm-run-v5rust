@@ -72,7 +72,7 @@ impl Cfg {
         out.complete()?;
         Ok(out)
     }
-    fn light(body: &Body) -> Result<Self, Error> {
+    pub(super) fn light(body: &Body) -> Result<Self, Error> {
         let count = body.blocks().len();
         let mut out = Self {
             successors: Edges::from_count(count),
@@ -185,7 +185,7 @@ impl Cfg {
             self.rpo_index[block.index()] = Some(index);
         }
     }
-    fn complete(&mut self) -> Result<(), Error> {
+    pub(super) fn complete(&mut self) -> Result<(), Error> {
         let count = self.flags.len();
         self.idom = vec![None; count];
         if self.rpo.len() > 1 {
@@ -197,6 +197,9 @@ impl Cfg {
             }
         }
         self.build_intervals()
+    }
+    pub(super) fn successors(&self, block: BlockId) -> &[BlockId] {
+        self.successors.at(block)
     }
     fn intersect(&self, mut a: BlockId, mut b: BlockId) -> Result<BlockId, Error> {
         while a != b {
@@ -334,7 +337,7 @@ impl Cfg {
         Ok(())
     }
 }
-fn is_eh(runtime: &R) -> bool {
+pub(super) fn is_eh(runtime: &R) -> bool {
     matches!(
         runtime,
         R::EhTry(_)

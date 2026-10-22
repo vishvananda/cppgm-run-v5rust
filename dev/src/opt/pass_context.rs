@@ -1,0 +1,236 @@
+//! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
+use super::{control_flow::Cfg, dead_code, exception_regions};
+use crate::lowir::{
+    Error,
+    model::{Body, Program, SymbolId},
+};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Pass {
+    SplitSlots,
+    PromoteSlots,
+    SimplifyValues,
+    ForwardMemory,
+    DeadCode,
+    Constants,
+    CleanupCfg,
+    ThreadJumps,
+    StripRegions,
+    CoalesceCopies,
+    RemoveLoops,
+    UnrollLoops,
+    FormSwitches,
+    NameReturnedSlot,
+    SplitOrBranches,
+    SpecializePhiCompares,
+    SplitBranchCompares,
+    DefinitionOrder,
+}
+impl Pass {
+    fn missing(self) -> &'static str {
+        match self {
+            Self::SplitSlots => "LowIR aggregate slot splitting",
+            Self::PromoteSlots => "LowIR slot promotion",
+            Self::SimplifyValues => "LowIR scalar simplification",
+            Self::ForwardMemory => "LowIR memory forwarding",
+            Self::Constants => "LowIR constant propagation",
+            Self::CleanupCfg => "LowIR CFG cleanup",
+            Self::ThreadJumps => "LowIR jump threading",
+            Self::CoalesceCopies => "LowIR copy coalescing",
+            Self::RemoveLoops => "LowIR loop removal",
+            Self::UnrollLoops => "LowIR loop unrolling",
+            Self::FormSwitches => "LowIR switch formation",
+            Self::NameReturnedSlot => "LowIR returned-slot naming",
+            Self::SplitOrBranches => "LowIR branch splitting",
+            Self::SpecializePhiCompares => "LowIR phi comparison specialization",
+            Self::SplitBranchCompares => "LowIR comparison placement",
+            Self::DefinitionOrder => "LowIR definition order restoration",
+            Self::DeadCode | Self::StripRegions => "implemented function pass",
+        }
+    }
+}
+enum CachedCfg {
+    Empty,
+    Light(Cfg),
+    Complete(Cfg),
+}
+pub(super) struct Context<'a> {
+    pub(super) program: &'a Program,
+    pub(super) symbol: SymbolId,
+    pub(super) body: &'a mut Body,
+    pub(super) level: u8,
+    pub(super) nounwind: &'a [bool],
+    pub(super) dead: u64,
+    cfg: CachedCfg,
+    version: u32,
+    settled: Vec<(Pass, u32, bool)>,
+    kept_body: Option<Pass>,
+    pub(super) ordered_version: Option<u32>,
+    left_ordered: bool,
+}
+impl<'a> Context<'a> {
+    pub(super) fn new(
+        program: &'a Program,
+        symbol: SymbolId,
+        body: &'a mut Body,
+        level: u8,
+        nounwind: &'a [bool],
+    ) -> Self {
+        Self {
+            program,
+            symbol,
+            body,
+            level,
+            nounwind,
+            dead: 0,
+            cfg: CachedCfg::Empty,
+            version: 0,
+            settled: Vec::new(),
+            kept_body: None,
+            ordered_version: None,
+            left_ordered: false,
+        }
+    }
+    pub(super) fn ensure_cfg(&mut self) -> Result<(), Error> {
+        let prior = std::mem::replace(&mut self.cfg, CachedCfg::Empty);
+        self.cfg = match prior {
+            CachedCfg::Empty => CachedCfg::Complete(Cfg::analyze(self.body)?),
+            CachedCfg::Light(mut cfg) => {
+                cfg.complete()?;
+                CachedCfg::Complete(cfg)
+            }
+            CachedCfg::Complete(cfg) => CachedCfg::Complete(cfg),
+        };
+        Ok(())
+    }
+    fn ensure_cfg_light(&mut self) -> Result<(), Error> {
+        if matches!(self.cfg, CachedCfg::Empty) {
+            self.cfg = CachedCfg::Light(Cfg::light(self.body)?);
+        }
+        Ok(())
+    }
+    pub(super) fn cfg(&self) -> Result<&Cfg, Error> {
+        match &self.cfg {
+            CachedCfg::Light(cfg) | CachedCfg::Complete(cfg) => Ok(cfg),
+            CachedCfg::Empty => Err(Error::Limit),
+        }
+    }
+    pub(super) fn invalidate_cfg(&mut self) {
+        self.cfg = CachedCfg::Empty;
+    }
+    fn dispatch(&mut self, pass: Pass) -> Result<bool, Error> {
+        match pass {
+            Pass::DeadCode => dead_code::remove(self),
+            Pass::StripRegions => exception_regions::strip(self),
+            Pass::PromoteSlots | Pass::ForwardMemory => {
+                self.ensure_cfg()?;
+                Err(Error::NotImplemented(pass.missing()))
+            }
+            Pass::DefinitionOrder => {
+                self.ensure_cfg_light()?;
+                Err(Error::NotImplemented(pass.missing()))
+            }
+            _ => Err(Error::NotImplemented(pass.missing())),
+        }
+    }
+    pub(super) fn run(&mut self, pass: Pass) -> Result<bool, Error> {
+        if let Some(&(_, _, reported)) = self
+            .settled
+            .iter()
+            .find(|&&(p, v, _)| p == pass && v == self.version)
+        {
+            return Ok(reported);
+        }
+        self.kept_body = None;
+        self.left_ordered = false;
+        let ordered = self.ordered_version == Some(self.version);
+        let changed = self.dispatch(pass)?;
+        if changed && self.kept_body != Some(pass) {
+            self.version = self.version.checked_add(1).ok_or(Error::Limit)?;
+            if self.left_ordered || (ordered && matches!(pass, Pass::DeadCode | Pass::Constants)) {
+                self.ordered_version = Some(self.version);
+            }
+            return Ok(true);
+        }
+        if let Some(entry) = self.settled.iter_mut().find(|entry| entry.0 == pass) {
+            *entry = (pass, self.version, changed);
+        } else {
+            self.settled.push((pass, self.version, changed));
+        }
+        Ok(changed)
+    }
+    pub(super) fn restore_order(&mut self) -> Result<(), Error> {
+        if self.ordered_version == Some(self.version) {
+            return Ok(());
+        }
+        if self.dispatch(Pass::DefinitionOrder)? {
+            self.version = self.version.checked_add(1).ok_or(Error::Limit)?;
+        } else {
+            self.ordered_version = Some(self.version);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowir::{
+        model::{Instruction, InstructionKind as I},
+        vocabulary::Type,
+    };
+    #[test]
+    fn settled_versions_preserve_order_and_cfg_for_dead_values() {
+        let mut program = crate::lowir::test_program(
+            b"function @f() -> void {block ^entry: %dead = const i64 7 return void}\n",
+        )
+        .unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let mut context = Context::new(&program, symbol, &mut body, 1, &[]);
+        context.ensure_cfg().unwrap();
+        context.ordered_version = Some(0);
+        assert!(context.run(Pass::DeadCode).unwrap());
+        assert_eq!(context.version, 1);
+        assert_eq!(context.dead, 1);
+        assert_eq!(context.ordered_version, Some(1));
+        assert!(matches!(context.cfg, CachedCfg::Complete(_)));
+        assert!(!context.run(Pass::DeadCode).unwrap());
+        assert_eq!(context.settled.len(), 1);
+        assert!(!context.run(Pass::DeadCode).unwrap());
+        assert_eq!(context.dead, 1);
+        assert_eq!(context.version, 1);
+    }
+    #[test]
+    fn light_cfg_upgrades_and_graph_edits_explicitly_invalidate_both_states() {
+        let mut program = crate::lowir::test_program(
+            b"function @f() -> void {block ^entry: jump ^exit block ^exit: return void}\n",
+        )
+        .unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let mut context = Context::new(&program, symbol, &mut body, 1, &[]);
+        context.ensure_cfg_light().unwrap();
+        assert!(matches!(context.cfg, CachedCfg::Light(_)));
+        context.ensure_cfg().unwrap();
+        assert!(matches!(context.cfg, CachedCfg::Complete(_)));
+        let entry = context.body.layout[0];
+        assert_eq!(context.cfg().unwrap().successors(entry).len(), 1);
+        let mut keep = vec![true; context.body.instructions().len()];
+        keep[0] = false;
+        context.body.retain_instructions(&keep).unwrap();
+        context
+            .body
+            .append(
+                entry,
+                Instruction::new(None, I::Return(Type::Void, None), 0),
+            )
+            .unwrap();
+        context.invalidate_cfg();
+        assert!(matches!(context.cfg, CachedCfg::Empty));
+        context.ensure_cfg_light().unwrap();
+        assert!(context.cfg().unwrap().successors(entry).is_empty());
+        context.ensure_cfg().unwrap();
+        assert!(context.cfg().unwrap().successors(entry).is_empty());
+    }
+}

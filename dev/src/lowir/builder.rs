@@ -186,7 +186,7 @@ impl<'a> FunctionBuilder<'a> {
         let signature = program.signature(function.signature);
         let mut body = Body::new(None, signature.parameters.len());
         for parameter in &signature.parameters {
-            let _ = body.generated_temp(parameter.ty)?;
+            body.append_parameter(parameter.name, parameter.ty)?;
         }
         Ok(Self {
             program,
@@ -207,6 +207,8 @@ impl<'a> FunctionBuilder<'a> {
                 "anonymous slot requires an internal definition".into(),
             ));
         }
+        self.slot_names
+            .push(super::construction_names::SlotName::Anonymous);
         self.body.constructed_slot(ty)
     }
     pub(crate) fn metadata(&mut self, metadata: Metadata) {
@@ -268,8 +270,12 @@ impl<'a> FunctionBuilder<'a> {
         self.body.constructed_slot(ty)
     }
     pub(crate) fn parameter_slot(&mut self, index: usize, ty: Type) -> Result<Value, Error> {
-        self.slot_names
-            .push(super::construction_names::SlotName::Parameter(index));
+        self.body.anonymous_parameter(index)?;
+        self.slot_names.push(if u16::try_from(index).is_ok() {
+            super::construction_names::SlotName::Parameter(index)
+        } else {
+            super::construction_names::SlotName::Generated("arg")
+        });
         self.body.constructed_slot(ty)
     }
     pub(crate) fn program(&mut self) -> &mut Program {
@@ -278,6 +284,11 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn block_id(&mut self, name: &str) -> Result<BlockId, Error> {
         let name = self.program.names.intern(name)?;
         self.body.use_block(name, 0)
+    }
+    pub(crate) fn block_origin(&mut self, block: BlockId, stem: &str) -> Result<(), Error> {
+        let stem = self.program.names.intern(stem)?;
+        self.body.generated_block_origin(block, stem);
+        Ok(())
     }
     pub(crate) fn signature(
         &mut self,
@@ -536,10 +547,7 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
     pub(crate) fn finish(mut self) -> Result<(), Error> {
-        if !self.publish {
-            return self.program.complete_body(self.symbol, self.body);
-        }
-
+        super::construction_names::record_shadows(&mut self.slot_names);
         let positional: std::collections::HashSet<_> = self
             .slot_names
             .iter()
@@ -567,6 +575,10 @@ impl<'a> FunctionBuilder<'a> {
         )?;
         self.body.name_constructed_slots(&names)?;
         self.body.retain_slot_names(self.slot_names);
+        self.body.name_blocks(&mut self.program.names)?;
+        if !self.publish {
+            return self.program.complete_body(self.symbol, self.body);
+        }
         self.function.body = Some(self.body);
         self.program.add(self.symbol, self.function)
     }
@@ -576,6 +588,39 @@ impl<'a> FunctionBuilder<'a> {
 mod tests {
     use super::*;
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
+
+    #[test]
+    fn completed_runtime_body_retains_parameter_names_and_anonymous_storage() -> Result<(), Error> {
+        let mut program =
+            crate::lowir::test_program(b"declare function @helper(%t1 : i64) -> i64\n")?;
+        let symbol = program.publications()[0];
+        let mut builder = FunctionBuilder::complete(&mut program, symbol)?;
+        let slot = builder.anonymous_slot(Type::I64)?;
+        builder.block("entry")?;
+        let argument = builder.parameter(0)?;
+        builder.effect(I::Store(
+            super::super::model::Facts::default(),
+            Type::I64,
+            argument,
+            slot,
+        ))?;
+        let result = builder.generated(I::Load(
+            super::super::model::Facts::default(),
+            Type::I64,
+            slot,
+        ))?;
+        builder.effect(I::Return(Type::I64, Some(result)))?;
+        builder.finish()?;
+        validator::validate_constructed(&program)?;
+        let mut bytes = Vec::new();
+        crate::lowir::writer::write(&program, &mut bytes).map_err(|_| Error::Limit)?;
+        let text = String::from_utf8(bytes).map_err(|_| Error::Limit)?;
+        assert!(text.contains("function @helper(%t1 : i64) -> i64"));
+        assert!(text.contains("slot $0 : i64"));
+        assert!(text.contains("store i64 %t1, $0"));
+        assert!(text.contains("%t2 = load i64 $0"));
+        Ok(())
+    }
 
     #[test]
     fn inserted_region_preserves_value_definitions_and_target_identity() -> Result<(), Error> {

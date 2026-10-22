@@ -174,7 +174,9 @@ fn block(
 ) -> Result<crate::lowir::model::BlockId, Error> {
     *next = next.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
     let name = format!("{prefix}_{next}");
-    Ok(builder.block_id(&name)?)
+    let block = builder.block_id(&name)?;
+    builder.block_origin(block, prefix)?;
+    Ok(block)
 }
 fn call(builder: &mut FunctionBuilder<'_>, callee: SymbolId, object: Value) -> Result<(), Error> {
     let arguments = builder.arguments(&[object])?;

@@ -1,0 +1,38 @@
+function @names(%__param0_ : i32, %t1 : i32) -> i32 [binding=strong, object=_Z5namesii] {
+  slot $__param0_ : i32
+  slot $t1 : i32
+  slot $__param0 : i32
+  slot $t2 : i32
+  slot $__param0__shadow2 : i32
+
+  block ^entry:
+    store typed i32 %__param0_, $__param0_
+    store typed i32 %t1, $t1
+    %t3 = load typed i32 $t1
+    store typed i32 %t3, $__param0
+    %t4 = load typed i32 $__param0
+    %t5 = binary add nowrap i32 %t4, 1
+    store typed i32 %t5, $t2
+    %t6 = load typed i32 $t2
+    store typed i32 %t6, $__param0__shadow2
+    %t7 = load typed i32 $__param0__shadow2
+    %t8 = binary add nowrap i32 %t7, 1
+    store typed i32 %t8, $t2
+    %t9 = load typed i32 $t2
+    return i32 %t9
+}
+function @unused(%__param0_ : i32) -> void [binding=strong, object=_Z6unusedi] {
+  slot $__param0_ : i32
+  slot $__param0 : i32
+
+  block ^entry:
+    store typed i32 %__param0_, $__param0_
+    store typed i32 3, $__param0
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @names(0, 3)
+    %t2 = binary sub nowrap i32 %t1, 5
+    return i32 %t2
+}

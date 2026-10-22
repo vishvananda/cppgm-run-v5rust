@@ -11,6 +11,8 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[path = "body_edits.rs"]
+mod body_edits;
 macro_rules! identity {
     ($($name:ident),+ ) => { $(
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -779,6 +781,7 @@ pub(crate) enum Value {
     Float(LiteralId, FloatKind),
     Symbol(SymbolId),
 }
+#[derive(Clone)]
 pub(crate) struct Temp {
     pub(crate) generated: bool,
     pub(crate) name: NameId,
@@ -796,6 +799,13 @@ pub(crate) struct Block {
     pub(crate) placed: bool,
     pub(crate) first_use: u32,
     pub(crate) instructions: Vec<InstId>,
+    origin: BlockName,
+}
+#[derive(Clone, Copy)]
+enum BlockName {
+    Source(NameId),
+    Generated(NameId),
+    Anonymous,
 }
 #[derive(Default)]
 pub(crate) struct Body {
@@ -958,6 +968,7 @@ impl Body {
         let id = BlockId(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?);
         self.blocks.push(Block {
             name: NameId(0),
+            origin: BlockName::Anonymous,
             placed: false,
             first_use: 0,
             instructions: Vec::new(),
@@ -999,6 +1010,7 @@ impl Body {
         let id = BlockId(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?);
         self.blocks.push(Block {
             name,
+            origin: BlockName::Source(name),
             placed: false,
             first_use: line,
             instructions: Vec::new(),
@@ -1047,12 +1059,32 @@ impl Body {
         names: &mut Names,
         parameters: &[NameId],
     ) -> Result<(), Error> {
-        let mut explicit = parameters.to_vec();
+        let positional: HashSet<_> = self
+            .slot_names
+            .iter()
+            .filter_map(|label| {
+                if let super::construction_names::SlotName::Parameter(index) = label {
+                    Some(*index)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut explicit: Vec<_> = parameters
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &name)| {
+                (!positional.contains(&index)
+                    && self.temps.get(index).is_none_or(|temp| !temp.generated))
+                .then_some(name)
+            })
+            .collect();
         explicit.extend(
             self.temps
                 .iter()
-                .filter(|temp| !temp.generated)
-                .map(|temp| temp.name),
+                .enumerate()
+                .filter(|(index, temp)| !temp.generated && !positional.contains(index))
+                .map(|(_, temp)| temp.name),
         );
         let labels = super::construction_names::slots(names, &self.slot_names, &explicit)?;
         self.name_constructed_slots(&labels)
@@ -1103,6 +1135,7 @@ impl Body {
         Ok(id)
     }
 }
+#[derive(Clone)]
 pub(crate) struct Instruction {
     pub(crate) result: Option<TempId>,
     pub(crate) kind: InstructionKind,
@@ -1119,6 +1152,7 @@ impl Instruction {
         }
     }
 }
+#[derive(Clone)]
 pub(crate) enum InstructionKind {
     Const(Type, Value),
     Copy(Type, Value),
@@ -1143,6 +1177,7 @@ pub(crate) enum InstructionKind {
     Unreachable,
 }
 /// Runtime facts only: later consumers implement their machine/runtime effects.
+#[derive(Clone)]
 pub(crate) enum RuntimeInstruction {
     AtomicLoad(Type, Value, MemoryOrder),
     AtomicStore(Type, Value, Value, MemoryOrder),
@@ -1220,6 +1255,7 @@ impl RuntimeInstruction {
         }
     }
 }
+#[derive(Clone)]
 pub(crate) struct Call {
     pub(crate) result: Type,
     pub(crate) callee: Value,

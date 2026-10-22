@@ -8,9 +8,21 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Copy)]
 pub(super) enum SlotName {
     Source(NameId),
+    Shadow(NameId),
+    Anonymous,
     RangeFor(NameId),
     Generated(&'static str),
     Parameter(usize),
+}
+pub(super) fn record_shadows(labels: &mut [SlotName]) {
+    let mut seen = HashSet::new();
+    for label in labels {
+        if let SlotName::Source(name) = *label
+            && !seen.insert(name)
+        {
+            *label = SlotName::Shadow(name);
+        }
+    }
 }
 pub(super) fn slots(
     names: &mut Names,
@@ -26,17 +38,18 @@ pub(super) fn slots(
     let mut generated = 0_u32;
     let mut range_for = 0_u32;
     let mut result = Vec::with_capacity(labels.len());
-    for label in labels {
+    for (index, label) in labels.iter().enumerate() {
         let text = match label {
-            SlotName::Source(name) => {
+            SlotName::Source(name) | SlotName::Shadow(name) => {
                 let count = counts.entry(*name).or_default();
                 *count = count.checked_add(1).ok_or(Error::Limit)?;
-                if *count == 1 {
+                if matches!(label, SlotName::Source(_)) {
                     result.push(*name);
                     continue;
                 }
                 format!("{}__shadow{}", names.get(*name), count)
             }
+            SlotName::Anonymous => index.to_string(),
             SlotName::Generated(stem) => loop {
                 generated = generated.checked_add(1).ok_or(Error::Limit)?;
                 let text = format!("{stem}__{generated}");

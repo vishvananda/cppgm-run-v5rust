@@ -1067,6 +1067,8 @@ impl Symbols<'_, '_> {
                 if !adjustment.reference {
                     let null_block = builder.block_id("return_null_1")?;
                     let adjust_block = builder.block_id("adjust_return_2")?;
+                    builder.block_origin(null_block, "return_null")?;
+                    builder.block_origin(adjust_block, "adjust_return")?;
                     let zero = builder.integer(0)?;
                     let is_null = builder.generated(I::Compare(
                         crate::lowir::vocabulary::Compare::Eq,

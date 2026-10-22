@@ -201,7 +201,12 @@ fn write_function_header(
         program.names.get(f.name)
     )?;
     let signature = program.signature(f.signature);
-    parameters(program, signature, out)?;
+    let local_names = f
+        .body
+        .as_ref()
+        .map(|body| temporary_names(program, body))
+        .transpose()?;
+    parameters(program, signature, local_names.as_deref(), out)?;
     metadata(program, Some(&f.metadata), Some(signature), out)?;
     if !defined {
         return writeln!(out);
@@ -286,39 +291,54 @@ fn write_location(
 // including slots declared after a temporary's first use (lowir/local_names.cpp).
 fn temporary_names(program: &Program, body: &Body) -> io::Result<Vec<String>> {
     let taken: std::collections::HashSet<_> = body
-        .temps()
-        .iter()
-        .filter(|temp| !temp.generated)
-        .map(|temp| program.names.get(temp.name))
-        .chain(body.slots().iter().map(|slot| program.names.get(slot.name)))
+        .explicit_value_names()
+        .map(|name| program.names.get(name))
         .collect();
     let mut ordinal = 0_u32;
     let mut names = Vec::with_capacity(body.temps().len());
-    for temp in body.temps() {
-        if !temp.generated {
-            names.push(program.names.get(temp.name).to_owned());
-            continue;
-        }
-        loop {
-            ordinal = ordinal
-                .checked_add(1)
-                .ok_or_else(|| io::Error::other("temporary numbering limit"))?;
-            let name = format!("t{ordinal}");
-            if !taken.contains(name.as_str()) {
-                names.push(name);
-                break;
+    for (index, temp) in body.temps().iter().enumerate() {
+        if index >= body.parameter_count {
+            loop {
+                ordinal = ordinal
+                    .checked_add(1)
+                    .ok_or_else(|| io::Error::other("temporary numbering limit"))?;
+                let name = format!("t{ordinal}");
+                if !taken.contains(name.as_str()) {
+                    break;
+                }
             }
         }
+        names.push(if !temp.generated {
+            program.names.get(temp.name).to_owned()
+        } else if index < body.parameter_count {
+            let mut name = format!("__param{index}");
+            while taken.contains(name.as_str()) {
+                name.push('_');
+            }
+            name
+        } else {
+            format!("t{ordinal}")
+        });
     }
     Ok(names)
 }
-fn parameters(program: &Program, signature: &Signature, out: &mut impl Write) -> io::Result<()> {
+fn parameters(
+    program: &Program,
+    signature: &Signature,
+    locals: Option<&[String]>,
+    out: &mut impl Write,
+) -> io::Result<()> {
     write!(out, "(")?;
     for (i, p) in signature.parameters.iter().enumerate() {
         if i != 0 {
             write!(out, ", ")?;
         }
-        write!(out, "%{} : {}", program.names.get(p.name), p.ty)?;
+        write!(
+            out,
+            "%{} : {}",
+            locals.map_or_else(|| program.names.get(p.name), |names| names[i].as_str()),
+            p.ty
+        )?;
         let mut fields = Vec::new();
         if let Some(pass) = p.pass {
             fields.push(format!("pass={}", pass.spelling()));
@@ -501,7 +521,7 @@ impl<W: Write> InstructionWriter<'_, W> {
         if let Some(id) = call.signature {
             write!(self.out, " as ")?;
             let signature = self.program.signature(id);
-            parameters(self.program, signature, self.out)?;
+            parameters(self.program, signature, None, self.out)?;
             metadata(self.program, None, Some(signature), self.out)?;
         }
         Ok(())
