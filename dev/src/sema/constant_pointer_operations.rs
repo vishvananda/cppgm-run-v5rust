@@ -108,7 +108,7 @@ impl Analyzer<'_> {
         }
         let value = self.evaluate_constant(id, scope, skipping)?;
         self.check_constant_bool(value, self.tree.expressions.get(id).location)?;
-        Ok(value.bits != 0)
+        Ok(value.truth())
     }
     pub(super) fn consumes_address(&self, id: ast::ExprId) -> bool {
         if self
@@ -193,6 +193,7 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         if skipping {
             return Ok(Some(Constant {
+                high: 0,
                 bits: 0,
                 ty: facts.ty,
             }));
@@ -274,6 +275,7 @@ impl Analyzer<'_> {
             }
         };
         Ok(Some(Constant {
+            high: 0,
             bits,
             ty: self.bare_type(facts.ty)?,
         }))

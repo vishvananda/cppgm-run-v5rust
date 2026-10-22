@@ -66,6 +66,7 @@ impl Analyzer<'_> {
             self.store_constant_value(
                 place,
                 Value::Integer(super::constants::Constant {
+                    high: 0,
                     bits: kind.convert(u64::from_le_bytes(bytes)),
                     ty: element,
                 }),
@@ -340,6 +341,8 @@ impl Analyzer<'_> {
             let kind = self
                 .integral_kind(place.designated)
                 .ok_or(Error::Invariant("nonintegral constant bit field"))?;
+            // Preserve the frozen interpreter's low-half-only field rule:
+            // fields at least 64 bits wide retain the complete assigned value.
             if width < 64
                 && !matches!(
                     self.graph.types.get(place.designated).kind,
@@ -353,10 +356,11 @@ impl Analyzer<'_> {
                 }
                 value = Value::Integer(super::constants::Constant {
                     bits: kind.convert(bits),
-                    ty: integer.ty,
+                    ..integer
                 });
             }
         }
+
         place.designated = self.bare_type(place.designated)?;
         self.constexpr_frames.write(place, value, location)
     }

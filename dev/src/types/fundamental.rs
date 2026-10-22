@@ -12,6 +12,8 @@ pub enum FundamentalType {
     UnsignedLongInt,
     LongLongInt,
     UnsignedLongLongInt,
+    Int128,
+    UnsignedInt128,
     Float,
     Double,
     LongDouble,
@@ -31,6 +33,8 @@ impl FundamentalType {
             Self::UnsignedLongInt => "unsigned long int",
             Self::LongLongInt => "long long int",
             Self::UnsignedLongLongInt => "unsigned long long int",
+            Self::Int128 => "__int128",
+            Self::UnsignedInt128 => "unsigned __int128",
             Self::Float => "float",
             Self::Double => "double",
             Self::LongDouble => "long double",
@@ -48,7 +52,7 @@ impl FundamentalType {
             | Self::LongLongInt
             | Self::UnsignedLongLongInt
             | Self::Double => 8,
-            Self::LongDouble => 16,
+            Self::LongDouble | Self::Int128 | Self::UnsignedInt128 => 16,
         }
     }
 

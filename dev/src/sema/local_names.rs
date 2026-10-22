@@ -63,7 +63,7 @@ impl Analyzer<'_> {
             // Reference evaluation consumes this source type and resolved name.
             self.graph.expression_facts.set(id, *facts);
             if let Some(value) = self.constant_value(id, scope, false)? {
-                facts.folded = Some(value.bits);
+                facts.folded = self.held_integral_constant(value).then_some(value.bits);
                 facts.fold_style = FoldStyle::EnclosingLocal;
                 return Ok(());
             }

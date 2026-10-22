@@ -1236,6 +1236,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         F::UnsignedLongInt => B::UnsignedLong,
                         F::LongLongInt => B::LongLong,
                         F::UnsignedLongLongInt => B::UnsignedLongLong,
+                        F::Int128 => B::Int128,
+                        F::UnsignedInt128 => B::Uint128,
                         F::Float => B::Float,
                         F::Double => B::Double,
                         F::LongDouble => B::LongDouble,

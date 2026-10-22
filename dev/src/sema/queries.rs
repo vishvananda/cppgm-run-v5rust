@@ -275,6 +275,7 @@ impl Analyzer<'_> {
         }
         let (size, align) = self.type_size(ty, location)?;
         Ok(Constant {
+            high: 0,
             bits: if alignment { align } else { size },
             ty: self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?,
         })

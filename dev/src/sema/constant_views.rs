@@ -87,6 +87,40 @@ impl Graph {
             _ => None,
         })
     }
+    pub(crate) fn lower_evaluated_wide(
+        &self,
+        tree: &ast::Tree,
+        id: ast::ExprId,
+    ) -> Result<Option<u128>, Error> {
+        let id = without_parentheses(tree, id);
+        let facts = self.expression_facts.get(id)?;
+        let Some(kind) = self.integral_kind(facts.ty) else {
+            return Ok(None);
+        };
+        if kind.bits <= 64
+            || facts.category == ValueCategory::Prvalue
+            || self.types.get(facts.ty).cv.0 & 2 != 0
+        {
+            return Ok(None);
+        }
+        let entity = match tree.expressions.get(id).kind {
+            ExprKind::Id(name) => self.lower_name(name)?,
+            ExprKind::Member { .. } => self.lower_member(id)?.0,
+            _ => return Ok(None),
+        };
+        if !self.entity(entity).constexpr {
+            return Ok(None);
+        }
+        let super::constants::ConstantState::Value(value) = self.entity(entity).constant else {
+            return Ok(None);
+        };
+        let extended = if kind.signed && value.bits >> 63 != 0 {
+            u64::MAX
+        } else {
+            0
+        };
+        Ok((value.high != extended).then_some(value.wide()))
+    }
     pub(crate) fn lower_evaluated_floating(
         &self,
         tree: &ast::Tree,

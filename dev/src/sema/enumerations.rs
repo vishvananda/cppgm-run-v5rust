@@ -443,6 +443,7 @@ impl Analyzer<'_> {
                 if let Some(previous) = previous {
                     if dependent {
                         Constant {
+                            high: 0,
                             bits: previous.bits.wrapping_add(1),
                             ..previous
                         }
@@ -451,6 +452,7 @@ impl Analyzer<'_> {
                     }
                 } else {
                     Constant {
+                        high: 0,
                         bits: 0,
                         ty: info
                             .underlying
@@ -476,7 +478,23 @@ impl Analyzer<'_> {
                             "enumerator value is not representable in the underlying type",
                         ));
                     }
+                    // HeldAsWideConstant: enumerators still use the frozen
+                    // integral evaluator's u64 constant representation.
+                    let negative = from.signed && integral::signed(value.bits) < 0;
+                    if kind.bits > 64
+                        && if kind.signed {
+                            !negative && value.bits >> 63 != 0
+                        } else {
+                            negative
+                        }
+                    {
+                        return Err(Error::at(
+                            self.tree.expressions.get(expr).location,
+                            "a 128-bit enumerator value beyond the 64-bit constants evaluated",
+                        ));
+                    }
                     value = Constant {
+                        high: 0,
                         bits: kind.convert(value.bits),
                         ty: info
                             .underlying
@@ -490,6 +508,7 @@ impl Analyzer<'_> {
                 self.next_enumerator(previous, info, enumerator.location)?
             } else {
                 Constant {
+                    high: 0,
                     bits: 0,
                     ty: if let Some(ty) = info.underlying {
                         ty
@@ -581,10 +600,8 @@ impl Analyzer<'_> {
             let ConstantState::Value(value) = self.graph.entity(id).constant else {
                 return Err(Error::Invariant("missing enum value"));
             };
-            self.graph.entity_mut(id).constant = ConstantState::Value(Constant {
-                bits: kind.convert(value.bits),
-                ty: enum_ty,
-            });
+            let value = self.integral_value(enum_ty, kind.convert(value.bits));
+            self.graph.entity_mut(id).constant = ConstantState::Value(value);
         }
         Ok(())
     }
@@ -604,6 +621,7 @@ impl Analyzer<'_> {
                 return Err(Error::at(location, "enumerator value overflows"));
             }
             return Ok(Constant {
+                high: 0,
                 bits: previous.bits.wrapping_add(1),
                 ty: self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?,
             });
@@ -624,12 +642,14 @@ impl Analyzer<'_> {
                 ));
             }
             return Ok(Constant {
+                high: 0,
                 bits: to.convert(bits),
                 ty,
             });
         }
         if kind.represents(bits, from) {
             return Ok(Constant {
+                high: 0,
                 bits,
                 ty: previous.ty,
             });
@@ -643,6 +663,7 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("next enum candidate"))?;
             if to.represents(bits, from) {
                 return Ok(Constant {
+                    high: 0,
                     bits,
                     ty: self.graph.types.scalar(Scalar::Basic(candidate))?,
                 });

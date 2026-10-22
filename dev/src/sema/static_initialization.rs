@@ -19,6 +19,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(crate) enum Value {
     Integer(u64),
+    WideInteger(u128),
     MemberPointer(super::symbolic_members::MemberPointer),
     Floating(F, u128),
     Address(EntityId, i64),
@@ -276,7 +277,7 @@ impl Analyzer<'_> {
             let floating = Format::of(ty)
                 .and_then(|format| BinaryFloat::from_bits(format, bits))
                 .ok_or(Error::Invariant("static floating integer value"))?;
-            if floating.integral(kind.bits, kind.signed).is_none()
+            if floating.integral_wide(kind.bits, kind.signed).is_none()
                 && !self.static_floating_fallback(id, scope)?
             {
                 return Ok(None);
@@ -378,7 +379,7 @@ impl Analyzer<'_> {
                 Some(Value::MemberPointer(value))
             }
             super::constant_addresses::TemporaryValue::Integer(value) => {
-                Some(Value::Integer(value.bits))
+                Some(self.static_integer_value(value))
             }
             super::constant_addresses::TemporaryValue::Floating(value) => {
                 let TypeKind::Scalar(Scalar::Basic(kind)) = self.graph.types.get(value.ty).kind
@@ -453,14 +454,14 @@ impl Analyzer<'_> {
             let value = if let Some(value) = self.graph.constant_fact(id) {
                 Some(value)
             } else {
-                match self.constant_value(id, scope, false) {
-                    Ok(value) => value,
-                    Err(Error::Missing(_)) => None,
+                match self.evaluate_constant(id, scope, false) {
+                    Ok(value) => Some(value),
+                    Err(Error::Missing(_) | Error::NonConstant { .. }) => None,
                     Err(error) => return Err(error),
                 }
             };
             if let Some(value) = value {
-                return Ok(Some(Value::Integer(value.bits)));
+                return Ok(Some(self.static_integer_value(value)));
             }
         }
         if matches!(
@@ -572,6 +573,16 @@ impl Analyzer<'_> {
             _ => Ok(None),
         }
     }
+    pub(super) fn static_integer_value(&self, value: super::constants::Constant) -> Value {
+        if self
+            .integral_kind(value.ty)
+            .is_some_and(|kind| kind.bits > 64)
+        {
+            Value::WideInteger(value.wide())
+        } else {
+            Value::Integer(value.bits)
+        }
+    }
     pub(super) fn static_conversion(
         &self,
         value: Value,
@@ -581,9 +592,64 @@ impl Analyzer<'_> {
         if !self.static_storage_value(value) {
             return Ok(None);
         }
+        if self
+            .integral_kind(target)
+            .is_some_and(|kind| kind.bits > 64)
+        {
+            let kind = self
+                .integral_kind(target)
+                .ok_or(Error::Invariant("wide static target"))?;
+            let bits = match value {
+                Value::WideInteger(bits) => bits,
+                Value::Integer(bits) => {
+                    if self.integral_kind(source).is_some_and(|kind| kind.signed) {
+                        i128::from(bits.cast_signed()).cast_unsigned()
+                    } else {
+                        u128::from(bits)
+                    }
+                }
+                Value::Floating(ty, bits) => {
+                    let format =
+                        Format::of(ty).ok_or(Error::Invariant("wide static floating source"))?;
+                    let floating = BinaryFloat::from_bits(format, bits)
+                        .ok_or(Error::Invariant("wide static floating encoding"))?;
+                    let Some(bits) = floating.integral_wide(128, kind.signed) else {
+                        return Ok(None);
+                    };
+                    bits
+                }
+                _ => return Ok(None),
+            };
+            return Ok(Some(Value::WideInteger(bits)));
+        }
+        if let Value::WideInteger(bits) = value {
+            if let Some(kind) = self.integral_kind(target) {
+                let low = u64::try_from(bits & u128::from(u64::MAX))
+                    .map_err(|_| Error::Invariant("wide static low bits"))?;
+                return Ok(Some(Value::Integer(if kind.bits == 1 {
+                    u64::from(bits != 0)
+                } else {
+                    kind.convert(low)
+                })));
+            }
+            if let Some(format) = self.float_format(target) {
+                let signed = self.integral_kind(source).is_some_and(|kind| kind.signed);
+                let Some(value) = BinaryFloat::wide_integer(bits, signed, format) else {
+                    return Ok(None);
+                };
+                let TypeKind::Scalar(Scalar::Basic(ty)) = self.graph.types.get(target).kind else {
+                    return Err(Error::Invariant("wide static floating target"));
+                };
+                return Ok(value.bits(format).map(|bits| Value::Floating(ty, bits)));
+            }
+            return Ok(None);
+        }
         if let Some(kind) = self.integral_kind(target) {
             let bits = match value {
                 Value::Integer(bits) => bits,
+                Value::WideInteger(_) => {
+                    return Err(Error::Invariant("unconverted wide static integer"));
+                }
                 Value::MemberPointer(value) if kind.bits == 1 => u64::from(value.member.is_some()),
                 Value::MemberPointer(_) => return Ok(None),
                 Value::Address(_, _)
@@ -665,7 +731,8 @@ impl Analyzer<'_> {
                         negative,
                     )
                 }
-                Value::MemberPointer(_)
+                Value::WideInteger(_)
+                | Value::MemberPointer(_)
                 | Value::Address(_, _)
                 | Value::Literal(_, _)
                 | Value::Temporary(_, _)

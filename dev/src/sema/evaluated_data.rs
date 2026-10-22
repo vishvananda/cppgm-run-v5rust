@@ -193,7 +193,7 @@ impl Analyzer<'_> {
                     Item::Scalar(ty, Value::MemberPointer(value))
                 }
                 Some(TemporaryValue::Integer(value)) => {
-                    Item::Scalar(ty, Value::Integer(value.bits))
+                    Item::Scalar(ty, self.static_integer_value(value))
                 }
                 Some(TemporaryValue::Floating(value)) => {
                     let TypeKind::Scalar(Scalar::Basic(kind)) = self.graph.types.get(ty).kind

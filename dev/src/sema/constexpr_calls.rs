@@ -167,18 +167,16 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(id).location,
             );
         }
-        let kind = self
-            .integral_kind(target)
-            .ok_or(Error::Missing("nonintegral constexpr scalar value"))?;
         let value = if self.is_address_expression(id) {
-            u64::from(self.evaluate_address(id, scope)?.root != Root::Null)
+            let truth = self.evaluate_address(id, scope)?.root != Root::Null;
+            self.integral_value(target, u64::from(truth))
         } else {
-            self.evaluate_constant(id, scope, false)?.bits
+            self.evaluate_constant(id, scope, false)?
         };
-        Ok(Value::Integer(Constant {
-            bits: kind.convert(value),
-            ty: self.bare_type(target)?,
-        }))
+        let target = self.bare_type(target)?;
+        Ok(Value::Integer(
+            self.convert_integer_constant(value, target)?,
+        ))
     }
     pub(super) fn zero_constant_scalar(&mut self, target: TypeId) -> Result<Value, Error> {
         if self.float_format(target).is_some() {
@@ -196,6 +194,7 @@ impl Analyzer<'_> {
                 Ok(Value::Pointer(Address::new(Root::Null, target)))
             }
             _ if self.integral_kind(target).is_some() => Ok(Value::Integer(Constant {
+                high: 0,
                 bits: 0,
                 ty: self.bare_type(target)?,
             })),
@@ -297,6 +296,7 @@ impl Analyzer<'_> {
             Returned::Value(Value::Integer(value)) => Ok(value),
             Returned::Place(place) => self.read_constant_integer(place, location),
             Returned::Void => Ok(Constant {
+                high: 0,
                 bits: 0,
                 ty: self.graph.expression_facts.get(id)?.ty,
             }),

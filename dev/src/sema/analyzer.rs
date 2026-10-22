@@ -29,6 +29,7 @@ pub(super) enum SpecializationMode {
 }
 
 pub(crate) struct Analyzer<'tree> {
+    pub(super) int128_name: crate::lex::identifiers::NameId,
     pub(super) decltype_name: crate::lex::identifiers::NameId,
     pub(super) override_name: crate::lex::identifiers::NameId,
     pub(super) exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
@@ -151,23 +152,42 @@ impl<'tree> Analyzer<'tree> {
     ) -> Result<Self, Error> {
         let fresh = previous.is_none();
         let mut graph = previous.unwrap_or_else(Graph::new);
-        let name = cursor
-            .intern_name(b"nullptr_t")
+        let int128_name = cursor
+            .intern_name(b"__int128")
             .map_err(|_| Error::Limit("semantic identifier limit"))?;
         if fresh {
-            let ty = graph.types.scalar(Scalar::Nullptr)?;
-            let entity = graph.add_entity(Some(ty), Some(name), Keyword::Typedef)?;
-            graph.add_binding(
-                graph.global,
-                None,
-                Binding {
-                    kind: BindingKind::Alias,
-                    name: Some(name),
-                    entity,
-                    ty: Some(ty),
-                    key: Keyword::Typedef,
-                },
-            )?;
+            for (spelling, scalar) in [
+                (b"nullptr_t".as_slice(), Scalar::Nullptr),
+                (
+                    b"__int128".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Int128),
+                ),
+                (
+                    b"__int128_t".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Int128),
+                ),
+                (
+                    b"__uint128_t".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::UnsignedInt128),
+                ),
+            ] {
+                let name = cursor
+                    .intern_name(spelling)
+                    .map_err(|_| Error::Limit("semantic identifier limit"))?;
+                let ty = graph.types.scalar(scalar)?;
+                let entity = graph.add_entity(Some(ty), Some(name), Keyword::Typedef)?;
+                graph.add_binding(
+                    graph.global,
+                    None,
+                    Binding {
+                        kind: BindingKind::Alias,
+                        name: Some(name),
+                        entity,
+                        ty: Some(ty),
+                        key: Keyword::Typedef,
+                    },
+                )?;
+            }
         }
         let builtin_names = super::builtin_calls::BuiltinNames {
             abort: cursor
@@ -270,6 +290,7 @@ impl<'tree> Analyzer<'tree> {
             copy_scratch: super::copy_initialization::CopyScratch::default(),
             assignment_scratch: super::assignment::Scratch::default(),
             builtin_names,
+            int128_name,
             pretyped_callable: None,
             callee_name: None,
             default_argument_scope: None,

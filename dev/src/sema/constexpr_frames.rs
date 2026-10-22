@@ -919,7 +919,11 @@ mod tests {
         frames
             .write(
                 a_place,
-                TemporaryValue::Integer(Constant { bits: 3, ty }),
+                TemporaryValue::Integer(Constant {
+                    high: 0,
+                    bits: 3,
+                    ty,
+                }),
                 location,
             )
             .unwrap();
@@ -933,7 +937,11 @@ mod tests {
         frames
             .write(
                 b_place,
-                TemporaryValue::Integer(Constant { bits: 7, ty }),
+                TemporaryValue::Integer(Constant {
+                    high: 0,
+                    bits: 7,
+                    ty,
+                }),
                 location,
             )
             .unwrap();
@@ -968,18 +976,30 @@ mod tests {
         };
         assert!(matches!(
             frames.read(copied, location).unwrap(),
-            TemporaryValue::Integer(Constant { bits: 7, .. })
+            TemporaryValue::Integer(Constant {
+                high: 0,
+                bits: 7,
+                ..
+            })
         ));
         frames
             .write(
                 b_place,
-                TemporaryValue::Integer(Constant { bits: 9, ty }),
+                TemporaryValue::Integer(Constant {
+                    high: 0,
+                    bits: 9,
+                    ty,
+                }),
                 location,
             )
             .unwrap();
         assert!(matches!(
             frames.read(copied, location).unwrap(),
-            TemporaryValue::Integer(Constant { bits: 7, .. })
+            TemporaryValue::Integer(Constant {
+                high: 0,
+                bits: 7,
+                ..
+            })
         ));
         frames.release(empty);
         assert!(frames.unions.members.is_empty());
@@ -1001,7 +1021,11 @@ mod tests {
         let first = storage
             .allocate(
                 (ty, ty),
-                Some(TemporaryValue::Integer(Constant { bits: 1, ty })),
+                Some(TemporaryValue::Integer(Constant {
+                    high: 0,
+                    bits: 1,
+                    ty,
+                })),
                 location,
             )
             .unwrap();
@@ -1035,7 +1059,11 @@ mod tests {
         ));
         assert!(matches!(
             storage.read(first, location),
-            Ok(TemporaryValue::Integer(Constant { bits: 1, .. }))
+            Ok(TemporaryValue::Integer(Constant {
+                high: 0,
+                bits: 1,
+                ..
+            }))
         ));
         storage.pop();
         storage.release(empty);
@@ -1073,7 +1101,11 @@ mod tests {
                 storage
                     .add_cell(
                         place,
-                        Some(TemporaryValue::Integer(Constant { bits, ty: integer })),
+                        Some(TemporaryValue::Integer(Constant {
+                            high: 0,
+                            bits,
+                            ty: integer,
+                        })),
                         location,
                     )
                     .unwrap();
@@ -1091,6 +1123,7 @@ mod tests {
             .write(
                 source,
                 TemporaryValue::Integer(Constant {
+                    high: 0,
                     bits: 9,
                     ty: integer,
                 }),
@@ -1104,7 +1137,11 @@ mod tests {
         };
         assert!(matches!(
             storage.read(target, location),
-            Ok(TemporaryValue::Integer(Constant { bits: 7, .. }))
+            Ok(TemporaryValue::Integer(Constant {
+                high: 0,
+                bits: 7,
+                ..
+            }))
         ));
         assert!(
             storage

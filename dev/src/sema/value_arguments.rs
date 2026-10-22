@@ -4,7 +4,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    constants::{Constant, ConstantState},
+    constants::ConstantState,
     graph::{Binding, BindingKind, ScopeId},
     templates::{DefaultArgument, HeadId},
     types::{Cv, TypeId, TypeKind},
@@ -364,37 +364,37 @@ impl Analyzer<'_> {
         if matches!(self.graph.types.get(argument).kind, TypeKind::Pack(_)) {
             return self.bind_argument_pack(scope, binding, argument);
         }
-        let (kind, entity, ty) = if let TypeKind::Address { ty, .. } =
-            self.graph.types.get(argument).kind
-        {
-            let entity = self.graph.add_entity(Some(ty), binding.name, binding.key)?;
-            self.graph
-                .constant_addresses
-                .bind_argument(entity, argument);
-            (BindingKind::Enumerator, entity, ty)
-        } else if let TypeKind::Value { ty, bits } = self.graph.types.get(argument).kind {
-            let entity = self.graph.add_entity(Some(ty), binding.name, binding.key)?;
-            self.graph.entity_mut(entity).constant = ConstantState::Value(Constant { bits, ty });
-            (BindingKind::Enumerator, entity, ty)
-        } else if self
-            .graph
-            .entity(binding.entity)
-            .template_parameter
-            .is_some_and(|info| info.value_type.is_some())
-        {
-            (
-                BindingKind::TemplateValue,
-                match self.graph.types.get(argument).kind {
-                    TypeKind::TemplateParameter { entity, .. } => entity,
-                    _ => binding.entity,
-                },
-                binding
-                    .ty
-                    .ok_or(Error::Invariant("value parameter without type"))?,
-            )
-        } else {
-            (BindingKind::Alias, binding.entity, argument)
-        };
+        let (kind, entity, ty) =
+            if let TypeKind::Address { ty, .. } = self.graph.types.get(argument).kind {
+                let entity = self.graph.add_entity(Some(ty), binding.name, binding.key)?;
+                self.graph
+                    .constant_addresses
+                    .bind_argument(entity, argument);
+                (BindingKind::Enumerator, entity, ty)
+            } else if let TypeKind::Value { ty, bits } = self.graph.types.get(argument).kind {
+                let entity = self.graph.add_entity(Some(ty), binding.name, binding.key)?;
+                let value = self.integral_value(ty, bits);
+                self.graph.entity_mut(entity).constant = ConstantState::Value(value);
+                (BindingKind::Enumerator, entity, ty)
+            } else if self
+                .graph
+                .entity(binding.entity)
+                .template_parameter
+                .is_some_and(|info| info.value_type.is_some())
+            {
+                (
+                    BindingKind::TemplateValue,
+                    match self.graph.types.get(argument).kind {
+                        TypeKind::TemplateParameter { entity, .. } => entity,
+                        _ => binding.entity,
+                    },
+                    binding
+                        .ty
+                        .ok_or(Error::Invariant("value parameter without type"))?,
+                )
+            } else {
+                (BindingKind::Alias, binding.entity, argument)
+            };
         let id = self.graph.add_binding(
             scope,
             None,

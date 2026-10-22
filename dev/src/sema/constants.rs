@@ -16,6 +16,7 @@ use crate::{
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Constant {
     pub bits: u64,
+    pub high: u64,
     pub ty: TypeId,
 }
 #[derive(Clone, Copy, Debug)]
@@ -70,11 +71,12 @@ impl Analyzer<'_> {
     }
     fn scalar_constant(&mut self, bits: u64, scalar: Scalar) -> Result<Constant, Error> {
         Ok(Constant {
+            high: 0,
             bits,
             ty: self.graph.types.scalar(scalar)?,
         })
     }
-    fn boolean(&mut self, value: bool) -> Result<Constant, Error> {
+    pub(super) fn boolean(&mut self, value: bool) -> Result<Constant, Error> {
         self.scalar_constant(u64::from(value), Scalar::Bool)
     }
     pub(super) fn constant_value(
@@ -94,11 +96,15 @@ impl Analyzer<'_> {
             self.evaluate_constant(id, scope, false)
         };
         match result {
-            Ok(value) => Ok(Some(value)),
+            Ok(value) if self.held_integral_constant(value) => Ok(Some(value)),
+            Ok(_) if required => Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "a 128-bit constant beyond the 64-bit integral constants",
+            )),
             Err(Error::NonConstant { location, message }) if required => {
                 Err(Error::at(location, message))
             }
-            Err(Error::NonConstant { .. }) => Ok(None),
+            Ok(_) | Err(Error::NonConstant { .. }) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -205,6 +211,7 @@ impl Analyzer<'_> {
             } if self.semantic() => {
                 if skipping {
                     Constant {
+                        high: 0,
                         bits: 0,
                         ty: self.graph.expression_facts.get(id)?.ty,
                     }
@@ -358,7 +365,11 @@ impl Analyzer<'_> {
     ) -> Result<Constant, Error> {
         let ty = self.query_call_type(id, scope)?;
         if skipping {
-            return Ok(Constant { bits: 0, ty });
+            return Ok(Constant {
+                high: 0,
+                bits: 0,
+                ty,
+            });
         }
         if self.graph.entity(self.graph.call_entity(id)?).constexpr {
             return Err(Error::Missing("constexpr function interpretation"));
@@ -410,10 +421,8 @@ impl Analyzer<'_> {
             && let Ok(facts) = self.graph.expression_facts.get(id)
             && let Some(bits) = facts.folded.or(facts.query_value)
         {
-            return Ok(Some(Constant {
-                bits,
-                ty: self.bare_type(facts.ty)?,
-            }));
+            let ty = self.bare_type(facts.ty)?;
+            return Ok(Some(self.integral_value(ty, bits)));
         }
         if self.semantic()
             && self.graph.expression_facts.get(id).is_ok()
@@ -476,15 +485,13 @@ impl Analyzer<'_> {
         let chosen = self.evaluate_constant(selected, scope, skipping)?;
         if self.semantic()
             && let Ok(facts) = self.graph.expression_facts.get(id)
-            && let Some(kind) = self.integral_kind(facts.ty)
+            && self.integral_kind(facts.ty).is_some()
         {
             // Both arms were checked by expression analysis. Evaluation
             // visits only the selected arm and consumes the recorded
             // result type, including its usual arithmetic conversion.
-            return Ok(Constant {
-                bits: kind.convert(chosen.bits),
-                ty: self.bare_type(facts.ty)?,
-            });
+            let ty = self.bare_type(facts.ty)?;
+            return self.convert_integer_constant(chosen, ty);
         }
         let unchosen = self.evaluate_constant(other, scope, true)?;
         Ok(if chosen.ty == unchosen.ty {
@@ -499,13 +506,7 @@ impl Analyzer<'_> {
             } else {
                 self.common_integral_type(chosen.ty, unchosen.ty)?
             };
-            let kind = self
-                .integral_kind(ty)
-                .ok_or(Error::Invariant("common nonintegral type"))?;
-            Constant {
-                bits: kind.convert(chosen.bits),
-                ty,
-            }
+            self.convert_integer_constant(chosen, ty)?
         })
     }
     fn constant_call(
@@ -538,6 +539,7 @@ impl Analyzer<'_> {
         }
         if skipping {
             return Ok(Constant {
+                high: 0,
                 bits: 0,
                 ty: facts.ty,
             });
@@ -645,11 +647,7 @@ impl Analyzer<'_> {
             } => {
                 let value = self.evaluate_constant(condition, scope, false)?;
                 self.constant_member_object(
-                    if value.bits == 0 {
-                        else_expr
-                    } else {
-                        then_expr
-                    },
+                    if value.truth() { then_expr } else { else_expr },
                     scope,
                 )
             }
@@ -743,7 +741,11 @@ impl Analyzer<'_> {
         let ty = self.binding_expression_type(found)?;
         if skipping && self.integral_kind(ty).is_some() {
             let ty = self.bare_type(ty)?;
-            return Ok(Constant { bits: 0, ty });
+            return Ok(Constant {
+                high: 0,
+                bits: 0,
+                ty,
+            });
         }
         let reference = self.semantic()
             && binding.ty.is_some_and(|ty| {
@@ -882,7 +884,7 @@ impl Analyzer<'_> {
                 };
                 if matches!(op, P::LogicalAnd | P::LogicalOr) {
                     self.check_constant_bool(value, self.tree.expressions.get(left).location)?;
-                    let truth = value.bits != 0;
+                    let truth = value.truth();
                     let decided = if op == P::LogicalOr { truth } else { !truth };
                     if decided {
                         match self.evaluate_constant(right, scope, true) {
@@ -900,7 +902,7 @@ impl Analyzer<'_> {
                             right_value,
                             self.tree.expressions.get(right).location,
                         )?;
-                        value = self.boolean(right_value.bits != 0)?;
+                        value = self.boolean(right_value.truth())?;
                     }
                 } else {
                     let right_value = self.evaluate_constant(right, scope, skipping)?;
@@ -980,7 +982,36 @@ impl Analyzer<'_> {
         }
         self.check_integral(left, location)?;
         self.check_integral(right, location)?;
-        let (ty, right_ty) = if self.evaluating_noexcept && !self.semantic() {
+        let (ty, right_ty) = if self.semantic() && self.graph.expression_facts.get(id).is_ok() {
+            let ExprKind::Binary {
+                left,
+                right,
+                assignment: false,
+                ..
+            } = self.tree.expressions.get(id).kind
+            else {
+                return Err(Error::Invariant(
+                    "constant binary operation without binary syntax",
+                ));
+            };
+            let left = self
+                .graph
+                .expression_facts
+                .get(left)?
+                .conversion
+                .ok_or(Error::Invariant("constant left operand without conversion"))?
+                .result;
+            let right = self
+                .graph
+                .expression_facts
+                .get(right)?
+                .conversion
+                .ok_or(Error::Invariant(
+                    "constant right operand without conversion",
+                ))?
+                .result;
+            (left, right)
+        } else if self.evaluating_noexcept && !self.semantic() {
             self.graph.arithmetic_types(id)?
         } else if matches!(op, P::ShiftLeft | P::ShiftRight) {
             (self.promoted_type(left.ty)?, self.promoted_type(right.ty)?)
@@ -988,6 +1019,12 @@ impl Analyzer<'_> {
             let common = self.common_integral_type(left.ty, right.ty)?;
             (common, common)
         };
+        if self.semantic()
+            && self.graph.expression_facts.get(id).is_ok()
+            && self.integral_kind(ty).is_some_and(|kind| kind.bits > 64)
+        {
+            return self.wide_arithmetic(op, left, right, (ty, right_ty), skipping, id);
+        }
         if matches!(op, P::ShiftLeft | P::ShiftRight) {
             let kind = self
                 .integral_kind(ty)
@@ -999,7 +1036,7 @@ impl Analyzer<'_> {
             if !valid && !skipping {
                 return Err(not_constant(location, "a shift outside its defined range"));
             }
-            return Ok(Constant { bits, ty });
+            return Ok(self.integral_value(ty, bits));
         }
         let kind = self
             .integral_kind(ty)
@@ -1021,7 +1058,7 @@ impl Analyzer<'_> {
                 "an arithmetic operation with an undefined result",
             ));
         }
-        Ok(Constant { bits, ty })
+        Ok(self.integral_value(ty, bits))
     }
     fn constant_unary(
         &mut self,
@@ -1073,7 +1110,7 @@ impl Analyzer<'_> {
             })?;
         if op == Some(P::LogicalNot) {
             self.check_constant_bool(value, self.tree.expressions.get(operand).location)?;
-            return self.boolean(value.bits == 0);
+            return self.boolean(!value.truth());
         }
         if !matches!(op, Some(P::Add | P::Subtract | P::Complement)) {
             return Err(not_constant(
@@ -1082,16 +1119,21 @@ impl Analyzer<'_> {
             ));
         }
         self.check_integral(value, location)?;
-        let ty = if self.evaluating_noexcept {
+        let ty = if self.evaluating_noexcept
+            || self.semantic() && self.graph.expression_facts.get(id).is_ok()
+        {
             self.graph
                 .expression_type(id)
-                .ok_or(Error::Invariant("untyped exception unary operand"))?
+                .ok_or(Error::Invariant("untyped constant unary operand"))?
         } else {
             self.promoted_type(value.ty)?
         };
         let kind = self
             .integral_kind(ty)
             .ok_or(Error::Invariant("nonintegral unary"))?;
+        if kind.bits > 64 && self.semantic() && self.graph.expression_facts.get(id).is_ok() {
+            return self.wide_unary(op, value, ty, skipping, location);
+        }
         let bits = kind.convert(value.bits);
         let bits = match op {
             Some(P::Subtract) => {
@@ -1110,7 +1152,7 @@ impl Analyzer<'_> {
             Some(P::Complement) => kind.convert(!bits),
             _ => bits,
         };
-        Ok(Constant { bits, ty })
+        Ok(self.integral_value(ty, bits))
     }
     fn constant_cast(
         &mut self,
@@ -1130,7 +1172,11 @@ impl Analyzer<'_> {
             })
         {
             if skipping {
-                return Ok(Constant { bits: 0, ty });
+                return Ok(Constant {
+                    high: 0,
+                    bits: 0,
+                    ty,
+                });
             }
             let value = self.scalar_value(
                 operand.ok_or(Error::Invariant("floating cast operand"))?,
@@ -1146,23 +1192,36 @@ impl Analyzer<'_> {
             };
             return Ok(value);
         }
-        let kind = self
-            .integral_kind(ty)
-            .ok_or_else(|| not_constant(location, "cast to a type that is not integral"))?;
+        if self.integral_kind(ty).is_none() {
+            return Err(not_constant(
+                location,
+                "cast to a type that is not integral",
+            ));
+        }
         let source = operand
             .map(|id| self.evaluate_constant(id, scope, skipping))
             .transpose()?
-            .unwrap_or(Constant { bits: 0, ty });
+            .unwrap_or(Constant {
+                high: 0,
+                bits: 0,
+                ty,
+            });
         if self.integral_kind(source.ty).is_none() {
             return Err(not_constant(
                 location,
                 "not an integral constant expression",
             ));
         }
-        Ok(Constant {
-            bits: kind.convert(source.bits),
-            ty,
-        })
+        if self.semantic()
+            && operand.is_none_or(|operand| self.graph.expression_facts.get(operand).is_ok())
+        {
+            self.convert_integer_constant(source, ty)
+        } else {
+            let kind = self
+                .integral_kind(ty)
+                .ok_or(Error::Invariant("integral evaluator cast"))?;
+            Ok(self.integral_value(ty, kind.convert(source.bits)))
+        }
     }
     pub(super) fn single_initializer(&self, initializer: ast::Initializer) -> Option<ast::ExprId> {
         match initializer.kind {
@@ -1255,6 +1314,7 @@ impl Analyzer<'_> {
             {
                 let target = self.bare_type(object)?;
                 self.graph.entity_mut(entity).constant = ConstantState::Value(Constant {
+                    high: 0,
                     bits: 0,
                     ty: target,
                 });
@@ -1268,6 +1328,11 @@ impl Analyzer<'_> {
         }
         let value = if self.semantic()
             && (self.floating_expression(expr)
+                || self
+                    .graph
+                    .expression_facts
+                    .function_conversion(expr)
+                    .is_some()
                 || matches!(
                     self.graph.types.get(object).kind,
                     TypeKind::Scalar(Scalar::Bool)
@@ -1302,6 +1367,17 @@ impl Analyzer<'_> {
             } else {
                 None
             }
+        } else if self.semantic() && kind.bits > 64 {
+            match self.evaluate_constant(expr, scope, false) {
+                Ok(value) => Some(value),
+                Err(Error::NonConstant { location, message })
+                    if self.graph.entity(entity).constexpr =>
+                {
+                    return Err(Error::at(location, message));
+                }
+                Err(Error::NonConstant { .. }) => None,
+                Err(error) => return Err(error),
+            }
         } else {
             self.constant_value(
                 expr,
@@ -1328,10 +1404,8 @@ impl Analyzer<'_> {
                     "an integer does not convert implicitly to an enumeration",
                 ));
             }
-            self.graph.entity_mut(entity).constant = ConstantState::Value(Constant {
-                bits: kind.convert(value.bits),
-                ty: target,
-            });
+            let value = self.convert_integer_constant(value, target)?;
+            self.graph.entity_mut(entity).constant = ConstantState::Value(value);
         }
         Ok(())
     }
@@ -1396,7 +1470,7 @@ impl Analyzer<'_> {
             .integral_kind(value.ty)
             .ok_or(Error::Invariant("nonintegral array bound"))?;
         if self.template_depth != 0
-            && (value.bits == 0 || kind.signed && integral::signed(value.bits) < 0)
+            && (!value.truth() || kind.signed && integral::signed(value.bits) < 0)
         {
             return Ok(0);
         }
@@ -1404,7 +1478,7 @@ impl Analyzer<'_> {
             Some("a scoped enumeration value is not an array bound")
         } else if kind.signed && integral::signed(value.bits) < 0 {
             Some("negative array bound")
-        } else if value.bits == 0 {
+        } else if !value.truth() {
             Some("array bound is zero")
         } else {
             None

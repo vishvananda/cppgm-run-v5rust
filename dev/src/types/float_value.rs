@@ -193,11 +193,21 @@ impl BinaryFloat {
                 | (sig & ((1 << (precision - 1)) - 1)),
         )
     }
+    pub(crate) fn wide_integer(bits: u128, signed: bool, format: Format) -> Option<Self> {
+        let negative = signed && bits >> 127 != 0;
+        Self::round(
+            negative,
+            if negative { bits.wrapping_neg() } else { bits },
+            0,
+            format,
+        )
+    }
     pub(crate) fn integral(self, width: u32, signed: bool) -> Option<u64> {
-        if width == 0 || width > 64 {
-            return None;
-        }
-        if self.is_nan() || self.is_infinite() {
+        let bits = self.integral_wide(width.min(64), signed)?;
+        u64::try_from(bits & u128::from(u64::MAX)).ok()
+    }
+    pub(crate) fn integral_wide(self, width: u32, signed: bool) -> Option<u128> {
+        if width == 0 || width > 128 || self.is_nan() || self.is_infinite() {
             return None;
         }
         let (sig, exponent) = self.parts();
@@ -207,20 +217,28 @@ impl BinaryFloat {
             } else {
                 sig >> -exponent
             }
+        } else if sig == 0 {
+            0
         } else {
-            if exponent >= 64 && sig != 0 {
+            if exponent >= 128 || sig > u128::MAX >> exponent {
                 return None;
             }
             sig << exponent
         };
-        let limit = 1u128 << (width - u32::from(signed));
+        let limit = if width == 128 && !signed {
+            None
+        } else {
+            Some(1u128 << (width - u32::from(signed)))
+        };
         if self.negative() {
-            if (!signed && magnitude != 0) || (signed && magnitude > limit) {
+            if (!signed && magnitude != 0)
+                || (signed && limit.is_some_and(|limit| magnitude > limit))
+            {
                 return None;
             }
-            Some(u64::try_from(magnitude).ok()?.wrapping_neg())
-        } else if magnitude < limit {
-            u64::try_from(magnitude).ok()
+            Some(magnitude.wrapping_neg())
+        } else if limit.is_none_or(|limit| magnitude < limit) {
+            Some(magnitude)
         } else {
             None
         }

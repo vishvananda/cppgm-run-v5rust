@@ -101,7 +101,7 @@ impl Analyzer<'_> {
         super::record(
             &mut self.graph.constant_facts,
             id.index(),
-            Constant { bits, ty },
+            Constant { high: 0, bits, ty },
         );
         Ok(facts)
     }

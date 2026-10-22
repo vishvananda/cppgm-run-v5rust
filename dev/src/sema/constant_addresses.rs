@@ -490,7 +490,7 @@ impl Analyzer<'_> {
             return Ok(value);
         }
         let value = self.evaluate_constant(id, scope, false)?;
-        if value.bits != 0 {
+        if value.truth() {
             return Err(nonconstant(
                 self.tree.expressions.get(id).location,
                 "an integer converted to a pointer in a constant expression",
@@ -1006,13 +1006,8 @@ impl Analyzer<'_> {
                     self.constant_operand_value(operand, facts.ty, scope)?
                 } else {
                     let value = self.evaluate_constant(operand, scope, false)?;
-                    let kind = self
-                        .integral_kind(facts.ty)
-                        .ok_or(Error::Missing("constant nonintegral cast temporary"))?;
-                    TemporaryValue::Integer(Constant {
-                        bits: kind.convert(value.bits),
-                        ty: self.bare_type(facts.ty)?,
-                    })
+                    let target = self.bare_type(facts.ty)?;
+                    TemporaryValue::Integer(self.convert_integer_constant(value, target)?)
                 };
                 self.constant_evaluation
                     .as_mut()
@@ -1298,6 +1293,7 @@ impl Analyzer<'_> {
                             })?
                     };
                     return Ok(Constant {
+                        high: 0,
                         bits: kind.convert(u64::from(byte)),
                         ty,
                     });
@@ -1317,6 +1313,7 @@ impl Analyzer<'_> {
                 let mut bytes = [0u8; 8];
                 bytes[..data.len()].copy_from_slice(data);
                 Ok(Constant {
+                    high: 0,
                     bits: kind.convert(u64::from_le_bytes(bytes)),
                     ty,
                 })

@@ -531,7 +531,7 @@ impl Analyzer<'_> {
                 return Err(Error::Invariant("enumerator without value"));
             };
             facts.ty = value.ty;
-            facts.folded = Some(value.bits);
+            facts.folded = self.held_integral_constant(value).then_some(value.bits);
         }
         Ok(facts)
     }

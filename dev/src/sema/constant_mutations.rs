@@ -104,6 +104,7 @@ impl Analyzer<'_> {
             return Ok((
                 place,
                 Value::Integer(Constant {
+                    high: 0,
                     bits: u64::from(pointer.root != Root::Null),
                     ty: self.bare_type(place.designated)?,
                 }),
@@ -126,6 +127,14 @@ impl Analyzer<'_> {
             Some(P::ShiftRightAssign) => P::ShiftRight,
             _ => return Err(Error::Invariant("unknown compound assignment")),
         };
+        if kind.bits > 64 {
+            let value = self.wide_arithmetic(op, old, right, (operation, right_type), false, id)?;
+            let target = self.bare_type(place.designated)?;
+            return Ok((
+                place,
+                Value::Integer(self.convert_integer_constant(value, target)?),
+            ));
+        }
         let (bits, valid) = if matches!(op, P::ShiftLeft | P::ShiftRight) {
             let count_kind = self
                 .integral_kind(right_type)
@@ -142,15 +151,10 @@ impl Analyzer<'_> {
             ));
         }
         let target = self.bare_type(place.designated)?;
-        let kind = self.integral_kind(target).ok_or(Error::Invariant(
-            "compound mutation without integral target",
-        ))?;
+        let value = self.integral_value(operation, bits);
         Ok((
             place,
-            Value::Integer(Constant {
-                bits: kind.convert(bits),
-                ty: target,
-            }),
+            Value::Integer(self.convert_integer_constant(value, target)?),
         ))
     }
 
@@ -194,6 +198,18 @@ impl Analyzer<'_> {
             let target_kind = self
                 .integral_kind(target)
                 .ok_or(Error::Missing("floating increment constant evaluation"))?;
+            if target_kind.bits > 64 {
+                let op = if decrement { P::Subtract } else { P::Add };
+                let (bits, valid) =
+                    super::wide_integers::operation(op, target_kind.signed, old.wide(), 1)
+                        .ok_or(Error::Invariant("wide increment operator"))?;
+                if !valid {
+                    return Err(nonconstant(location, "an increment that overflows"));
+                }
+                let stepped = Value::Integer(Constant::from_wide(target, bits));
+                self.write_constant_value(place, stepped, location)?;
+                return Ok((place, Value::Integer(old)));
+            }
             let bits = if matches!(
                 self.graph.types.get(target).kind,
                 TypeKind::Scalar(Scalar::Bool)
@@ -214,7 +230,11 @@ impl Analyzer<'_> {
             };
             (
                 Value::Integer(old),
-                Value::Integer(Constant { bits, ty: target }),
+                Value::Integer(Constant {
+                    high: 0,
+                    bits,
+                    ty: target,
+                }),
             )
         };
         self.write_constant_value(place, stepped, location)?;

@@ -207,6 +207,15 @@ impl Analyzer<'_> {
                 }
             }
         }
+        let location = self
+            .tree
+            .specs
+            .get(list)
+            .first()
+            .map_or(crate::support::source::SourceOffset(0), |spec| {
+                spec.location
+            });
+        let mut int128 = false;
         let mut ty = None;
         let mut declared = None;
         for syntax_index in 0..self.tree.specs.get(list).len() {
@@ -232,10 +241,31 @@ impl Analyzer<'_> {
             } else {
                 self.specifier_type(specifier, scope, lone)?
             };
+            if !fundamental.is_empty()
+                && !int128
+                && self.graph.types.get(named).kind
+                    == super::types::TypeKind::Scalar(Scalar::Basic(F::Int128))
+                && matches!(specifier.kind, SpecifierKind::Named(name) if {
+                    let name = self.tree.names.get(name);
+                    let parts = self.tree.name_lists.get(name.components);
+                    !name.global && matches!(parts, [part] if matches!(part.kind, crate::syntax::ast::NameKind::Identifier(identifier) if identifier == self.int128_name) && part.arguments.is_none())
+                })
+            {
+                int128 = true;
+                continue;
+            }
             if ty.is_some() || !fundamental.is_empty() {
                 return Err(Error::at(
-                    specifier.location,
-                    "invalid combination of type specifiers",
+                    if ty.is_some() {
+                        specifier.location
+                    } else {
+                        location
+                    },
+                    if int128 || self.integral_kind(named).is_some_and(|kind| kind.bits > 64) {
+                        "more than one type in a declaration"
+                    } else {
+                        "invalid combination of type specifiers"
+                    },
                 ));
             }
             ty = Some(named);
@@ -246,14 +276,6 @@ impl Analyzer<'_> {
                 declared = Some(named);
             }
         }
-        let location = self
-            .tree
-            .specs
-            .get(list)
-            .first()
-            .map_or(crate::support::source::SourceOffset(0), |spec| {
-                spec.location
-            });
         let has_written_type = auto_type || ty.is_some() || !fundamental.is_empty();
         let ty = if auto_type {
             if ty.is_some() || !fundamental.is_empty() {
@@ -265,7 +287,21 @@ impl Analyzer<'_> {
         } else if let Some(ty) = ty {
             ty
         } else {
-            let scalar = if special && fundamental.is_empty() {
+            let scalar = if int128 {
+                if fundamental.len() != 1
+                    || !matches!(fundamental[0], Keyword::Signed | Keyword::Unsigned)
+                {
+                    return Err(Error::at(
+                        location,
+                        "invalid combination of type specifiers",
+                    ));
+                }
+                Some(Scalar::Basic(if fundamental[0] == Keyword::Unsigned {
+                    F::UnsignedInt128
+                } else {
+                    F::Int128
+                }))
+            } else if special && fundamental.is_empty() {
                 Some(Scalar::Void)
             } else {
                 fundamental_type(&fundamental)

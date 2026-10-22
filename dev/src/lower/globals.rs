@@ -369,9 +369,10 @@ fn define_storage<'a>(
             Some(value @ StaticValue::MemberPointer(_)) => {
                 GlobalInit::Data(data::member_items(output, symbols, graph, value)?)
             }
-            Some(StaticValue::Integer(bits)) => {
-                GlobalInit::Constant(Constant::Integer(u128::from(bits)))
-            }
+            Some(StaticValue::WideInteger(bits)) => GlobalInit::Constant(Constant::Integer(bits)),
+            Some(StaticValue::Integer(bits)) => GlobalInit::Constant(Constant::Integer(
+                i128::from(bits.cast_signed()).cast_unsigned(),
+            )),
             Some(StaticValue::Floating(ty, bits)) => GlobalInit::Constant(Constant::Float(
                 match ty {
                     F::Float => FloatKind::F32,

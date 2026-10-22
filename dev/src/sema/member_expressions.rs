@@ -399,7 +399,7 @@ impl Analyzer<'_> {
                     return Err(Error::Invariant("enumerator member without value"));
                 };
                 let mut facts = self.new_expression_facts(value.ty, V::Prvalue)?;
-                facts.folded = Some(value.bits);
+                facts.folded = self.held_integral_constant(value).then_some(value.bits);
                 facts
             }
             _ => {

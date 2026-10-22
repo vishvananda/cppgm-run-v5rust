@@ -67,7 +67,9 @@ impl Analyzer<'_> {
                 value.ty = target;
                 Ok(value)
             }
-            Value::Integer(Constant { bits: 0, .. })
+            Value::Integer(Constant {
+                high: 0, bits: 0, ..
+            })
             | Value::Pointer(Address {
                 root: Root::Null, ..
             }) => Ok(MemberPointer::null(target)),
@@ -546,6 +548,7 @@ impl Analyzer<'_> {
         {
             if skipping {
                 return Ok(Some(Constant {
+                    high: 0,
                     bits: 0,
                     ty: self.graph.expression_facts.get(id)?.ty,
                 }));
@@ -570,6 +573,7 @@ impl Analyzer<'_> {
                 }
             };
             return Ok(Some(Constant {
+                high: 0,
                 bits: u64::from(truth),
                 ty: self.graph.expression_facts.get(id)?.ty,
             }));
@@ -605,7 +609,11 @@ impl Analyzer<'_> {
         };
         let ty = self.bare_type(self.graph.expression_facts.get(id)?.ty)?;
         if skipping {
-            return Ok(Some(Constant { bits: 0, ty }));
+            return Ok(Some(Constant {
+                high: 0,
+                bits: 0,
+                ty,
+            }));
         }
         let bits = if let Some((right, equality)) = right {
             let common = self
@@ -653,7 +661,7 @@ impl Analyzer<'_> {
                 value.bits
             }
         };
-        Ok(Some(Constant { bits, ty }))
+        Ok(Some(Constant { high: 0, bits, ty }))
     }
 }
 

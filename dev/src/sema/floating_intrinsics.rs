@@ -166,6 +166,7 @@ impl Analyzer<'_> {
                         .integral_kind(ty)
                         .ok_or(Error::Invariant("classification result is not integral"))?;
                     return Ok(super::constants::Constant {
+                        high: 0,
                         bits: integer.convert(code.bits),
                         ty,
                     });
@@ -174,6 +175,7 @@ impl Analyzer<'_> {
             }
         };
         Ok(super::constants::Constant {
+            high: 0,
             bits: result,
             ty: self.graph.expression_facts.get(id)?.ty,
         })

@@ -145,6 +145,12 @@ impl Function<'_, '_, '_, '_> {
                     ..value
                 });
             }
+            if to == Type::I128 && value.ty == Type::I128 && value.bits.is_some() {
+                return Ok(RValue {
+                    source: target,
+                    ..value
+                });
+            }
             let from_bits = value.ty.bits();
             let to_bits = to.bits();
             let bool_source = types::boolean(self.graph, value.source)?;
@@ -179,7 +185,7 @@ impl Function<'_, '_, '_, '_> {
                     || widening)
             {
                 let width = to_bits.min(from_bits);
-                let mask = u64::MAX >> (64 - width);
+                let mask = u64::MAX >> (64 - width.min(64));
                 let mut folded = bits & mask;
                 let extend_sign = if to_bits <= from_bits {
                     to_signed
@@ -189,7 +195,12 @@ impl Function<'_, '_, '_, '_> {
                 if extend_sign && width < 64 && folded & (1 << (width - 1)) != 0 {
                     folded |= !mask;
                 }
-                let literal = self.builder.integer(u128::from(folded))?;
+                let literal_bits = if to_bits != 128 || extend_sign {
+                    i128::from(folded.cast_signed()).cast_unsigned()
+                } else {
+                    u128::from(folded)
+                };
+                let literal = self.builder.integer(literal_bits)?;
                 return Ok(RValue {
                     value: literal,
                     ty: to,

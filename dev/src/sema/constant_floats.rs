@@ -166,6 +166,23 @@ impl Analyzer<'_> {
             let changes_precision = matches!(value, Value::Floating(value) if self.float_format(value.ty) != Some(format));
             let value = match value {
                 Value::Floating(value) => value.value,
+                Value::Integer(value)
+                    if self
+                        .integral_kind(value.ty)
+                        .is_some_and(|kind| kind.bits > 64) =>
+                {
+                    return Ok(Value::Floating(Floating {
+                        ty: target,
+                        value: BinaryFloat::wide_integer(
+                            value.wide(),
+                            self.integral_kind(value.ty).is_some_and(|kind| kind.signed),
+                            format,
+                        )
+                        .ok_or_else(|| {
+                            nonconstant(location, "a floating conversion out of range")
+                        })?,
+                    }));
+                }
                 Value::Integer(value) => BinaryFloat::integer(
                     value.bits,
                     self.integral_kind(value.ty)
@@ -188,6 +205,25 @@ impl Analyzer<'_> {
             return Ok(Value::Floating(Floating { ty: target, value }));
         }
         if let Some(kind) = self.integral_kind(target) {
+            if let Value::Integer(value) = value {
+                return self
+                    .convert_integer_constant(value, target)
+                    .map(Value::Integer);
+            }
+            if kind.bits > 64
+                && let Value::Floating(value) = value
+            {
+                let bits = value
+                    .value
+                    .integral_wide(kind.bits, kind.signed)
+                    .ok_or_else(|| {
+                        nonconstant(
+                            location,
+                            "a floating value out of the integral type's range",
+                        )
+                    })?;
+                return Ok(Value::Integer(Constant::from_wide(target, bits)));
+            }
             let bits = match value {
                 Value::Integer(value) => kind.convert(value.bits),
                 Value::Floating(value) => {
@@ -213,7 +249,11 @@ impl Analyzer<'_> {
                     ));
                 }
             };
-            return Ok(Value::Integer(Constant { bits, ty: target }));
+            return Ok(Value::Integer(Constant {
+                high: 0,
+                bits,
+                ty: target,
+            }));
         }
         if matches!(
             self.graph.types.get(target).kind,
@@ -425,7 +465,11 @@ impl Analyzer<'_> {
     ) -> Result<Constant, Error> {
         let ty = self.graph.expression_facts.get(id)?.ty;
         if skipping {
-            return Ok(Constant { ty, bits: 0 });
+            return Ok(Constant {
+                high: 0,
+                ty,
+                bits: 0,
+            });
         }
         let node = *self.tree.expressions.get(id);
         if let ExprKind::Binary {
@@ -443,6 +487,7 @@ impl Analyzer<'_> {
                 left || self.constant_truth(right, scope, false)?
             };
             return Ok(Constant {
+                high: 0,
                 ty,
                 bits: u64::from(truth),
             });
@@ -552,6 +597,7 @@ impl Analyzer<'_> {
                 _ => return Err(Error::Invariant("nonfloating numeric operation")),
             };
             return Ok(Value::Integer(Constant {
+                high: 0,
                 ty: self.graph.types.scalar(Scalar::Bool)?,
                 bits: u64::from(truth),
             }));

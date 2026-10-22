@@ -37,6 +37,7 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
                 F::LongInt | F::UnsignedLongInt | F::LongLongInt | F::UnsignedLongLongInt,
             )
             | Scalar::Nullptr => Type::I64,
+            Scalar::Basic(F::Int128 | F::UnsignedInt128) => Type::I128,
             Scalar::Basic(F::Float) => Type::F32,
             Scalar::Basic(F::Double) => Type::F64,
             Scalar::Basic(F::LongDouble) => Type::F80,
@@ -96,11 +97,19 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
     })
 }
 pub(super) fn layout(graph: &Graph, ty: TypeId) -> Result<(u64, u8), Error> {
+    if let Some((_, element)) = graph.lower_member_pointer_type(ty) {
+        return Ok(
+            if matches!(graph.lower_type(element)?, TypeView::Function { .. }) {
+                (16, 3)
+            } else {
+                (8, 3)
+            },
+        );
+    }
     let ty = storage(graph, ty)?;
     Ok(match ty {
         Type::Object { bytes, align } => (bytes, align),
-        Type::F80 => (16, 4),
-        Type::I128 => (16, 3),
+        Type::F80 | Type::I128 => (16, 4),
         Type::F64 | Type::Ptr | Type::I64 => (8, 3),
         Type::F32 | Type::I32 | Type::U32 => (4, 2),
         Type::I16 | Type::U16 => (2, 1),
@@ -155,7 +164,7 @@ pub(super) fn signed(graph: &Graph, ty: TypeId) -> Result<bool, Error> {
         TypeView::Scalar(
             Scalar::SignedChar
             | Scalar::Short
-            | Scalar::Basic(F::Char | F::WcharT | F::Int | F::LongInt | F::LongLongInt),
+            | Scalar::Basic(F::Char | F::WcharT | F::Int | F::LongInt | F::LongLongInt | F::Int128),
         ) => true,
         _ => false,
     })

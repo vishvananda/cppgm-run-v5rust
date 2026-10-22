@@ -456,6 +456,7 @@ impl Analyzer<'_> {
         self.store_constant_value(
             second,
             super::constant_addresses::TemporaryValue::Integer(super::constants::Constant {
+                high: 0,
                 bits: bound,
                 ty: second.designated,
             }),

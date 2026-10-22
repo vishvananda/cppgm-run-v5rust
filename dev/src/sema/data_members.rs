@@ -111,7 +111,7 @@ impl Analyzer<'_> {
             return;
         }
         if let ConstantState::Value(value) = entity.constant {
-            facts.folded = Some(value.bits);
+            facts.folded = self.held_integral_constant(value).then_some(value.bits);
             facts.fold_style = super::expression_facts::FoldStyle::StaticMember;
         }
     }

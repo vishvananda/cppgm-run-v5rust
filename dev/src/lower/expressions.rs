@@ -123,6 +123,31 @@ impl Function<'_, '_, '_, '_> {
             _ => false,
         })
     }
+    fn evaluated_wide(
+        &mut self,
+        id: ast::ExprId,
+        ty: Type,
+        source: crate::sema::lowering::TypeId,
+    ) -> Result<Option<RValue>, Error> {
+        if let Some(bits) = self.graph.lower_evaluated_wide(self.tree, id)? {
+            if let ExprKind::Member { base, op, .. } =
+                self.tree.expressions.get(self.without_parentheses(id)).kind
+            {
+                self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
+            }
+            return Ok(Some(RValue {
+                value: self.builder.integer(bits)?,
+                ty,
+                source,
+                literal: false,
+                bits: Some(
+                    u64::try_from(bits & u128::from(u64::MAX))
+                        .map_err(|_| crate::lowir::Error::Limit)?,
+                ),
+            }));
+        }
+        Ok(None)
+    }
     fn evaluated_floating(&mut self, id: ast::ExprId) -> Result<Option<RValue>, Error> {
         let id = self.without_parentheses(id);
         let Some(bits) = self.graph.lower_evaluated_floating(self.tree, id)? else {
@@ -158,11 +183,61 @@ impl Function<'_, '_, '_, '_> {
             return self.zero(source);
         }
         Ok(RValue {
-            value: self.builder.integer(u128::from(bits))?,
+            value: self.builder.integer(
+                if ty != Type::I128 || types::signed(self.graph, source)? {
+                    i128::from(bits.cast_signed()).cast_unsigned()
+                } else {
+                    u128::from(bits)
+                },
+            )?,
             ty,
             source,
             literal: false,
             bits: Some(bits),
+        })
+    }
+    fn literal_value(
+        &mut self,
+        literal: ast::Literal,
+        ty: Type,
+        source: crate::sema::lowering::TypeId,
+    ) -> Result<RValue, Error> {
+        let (PostTokenKind::Literal { data, .. } | PostTokenKind::Character { data, .. }) =
+            literal.kind
+        else {
+            return Err(Error::Missing("string and user-defined literal lowering"));
+        };
+        let bits = data
+            .as_slice()
+            .iter()
+            .enumerate()
+            .fold(0_u128, |bits, (index, &byte)| {
+                bits | (u128::from(byte) << (index * 8))
+            });
+        let constant = if let Some(kind) = FloatKind::from_type(ty) {
+            Constant::Float(kind, bits)
+        } else {
+            Constant::Integer(if ty == Type::I64 {
+                i128::from(
+                    u64::try_from(bits)
+                        .map_err(|_| crate::lowir::Error::Limit)?
+                        .cast_signed(),
+                )
+                .cast_unsigned()
+            } else {
+                bits
+            })
+        };
+        Ok(RValue {
+            value: self.builder.constant(constant)?,
+            ty,
+            source,
+            literal: true,
+            bits: if ty.float_rank() == 0 {
+                Some(u64::try_from(bits).map_err(|_| crate::lowir::Error::Limit)?)
+            } else {
+                None
+            },
         })
     }
     fn expression_value(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
@@ -249,6 +324,9 @@ impl Function<'_, '_, '_, '_> {
         if let Some(bits) = facts.folded {
             return self.folded_value(id, ty, source, bits);
         }
+        if let Some(value) = self.evaluated_wide(id, ty, source)? {
+            return Ok(value);
+        }
         if let Some(pointer) = self.evaluated_pointer(id)? {
             return Ok(pointer);
         }
@@ -267,36 +345,7 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Statement(body) => self.statement_expression(id, body, None),
             ExprKind::Throw(operand) => self.throw_value(id, operand),
             ExprKind::Paren(inner) => self.expression(inner, context),
-            ExprKind::Literal(literal) => {
-                let (PostTokenKind::Literal { data, .. } | PostTokenKind::Character { data, .. }) =
-                    literal.kind
-                else {
-                    return Err(Error::Missing("string and user-defined literal lowering"));
-                };
-                let bits = data
-                    .as_slice()
-                    .iter()
-                    .enumerate()
-                    .fold(0_u128, |bits, (index, &byte)| {
-                        bits | (u128::from(byte) << (index * 8))
-                    });
-                let constant = if let Some(kind) = FloatKind::from_type(ty) {
-                    Constant::Float(kind, bits)
-                } else {
-                    Constant::Integer(bits)
-                };
-                Ok(RValue {
-                    value: self.builder.constant(constant)?,
-                    ty,
-                    source,
-                    literal: true,
-                    bits: if ty.float_rank() == 0 {
-                        Some(u64::try_from(bits).map_err(|_| crate::lowir::Error::Limit)?)
-                    } else {
-                        None
-                    },
-                })
-            }
+            ExprKind::Literal(literal) => self.literal_value(literal, ty, source),
             ExprKind::Keyword(keyword @ (Keyword::True | Keyword::False | Keyword::Nullptr)) => {
                 let bits = u64::from(keyword == Keyword::True);
                 Ok(RValue {

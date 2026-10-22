@@ -70,6 +70,7 @@ fn integer(bits: u64) -> Constant {
 pub(super) fn constant(value: StaticValue) -> Result<Constant, Error> {
     Ok(match value {
         StaticValue::Integer(bits) => integer(bits),
+        StaticValue::WideInteger(bits) => Constant::Integer(bits),
         StaticValue::Floating(ty, bits) => Constant::Float(
             match ty {
                 crate::types::FundamentalType::Float => FloatKind::F32,

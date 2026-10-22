@@ -20,6 +20,8 @@ impl IntegralKind {
             Scalar::Basic(F::UnsignedInt | F::Char32T) => (32, false),
             Scalar::Basic(F::LongInt | F::LongLongInt) => (64, true),
             Scalar::Basic(F::UnsignedLongInt | F::UnsignedLongLongInt) => (64, false),
+            Scalar::Basic(F::Int128) => (128, true),
+            Scalar::Basic(F::UnsignedInt128) => (128, false),
             _ => return None,
         };
         Some(Self { bits, signed })
@@ -27,6 +29,9 @@ impl IntegralKind {
     pub(super) fn convert(self, bits: u64) -> u64 {
         if self.bits == 1 {
             return u64::from(bits != 0);
+        }
+        if self.bits >= 64 {
+            return bits;
         }
         let mask = self.mask();
         let value = bits & mask;
@@ -37,13 +42,13 @@ impl IntegralKind {
         }
     }
     fn mask(self) -> u64 {
-        u64::MAX >> (64 - self.bits)
+        u64::MAX >> (64 - self.bits.min(64))
     }
     pub(super) fn minimum(self) -> i64 {
-        i64::MIN >> (64 - self.bits)
+        i64::MIN >> (64 - self.bits.min(64))
     }
     fn maximum(self) -> i64 {
-        i64::MAX >> (64 - self.bits)
+        i64::MAX >> (64 - self.bits.min(64))
     }
     pub(super) fn represents(self, bits: u64, from: Self) -> bool {
         let negative = from.signed && signed(bits) < 0;
@@ -51,6 +56,8 @@ impl IntegralKind {
             bits <= 1
         } else if !self.signed {
             !negative && bits <= self.mask()
+        } else if self.bits > 64 {
+            true
         } else {
             (negative || bits <= self.maximum().cast_unsigned()) && signed(bits) >= self.minimum()
         }
@@ -107,18 +114,25 @@ impl IntegralKind {
         if count >= u64::from(self.bits) || count_kind.signed && signed(count) < 0 {
             return (0, false);
         }
+        // The type-only evaluator operates on a u64 even for an extended
+        // type. Preserve the frozen x86-64 seed's masked limb shifts here;
+        // typed semantic evaluation uses wide_integers instead.
         if op == P::ShiftRight {
             return (
                 if self.signed {
-                    (signed(a) >> count).cast_unsigned()
+                    signed(a)
+                        .wrapping_shr(u32::from(count.to_le_bytes()[0] & 63))
+                        .cast_unsigned()
                 } else {
-                    a >> count
+                    a.wrapping_shr(u32::from(count.to_le_bytes()[0] & 63))
                 },
                 true,
             );
         }
-        let valid = !self.signed || signed(a) >= 0 && a <= self.mask() >> count;
-        (self.convert(a << count), valid)
+        let amount = u32::from(count.to_le_bytes()[0] & 63);
+        let valid =
+            !self.signed || signed(a) >= 0 && (count == 0 || a <= self.mask().wrapping_shr(amount));
+        (self.convert(a.wrapping_shl(amount)), valid)
     }
 }
 pub(super) fn signed(bits: u64) -> i64 {
@@ -140,6 +154,7 @@ fn rank(scalar: Scalar) -> u8 {
     match scalar {
         Scalar::Basic(F::Int | F::UnsignedInt) => 1,
         Scalar::Basic(F::LongInt | F::UnsignedLongInt) => 2,
+        Scalar::Basic(F::Int128 | F::UnsignedInt128) => 4,
         _ => 3,
     }
 }
@@ -162,6 +177,7 @@ pub(super) fn common(a: Scalar, b: Scalar) -> Option<Scalar> {
         match signed {
             Scalar::Basic(F::Int) => Scalar::Basic(F::UnsignedInt),
             Scalar::Basic(F::LongInt) => Scalar::Basic(F::UnsignedLongInt),
+            Scalar::Basic(F::Int128) => Scalar::Basic(F::UnsignedInt128),
             _ => Scalar::Basic(F::UnsignedLongLongInt),
         }
     })
