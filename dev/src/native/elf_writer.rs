@@ -374,3 +374,73 @@ pub(crate) fn write(object: &Object, path: &Path) -> Result<(), Error> {
     let image = Encoder::new(object)?.finish()?;
     std::fs::write(path, image).map_err(|_| Error::argument("cannot write ", path.as_os_str()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        lowir::{
+            builder::FunctionBuilder,
+            model::{InstructionKind as I, Metadata, Program},
+            vocabulary::{Binding as SourceBinding, Type},
+        },
+        native::object_compile::{ObjectBuilder, ObjectModel, compile},
+    };
+    // Compare whole objects with independent physical encoding orders. Besides
+    // FDE bytes this checks their section-symbol identities and relocations;
+    // equal-sized FDEs alone would conceal the wrong function association.
+    #[test]
+    fn host_unwind_follows_released_definitions_after_pruning() -> Result<(), Error> {
+        fn object(order: &[(&str, bool)]) -> Result<Vec<u8>, Error> {
+            let mut program = Program::default();
+            program
+                .set_definition_sink(Box::new(ObjectBuilder::with_model(0, ObjectModel::Host)?))?;
+            for &(name, held) in order {
+                let mut builder = FunctionBuilder::new(&mut program, name, &[], Type::I64)?;
+                builder.metadata(Metadata {
+                    binding: Some(if name == "unused" {
+                        SourceBinding::Internal
+                    } else {
+                        SourceBinding::Weak
+                    }),
+                    ..Metadata::default()
+                });
+                builder.block("entry")?;
+                let value = builder.integer(if name == "held" { 0x1234_5678_9abc } else { 7 })?;
+                builder.effect(I::Return(Type::I64, Some(value)))?;
+                builder.finish()?;
+                if held {
+                    program.defer_last_definition()?;
+                } else {
+                    program.stream_last_definition(&mut std::io::sink())?;
+                }
+                assert!(program.functions().iter().all(|f| f.body.is_none()));
+                if name == "first" {
+                    program.release_held_definitions();
+                }
+            }
+            program.release_held_definitions();
+            let object = compile(&mut program, Vec::new(), 0)?;
+            Encoder::new(&object)?.finish()
+        }
+        let delayed = object(&[("first", false), ("held", false), ("last", false)])?;
+        for order in [
+            vec![("held", true), ("first", false), ("last", false)],
+            vec![
+                ("unused", true),
+                ("held", true),
+                ("first", false),
+                ("last", false),
+            ],
+            vec![
+                ("held", true),
+                ("unused", false),
+                ("first", false),
+                ("last", false),
+            ],
+        ] {
+            assert_eq!(object(&order)?, delayed);
+        }
+        Ok(())
+    }
+}

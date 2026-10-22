@@ -579,7 +579,12 @@ impl ObjectBuilder {
         if self.ranges.iter().any(|r| !r.dropped) {
             super::host_unwind::cie(bytes)?;
         }
-        for range in &self.ranges {
+        // The C++ stream delivers held definitions only at release. We encode
+        // them eagerly to release their IR, so their physical range precedes
+        // their publication. Tables follow the same released order as text and
+        // symbols, while their frame spans still identify the original bytes.
+        for &id in &self.order {
+            let range = &self.ranges[id.index()];
             if range.dropped {
                 continue;
             }
