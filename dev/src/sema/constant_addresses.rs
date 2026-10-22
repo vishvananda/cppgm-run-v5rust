@@ -810,21 +810,7 @@ impl Analyzer<'_> {
                 value.designated = facts.ty;
                 Ok(value)
             }
-            ExprKind::Subscript { base, index } => {
-                let (base, index) = if facts.commuted {
-                    (index, base)
-                } else {
-                    (base, index)
-                };
-                let mut value = self.address_operand(base, scope)?;
-                let index = self.evaluate_constant(index, scope, false)?;
-                if value.root == Root::Null {
-                    return Err(nonconstant(location, "a subscript of a null pointer"));
-                }
-                self.advance_address(&mut value, super::integral::signed(index.bits), location)?;
-                value.designated = facts.ty;
-                Ok(value)
-            }
+            ExprKind::Subscript { .. } => self.constant_subscript_place(id, scope),
             ExprKind::Binary {
                 op,
                 left,

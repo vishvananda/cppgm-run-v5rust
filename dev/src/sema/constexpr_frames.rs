@@ -38,6 +38,13 @@ pub(super) struct Frozen {
     index: HashMap<(i64, TypeId, Option<EntityId>), CellId>,
     members: HashMap<(CellId, EntityId), CellId>,
 }
+pub(super) struct PlacementValue {
+    pub depth: usize,
+    pub ty: TypeId,
+    pub offset: i64,
+    pub field: Option<EntityId>,
+    pub value: Option<TemporaryValue>,
+}
 impl Frozen {
     fn locate(
         &self,
@@ -89,6 +96,31 @@ impl Frozen {
         &self,
     ) -> impl Iterator<Item = (TypeId, i64, Option<EntityId>, Option<TemporaryValue>)> + '_ {
         active_cells(&self.cells).map(|cell| (cell.ty, cell.offset, cell.field, cell.value))
+    }
+    // The data writer has its own structural depth bound. Semantic reads
+    // keep the full value, including subobjects beyond that bound.
+    pub(super) fn placement_values(&self) -> impl Iterator<Item = PlacementValue> + '_ {
+        self.cells
+            .iter()
+            .enumerate()
+            .scan(Vec::new(), |ends: &mut Vec<usize>, (index, cell)| {
+                while ends.last().is_some_and(|&end| end <= index) {
+                    ends.pop();
+                }
+                let depth = ends.len();
+                ends.push(cell.end);
+                Some((index, depth, cell))
+            })
+            .filter_map(|(index, depth, cell)| {
+                let id = CellId(u32::try_from(index).ok()?);
+                accessible(&self.cells, id, 0).then_some(PlacementValue {
+                    depth,
+                    ty: cell.ty,
+                    offset: cell.offset,
+                    field: cell.field,
+                    value: cell.value,
+                })
+            })
     }
 }
 struct Object {

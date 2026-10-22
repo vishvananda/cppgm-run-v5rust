@@ -5,6 +5,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     constant_addresses::{Root, TemporaryValue},
+    constexpr_frames::PlacementValue,
     graph::EntityId,
     static_arrays::{Item, append_zero},
     static_initialization::Value,
@@ -96,7 +97,7 @@ impl Analyzer<'_> {
         let Some(value) = self.graph.aggregate_constants.get(entity) else {
             return Ok(false);
         };
-        let values: Vec<_> = value.values().collect();
+        let values: Vec<_> = value.placement_values().collect();
         let ty = self.graph.lower_entity_type(entity)?;
         let Some(image) = self.completed_cells(ty, values)? else {
             return Ok(false);
@@ -109,17 +110,39 @@ impl Analyzer<'_> {
         ty: TypeId,
         value: &super::constexpr_frames::Frozen,
     ) -> Result<Option<Vec<Item>>, Error> {
-        self.completed_cells(ty, value.values().collect())
+        self.completed_cells(ty, value.placement_values().collect())
     }
     fn completed_cells(
         &mut self,
         ty: TypeId,
-        values: Vec<(TypeId, i64, Option<EntityId>, Option<TemporaryValue>)>,
+        values: Vec<PlacementValue>,
     ) -> Result<Option<Vec<Item>>, Error> {
+        let mut element = ty;
+        while let TypeKind::Array { element: child, .. } = self.graph.types.get(element).kind {
+            element = child;
+        }
+        let scalar_array = element != ty && self.graph.class_of(element).is_none();
         let mut placements = Vec::new();
         let mut tables = std::collections::HashSet::new();
         let mut bits = BitImage::default();
-        for (ty, offset, field, value) in values {
+        for PlacementValue {
+            depth,
+            ty,
+            offset,
+            field,
+            value,
+        } in values
+        {
+            // constant_placements bounds every visited subobject, whereas
+            // scalar_array_data bounds only arrays and writes scalar leaves
+            // directly. Direct bit-fields bypass recursive placement.
+            if depth > 256
+                && field.is_none()
+                && (!scalar_array
+                    || matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }))
+            {
+                return Ok(None);
+            }
             if let TypeKind::Class(class) = self.graph.types.get(ty).kind
                 && self.graph.lower_polymorphic(class)
                 && !tables.contains(&offset)

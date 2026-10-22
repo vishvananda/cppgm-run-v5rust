@@ -5,6 +5,7 @@ use super::{
     analyzer::Analyzer,
     constant_addresses::{Address, Root, nonconstant},
     constants::Constant,
+    expression_facts::ValueCategory,
     graph::{EntityId, ScopeId},
     integral,
     types::{Scalar, TypeId, TypeKind},
@@ -39,6 +40,46 @@ struct Subobject {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn constant_subscript_place(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        let node = *self.tree.expressions.get(id);
+        let ExprKind::Subscript { base, index } = node.kind else {
+            return Err(Error::Invariant(
+                "constant subscript without subscript syntax",
+            ));
+        };
+        let facts = self.graph.expression_facts.get(id)?;
+        let (base, index) = if facts.commuted {
+            (index, base)
+        } else {
+            (base, index)
+        };
+        let array = self.graph.expression_facts.root(base);
+        let base_facts = self.graph.expression_facts.get(array)?;
+        let mut pointer = if let TypeKind::Array { element, .. } =
+            self.graph.types.get(base_facts.ty).kind
+            && base_facts.category == ValueCategory::Prvalue
+        {
+            // CWG 1213: the element belongs to the array prvalue's
+            // temporary. Materialize it once before evaluating the index.
+            let mut place = self.constant_object_place(array, scope)?;
+            place.designated = element;
+            place.pointer()
+        } else {
+            self.address_operand(base, scope)?
+        };
+        let index = self.evaluate_constant(index, scope, false)?;
+        if pointer.root == Root::Null {
+            return Err(nonconstant(node.location, "a subscript of a null pointer"));
+        }
+        self.advance_address(&mut pointer, integral::signed(index.bits), node.location)?;
+        pointer.designated = facts.ty;
+        Ok(pointer)
+    }
+
     pub(super) fn constant_truth(
         &mut self,
         id: ast::ExprId,

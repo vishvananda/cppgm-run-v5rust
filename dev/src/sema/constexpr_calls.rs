@@ -265,6 +265,17 @@ impl Analyzer<'_> {
                 .conversion
                 .is_some_and(|conversion| conversion.temporary)
         {
+            if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Array { .. })
+                && facts.category == ValueCategory::Prvalue
+            {
+                // bind() obtains the array temporary's value, then its scalar
+                // conversion fails. Preserve construction failures first.
+                self.constant_object_place(id, scope)?;
+                return Err(nonconstant(
+                    location,
+                    "a conversion outside constant evaluation",
+                ));
+            }
             let value = self.constant_operand_value(id, element, scope)?;
             return self.allocate_constant_object(
                 element,
