@@ -28,8 +28,20 @@ pub(super) struct Selection<'a> {
     pub(super) pos: usize,
 }
 impl Selection<'_> {
+    pub(super) fn mark_volatile(&mut self) {
+        use crate::lowir::model::InstructionKind as I;
+        let source = self
+            .body
+            .instruction(self.facts.flow.instructions[self.pos]);
+        if matches!(source.kind, I::Load(flags, ..) | I::Store(flags, ..) if flags.volatile())
+            && let Some(last) = self.mir.instructions.last_mut()
+        {
+            last.volatile = true;
+        }
+    }
     pub(super) fn emit(&mut self, op: ScalarOp) {
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Scalar(op),
             location: self.location,
         });
@@ -105,6 +117,7 @@ impl Selection<'_> {
         }
         if r.code() >= 16 && !source.is_symbol() {
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::FloatCopy(super::float_transport::FloatCopy {
                     ty,
                     destination: Operand::Register(r),

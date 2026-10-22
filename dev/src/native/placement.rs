@@ -498,6 +498,7 @@ impl Placement {
             let home = self.frame_alloc(8, 8)?;
             self.sret_home = Some(home);
             mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Scalar(ScalarOp::Store(
                     Operand::Frame(home),
                     Type::Ptr,
@@ -611,10 +612,12 @@ impl Placement {
                 let home = self.home(body, temp, mir)?;
                 self.locations[index].homed = true;
                 mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::Scalar(ScalarOp::Load(R::RAX, ty, source)),
                     location: None,
                 });
                 mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::Scalar(ScalarOp::Store(
                         Operand::Frame(home),
                         ty,
@@ -773,6 +776,7 @@ impl Placement {
             let home = self.home(body, temp, mir)?;
             let ty = body.temp(temp).ty.ok_or(Error::Limit)?;
             mir.instructions.push(Instruction {
+                volatile: false,
                 op: if r.code() >= 16 {
                     Op::FloatCopy(super::float_transport::FloatCopy {
                         ty,
@@ -814,8 +818,12 @@ impl Placement {
         mir.preserve = self.preserve;
         Ok(())
     }
-    pub(super) fn order_frame(&self, mir: &mut Function) {
+    pub(super) fn optimize_frame(&self, mir: &mut Function) -> Result<(), Error> {
+        super::frame_lifetimes::forward_copies(mir, &self.frame_objects);
+        mir.dead_frame_stores += super::frame_lifetimes::drop_stores(mir, &self.frame_objects)?;
+        super::frame_lifetimes::drop_unused(mir);
         super::frame_layout::order(mir, &self.frame_objects);
+        Ok(())
     }
 }
 

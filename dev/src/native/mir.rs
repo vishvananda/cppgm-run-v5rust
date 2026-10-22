@@ -96,6 +96,7 @@ impl CallSite {
 
 #[derive(Clone, Copy)]
 pub(super) enum Op {
+    Nop,
     Jump(BlockId),
     Branch(super::condition::Condition, BlockId),
     Move(R, u128),
@@ -127,7 +128,9 @@ pub(super) enum Op {
     },
     Scalar(super::scalar_mir::ScalarOp),
 }
+#[derive(Clone, Copy)]
 pub(super) struct Instruction {
+    pub(super) volatile: bool,
     pub(super) op: Op,
     pub(super) location: Option<DebugLocation>,
 }
@@ -169,7 +172,7 @@ pub(super) struct Function {
     pub(super) eh: super::region_flow::Tables,
     pub(super) frame_pinned: bool,
     pub(super) ordered_frames: usize,
-    pub(super) removed_instructions: usize,
+    pub(super) dead_frame_stores: usize,
     pub(super) variadic: bool,
     pub(super) blocks: Vec<Block>,
     pub(super) layout: Layout,
@@ -212,7 +215,7 @@ impl Function {
             eh: super::region_flow::Tables::default(),
             frame_pinned: false,
             ordered_frames: 0,
-            removed_instructions: 0,
+            dead_frame_stores: 0,
             variadic: false,
             blocks: vec![Block {
                 name: BlockName::Named(block),
@@ -383,6 +386,7 @@ impl Function {
         instruction: &Instruction,
     ) -> std::io::Result<()> {
         match instruction.op {
+            Op::Nop => return Ok(()),
             Op::Jump(target) => {
                 write!(out, "    jmp ")?;
                 self.label(program, target, out)?;

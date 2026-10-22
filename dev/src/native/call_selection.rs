@@ -37,6 +37,7 @@ impl Selection<'_> {
                     || matches!(source, Operand::Immediate(_)))
         {
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::FloatCopy(super::float_transport::FloatCopy {
                     ty,
                     destination,
@@ -134,6 +135,7 @@ impl Selection<'_> {
             };
             if let Type::Object { .. } = own {
                 self.mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::Bulk(super::bulk::Bulk::new(
                         Operand::Frame(home),
                         Some(source),
@@ -144,6 +146,7 @@ impl Selection<'_> {
                 });
             } else if own == Type::I128 {
                 self.mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::WideMove {
                         destination: Operand::Frame(home),
                         source,
@@ -217,6 +220,7 @@ impl Selection<'_> {
                 let dst = Operand::Memory(Memory::new(Base::Register(R::RSP), part.stack));
                 if matches!(ty, Type::Object { .. }) {
                     self.mir.instructions.push(Instruction {
+                        volatile: false,
                         op: Op::Bulk(super::bulk::Bulk::new(
                             dst,
                             Some(source),
@@ -227,6 +231,7 @@ impl Selection<'_> {
                     });
                 } else if ty == Type::I128 {
                     self.mir.instructions.push(Instruction {
+                        volatile: false,
                         op: Op::WideMove {
                             destination: dst,
                             source,
@@ -336,6 +341,7 @@ impl Selection<'_> {
     ) -> Result<(), Error> {
         if plan.kind == CallKind::Trap {
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Trap,
                 location: self.location,
             });
@@ -390,6 +396,7 @@ impl Selection<'_> {
         let used = result.is_some_and(|t| self.facts.intervals[t.index()].uses != 0);
         if plan.kind == CallKind::Memcpy && !used {
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::DynamicCopy,
                 location: self.location,
             });
@@ -398,6 +405,7 @@ impl Selection<'_> {
             return Ok(());
         }
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Call(CallSite {
                 target,
                 arguments: staged.mask,

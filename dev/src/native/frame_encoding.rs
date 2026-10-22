@@ -127,7 +127,7 @@ pub(super) fn calls_out(op: Op) -> bool {
     ) || matches!(op, Op::Wide(w) if matches!(w.operation, Operation::Binary(Binary::Div | Binary::UDiv | Binary::Mod | Binary::UMod)))
         || matches!(op, Op::Convert(c) if c.from == Type::I128 || c.to == Type::I128)
 }
-fn extra_rsp(op: Op) -> bool {
+pub(super) fn extra_rsp(op: Op) -> bool {
     let reg = |r: R| r == R::RSP;
     match op {
         Op::Move(r, _)
@@ -307,11 +307,13 @@ mod tests {
         function.instructions.clear();
         for _ in 0..64 {
             function.instructions.push(super::super::mir::Instruction {
+                volatile: false,
                 op: Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, Operand::Frame(-8))),
                 location: None,
             });
         }
         function.instructions.push(super::super::mir::Instruction {
+            volatile: false,
             op: Op::Scalar(ScalarOp::Binary(
                 Binary::Sub,
                 Type::I64,
@@ -322,6 +324,7 @@ mod tests {
         });
         assert!(can_omit(&function));
         function.instructions.push(super::super::mir::Instruction {
+            volatile: false,
             op: Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, Operand::Frame(-8))),
             location: None,
         });
@@ -329,6 +332,7 @@ mod tests {
         function.instructions.remove(64);
         assert!(can_omit(&function));
         function.instructions.push(super::super::mir::Instruction {
+            volatile: false,
             op: Op::Scalar(ScalarOp::Store(
                 Operand::Frame(-8),
                 Type::I64,
@@ -346,6 +350,7 @@ mod tests {
         function.instructions.insert(
             0,
             super::super::mir::Instruction {
+                volatile: false,
                 op: Op::Call(super::super::mir::CallSite {
                     target: Operand::Symbol(program.publications()[0]),
                     arguments: 0,

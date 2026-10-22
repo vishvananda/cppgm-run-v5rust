@@ -181,6 +181,7 @@ pub(super) fn normalize(
             && reg.code() < 16
         {
             mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Scalar(if ty == Type::I1 {
                     ScalarOp::Binary(Binary::And, Type::I64, reg, Operand::Immediate(1))
                 } else {

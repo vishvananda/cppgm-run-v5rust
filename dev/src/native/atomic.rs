@@ -188,6 +188,7 @@ fn compare16(a: &mut Assembler) -> Result<(), Error> {
 impl Selection<'_> {
     fn emit_atomic(&mut self, op: Atomic) {
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Atomic(op),
             location: self.location,
         });

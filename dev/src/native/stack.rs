@@ -77,6 +77,7 @@ impl Selection<'_> {
         };
         let destination = self.result(result, [None, None], exclude);
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::StackAlloc(Allocation { destination, size }),
             location: self.location,
         });

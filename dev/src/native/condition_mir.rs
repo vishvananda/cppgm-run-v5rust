@@ -152,7 +152,8 @@ pub(super) fn flags_after(instructions: &[Instruction]) -> Vec<bool> {
     for (i, inst) in instructions.iter().enumerate().rev() {
         result[i] = next;
         next = match inst.op {
-            Op::Move(..)
+            Op::Nop
+            | Op::Move(..)
             | Op::SymbolMove(..)
             | Op::Scalar(ScalarOp::Move(..) | ScalarOp::Load(..) | ScalarOp::Lea(..)) => next,
             Op::Branch(..)
@@ -176,22 +177,27 @@ mod tests {
         ];
         let instructions = vec![
             Instruction {
+                volatile: false,
                 op: Op::Scalar(ScalarOp::Condition(ops[0])),
                 location: None,
             },
             Instruction {
+                volatile: false,
                 op: Op::Move(R::RAX, 0),
                 location: None,
             },
             Instruction {
+                volatile: false,
                 op: Op::Scalar(ScalarOp::Condition(ops[1])),
                 location: None,
             },
             Instruction {
+                volatile: false,
                 op: Op::Move(R::R8, 0),
                 location: None,
             },
             Instruction {
+                volatile: false,
                 op: Op::Return(Some(R::RAX)),
                 location: None,
             },

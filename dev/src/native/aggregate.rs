@@ -60,6 +60,7 @@ impl Selection<'_> {
             let destination =
                 Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?);
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::WideExtend {
                     signed: operation != Convert::ZeroExtend && from != Type::I1,
                     destination,
@@ -122,6 +123,7 @@ impl Selection<'_> {
         let source = self.address(address, R::R10)?;
         let destination = Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?);
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::WideMove {
                 destination,
                 source,
@@ -134,6 +136,7 @@ impl Selection<'_> {
         let source = self.aggregate_source(value)?;
         let destination = self.address(address, R::R10)?;
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::WideMove {
                 destination,
                 source,
@@ -146,6 +149,7 @@ impl Selection<'_> {
         let source = self.aggregate_source(value)?;
         let destination = Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?);
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::WideMove {
                 destination,
                 source,
@@ -170,10 +174,12 @@ impl Selection<'_> {
                 abi::value_align(ty)?,
             );
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Bulk(copy),
                 location: self.location,
             });
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Return(Some(R::RAX)),
                 location: self.location,
             });
@@ -184,11 +190,13 @@ impl Selection<'_> {
         {
             for (register, bits) in [(R::RAX, bits), (R::RDX, bits >> 64)] {
                 self.mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::Move(register, bits & u128::from(u64::MAX)),
                     location: self.location,
                 });
             }
             self.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Return(None),
                 location: self.location,
             });
@@ -206,6 +214,7 @@ impl Selection<'_> {
             }
         }
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Return(None),
             location: self.location,
         });

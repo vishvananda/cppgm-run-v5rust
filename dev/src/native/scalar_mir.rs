@@ -91,7 +91,7 @@ impl Operand {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         match self {
             Self::Register(r) => write!(out, "{}", r.spelling()),
-            Self::Frame(d) => write!(out, "[rbp{d:+}]"),
+            Self::Frame(d) => super::memory::Memory::frame(d).write(program, out),
             Self::Memory(m) => m.write(program, out),
             Self::SymbolOffset(id, d) => {
                 write!(out, "@{}", program.names.get(program.symbol(id).name))?;

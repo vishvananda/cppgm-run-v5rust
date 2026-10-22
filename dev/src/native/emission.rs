@@ -214,6 +214,9 @@ impl<'a> Pass<'a> {
             };
             for index in range.clone() {
                 let op = f.instructions[index].op;
+                if matches!(op, Op::Nop) {
+                    continue;
+                }
                 let replacement = self.carries.replacement(&op);
                 let pending = self.carries.track(&f.instructions[..range.end], index);
                 if let Some((to, from)) = replacement {
@@ -413,6 +416,7 @@ impl<'a> Pass<'a> {
     ) -> Result<(), Error> {
         let f = self.function;
         match op {
+            Op::Nop => {}
             Op::HostEh(super::landing_pad::Effect::Resume) => {
                 self.branch(None, self.terminal.ok_or(Error::Limit)?);
             }

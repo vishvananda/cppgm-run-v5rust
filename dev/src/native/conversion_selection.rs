@@ -28,6 +28,7 @@ impl Selection<'_> {
             self.mir.scratch_bytes = 48;
         }
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Convert(Conversion {
                 kind,
                 from,

@@ -37,21 +37,23 @@ pub(super) fn extensions(function: &mut Function) {
             }
         }
     }
-    compact(function, &removed);
+    erase(function, &removed);
+    redundant_copies(function);
     redundant_constants(function);
 }
 
 // simple_inst and written_reg from the frozen cleanup: only explicit GPR
 // writes may preserve other holders. Calls, runtime operations, symbolic
 // accesses, wide immediates and non-scalar operations forget every holder.
-enum SimpleWrite {
+pub(super) enum SimpleWrite {
     None,
     Register(R),
 }
-fn simple_write(op: Op) -> Option<SimpleWrite> {
+pub(super) fn simple_write(op: Op) -> Option<SimpleWrite> {
     use super::condition_mir::FlagOp;
     use crate::lowir::vocabulary::Unary;
     let (writer, operands) = match op {
+        Op::Nop => (None, [None, None]),
         Op::Move(r, bits) => (
             Some(r),
             [Some(Operand::Register(r)), Some(Operand::Immediate(bits))],
@@ -138,7 +140,7 @@ fn redundant_constants(function: &mut Function) {
             }
         }
     }
-    compact(function, &removed);
+    erase(function, &removed);
 }
 
 fn flags_dead_after(function: &Function, at: usize, end: usize) -> bool {
@@ -147,7 +149,8 @@ fn flags_dead_after(function: &Function, at: usize, end: usize) -> bool {
     for inst in &function.instructions[at + 1..end] {
         match inst.op {
             Op::Scalar(ScalarOp::Shift(_, _, Operand::Immediate(bits))) => return bits & 63 != 0,
-            Op::Move(..)
+            Op::Nop
+            | Op::Move(..)
             | Op::SymbolMove(..)
             | Op::Scalar(
                 ScalarOp::Move(..)
@@ -361,25 +364,140 @@ fn copies_into_lea(function: &mut Function) {
             removed[i] = true;
         }
     }
-    compact(function, &removed);
+    erase(function, &removed);
 }
-fn compact(function: &mut Function, removed: &[bool]) {
-    // The frozen branch-layout counter retains Nop instruction positions.
-    // Compact storage keeps that deterministic count as an explicit fact.
-    function.removed_instructions += removed.iter().filter(|&&drop| drop).count();
-    let mut old = 0;
-    let mut kept = 0;
-    for block in &mut function.blocks {
-        let count = removed[block.range.clone()]
-            .iter()
-            .filter(|&&drop| !drop)
-            .count();
-        block.range = kept..kept + count;
-        kept += count;
+pub(super) fn erase(function: &mut Function, removed: &[bool]) {
+    // Later cleanups observe immediate neighbours and the original ranges.
+    // Keep the frozen no-op positions until branch layout releases them.
+    for (instruction, &drop) in function.instructions.iter_mut().zip(removed) {
+        if drop {
+            instruction.op = Op::Nop;
+        }
     }
-    function.instructions.retain(|_| {
-        let keep = !removed[old];
-        old += 1;
-        keep
-    });
+}
+
+fn touches(op: Op, r: R) -> bool {
+    use super::condition_mir::FlagOp;
+    use crate::lowir::vocabulary::Unary;
+    if matches!(op, Op::Scalar(ScalarOp::Binary(Binary::Shl | Binary::Shr | Binary::UShr, _, _, source)) if !matches!(source, Operand::Immediate(_)))
+        && r == R::RCX
+    {
+        return true;
+    }
+    let operands = match op {
+        Op::Move(to, _) | Op::SymbolMove(to, _) => [Some(Operand::Register(to)), None],
+        Op::Scalar(op) => match op {
+            ScalarOp::Move(to, source)
+            | ScalarOp::Load(to, _, source)
+            | ScalarOp::Lea(to, source)
+            | ScalarOp::Lea32(to, source)
+            | ScalarOp::Binary(_, _, to, source) => [Some(Operand::Register(to)), Some(source)],
+            ScalarOp::Store(to, _, source) => [Some(to), Some(source)],
+            ScalarOp::Condition(FlagOp::Compare(_, a, b)) => [Some(a), Some(b)],
+            ScalarOp::Condition(FlagOp::CompareFloatLiteral(_, a, _))
+            | ScalarOp::CompareZero(_, a) => [Some(a), None],
+            ScalarOp::Extend(_, to)
+            | ScalarOp::Movzx(to)
+            | ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, to) => {
+                [Some(Operand::Register(to)), None]
+            }
+            ScalarOp::ExtendMove(_, to, source) => {
+                [Some(Operand::Register(to)), Some(Operand::Register(source))]
+            }
+            ScalarOp::Shift(_, to, count) => {
+                if !matches!(count, Operand::Immediate(_)) && r == R::RCX {
+                    return true;
+                }
+                [Some(Operand::Register(to)), Some(count)]
+            }
+            ScalarOp::Condition(FlagOp::Test(_, to)) => [Some(Operand::Register(to)), None],
+            _ => return true,
+        },
+        Op::Nop => return false,
+        _ => return true,
+    };
+    operands
+        .into_iter()
+        .flatten()
+        .any(|value| value.mask() & (1 << r.code()) != 0)
+}
+pub(super) fn redundant_copies(function: &mut Function) -> usize {
+    let mut removed = vec![false; function.instructions.len()];
+    let mut same = Vec::new();
+    for block in &function.blocks {
+        same.clear();
+        for i in block.range.clone() {
+            let op = function.instructions[i].op;
+            if matches!(op, Op::Nop) {
+                continue;
+            }
+            if let Op::Scalar(ScalarOp::Move(to, Operand::Register(source))) = op
+                && to.code() < 16
+                && source.code() < 16
+            {
+                if to == source
+                    || same
+                        .iter()
+                        .any(|&(a, b)| a == to && b == source || a == source && b == to)
+                {
+                    removed[i] = true;
+                    continue;
+                }
+                same.retain(|&(a, b)| a != to && b != to);
+                same.push((to, source));
+            } else {
+                same.retain(|&(a, b)| !touches(op, a) && !touches(op, b));
+            }
+        }
+    }
+    let count = removed.iter().filter(|&&b| b).count();
+    erase(function, &removed);
+    count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn copy_pairs_survive_nops_but_not_named_or_implicit_register_uses() {
+        let p = crate::lowir::test_program(b"function @f() -> void {block ^entry: return void}")
+            .unwrap();
+        let symbol = p.publications()[0];
+        let mut f = super::super::value_selection::select(
+            &p,
+            symbol,
+            p.function(p.symbol(symbol)).unwrap(),
+            0,
+        )
+        .unwrap();
+        let copy = |a, b| Op::Scalar(ScalarOp::Move(a, Operand::Register(b)));
+        let ops = [
+            copy(R::R8, R::RDI),
+            Op::Nop,
+            copy(R::RDI, R::R8),
+            copy(R::RCX, R::R9),
+            Op::Scalar(ScalarOp::Shift(
+                Binary::Shl,
+                R::RAX,
+                Operand::Register(R::RDX),
+            )),
+            copy(R::R9, R::RCX),
+            Op::Return(None),
+        ];
+        f.instructions = ops
+            .into_iter()
+            .map(|op| super::super::mir::Instruction {
+                op,
+                location: None,
+                volatile: false,
+            })
+            .collect();
+        f.blocks[0].range = 0..f.instructions.len();
+        assert_eq!(redundant_copies(&mut f), 1);
+        assert!(matches!(f.instructions[2].op, Op::Nop));
+        assert!(matches!(
+            f.instructions[5].op,
+            Op::Scalar(ScalarOp::Move(..))
+        ));
+    }
 }

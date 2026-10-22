@@ -198,6 +198,7 @@ impl Selection<'_> {
         };
         let r = self.result(result, [prefer, None], 0);
         self.emit(ScalarOp::Load(r, ty, mem));
+        self.mark_volatile();
         self.finish(result, r)
     }
     pub(super) fn write_memory(
@@ -217,6 +218,7 @@ impl Selection<'_> {
             source = Operand::Register(R::R11);
         }
         self.emit(ScalarOp::Store(mem, ty, source));
+        self.mark_volatile();
         Ok(())
     }
     pub(super) fn select_address(&mut self, result: TempId) -> Result<(), Error> {

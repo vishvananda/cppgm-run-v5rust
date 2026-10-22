@@ -35,6 +35,12 @@ pub(super) struct Argument {
     destination: R,
     list: Operand,
 }
+impl Start {
+    pub(super) fn map_operands(&mut self, mut visit: impl FnMut(&mut Operand, u32)) {
+        visit(&mut self.list, 1);
+        visit(&mut self.save, 1);
+    }
+}
 impl Argument {
     pub(super) fn map_list(&mut self, mut visit: impl FnMut(&mut Operand, u32)) {
         visit(&mut self.list, u32::from(super::scalar_mir::bytes(self.ty)));
@@ -143,6 +149,7 @@ impl SaveArea {
             .enumerate()
         {
             mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Scalar(ScalarOp::Store(
                     Operand::Frame(
                         self.offset
@@ -157,6 +164,7 @@ impl SaveArea {
         for index in 0_u8..8 {
             let register = R::xmm(index)?;
             mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::FloatCopy(FloatCopy {
                     ty: Type::I128,
                     destination: Operand::Frame(
@@ -175,6 +183,7 @@ impl Selection<'_> {
         let list = self.address(list, R::R10)?;
         let destination = self.result(result, [None, None], list.mask());
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::VaArg(Argument {
                 ty,
                 destination,
@@ -191,6 +200,7 @@ impl Selection<'_> {
             .ok_or_else(|| Error::Construction("va_start outside a variadic function".into()))?;
         let list = self.address(list, R::R10)?;
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::VaStart(Start {
                 list,
                 save: Operand::Frame(save.offset),

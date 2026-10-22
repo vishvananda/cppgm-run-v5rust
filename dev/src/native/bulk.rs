@@ -265,6 +265,7 @@ impl Selection<'_> {
         source: Operand,
     ) -> Result<(), Error> {
         self.mir.instructions.push(super::mir::Instruction {
+            volatile: false,
             op: super::mir::Op::Bulk(Bulk::new(
                 destination,
                 Some(source),
@@ -332,6 +333,7 @@ impl Selection<'_> {
             return Ok(());
         }
         self.mir.instructions.push(super::mir::Instruction {
+            volatile: false,
             op: super::mir::Op::Bulk(Bulk::new(destination, source, bytes, alignment(log))),
             location: self.location,
         });

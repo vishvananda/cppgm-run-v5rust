@@ -5,7 +5,7 @@ use crate::lowir::{Error, model::SymbolId};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Register(u8);
 impl Register {
-    pub(super) fn code(self) -> u8 {
+    pub(super) const fn code(self) -> u8 {
         self.0
     }
     pub(super) const RAX: Self = Self(0);

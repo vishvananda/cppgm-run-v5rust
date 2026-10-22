@@ -98,12 +98,14 @@ impl Control {
 impl Selection<'_> {
     pub(super) fn jump(&mut self, target: mir::BlockId) {
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Jump(target),
             location: self.location,
         });
     }
     pub(super) fn branch(&mut self, condition: Condition, target: mir::BlockId) {
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Branch(condition, target),
             location: self.location,
         });
@@ -180,6 +182,7 @@ impl Selection<'_> {
                     for &(value, to) in cases {
                         let right = self.wide_operand(value, super::x86::Register::R11)?;
                         self.mir.instructions.push(Instruction {
+                            volatile: false,
                             op: Op::WideCompare(super::wide_compare::Comparison {
                                 predicate: crate::lowir::vocabulary::Compare::Eq,
                                 destination: super::wide_compare::Destination::Register(

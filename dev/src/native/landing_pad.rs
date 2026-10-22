@@ -93,6 +93,7 @@ impl Effect {
 impl Selection<'_> {
     fn host_effect(&mut self, effect: Effect) {
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::HostEh(effect),
             location: self.location,
         });

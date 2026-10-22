@@ -411,6 +411,7 @@ pub(super) fn select_for_object(
                     }
                 }
                 I::Unreachable => selection.mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::Trap,
                     location: selection.location,
                 }),
@@ -436,8 +437,9 @@ pub(super) fn select_for_object(
     selection.placement.finish_frame(&mut selection.mir)?;
     selection.mir.frame_policy.omit_pointer = super::frame_encoding::can_omit(&selection.mir);
     if level >= 1 {
+        super::return_slots::forward(&mut selection.mir);
         super::mir_cleanup::extensions(&mut selection.mir);
-        selection.placement.order_frame(&mut selection.mir);
+        selection.placement.optimize_frame(&mut selection.mir)?;
     }
     Ok(selection.mir)
 }
@@ -454,7 +456,13 @@ fn emit_return(
     }
     let Some(value) = value else {
         let mir = &mut selection.mir;
-        let mut emit = |op| mir.instructions.push(Instruction { op, location });
+        let mut emit = |op| {
+            mir.instructions.push(Instruction {
+                volatile: false,
+                op,
+                location,
+            });
+        };
         emit(Op::Return(None));
         return Ok(());
     };
@@ -462,10 +470,11 @@ fn emit_return(
     match source {
         Alias::Constant(value) => {
             let mut emit = |op| {
-                selection
-                    .mir
-                    .instructions
-                    .push(Instruction { op, location });
+                selection.mir.instructions.push(Instruction {
+                    volatile: false,
+                    op,
+                    location,
+                });
             };
             let bits = match value {
                 Constant::Integer(bits) => normalize(bits, ty),
@@ -509,6 +518,7 @@ fn emit_return(
                 R::RAX
             };
             selection.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Return(Some(reg)),
                 location,
             });
@@ -518,6 +528,7 @@ fn emit_return(
             let source = selection.operand(value, ty, R::R10)?;
             selection.load(R::RAX, source, ty);
             selection.mir.instructions.push(Instruction {
+                volatile: false,
                 op: Op::Return(Some(R::RAX)),
                 location,
             });
@@ -525,10 +536,11 @@ fn emit_return(
         Alias::Symbol(symbol) => {
             let source = selection.symbol_operand(symbol, 0);
             let mut emit = |op| {
-                selection
-                    .mir
-                    .instructions
-                    .push(Instruction { op, location });
+                selection.mir.instructions.push(Instruction {
+                    volatile: false,
+                    op,
+                    location,
+                });
             };
             if ty == Type::I128 || ty.float_rank() != 0 {
                 return Err(unsupported());

@@ -239,6 +239,7 @@ impl Selection<'_> {
                 let temp = result.ok_or(Error::Limit)?;
                 let destination = self.result(temp, [None, None], 0);
                 self.mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::Exception(ExceptionOp::Read { ty, destination }),
                     location: self.location,
                 });
@@ -248,6 +249,7 @@ impl Selection<'_> {
                 let temp = result.ok_or(Error::Limit)?;
                 let r = self.result(temp, [None, None], 0);
                 self.mir.instructions.push(Instruction {
+                    volatile: false,
                     op: Op::Exception(ExceptionOp::Selector(r)),
                     location: self.location,
                 });
@@ -265,6 +267,7 @@ impl Selection<'_> {
             _ => return Err(super::value_selection::unsupported()),
         };
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Exception(op),
             location: self.location,
         });

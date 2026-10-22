@@ -62,6 +62,7 @@ impl Selection<'_> {
         };
         let destination = Operand::Frame(self.placement.home(self.body, temp, &mut self.mir)?);
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::Wide(Arithmetic {
                 operation,
                 destination,
@@ -102,6 +103,7 @@ impl Selection<'_> {
         let right = self.wide_operand(right, R::R11)?;
         let dst = self.result(temp, [None, None], 0);
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::WideCompare(Comparison {
                 predicate,
                 destination: Destination::Register(dst),
@@ -121,6 +123,7 @@ impl Selection<'_> {
         no: BlockId,
     ) {
         self.mir.instructions.push(Instruction {
+            volatile: false,
             op: Op::WideCompare(Comparison {
                 predicate,
                 destination: Destination::Branch { yes, no },

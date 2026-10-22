@@ -11,9 +11,29 @@ use super::{
 use crate::lowir::vocabulary::Type;
 
 pub(super) struct Object {
-    offset: i32,
-    bytes: u32,
+    pub(super) offset: i32,
+    pub(super) bytes: u32,
     align: u32,
+}
+// Immutable containment queries share one function-owned sorted inventory.
+pub(super) struct Index<'a> {
+    pub(super) objects: &'a [Object],
+    order: Vec<usize>,
+}
+impl<'a> Index<'a> {
+    pub(super) fn new(objects: &'a [Object]) -> Self {
+        let mut order: Vec<_> = (0..objects.len()).collect();
+        order.sort_unstable_by_key(|&i| objects[i].offset);
+        Self { objects, order }
+    }
+    pub(super) fn find(&self, offset: i32) -> Option<usize> {
+        let past = self
+            .order
+            .partition_point(|&i| self.objects[i].offset <= offset);
+        past.checked_sub(1).map(|i| self.order[i]).filter(|&i| {
+            i64::from(offset) < i64::from(self.objects[i].offset) + i64::from(self.objects[i].bytes)
+        })
+    }
 }
 impl Object {
     pub(super) fn new(offset: i32, bytes: u32, align: u32) -> Self {
@@ -152,8 +172,13 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
         },
         Op::VaArg(argument) => argument.map_list(visit),
         Op::Exception(ExceptionOp::Throw(source)) => visit(source, 1),
-        Op::VaStart(_) | Op::Exception(ExceptionOp::Push { .. }) | Op::HostEh(_) => return false,
-        Op::Jump(_)
+        Op::VaStart(start) => {
+            start.map_operands(visit);
+            return false;
+        }
+        Op::Exception(ExceptionOp::Push { .. }) | Op::HostEh(_) => return false,
+        Op::Nop
+        | Op::Jump(_)
         | Op::Branch(..)
         | Op::Move(..)
         | Op::SymbolMove(..)
@@ -188,14 +213,8 @@ pub(super) fn order(function: &mut Function, objects: &[Object]) {
     if function.blocks.len() != 1 {
         return;
     }
-    let mut by_offset: Vec<_> = (0..objects.len()).collect();
-    by_offset.sort_unstable_by_key(|&i| objects[i].offset);
-    let find = |offset: i32| {
-        let past = by_offset.partition_point(|&i| objects[i].offset <= offset);
-        past.checked_sub(1).map(|i| by_offset[i]).filter(|&i| {
-            i64::from(offset) < i64::from(objects[i].offset) + i64::from(objects[i].bytes)
-        })
-    };
+    let index = Index::new(objects);
+    let find = |offset| index.find(offset);
     let mut weights = vec![0_u64; objects.len()];
     let mut valid = true;
     for inst in &mut function.instructions {

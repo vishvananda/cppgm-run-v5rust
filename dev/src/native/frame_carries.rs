@@ -164,6 +164,7 @@ mod tests {
             ScalarOp::Load(R::R11, Type::I64, Operand::Frame(-8)),
         ]
         .map(|op| Instruction {
+            volatile: false,
             op: Op::Scalar(op),
             location: None,
         });
