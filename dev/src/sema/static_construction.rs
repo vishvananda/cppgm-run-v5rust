@@ -46,6 +46,9 @@ mod tests {
             struct VirtualRoot{virtual int f(){return 1;}};
             struct VirtualChild:virtual VirtualRoot{}; VirtualChild virtual_child;
             struct IndirectChild:VirtualChild{}; IndirectChild indirect_child;
+            struct Left:Empty{}; struct Right:Empty{};
+            struct Diamond:Left,Right{}; Diamond diamond;
+            struct Failing:Left,Right{int n;Failing():n(dynamic()){}}; Failing failing;
             struct Unused{virtual void f();};
             void local(){Empty automatic;}
         "
@@ -88,18 +91,18 @@ mod tests {
         assert!(graph.lower_evaluated_construction(empty));
         assert!(graph.lower_evaluated_construction(derived));
         assert!(
-            matches!(graph.lower_static_construction(empty), Some([Item::Table(c)]) if *c == base)
+            matches!(graph.lower_static_construction(empty), Some([Item::Table(c, _)]) if *c == base)
         );
         assert!(
-            matches!(graph.lower_static_construction(derived), Some([Item::Table(c)]) if *c == child)
+            matches!(graph.lower_static_construction(derived), Some([Item::Table(c, _)]) if *c == child)
         );
         assert!(!graph.lower_evaluated_construction(promoted));
         assert!(graph.lower_static_construction(promoted).is_some());
         assert!(graph.lower_static_construction(partial).is_none());
         assert!(matches!(graph.lower_static_construction_demands(partial),
-            [Item::Table(_), Item::Scalar(_, Value::Address(root, 0))] if *root == entity(b"target")));
+            [Item::Table(..), Item::Scalar(_, Value::Address(root, 0))] if *root == entity(b"target")));
         let packed = graph.lower_static_construction(entity(b"packed")).unwrap();
-        assert!(matches!(packed.first(), Some(Item::Table(_))));
+        assert!(matches!(packed.first(), Some(Item::Table(..))));
         assert!(
             packed
                 .iter()
@@ -121,7 +124,38 @@ mod tests {
             assert!(graph.lower_static_construction(child).is_none());
             assert!(graph.lower_static_construction_demands(child).is_empty());
         }
-        assert_eq!(graph.static_constructions.attempts.len(), 5);
+        let diamond = entity(b"diamond");
+        let class = graph
+            .lower_constructor(graph.lower_construction(diamond).unwrap())
+            .class;
+        let image = graph.lower_static_construction(diamond).unwrap();
+        let segments: Vec<_> = image
+            .iter()
+            .filter_map(|item| match item {
+                Item::Table(owner, segment) => {
+                    assert_eq!(*owner, class);
+                    Some(segment.index())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(segments, [0, 1]);
+        let demand: Vec<_> = graph
+            .lower_static_construction_demands(diamond)
+            .iter()
+            .filter_map(|item| match item {
+                Item::Table(owner, segment) => Some((*owner, segment.index())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(demand.len(), 6);
+        assert_eq!(demand[0], (base, 0));
+        assert_eq!(demand[2], (base, 0));
+        assert_eq!(&demand[4..], &[(class, 0), (class, 1)]);
+        let failing = entity(b"failing");
+        assert!(graph.lower_static_construction(failing).is_none());
+        assert_eq!(graph.lower_static_construction_demands(failing).len(), 6);
+        assert_eq!(graph.static_constructions.attempts.len(), 7);
         let unused = graph
             .binding(
                 graph
@@ -159,6 +193,30 @@ struct Construction {
     demands: Vec<Item>,
 }
 impl Graph {
+    // constant_lowering.cpp::place_tables: retain the complete object's
+    // nonshared address points, including its secondary base segments.
+    pub(super) fn static_table_placements(
+        &self,
+        class: EntityId,
+        origin: u64,
+        out: &mut Vec<(u64, u64, Item)>,
+    ) -> Result<(), Error> {
+        let offsets = self.lower_segment_offsets(class)?;
+        let group = self.lower_vtable_group(class);
+        for (index, offset) in offsets.into_iter().enumerate() {
+            if index != 0 && group.is_some_and(|group| group.segments[index].shared) {
+                continue;
+            }
+            out.push((
+                origin
+                    .checked_add(offset)
+                    .ok_or(Error::Limit("static table offset"))?,
+                8,
+                Item::Table(class, super::vtable_groups::SegmentId::new(index)?),
+            ));
+        }
+        Ok(())
+    }
     pub(crate) fn lower_static_construction(&self, entity: EntityId) -> Option<&[Item]> {
         self.static_constructions
             .attempts
@@ -182,33 +240,39 @@ impl Graph {
     }
 }
 impl Construction {
-    fn tables(&mut self, class: EntityId, origin: u64, first: usize, cursor: &mut u64) -> bool {
-        let item = Item::Table(class);
-        self.demands.push(item);
-        if *cursor == 0 {
-            self.placements.push(Placement {
-                offset: origin,
-                size: 8,
-                item,
-            });
-        } else {
-            let Some(prior) = self.placements[first..].iter_mut().rev().find(|p| {
-                p.offset == origin
-                    && matches!(
-                        p.item,
-                        Item::Table(_)
-                            | Item::Scalar(
-                                _,
-                                Value::Address(..) | Value::Literal(..) | Value::Temporary(..)
-                            )
-                    )
-            }) else {
-                return false;
-            };
-            prior.item = item;
+    fn tables(
+        &mut self,
+        graph: &Graph,
+        class: EntityId,
+        origin: u64,
+        first: usize,
+        cursor: &mut u64,
+    ) -> Result<bool, Error> {
+        let mut tables = Vec::new();
+        graph.static_table_placements(class, origin, &mut tables)?;
+        for (offset, size, item) in tables {
+            self.demands.push(item);
+            if *cursor == 0 {
+                self.placements.push(Placement { offset, size, item });
+            } else {
+                let Some(prior) = self.placements[first..].iter_mut().rev().find(|p| {
+                    p.offset == offset
+                        && matches!(
+                            p.item,
+                            Item::Table(..)
+                                | Item::Scalar(
+                                    _,
+                                    Value::Address(..) | Value::Literal(..) | Value::Temporary(..)
+                                )
+                        )
+                }) else {
+                    return Ok(false);
+                };
+                prior.item = item;
+            }
         }
         *cursor = (*cursor).max(8);
-        true
+        Ok(true)
     }
     fn image(&mut self, size: u64) -> Result<Option<Vec<Item>>, Error> {
         self.placements.sort_by_key(|p| p.offset);
@@ -406,7 +470,7 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
             if !tables && self.graph.lower_polymorphic(class) {
-                if !out.tables(class, origin, first, &mut cursor) {
+                if !out.tables(&self.graph, class, origin, first, &mut cursor)? {
                     return Ok(None);
                 }
                 tables = true;
@@ -448,7 +512,7 @@ impl Analyzer<'_> {
         }
         if !tables
             && self.graph.lower_polymorphic(class)
-            && !out.tables(class, origin, first, &mut cursor)
+            && !out.tables(&self.graph, class, origin, first, &mut cursor)?
         {
             return Ok(None);
         }

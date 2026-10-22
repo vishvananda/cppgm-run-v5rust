@@ -122,11 +122,18 @@ impl Analyzer<'_> {
         for (ty, offset, field, value) in values {
             if let TypeKind::Class(class) = self.graph.types.get(ty).kind
                 && self.graph.lower_polymorphic(class)
-                && tables.insert(offset)
+                && !tables.contains(&offset)
             {
                 let offset = u64::try_from(offset)
                     .map_err(|_| Error::Invariant("negative constant table placement"))?;
-                placements.push((offset, 8, Item::Table(class)));
+                let first = placements.len();
+                self.graph
+                    .static_table_placements(class, offset, &mut placements)?;
+                for &(offset, _, _) in &placements[first..] {
+                    tables.insert(
+                        i64::try_from(offset).map_err(|_| Error::Limit("constant table offset"))?,
+                    );
+                }
             }
             if matches!(
                 self.graph.types.get(ty).kind,

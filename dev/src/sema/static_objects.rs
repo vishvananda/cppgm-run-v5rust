@@ -263,7 +263,7 @@ impl Analyzer<'_> {
             return Ok(false);
         };
         if self.graph.lower_polymorphic(class) && !primary {
-            out.push((at, 8, Item::Table(class)));
+            self.graph.static_table_placements(class, at, out)?;
         }
         for index in 0..actions.len() {
             let action = self
@@ -293,7 +293,8 @@ impl Analyzer<'_> {
                         .ok_or(Error::Invariant("copy image base layout"))?;
                     (
                         offset,
-                        self.graph.lower_polymorphic(base.class) && offset == 0,
+                        self.graph.lower_polymorphic(base.class)
+                            && (offset == 0 || self.graph.lower_vtable_group(class).is_some()),
                     )
                 }
                 super::copy_construction::CopyTarget::Member(member) => (
@@ -389,7 +390,7 @@ impl Analyzer<'_> {
         }
         self.class_layout(class, SourceOffset(0))?;
         if self.graph.lower_polymorphic(class) && !call.primary {
-            out.push((at, 8, Item::Table(class)));
+            self.graph.static_table_placements(class, at, out)?;
         }
         for index in 0..self.graph.constructors.get(call.constructor).bases.len() {
             let base = self.graph.constructors.get(call.constructor).bases[index];
@@ -413,7 +414,7 @@ impl Analyzer<'_> {
                         && self.graph.lower_constructor(constructor).zero_before_value,
                 primary: self.graph.lower_polymorphic(class)
                     && self.graph.lower_polymorphic(base.class)
-                    && offset == 0,
+                    && (offset == 0 || self.graph.lower_vtable_group(class).is_some()),
                 arguments,
             };
             if !self.evaluated_constructor(
@@ -603,7 +604,7 @@ impl Analyzer<'_> {
                 Item::Zero(bytes) => bytes,
                 Item::Scalar(ty, _) => self.type_size(ty, SourceOffset(0))?.0,
                 Item::BitUnit(bytes, _) => u64::from(bytes),
-                Item::Table(_) => 8,
+                Item::Table(..) => 8,
             };
             if !matches!(item, Item::Zero(_)) {
                 out.push((at, bytes, item));

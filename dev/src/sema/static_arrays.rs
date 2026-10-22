@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Item {
-    Table(EntityId),
+    Table(EntityId, super::vtable_groups::SegmentId),
     Scalar(TypeId, Value),
     Zero(u64),
     BitUnit(u8, u64),

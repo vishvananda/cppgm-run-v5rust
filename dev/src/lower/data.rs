@@ -194,11 +194,15 @@ pub(super) fn items<'a>(
             continue;
         }
         out.push(match item {
-            StaticItem::Table(class) => DataItem::Address(
-                crate::lowir::vocabulary::Type::Ptr,
-                symbols.vtable_symbol(output.program(), class)?,
-                16,
-            ),
+            StaticItem::Table(class, segment) => {
+                let (symbol, addend) =
+                    symbols.table_address(output.program(), class, segment.index())?;
+                DataItem::Address(
+                    crate::lowir::vocabulary::Type::Ptr,
+                    symbol,
+                    i64::try_from(addend).map_err(|_| crate::lowir::Error::Limit)?,
+                )
+            }
             StaticItem::BitUnit(bytes, bits) => DataItem::Constant(
                 match bytes {
                     1 => crate::lowir::vocabulary::Type::U8,

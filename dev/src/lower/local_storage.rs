@@ -261,6 +261,10 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         let facts = self.graph.lower_variable(entity)?;
+        // A static-construction attempt can publish base tables and symbolic
+        // addresses even when its final image replaces them or it fails.
+        // Replay that demand before defining the surviving storage image.
+        self.static_data_items(self.graph.lower_static_construction_demands(entity))?;
         let mut init = if aggregate {
             GlobalInit::Data(
                 if let Some(image) = self
