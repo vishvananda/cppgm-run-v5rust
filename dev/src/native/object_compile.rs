@@ -17,6 +17,12 @@ use crate::{
     types::floating::FloatingScanner,
 };
 use std::collections::HashMap;
+/// Exception runtime and object ABI chosen by the output dialect.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ObjectModel {
+    Course,
+    Host,
+}
 #[derive(Clone, Copy, Default)]
 struct Placement {
     section: Option<SectionId>,
@@ -44,6 +50,7 @@ struct CodeRange {
     section: Option<SectionId>,
     base: u64,
     dropped: bool,
+    cfi: std::ops::Range<usize>,
 }
 struct Pending {
     section: SectionId,
@@ -53,6 +60,9 @@ struct Pending {
 }
 pub(crate) struct ObjectBuilder {
     level: u8,
+    model: ObjectModel,
+    cfi: Vec<u8>,
+    unwind: Vec<(SectionId, u64, SectionId, i64)>,
     out: Object,
     image: Image,
     runtime: Symbols,
@@ -65,10 +75,13 @@ pub(crate) struct ObjectBuilder {
     placements: Vec<Placement>,
     object_symbols: Vec<Option<object::SymbolId>>,
     by_name: HashMap<NameId, object::SymbolId>,
+    host_names: HashMap<NameId, NameId>,
     shared: [Option<SectionId>; 4],
     own_names: [Option<Name>; 4],
     named: HashMap<NameId, SectionId>,
     grouped: Vec<SymbolId>,
+    relro: Option<SectionId>,
+    relro_name: Option<Name>,
     addresses: Vec<global_data::Address>,
 }
 fn kind_slot(kind: SectionKind) -> Result<usize, Error> {
@@ -115,8 +128,10 @@ pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result
     compiler.place_text(program)?;
     compiler.place_globals(program)?;
     compiler.place_startup(program)?;
+    compiler.place_unwind()?;
     compiler.add_symbols(program)?;
     compiler.add_relocations(program)?;
+    compiler.add_unwind_relocations()?;
     for index in 0..compiler.grouped.len() {
         let symbol = compiler.grouped[index];
         let signature = compiler.object_symbol(program, ImageSymbol::Program(symbol))?;
@@ -132,10 +147,16 @@ pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result
 }
 impl ObjectBuilder {
     pub(crate) fn new(level: u8) -> Result<Self, Error> {
+        Self::with_model(level, ObjectModel::Course)
+    }
+    pub(crate) fn with_model(level: u8, model: ObjectModel) -> Result<Self, Error> {
         let mut image = Image::new(0);
         let runtime = Symbols::imports(&mut image)?;
         Ok(Self {
             level,
+            model,
+            cfi: Vec::new(),
+            unwind: Vec::new(),
             out: Object::new(Vec::new()),
             image,
             runtime,
@@ -146,10 +167,13 @@ impl ObjectBuilder {
             placements: Vec::new(),
             object_symbols: Vec::new(),
             by_name: HashMap::new(),
+            host_names: HashMap::new(),
             shared: [None; 4],
             own_names: [None; 4],
             named: HashMap::new(),
             grouped: Vec::new(),
+            relro: None,
+            relro_name: None,
             addresses: Vec::new(),
         })
     }
@@ -158,18 +182,56 @@ impl ObjectBuilder {
         let function = program
             .function(program.symbol(symbol))
             .ok_or(Error::Limit)?;
+        if self.model == ObjectModel::Host
+            && function.body.as_ref().is_some_and(|body| {
+                body.instructions().iter().any(|i| {
+                    matches!(
+                        i.kind,
+                        crate::lowir::model::InstructionKind::Runtime(
+                            crate::lowir::model::RuntimeInstruction::EhTry(_)
+                                | crate::lowir::model::RuntimeInstruction::EhCleanup(_)
+                                | crate::lowir::model::RuntimeInstruction::EhCatch(..)
+                                | crate::lowir::model::RuntimeInstruction::EhCatchAll(_)
+                                | crate::lowir::model::RuntimeInstruction::EhFilter(..)
+                                | crate::lowir::model::RuntimeInstruction::Resume
+                                | crate::lowir::model::RuntimeInstruction::Throw(..)
+                                | crate::lowir::model::RuntimeInstruction::Exception(_)
+                                | crate::lowir::model::RuntimeInstruction::ExceptionSelector(_)
+                                | crate::lowir::model::RuntimeInstruction::EhEnd
+                        )
+                    )
+                })
+            })
+        {
+            return Err(Error::NotImplemented(
+                "host EH region selection and LSDA tables",
+            ));
+        }
+        let mut facts = super::host_unwind::Frame::default();
         if !super::jump_thunk::emit(program, symbol, function, &mut self.image)? {
-            let mir = super::value_selection::select(program, symbol, function, level)?;
-            let _ = mir.emit(&mut self.image, Some(self.runtime))?;
+            let mir = super::value_selection::select_for_object(
+                program, symbol, function, level, self.model,
+            )?;
+            let _ = super::emission::emit_with_frame(
+                &mir,
+                &mut self.image,
+                Some(self.runtime),
+                (self.model == ObjectModel::Host).then_some(&mut facts),
+            )?;
         }
         let start = usize::try_from(self.image.definition(ImageSymbol::Program(symbol)).offset)
             .map_err(|_| Error::Limit)?;
+        let cfi_start = self.cfi.len();
+        if self.model == ObjectModel::Host {
+            self.cfi.extend(facts.encode()?);
+        }
         self.ranges.push(CodeRange {
             symbol,
             bytes: start..self.image.text.len(),
             section: None,
             base: 0,
             dropped: false,
+            cfi: cfi_start..self.cfi.len(),
         });
         self.order.push(RangeId::new(self.ranges.len() - 1)?);
         Ok(())
@@ -213,6 +275,7 @@ impl ObjectBuilder {
                     section: None,
                     base: 0,
                     dropped: false,
+                    cfi: 0..0,
                 });
                 self.order.push(RangeId::new(self.ranges.len() - 1)?);
             }
@@ -375,6 +438,27 @@ impl ObjectBuilder {
         }
         Ok(())
     }
+    fn relro_section(&mut self, program: &Program, symbol: SymbolId) -> Result<SectionId, Error> {
+        if Self::comdat(program, symbol) {
+            let name = if let Some(name) = self.relro_name {
+                name
+            } else {
+                let name = self.out.add_name(b".data.rel.ro")?;
+                self.relro_name = Some(name);
+                name
+            };
+            self.grouped.push(symbol);
+            self.out.add_named_section(name, SectionKind::Data, 1)
+        } else if let Some(section) = self.relro {
+            Ok(section)
+        } else {
+            let section = self
+                .out
+                .add_section(b".data.rel.ro", SectionKind::Data, 1)?;
+            self.relro = Some(section);
+            Ok(section)
+        }
+    }
     fn place_globals(&mut self, program: &Program) -> Result<(), Error> {
         let mut scanner = FloatingScanner::default();
         for index in 0..program.publications().len() {
@@ -387,15 +471,24 @@ impl ObjectBuilder {
             };
             let metadata = global.metadata;
             let (size, align) = global_data::layout(global)?;
-            let mut kind = if metadata.storage == Some(Storage::ReadOnly) {
+            let relro = self.model == ObjectModel::Host
+                && metadata.storage == Some(Storage::ReadOnly)
+                && match &global.init {
+                    GlobalInit::Address(..) => true,
+                    GlobalInit::Data(items) => items
+                        .iter()
+                        .any(|item| matches!(item, DataItem::Address(..))),
+                    _ => false,
+                };
+            let mut kind = if metadata.storage == Some(Storage::ReadOnly) && !relro {
                 SectionKind::Rodata
-            } else if global_data::is_zero(global, &mut scanner)? {
+            } else if !relro && global_data::is_zero(global, &mut scanner)? {
                 SectionKind::Bss
             } else {
                 SectionKind::Data
             };
             let section = if let Some(name) = metadata.section {
-                kind = if metadata.storage == Some(Storage::ReadOnly) {
+                kind = if metadata.storage == Some(Storage::ReadOnly) && !relro {
                     SectionKind::Rodata
                 } else {
                     SectionKind::Data
@@ -410,6 +503,8 @@ impl ObjectBuilder {
                     self.named.insert(name, section);
                     section
                 }
+            } else if relro {
+                self.relro_section(program, symbol)?
             } else {
                 self.section(program, kind, symbol)?
             };
@@ -475,6 +570,58 @@ impl ObjectBuilder {
         }
         Ok(())
     }
+    fn place_unwind(&mut self) -> Result<(), Error> {
+        if self.model != ObjectModel::Host || self.ranges.is_empty() {
+            return Ok(());
+        }
+        let frame = self.out.add_section(b".eh_frame", SectionKind::Rodata, 8)?;
+        let bytes = &mut self.out.section_mut(frame).bytes;
+        if self.ranges.iter().any(|r| !r.dropped) {
+            super::host_unwind::cie(bytes)?;
+        }
+        for range in &self.ranges {
+            if range.dropped {
+                continue;
+            }
+            let field = super::host_unwind::fde(
+                bytes,
+                u32::try_from(range.bytes.len()).map_err(|_| Error::Limit)?,
+                &self.cfi[range.cfi.clone()],
+            )?;
+            self.unwind.push((
+                frame,
+                u64::from(field),
+                range.section.ok_or(Error::Limit)?,
+                i64::try_from(range.base).map_err(|_| Error::Limit)?,
+            ));
+        }
+        self.out.section_mut(frame).size = u64::try_from(bytes.len()).map_err(|_| Error::Limit)?;
+        self.cfi.clear();
+        Ok(())
+    }
+    fn add_unwind_relocations(&mut self) -> Result<(), Error> {
+        let mut symbols = vec![None; self.out.section_count()];
+        for &(section, offset, target, addend) in &self.unwind {
+            let symbol = if let Some(symbol) = symbols[target.index()] {
+                symbol
+            } else {
+                let symbol = self.out.add_symbol(Symbol {
+                    kind: SymbolKind::Section,
+                    definition: Definition::Section(target),
+                    ..Symbol::default()
+                })?;
+                symbols[target.index()] = Some(symbol);
+                symbol
+            };
+            self.out.section_mut(section).relocations.push(Relocation {
+                offset,
+                kind: RelocationKind::Relative,
+                symbol,
+                addend,
+            });
+        }
+        Ok(())
+    }
     fn object_symbol(
         &mut self,
         program: &Program,
@@ -518,6 +665,9 @@ impl ObjectBuilder {
         } else {
             SymbolKind::Object
         };
+        if self.model == ObjectModel::Host && !defined {
+            symbol.kind = SymbolKind::None;
+        }
         symbol.binding = if metadata.binding == Some(SourceBinding::Weak) {
             Binding::Weak
         } else {
@@ -530,7 +680,10 @@ impl ObjectBuilder {
         {
             symbol.binding = Binding::Local;
         }
-        let name = metadata.object.unwrap_or(from.name);
+        let mut name = metadata.object.unwrap_or(from.name);
+        if self.model == ObjectModel::Host {
+            name = self.host_names.get(&name).copied().unwrap_or(name);
+        }
         if symbol.binding != Binding::Local
             && let Some(&existing) = self.by_name.get(&name)
         {
@@ -576,7 +729,20 @@ impl ObjectBuilder {
         }
         Ok(())
     }
-    fn add_symbols(&mut self, program: &Program) -> Result<(), Error> {
+    fn add_symbols(&mut self, program: &mut Program) -> Result<(), Error> {
+        if self.model == ObjectModel::Host {
+            for index in 0..program.symbols().len() {
+                let source = &program.symbols()[index];
+                let name = program
+                    .symbol_metadata(source)
+                    .and_then(|m| m.object)
+                    .unwrap_or(source.name);
+                let host = host_builtin_name(program, name)?;
+                if host != name {
+                    self.host_names.insert(name, host);
+                }
+            }
+        }
         self.object_symbols.resize(self.placements.len(), None);
         for position in 0..self.order.len() {
             let index = self.order[position].index();
@@ -653,9 +819,30 @@ impl ObjectBuilder {
                 )
                 .ok_or(Error::Limit)?;
             let symbol = self.object_symbol(program, fixup.target)?;
+            let mut got = false;
+            if self.model == ObjectModel::Host
+                && !fixup.branch
+                && let ImageSymbol::Program(target) = fixup.target
+                && self.placements[target.index()].section.is_none()
+            {
+                let at = usize::try_from(offset).map_err(|_| Error::Limit)?;
+                let bytes = &mut self.out.section_mut(section).bytes;
+                if at < 3
+                    || bytes[at - 3] & 0xf8 != 0x48
+                    || bytes[at - 2] != 0x8d
+                    || bytes[at - 1] & 0xc7 != 0x05
+                    || fixup.addend != 0
+                {
+                    return Err(Error::NotImplemented("host imported data memory operands"));
+                }
+                bytes[at - 2] = 0x8b;
+                got = true;
+            }
             self.out.section_mut(section).relocations.push(Relocation {
                 offset,
-                kind: if fixup.branch {
+                kind: if got {
+                    RelocationKind::Other(42)
+                } else if fixup.branch {
                     RelocationKind::Branch
                 } else {
                     RelocationKind::Relative
@@ -697,6 +884,23 @@ impl crate::lowir::model::DefinitionSink for ObjectBuilder {
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
+}
+
+fn host_builtin_name(program: &mut Program, name: NameId) -> Result<NameId, Error> {
+    let host: &[u8] = match program.names.bytes(name) {
+        b"cppgm_builtin_strlen" => b"strlen",
+        b"cppgm_builtin_memcpy" => b"memcpy",
+        b"cppgm_builtin_memmove" => b"memmove",
+        b"cppgm_builtin_memset" => b"memset",
+        b"cppgm_builtin_memcmp" => b"memcmp",
+        b"cppgm_builtin_operator_new" => b"_Znwm",
+        b"cppgm_builtin_operator_new_array" => b"_Znam",
+        b"cppgm_builtin_operator_delete" => b"_ZdlPv",
+        b"cppgm_builtin_operator_delete_array" => b"_ZdaPv",
+        _ => return Ok(name),
+    };
+    let host = std::str::from_utf8(host).map_err(|_| Error::Limit)?;
+    program.names.intern(host)
 }
 
 #[cfg(test)]

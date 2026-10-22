@@ -23,11 +23,19 @@ pub struct LowIrOutput {
     output: crate::lower::Output,
 }
 impl LowIrOutput {
+    #[cfg(test)]
     pub(crate) fn for_object() -> Result<Self, crate::lowir::Error> {
+        Self::for_object_model(crate::native::ObjectModel::Course)
+    }
+    pub(crate) fn for_object_model(
+        model: crate::native::ObjectModel,
+    ) -> Result<Self, crate::lowir::Error> {
         let mut output = crate::lower::Output::default();
         output
             .program
-            .set_definition_sink(Box::new(crate::native::ObjectBuilder::new(0)?))?;
+            .set_definition_sink(Box::new(crate::native::ObjectBuilder::with_model(
+                0, model,
+            )?))?;
         output.set_object_mode();
         Ok(Self { output })
     }

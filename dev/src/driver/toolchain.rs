@@ -278,7 +278,13 @@ fn compile(
         )
     })?;
     let source = SourceBuffer::new(bytes).map_err(message)?;
-    let mut output = LowIrOutput::for_object().map_err(ast::native_error)?;
+    let host = invocation.compile && !invocation.output.as_os_str().as_bytes().ends_with(b".obj");
+    let model = if host {
+        native::ObjectModel::Host
+    } else {
+        native::ObjectModel::Course
+    };
+    let mut output = LowIrOutput::for_object_model(model).map_err(ast::native_error)?;
     ast::emit_compilation_unit(
         &source,
         input.path.as_os_str().as_bytes(),
@@ -359,9 +365,6 @@ pub fn run(
             } else {
                 invocation.output.clone()
             };
-            if !path.as_os_str().as_bytes().ends_with(b".obj") {
-                return Err(AstToolError::Missing("host relocatable object emission"));
-            }
             let object = compile(input, &invocation, values, budget)?;
             check_output(&invocation, &path)?;
             native::write_object(&object, &path).map_err(ast::native_error)?;

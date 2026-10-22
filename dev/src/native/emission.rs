@@ -127,6 +127,8 @@ struct Pass<'a> {
     flags: Vec<bool>,
     carries: Carries,
     stats: Emission,
+    frame: super::host_unwind::Frame,
+    record_frame: bool,
 }
 impl<'a> Pass<'a> {
     fn new(
@@ -134,6 +136,7 @@ impl<'a> Pass<'a> {
         order: &Order,
         short: &'a [bool],
         runtime: Option<super::runtime::Symbols>,
+        record_frame: bool,
     ) -> Result<Self, Error> {
         let mut assembler = Assembler::default();
         let mut labels = Vec::with_capacity(function.blocks.len());
@@ -155,6 +158,8 @@ impl<'a> Pass<'a> {
             flags: super::condition_mir::flags_after(&function.instructions),
             carries: Carries::new(&function.bindings),
             stats: Emission::default(),
+            frame: super::host_unwind::Frame::default(),
+            record_frame,
         })
     }
     fn branch(&mut self, condition: Option<u8>, label: Label) {
@@ -173,14 +178,25 @@ impl<'a> Pass<'a> {
         let f = self.function;
         let a = &mut self.assembler;
         a.push(R::RBP);
+        self.frame.push_end = a.position()?;
         a.mov_rr(R::RBP, R::RSP)?;
+        self.frame.established_end = a.position()?;
         let saved = f.preserve.count_ones() * 8;
         if f.stack_size != saved {
             a.alu_ri(5, Rm::Reg(R::RSP), i64::from(f.stack_size - saved), 8)?;
         }
+        let mut offset = f
+            .stack_size
+            .cast_signed()
+            .wrapping_neg()
+            .wrapping_add(saved.cast_signed());
         for reg in super::placement::SAVED.into_iter().rev() {
             if f.preserve & (1 << reg.code()) != 0 {
                 a.push(reg);
+                offset = offset.wrapping_sub(8);
+                if self.record_frame {
+                    self.frame.saves.push((a.position()?, reg, offset));
+                }
             }
         }
         if f.aligned_base != 0 {
@@ -257,7 +273,9 @@ impl<'a> Pass<'a> {
             }
         }
         self.assembler.byte(0xc9);
+        self.frame.leave_end = self.assembler.position()?;
         self.assembler.ret();
+        self.frame.ret_end = self.assembler.position()?;
         Ok(())
     }
     fn instruction(
@@ -397,10 +415,18 @@ pub(super) fn emit(
     image: &mut Image,
     runtime: Option<super::runtime::Symbols>,
 ) -> Result<Emission, Error> {
+    emit_with_frame(function, image, runtime, None)
+}
+pub(super) fn emit_with_frame(
+    function: &Function,
+    image: &mut Image,
+    runtime: Option<super::runtime::Symbols>,
+    frame: Option<&mut super::host_unwind::Frame>,
+) -> Result<Emission, Error> {
     let base = image.align_text()?;
     image.define(ImageSymbol::Program(function.symbol), Section::Text, base);
     let order = Order::new(function);
-    let mut pass = Pass::new(function, &order, &[], runtime)?;
+    let mut pass = Pass::new(function, &order, &[], runtime, frame.is_some())?;
     pass.run(image, &order)?;
     let mut short = Vec::with_capacity(pass.branches.len());
     for branch in &pass.branches {
@@ -413,7 +439,7 @@ pub(super) fn emit(
         short.push(i8::try_from(displacement).is_ok());
     }
     if short.iter().any(|&short| short) {
-        pass = Pass::new(function, &order, &short, runtime)?;
+        pass = Pass::new(function, &order, &short, runtime, frame.is_some())?;
         pass.run(image, &order)?;
     }
     pass.assembler.resolve()?;
@@ -422,6 +448,9 @@ pub(super) fn emit(
     pass.stats.code_bytes = pass.assembler.code.len();
     pass.stats.fixups = pass.assembler.fixups.len();
     let stats = pass.stats;
+    if let Some(frame) = frame {
+        *frame = pass.frame;
+    }
     image.append(pass.assembler)?;
     Ok(stats)
 }

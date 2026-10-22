@@ -509,6 +509,9 @@ impl Placement {
             self.variadic = Some(area);
             area.entry(mir)?;
         }
+        if mir.object_model == super::object_compile::ObjectModel::Host {
+            super::host_parameters::normalize(body, facts, mir)?;
+        }
         for (index, parameter) in body.temps().iter().take(body.parameter_count).enumerate() {
             if facts.intervals[index].uses == 0 {
                 continue;

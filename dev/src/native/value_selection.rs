@@ -123,6 +123,21 @@ pub(super) fn select(
     function: &Function,
     level: u8,
 ) -> Result<MirFunction, Error> {
+    select_for_object(
+        program,
+        symbol,
+        function,
+        level,
+        super::object_compile::ObjectModel::Course,
+    )
+}
+pub(super) fn select_for_object(
+    program: &Program,
+    symbol: SymbolId,
+    function: &Function,
+    level: u8,
+    model: super::object_compile::ObjectModel,
+) -> Result<MirFunction, Error> {
     let body = function.body.as_ref().ok_or(Error::Limit)?;
     let signature = program.signature(function.signature);
     let layout = abi::Layout::classify(signature)?;
@@ -155,6 +170,7 @@ pub(super) fn select(
         layout,
     );
     mir.optimized = level >= 1;
+    mir.object_model = model;
     mir.variadic = signature.boundary.arity == Arity::Variadic;
     mir.lowir_instructions = body.instructions().len();
     mir.dead_slots = slots.iter().filter(|s| matches!(s, Slot::Dead)).count();
