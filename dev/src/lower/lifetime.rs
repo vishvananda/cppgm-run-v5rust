@@ -224,6 +224,7 @@ pub(super) struct Lifetime {
     pub declared_object: Option<Value>,
     pub guard_start: Option<crate::lowir::builder::Position>,
     pub function_guard: Option<BlockId>,
+    pub unexpected_specification: Option<EntityId>,
     pub exception_slot: Option<Value>,
     pub throw_work: Vec<ast::ExprId>,
     pub temporary_work: Vec<ast::ExprId>,

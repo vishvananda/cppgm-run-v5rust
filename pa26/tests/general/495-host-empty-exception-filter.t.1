@@ -1,0 +1,17 @@
+extern "C" void install_empty_handler();
+extern "C" void record_cleanup();
+struct Guard
+{
+	~Guard() { record_cleanup(); }
+};
+void empty() throw()
+{
+	Guard guard;
+	throw 7;
+}
+int main()
+{
+	install_empty_handler();
+	empty();
+	return 1;
+}

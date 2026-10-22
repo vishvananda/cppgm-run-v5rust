@@ -1,0 +1,26 @@
+struct Base { int base; };
+struct Other { int other; };
+struct Single : Base { int value; };
+struct Multiple : Base, Other { int value; };
+struct Virtual : virtual Base { int value; };
+struct Diamond : Virtual, virtual Other { int value; };
+template<class T> struct Dormant
+{
+	virtual void unused() { T::missing(); }
+	int value;
+};
+void work() {}
+void single() throw(Single) { work(); }
+void multiple() throw(Multiple) { work(); }
+void virtual_base() throw(Virtual) { work(); }
+void diamond() throw(Diamond) { work(); }
+void specialization() throw(Dormant<int>) { work(); }
+int main()
+{
+	single();
+	multiple();
+	virtual_base();
+	diamond();
+	specialization();
+	return 0;
+}

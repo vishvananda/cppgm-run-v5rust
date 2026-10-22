@@ -518,6 +518,7 @@ impl Function<'_, '_, '_, '_> {
         // The serialized view instead resumes into that guard.
         if self.symbols.object_mode()
             && self.lifetime.function_guard.is_some()
+            && self.lifetime.unexpected_specification.is_none()
             && (outside_tries || self.innermost_try().is_none())
         {
             return self.terminate_current_exception();

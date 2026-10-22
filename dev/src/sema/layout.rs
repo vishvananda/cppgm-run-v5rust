@@ -360,6 +360,7 @@ impl Analyzer<'_> {
                 &mut constructors,
             )?;
             seen.insert(entity);
+            self.prepare_throw_specification_layouts(entity)?;
             self.prepare_virtual_definition_layouts(entity, definition_groups)?;
             if let Some(classes) = class_informations.remove(&entity) {
                 for class in classes {

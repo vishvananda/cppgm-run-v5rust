@@ -22,10 +22,37 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct SourceExceptions {
+    // Written order and repetitions are observable in host exception filters.
+    // Keep these independently of the sorted sets used for compatibility.
+    specifications: HashMap<EntityId, Vec<TypeId>>,
     thrown: HashMap<ast::ExprId, TypeId>,
     // Handler bodies have stable syntax identities, including unnamed declarations.
     handlers: HashMap<ast::StmtId, (TypeId, Option<BindingId>)>,
     parameters: HashSet<EntityId>,
+}
+
+impl SourceExceptions {
+    pub(super) fn specification(&self, entity: EntityId) -> Option<&[TypeId]> {
+        self.specifications.get(&entity).map(Vec::as_slice)
+    }
+
+    pub(super) fn record_specification(&mut self, entity: EntityId, types: Vec<TypeId>) {
+        // Redeclarations check compatibility with the first declaration;
+        // their spelling does not replace its emitted specification.
+        self.specifications.entry(entity).or_insert(types);
+    }
+
+    pub(super) fn inherit_specification(&mut self, entity: EntityId, origin: EntityId) {
+        if let Some(types) = self.specifications.get(&origin).cloned() {
+            self.record_specification(entity, types);
+        }
+    }
+}
+
+impl super::Graph {
+    pub(crate) fn lower_throw_specification(&self, entity: EntityId) -> Option<&[TypeId]> {
+        self.source_exceptions.specification(entity)
+    }
 }
 
 impl Analyzer<'_> {
@@ -323,6 +350,71 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn dynamic_specifications_keep_order_and_empty_origin_without_reparsing() {
+        let source = SourceBuffer::new(
+            b"void first()throw(double,int,double);void first()throw(int,double);\
+              void empty()throw();void nonthrowing()noexcept;\
+              template<class T>void unused()throw(T){T::missing();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"dynamic-specifications").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let bodies = tree.bodies.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        analyzer.finish_unit_exceptions().unwrap();
+        let entity = |name: &[u8]| {
+            let name = analyzer.identifiers.find(name).unwrap();
+            let binding = analyzer
+                .unqualified(
+                    analyzer.graph.global,
+                    name,
+                    super::super::lookup::Filter::Ordinary,
+                )
+                .unwrap()
+                .unwrap();
+            analyzer.graph.binding(binding).entity
+        };
+        let first = entity(b"first");
+        let empty = entity(b"empty");
+        let nonthrowing = entity(b"nonthrowing");
+        let unused = entity(b"unused");
+        let types = analyzer.graph.lower_throw_specification(first).unwrap();
+        assert_eq!(types.len(), 3);
+        assert_eq!(types[0], types[2]);
+        assert!(matches!(
+            analyzer.graph.types.get(types[0]).kind,
+            TypeKind::Scalar(Scalar::Basic(crate::types::FundamentalType::Double))
+        ));
+        assert!(matches!(
+            analyzer.graph.types.get(types[1]).kind,
+            TypeKind::Scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+        ));
+        assert_eq!(
+            analyzer.graph.lower_throw_specification(empty),
+            Some([].as_slice())
+        );
+        assert!(
+            analyzer
+                .graph
+                .lower_throw_specification(nonthrowing)
+                .is_none()
+        );
+        assert!(!analyzer.graph.function_templates.body_demanded(unused));
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.tree.bodies.mark(), bodies);
+    }
 
     #[test]
     fn throw_moves_only_eligible_local_names_and_retains_handler_ownership() {

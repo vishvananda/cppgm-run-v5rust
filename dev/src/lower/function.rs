@@ -260,7 +260,10 @@ pub(super) fn lower<'a>(
     } else {
         false
     };
-    if facts.nothrow && !calls_complete {
+    let specification = entity.filter(|&entity| {
+        function.symbols.host_objects() && graph.lower_throw_specification(entity).is_some()
+    });
+    if (facts.nothrow || specification.is_some()) && !calls_complete {
         let raises = body
             .map(|body| function.statement_throws(body.compound))
             .transpose()?
@@ -280,6 +283,7 @@ pub(super) fn lower<'a>(
                 false
             };
         if raises {
+            function.lifetime.unexpected_specification = specification;
             function.open_function_guard()?;
         }
     }

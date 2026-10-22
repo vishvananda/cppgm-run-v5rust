@@ -202,6 +202,9 @@ impl Function<'_, '_, '_, '_> {
         let Some(landing) = self.lifetime.function_guard.take() else {
             return Ok(());
         };
+        if let Some(entity) = self.lifetime.unexpected_specification {
+            return self.place_unexpected_landing(landing, entity);
+        }
         let action = self.new_block("function_exception_action")?;
         self.place(landing)?;
         self.effect(I::Runtime(R::EhCatchAll(Some(1))))?;
@@ -228,6 +231,71 @@ impl Function<'_, '_, '_, '_> {
         self.terminate_exception(exception)?;
         let ty = self.symbols.result_boundary(source)?.ty;
         self.termination_return(source, ty)
+    }
+    fn place_unexpected_landing(
+        &mut self,
+        landing: crate::lowir::model::BlockId,
+        entity: crate::sema::lowering::EntityId,
+    ) -> Result<(), Error> {
+        use crate::lowir::{
+            model::{Call, Value},
+            vocabulary::Compare,
+        };
+        self.place(landing)?;
+        let types =
+            self.graph
+                .lower_throw_specification(entity)
+                .ok_or(crate::sema::Error::Invariant(
+                    "missing dynamic exception specification",
+                ))?;
+        let mut information = Vec::with_capacity(types.len());
+        for &ty in types {
+            let ty = match self.graph.lower_type(ty)? {
+                crate::sema::lowering::TypeView::Reference { element, .. } => element,
+                _ => ty,
+            };
+            information.push(Value::Symbol(
+                self.symbols
+                    .exception_type_information(self.builder.program(), ty)?,
+            ));
+        }
+        let arguments = self.builder.arguments(&information)?;
+        self.effect(I::Runtime(R::EhFilter(arguments, Some(-1))))?;
+        let source = self.result.ok_or(crate::sema::Error::Invariant(
+            "specification without result",
+        ))?;
+        let selector = self
+            .emit(I::Runtime(R::ExceptionSelector(Type::I32)), source)?
+            .value;
+        let violated = self.new_block("function_exception_action")?;
+        let allowed = self.new_block("function_exception_resume")?;
+        let minus_one = self.builder.integer(u128::MAX)?;
+        let test = self
+            .emit(
+                I::Compare(Compare::Eq, Type::I32, selector, minus_one),
+                source,
+            )?
+            .value;
+        self.effect(I::Branch(test, violated, allowed))?;
+        self.terminated = true;
+        self.place(violated)?;
+        let exception = self
+            .emit(I::Runtime(R::Exception(Type::Ptr)), source)?
+            .value;
+        let callee = self.symbols.unexpected_function(self.builder.program())?;
+        let arguments = self.builder.arguments(&[exception])?;
+        self.effect(I::Call(Call {
+            result: Type::Void,
+            callee: Value::Symbol(callee),
+            arguments,
+            signature: None,
+            copy_elision: false,
+        }))?;
+        self.terminated = true;
+        self.place(allowed)?;
+        self.effect(I::Runtime(R::Resume))?;
+        self.terminated = true;
+        Ok(())
     }
     pub(super) fn terminate_exception(
         &mut self,

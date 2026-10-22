@@ -153,6 +153,44 @@ impl Symbols<'_, '_> {
                 );
             }
         };
+        let symbol = self.declare_runtime_function(
+            program,
+            object,
+            types,
+            result,
+            noreturn,
+            Some(requested),
+        )?;
+        self.table.runtime_entries.insert(requested, symbol);
+        Ok(symbol)
+    }
+    pub(in crate::lower) fn unexpected_function(
+        &mut self,
+        program: &mut Program,
+    ) -> Result<SymbolId, Error> {
+        if let Some(symbol) = self.table.unexpected_function {
+            return Ok(symbol);
+        }
+        let symbol = self.declare_runtime_function(
+            program,
+            "__cxa_call_unexpected",
+            &[Type::Ptr],
+            Type::Void,
+            true,
+            None,
+        )?;
+        self.table.unexpected_function = Some(symbol);
+        Ok(symbol)
+    }
+    fn declare_runtime_function(
+        &mut self,
+        program: &mut Program,
+        object: &str,
+        types: &[Type],
+        result: Type,
+        noreturn: bool,
+        role: Option<Role>,
+    ) -> Result<SymbolId, Error> {
         let symbol = self.table.allocate(
             program,
             &format!("__external_runtime__{object}"),
@@ -192,7 +230,7 @@ impl Symbols<'_, '_> {
                 name: program.symbol(symbol).name,
                 signature,
                 metadata: Metadata {
-                    role: Some(requested),
+                    role,
                     linkage: Linkage::C,
                     binding: Some(Binding::Strong),
                     object: Some(object),
@@ -203,14 +241,15 @@ impl Symbols<'_, '_> {
             },
         )?;
         program.publish_runtime_declaration(symbol);
-        self.table
-            .runtime_roles
-            .push(crate::lower::runtime_roles::RoleSymbol {
-                symbol,
-                role: requested,
-                origin: crate::lower::runtime_roles::Origin::Runtime,
-            });
-        self.table.runtime_entries.insert(requested, symbol);
+        if let Some(role) = role {
+            self.table
+                .runtime_roles
+                .push(crate::lower::runtime_roles::RoleSymbol {
+                    symbol,
+                    role,
+                    origin: crate::lower::runtime_roles::Origin::Runtime,
+                });
+        }
         Ok(symbol)
     }
 }

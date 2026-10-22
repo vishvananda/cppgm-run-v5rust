@@ -205,6 +205,9 @@ impl Analyzer<'_> {
             function.function_parameters = parameters;
             function.exceptions = exceptions;
             self.graph
+                .source_exceptions
+                .inherit_specification(invoker, closure.call);
+            self.graph
                 .closures
                 .records
                 .get_mut(&class)

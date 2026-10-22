@@ -52,6 +52,7 @@ pub(super) struct SymbolTable {
     exception_helpers: Option<super::exception_helpers::Helpers>,
     terminate_pending: bool,
     bad_array_length: Option<SymbolId>,
+    unexpected_function: Option<SymbolId>,
     atexit: Option<SymbolId>,
     guard_functions: [Option<SymbolId>; 3],
     thread_atexit: Option<SymbolId>,

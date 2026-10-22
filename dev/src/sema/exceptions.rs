@@ -55,6 +55,91 @@ pub(super) struct PendingSpecification {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn prepare_throw_specification_layouts(
+        &mut self,
+        entity: EntityId,
+    ) -> Result<(), Error> {
+        if !self.graph.lower_function_defined(entity) {
+            return Ok(());
+        }
+        let count = self
+            .graph
+            .lower_throw_specification(entity)
+            .map_or(0, <[TypeId]>::len);
+        for index in 0..count {
+            let ty = self
+                .graph
+                .lower_throw_specification(entity)
+                .ok_or(Error::Invariant("exception specification disappeared"))?[index];
+            let object = match self.graph.types.get(ty).kind {
+                TypeKind::Reference { element, .. } => element,
+                _ => ty,
+            };
+            self.prepare_rtti_layouts(object, SourceOffset(0))?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn substitute_throw_specification(&mut self, entity: EntityId) -> Result<(), Error> {
+        if self.graph.source_exceptions.specification(entity).is_some() {
+            return Ok(());
+        }
+        let Some(primary) = self.graph.function_templates.primary(entity) else {
+            return Ok(());
+        };
+        let primary = self.graph.binding(primary).entity;
+        let Some(types) = self
+            .graph
+            .source_exceptions
+            .specification(primary)
+            .map(<[TypeId]>::to_vec)
+        else {
+            return Ok(());
+        };
+        let Some(head) = self.graph.entity(primary).template_head else {
+            return Ok(());
+        };
+        let arguments = self
+            .graph
+            .function_templates
+            .arguments
+            .get(&entity)
+            .ok_or(Error::Invariant(
+                "specification without specialization arguments",
+            ))?
+            .iter()
+            .copied()
+            .map(Some)
+            .collect::<Vec<_>>();
+        let mut substitution = super::function_templates::Substitution::new(
+            self.graph.templates.depth(head),
+            &arguments,
+        );
+        let Some(types) = self.substitute_pack_list(&types, &mut substitution)? else {
+            return Ok(());
+        };
+        let mut adjusted = Vec::with_capacity(types.len());
+        for ty in types {
+            if matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Pack(_) | TypeKind::Expansion(_)
+            ) {
+                return Ok(());
+            }
+            let ty = self.graph.types.parameter(ty)?;
+            let object = match self.graph.types.get(ty).kind {
+                TypeKind::Reference { element, .. } => element,
+                _ => ty,
+            };
+            self.prepare_type_information(object)?;
+            adjusted.push(ty);
+        }
+        self.graph
+            .source_exceptions
+            .record_specification(entity, adjusted);
+        Ok(())
+    }
+
     pub(super) fn pending_virtual_noexcept(&self, function: EntityId) -> bool {
         matches!(self.graph.entity(function).exceptions, ExceptionState::Pending(id)
             if matches!(self.specifications[id.0 as usize].qualifier, Some(Qualifier { kind: QualifierKind::Noexcept(Some(_)), .. })))
@@ -415,7 +500,7 @@ impl Analyzer<'_> {
                     }
                 })
         } else {
-            self.exception_set(pending.qualifier, pending.scope)
+            self.exception_set_context(pending.qualifier, pending.scope, true, Some(pending.entity))
         };
         self.body_context = saved_body;
         self.default_argument_scope = saved_default;
@@ -520,13 +605,14 @@ impl Analyzer<'_> {
         qualifier: Option<Qualifier>,
         scope: ScopeId,
     ) -> Result<ExceptionSet, Error> {
-        self.exception_set_context(qualifier, scope, true)
+        self.exception_set_context(qualifier, scope, true, None)
     }
     fn exception_set_context(
         &mut self,
         qualifier: Option<Qualifier>,
         scope: ScopeId,
         complete: bool,
+        owner: Option<EntityId>,
     ) -> Result<ExceptionSet, Error> {
         match qualifier.map(|q| q.kind) {
             None => Ok(ExceptionSet::All),
@@ -566,39 +652,73 @@ impl Analyzer<'_> {
                 })
             }
             Some(QualifierKind::Throw(types)) => {
-                let mut adjusted = Vec::new();
-                for syntax_index in 0..self.tree.type_lists.get(types).len() {
-                    let syntax = self.tree.type_lists.get(types)[syntax_index];
-                    let ty = self.type_syntax(syntax, scope)?;
-                    let location = self.tree.types.get(syntax).location;
-                    if matches!(
-                        self.graph.types.get(ty).kind,
-                        TypeKind::Reference {
-                            kind: RefKind::Rvalue,
-                            ..
-                        }
-                    ) {
-                        return Err(Error::at(
-                            location,
-                            "an rvalue reference type in an exception-specification",
-                        ));
-                    }
-                    let ty = self.graph.types.parameter(ty)?;
-                    if complete {
-                        self.check_complete_throw_type(ty, location)?;
-                    }
-                    adjusted.push(self.graph.types.canonical_function(ty)?);
-                }
-                adjusted.sort_unstable();
-                adjusted.dedup();
-                Ok(if adjusted.is_empty() {
-                    ExceptionSet::None
-                } else {
-                    ExceptionSet::Dynamic(adjusted)
-                })
+                self.dynamic_exception_set(types, scope, complete, owner)
             }
             _ => Err(Error::Invariant("invalid exception qualifier")),
         }
+    }
+    fn dynamic_exception_set(
+        &mut self,
+        types: crate::syntax::storage::List<ast::TypeId>,
+        scope: ScopeId,
+        complete: bool,
+        owner: Option<EntityId>,
+    ) -> Result<ExceptionSet, Error> {
+        let mut adjusted = Vec::new();
+        for syntax_index in 0..self.tree.type_lists.get(types).len() {
+            let syntax = self.tree.type_lists.get(types)[syntax_index];
+            let ty = self.type_syntax(syntax, scope)?;
+            if let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind {
+                let count = elements.len();
+                for index in 0..count {
+                    let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind else {
+                        return Err(Error::Invariant("exception type pack changed"));
+                    };
+                    let element = self.graph.types.parameter(elements[index])?;
+                    adjusted.push(self.graph.types.canonical_function(element)?);
+                }
+                continue;
+            }
+            let location = self.tree.types.get(syntax).location;
+            if matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Reference {
+                    kind: RefKind::Rvalue,
+                    ..
+                }
+            ) {
+                return Err(Error::at(
+                    location,
+                    "an rvalue reference type in an exception-specification",
+                ));
+            }
+            let ty = self.graph.types.parameter(ty)?;
+            if complete {
+                self.check_complete_throw_type(ty, location)?;
+            }
+            adjusted.push(self.graph.types.canonical_function(ty)?);
+        }
+        if let Some(owner) = owner {
+            for &ty in &adjusted {
+                if !self.graph.dependent_type(ty) {
+                    let object = match self.graph.types.get(ty).kind {
+                        TypeKind::Reference { element, .. } => element,
+                        _ => ty,
+                    };
+                    self.prepare_type_information(object)?;
+                }
+            }
+            self.graph
+                .source_exceptions
+                .record_specification(owner, adjusted.clone());
+        }
+        adjusted.sort_unstable();
+        adjusted.dedup();
+        Ok(if adjusted.is_empty() {
+            ExceptionSet::None
+        } else {
+            ExceptionSet::Dynamic(adjusted)
+        })
     }
     fn record_template_throw(
         &mut self,
@@ -625,7 +745,7 @@ impl Analyzer<'_> {
         // A class template's ordinary member waits for its instantiation;
         // a function template records its written adjusted types immediately.
         let set = if self.graph.entity(entity).template_head.is_some() {
-            self.exception_set_context(qualifier, scope, false)?
+            self.exception_set_context(qualifier, scope, false, Some(entity))?
         } else {
             ExceptionSet::All
         };
@@ -633,7 +753,7 @@ impl Analyzer<'_> {
         Ok(())
     }
     fn check_complete_throw_type(
-        &self,
+        &mut self,
         mut ty: TypeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
@@ -645,16 +765,26 @@ impl Analyzer<'_> {
         if pointer && let TypeKind::Pointer(element) = self.graph.types.get(ty).kind {
             ty = element;
         }
-        match self.graph.types.get(ty).kind {
-            TypeKind::Scalar(super::types::Scalar::Void) if !reference && !pointer => Err(
-                Error::at(location, "void in an exception-specification (15.4p2)"),
-            ),
-            TypeKind::Class(entity) if !self.graph.entity(entity).complete => Err(Error::at(
+        if let TypeKind::Class(entity) = self.graph.types.get(ty).kind
+            && !self.complete_class(entity)?
+        {
+            return Err(Error::at(
                 location,
                 "an incomplete class type in an exception-specification (15.4p2)",
-            )),
-            _ => Ok(()),
+            ));
         }
+        if matches!(
+            self.graph.types.get(ty).kind,
+            TypeKind::Scalar(super::types::Scalar::Void)
+        ) && !reference
+            && !pointer
+        {
+            return Err(Error::at(
+                location,
+                "void in an exception-specification (15.4p2)",
+            ));
+        }
+        Ok(())
     }
     pub(super) fn finish_class_exceptions(&mut self) -> Result<(), Error> {
         let pending = std::mem::take(&mut self.pending_throws);

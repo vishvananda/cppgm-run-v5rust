@@ -1,0 +1,9 @@
+function @permitted() -> void [binding=strong, object=_Z9permittedv] {
+  block ^entry:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @permitted()
+    return i32 0
+}

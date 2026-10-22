@@ -1,0 +1,38 @@
+extern "C" int printf(const char*, ...);
+extern "C" void install_replacement();
+int cleanups;
+struct Guard
+{
+	~Guard() { ++cleanups; }
+};
+void permitted(int choice) throw(long, int, const long&, void*, long)
+{
+	Guard guard;
+	if (choice == 0) throw 7;
+	if (choice == 1) throw 9L;
+	throw static_cast<void*>(0);
+}
+void violated() throw(int)
+{
+	Guard guard;
+	throw 0.5;
+}
+template<class... Types> void template_violation() throw(Types...)
+{
+	Guard guard;
+	throw 'x';
+}
+int main()
+{
+	install_replacement();
+	int sum = 0;
+	try { permitted(0); } catch (int value) { sum += value; }
+	try { permitted(1); } catch (long value) { sum += value; }
+	try { permitted(2); } catch (void* value) { sum += value == 0; }
+	try { violated(); } catch (int value) { sum += value; }
+	try { template_violation<double, int, double>(); } catch (int value) { sum += value; }
+	void (*entry)() = []() throw(int) { throw 2.0; };
+	try { entry(); } catch (int value) { sum += value; }
+	printf("sum %d cleanups %d\n", sum, cleanups);
+	return sum != 140 || cleanups != 5;
+}

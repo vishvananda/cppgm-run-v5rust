@@ -946,6 +946,7 @@ impl Analyzer<'_> {
         }
         self.graph.lookup_limit = Some(pattern.limit);
         self.resolve_specialization_exception(entity)?;
+        self.substitute_throw_specification(entity)?;
         let result = self.function_body(DeferredBody {
             entity,
             ty,
