@@ -261,7 +261,7 @@ mod tests {
         nounwind[id.index()] = false;
         let mut body = program.take_body(id).unwrap().unwrap();
         let changed = {
-            let mut context = Context::new(&program, id, &mut body, level, &nounwind);
+            let mut context = Context::new(&program, id, &mut body, level, &nounwind, &[]);
             strip(&mut context).unwrap()
         };
         program.restore_body(id, body).unwrap();
@@ -355,7 +355,7 @@ function @f() -> void {
             let id = first(&program);
             let facts = vec![known; program.symbols().len()];
             let mut body = program.take_body(id).unwrap().unwrap();
-            let context = Context::new(&program, id, &mut body, 1, &facts);
+            let context = Context::new(&program, id, &mut body, 1, &facts, &[]);
             assert_eq!(proves_nounwind(&context), expected);
         }
     }

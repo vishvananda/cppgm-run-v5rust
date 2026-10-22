@@ -57,6 +57,32 @@ impl BinaryFloat {
     pub(crate) fn is_infinite(self) -> bool {
         self.0 & !SIGN == INFINITY
     }
+    /// The initialized x87 representation; used at typed scalar-bit boundaries.
+    pub(crate) fn extended_bits(self) -> u128 {
+        self.0
+    }
+    pub(crate) fn quiet(self) -> Self {
+        if self.is_nan() {
+            Self(self.0 | (1 << 62))
+        } else {
+            self
+        }
+    }
+    /// Arithmetic interpretation of x87 pseudo-denormals and unsupported encodings.
+    pub(crate) fn canonical(self) -> Self {
+        let exponent = (self.0 >> 64) & 0x7fff;
+        if self.unsupported() {
+            return Self(SIGN | INFINITY | (1 << 62));
+        }
+        if exponent == 0 && self.0 & (1 << 63) != 0 {
+            Self(self.0 | (1 << 64))
+        } else {
+            self
+        }
+    }
+    fn unsupported(self) -> bool {
+        self.0 & (0x7fff << 64) != 0 && self.0 & (1 << 63) == 0
+    }
     pub(crate) fn truth(self) -> bool {
         self.0 & !SIGN != 0
     }
@@ -158,6 +184,90 @@ impl BinaryFloat {
             return Self::from_bits(format, self.bits(format)? | (1 << quiet));
         }
         self.rounded(format)
+    }
+    /// Runtime folding permits nonfinite results that constant expressions reject.
+    /// The caller selects SSE single precision or x87 extended evaluation.
+    pub(crate) fn evaluated(self, op: Operation, right: Self, format: Format) -> Self {
+        let invalid = Self(SIGN | INFINITY | (1 << 62));
+        if self.unsupported() || right.unsupported() {
+            return invalid;
+        }
+        let a = self.canonical();
+        let b = right.canonical();
+        if a.is_nan() || b.is_nan() {
+            if !a.is_nan() {
+                return b.quiet();
+            }
+            if !b.is_nan() || format == Format::Single {
+                return a.quiet();
+            }
+            // x87 chooses a quiet NaN over a signaling one, then the larger
+            // significand; equal payloads with opposite signs choose positive.
+            let aq = a.0 & (1 << 62) != 0;
+            let bq = b.0 & (1 << 62) != 0;
+            let amag = a.0 & ((1 << 64) - 1);
+            let bmag = b.0 & ((1 << 64) - 1);
+            return if aq && !bq || aq == bq && (amag > bmag || amag == bmag && !a.negative()) {
+                a.quiet()
+            } else {
+                b.quiet()
+            };
+        }
+        let negative = a.negative() ^ b.negative();
+        match op {
+            Operation::Add | Operation::Subtract if a.is_infinite() || b.is_infinite() => {
+                let b = if matches!(op, Operation::Subtract) {
+                    b.negate()
+                } else {
+                    b
+                };
+                if a.is_infinite() && b.is_infinite() && a.negative() != b.negative() {
+                    invalid
+                } else if a.is_infinite() {
+                    a
+                } else {
+                    b
+                }
+            }
+            Operation::Multiply if a.is_infinite() || b.is_infinite() => {
+                if !a.truth() || !b.truth() {
+                    invalid
+                } else {
+                    Self(INFINITY | if negative { SIGN } else { 0 })
+                }
+            }
+            Operation::Divide if !b.truth() || a.is_infinite() || b.is_infinite() => {
+                if !a.truth() && !b.truth() || a.is_infinite() && b.is_infinite() {
+                    invalid
+                } else if b.is_infinite() {
+                    Self::pack(negative, 0, 0)
+                } else {
+                    Self(INFINITY | if negative { SIGN } else { 0 })
+                }
+            }
+            _ => a.operation(op, b, format).unwrap_or_else(|| {
+                let negative = if matches!(op, Operation::Add | Operation::Subtract) {
+                    let b = if matches!(op, Operation::Subtract) {
+                        b.negate()
+                    } else {
+                        b
+                    };
+                    if a.0 & !SIGN >= b.0 & !SIGN {
+                        a.negative()
+                    } else {
+                        b.negative()
+                    }
+                } else {
+                    negative
+                };
+                Self(INFINITY | if negative { SIGN } else { 0 })
+            }),
+        }
+    }
+    pub(crate) fn stored(self, format: Format) -> Self {
+        self.canonical()
+            .converted(format)
+            .unwrap_or(Self(INFINITY | (self.0 & SIGN)))
     }
     pub(crate) fn bits(self, format: Format) -> Option<u128> {
         let value = self.rounded(format)?;

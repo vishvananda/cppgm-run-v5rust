@@ -1141,6 +1141,7 @@ pub(crate) struct Instruction {
     pub(crate) kind: InstructionKind,
     pub(crate) line: u32,
     location: Option<LocationId>,
+    switch_type: Option<Type>,
 }
 impl Instruction {
     pub(crate) fn new(result: Option<TempId>, kind: InstructionKind, line: u32) -> Self {
@@ -1149,7 +1150,11 @@ impl Instruction {
             kind,
             line,
             location: None,
+            switch_type: None,
         }
+    }
+    pub(crate) fn switch_type(&self) -> Option<Type> {
+        self.switch_type
     }
 }
 #[derive(Clone)]

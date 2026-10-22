@@ -6,6 +6,7 @@ use super::{
 use crate::lowir::{Error, vocabulary::Type};
 
 pub(super) fn simplify(context: &mut Context<'_>) -> Result<bool, Error> {
+    context.body.record_switch_types();
     let object_slots = context
         .body
         .slots()

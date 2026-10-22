@@ -12,17 +12,8 @@ fn removable(context: &Context<'_>, id: crate::lowir::model::InstId) -> bool {
         return false;
     }
     match &instruction.kind {
-        I::Const(..)
-        | I::Copy(..)
-        | I::Phi(..)
-        | I::Addr(..)
-        | I::Index(..)
-        | I::Unary(..)
-        | I::Binary(..)
-        | I::Compare(..)
-        | I::Select(..)
-        | I::Convert(..)
-        | I::Runtime(R::StackAlloc(_)) => true,
+        kind if super::pure(kind) => true,
+        I::Runtime(R::StackAlloc(_)) => true,
         I::Load(facts, ..) => !facts.volatile(),
         I::Call(call) => context.program.call_boundary(call).is_some_and(|s| {
             matches!(
@@ -111,7 +102,7 @@ mod tests {
             .unwrap();
         let mut body = program.take_body(symbol).unwrap().unwrap();
         let dead = {
-            let mut context = Context::new(&program, symbol, &mut body, 1, &[]);
+            let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
             let changed = remove(&mut context).unwrap();
             assert_eq!(changed, context.dead != 0);
             context.dead

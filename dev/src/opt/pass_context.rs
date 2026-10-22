@@ -1,8 +1,11 @@
 //! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
-use super::{control_flow::Cfg, dead_code, exception_regions};
+use super::{
+    control_flow::Cfg, dead_code, definition_order, exception_regions, flow_cleanup,
+    sparse_constants,
+};
 use crate::lowir::{
     Error,
-    model::{Body, Program, SymbolId},
+    model::{BlockId, Body, Program, SymbolId},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -61,12 +64,22 @@ pub(super) struct Context<'a> {
     pub(super) level: u8,
     pub(super) nounwind: &'a [bool],
     pub(super) dead: u64,
+    pub(super) propagated: u64,
+    pub(super) unwritten: &'a [bool],
+    pub(super) branches_folded: u64,
+    pub(super) blocks_removed: u64,
+    pub(super) blocks_merged: u64,
+    pub(super) passed: Vec<u32>,
+    pub(super) passed_stamp: u32,
     cfg: CachedCfg,
     version: u32,
     settled: Vec<(Pass, u32, bool)>,
     kept_body: Option<Pass>,
     pub(super) ordered_version: Option<u32>,
-    left_ordered: bool,
+    pub(super) left_ordered: bool,
+    running: Option<Pass>,
+    block_of: Vec<Option<BlockId>>,
+    block_of_key: Option<(u32, usize)>,
 }
 impl<'a> Context<'a> {
     pub(super) fn new(
@@ -75,6 +88,7 @@ impl<'a> Context<'a> {
         body: &'a mut Body,
         level: u8,
         nounwind: &'a [bool],
+        unwritten: &'a [bool],
     ) -> Self {
         Self {
             program,
@@ -83,12 +97,22 @@ impl<'a> Context<'a> {
             level,
             nounwind,
             dead: 0,
+            propagated: 0,
+            unwritten,
+            branches_folded: 0,
+            blocks_removed: 0,
+            blocks_merged: 0,
+            passed: Vec::new(),
+            passed_stamp: 0,
             cfg: CachedCfg::Empty,
             version: 0,
             settled: Vec::new(),
             kept_body: None,
             ordered_version: None,
             left_ordered: false,
+            running: None,
+            block_of: Vec::new(),
+            block_of_key: None,
         }
     }
     pub(super) fn ensure_cfg(&mut self) -> Result<(), Error> {
@@ -103,7 +127,7 @@ impl<'a> Context<'a> {
         };
         Ok(())
     }
-    fn ensure_cfg_light(&mut self) -> Result<(), Error> {
+    pub(super) fn ensure_cfg_light(&mut self) -> Result<(), Error> {
         if matches!(self.cfg, CachedCfg::Empty) {
             self.cfg = CachedCfg::Light(Cfg::light(self.body)?);
         }
@@ -115,21 +139,56 @@ impl<'a> Context<'a> {
             CachedCfg::Empty => Err(Error::Limit),
         }
     }
+    pub(super) fn cfg_mut(&mut self) -> Result<&mut Cfg, Error> {
+        match &mut self.cfg {
+            CachedCfg::Light(cfg) | CachedCfg::Complete(cfg) => Ok(cfg),
+            CachedCfg::Empty => Err(Error::Limit),
+        }
+    }
+    pub(super) fn invalidate_block_map(&mut self) {
+        self.block_of_key = None;
+    }
+    pub(super) fn next_pass_stamp(&mut self) -> u32 {
+        if self.passed.len() < self.body.instructions().len() {
+            self.passed.resize(self.body.instructions().len(), 0);
+        }
+        self.passed_stamp = self.passed_stamp.wrapping_add(1);
+        if self.passed_stamp == 0 {
+            self.passed.fill(0);
+            self.passed_stamp = 1;
+        }
+        self.passed_stamp
+    }
     pub(super) fn invalidate_cfg(&mut self) {
         self.cfg = CachedCfg::Empty;
+    }
+    pub(super) fn prepare_block_map(&mut self, pass: Pass, fresh: bool) {
+        let share = fresh && self.running == Some(pass);
+        let key = (self.version, self.body.instructions().len());
+        if !share || self.block_of_key != Some(key) {
+            self.block_of = vec![None; key.1];
+            for &block in &self.body.layout {
+                for &id in &self.body.block(block).instructions {
+                    self.block_of[id.index()] = Some(block);
+                }
+            }
+            self.block_of_key = share.then_some(key);
+        }
+    }
+    pub(super) fn block_map(&self) -> &[Option<BlockId>] {
+        &self.block_of
     }
     fn dispatch(&mut self, pass: Pass) -> Result<bool, Error> {
         match pass {
             Pass::DeadCode => dead_code::remove(self),
             Pass::StripRegions => exception_regions::strip(self),
+            Pass::Constants => sparse_constants::propagate(self),
+            Pass::CleanupCfg => flow_cleanup::cleanup(self),
             Pass::PromoteSlots | Pass::ForwardMemory => {
                 self.ensure_cfg()?;
                 Err(Error::NotImplemented(pass.missing()))
             }
-            Pass::DefinitionOrder => {
-                self.ensure_cfg_light()?;
-                Err(Error::NotImplemented(pass.missing()))
-            }
+            Pass::DefinitionOrder => definition_order::restore(self),
             _ => Err(Error::NotImplemented(pass.missing())),
         }
     }
@@ -144,7 +203,10 @@ impl<'a> Context<'a> {
         self.kept_body = None;
         self.left_ordered = false;
         let ordered = self.ordered_version == Some(self.version);
-        let changed = self.dispatch(pass)?;
+        self.running = Some(pass);
+        let result = self.dispatch(pass);
+        self.running = None;
+        let changed = result?;
         if changed && self.kept_body != Some(pass) {
             self.version = self.version.checked_add(1).ok_or(Error::Limit)?;
             if self.left_ordered || (ordered && matches!(pass, Pass::DeadCode | Pass::Constants)) {
@@ -187,7 +249,7 @@ mod tests {
         .unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[]);
+        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
         context.ensure_cfg().unwrap();
         context.ordered_version = Some(0);
         assert!(context.run(Pass::DeadCode).unwrap());
@@ -209,7 +271,7 @@ mod tests {
         .unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[]);
+        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
         context.ensure_cfg_light().unwrap();
         assert!(matches!(context.cfg, CachedCfg::Light(_)));
         context.ensure_cfg().unwrap();

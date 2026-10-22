@@ -67,6 +67,66 @@ pub(super) struct Cfg {
     children: Edges,
 }
 impl Cfg {
+    pub(super) fn successor_edges(&self) -> (&[usize], &[BlockId]) {
+        (&self.successors.first, &self.successors.targets)
+    }
+    pub(super) fn predecessor_edges(&self) -> (&[usize], &[BlockId]) {
+        (&self.predecessors.first, &self.predecessors.targets)
+    }
+    pub(super) fn reverse_postorder(&self) -> &[BlockId] {
+        &self.rpo
+    }
+    pub(super) fn predecessors(&self, block: BlockId) -> &[BlockId] {
+        self.predecessors.at(block)
+    }
+    pub(super) fn reachable(&self, block: BlockId) -> bool {
+        self.flags[block.index()] & REACHABLE != 0
+    }
+    pub(super) fn handler(&self, block: BlockId) -> bool {
+        self.flags[block.index()] & HANDLER != 0
+    }
+    /// Removing unreachable blocks retains all existing dominance facts.
+    pub(super) fn drop_blocks(&mut self, dead: &[bool], layout: &[BlockId]) -> Result<(), Error> {
+        if dead.len() != self.flags.len() {
+            return Err(Error::Limit);
+        }
+        let mut s = 0;
+        let mut h = 0;
+        for (b, &dead) in dead.iter().enumerate() {
+            let sr = self.successors.first[b]..self.successors.first[b + 1];
+            let hr = self.handlers.first[b]..self.handlers.first[b + 1];
+            self.successors.first[b] = s;
+            self.handlers.first[b] = h;
+            if dead {
+                self.flags[b] = 0;
+                continue;
+            }
+            self.flags[b] &= !HANDLER;
+            for k in sr {
+                self.successors.targets[s] = self.successors.targets[k];
+                s += 1;
+            }
+            for k in hr {
+                self.handlers.targets[h] = self.handlers.targets[k];
+                h += 1;
+            }
+        }
+        self.successors.first[dead.len()] = s;
+        self.handlers.first[dead.len()] = h;
+        self.successors.targets.truncate(s);
+        self.handlers.targets.truncate(h);
+        for &target in &self.handlers.targets {
+            self.flags[target.index()] |= HANDLER;
+        }
+        let mut placed = vec![None; dead.len()];
+        for &block in layout {
+            placed[block.index()] = Some(block);
+        }
+        self.predecessors = self
+            .successors
+            .reverse(dead.len(), placed.iter().copied().flatten())?;
+        Ok(())
+    }
     pub(super) fn analyze(body: &Body) -> Result<Self, Error> {
         let mut out = Self::light(body)?;
         out.complete()?;

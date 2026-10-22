@@ -4,6 +4,7 @@ use super::{
     RuntimeInstruction, Slot, SlotId, TempId, Type, Value,
 };
 use crate::lowir::construction_names::SlotName;
+use crate::lowir::literals::Constant;
 use std::collections::HashSet;
 
 trait Remap {
@@ -90,11 +91,18 @@ fn rewrite_runtime(runtime: &mut RuntimeInstruction, map: &mut impl Remap) -> Re
         }
         R::EhTry(block) | R::EhCleanup(Some(block)) => *block = map.block(*block)?,
         R::EhFilter(arguments, _) => *arguments = map.arguments(*arguments)?,
+        R::EhCatch(symbol, _) => {
+            let Value::Symbol(replacement) = map.value(Value::Symbol(*symbol))? else {
+                return Err(Error::Construction(
+                    "catch type information must name a symbol".into(),
+                ));
+            };
+            *symbol = replacement;
+        }
         R::Fence(..)
         | R::Exception(_)
         | R::ExceptionSelector(_)
         | R::EhCleanup(None)
-        | R::EhCatch(..)
         | R::EhCatchAll(_)
         | R::EhEnd
         | R::Resume => (),
@@ -103,6 +111,175 @@ fn rewrite_runtime(runtime: &mut RuntimeInstruction, map: &mut impl Remap) -> Re
 }
 
 impl Body {
+    pub(crate) fn rewrite_values(
+        &mut self,
+        id: super::InstId,
+        rewrite_value: impl FnMut(Value) -> Result<Value, Error>,
+    ) -> Result<(), Error> {
+        let mut map = ValueRewrite {
+            operands: &mut self.operands,
+            rewrite_value,
+        };
+        rewrite(&mut self.instructions[id.index()].kind, &mut map)
+    }
+    pub(crate) fn replace_kind(&mut self, id: super::InstId, kind: InstructionKind) {
+        let instruction = &mut self.instructions[id.index()];
+        instruction.kind = kind;
+        instruction.switch_type = None;
+    }
+    pub(crate) fn replace_links(
+        &mut self,
+        block: BlockId,
+        instructions: Vec<super::InstId>,
+    ) -> Result<(), Error> {
+        if instructions
+            .iter()
+            .any(|id| id.index() >= self.instructions.len())
+        {
+            return Err(Error::Limit);
+        }
+        self.blocks[block.index()].instructions = instructions;
+        Ok(())
+    }
+    pub(crate) fn retain_layout(&mut self, dead: &[bool]) -> Result<(), Error> {
+        if dead.len() != self.blocks.len() {
+            return Err(Error::Limit);
+        }
+        self.layout.retain(|id| !dead[id.index()]);
+        for (block, &dead) in self.blocks.iter_mut().zip(dead) {
+            if dead {
+                block.placed = false;
+            }
+        }
+        Ok(())
+    }
+    /// Absorb a successor after omitting its leading phis and our final jump.
+    pub(crate) fn join_blocks(&mut self, a: BlockId, b: BlockId, phis: usize) -> Result<(), Error> {
+        if a == b {
+            return Err(Error::Limit);
+        }
+        let (a, b) = if a.index() < b.index() {
+            let (left, right) = self.blocks.split_at_mut(b.index());
+            (&mut left[a.index()], &mut right[0])
+        } else {
+            let (left, right) = self.blocks.split_at_mut(a.index());
+            (&mut right[0], &mut left[b.index()])
+        };
+        if a.instructions.is_empty() || phis > b.instructions.len() {
+            return Err(Error::Limit);
+        }
+        a.instructions.pop();
+        b.instructions.drain(..phis);
+        a.instructions.append(&mut b.instructions);
+        Ok(())
+    }
+    pub(crate) fn remove_phi_predecessor(&mut self, block: BlockId, pred: BlockId) {
+        for &id in &self.blocks[block.index()].instructions {
+            let InstructionKind::Phi(_, pairs) = &mut self.instructions[id.index()].kind else {
+                break;
+            };
+            if let Some(index) = pairs.iter().position(|&(b, _)| b == pred) {
+                pairs.remove(index);
+            }
+        }
+    }
+    pub(crate) fn rename_phi_predecessor(&mut self, block: BlockId, from: BlockId, to: BlockId) {
+        for &id in &self.blocks[block.index()].instructions {
+            let InstructionKind::Phi(_, pairs) = &mut self.instructions[id.index()].kind else {
+                break;
+            };
+            for (block, _) in pairs {
+                if *block == from {
+                    *block = to;
+                }
+            }
+        }
+    }
+    pub(crate) fn append_phi_predecessor(
+        &mut self,
+        id: super::InstId,
+        block: BlockId,
+        value: Value,
+    ) -> Result<(), Error> {
+        let InstructionKind::Phi(_, pairs) = &mut self.instructions[id.index()].kind else {
+            return Err(Error::Limit);
+        };
+        if pairs.len() >= (u32::MAX / 2) as usize {
+            return Err(Error::Limit);
+        }
+        pairs.push((block, value));
+        Ok(())
+    }
+    pub(crate) fn redirect_successors(&mut self, id: super::InstId, from: BlockId, to: BlockId) {
+        let redirect = |block: &mut BlockId| {
+            if *block == from {
+                *block = to;
+            }
+        };
+        match &mut self.instructions[id.index()].kind {
+            InstructionKind::Jump(block) => redirect(block),
+            InstructionKind::Branch(_, yes, no) => {
+                redirect(yes);
+                redirect(no);
+            }
+            InstructionKind::Switch(_, default, cases) => {
+                redirect(default);
+                for (_, block) in cases {
+                    redirect(block);
+                }
+            }
+            _ => (),
+        }
+    }
+    pub(crate) fn clear_speculation_facts(&mut self, id: super::InstId) {
+        if let InstructionKind::Binary(_, facts, ..) = &mut self.instructions[id.index()].kind {
+            facts.0 &= !0x30;
+        }
+    }
+    pub(crate) fn record_switch_types(&mut self) {
+        for &block in &self.layout {
+            let Some(&last) = self.blocks[block.index()].instructions.last() else {
+                continue;
+            };
+            let instruction = &mut self.instructions[last.index()];
+            if instruction.switch_type.is_none()
+                && let InstructionKind::Switch(Value::Temp(temp), ..) = instruction.kind
+            {
+                instruction.switch_type = self.temps[temp.index()].ty;
+            }
+        }
+    }
+    /// Substitute one canonical literal per known temporary, in `TempId` order.
+    /// A call's callee must keep its callable identity even when known constant.
+    pub(crate) fn substitute_constants(
+        &mut self,
+        constants: &[Option<Constant>],
+    ) -> Result<u64, Error> {
+        if constants.len() != self.temps.len() {
+            return Err(Error::Limit);
+        }
+        let mut values = vec![None; constants.len()];
+        for (index, &constant) in constants.iter().enumerate().skip(self.parameter_count) {
+            if let Some(constant) = constant {
+                values[index] = Some(self.constant(constant)?);
+            }
+        }
+        let mut count = 0_u64;
+        for &block in &self.layout {
+            for &id in &self.blocks[block.index()].instructions {
+                let kind = &mut self.instructions[id.index()].kind;
+                let mut map = Substitution {
+                    values: &values,
+                    operands: &mut self.operands,
+                    count: &mut count,
+                    callee: matches!(kind, InstructionKind::Call(_)),
+                };
+                rewrite(kind, &mut map)?;
+            }
+        }
+        self.recount_uses()?;
+        Ok(count)
+    }
     pub(in crate::lowir) fn append_parameter(
         &mut self,
         name: NameId,
@@ -186,6 +363,56 @@ impl Body {
         let out = Compactor::run(self, names)?;
         *self = out;
         Ok(())
+    }
+}
+
+struct ValueRewrite<'a, F> {
+    operands: &'a mut [Value],
+    rewrite_value: F,
+}
+impl<F: FnMut(Value) -> Result<Value, Error>> Remap for ValueRewrite<'_, F> {
+    fn value(&mut self, value: Value) -> Result<Value, Error> {
+        (self.rewrite_value)(value)
+    }
+    fn block(&mut self, block: BlockId) -> Result<BlockId, Error> {
+        Ok(block)
+    }
+    fn arguments(&mut self, arguments: Arguments) -> Result<Arguments, Error> {
+        for index in arguments.first..arguments.first + arguments.count {
+            self.operands[index as usize] = (self.rewrite_value)(self.operands[index as usize])?;
+        }
+        Ok(arguments)
+    }
+}
+
+struct Substitution<'a> {
+    values: &'a [Option<Value>],
+    operands: &'a mut [Value],
+    count: &'a mut u64,
+    callee: bool,
+}
+impl Remap for Substitution<'_> {
+    fn value(&mut self, value: Value) -> Result<Value, Error> {
+        if std::mem::take(&mut self.callee) {
+            return Ok(value);
+        }
+        if let Value::Temp(temp) = value
+            && let Some(replacement) = self.values[temp.index()]
+        {
+            *self.count = self.count.checked_add(1).ok_or(Error::Limit)?;
+            return Ok(replacement);
+        }
+        Ok(value)
+    }
+    fn block(&mut self, block: BlockId) -> Result<BlockId, Error> {
+        Ok(block)
+    }
+    fn arguments(&mut self, arguments: Arguments) -> Result<Arguments, Error> {
+        for index in arguments.first..arguments.first + arguments.count {
+            let value = self.operands[index as usize];
+            self.operands[index as usize] = self.value(value)?;
+        }
+        Ok(arguments)
     }
 }
 
