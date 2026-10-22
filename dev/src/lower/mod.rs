@@ -148,6 +148,13 @@ impl Output {
     pub(crate) fn finish_entry_aliases(&mut self) {
         self.symbols.finish_entry_aliases(&mut self.program);
     }
+    pub(crate) fn finish_program(mut self) -> Result<Program, Error> {
+        self.finish_initialization()?;
+        self.finish_entry_aliases();
+        // Only LowIR crosses the completed lowering boundary. Its demand,
+        // naming and definition-order caches have had their last consumer.
+        Ok(self.program)
+    }
 }
 fn finish_unit<'a>(
     program: &mut Program,

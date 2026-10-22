@@ -59,24 +59,22 @@ impl LowIrOutput {
         })
     }
     pub(crate) fn finish_object(
-        mut self,
+        self,
         path: Vec<u8>,
     ) -> Result<crate::native::Object, AstToolError> {
-        self.output.finish_initialization().map_err(lower_error)?;
-        self.output.finish_entry_aliases();
+        let mut program = self.output.finish_program().map_err(lower_error)?;
         let (model, level) = self
             .object
             .ok_or(AstToolError::Internal("object output without model"))?;
         if level != 0 {
-            crate::opt::optimize(&mut self.output.program, level).map_err(native_error)?;
-            self.output
-                .program
+            crate::opt::optimize(&mut program, level).map_err(native_error)?;
+            program
                 .set_definition_sink(Box::new(
                     crate::native::ObjectBuilder::with_model(level, model).map_err(native_error)?,
                 ))
                 .map_err(native_error)?;
         }
-        crate::native::compile_object(&mut self.output.program, path, level).map_err(native_error)
+        crate::native::compile_object(&mut program, path, level).map_err(native_error)
     }
 
     /// Render the typed program accumulated across translation units.
@@ -391,25 +389,18 @@ mod tests {
                             .any(|function| function.body.is_some())
                     );
                     assert!(!output.output.program.has_definition_sink());
-                    output.output.finish_initialization().unwrap();
-                    output.output.finish_entry_aliases();
-                    output
-                        .output
-                        .program
-                        .set_definition_sink(Box::new(
-                            crate::native::ObjectBuilder::with_model(0, model).unwrap(),
-                        ))
-                        .unwrap();
                 }
                 // This test isolates ownership from transforms: both encoders
                 // run the unchanged O0 policy, over the same typed source facts.
                 let object = if retained {
-                    crate::native::compile_object(
-                        &mut output.output.program,
-                        b"retained-test".to_vec(),
-                        0,
-                    )
-                    .unwrap()
+                    let mut program = output.output.finish_program().unwrap();
+                    program
+                        .set_definition_sink(Box::new(
+                            crate::native::ObjectBuilder::with_model(0, model).unwrap(),
+                        ))
+                        .unwrap();
+                    crate::native::compile_object(&mut program, b"retained-test".to_vec(), 0)
+                        .unwrap()
                 } else {
                     output.finish_object(b"retained-test".to_vec()).unwrap()
                 };
