@@ -184,7 +184,6 @@ pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
     pub list_elements: super::list_elements::SavedElements,
     pending: Vec<ChainBlock>,
-    omitted: Vec<ChainBlock>,
     late: Vec<ChainBlock>,
     resume: Option<BlockId>,
     conditional_resume: Option<BlockId>,
@@ -348,13 +347,6 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn reused_dropped_chains(&mut self) -> bool {
         let dropped = std::mem::take(&mut self.lifetime.dropped_chains);
         dropped != 0 && dropped == self.lifetime.pending.len()
-    }
-    pub(super) fn defer_cleanup_chains(&mut self) {
-        self.lifetime.omitted.append(&mut self.lifetime.pending);
-    }
-    pub(super) fn resume_omitted_cleanup_chains(&mut self) {
-        self.lifetime.omitted.append(&mut self.lifetime.pending);
-        std::mem::swap(&mut self.lifetime.pending, &mut self.lifetime.omitted);
     }
     pub(super) fn automatic_destructor(
         &mut self,
@@ -1376,9 +1368,6 @@ impl Function<'_, '_, '_, '_> {
         });
     }
     pub(super) fn place_cleanup_chains(&mut self, late: bool) -> Result<(), Error> {
-        if late {
-            self.lifetime.late.append(&mut self.lifetime.omitted);
-        }
         let mut blocks = Vec::new();
         loop {
             if late {

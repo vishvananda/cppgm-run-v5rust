@@ -7,6 +7,7 @@ use crate::syntax::{ParseError, SyntaxUnit};
 pub enum AstToolError {
     Initialization(PreprocessError),
     Diagnostic(Vec<u8>),
+    NativeDiagnostic(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
     Output(std::io::Error),
@@ -251,9 +252,11 @@ fn emit_preprocessed(
                     crate::lowir::Error::Output(error) => AstToolError::Output(error),
                     crate::lowir::Error::Limit => AstToolError::Internal("LowIR storage limit"),
                     crate::lowir::Error::Diagnostic(message) => {
-                        AstToolError::Diagnostic(message.into_bytes())
+                        AstToolError::NativeDiagnostic(message.into_bytes())
                     }
-                    crate::lowir::Error::ByteDiagnostic(bytes) => AstToolError::Diagnostic(bytes),
+                    crate::lowir::Error::ByteDiagnostic(bytes) => {
+                        AstToolError::NativeDiagnostic(bytes)
+                    }
                     crate::lowir::Error::Construction(_) => {
                         AstToolError::Internal("typed LowIR construction failed")
                     }
@@ -299,8 +302,10 @@ pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
         crate::lowir::Error::Construction(_) => {
             AstToolError::Internal("native construction invariant")
         }
-        crate::lowir::Error::Diagnostic(message) => AstToolError::Diagnostic(message.into_bytes()),
-        crate::lowir::Error::ByteDiagnostic(bytes) => AstToolError::Diagnostic(bytes),
+        crate::lowir::Error::Diagnostic(message) => {
+            AstToolError::NativeDiagnostic(message.into_bytes())
+        }
+        crate::lowir::Error::ByteDiagnostic(bytes) => AstToolError::NativeDiagnostic(bytes),
         crate::lowir::Error::Output(error) => AstToolError::Output(error),
         crate::lowir::Error::Limit => {
             AstToolError::Diagnostic(b"LowIR storage limit exceeded".to_vec())

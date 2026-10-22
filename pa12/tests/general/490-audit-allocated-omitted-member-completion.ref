@@ -1,0 +1,104 @@
+declare function @Local__Local(%arg0 : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN5LocalC1Ev]
+declare function @operatornew(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new]
+declare function @Local___Local(%arg0 : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN5LocalD1Ev]
+declare function @Member__Member(%arg0 : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN6MemberC1Ev]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+declare function @Member___Member(%arg0 : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN6MemberD1Ev]
+
+function @f() -> void [binding=strong, object=_Z1fv] {
+  slot $before : obj<1x1>
+  slot $call__1 : ptr
+
+  block ^entry:
+    %t1 = addr $before
+    call void @Local__Local(%t1)
+    eh_try ^cleanup_action_2
+    %t2 = convert sext i64 i32 2
+    %t3 = call ptr @operatornew(%t2)
+    store typed ptr %t3, $call__1
+    %t4 = load typed ptr $call__1
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t5 = addr $before
+    call void @Local___Local(%t5)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t6 = index i8 [projection=field] %t4, 0
+    eh_try ^construction_cleanup_4
+    call void @Member__Member(%t6)
+    eh_end
+    %t7 = index i8 [projection=field] %t4, 1
+    eh_try ^construction_cleanup_5
+    call void @Member__Member(%t7)
+    eh_end
+    jump ^call_unwind_end_6
+
+  block ^construction_cleanup_4:
+    call void @operatordelete(%t4)
+    jump ^cleanup_action_2
+
+  block ^construction_cleanup_5:
+    call void @Member___Member(%t6)
+    jump ^construction_cleanup_4
+
+  block ^call_unwind_end_6:
+    %t8 = cmp ne ptr %t4, 0
+    branch %t8, ^delete_nonnull_7, ^delete_end_8
+
+  block ^delete_nonnull_7:
+    call void @Pair___Pair(%t4)
+    call void @operatordelete(%t4)
+    jump ^delete_end_8
+
+  block ^delete_end_8:
+    %t9 = addr $before
+    call void @Local___Local(%t9)
+    return void
+}
+function @Pair___Pair(%this : ptr [object_bytes=2]) -> void [unwind=no, binding=weak, object=_ZN4PairD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 1
+    call void @Member___Member(%t2)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Member___Member(%t4)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_4:
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 0
+    call void @Member___Member(%t6)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t7 = load typed ptr $this
+    %t8 = index i8 [projection=field] %t7, 1
+    call void @Member___Member(%t8)
+    %t9 = load typed ptr $this
+    %t10 = index i8 [projection=field] %t9, 0
+    call void @Member___Member(%t10)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+alias object _ZN4PairD2Ev = @Pair___Pair

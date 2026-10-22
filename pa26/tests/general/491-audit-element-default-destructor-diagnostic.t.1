@@ -1,0 +1,4 @@
+struct Temporary { Temporary(); ~Temporary() noexcept(false); };
+struct Element { Element(Temporary = Temporary()); ~Element(); };
+struct Local { Local(); ~Local(); };
+void f() { Local before; Element values[3]; }

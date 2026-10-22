@@ -650,25 +650,6 @@ impl Function<'_, '_, '_, '_> {
         }
         self.effect(I::Runtime(R::EhEnd))?;
         let reused = self.reused_dropped_chains();
-        // An allocated aggregate's omitted class member has its own value
-        // initialization segment. Its handlers wait for the function's final
-        // placement instead of adding a continuation between member stores.
-        if self.aggregation.call_scope == super::aggregate_cleanup::CallScope::OmittedValue
-            && self
-                .aggregation
-                .floor
-                .and_then(|floor| floor.checked_sub(1))
-                .and_then(|index| self.lifetime.cleanups.get(index))
-                .is_some_and(|cleanup| {
-                    matches!(
-                        cleanup.place,
-                        super::lifetime::CleanupPlace::Deallocation { .. }
-                    )
-                })
-        {
-            self.defer_cleanup_chains();
-            return Ok(());
-        }
         if self.lifetime_has_pending_chains()
             && !reused
             && self.lifetime.landing_placement == super::class_results::LandingPlacement::Immediate

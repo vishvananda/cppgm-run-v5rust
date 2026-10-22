@@ -187,7 +187,9 @@ fn run() -> Result<(), CliError> {
         .map_err(|error| match error {
             AstToolError::Missing(group) => CliError::Missing(group),
             AstToolError::Internal(message) => CliError::Internal(message),
-            AstToolError::Diagnostic(bytes) => CliError::Diagnostic(bytes),
+            AstToolError::Diagnostic(bytes) | AstToolError::NativeDiagnostic(bytes) => {
+                CliError::Diagnostic(bytes)
+            }
             AstToolError::Output(_) => CliError::Output,
             AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {
                 CliError::Missing(group)
@@ -259,7 +261,9 @@ fn tool_error(error: AstToolError) -> CliError {
         | AstToolError::Initialization(PreprocessError::Invariant(message)) => {
             CliError::Internal(message)
         }
-        AstToolError::Diagnostic(bytes) => CliError::Diagnostic(bytes),
+        AstToolError::Diagnostic(bytes) | AstToolError::NativeDiagnostic(bytes) => {
+            CliError::Diagnostic(bytes)
+        }
         AstToolError::Output(_) => CliError::Output,
         AstToolError::Initialization(_) => {
             CliError::Internal("unrendered source initialization error")

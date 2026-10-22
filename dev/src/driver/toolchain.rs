@@ -305,9 +305,19 @@ fn compile(
             ]
             .concat(),
         ),
+        AstToolError::NativeDiagnostic(bytes) => {
+            AstToolError::Diagnostic([input.path.as_os_str().as_bytes(), b": ", &bytes].concat())
+        }
         error => error,
     })?;
-    output.finish_object(input.path.as_os_str().as_bytes().to_vec())
+    output
+        .finish_object(input.path.as_os_str().as_bytes().to_vec())
+        .map_err(|error| match error {
+            AstToolError::NativeDiagnostic(bytes) => AstToolError::Diagnostic(
+                [input.path.as_os_str().as_bytes(), b": ", &bytes].concat(),
+            ),
+            error => error,
+        })
 }
 fn library(invocation: &Invocation, name: &Path) -> Result<PathBuf, AstToolError> {
     for dir in &invocation.libraries {

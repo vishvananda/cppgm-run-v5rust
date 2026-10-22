@@ -872,7 +872,6 @@ impl Function<'_, '_, '_, '_> {
             .iter()
             .any(|cleanup| matches!(cleanup.place, super::lifetime::CleanupPlace::Temporary(_)))
         {
-            self.resume_omitted_cleanup_chains();
             self.aggregation.call_scope = saved_scope;
         }
         if destroyed {
