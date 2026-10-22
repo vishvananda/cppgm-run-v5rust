@@ -600,3 +600,122 @@ pub(super) fn analyze(
     flow.restrict(body, &plan.live)?;
     Ok(plan)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowir::{
+        builder::FunctionBuilder,
+        model::{Boundary, Call, Signature},
+        vocabulary::Type,
+    };
+
+    #[test]
+    fn only_live_predecessors_can_reject_a_jump_into_typed_clauses() -> Result<(), Error> {
+        for live in [false, true] {
+            let mut program = Program::default();
+            let mut builder = FunctionBuilder::new(&mut program, "g", &[], Type::Void)?;
+            builder.block("entry")?;
+            builder.effect(I::Return(Type::Void, None))?;
+            builder.finish()?;
+            let g = program
+                .find_symbol(program.functions()[0].name)
+                .ok_or(Error::Limit)?;
+            let mut builder = FunctionBuilder::new(&mut program, "f", &[], Type::Void)?;
+            let dead = builder.block_id("dead")?;
+            let landing = builder.block_id("landing")?;
+            builder.block("entry")?;
+            let arguments = builder.arguments(&[])?;
+            let call = || Call {
+                result: Type::Void,
+                callee: Value::Symbol(g),
+                arguments,
+                copy_elision: false,
+                signature: None,
+            };
+            builder.effect(I::Runtime(Runtime::EhTry(dead)))?;
+            if live {
+                builder.effect(I::Call(call()))?;
+            }
+            builder.effect(I::Runtime(Runtime::EhEnd))?;
+            builder.effect(I::Runtime(Runtime::EhTry(landing)))?;
+            builder.effect(I::Call(call()))?;
+            builder.effect(I::Runtime(Runtime::EhEnd))?;
+            builder.effect(I::Return(Type::Void, None))?;
+            for block in ["dead", "landing"] {
+                builder.block(block)?;
+                builder.effect(I::Runtime(Runtime::EhCatch(g, Some(1))))?;
+                if block == "dead" {
+                    builder.effect(I::Jump(landing))?;
+                } else {
+                    let _ =
+                        builder.value(I::Runtime(Runtime::Exception(Type::Ptr)), "exception")?;
+                    builder.effect(I::Return(Type::Void, None))?;
+                }
+            }
+            builder.finish()?;
+            let function = &program.functions()[1];
+            let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
+            let body = function.body.as_ref().ok_or(Error::Limit)?;
+            let mut flow = Flow::analyze(body)?;
+            let result = analyze(&program, symbol, body, &mut flow);
+            if live {
+                assert!(matches!(result, Err(Error::Diagnostic(message))
+                    if message == "host EH: a jump into a landing with catch clauses (in @f)"));
+            } else {
+                let plan = result?;
+                assert_eq!(plan.tables.landings.len(), 1);
+                assert!(!flow.reachable[dead.index()]);
+                assert!(flow.predecessors(landing).is_empty());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn filter_selector_maps_truncate_only_after_the_identity_comparison() -> Result<(), Error> {
+        for (selector, mapped, raw) in [
+            (-1, -1, false),
+            (0, 0, true),
+            (0xffff_ffff, -1, true),
+            (i64::MIN, 0, true),
+            (i64::MAX, -1, true),
+        ] {
+            let mut program = Program::default();
+            let mut builder =
+                FunctionBuilder::new(&mut program, "f", &[("g", Type::Ptr)], Type::Void)?;
+            builder.block("entry")?;
+            let landing = builder.block_id("landing")?;
+            builder.effect(I::Runtime(Runtime::EhTry(landing)))?;
+            let signature = builder.program().add_signature(Signature {
+                parameters: Vec::new(),
+                result: Type::Void,
+                boundary: Boundary::default(),
+            })?;
+            let call = Call {
+                result: Type::Void,
+                callee: builder.parameter(0)?,
+                arguments: builder.arguments(&[])?,
+                copy_elision: false,
+                signature: Some(signature),
+            };
+            builder.effect(I::Call(call))?;
+            builder.effect(I::Runtime(Runtime::EhEnd))?;
+            builder.effect(I::Return(Type::Void, None))?;
+            builder.block("landing")?;
+            let types = builder.arguments(&[])?;
+            builder.effect(I::Runtime(Runtime::EhFilter(types, Some(selector))))?;
+            builder.effect(I::Runtime(Runtime::Resume))?;
+            builder.finish()?;
+            let function = &program.functions()[0];
+            let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
+            let body = function.body.as_ref().ok_or(Error::Limit)?;
+            let mut flow = Flow::analyze(body)?;
+            let plan = analyze(&program, symbol, body, &mut flow)?;
+            assert_eq!(plan.tables.map, [(-1, mapped)]);
+            assert_eq!(plan.tables.raw, raw);
+            assert_eq!(plan.tables.specs, [0]);
+        }
+        Ok(())
+    }
+}

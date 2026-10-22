@@ -332,9 +332,13 @@ impl Chains {
                 }
                 _ => continue,
             };
-            let s = i32::try_from(selector(kind)).map_err(|_| Error::Limit)?;
+            let source_selector = selector(kind);
+            // The MIR map carries target int32 bits, but the identity test in
+            // the frozen owner compares against the original int64 selector.
+            let bits = source_selector.to_le_bytes();
+            let s = i32::from_le_bytes([bits[0], bits[1], bits[2], bits[3]]);
             a.plan.tables.map.push((filter, s));
-            translate |= filter != s;
+            translate |= i64::from(filter) != source_selector;
         }
         translate |= a.plan.tables.filters[filters.clone()]
             .iter()
@@ -352,14 +356,17 @@ pub(super) fn build(a: &mut Analysis<'_>) -> Result<(), Error> {
     }
     for &block in &a.body.layout {
         let b = block.index();
-        if a.flow.reachable[b]
+        // C++ rebuilds reachable predecessors after eh_prune, before checking
+        // these edges. The shared Flow is restricted after table construction;
+        // use the final live set here for both endpoints of each edge.
+        if a.plan.live[b] != 0
             && a.landing_nodes[b].is_some()
             && a.plan.entry_selectors[b] == 0
             && a.landing_mask(block) & !1 != 0
             && a.flow
                 .predecessors(block)
                 .iter()
-                .any(|p| a.incoming[p.index()].is_some())
+                .any(|p| a.plan.live[p.index()] != 0 && a.incoming[p.index()].is_some())
         {
             return Err(Error::Diagnostic(
                 "a jump into a landing with catch clauses".into(),

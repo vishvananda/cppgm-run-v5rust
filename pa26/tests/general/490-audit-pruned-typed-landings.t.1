@@ -1,0 +1,18 @@
+int quiet() noexcept { return 3; }
+
+int exercise(int value)
+{
+  try
+  {
+    try { quiet(); }
+    catch (double) { throw; }
+    if (value) throw 7;
+  }
+  catch (int caught) { return caught; }
+  return 3;
+}
+
+int main()
+{
+  return exercise(0) != 3 || exercise(1) != 7;
+}
