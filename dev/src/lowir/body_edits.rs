@@ -111,6 +111,23 @@ fn rewrite_runtime(runtime: &mut RuntimeInstruction, map: &mut impl Remap) -> Re
 }
 
 impl Body {
+    pub(crate) fn update_instruction(
+        &mut self,
+        id: super::InstId,
+        instruction: super::Instruction,
+    ) {
+        self.instructions[id.index()] = instruction;
+    }
+    pub(crate) fn retype_load(&mut self, id: super::InstId, ty: Type) -> Result<(), Error> {
+        let instruction = &mut self.instructions[id.index()];
+        let InstructionKind::Load(_, from, _) = &mut instruction.kind else {
+            return Err(Error::Limit);
+        };
+        *from = ty;
+        let temp = instruction.result.ok_or(Error::Limit)?;
+        self.temps[temp.index()].ty = Some(ty);
+        Ok(())
+    }
     pub(crate) fn rewrite_values(
         &mut self,
         id: super::InstId,

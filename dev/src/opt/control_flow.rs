@@ -85,6 +85,22 @@ impl Cfg {
     pub(super) fn handler(&self, block: BlockId) -> bool {
         self.flags[block.index()] & HANDLER != 0
     }
+    pub(super) fn has_eh(&self, block: BlockId) -> bool {
+        self.flags[block.index()] & EH != 0
+    }
+    pub(super) fn handlers(&self, block: BlockId) -> &[BlockId] {
+        self.handlers.at(block)
+    }
+    pub(super) fn dominator(&self, block: BlockId) -> Option<BlockId> {
+        self.idom[block.index()]
+    }
+    pub(super) fn children(&self, block: BlockId) -> &[BlockId] {
+        self.children.at(block)
+    }
+    pub(super) fn dominates(&self, a: BlockId, b: BlockId) -> bool {
+        self.dom_in[a.index()] <= self.dom_in[b.index()]
+            && self.dom_out[b.index()] <= self.dom_out[a.index()]
+    }
     /// Removing unreachable blocks retains all existing dominance facts.
     pub(super) fn drop_blocks(&mut self, dead: &[bool], layout: &[BlockId]) -> Result<(), Error> {
         if dead.len() != self.flags.len() {

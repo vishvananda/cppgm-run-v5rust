@@ -97,6 +97,35 @@ macro_rules! vocabulary {
 vocabulary!(Unary { Neg => "neg", Not => "not", BitNot => "bitnot", ByteSwap => "bswap", Ctz => "ctz", Clz => "clz" });
 vocabulary!(Binary { Add => "add", Sub => "sub", Mul => "mul", Div => "div", Mod => "mod", UDiv => "udiv", UMod => "umod", And => "and", Or => "or", Xor => "xor", Shl => "shl", Shr => "shr", UShr => "ushr" });
 vocabulary!(Compare { Eq => "eq", Ne => "ne", Lt => "lt", Le => "le", Gt => "gt", Ge => "ge", Ult => "ult", Ule => "ule", Ugt => "ugt", Uge => "uge" });
+impl Compare {
+    pub(crate) fn swapped(self) -> Self {
+        match self {
+            Self::Eq | Self::Ne => self,
+            Self::Lt => Self::Gt,
+            Self::Le => Self::Ge,
+            Self::Gt => Self::Lt,
+            Self::Ge => Self::Le,
+            Self::Ult => Self::Ugt,
+            Self::Ule => Self::Uge,
+            Self::Ugt => Self::Ult,
+            Self::Uge => Self::Ule,
+        }
+    }
+    pub(crate) fn inverted(self) -> Self {
+        match self {
+            Self::Eq => Self::Ne,
+            Self::Ne => Self::Eq,
+            Self::Lt => Self::Ge,
+            Self::Le => Self::Gt,
+            Self::Gt => Self::Le,
+            Self::Ge => Self::Lt,
+            Self::Ult => Self::Uge,
+            Self::Ule => Self::Ugt,
+            Self::Ugt => Self::Ule,
+            Self::Uge => Self::Ult,
+        }
+    }
+}
 vocabulary!(Convert { SignExtend => "sext", ZeroExtend => "zext", Truncate => "trunc", SignedToFloat => "sitofp", UnsignedToFloat => "uitofp", FloatToSigned => "fptosi", FloatToUnsigned => "fptoui", FloatExtend => "fpext", FloatTruncate => "fptrunc" });
 vocabulary!(Role {
     Entry => "entry", Init => "init", Fini => "fini",

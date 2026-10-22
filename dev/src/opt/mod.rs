@@ -1,16 +1,21 @@
 //! Typed unit optimization, translated from opt/optimizer.cpp. See NOTICE.
+mod algebra;
 mod control_flow;
 mod dead_code;
 mod definition_order;
+mod diamond_reuse;
 mod exception_regions;
 mod flow_cleanup;
 mod global_contents;
 mod local_pipeline;
+mod memory_calls;
+mod memory_contents;
 mod numeric_fold;
 mod pass_context;
 mod sparse_constants;
 mod storage_arguments;
 mod unit_graph;
+mod value_reuse;
 use crate::lowir::{Error, model::Program};
 
 pub(super) fn pure(kind: &crate::lowir::model::InstructionKind) -> bool {

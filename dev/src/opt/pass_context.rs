@@ -1,7 +1,7 @@
 //! Function-owned pass state and settled versions from `opt/passes.h`. See NOTICE.
 use super::{
     control_flow::Cfg, dead_code, definition_order, exception_regions, flow_cleanup,
-    sparse_constants,
+    sparse_constants, value_reuse,
 };
 use crate::lowir::{
     Error,
@@ -69,6 +69,8 @@ pub(super) struct Context<'a> {
     pub(super) branches_folded: u64,
     pub(super) blocks_removed: u64,
     pub(super) blocks_merged: u64,
+    pub(super) folded: u64,
+    pub(super) reused: u64,
     pub(super) passed: Vec<u32>,
     pub(super) passed_stamp: u32,
     cfg: CachedCfg,
@@ -80,6 +82,8 @@ pub(super) struct Context<'a> {
     running: Option<Pass>,
     block_of: Vec<Option<BlockId>>,
     block_of_key: Option<(u32, usize)>,
+    uses: Vec<u32>,
+    uses_key: Option<(u32, usize)>,
 }
 impl<'a> Context<'a> {
     pub(super) fn new(
@@ -102,6 +106,8 @@ impl<'a> Context<'a> {
             branches_folded: 0,
             blocks_removed: 0,
             blocks_merged: 0,
+            folded: 0,
+            reused: 0,
             passed: Vec::new(),
             passed_stamp: 0,
             cfg: CachedCfg::Empty,
@@ -113,6 +119,8 @@ impl<'a> Context<'a> {
             running: None,
             block_of: Vec::new(),
             block_of_key: None,
+            uses: Vec::new(),
+            uses_key: None,
         }
     }
     pub(super) fn ensure_cfg(&mut self) -> Result<(), Error> {
@@ -178,11 +186,28 @@ impl<'a> Context<'a> {
     pub(super) fn block_map(&self) -> &[Option<BlockId>] {
         &self.block_of
     }
+    pub(super) fn prepare_uses(&mut self, pass: Pass, fresh: bool) -> Result<(), Error> {
+        let share = fresh && self.running == Some(pass);
+        let key = (self.version, self.body.temps().len());
+        if !share || self.uses_key != Some(key) {
+            self.body.recount_uses()?;
+            self.uses = self.body.temps().iter().map(|t| t.uses).collect();
+            self.uses_key = share.then_some(key);
+        }
+        Ok(())
+    }
+    pub(super) fn entry_uses(&self) -> &[u32] {
+        &self.uses
+    }
+    pub(super) fn invalidate_uses(&mut self) {
+        self.uses_key = None;
+    }
     fn dispatch(&mut self, pass: Pass) -> Result<bool, Error> {
         match pass {
             Pass::DeadCode => dead_code::remove(self),
             Pass::StripRegions => exception_regions::strip(self),
             Pass::Constants => sparse_constants::propagate(self),
+            Pass::SimplifyValues => value_reuse::simplify(self),
             Pass::CleanupCfg => flow_cleanup::cleanup(self),
             Pass::PromoteSlots | Pass::ForwardMemory => {
                 self.ensure_cfg()?;
@@ -294,5 +319,42 @@ mod tests {
         assert!(context.cfg().unwrap().successors(entry).is_empty());
         context.ensure_cfg().unwrap();
         assert!(context.cfg().unwrap().successors(entry).is_empty());
+    }
+    #[test]
+    fn an_unreported_edge_substitution_invalidates_the_entry_use_snapshot() {
+        let mut program = crate::lowir::test_program(b"function @f(%v : i64) -> i64 {block ^entry: %c = cmp eq i64 %v, 7 branch %c, ^yes, ^no block ^yes: return i64 %v block ^no: return i64 %v}").unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        assert!(!context.run(Pass::SimplifyValues).unwrap());
+        assert_eq!(context.version, 0);
+        assert_eq!(context.uses_key, None);
+        assert_eq!(context.entry_uses()[0], 3);
+        context.prepare_uses(Pass::ForwardMemory, true).unwrap();
+        assert_eq!(context.entry_uses()[0], 2);
+        assert_eq!(context.uses_key, None);
+    }
+
+    #[test]
+    fn an_entry_use_cache_requires_the_pass_version_and_storage_size() {
+        let mut program = crate::lowir::test_program(
+            b"function @f(%v : i64) -> i64 {block ^entry: return i64 %v}",
+        )
+        .unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        context.running = Some(Pass::SimplifyValues);
+        context.prepare_uses(Pass::SimplifyValues, true).unwrap();
+        assert_eq!(context.uses_key, Some((0, 1)));
+        context.body.generated_temp(Type::I64).unwrap();
+        context.prepare_uses(Pass::SimplifyValues, true).unwrap();
+        assert_eq!(context.uses_key, Some((0, 2)));
+        assert_eq!(context.entry_uses(), [1, 0]);
+        context.version = 1;
+        context.prepare_uses(Pass::SimplifyValues, true).unwrap();
+        assert_eq!(context.uses_key, Some((1, 2)));
+        context.prepare_uses(Pass::ForwardMemory, true).unwrap();
+        assert_eq!(context.uses_key, None);
     }
 }

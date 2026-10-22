@@ -1279,7 +1279,7 @@ impl Arguments {
         &operands[self.first as usize..(self.first + self.count) as usize]
     }
 }
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Facts(u8);
 impl Facts {
     pub(crate) fn arithmetic(nowrap: bool, exact: bool) -> Self {

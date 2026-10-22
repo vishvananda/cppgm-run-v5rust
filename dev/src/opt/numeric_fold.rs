@@ -58,6 +58,20 @@ pub(super) fn normalize(ty: Type, bits: u128) -> u128 {
 pub(super) fn integer(ty: Type, bits: u128) -> Constant {
     Constant::Integer(normalize(ty, bits))
 }
+pub(super) fn integer_bits(ty: Type, value: Constant) -> Option<u128> {
+    if ty.float_rank() != 0 || width(ty) == 0 {
+        return None;
+    }
+    raw(value).map(|bits| normalize(ty, bits))
+}
+pub(super) fn is_integer(ty: Type, value: Constant, expected: i64) -> bool {
+    let bits = u128::from_le_bytes(i128::from(expected).to_le_bytes());
+    integer_bits(ty, value).is_some_and(|actual| actual == normalize(ty, bits))
+}
+pub(super) fn all_ones(ty: Type, value: Constant) -> bool {
+    let width = width(ty);
+    width != 0 && raw(value).is_some_and(|bits| bits & mask(width) == mask(width))
+}
 fn raw(value: Constant) -> Option<u128> {
     if let Constant::Integer(bits) = value {
         Some(bits)
