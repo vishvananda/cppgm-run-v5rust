@@ -502,6 +502,23 @@ impl Program {
     pub(crate) fn publications(&self) -> &[SymbolId] {
         &self.publications
     }
+    pub(crate) fn replace_publications(&mut self, order: Vec<SymbolId>) {
+        self.publications = order;
+    }
+    pub(crate) fn discard_function_definition(&mut self, symbol: SymbolId) -> Result<(), Error> {
+        let body = self.take_body(symbol)?.ok_or(Error::Limit)?;
+        drop(body);
+        if self.completed_definition == Some(symbol) {
+            self.completed_definition = None;
+        }
+        Ok(())
+    }
+    pub(crate) fn drop_aliases_of(&mut self, dropped: &[bool]) {
+        self.aliases.retain(|alias| !dropped[alias.target.index()]);
+        self.alias_names.clear();
+        self.alias_names
+            .extend(self.aliases.iter().map(|alias| alias.object));
+    }
     pub(crate) fn globals(&self) -> &[Global] {
         &self.globals
     }
