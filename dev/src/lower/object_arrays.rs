@@ -52,11 +52,22 @@ impl Function<'_, '_, '_, '_> {
             element = inner;
         }
         let throws = self.default_constructor_throws(constructor)?;
+        let temporaries = self.array_default_temporaries(constructor)?;
+        if temporaries && throws {
+            self.before_lifetime_call(true)?;
+        }
         let destroyed = self.symbols.class_destructor(element)?.is_some();
         if count <= 8 {
-            self.construct_small_array(element, base, count, constructor, throws && destroyed)
+            self.construct_small_array(
+                element,
+                base,
+                count,
+                constructor,
+                temporaries,
+                throws && destroyed,
+            )
         } else {
-            self.construct_array_loop(element, base, count, constructor, throws, destroyed)
+            self.construct_array_loop(element, base, count, constructor, throws, temporaries)
         }
     }
     fn construction_array_base(
@@ -85,6 +96,7 @@ impl Function<'_, '_, '_, '_> {
         storage: ArrayBase,
         count: u64,
         constructor: ConstructorId,
+        temporaries: bool,
         guarded: bool,
     ) -> Result<(), Error> {
         let size = types::layout(self.graph, element)?.0;
@@ -97,9 +109,11 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 None
             };
+            let scope = self.begin_element_temporaries(temporaries, guard.is_none());
             let base = self.construction_array_base(storage, element)?;
             let object = self.element_address(base, index, size, element)?;
             self.call_constructor(constructor, Variant::Complete, object, None)?;
+            self.end_copy_temporaries(scope)?;
             if let Some((dispatch, next)) = guard {
                 self.effect(I::Runtime(R::EhEnd))?;
                 self.jump(next)?;
@@ -129,13 +143,16 @@ impl Function<'_, '_, '_, '_> {
         count: u64,
         constructor: ConstructorId,
         throws: bool,
-        destroyed: bool,
+        temporaries: bool,
     ) -> Result<(), Error> {
+        let destroyed = self.symbols.class_destructor(element)?.is_some();
         let size = types::layout(self.graph, element)?.0;
         let slot = self.generated_slot("constructor_array_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;
-        self.before_lifetime_call(throws)?;
+        if throws && !temporaries {
+            self.before_lifetime_call(true)?;
+        }
         let test = self.new_block("constructor_array_cond")?;
         let body = self.new_block("constructor_array_body")?;
         let end = self.new_block("constructor_array_end")?;
@@ -161,7 +178,9 @@ impl Function<'_, '_, '_, '_> {
             None
         };
         let object = self.dynamic_element(storage, element, current, size, false)?;
+        let scope = self.begin_copy_temporaries(temporaries);
         self.call_constructor(constructor, Variant::Complete, object, None)?;
+        self.end_copy_temporaries(scope)?;
         if cleanup.is_some() {
             self.effect(I::Runtime(R::EhEnd))?;
         }

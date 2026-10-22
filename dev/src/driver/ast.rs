@@ -380,6 +380,54 @@ mod tests {
     }
 
     #[test]
+    fn host_array_default_arguments_keep_one_region_state_on_every_edge() {
+        for count in [3, 9] {
+            let text = format!(
+                "struct P{{P();~P();}};struct Q{{Q(P=P());~Q();}};struct L{{L();~L();}};void f(){{L before;Q a[{count}];}}"
+            );
+            let source = SourceBuffer::new(text.into_bytes()).unwrap();
+            let mut output =
+                LowIrOutput::for_object_model(crate::native::ObjectModel::Host).unwrap();
+            emit_compilation_unit(
+                &source,
+                b"element-regions",
+                &PredefinedValues::default(),
+                &crate::preprocess::options::DriverOptions::default(),
+                &mut output,
+                StackBudget::default(),
+            )
+            .unwrap();
+            assert!(
+                output
+                    .output
+                    .program
+                    .functions()
+                    .iter()
+                    .all(|f| f.body.is_none())
+            );
+            output.finish_object(b"element-regions".to_vec()).unwrap();
+        }
+    }
+
+    #[test]
+    fn host_declared_construction_joins_conditional_and_nested_allocation_regions() {
+        let source = SourceBuffer::new(b"struct L{L(int);~L();};struct U{U();~U();};struct T{T(bool);};int g();int use(U*);void f(int c,int n){L before(0);L x(c?({L p(1);g();}):g());delete new T(use(new U[n])!=0);}".to_vec()).unwrap();
+        let mut output = LowIrOutput::for_object_model(crate::native::ObjectModel::Host).unwrap();
+        emit_compilation_unit(
+            &source,
+            b"construction-joins",
+            &PredefinedValues::default(),
+            &crate::preprocess::options::DriverOptions::default(),
+            &mut output,
+            StackBudget::default(),
+        )
+        .unwrap();
+        output
+            .finish_object(b"construction-joins".to_vec())
+            .unwrap();
+    }
+
+    #[test]
     fn object_stream_releases_bodies_and_retains_forward_call_boundaries() {
         let source =
             SourceBuffer::new(b"int later(int); int main(){return later(7);}".to_vec()).unwrap();

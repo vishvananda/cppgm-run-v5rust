@@ -203,6 +203,8 @@ pub(super) struct Lifetime {
     pub temporary_segment: TemporarySegment,
     pub expression_start: Option<crate::lowir::builder::Position>,
     pub construction: bool,
+    pub construction_flow: super::construction_flow::ConstructionFlow,
+    pub branch_work: Vec<(ast::ExprId, bool)>,
     pub construction_start: Option<(crate::lowir::builder::Position, usize)>,
     pub region: bool,
     pub flow_region: FlowRegion,

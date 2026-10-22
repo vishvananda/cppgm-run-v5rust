@@ -155,7 +155,10 @@ impl Function<'_, '_, '_, '_> {
         }
         self.place(after)
     }
-    fn array_default_temporaries(&mut self, constructor: ConstructorId) -> Result<bool, Error> {
+    pub(super) fn array_default_temporaries(
+        &mut self,
+        constructor: ConstructorId,
+    ) -> Result<bool, Error> {
         let Some(entity) = self.graph.lower_constructor_entity(constructor) else {
             return Ok(false);
         };

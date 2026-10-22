@@ -530,6 +530,8 @@ impl Function<'_, '_, '_, '_> {
         {
             self.builder.insert_marker(position, R::EhTry(entry))?;
         } else if self.lifetime.construction
+            && self.lifetime.construction_flow
+                != super::construction_flow::ConstructionFlow::Branched
             && !self.lifetime.full_expression
             && let Some((position, depth)) = self.lifetime.construction_start
             && !self.builder.same_block(position)

@@ -67,6 +67,24 @@ impl Function<'_, '_, '_, '_> {
         }
         self.aggregate_array(ty, object, values)
     }
+    /// Allocated nonempty lists use structured actions directly: the new-expression
+    /// already owns the storage/member cleanup chain and its initial region.
+    pub(super) fn allocated_aggregate(
+        &mut self,
+        ty: TypeId,
+        object: Value,
+        values: &[ast::ExprId],
+    ) -> Result<(), Error> {
+        if self.prvalue_helper(ty, object, values)? {
+            return Ok(());
+        }
+        let mut path = Path {
+            root: Root::Address(object),
+            steps: Vec::new(),
+            volatile: self.graph.lower_cv(ty) & 2 != 0,
+        };
+        self.named_contents(ty, &mut Input { values, next: 0 }, &mut path, false)
+    }
     pub(super) fn constructor_aggregate_base(
         &mut self,
         ty: TypeId,

@@ -563,7 +563,9 @@ impl Function<'_, '_, '_, '_> {
             self.pause_call_region()?;
         }
         if kind.terminator()
-            && self.lifetime.full_expression
+            && (self.lifetime.full_expression
+                || self.lifetime.construction_flow
+                    == super::construction_flow::ConstructionFlow::Branched)
             && self.lifetime.flow_region == super::lifetime::FlowRegion::Local
             && self.handlers.explicit == 0
         {
@@ -748,6 +750,14 @@ impl Function<'_, '_, '_, '_> {
         };
         let began = self.begin_local_initializer(entity, initializer, object, temporaries)?;
         let construction = self.lifetime.construction;
+        let construction_flow = self.lifetime.construction_flow;
+        let construction_start = self.lifetime.construction_start;
+        if object && !began && !self.lifetime.full_expression {
+            self.lifetime.construction_flow = self.initializer_branches(initializer)?;
+            self.ensure_insertion()?;
+            self.lifetime.construction_start =
+                Some((self.builder.position()?, self.lifetime.cleanups.len()));
+        }
         self.lifetime.construction |= object;
         let saved_owner = self.reference_lifetimes.aggregate;
         if object && self.graph.lower_automatic(entity) {
@@ -790,6 +800,8 @@ impl Function<'_, '_, '_, '_> {
             self.close_lifetime_region()?;
         }
         self.lifetime.construction = construction;
+        self.lifetime.construction_flow = construction_flow;
+        self.lifetime.construction_start = construction_start;
         self.end_lifetime_expression(began)?;
         self.lifetime.full_expression = expression;
         if reachable && self.graph.lower_is_variable(entity) && self.graph.lower_automatic(entity) {

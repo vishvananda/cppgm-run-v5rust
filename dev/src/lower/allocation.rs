@@ -137,6 +137,10 @@ impl Function<'_, '_, '_, '_> {
         let callee = self.symbols.callee(function, &mut self.builder)?;
         // The frozen delete expression emits this call directly: unlike its
         // destructor it does not begin/end a lifetime call around deallocation.
+        let transient = throws
+            && !self.lifetime.full_expression
+            && !self.lifetime.construction
+            && !self.lifetime.region;
         self.before_lifetime_call(throws)?;
         let call = I::Call(Call {
             result: Type::Void,
@@ -146,7 +150,7 @@ impl Function<'_, '_, '_, '_> {
             copy_elision: false,
         });
         self.lifetime_result(call, result)?;
-        if !self.lifetime.full_expression && !self.lifetime.construction {
+        if transient {
             self.close_lifetime_region()?;
         }
         Ok(())
@@ -266,9 +270,30 @@ impl Function<'_, '_, '_, '_> {
             };
             self.register_storage_cleanup(use_.target, object.value, deallocator, placement)?;
         }
+        let saved_floor = self.aggregation.floor;
+        let saved_regions = self.aggregation.regions;
+        let saved_count = if deallocator.is_some() {
+            let count = self.aggregation.count.take();
+            self.aggregation.floor = if use_.constructor.is_none()
+                && matches!(self.graph.lower_type(use_.target)?, TypeView::Class(class) if self.graph.lower_aggregate_class(class))
+            {
+                Some(self.lifetime.cleanups.len())
+            } else {
+                None
+            };
+            self.aggregation.regions = super::aggregate_cleanup::MemberRegions::Absent;
+            count
+        } else {
+            None
+        };
         let saved = self.reference_lifetimes.aggregate.take();
         let initialized = self.initialize_allocation(&use_, object.value, initializer);
         self.reference_lifetimes.aggregate = saved;
+        self.aggregation.floor = saved_floor;
+        self.aggregation.regions = saved_regions;
+        if deallocator.is_some() {
+            self.aggregation.count = saved_count;
+        }
         initialized?;
         if deallocator.is_some() {
             self.close_lifetime_region()?;
@@ -326,7 +351,7 @@ impl Function<'_, '_, '_, '_> {
                         self.zero_class_object(use_.target, object, None)
                     };
                 }
-                return self.aggregate_prvalue(
+                return self.allocated_aggregate(
                     use_.target,
                     object,
                     self.tree.expr_lists.get(elements),

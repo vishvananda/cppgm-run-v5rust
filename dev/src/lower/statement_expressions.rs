@@ -104,6 +104,7 @@ struct ExpressionScope {
     temporary_segment: super::lifetime::TemporarySegment,
     expression_start: Option<crate::lowir::builder::Position>,
     construction: bool,
+    construction_flow: super::construction_flow::ConstructionFlow,
     construction_start: Option<(crate::lowir::builder::Position, usize)>,
     flow_region: super::lifetime::FlowRegion,
     region_start: super::lifetime::RegionStart,
@@ -133,6 +134,7 @@ impl ExpressionScope {
             temporary_segment: std::mem::take(&mut f.lifetime.temporary_segment),
             expression_start: std::mem::take(&mut f.lifetime.expression_start),
             construction: std::mem::take(&mut f.lifetime.construction),
+            construction_flow: std::mem::take(&mut f.lifetime.construction_flow),
             construction_start: std::mem::take(&mut f.lifetime.construction_start),
             flow_region: std::mem::take(&mut f.lifetime.flow_region),
             region_start: std::mem::take(&mut f.lifetime.region_start),
@@ -174,6 +176,10 @@ impl ExpressionScope {
         );
         std::mem::swap(&mut f.lifetime.expression_start, &mut self.expression_start);
         std::mem::swap(&mut f.lifetime.construction, &mut self.construction);
+        std::mem::swap(
+            &mut f.lifetime.construction_flow,
+            &mut self.construction_flow,
+        );
         std::mem::swap(
             &mut f.lifetime.construction_start,
             &mut self.construction_start,

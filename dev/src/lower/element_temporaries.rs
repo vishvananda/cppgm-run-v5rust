@@ -54,6 +54,7 @@ pub(super) struct Scope {
 struct Evaluation {
     full_expression: bool,
     construction: bool,
+    construction_flow: super::construction_flow::ConstructionFlow,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn note_element_marker(&mut self) -> Result<(), Error> {
@@ -132,6 +133,7 @@ impl Function<'_, '_, '_, '_> {
             evaluation: Evaluation {
                 full_expression: self.lifetime.full_expression,
                 construction: self.lifetime.construction,
+                construction_flow: self.lifetime.construction_flow,
             },
             segment: self.lifetime.temporary_segment,
             region: self.lifetime.region,
@@ -145,6 +147,7 @@ impl Function<'_, '_, '_, '_> {
         };
         self.lifetime.full_expression = false;
         self.lifetime.construction = false;
+        self.lifetime.construction_flow = super::construction_flow::ConstructionFlow::Linear;
         self.lifetime.temporary_segment = TemporarySegment::Empty;
         self.lifetime.region = false;
         self.lifetime.flow_region = super::lifetime::FlowRegion::Local;
@@ -222,6 +225,7 @@ impl Function<'_, '_, '_, '_> {
         self.handlers.explicit -= 1;
         self.lifetime.full_expression = scope.evaluation.full_expression;
         self.lifetime.construction = scope.evaluation.construction;
+        self.lifetime.construction_flow = scope.evaluation.construction_flow;
         self.lifetime.temporary_segment = scope.segment;
         self.lifetime.region = scope.region;
         self.lifetime.flow_region = scope.flow_region;
