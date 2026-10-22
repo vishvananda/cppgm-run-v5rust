@@ -402,6 +402,7 @@ impl Selection<'_> {
                 variadic: plan.variadic,
                 no_unwind: plan.no_unwind,
                 no_return: plan.no_return,
+                landing: None,
             }),
             location: self.location,
         });

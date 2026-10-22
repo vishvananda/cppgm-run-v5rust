@@ -140,6 +140,41 @@ impl Flow {
     pub(super) fn successors(&self, block: BlockId) -> &[BlockId] {
         &self.successors[self.succ_first[block.index()]..self.succ_first[block.index() + 1]]
     }
+    pub(super) fn restrict(&mut self, body: &Body, live: &[u8]) -> Result<(), Error> {
+        for (reachable, &live) in self.reachable.iter_mut().zip(live) {
+            *reachable &= live != 0;
+        }
+        self.pred_first.fill(0);
+        for &block in &body.layout {
+            if self.reachable[block.index()] {
+                for index in self.succ_first[block.index()]..self.succ_first[block.index() + 1] {
+                    self.pred_first[self.successors[index].index() + 1] += 1;
+                }
+            }
+        }
+        for index in 0..body.blocks().len() {
+            self.pred_first[index + 1] += self.pred_first[index];
+        }
+        self.predecessors
+            .resize(self.pred_first[body.blocks().len()], body.layout[0]);
+        let mut fill = self.pred_first[..body.blocks().len()].to_vec();
+        let mut linear = 0_usize;
+        for &block in &body.layout {
+            self.linear[block.index()] = linear;
+            if !self.reachable[block.index()] {
+                continue;
+            }
+            linear = linear
+                .checked_add(self.ranges[block.index()].len() + 2)
+                .ok_or(Error::Limit)?;
+            for index in self.succ_first[block.index()]..self.succ_first[block.index() + 1] {
+                let to = self.successors[index];
+                self.predecessors[fill[to.index()]] = block;
+                fill[to.index()] += 1;
+            }
+        }
+        Ok(())
+    }
     pub(super) fn predecessors(&self, block: BlockId) -> &[BlockId] {
         &self.predecessors[self.pred_first[block.index()]..self.pred_first[block.index() + 1]]
     }

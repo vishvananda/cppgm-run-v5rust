@@ -19,6 +19,7 @@ pub(super) struct CallSite {
     pub(super) variadic: bool,
     pub(super) no_unwind: bool,
     pub(super) no_return: bool,
+    pub(super) landing: Option<super::region_flow::LandingId>,
 }
 impl CallSite {
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
@@ -112,6 +113,7 @@ pub(super) enum Op {
     Floating(super::floating_mir::FloatingOp),
     Convert(super::conversion::Conversion),
     Exception(super::exception::ExceptionOp),
+    HostEh(super::landing_pad::Effect),
     Wide(super::wide_mir::Arithmetic),
     WideCompare(super::wide_compare::Comparison),
     WideMove {
@@ -156,12 +158,14 @@ pub(super) enum BlockName {
 pub(super) struct Block {
     pub(super) name: BlockName,
     pub(super) range: std::ops::Range<usize>,
+    pub(super) landing: bool,
 }
 pub(super) struct Function {
     pub(super) symbol: SymbolId,
     signature: SignatureId,
     pub(super) optimized: bool,
     pub(super) object_model: super::object_compile::ObjectModel,
+    pub(super) eh: super::region_flow::Tables,
     pub(super) frame_pinned: bool,
     pub(super) ordered_frames: usize,
     pub(super) removed_instructions: usize,
@@ -203,6 +207,7 @@ impl Function {
             signature,
             optimized: false,
             object_model: super::object_compile::ObjectModel::Course,
+            eh: super::region_flow::Tables::default(),
             frame_pinned: false,
             ordered_frames: 0,
             removed_instructions: 0,
@@ -210,6 +215,7 @@ impl Function {
             blocks: vec![Block {
                 name: BlockName::Named(block),
                 range: 0..0,
+                landing: false,
             }],
             layout,
             instructions: Vec::new(),
@@ -340,6 +346,7 @@ impl Function {
         self.blocks.push(Block {
             name,
             range: at..at,
+            landing: false,
         });
         Ok(id)
     }
@@ -412,6 +419,16 @@ impl Function {
             Op::Exception(op) => {
                 op.write(program, out, |target, out| self.label(program, target, out))?;
             }
+            Op::HostEh(op) => write!(
+                out,
+                "    {}",
+                match op {
+                    super::landing_pad::Effect::Landing { .. } => "landing",
+                    super::landing_pad::Effect::Select(_) => "eh_select",
+                    super::landing_pad::Effect::CatchAll(_) => "catch_all",
+                    super::landing_pad::Effect::Resume => "resume",
+                }
+            )?,
             Op::Atomic(op) => op.write(program, out)?,
             Op::Wide(op) => op.write(program, out)?,
             Op::WideCompare(op) => {
@@ -498,6 +515,7 @@ mod tests {
                 variadic: false,
                 no_unwind: false,
                 no_return: false,
+                landing: None,
             };
             let mut text = Vec::new();
             site.write(&program, &mut text).map_err(Error::Output)?;

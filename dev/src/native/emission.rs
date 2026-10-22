@@ -66,6 +66,7 @@ impl Order {
         let jump = |block: usize| {
             let range = &function.blocks[block].range;
             if block != 0
+                && !function.blocks[block].landing
                 && range.len() == 1
                 && let Op::Jump(target) = function.instructions[range.start].op
             {
@@ -122,6 +123,7 @@ struct Pass<'a> {
     assembler: Assembler,
     labels: Vec<Label>,
     epilogue: Label,
+    terminal: Option<Label>,
     branches: Vec<Branch>,
     short: &'a [bool],
     flags: Vec<bool>,
@@ -144,6 +146,15 @@ impl<'a> Pass<'a> {
             labels.push(assembler.label()?);
         }
         let epilogue = assembler.label()?;
+        let terminal = if function
+            .instructions
+            .iter()
+            .any(|i| matches!(i.op, Op::HostEh(super::landing_pad::Effect::Resume)))
+        {
+            Some(assembler.label()?)
+        } else {
+            None
+        };
         for (block, &target) in order.targets.iter().enumerate() {
             labels[block] = labels[target];
         }
@@ -153,6 +164,7 @@ impl<'a> Pass<'a> {
             assembler,
             labels,
             epilogue,
+            terminal,
             branches: Vec::new(),
             short,
             flags: super::condition_mir::flags_after(&function.instructions),
@@ -276,6 +288,35 @@ impl<'a> Pass<'a> {
         self.frame.leave_end = self.assembler.position()?;
         self.assembler.ret();
         self.frame.ret_end = self.assembler.position()?;
+        if let Some(terminal) = self.terminal {
+            self.assembler.bind(terminal);
+            self.assembler
+                .load(R::RDI, Rm::mem(R::RBP, f.eh.slot), 8, false)?;
+            let begin = self.assembler.position()?;
+            self.assembler
+                .call_symbol(self.runtime.ok_or(Error::Limit)?.unwind_resume)?;
+            self.frame.calls.push(super::host_unwind::Call {
+                begin,
+                end: self.assembler.position()?,
+                landing: None,
+                args: 0,
+            });
+        }
+        if self.record_frame {
+            self.frame.size = self.assembler.position()?;
+            for landing in &f.eh.landings {
+                self.frame.pads.push(if let Some(pad) = landing.pad {
+                    u32::try_from(
+                        self.assembler
+                            .label_position(self.labels[pad.index()])
+                            .ok_or(Error::Limit)?,
+                    )
+                    .map_err(|_| Error::Limit)?
+                } else {
+                    0
+                });
+            }
+        }
         Ok(())
     }
     fn instruction(
@@ -287,6 +328,10 @@ impl<'a> Pass<'a> {
     ) -> Result<(), Error> {
         let f = self.function;
         match op {
+            Op::HostEh(super::landing_pad::Effect::Resume) => {
+                self.branch(None, self.terminal.ok_or(Error::Limit)?);
+            }
+            Op::HostEh(effect) => effect.emit(&mut self.assembler, &f.eh)?,
             Op::Exception(op) => op.rebase(f.aligned_disp, f.aligned_bytes).emit(
                 &mut self.assembler,
                 self.runtime.ok_or(Error::Limit)?,
@@ -310,7 +355,18 @@ impl<'a> Pass<'a> {
                     self.branch(None, self.epilogue);
                 }
             }
-            Op::Call(site) => site.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
+            Op::Call(site) => {
+                let begin = self.assembler.position()?;
+                site.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?;
+                if self.record_frame && (site.landing.is_some() || !site.no_unwind) {
+                    self.frame.calls.push(super::host_unwind::Call {
+                        begin,
+                        end: self.assembler.position()?,
+                        landing: site.landing,
+                        args: site.stack.wrapping_add(15) & !15,
+                    });
+                }
+            }
             Op::VaStart(op) => op.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
             Op::VaArg(op) => op.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
             Op::StackAlloc(op) => op.emit(&mut self.assembler)?,

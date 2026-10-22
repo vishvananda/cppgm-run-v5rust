@@ -27,6 +27,7 @@ enum Identity {
     Normalized(TempId),
 }
 pub(super) struct Facts {
+    host: bool,
     pub(super) level: u8,
     pub(super) fits: Vec<u32>,
     pub(super) flow: super::control_flow::Flow,
@@ -100,6 +101,21 @@ impl Facts {
         flow: super::control_flow::Flow,
         level: u8,
     ) -> Result<Self, Error> {
+        Self::analyze_for_object(
+            body,
+            slots,
+            flow,
+            level,
+            super::object_compile::ObjectModel::Course,
+        )
+    }
+    pub(super) fn analyze_for_object(
+        body: &Body,
+        slots: &[Slot],
+        flow: super::control_flow::Flow,
+        level: u8,
+        model: super::object_compile::ObjectModel,
+    ) -> Result<Self, Error> {
         let ids = flow.instructions.clone();
         let mut definitions = vec![None; body.temps().len()];
         for (pos, &id) in ids.iter().enumerate() {
@@ -109,6 +125,7 @@ impl Facts {
         }
         let mut facts = Self {
             global: vec![false; body.temps().len()],
+            host: model == super::object_compile::ObjectModel::Host,
             definitions,
             clobbers: vec![(0, 0); ids.len()],
             level,
@@ -601,15 +618,13 @@ impl Facts {
                 fixed
             };
             let call = calls.and_then(|c| c.at(pos));
-            let runtime_call = matches!(
-                inst.kind,
-                I::Runtime(
-                    Runtime::Throw(..)
-                        | Runtime::Resume
-                        | Runtime::EhCatch(..)
-                        | Runtime::EhCatchAll(_)
-                )
-            );
+            let runtime_call =
+                matches!(inst.kind, I::Runtime(Runtime::Throw(..) | Runtime::Resume))
+                    || !self.host
+                        && matches!(
+                            inst.kind,
+                            I::Runtime(Runtime::EhCatch(..) | Runtime::EhCatchAll(_))
+                        );
             let runtime_call = runtime_call
                 || matches!(
                     inst.kind,

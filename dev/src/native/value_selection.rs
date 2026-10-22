@@ -131,6 +131,10 @@ pub(super) fn select(
         super::object_compile::ObjectModel::Course,
     )
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "cohesive per-function selection driver and typed instruction dispatch; audited below 360 lines"
+)]
 pub(super) fn select_for_object(
     program: &Program,
     symbol: SymbolId,
@@ -141,7 +145,16 @@ pub(super) fn select_for_object(
     let body = function.body.as_ref().ok_or(Error::Limit)?;
     let signature = program.signature(function.signature);
     let layout = abi::Layout::classify(signature)?;
-    let flow = super::control_flow::Flow::analyze(body)?;
+    let mut flow = super::control_flow::Flow::analyze(body)?;
+    let mut region_flow = if model == super::object_compile::ObjectModel::Host
+        && super::region_flow::needed(body, &flow)
+    {
+        Some(super::region_flow::analyze(
+            program, symbol, body, &mut flow,
+        )?)
+    } else {
+        None
+    };
     // Optimized function-level allocation and branch layout have separate
     // owners. Until translated, do not substitute the O0 hull policy.
     if level >= 1
@@ -159,7 +172,11 @@ pub(super) fn select_for_object(
         return Err(unsupported());
     }
     let slots = slot_analysis::analyze(body, &flow)?;
-    let mut facts = Facts::analyze(body, &slots, flow, level)?;
+    let mut facts = if model == super::object_compile::ObjectModel::Course {
+        Facts::analyze(body, &slots, flow, level)?
+    } else {
+        Facts::analyze_for_object(body, &slots, flow, level, model)?
+    };
     let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
     let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
     facts.apply_calls(body, &calls)?;
@@ -189,15 +206,25 @@ pub(super) fn select_for_object(
     mir.global_registers = globals.count;
     mir.liveness_steps = globals.steps;
     mir.hull_fallbacks = globals.fallbacks;
-    let mut control = super::control_selection::Control::new(body, &facts)?;
+    let mut control = if let Some(plan) = region_flow.as_mut() {
+        super::control_selection::Control::with_eh(body, &facts, Some(plan))?
+    } else {
+        super::control_selection::Control::new(body, &facts)?
+    };
     mir.edge_blocks = control.edges.len();
-    let placement = Placement::new(
+    let mut placement = Placement::new(
         body,
         &mir.layout,
         globals,
         registers.vector_boundary,
         registers.excluded,
     );
+    if let Some(plan) = &mut region_flow {
+        if !plan.tables.landings.is_empty() {
+            plan.tables.slot = placement.frame_alloc(if plan.tables.raw { 24 } else { 16 }, 8)?;
+        }
+        mir.eh = std::mem::take(&mut plan.tables);
+    }
     let mut selection = Selection {
         phis: super::control_selection::PhiInputs::default(),
         edge_moves: Vec::new(),
@@ -241,6 +268,13 @@ pub(super) fn select_for_object(
         }
         control.prepare(block);
         selection.location = None;
+        if let Some(plan) = &region_flow {
+            selection.host_pad(
+                plan,
+                block,
+                control.targets[block.index()].ok_or(Error::Limit)?,
+            )?;
+        }
         selection
             .placement
             .enter_block(body, &selection.facts, &selection.addresses, block);
@@ -268,7 +302,19 @@ pub(super) fn select_for_object(
             match inst.kind {
                 I::Phi(..) => {}
                 I::Runtime(ref runtime) => {
-                    emit_runtime(&mut selection, inst.result, runtime, &control.targets)?;
+                    if let Some(plan) = &region_flow
+                        && super::landing_pad::runtime(runtime)
+                    {
+                        selection.host_exception(
+                            plan,
+                            id,
+                            inst.result,
+                            runtime,
+                            &control.targets,
+                        )?;
+                    } else {
+                        emit_runtime(&mut selection, inst.result, runtime, &control.targets)?;
+                    }
                 }
                 I::Load(_, Type::I128, address) => {
                     selection.wide_load(inst.result.ok_or(Error::Limit)?, address)?;
@@ -284,14 +330,35 @@ pub(super) fn select_for_object(
                     selection.bulk(bytes, align, None, destination)?;
                 }
                 I::Jump(..) | I::Branch(..) | I::Switch(..) => {
-                    selection.terminator(&control, block, &inst.kind)?;
+                    if let Some(plan) = &region_flow
+                        && let I::Jump(to) = inst.kind
+                    {
+                        if plan.sites[id.index()] == super::region_flow::Site::None {
+                            selection.host_entry_selector(plan.entry_selectors[to.index()]);
+                            selection.terminator(&control, block, &inst.kind)?;
+                        } else {
+                            selection.host_resume(
+                                plan,
+                                plan.sites[id.index()],
+                                &control.targets,
+                            )?;
+                        }
+                    } else {
+                        selection.terminator(&control, block, &inst.kind)?;
+                    }
                 }
-                I::Call(ref call) => selection.call(
-                    program,
-                    inst.result,
-                    call,
-                    calls.at(pos).ok_or(Error::Limit)?,
-                )?,
+                I::Call(ref call) => {
+                    let first = selection.mir.instructions.len();
+                    selection.call(
+                        program,
+                        inst.result,
+                        call,
+                        calls.at(pos).ok_or(Error::Limit)?,
+                    )?;
+                    if let Some(plan) = &region_flow {
+                        super::landing_pad::protect_call(&mut selection.mir, first, plan, id)?;
+                    }
+                }
                 I::Load(_, ty @ Type::Object { .. }, address) => {
                     selection.object_load(inst.result.ok_or(Error::Limit)?, ty, address)?;
                 }

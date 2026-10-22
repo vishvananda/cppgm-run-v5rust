@@ -18,6 +18,8 @@ pub(super) struct Runtime {
 }
 #[derive(Clone, Copy)]
 pub(super) struct Symbols {
+    pub(super) unwind_resume: ImageSymbol,
+    pub(super) personality: ImageSymbol,
     pub(super) top: ImageSymbol,
     pub(super) payload: ImageSymbol,
     pub(super) selector: ImageSymbol,
@@ -30,6 +32,8 @@ pub(super) struct Symbols {
 impl Runtime {
     pub(super) fn symbols(&self) -> Symbols {
         Symbols {
+            unwind_resume: self.dispatch,
+            personality: self.dispatch,
             top: self.top,
             payload: self.payload,
             selector: self.selector,
@@ -250,9 +254,11 @@ impl Symbols {
         for symbol in &mut float_conversion {
             *symbol = image.local()?;
         }
-        let _ = image.local()?;
-        let _ = image.local()?;
+        let unwind_resume = image.local()?;
+        let personality = image.local()?;
         Ok(Self {
+            unwind_resume,
+            personality,
             top,
             payload,
             selector,

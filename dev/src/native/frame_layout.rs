@@ -152,7 +152,7 @@ fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) -> bool {
         },
         Op::VaArg(argument) => argument.map_list(visit),
         Op::Exception(ExceptionOp::Throw(source)) => visit(source, 1),
-        Op::VaStart(_) | Op::Exception(ExceptionOp::Push { .. }) => return false,
+        Op::VaStart(_) | Op::Exception(ExceptionOp::Push { .. }) | Op::HostEh(_) => return false,
         Op::Jump(_)
         | Op::Branch(..)
         | Op::Move(..)

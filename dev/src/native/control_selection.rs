@@ -20,9 +20,17 @@ pub(super) struct Control {
     pub(super) edge_ranges: Vec<std::ops::Range<usize>>,
     cached: Vec<Option<(BlockId, mir::BlockId)>>,
     pub(super) entry_loop: bool,
+    host_selectors: Option<Vec<i64>>,
 }
 impl Control {
     pub(super) fn new(body: &Body, facts: &super::value_facts::Facts) -> Result<Self, Error> {
+        Self::with_eh(body, facts, None)
+    }
+    pub(super) fn with_eh(
+        body: &Body,
+        facts: &super::value_facts::Facts,
+        mut eh: Option<&mut super::region_flow::Plan>,
+    ) -> Result<Self, Error> {
         let entry_loop = !facts.flow.predecessors(body.layout[0]).is_empty();
         let mut next = u32::from(entry_loop);
         let mut out = Self {
@@ -31,23 +39,40 @@ impl Control {
             edge_ranges: vec![0..0; body.blocks().len()],
             cached: vec![None; body.blocks().len()],
             entry_loop,
+            host_selectors: eh.as_ref().map(|plan| plan.entry_selectors.clone()),
         };
         for &block in &body.layout {
             if !facts.flow.reachable[block.index()] {
                 continue;
             }
             out.edge_ranges[block.index()].start = out.edges.len();
+            if let Some(plan) = eh.as_mut()
+                && let Some(index) = plan.indexes[block.index()]
+            {
+                let landing = &mut plan.tables.landings[index.index()];
+                if plan.live[block.index()] == 2 {
+                    landing.pad = Some(mir::BlockId(next));
+                    next = next.checked_add(1).ok_or(Error::Limit)?;
+                }
+                if landing.translate || plan.tables.raw && plan.resumed[block.index()] {
+                    landing.select = Some(mir::BlockId(next));
+                    next = next.checked_add(1).ok_or(Error::Limit)?;
+                }
+            }
             out.targets[block.index()] = Some(mir::BlockId(next));
             next = next.checked_add(1).ok_or(Error::Limit)?;
             if body.block(block).instructions.last().is_some_and(|&id| {
                 matches!(body.instruction(id).kind, I::Branch(..) | I::Switch(..))
             }) {
                 for &target in facts.flow.successors(block) {
-                    if body
-                        .block(target)
-                        .instructions
-                        .first()
-                        .is_some_and(|&id| matches!(body.instruction(id).kind, I::Phi(..)))
+                    if eh
+                        .as_ref()
+                        .is_some_and(|plan| plan.entry_selectors[target.index()] != 0)
+                        || body
+                            .block(target)
+                            .instructions
+                            .first()
+                            .is_some_and(|&id| matches!(body.instruction(id).kind, I::Phi(..)))
                     {
                         out.edges.push((target, mir::BlockId(next)));
                         next = next.checked_add(1).ok_or(Error::Limit)?;
@@ -216,6 +241,9 @@ impl Selection<'_> {
                 return Err(Error::Construction("phi edge block out of order".into()));
             }
             self.phi_transfers(from, to)?;
+            if let Some(plan) = &control.host_selectors {
+                self.host_entry_selector(plan[to.index()]);
+            }
             self.jump(control.targets[to.index()].ok_or(Error::Limit)?);
             self.mir.end_block();
         }

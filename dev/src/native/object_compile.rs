@@ -51,6 +51,8 @@ struct CodeRange {
     base: u64,
     dropped: bool,
     cfi: std::ops::Range<usize>,
+    lsda: std::ops::Range<usize>,
+    types: std::ops::Range<usize>,
 }
 struct Pending {
     section: SectionId,
@@ -58,11 +60,26 @@ struct Pending {
     target: ImageSymbol,
     addend: i64,
 }
+#[derive(Clone, Copy)]
+enum UnwindTarget {
+    Section(SectionId),
+    Cell(usize),
+}
+struct Cell {
+    target: ImageSymbol,
+    offset: u64,
+    symbol: Option<object::SymbolId>,
+}
 pub(crate) struct ObjectBuilder {
     level: u8,
     model: ObjectModel,
     cfi: Vec<u8>,
-    unwind: Vec<(SectionId, u64, SectionId, i64)>,
+    unwind: Vec<(SectionId, u64, UnwindTarget, i64)>,
+    lsda: Vec<u8>,
+    type_fields: Vec<(u32, SymbolId)>,
+    cells: Vec<Cell>,
+    cell_index: HashMap<ImageSymbol, usize>,
+    group_members: Vec<(SymbolId, SectionId)>,
     out: Object,
     image: Image,
     runtime: Symbols,
@@ -128,21 +145,36 @@ pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result
     compiler.place_text(program)?;
     compiler.place_globals(program)?;
     compiler.place_startup(program)?;
-    compiler.place_unwind()?;
+    compiler.place_unwind(program)?;
     compiler.add_symbols(program)?;
     compiler.add_relocations(program)?;
-    compiler.add_unwind_relocations()?;
+    compiler.add_unwind_relocations(program)?;
+    let mut member = 0;
     for index in 0..compiler.grouped.len() {
         let symbol = compiler.grouped[index];
         let signature = compiler.object_symbol(program, ImageSymbol::Program(symbol))?;
         let section = compiler.placements[symbol.index()]
             .section
             .ok_or(Error::Limit)?;
+        let mut sections = vec![section];
+        while let Some(&(owner, section)) = compiler.group_members.get(member) {
+            if owner != symbol {
+                break;
+            }
+            sections.push(section);
+            member += 1;
+        }
         let _ = compiler.out.add_group(Group {
             signature,
-            sections: vec![section],
+            sections,
         })?;
     }
+    if member != compiler.group_members.len() {
+        return Err(Error::Construction(
+            "an LSDA of a function without its group".into(),
+        ));
+    }
+
     Ok(compiler.out)
 }
 impl ObjectBuilder {
@@ -157,6 +189,11 @@ impl ObjectBuilder {
             model,
             cfi: Vec::new(),
             unwind: Vec::new(),
+            lsda: Vec::new(),
+            type_fields: Vec::new(),
+            cells: Vec::new(),
+            cell_index: HashMap::new(),
+            group_members: Vec::new(),
             out: Object::new(Vec::new()),
             image,
             runtime,
@@ -182,32 +219,9 @@ impl ObjectBuilder {
         let function = program
             .function(program.symbol(symbol))
             .ok_or(Error::Limit)?;
-        if self.model == ObjectModel::Host
-            && function.body.as_ref().is_some_and(|body| {
-                body.instructions().iter().any(|i| {
-                    matches!(
-                        i.kind,
-                        crate::lowir::model::InstructionKind::Runtime(
-                            crate::lowir::model::RuntimeInstruction::EhTry(_)
-                                | crate::lowir::model::RuntimeInstruction::EhCleanup(_)
-                                | crate::lowir::model::RuntimeInstruction::EhCatch(..)
-                                | crate::lowir::model::RuntimeInstruction::EhCatchAll(_)
-                                | crate::lowir::model::RuntimeInstruction::EhFilter(..)
-                                | crate::lowir::model::RuntimeInstruction::Resume
-                                | crate::lowir::model::RuntimeInstruction::Throw(..)
-                                | crate::lowir::model::RuntimeInstruction::Exception(_)
-                                | crate::lowir::model::RuntimeInstruction::ExceptionSelector(_)
-                                | crate::lowir::model::RuntimeInstruction::EhEnd
-                        )
-                    )
-                })
-            })
-        {
-            return Err(Error::NotImplemented(
-                "host EH region selection and LSDA tables",
-            ));
-        }
         let mut facts = super::host_unwind::Frame::default();
+        let lsda_start = self.lsda.len();
+        let types_start = self.type_fields.len();
         if !super::jump_thunk::emit(program, symbol, function, &mut self.image)? {
             let mir = super::value_selection::select_for_object(
                 program, symbol, function, level, self.model,
@@ -218,12 +232,18 @@ impl ObjectBuilder {
                 Some(self.runtime),
                 (self.model == ObjectModel::Host).then_some(&mut facts),
             )?;
+            if self.model == ObjectModel::Host {
+                let lsda = super::lsda::encode(&facts, &mir.eh)?;
+                self.lsda.extend(lsda.bytes);
+                self.type_fields.extend(lsda.types);
+            }
         }
         let start = usize::try_from(self.image.definition(ImageSymbol::Program(symbol)).offset)
             .map_err(|_| Error::Limit)?;
         let cfi_start = self.cfi.len();
         if self.model == ObjectModel::Host {
-            self.cfi.extend(facts.encode()?);
+            self.cfi
+                .extend(facts.encode(self.lsda.len() != lsda_start)?);
         }
         self.ranges.push(CodeRange {
             symbol,
@@ -232,6 +252,8 @@ impl ObjectBuilder {
             base: 0,
             dropped: false,
             cfi: cfi_start..self.cfi.len(),
+            lsda: lsda_start..self.lsda.len(),
+            types: types_start..self.type_fields.len(),
         });
         self.order.push(RangeId::new(self.ranges.len() - 1)?);
         Ok(())
@@ -276,6 +298,8 @@ impl ObjectBuilder {
                     base: 0,
                     dropped: false,
                     cfi: 0..0,
+                    lsda: 0..0,
+                    types: 0..0,
                 });
                 self.order.push(RangeId::new(self.ranges.len() - 1)?);
             }
@@ -570,53 +594,173 @@ impl ObjectBuilder {
         }
         Ok(())
     }
-    fn place_unwind(&mut self) -> Result<(), Error> {
+    fn cell(&mut self, target: ImageSymbol) -> Result<usize, Error> {
+        if let Some(&index) = self.cell_index.get(&target) {
+            return Ok(index);
+        }
+        let data = self.shared_section(SectionKind::Data)?;
+        let section = self.out.section_mut(data);
+        section.align = section.align.max(8);
+        let offset = align_up(section.size, 8)?;
+        section.size = offset.checked_add(8).ok_or(Error::Limit)?;
+        resize(&mut section.bytes, section.size, 0)?;
+        self.pending.push(Pending {
+            section: data,
+            offset,
+            target,
+            addend: 0,
+        });
+        let index = self.cells.len();
+        self.cells.push(Cell {
+            target,
+            offset,
+            symbol: None,
+        });
+        self.cell_index.insert(target, index);
+        Ok(index)
+    }
+    fn place_unwind(&mut self, program: &Program) -> Result<(), Error> {
         if self.model != ObjectModel::Host || self.ranges.is_empty() {
             return Ok(());
         }
+        let any_lsda = self.ranges.iter().any(|r| !r.dropped && !r.lsda.is_empty());
+        let plain = self.ranges.iter().any(|r| !r.dropped && r.lsda.is_empty());
+        let personality_cell = if any_lsda {
+            Some(self.cell(self.runtime.personality)?)
+        } else {
+            None
+        };
+        let mut placed_lsda = vec![None; self.ranges.len()];
+        let mut shared = None;
+        let mut name = None;
+        for position in 0..self.order.len() {
+            let index = self.order[position].index();
+            let range = &self.ranges[index];
+            if range.dropped || range.lsda.is_empty() {
+                continue;
+            }
+            let symbol = range.symbol;
+            let lsda = range.lsda.clone();
+            let types = range.types.clone();
+            let name = if let Some(name) = name {
+                name
+            } else {
+                let added = self.out.add_name(b".gcc_except_table")?;
+                name = Some(added);
+                added
+            };
+            let section = if Self::comdat(program, symbol) {
+                let id = self.out.add_named_section(name, SectionKind::Rodata, 4)?;
+                self.group_members.push((symbol, id));
+                id
+            } else if let Some(shared) = shared {
+                shared
+            } else {
+                let id = self.out.add_named_section(name, SectionKind::Rodata, 4)?;
+                shared = Some(id);
+                id
+            };
+            let data = self.out.section_mut(section);
+            let offset = align_up(
+                u64::try_from(data.bytes.len()).map_err(|_| Error::Limit)?,
+                4,
+            )?;
+            resize(&mut data.bytes, offset, 0)?;
+            data.bytes.extend_from_slice(&self.lsda[lsda]);
+            data.size = u64::try_from(data.bytes.len()).map_err(|_| Error::Limit)?;
+            placed_lsda[index] = Some((section, offset));
+            for t in types {
+                let (field, ty) = self.type_fields[t];
+                let cell = self.cell(ImageSymbol::Program(ty))?;
+                self.unwind.push((
+                    section,
+                    offset + u64::from(field),
+                    UnwindTarget::Cell(cell),
+                    0,
+                ));
+            }
+        }
         let frame = self.out.add_section(b".eh_frame", SectionKind::Rodata, 8)?;
         let bytes = &mut self.out.section_mut(frame).bytes;
-        if self.ranges.iter().any(|r| !r.dropped) {
-            super::host_unwind::cie(bytes)?;
+        if plain {
+            let _ = super::host_unwind::cie(bytes, false)?;
         }
-        // The C++ stream delivers held definitions only at release. We encode
-        // them eagerly to release their IR, so their physical range precedes
-        // their publication. Tables follow the same released order as text and
-        // symbols, while their frame spans still identify the original bytes.
+        let personality_cie = u32::try_from(bytes.len()).map_err(|_| Error::Limit)?;
+        if let Some(cell) = personality_cell {
+            let field = super::host_unwind::cie(bytes, true)?.ok_or(Error::Limit)?;
+            self.unwind
+                .push((frame, u64::from(field), UnwindTarget::Cell(cell), 0));
+        }
+        // Follow delivered definition order, retaining only final frame/table spans.
         for &id in &self.order {
             let range = &self.ranges[id.index()];
             if range.dropped {
                 continue;
             }
-            let field = super::host_unwind::fde(
+            let lsda = placed_lsda[id.index()];
+            let (field, lsda_field) = super::host_unwind::fde(
                 bytes,
                 u32::try_from(range.bytes.len()).map_err(|_| Error::Limit)?,
                 &self.cfi[range.cfi.clone()],
+                if lsda.is_some() { personality_cie } else { 0 },
+                lsda.is_some(),
             )?;
             self.unwind.push((
                 frame,
                 u64::from(field),
-                range.section.ok_or(Error::Limit)?,
+                UnwindTarget::Section(range.section.ok_or(Error::Limit)?),
                 i64::try_from(range.base).map_err(|_| Error::Limit)?,
             ));
+            if let Some((section, offset)) = lsda {
+                self.unwind.push((
+                    frame,
+                    u64::from(lsda_field.ok_or(Error::Limit)?),
+                    UnwindTarget::Section(section),
+                    i64::try_from(offset).map_err(|_| Error::Limit)?,
+                ));
+            }
         }
         self.out.section_mut(frame).size = u64::try_from(bytes.len()).map_err(|_| Error::Limit)?;
         self.cfi.clear();
+        self.lsda.clear();
+        self.type_fields.clear();
         Ok(())
     }
-    fn add_unwind_relocations(&mut self) -> Result<(), Error> {
+    fn add_unwind_relocations(&mut self, program: &Program) -> Result<(), Error> {
+        for index in 0..self.cells.len() {
+            let target = self.object_symbol(program, self.cells[index].target)?;
+            // The DW namespace and ref-cell marker form an ABI symbol.
+            let mut name = b"DW.".to_vec();
+            name.extend_from_slice(b"ref.");
+            name.extend_from_slice(self.out.symbol_name(target));
+            let name = self.out.add_name(&name)?;
+            let symbol = self.out.add_symbol(Symbol {
+                name,
+                kind: SymbolKind::Object,
+                definition: Definition::Section(self.shared[2].ok_or(Error::Limit)?),
+                value: self.cells[index].offset,
+                size: 8,
+                ..Symbol::default()
+            })?;
+            self.cells[index].symbol = Some(symbol);
+        }
         let mut symbols = vec![None; self.out.section_count()];
         for &(section, offset, target, addend) in &self.unwind {
-            let symbol = if let Some(symbol) = symbols[target.index()] {
-                symbol
-            } else {
-                let symbol = self.out.add_symbol(Symbol {
-                    kind: SymbolKind::Section,
-                    definition: Definition::Section(target),
-                    ..Symbol::default()
-                })?;
-                symbols[target.index()] = Some(symbol);
-                symbol
+            let symbol = match target {
+                UnwindTarget::Cell(index) => self.cells[index].symbol.ok_or(Error::Limit)?,
+                UnwindTarget::Section(target) => {
+                    if let Some(symbol) = symbols[target.index()] {
+                        symbol
+                    } else {
+                        let symbol = self.out.add_symbol(Symbol {
+                            kind: SymbolKind::Section,
+                            definition: Definition::Section(target),
+                            ..Symbol::default()
+                        })?;
+                        symbols[target.index()] = Some(symbol);
+                        symbol
+                    }
+                }
             };
             self.out.section_mut(section).relocations.push(Relocation {
                 offset,
