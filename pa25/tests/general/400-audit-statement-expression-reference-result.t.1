@@ -1,0 +1,15 @@
+int copies;
+int destroyed;
+struct Value {
+  Value() {}
+  Value(const Value&) { ++copies; }
+  ~Value() { ++destroyed; }
+};
+int main() {
+  {
+    Value original;
+    const Value& result = ({ original; });
+    if (copies != 1 || destroyed != 0) return 1;
+  }
+  return copies == 1 && destroyed == 2 ? 0 : 2;
+}

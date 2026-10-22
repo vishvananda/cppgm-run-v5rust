@@ -328,29 +328,13 @@ impl Analyzer<'_> {
             ExprKind::Call { .. }
                 if self.semantic() && self.graph.expression_facts.get(id).is_ok() =>
             {
-                if self.graph.expression_facts.get(id)?.functional_call {
-                    let ExprKind::Call { arguments, .. } = expr.kind else {
-                        return Err(Error::Invariant("functional call without arguments"));
-                    };
-                    let ty = self.graph.expression_facts.get(id)?.ty;
-                    let values = self.tree.expr_lists.get(arguments);
-                    let values = if let [value] = values
-                        && let ExprKind::Braced { elements, .. } =
-                            self.tree.expressions.get(*value).kind
-                    {
-                        self.tree.expr_lists.get(elements)
-                    } else {
-                        values
-                    };
-                    return self.constant_cast(
-                        ty,
-                        values.first().copied(),
-                        scope,
-                        skipping,
-                        location,
-                    );
-                }
                 return self.constant_call(id, scope, skipping);
+            }
+            ExprKind::Statement(_) if self.semantic() => {
+                return Err(not_constant(
+                    location,
+                    "an expression that is not a constant expression",
+                ));
             }
             _ => {
                 return Err(not_constant(
@@ -531,6 +515,27 @@ impl Analyzer<'_> {
         skipping: bool,
     ) -> Result<Constant, Error> {
         let facts = self.graph.expression_facts.get(id)?;
+        if facts.functional_call {
+            let ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
+                return Err(Error::Invariant("functional call without arguments"));
+            };
+            let ty = facts.ty;
+            let values = self.tree.expr_lists.get(arguments);
+            let values = if let [value] = values
+                && let ExprKind::Braced { elements, .. } = self.tree.expressions.get(*value).kind
+            {
+                self.tree.expr_lists.get(elements)
+            } else {
+                values
+            };
+            return self.constant_cast(
+                ty,
+                values.first().copied(),
+                scope,
+                skipping,
+                self.tree.expressions.get(id).location,
+            );
+        }
         if skipping {
             return Ok(Constant {
                 bits: 0,

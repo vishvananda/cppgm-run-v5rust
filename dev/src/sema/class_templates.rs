@@ -636,6 +636,62 @@ mod tests {
     };
 
     #[test]
+    fn member_default_demands_one_body_in_each_enclosing_argument_frame() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct A{\
+                static constexpr int size(){return sizeof(T);}\
+                static int unused(){return T::missing;}\
+                template<int N=size()>struct Q{char x[N];};typedef Q<> R;};\
+              typedef A<int> Int;typedef A<long> Long;typedef A<int> Again;\
+              static_assert(sizeof(Int::R)==4&&sizeof(Long::R)==8, \"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"audit-default").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::template_bodies::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let size = cursor.intern_name(b"size").unwrap();
+        let unused = cursor.intern_name(b"unused").unwrap();
+        let mut classes = Vec::new();
+        let mut bodies = std::collections::HashSet::new();
+        for name in [b"Int".as_slice(), b"Long", b"Again"] {
+            let name = cursor.intern_name(name).unwrap();
+            let binding = graph
+                .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            let ty = graph.binding(binding).ty.unwrap();
+            let TypeKind::Class(class) = graph.types.get(ty).kind else {
+                panic!("class alias");
+            };
+            let scope = graph.entity(class).scope.unwrap();
+            let function = graph
+                .own(scope, size, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            let function = graph.binding(function).entity;
+            let body = graph.entity(function).analyzed_body.unwrap();
+            assert_eq!(graph.function_templates.bodies.body(function), Some(body));
+            bodies.insert(body);
+            let unused = graph
+                .own(scope, unused, super::super::lookup::Filter::Ordinary)
+                .unwrap();
+            assert!(graph.entity(graph.binding(unused).entity).scope.is_none());
+            classes.push(class);
+        }
+        assert_eq!(classes[0], classes[2]);
+        assert_ne!(classes[0], classes[1]);
+        assert_eq!(bodies.len(), 2);
+    }
+
+    #[test]
     fn enclosing_defaults_keep_dependent_patterns_and_distinct_concrete_shells() {
         let source = SourceBuffer::new(
             b"template<class T>struct A{\

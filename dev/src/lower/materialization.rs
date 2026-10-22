@@ -411,8 +411,7 @@ impl Function<'_, '_, '_, '_> {
         {
             self.open_temporary_region_at(self.lifetime.expression_start)?;
         }
-        let opens =
-            (destructor.is_some()
+        let opens = (destructor.is_some()
                 || !branched
                     && self.lifetime.region_start.is_pending()
                     && self.lifetime.guarded_operands == 0)
@@ -423,7 +422,12 @@ impl Function<'_, '_, '_, '_> {
                 && !self.lifetime.region
                 && !deferred
                 && !tracked_discard
-                && (owner.is_none() || self.operand_temporaries(id)?.made)
+                // A statement block suspends its enclosing construction
+                // region, including an empty region's pending cleanup chain.
+                // Its opaque body cannot supply operand-temporary facts.
+                && (owner.is_none()
+                    || matches!(self.tree.expressions.get(root).kind, ExprKind::Statement(_))
+                    || self.operand_temporaries(id)?.made)
                 && (if branched {
                     self.lifetime.region_start.is_pending()
                         && self.lifetime.guarded_operands == 0

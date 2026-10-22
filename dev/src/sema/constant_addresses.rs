@@ -425,7 +425,7 @@ impl Analyzer<'_> {
                 }
                 _ => return Err(Error::Invariant("pointer call returned no address")),
             },
-            ExprKind::New { .. } => {
+            ExprKind::New { .. } | ExprKind::Statement(_) => {
                 return Err(nonconstant(
                     location,
                     "an expression that is not a constant expression",

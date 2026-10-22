@@ -1,0 +1,2 @@
+constexpr int value() { return ({ int local = 3; local; }); }
+static_assert(value() == 3, "statement expressions cannot be constant expressions");

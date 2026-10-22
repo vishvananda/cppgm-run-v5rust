@@ -55,7 +55,6 @@ struct Context {
     linkage: Option<super::linkage::Specification>,
     suppress_implicit: bool,
     deferred: Vec<DeferredMember>,
-    deferred_constexpr: HashMap<EntityId, super::analyzer::DeferredBody>,
     throws: Vec<super::exceptions::SpecificationId>,
     overrides: Vec<super::virtual_exceptions::PendingOverride>,
 }
@@ -107,10 +106,9 @@ impl Context {
         swap(&mut self.linkage, &mut analyzer.linkage_specification);
         swap(&mut self.suppress_implicit, &mut analyzer.suppress_implicit);
         swap(&mut self.deferred, &mut analyzer.deferred);
-        swap(
-            &mut self.deferred_constexpr,
-            &mut analyzer.deferred_constexpr,
-        );
+        // Definition availability belongs to the declaring class, not to
+        // the current query. A nested default may demand a constexpr member
+        // already declared by the interrupted class instantiation.
         swap(&mut self.throws, &mut analyzer.pending_throws);
         swap(&mut self.overrides, &mut analyzer.exception_overrides);
     }

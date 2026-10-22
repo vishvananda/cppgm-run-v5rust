@@ -1,0 +1,2 @@
+constexpr const int* value() { return ({ const int* local = nullptr; local; }); }
+constexpr const int* pointer = value();

@@ -19,6 +19,12 @@ enum Length {
     Deferred,
 }
 
+#[derive(Clone, Copy)]
+enum Shadow {
+    Hidden,
+    Pack(Length),
+}
+
 #[derive(Default)]
 struct CollectedNames {
     names: Vec<NameId>,
@@ -29,7 +35,8 @@ pub(super) struct Expansion<'a> {
     expander: &'a mut dyn PackExpander,
     collecting: Option<CollectedNames>,
     renames: HashMap<NameId, NameId>,
-    shadows: Vec<(NameId, Option<Length>)>,
+    shadows: HashMap<NameId, Shadow>,
+    shadow_log: Vec<(NameId, Option<Shadow>)>,
     parameter_packs: Vec<(Option<NameId>, usize)>,
 }
 impl<'a> Expansion<'a> {
@@ -38,13 +45,17 @@ impl<'a> Expansion<'a> {
             expander,
             collecting: None,
             renames: HashMap::new(),
-            shadows: Vec::new(),
+            shadows: HashMap::new(),
+            shadow_log: Vec::new(),
             parameter_packs: Vec::new(),
         }
     }
     fn length(&self, name: NameId) -> Option<Length> {
-        if let Some((_, length)) = self.shadows.iter().rev().find(|(id, _)| *id == name) {
-            *length
+        if let Some(shadow) = self.shadows.get(&name) {
+            match shadow {
+                Shadow::Hidden => None,
+                Shadow::Pack(length) => Some(*length),
+            }
         } else if let Some((_, length)) = self
             .parameter_packs
             .iter()
@@ -53,6 +64,21 @@ impl<'a> Expansion<'a> {
             Some(Length::Bound(*length))
         } else {
             self.expander.pack_length(name).map(Length::Bound)
+        }
+    }
+    fn shadow(&mut self, name: NameId, shadow: Shadow) {
+        let previous = self.shadows.insert(name, shadow);
+        self.shadow_log.push((name, previous));
+    }
+    fn restore_shadows(&mut self, mark: usize) {
+        while self.shadow_log.len() > mark {
+            if let Some((name, previous)) = self.shadow_log.pop() {
+                if let Some(previous) = previous {
+                    self.shadows.insert(name, previous);
+                } else {
+                    self.shadows.remove(&name);
+                }
+            }
         }
     }
     fn rename_to(&mut self, names: &[NameId], index: usize) -> Result<(), ParseError> {
@@ -185,7 +211,7 @@ impl Cloner<'_> {
         let Some(state) = self.expansion.as_mut() else {
             return 0;
         };
-        let mark = state.shadows.len();
+        let mark = state.shadow_log.len();
         for parameter in self.tree.template_parameters.get(parameters.parameters) {
             if !parameter.pack {
                 continue;
@@ -197,7 +223,7 @@ impl Cloner<'_> {
                 }
             };
             if let Some(name) = name {
-                state.shadows.push((name, Some(Length::Deferred)));
+                state.shadow(name, Shadow::Pack(Length::Deferred));
             }
         }
         mark
@@ -205,14 +231,14 @@ impl Cloner<'_> {
     pub(super) fn shadow_mark(&self) -> usize {
         self.expansion
             .as_ref()
-            .map_or(0, |state| state.shadows.len())
+            .map_or(0, |state| state.shadow_log.len())
     }
     pub(super) fn shadow_declarator(&mut self, declarator: Option<ast::DeclaratorId>) {
         if let Some(name) = declarator_identifier(self.tree, declarator)
             && let Some(state) = self.expansion.as_mut()
             && matches!(state.length(name), Some(Length::Bound(_)))
         {
-            state.shadows.push((name, None));
+            state.shadow(name, Shadow::Hidden);
         }
     }
     pub(super) fn shadow_declared(&mut self, id: ast::DeclId) {
@@ -225,7 +251,7 @@ impl Cloner<'_> {
     }
     pub(super) fn restore_shadows(&mut self, mark: usize) {
         if let Some(state) = self.expansion.as_mut() {
-            state.shadows.truncate(mark);
+            state.restore_shadows(mark);
         }
     }
     fn copy_pattern(&mut self, pattern: Pattern) -> Result<(), ParseError> {
@@ -264,6 +290,7 @@ impl Cloner<'_> {
             .ok_or(ParseError::Invariant("pack copy without context"))?;
         let saved = state.collecting.replace(CollectedNames::default());
         let renames = std::mem::take(&mut state.renames);
+        let shadows = state.shadow_log.len();
         let mark = self.tree.mark();
         let result = self.copy_pattern(pattern);
         self.tree.rewind(&mark);
@@ -277,6 +304,7 @@ impl Cloner<'_> {
             .ok_or(ParseError::Invariant("pack copy lost collection"))?;
         state.collecting = saved;
         state.renames = renames;
+        state.restore_shadows(shadows);
         result?;
         Ok(names.names)
     }
@@ -597,4 +625,37 @@ fn declarator_identifier(
         declarator = node.nested;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Packs;
+    impl PackExpander for Packs {
+        fn pack_length(&self, _: NameId) -> Option<usize> {
+            Some(3)
+        }
+        fn element_name(&mut self, name: NameId, _: usize) -> Result<NameId, ParseError> {
+            Ok(name)
+        }
+    }
+
+    #[test]
+    fn nested_shadows_restore_deferred_bound_and_absent_entries() {
+        let mut identifiers = crate::lex::identifiers::Identifiers::default();
+        let name = identifiers.intern(b"T").unwrap();
+        let mut packs = Packs;
+        let mut expansion = Expansion::new(&mut packs);
+        assert!(matches!(expansion.length(name), Some(Length::Bound(3))));
+        expansion.shadow(name, Shadow::Pack(Length::Deferred));
+        let mark = expansion.shadow_log.len();
+        expansion.shadow(name, Shadow::Hidden);
+        assert!(expansion.length(name).is_none());
+        expansion.restore_shadows(mark);
+        assert!(matches!(expansion.length(name), Some(Length::Deferred)));
+        expansion.restore_shadows(0);
+        assert!(expansion.shadows.is_empty());
+        assert!(matches!(expansion.length(name), Some(Length::Bound(3))));
+    }
 }
