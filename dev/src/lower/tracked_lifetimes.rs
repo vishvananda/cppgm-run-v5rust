@@ -252,7 +252,11 @@ impl Function<'_, '_, '_, '_> {
                 | ExprKind::Member { base: operand, .. } => work.push(child(operand)),
                 ExprKind::Subscript { base, index } => work.extend([base, index].map(child)),
                 ExprKind::Call { callee, arguments } => {
-                    work.push(child(callee));
+                    // Intrinsics retain an untyped source designation. Its
+                    // operands still participate in guarded lifetime queries.
+                    if !self.graph.expression_is_intrinsic(id)? {
+                        work.push(child(callee));
+                    }
                     work.extend(
                         self.tree
                             .expr_lists

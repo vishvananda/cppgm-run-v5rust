@@ -73,8 +73,8 @@ impl Function<'_, '_, '_, '_> {
         let persistent = persistent || self.persistent_temporary_path(id);
         let ty = self.graph.lower_expression(id)?.ty;
         let root = self.without_parentheses(id);
-        let list = match self.tree.expressions.get(root).kind {
-            ExprKind::Braced { elements, .. } => elements,
+        let (initializer, list) = match self.tree.expressions.get(root).kind {
+            ExprKind::Braced { elements, .. } => (root, elements),
             ExprKind::FunctionalCast {
                 braced: Some(expr), ..
             } => {
@@ -83,7 +83,7 @@ impl Function<'_, '_, '_, '_> {
                         "array temporary without list",
                     )));
                 };
-                elements
+                (expr, elements)
             }
             _ => return Err(Error::Missing("non-list array temporary lowering")),
         };
@@ -99,25 +99,14 @@ impl Function<'_, '_, '_, '_> {
             self.open_temporary_region()?;
         }
         let address = self.emit(I::Addr(slot), ty)?.value;
-        let helper = if let TypeView::Array { element, bound } = self.graph.lower_type(ty)?
-            && let TypeView::Class(class) = self.graph.lower_type(element)?
-            && self.array_helper_eligible(class, bound, self.tree.expr_lists.get(list), None)?
-        {
-            self.aggregate_array_helpers(class, bound, address, self.tree.expr_lists.get(list))?;
-            true
+        let mut element = ty;
+        while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
+            element = inner;
+        }
+        if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
+            self.initialize_temporary_array(ty, address, initializer)?;
         } else {
-            false
-        };
-        if !helper {
-            let mut element = ty;
-            while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
-                element = inner;
-            }
-            if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
-                self.aggregate_array(ty, address, self.tree.expr_lists.get(list))?;
-            } else {
-                self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
-            }
+            self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
         }
         if destructor.is_some() {
             if let Some(owner) = owner {
@@ -128,6 +117,63 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         Ok(address)
+    }
+    fn initialize_temporary_array(
+        &mut self,
+        ty: TypeId,
+        address: Value,
+        initializer: ast::ExprId,
+    ) -> Result<(), Error> {
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(initializer).kind else {
+            return Err(crate::sema::Error::Invariant("array initializer without list").into());
+        };
+        // aggregate_array_object owns a counter before structured_item visits
+        // the whole array. In multiple dimensions that visit is itself a row,
+        // above the individual subarrays' prefixes and below their temporaries.
+        let parent = self.aggregation.count.take();
+        let floor = self.aggregation.floor.take();
+        let regions = self.aggregation.regions;
+        let result = (|| {
+            let counted =
+                if self.counts_aggregate_elements(ty, self.tree.expr_lists.get(elements))? {
+                    Some(self.begin_counted_elements(ty, address)?)
+                } else {
+                    None
+                };
+            if matches!(self.graph.lower_type(ty)?, TypeView::Array { element, .. }
+                if matches!(self.graph.lower_type(element)?, TypeView::Array { .. }))
+                && self.expression_temporaries(initializer)?.made
+                && let Some(count) = self.aggregation.count.as_mut()
+            {
+                count.rows = true;
+            }
+            if let TypeView::Array { element, bound } = self.graph.lower_type(ty)?
+                && let TypeView::Class(class) = self.graph.lower_type(element)?
+                && self.array_helper_eligible(
+                    class,
+                    bound,
+                    self.tree.expr_lists.get(elements),
+                    None,
+                )?
+            {
+                self.aggregate_array_helpers(
+                    class,
+                    bound,
+                    address,
+                    self.tree.expr_lists.get(elements),
+                )?;
+            } else {
+                self.automatic_array_contents(ty, address, initializer)?;
+            }
+            if let Some(scope) = counted {
+                self.end_counted_elements(scope)?;
+            }
+            Ok(())
+        })();
+        self.aggregation.count = parent;
+        self.aggregation.floor = floor;
+        self.aggregation.regions = regions;
+        result
     }
     pub(super) fn literal_array_unit(
         &self,

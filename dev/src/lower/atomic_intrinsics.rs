@@ -211,14 +211,34 @@ impl Function<'_, '_, '_, '_> {
         argument: ast::ExprId,
         through_pointer: bool,
     ) -> Result<RValue, Error> {
-        let value = self.operand(argument, Context::Argument)?;
+        let source = self.graph.lower_expression(argument)?;
         let value = if through_pointer {
+            let value = self.operand(argument, Context::Argument)?;
             self.emit(
                 I::Load(atomic_memory(object.stored), object.stored, value.value),
                 object.source,
             )?
+        } else if let TypeView::Class(class) = self.graph.lower_type(source.ty)? {
+            // Legacy lock_release may read its first trailing operand. The
+            // frozen value_operand materializes a class there, then reads the
+            // object's integer width, without argument destruction ownership.
+            let slot = self.generated_slot("argobj", types::storage(self.graph, source.ty)?)?;
+            let address = self.storage_address(slot, source.ty)?;
+            if source.is_place && self.graph.lower_class_copy(argument)?.is_none() {
+                let from = self.address(argument)?;
+                if !self.graph.lower_class_empty(class)? {
+                    let (size, alignment) = types::layout(self.graph, source.ty)?;
+                    self.effect(I::CopyObject(size, alignment, from, address))?;
+                }
+            } else {
+                self.materialize_class(argument, source.ty, address)?;
+            }
+            self.emit(
+                I::Load(atomic_memory(object.stored), object.stored, slot),
+                object.source,
+            )?
         } else {
-            value
+            self.operand(argument, Context::Argument)?
         };
         if value.ty == Type::Ptr {
             self.emit(I::Copy(object.ty, value.value), object.source)

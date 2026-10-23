@@ -1399,7 +1399,8 @@ mod tests {
             b"int n;int*p;int*q=__atomic_load_n(&p,2);\
             struct S{int x;S(int v):x(v){}~S(){}};\
             int f(){static int x=__atomic_fetch_add(&n,1,5);\
-            S s(__atomic_fetch_xor(&n,2,5));return x+s.x;}"
+            S s(__atomic_fetch_xor(&n,2,5));return x+s.x;}\
+            void release(int*p){__sync_lock_release(p,S(1));}"
                 .to_vec(),
         )
         .unwrap();
@@ -1407,6 +1408,7 @@ mod tests {
             SyntaxUnit::new(Preprocessor::with_name(&source, b"atomic-initializers").unwrap());
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax_count = tree.expressions.mark();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
         let graph = analyzer.analyze(declarations).unwrap();
@@ -1421,6 +1423,7 @@ mod tests {
             StackBudget::default(),
         )
         .unwrap();
+        assert_eq!(tree.expressions.mark(), syntax_count);
         let program = output.finish_program().unwrap();
         assert!(!program.functions().is_empty());
         crate::lowir::validate_test_program(&program).unwrap();

@@ -1,0 +1,11 @@
+int made, destroyed;
+struct Value {
+  int bits;
+  Value() : bits(17) { ++made; }
+  ~Value() { ++destroyed; }
+};
+int main() {
+  int object=0;
+  __sync_lock_release(&object,Value());
+  return object==17 && made==1 && destroyed==0 ? 0 : 1;
+}
