@@ -239,6 +239,7 @@ pub(crate) struct Graph {
     pub(super) hosted: bool,
     pub(super) alias_alignments: super::aligned_aliases::AliasAlignments,
     pub(super) symbol_attributes: super::symbol_attributes::SymbolAttributes,
+    pub(super) abi_tags: super::abi_tags::AbiTags,
     pub(super) closures: Box<super::lambdas::Closures>,
     pub(super) range_loops: Box<super::range_for::RangeLoops>,
     pub(super) virtuals: Box<super::virtual_members::Virtuals>,
@@ -397,6 +398,9 @@ impl Graph {
             }
         }
     }
+    pub(super) fn binding_redeclared(&self, binding: BindingId) -> bool {
+        self.ordinals[binding.0 as usize] != binding.0 as usize
+    }
     pub(super) fn record_special_value(
         &mut self,
         scope: ScopeId,
@@ -440,6 +444,7 @@ impl Graph {
             hosted: false,
             alias_alignments: super::aligned_aliases::AliasAlignments::default(),
             symbol_attributes: super::symbol_attributes::SymbolAttributes::default(),
+            abi_tags: super::abi_tags::AbiTags::default(),
             closures: Box::default(),
             range_loops: Box::default(),
             virtuals: Box::default(),

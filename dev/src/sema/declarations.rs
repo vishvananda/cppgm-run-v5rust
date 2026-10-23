@@ -55,6 +55,33 @@ impl Analyzer<'_> {
         if declarators.is_empty()
             && let TypeKind::Class(class) = self.graph.types.get(specs.ty).kind
         {
+            let tag_location = self
+                .tree
+                .specs
+                .get(specifiers)
+                .iter()
+                .find_map(|specifier| {
+                    if let ast::SpecifierKind::Elaborated { name, .. } = specifier.kind {
+                        Some(self.tree.names.get(name).location)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(location);
+            let redeclared = self
+                .graph
+                .entity(class)
+                .home
+                .zip(self.graph.entity(class).name)
+                .and_then(|(home, name)| self.graph.declared_name(home, name, Filter::Elaborated))
+                .is_some_and(|binding| self.graph.binding_redeclared(binding));
+            self.class_abi_tags(
+                class,
+                declaration.attributes,
+                true,
+                redeclared,
+                tag_location,
+            )?;
             self.class_layout_attributes(class, declaration.attributes, scope, true)?;
         }
         let first_name = self
@@ -127,6 +154,7 @@ impl Analyzer<'_> {
         declarations: List<ast::DeclId>,
         scope: ScopeId,
         location: SourceOffset,
+        attributes: List<ast::Attribute>,
     ) -> Result<(), Error> {
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
             return Err(Error::at(
@@ -169,6 +197,7 @@ impl Analyzer<'_> {
         } else {
             self.new_namespace(name, inline, scope)?
         };
+        self.namespace_abi_tags(target, attributes, name, location)?;
         self.declarations(declarations, target)
     }
     fn new_namespace(
@@ -1683,6 +1712,7 @@ impl Analyzer<'_> {
         let node = *self.tree.classes.get(id);
         let Some(name) = node.name else {
             let entity = self.new_class(node.key, None, scope)?;
+            self.class_abi_tags(entity, node.attributes, false, false, node.location)?;
             self.graph.entity_mut(entity).anonymous_class =
                 Some(super::anonymous_types::AnonymousClass::Pending(node.tokens));
             return self.define_class(node, entity, scope, scope);
@@ -1778,6 +1808,13 @@ impl Analyzer<'_> {
             ));
         }
         self.class_template_head(entity, scope, existing.is_some(), qualified_name.location)?;
+        self.class_abi_tags(
+            entity,
+            node.attributes,
+            false,
+            existing.is_some() || prefix.is_some(),
+            qualified_name.location,
+        )?;
         let print = prefix.unwrap_or(scope);
         let parent = if prefix.is_some() && self.active_template_head(scope).is_some() {
             self.member_lookup_bridge(scope, home)?

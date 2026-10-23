@@ -1,4 +1,5 @@
 //! Typed declaration analysis on the single PA5 syntax tree. See NOTICE.
+mod abi_tags;
 mod address_arguments;
 mod aggregate_initialization;
 mod alias_templates;

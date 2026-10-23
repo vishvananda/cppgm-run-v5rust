@@ -457,7 +457,14 @@ impl<'tree> Analyzer<'tree> {
                 name,
                 inline,
                 declarations,
-            } => self.namespace_definition(name, inline, declarations, scope, location),
+            } => self.namespace_definition(
+                name,
+                inline,
+                declarations,
+                scope,
+                location,
+                declaration.attributes,
+            ),
             ast::DeclKind::NamespaceAlias { name, target } => {
                 self.namespace_alias(name, target, scope, location)
             }

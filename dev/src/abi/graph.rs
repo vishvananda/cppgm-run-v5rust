@@ -114,6 +114,8 @@ pub enum Node {
         parent: Option<NodeId>,
         terminal: NodeId,
         internal: bool,
+        /// Inline namespace tags participate in derivation but are not encoded.
+        hidden_tags: bool,
         /// A closure prefix's initializing member: `<name> M` (5.1.8).
         data_member: bool,
         /// Number of earlier entities with this name directly in the function.
@@ -262,6 +264,7 @@ pub struct Graph {
     items: Vec<NodeId>,
     text: Vec<u8>,
     index: HashMap<u64, NodeId>,
+    pub(super) tags: super::tags::Tags,
 }
 impl Default for Graph {
     fn default() -> Self {
@@ -275,6 +278,7 @@ impl Default for Graph {
             items: Vec::new(),
             text: Vec::new(),
             index: HashMap::new(),
+            tags: super::tags::Tags::default(),
         }
     }
 }
@@ -298,12 +302,14 @@ impl Graph {
             + self.items.capacity() * size_of::<NodeId>()
             + self.text.capacity()
             + self.index.capacity() * size_of::<(u64, NodeId)>()
+            + self.tags.bytes_reserved()
     }
     pub(crate) fn reset(&mut self) {
         self.nodes.truncate(1);
         self.items.clear();
         self.text.clear();
         self.index.clear();
+        self.tags = super::tags::Tags::default();
     }
     pub(crate) fn intern(&mut self, node: Node, items: &[NodeId]) -> Result<NodeId, Error> {
         self.intern_with(node, items, &[])
@@ -355,6 +361,7 @@ impl Graph {
                 parent,
                 terminal,
                 internal: false,
+                hidden_tags: false,
                 data_member: false,
                 occurrence: 0,
             },
@@ -363,7 +370,7 @@ impl Graph {
     }
     fn is_std_name(&self, name: NodeId, spelling: &[u8]) -> bool {
         matches!(self.get(name), Node::Name {
-            parent: Some(parent), terminal, internal: false, data_member: false, occurrence: 0,
+            parent: Some(parent), terminal, internal: false, hidden_tags: false, data_member: false, occurrence: 0,
         } if self.get(parent) == Node::Std
             && self.get(terminal) == Node::Text
             && self.text(terminal) == spelling)

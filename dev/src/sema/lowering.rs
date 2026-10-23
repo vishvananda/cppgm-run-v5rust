@@ -184,6 +184,7 @@ pub(crate) struct Allocation {
     pub array: bool,
 }
 pub(crate) struct FunctionFacts {
+    pub abi_owner: Option<EntityId>,
     pub template_instance: Option<EntityId>,
     pub inherited_constructor: Option<EntityId>,
     pub name: FunctionName,
@@ -561,6 +562,7 @@ impl Graph {
         }
         let class = self.entity(plan.class);
         Ok(FunctionFacts {
+            abi_owner: None,
             template_instance: None,
             inherited_constructor: None,
             name: FunctionName::Constructor(self.lower_class_spelling(plan.class)?),
@@ -761,12 +763,14 @@ impl Graph {
         };
         Some((node.ty.unwrap_or(value.ty), value.bits))
     }
-    pub(crate) fn lower_template_name(&self, ty: TypeId) -> Option<(ScopeId, NameId)> {
+    pub(crate) fn lower_template_name(&self, ty: TypeId) -> Option<(EntityId, ScopeId, NameId)> {
         let TypeKind::Template(entity) = self.types.get(ty).kind else {
             return None;
         };
-        let entity = self.entity(entity);
-        entity.home.zip(entity.name)
+        let node = self.entity(entity);
+        node.home
+            .zip(node.name)
+            .map(|(home, name)| (entity, home, name))
     }
     pub(crate) fn lower_template_id_name(&self, ty: TypeId) -> Option<TemplateIdView<'_>> {
         let TypeKind::Class(entity) = self.types.get(ty).kind else {
@@ -1691,6 +1695,7 @@ impl Graph {
                 self.lower_function_type_qualifiers(ty)
             });
         Ok(FunctionFacts {
+            abi_owner: Some(id),
             template_instance: self.function_templates.primary(id).map(|_| id),
             inherited_constructor: object_mode
                 .then(|| self.inherited_constructors.full_root(id))

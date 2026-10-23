@@ -179,6 +179,7 @@ impl Analyzer<'_> {
                 .entity(entity)
                 .ty
                 .ok_or(Error::Invariant("anonymous enum type"))?;
+            self.class_abi_tags(entity, declaration.attributes, false, false, location)?;
             self.enumerators(entity, enumerators, scope, binding, None)?;
             return Ok(ty);
         };
@@ -276,6 +277,13 @@ impl Analyzer<'_> {
             )?
             .0
         };
+        self.class_abi_tags(
+            entity,
+            declaration.attributes,
+            false,
+            existing.is_some(),
+            location,
+        )?;
         let ty = self
             .graph
             .entity(entity)

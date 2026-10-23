@@ -35,6 +35,7 @@ impl Analyzer<'_> {
         else {
             return Ok(());
         };
+        let declared = binding;
         let binding = self.graph.binding(binding);
         // C++'s explicit variable-template path leaves init.declared null.
         // Rust retains that binding for other facts, but attributes still skip it.
@@ -53,7 +54,7 @@ impl Analyzer<'_> {
             self.apply_symbol_attributes(binding.entity, binding.kind, node.attributes)?;
             part = node.nested;
         }
-        Ok(())
+        self.declarator_abi_tags(declared, declarator, leading)
     }
 
     fn apply_symbol_attributes(

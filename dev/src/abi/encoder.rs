@@ -112,6 +112,15 @@ impl<'a> Encoder<'a> {
         self.put(text);
     }
     fn tags(&mut self, id: NodeId) {
+        if matches!(
+            self.graph.get(id),
+            Node::Name {
+                hidden_tags: true,
+                ..
+            }
+        ) {
+            return;
+        }
         for tag in self.graph.items(id) {
             self.put(b"B");
             self.source_name(*tag);

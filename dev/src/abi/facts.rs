@@ -358,6 +358,7 @@ impl<'a, 'g> CaseReader<'a, 'g> {
                     parent: None,
                     terminal,
                     internal: false,
+                    hidden_tags: false,
                     data_member: false,
                     occurrence: 0,
                 } = self.graph.get(id)

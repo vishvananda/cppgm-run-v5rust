@@ -53,6 +53,7 @@ impl CaseReader<'_, '_> {
                 parent: Some(parent),
                 terminal,
                 internal: false,
+                hidden_tags: false,
                 data_member: false,
                 occurrence,
             },

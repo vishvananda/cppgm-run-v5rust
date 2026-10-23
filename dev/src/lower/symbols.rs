@@ -1,9 +1,13 @@
 // Translated from lower/symbol_lowering.cpp's procedural symbol and ABI construction. See NOTICE.
 use super::Error;
+#[path = "abi_tags.rs"]
+mod abi_tags;
 #[path = "argument_declarations.rs"]
 mod argument_declarations;
 #[path = "call_signatures.rs"]
 mod call_signatures;
+#[path = "callable_encoding.rs"]
+mod callable_encoding;
 #[path = "exception_information.rs"]
 mod exception_information;
 #[path = "inline_definitions.rs"]
@@ -141,6 +145,7 @@ pub(super) struct Symbols<'a, 'source> {
     placeholders: HashMap<(TypeId, bool, u32), Option<NodeId>>,
     unmangled: HashMap<TypeId, bool>,
     scopes: HashMap<(ScopeId, bool, u32), Option<NodeId>>,
+    encodings_underway: Vec<(EntityId, NodeId)>,
     budget: StackBudget,
     stack_base: usize,
     pub pending: super::definition_demands::Demands,
@@ -233,6 +238,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             placeholders: HashMap::new(),
             unmangled: HashMap::new(),
             scopes: HashMap::new(),
+            encodings_underway: Vec::new(),
             budget,
             pending: super::definition_demands::Demands::default(),
             root_arguments: super::definition_demands::RootArguments::new(
@@ -1033,7 +1039,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 Node::RawFunctionScope(self.abi.string(raw.as_bytes())?)
             } else {
                 Node::FunctionScope {
-                    encoding: self.function_encoding(function)?,
+                    encoding: if let Some((_, encoding)) = self
+                        .encodings_underway
+                        .iter()
+                        .rev()
+                        .find(|(owner, _)| *owner == function)
+                    {
+                        *encoding
+                    } else {
+                        self.function_encoding(function)?
+                    },
                     default_argument: 0,
                 }
             };
@@ -1070,6 +1085,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             } else {
                 0
             };
+            let tags = self.graph.lower_namespace_abi_tags(scope);
+            let mut nodes = Vec::with_capacity(tags.len());
+            for tag in tags {
+                nodes.push(self.abi.string(self.cursor.name(*tag))?);
+            }
             Some(
                 self.abi
                     .intern(
@@ -1077,10 +1097,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
                             parent,
                             terminal,
                             internal: false,
+                            hidden_tags: !nodes.is_empty(),
                             data_member: false,
                             occurrence,
                         },
-                        &[],
+                        &nodes,
                     )
                     .map_err(Error::from)?,
             )
@@ -1158,14 +1179,21 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let node = self.abi_type(aliased)?;
             return self.finish_abi_type(ty, node);
         }
-        let node = if let Some((home, name)) = self.graph.lower_template_name(ty) {
-            Node::Name {
-                parent: self.scope(home)?,
-                terminal: self.abi.string(self.cursor.name(name))?,
-                internal: false,
-                data_member: false,
-                occurrence: 0,
-            }
+        let node = if let Some((entity, home, name)) = self.graph.lower_template_name(ty) {
+            let parent = self.scope(home)?;
+            let terminal = self.abi.string(self.cursor.name(name))?;
+            let node = self.tagged_entity_name(
+                Node::Name {
+                    parent,
+                    terminal,
+                    internal: false,
+                    hidden_tags: false,
+                    data_member: false,
+                    occurrence: 0,
+                },
+                Some(entity),
+            )?;
+            return self.finish_abi_type(ty, node);
         } else if let Some(view) = self.graph.lower_template_id_name(ty) {
             let id = self.name_template_id(view)?;
             return self.finish_abi_type(ty, id);
@@ -1219,6 +1247,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 parent: Some(self.abi_type(qualifier)?),
                 terminal: self.abi.string(self.cursor.name(name))?,
                 internal: false,
+                hidden_tags: false,
                 data_member: false,
                 occurrence: 0,
             }
@@ -1328,15 +1357,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     } else {
                         0
                     };
-                    let name = self.abi.intern(
+                    let name = self.tagged_entity_name(
                         Node::Name {
                             parent,
                             terminal,
                             internal: false,
+                            hidden_tags: false,
                             data_member: false,
                             occurrence,
                         },
-                        &[],
+                        Some(self.graph.lower_class_abi_tag_owner(entity)),
                     )?;
                     let id = if let Some(arguments) = self.graph.lower_class_arguments(entity) {
                         let mut nodes = Vec::with_capacity(arguments.len());
@@ -1430,6 +1460,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     parent,
                     terminal: self.abi.string(self.cursor.name(name))?,
                     internal: false,
+                    hidden_tags: false,
                     data_member: true,
                     occurrence: 0,
                 }
@@ -1656,7 +1687,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 && (facts.c_linkage
                     || self.graph.lower_presentation_scope(facts.home).0.is_none()
                         && !facts.internal
-                        && self.graph.lower_variable_arguments(entity).is_none())
+                        && self.graph.lower_variable_arguments(entity).is_none()
+                        && (!self.graph.lower_has_abi_tags()
+                            || named_identity.is_some_and(|name| self.abi.items(name).is_empty())))
             {
                 Some(
                     program
@@ -1835,17 +1868,23 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 "anonymous object without named member",
             ))?;
         let terminal = self.abi.string(self.cursor.name(identifier))?;
-        let mut name = self.abi.intern(
+        if facts.c_linkage {
+            let name = self.abi.name(None, terminal, &[])?;
+            self.variable_names.insert(entity, name);
+            return Ok(name);
+        }
+        let mut name = self.tagged_entity_name(
             Node::Name {
                 parent,
                 terminal,
                 internal: facts.name.is_some()
                     && facts.internal
                     && !self.graph.lower_anonymous_namespace(facts.home),
+                hidden_tags: false,
                 data_member: false,
                 occurrence: 0,
             },
-            &[],
+            Some(self.graph.lower_variable_abi_tag_owner(entity)),
         )?;
         if let Some(arguments) = self.graph.lower_variable_arguments(entity) {
             let mut nodes = Vec::with_capacity(arguments.len());
@@ -1854,6 +1893,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
             name = self.abi.intern(Node::Template(name), &nodes)?;
         }
+        name = self.with_implicit_tags(name, facts.ty)?;
         self.variable_names.insert(entity, name);
         Ok(name)
     }
@@ -1965,16 +2005,18 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .or_default();
         let occurrence = *count;
         *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
-        let name = self.abi.intern(
+        let name = self.tagged_entity_name(
             Node::Name {
                 parent: Some(parent),
                 terminal,
                 internal: false,
+                hidden_tags: false,
                 data_member: false,
                 occurrence,
             },
-            &[],
+            Some(entity),
         )?;
+        let name = self.with_implicit_tags(name, facts.ty)?;
         self.local_static_names.insert(entity, name);
         let mut bytes = Vec::new();
         abi::encoder::Encoder::encode(
@@ -2653,199 +2695,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
             Ok(())
         }
-    }
-    pub(super) fn function_encoding(&mut self, entity: EntityId) -> Result<NodeId, Error> {
-        let facts = self.function_facts(entity)?;
-        self.encode_function(&facts, super::construction::Variant::Complete)
-    }
-    fn encode_function(
-        &mut self,
-        facts: &crate::sema::lowering::FunctionFacts,
-        variant: super::construction::Variant,
-    ) -> Result<NodeId, Error> {
-        let inherited = facts
-            .inherited_constructor
-            .map(|root| self.function_facts(root))
-            .transpose()?;
-        let specialization = inherited.as_ref().unwrap_or(facts);
-        let level = if specialization.template_instance.is_some() {
-            self.graph.lower_instance_levels(specialization.home)?
-        } else {
-            0
-        };
-        let inherited_base = inherited
-            .as_ref()
-            .map(|root| {
-                let class = root.object.ok_or(crate::sema::Error::Invariant(
-                    "inherited constructor root without class",
-                ))?;
-                self.abi_type(self.graph.lower_entity_type(class)?)
-            })
-            .transpose()?;
-        let saved = (self.own_level, self.bound_pattern);
-        self.own_level = level;
-        self.bound_pattern = false;
-        let result = self.encode_function_inner(facts, specialization, inherited_base, variant);
-        (self.own_level, self.bound_pattern) = saved;
-        result
-    }
-
-    fn encode_function_inner(
-        &mut self,
-        facts: &crate::sema::lowering::FunctionFacts,
-        specialization: &crate::sema::lowering::FunctionFacts,
-        inherited_base: Option<NodeId>,
-        variant: super::construction::Variant,
-    ) -> Result<NodeId, Error> {
-        if facts.c_linkage
-            || matches!(facts.name,
-            FunctionName::Identifier(identifier) if self.cursor.name(identifier) == b"main"
-                && self.graph.lower_presentation_scope(facts.home).0.is_none())
-        {
-            let spelling = self.source_function_spelling(facts.name)?;
-            let terminal = self.abi.string(spelling.as_bytes())?;
-            return Ok(self.abi.intern(
-                Node::Name {
-                    parent: None,
-                    terminal,
-                    internal: false,
-                    data_member: false,
-                    occurrence: 0,
-                },
-                &[],
-            )?);
-        }
-        let parent = self.scope(facts.home)?;
-        // The frozen encoder uses the primary's written parameter count for
-        // operator arity, just as it uses that signature for parameter types.
-        // An empty expansion must not turn a binary terminal into a unary one.
-        let template = specialization
-            .template_instance
-            .map(|instance| self.graph.lower_template_signature(instance))
-            .transpose()?;
-        let signature = template.map_or(facts.ty, |(pattern, _)| pattern);
-        let terminal = if matches!(
-            facts.name,
-            FunctionName::Constructor(_) | FunctionName::Destructor(_)
-        ) {
-            self.abi.intern(
-                Node::Terminal {
-                    kind: match (facts.name, variant) {
-                        (FunctionName::Destructor(_), super::construction::Variant::Base) => {
-                            abi::vocabulary::Terminal::DestructorBase
-                        }
-                        (FunctionName::Destructor(_), super::construction::Variant::Deleting) => {
-                            abi::vocabulary::Terminal::DestructorDeleting
-                        }
-                        (FunctionName::Destructor(_), _) => {
-                            abi::vocabulary::Terminal::DestructorComplete
-                        }
-                        (_, super::construction::Variant::Base) => {
-                            abi::vocabulary::Terminal::ConstructorBase
-                        }
-                        _ => abi::vocabulary::Terminal::ConstructorComplete,
-                    },
-                    inherited: inherited_base,
-                },
-                &[],
-            )?
-        } else {
-            let name = if matches!(facts.name, FunctionName::Conversion(_)) {
-                let TypeView::Function { result, .. } = self.graph.lower_type(signature)? else {
-                    return Err(Error::Semantic(crate::sema::Error::Invariant(
-                        "conversion without function type",
-                    )));
-                };
-                FunctionName::Conversion(result)
-            } else {
-                facts.name
-            };
-            self.function_terminal(name, signature, facts.object.is_some())?
-        };
-        let name = self
-            .abi
-            .intern(
-                Node::Name {
-                    parent,
-                    terminal,
-                    internal: facts.declared_linkage
-                        == crate::sema::lowering::DeclaredLinkage::Internal
-                        && !self.graph.lower_anonymous_namespace(facts.home),
-                    data_member: false,
-                    occurrence: 0,
-                },
-                &[],
-            )
-            .map_err(Error::from)?;
-        let mut name = name;
-        if let Some((instance, (_, arguments))) = specialization.template_instance.zip(template) {
-            let mut nodes = Vec::with_capacity(arguments.len());
-            for (index, &argument) in arguments.iter().enumerate() {
-                nodes.push(self.declared_template_argument(instance, index, argument)?);
-            }
-            name = self.abi.intern(Node::Template(name), &nodes)?;
-        }
-        let TypeView::Function {
-            result,
-            parameters,
-            variadic,
-        } = self.graph.lower_type(signature)?
-        else {
-            return Err(Error::Semantic(crate::sema::Error::Invariant(
-                "function without function type",
-            )));
-        };
-        let mut args = Vec::with_capacity(parameters.len());
-        for (index, &parameter) in parameters.iter().enumerate() {
-            let parameter = if specialization.template_instance.is_some()
-                && self.unmangled_placeholder(parameter)?
-            {
-                let TypeView::Function { parameters, .. } =
-                    self.graph.lower_type(specialization.ty)?
-                else {
-                    return Err(Error::Missing("specialization without function type"));
-                };
-                *parameters
-                    .get(index)
-                    .ok_or(Error::Missing("specialization parameter count"))?
-            } else {
-                parameter
-            };
-            args.push(self.abi_type(parameter)?);
-        }
-        let result = if specialization.template_instance.is_some()
-            && !matches!(
-                facts.name,
-                FunctionName::Constructor(_)
-                    | FunctionName::Destructor(_)
-                    | FunctionName::Conversion(_)
-            ) {
-            let result = if self.unmangled_placeholder(result)? {
-                let TypeView::Function { result, .. } = self.graph.lower_type(specialization.ty)?
-                else {
-                    return Err(Error::Missing("specialization without function type"));
-                };
-                result
-            } else {
-                result
-            };
-            Some(self.abi_type(result)?)
-        } else {
-            None
-        };
-        let function = self
-            .abi
-            .intern(
-                Node::Function {
-                    name,
-                    result,
-                    qualifiers: facts.qualifiers,
-                    variadic,
-                },
-                &args,
-            )
-            .map_err(Error::from)?;
-        Ok(function)
     }
 }
 

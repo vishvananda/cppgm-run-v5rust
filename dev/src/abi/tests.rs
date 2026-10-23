@@ -450,6 +450,7 @@ fn local_scope_identity_and_closure_signature_survive_store_growth() {
         parent: Some(default_argument),
         terminal: closure,
         internal: false,
+        hidden_tags: false,
         data_member: false,
         occurrence: 11,
     };
@@ -460,6 +461,7 @@ fn local_scope_identity_and_closure_signature_survive_store_growth() {
                 parent: Some(default_argument),
                 terminal: closure,
                 internal: false,
+                hidden_tags: false,
                 data_member: false,
                 occurrence: 10,
             },
