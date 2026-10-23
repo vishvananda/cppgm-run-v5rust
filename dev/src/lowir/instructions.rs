@@ -352,16 +352,36 @@ impl Parser<'_> {
         self.expect(Kind::RParen, ")")?;
         let arguments = body.add_arguments(&self.arguments)?;
         let mut copy_elision = false;
+        let mut argument_classes = Vec::new();
         if self.accept(Kind::LBracket)? {
             loop {
-                if copy_elision || !self.accept_word("elision")? {
+                if !copy_elision && self.accept_word("elision")? {
+                    self.expect(Kind::Equals, "=")?;
+                    if !self.accept_word("copy")? {
+                        return Err(self.fail("invalid call metadata"));
+                    }
+                    copy_elision = true;
+                } else if self.object_facts && self.accept_word("classes")? {
+                    self.expect(Kind::Equals, "=")?;
+                    if !self.at(Kind::Number) {
+                        return Err(self.fail("expected argument index"));
+                    }
+                    let text = self.lexer.token.word();
+                    let argument = if text == "0" { 0 } else { self.positive(text)? };
+                    self.advance()?;
+                    self.expect(Kind::Colon, ":")?;
+                    if argument >= self.arguments.len() as u64 {
+                        return Err(self.fail("classes metadata names no argument"));
+                    }
+                    let classes = self.object_classes(Type::Object {
+                        bytes: 16,
+                        align: 3,
+                    })?;
+                    argument_classes
+                        .push((u32::try_from(argument).map_err(|_| Error::Limit)?, classes));
+                } else {
                     return Err(self.fail("invalid call metadata"));
                 }
-                self.expect(Kind::Equals, "=")?;
-                if !self.accept_word("copy")? {
-                    return Err(self.fail("invalid call metadata"));
-                }
-                copy_elision = true;
                 if !self.accept(Kind::Comma)? {
                     break;
                 }
@@ -378,6 +398,7 @@ impl Parser<'_> {
             callee,
             arguments,
             copy_elision,
+            argument_classes,
             signature,
         })
     }
@@ -461,5 +482,32 @@ impl Parser<'_> {
                     .ok_or_else(|| self.fail_at(line, format!("unknown instruction: {head}")))?,
             ),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lowir::{test_program_dialect, writer};
+
+    #[test]
+    fn host_call_classes_roundtrip_without_changing_the_declared_signature() {
+        let source = b"declare function @sink(%n : i32) -> void [arity=variadic]\nfunction @f() -> void {\n slot $a : obj<4x4>\n block ^entry:\n call void @sink(0, $a, $a) [classes=2:sse_none, classes=1:sse_none]\n return void\n}\n";
+        let program = test_program_dialect(source, true).unwrap();
+        let mut first = Vec::new();
+        writer::write(&program, &mut first).unwrap();
+        assert!(
+            String::from_utf8_lossy(&first).contains("[classes=2:sse_none, classes=1:sse_none]")
+        );
+        let copy = test_program_dialect(&first, true).unwrap();
+        let mut second = Vec::new();
+        writer::write(&copy, &mut second).unwrap();
+        assert_eq!(first, second);
+        assert!(test_program_dialect(source, false).is_err());
+        let invalid = String::from_utf8_lossy(source).replace("classes=2:", "classes=3:");
+        let error = test_program_dialect(invalid.as_bytes(), true)
+            .err()
+            .unwrap();
+        assert!(matches!(error, crate::lowir::Error::ByteDiagnostic(message)
+            if message.starts_with(b"classes metadata names no argument at ")));
     }
 }

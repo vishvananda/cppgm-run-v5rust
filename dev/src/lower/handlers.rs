@@ -484,6 +484,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
+            argument_classes: Vec::new(),
         });
         if result == Type::Void {
             self.effect(call)?;

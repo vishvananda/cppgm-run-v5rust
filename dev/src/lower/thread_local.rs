@@ -125,6 +125,7 @@ pub(super) fn forwarder(
             callee: Value::Symbol(target),
             arguments,
             copy_elision: false,
+            argument_classes: Vec::new(),
             signature: None,
         }))?;
     }
@@ -175,6 +176,7 @@ pub(super) fn finish_unit<'a>(
             callee: Value::Symbol(init),
             arguments,
             copy_elision: false,
+            argument_classes: Vec::new(),
             signature: None,
         }))?;
     }
@@ -211,6 +213,7 @@ impl Function<'_, '_, '_, '_> {
                 callee: Value::Symbol(wrapper),
                 arguments,
                 copy_elision: false,
+                argument_classes: Vec::new(),
                 signature: None,
             }))?;
             self.finish_lifetime_value(value, Type::Ptr, false)

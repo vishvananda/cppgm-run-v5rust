@@ -179,10 +179,21 @@ impl Layout {
         }
         Ok(layout)
     }
-    pub(super) fn classify_call(signature: &Signature, types: &[Type]) -> Result<Self, Error> {
+    pub(super) fn classify_call(
+        signature: &Signature,
+        types: &[Type],
+        classes: &[(u32, ObjectClasses)],
+    ) -> Result<Self, Error> {
         let mut layout = Self::empty(signature)?;
         for (index, &ty) in types.iter().enumerate() {
-            layout.argument(ty, signature.parameters.get(index).and_then(|p| p.classes))?;
+            let classes = if let Some(parameter) = signature.parameters.get(index) {
+                parameter.classes
+            } else {
+                classes.iter().find_map(|&(argument, classes)| {
+                    (argument as usize == index).then_some(classes)
+                })
+            };
+            layout.argument(ty, classes)?;
         }
         Ok(layout)
     }

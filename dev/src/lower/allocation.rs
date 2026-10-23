@@ -71,6 +71,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: Some(signature),
                 copy_elision: false,
+                argument_classes: Vec::new(),
             }))?;
             let none = self.zero(source)?;
             self.finish_lifetime_call(none, throws)?;
@@ -148,6 +149,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
+            argument_classes: Vec::new(),
         });
         self.lifetime_result(call, result)?;
         if transient {
@@ -187,6 +189,7 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("allocation signature").into());
         };
         let mut values = vec![size];
+        let mut argument_classes = Vec::new();
         let written = self.tree.expr_lists.get(placement.unwrap_or_default());
         // The frozen allocation loop emits only written placement operands,
         // including when overload viability accepted an unwritten default.
@@ -195,7 +198,8 @@ impl Function<'_, '_, '_, '_> {
             let value = if let Some(&parameter) = parameters.get(index) {
                 self.operator_argument(argument, parameter)?
             } else {
-                self.ellipsis_argument(argument)?
+                self.push_ellipsis_argument(argument, &mut values, &mut argument_classes)?;
+                continue;
             };
             values.push(value);
         }
@@ -214,6 +218,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: argument_classes.into_iter().rev().collect(),
             }),
             source,
         )?;

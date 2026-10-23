@@ -88,6 +88,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: Vec::new(),
             }),
             source,
         )?;
@@ -189,6 +190,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
+            argument_classes: Vec::new(),
         }))?;
         // Terminate the failure edge through the ordinary source-segment rules.
         self.effect(I::Unreachable)?;

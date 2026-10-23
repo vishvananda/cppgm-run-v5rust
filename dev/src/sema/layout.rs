@@ -26,6 +26,7 @@ pub(super) enum LayoutCategory {
 }
 pub(super) enum StorageDemand {
     Object(super::types::TypeId),
+    VariadicClass(super::types::TypeId),
     AnonymousUnion(EntityId),
     CallBoundary(super::types::TypeId),
     TypeInformation(super::types::TypeId),
@@ -478,6 +479,14 @@ impl Analyzer<'_> {
                     }
                     StorageDemand::Object(ty) => {
                         self.type_size(ty, location)?;
+                    }
+                    StorageDemand::VariadicClass(ty) => {
+                        self.type_size(ty, location)?;
+                        let class = self
+                            .graph
+                            .class_of(ty)
+                            .ok_or(Error::Invariant("variadic class boundary without class"))?;
+                        self.prepare_class_parameter(class)?;
                     }
                     StorageDemand::AnonymousUnion(entity) => {
                         self.type_size(self.graph.lower_entity_type(entity)?, location)?;

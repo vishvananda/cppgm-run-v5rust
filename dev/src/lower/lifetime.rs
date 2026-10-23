@@ -899,6 +899,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
+            argument_classes: Vec::new(),
         }))
     }
     pub(super) fn destroy_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {

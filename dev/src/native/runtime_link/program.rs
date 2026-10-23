@@ -307,6 +307,7 @@ impl<'a> Routine<'a> {
             callee,
             arguments,
             copy_elision: false,
+            argument_classes: Vec::new(),
             signature,
         }))
     }
@@ -325,6 +326,7 @@ impl<'a> Routine<'a> {
             callee,
             arguments,
             copy_elision: false,
+            argument_classes: Vec::new(),
             signature,
         }))
     }

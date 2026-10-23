@@ -547,6 +547,7 @@ mod tests {
                 callee,
                 arguments,
                 copy_elision: false,
+                argument_classes: Vec::new(),
                 signature: None,
             }),
             "r",
@@ -585,6 +586,7 @@ mod tests {
                 callee,
                 arguments,
                 copy_elision: false,
+                argument_classes: Vec::new(),
                 signature: None,
             }),
             "first",
@@ -595,6 +597,7 @@ mod tests {
                 callee,
                 arguments,
                 copy_elision: false,
+                argument_classes: Vec::new(),
                 signature: None,
             }),
             "second",
@@ -666,6 +669,7 @@ mod tests {
             callee,
             arguments,
             copy_elision: false,
+            argument_classes: Vec::new(),
             signature: None,
         }))?;
         let mut sum = condition;

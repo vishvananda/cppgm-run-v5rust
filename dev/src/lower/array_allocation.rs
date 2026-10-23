@@ -121,12 +121,14 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("array allocation signature").into());
         };
         let mut values = vec![size];
+        let mut argument_classes = Vec::new();
         let written = self.tree.expr_lists.get(placement.unwrap_or_default());
         for (index, &argument) in written.iter().enumerate() {
             let value = if let Some(&parameter) = parameters.get(index + 1) {
                 self.operator_argument(argument, parameter)?
             } else {
-                self.ellipsis_argument(argument)?
+                self.push_ellipsis_argument(argument, &mut values, &mut argument_classes)?;
+                continue;
             };
             values.push(value);
         }
@@ -151,6 +153,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: argument_classes.into_iter().rev().collect(),
             }),
             source,
         )?;
@@ -343,6 +346,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: Vec::new(),
             }))?;
             if std::mem::take(&mut self.lifetime.call_region)
                 == super::lifetime::CallRegion::Transient

@@ -525,8 +525,19 @@ impl<W: Write> InstructionWriter<'_, W> {
             }
         }
         write!(self.out, ")")?;
-        if call.copy_elision {
-            write!(self.out, " [elision=copy]")?;
+        if call.copy_elision || self.program.object_facts && !call.argument_classes.is_empty() {
+            let mut separator = " [";
+            if call.copy_elision {
+                write!(self.out, "{separator}elision=copy")?;
+                separator = ", ";
+            }
+            if self.program.object_facts {
+                for &(argument, classes) in &call.argument_classes {
+                    write!(self.out, "{separator}classes={argument}:{classes}")?;
+                    separator = ", ";
+                }
+            }
+            write!(self.out, "]")?;
         }
         if let Some(id) = call.signature {
             write!(self.out, " as ")?;

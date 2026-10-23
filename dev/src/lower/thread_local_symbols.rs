@@ -206,6 +206,7 @@ impl Symbols<'_, '_> {
                     arguments,
                     signature: None,
                     copy_elision: false,
+                    argument_classes: Vec::new(),
                 },
             ))?;
             if let Some(done) = done {

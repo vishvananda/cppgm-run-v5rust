@@ -186,6 +186,7 @@ fn call(builder: &mut FunctionBuilder<'_>, callee: SymbolId, object: Value) -> R
         arguments,
         signature: None,
         copy_elision: false,
+        argument_classes: Vec::new(),
     }))?;
     Ok(())
 }

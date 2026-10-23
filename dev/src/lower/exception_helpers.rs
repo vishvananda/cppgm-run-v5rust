@@ -121,6 +121,7 @@ pub(super) fn emit_pending(
         arguments,
         signature: None,
         copy_elision: false,
+        argument_classes: Vec::new(),
     }))?;
     let arguments = builder.arguments(&[])?;
     builder.effect(I::Call(Call {
@@ -129,6 +130,7 @@ pub(super) fn emit_pending(
         arguments,
         signature: None,
         copy_elision: false,
+        argument_classes: Vec::new(),
     }))?;
     builder.effect(I::Return(Type::Void, None))?;
     builder.finish()?;

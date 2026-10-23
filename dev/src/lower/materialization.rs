@@ -1,10 +1,10 @@
 // Translated from lower/object_lowering.cpp::materialize_prvalue/temporary_object.
 // See NOTICE.
 //! Original class expressions initialize their destination without an intermediate copy.
-use super::{Error, construction::CopyCall, function::Function, types};
+use super::{Error, construction::CopyCall, conversions::Context, function::Function, types};
 use crate::{
     lowir::model::{InstructionKind as I, Value},
-    sema::lowering::{ClassInitialization, CopyAction, EntityId, TypeId, TypeView},
+    sema::lowering::{CallTarget, ClassInitialization, CopyAction, EntityId, TypeId, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
@@ -25,16 +25,128 @@ impl TemporaryUse {
     }
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn push_call_arguments(
+        &mut self,
+        target: crate::sema::lowering::CallTarget,
+        parameters: &[TypeId],
+        supplied: &[ast::ExprId],
+        variadic: bool,
+        values: &mut Vec<Value>,
+    ) -> Result<Vec<(u32, crate::lowir::vocabulary::ObjectClasses)>, Error> {
+        for (index, &parameter) in parameters.iter().enumerate() {
+            let argument = supplied
+                .get(index)
+                .copied()
+                .or_else(|| match target {
+                    CallTarget::Direct(entity) => self.graph.lower_default(entity, index),
+                    CallTarget::Indirect(_, _) => None,
+                })
+                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                    "call argument missing",
+                )))?;
+            if matches!(
+                self.graph.lower_type(parameter)?,
+                TypeView::Reference { .. }
+            ) {
+                values.push(self.bind_reference(argument, parameter, Context::Argument)?);
+            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
+                values.push(self.class_argument(argument, parameter)?);
+            } else {
+                // argument() applies its recorded standard sequence to the
+                // raw rvalue; operand()'s member-address folding belongs to
+                // expression operands, not this call boundary.
+                let value = if self.graph.lower_function_conversion(argument)?.is_some() {
+                    self.operand(argument, Context::Argument)?
+                } else {
+                    let value = self.expression(argument, Context::Argument)?;
+                    self.apply_conversion(argument, value, Context::Argument)?
+                };
+                let value = self.fit(value, parameter)?;
+                values.push(value.value);
+            }
+        }
+        let mut argument_classes = Vec::new();
+        if variadic {
+            for &argument in supplied.iter().skip(parameters.len()) {
+                self.push_ellipsis_argument(argument, values, &mut argument_classes)?;
+            }
+        }
+        Ok(argument_classes)
+    }
+
     // expression_lowering.cpp::push_converted's null-parameter class path:
-    // course LowIR passes the address of a caller-owned byte copy. Unlike a
-    // declared class parameter, this path neither selects a copy constructor
-    // nor registers destruction of the copied argument.
-    pub(super) fn ellipsis_argument(&mut self, id: ast::ExprId) -> Result<Value, Error> {
+    // The caller owns the copy; host objects pass direct classes as bytes.
+    // Classification belongs to this call, including across nested calls.
+    pub(super) fn push_ellipsis_argument(
+        &mut self,
+        id: ast::ExprId,
+        values: &mut Vec<Value>,
+        classes: &mut Vec<(u32, crate::lowir::vocabulary::ObjectClasses)>,
+    ) -> Result<(), Error> {
+        let (value, classification) = self.ellipsis_argument(id)?;
+        if let Some(classification) = classification {
+            let classification = match classification {
+                crate::lowir::vocabulary::ObjectClasses::Direct(first, None) => {
+                    crate::lowir::vocabulary::ObjectClasses::Direct(
+                        first,
+                        Some(crate::lowir::vocabulary::EightbyteClass::None),
+                    )
+                }
+                other => other,
+            };
+            classes.push((
+                u32::try_from(values.len()).map_err(|_| crate::lowir::Error::Limit)?,
+                classification,
+            ));
+        }
+        values.push(value);
+        Ok(())
+    }
+    fn ellipsis_argument(
+        &mut self,
+        id: ast::ExprId,
+    ) -> Result<(Value, Option<crate::lowir::vocabulary::ObjectClasses>), Error> {
         let facts = self.graph.lower_expression(id)?;
+        if self.graph.lower_function_conversion(id)?.is_some()
+            || !matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_))
+        {
+            let value = self.operand(id, super::conversions::Context::Argument)?;
+            let classes = if self.symbols.object_mode()
+                && matches!(
+                    value.ty,
+                    crate::lowir::vocabulary::Type::Object { .. }
+                        | crate::lowir::vocabulary::Type::I128
+                ) {
+                self.symbols.object_argument_classes(value.source)?
+            } else {
+                None
+            };
+            let value =
+                if value.ty == crate::lowir::vocabulary::Type::I128 && self.symbols.object_mode() {
+                    let ty = crate::lowir::vocabulary::Type::Object {
+                        bytes: 16,
+                        align: if self.graph.lower_member_pointer_type(facts.ty).is_some() {
+                            3
+                        } else {
+                            4
+                        },
+                    };
+                    let slot = self.generated_slot("arg", ty)?;
+                    let object = self.emit(I::Addr(slot), facts.ty)?.value;
+                    self.effect(I::Store(
+                        crate::lowir::model::Facts::memory(false, true),
+                        value.ty,
+                        value.value,
+                        object,
+                    ))?;
+                    slot
+                } else {
+                    value.value
+                };
+            return Ok((value, classes));
+        }
         let TypeView::Class(class) = self.graph.lower_type(facts.ty)? else {
-            return Ok(self
-                .operand(id, super::conversions::Context::Argument)?
-                .value);
+            return Err(crate::sema::Error::Invariant("ellipsis class argument").into());
         };
         let ty = facts.ty;
         let slot = self.generated_slot("arg", types::storage(self.graph, ty)?)?;
@@ -49,7 +161,11 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.materialize_class(id, ty, object)?;
         }
-        Ok(object)
+        if self.symbols.object_mode() && self.graph.lower_direct_class_parameter(class)? {
+            Ok((slot, self.symbols.object_argument_classes(ty)?))
+        } else {
+            Ok((object, None))
+        }
     }
     pub(super) fn named_elided_list(
         &self,

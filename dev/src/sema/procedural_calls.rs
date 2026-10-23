@@ -1484,7 +1484,11 @@ impl Analyzer<'_> {
         {
             // The ellipsis has no declared parameter whose call boundary
             // would request this storage. Defer layout with the owning body.
-            self.request_object_layout(target, crate::support::source::SourceOffset(0));
+            self.graph.storage_layouts.push((
+                self.body_context.as_ref().map(|body| body.entity),
+                super::layout::StorageDemand::VariadicClass(target),
+                crate::support::source::SourceOffset(0),
+            ));
         }
         if matches!(
             self.graph.types.get(target).kind,
@@ -1641,7 +1645,10 @@ mod tests {
                 matches!(graph.entity(class).layout, LayoutState::Value { .. }),
                 needed,
             );
-            assert!(graph.entity(class).implicit_copies.is_none());
+            assert_eq!(graph.entity(class).implicit_copies.is_some(), needed);
+            if needed {
+                assert!(graph.lower_direct_class_parameter(class).unwrap());
+            }
         }
     }
 }

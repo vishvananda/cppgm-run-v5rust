@@ -238,6 +238,7 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let mut values = vec![object];
+        let mut argument_classes = Vec::new();
         let hidden_vtt = entry.hidden_vtt(self.graph)?;
         if hidden_vtt && !written.is_empty() {
             values.push(self.hidden_vtt_value()?);
@@ -245,7 +246,7 @@ impl Function<'_, '_, '_, '_> {
         for index in 0..parameters.len().max(written.len()) {
             let parameter = parameters.get(index).copied();
             if parameter.is_none() {
-                values.push(self.ellipsis_argument(written[index])?);
+                self.push_ellipsis_argument(written[index], &mut values, &mut argument_classes)?;
                 continue;
             }
             let parameter = parameter.ok_or(Error::Semantic(crate::sema::Error::Invariant(
@@ -312,6 +313,7 @@ impl Function<'_, '_, '_, '_> {
             &values,
             copy_elision,
             publish_table,
+            argument_classes,
         );
         if !facts.nothrow && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
@@ -324,7 +326,7 @@ impl Function<'_, '_, '_, '_> {
         nothrow: bool,
         values: &[Value],
     ) -> Result<(), Error> {
-        self.emit_constructor_call_with_elision(entry, nothrow, values, false, true)
+        self.emit_constructor_call_with_elision(entry, nothrow, values, false, true, Vec::new())
     }
     pub(super) fn emit_address_constructor_call(
         &mut self,
@@ -334,7 +336,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // object_lowering.cpp::construct_from demands only the constructor.
         // Its body publishes any vtable it needs when that body is lowered.
-        self.emit_constructor_call_with_elision(entry, nothrow, values, false, false)
+        self.emit_constructor_call_with_elision(entry, nothrow, values, false, false, Vec::new())
     }
     fn emit_constructor_call_with_elision(
         &mut self,
@@ -343,6 +345,7 @@ impl Function<'_, '_, '_, '_> {
         values: &[Value],
         copy_elision: bool,
         publish_table: bool,
+        argument_classes: Vec<(u32, crate::lowir::vocabulary::ObjectClasses)>,
     ) -> Result<(), Error> {
         // An aggregate construction's active segment also brackets a
         // nonthrowing call once prior subobjects need destruction.
@@ -396,6 +399,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision,
+            argument_classes: argument_classes.into_iter().rev().collect(),
         }))?;
         if transient {
             self.close_lifetime_region()?;

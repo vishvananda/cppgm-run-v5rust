@@ -62,6 +62,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: Vec::new(),
             }))
         } else if self.graph.lower_polymorphic(class) {
             self.store_vptr(class, source)
@@ -375,6 +376,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: Vec::new(),
             }))?;
         }
         if guard.is_some() {

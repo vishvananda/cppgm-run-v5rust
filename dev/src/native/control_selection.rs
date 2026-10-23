@@ -408,6 +408,7 @@ mod tests {
                 callee: Value::Symbol(callee),
                 arguments,
                 copy_elision: false,
+                argument_classes: Vec::new(),
                 signature: None,
             }),
             "unused",

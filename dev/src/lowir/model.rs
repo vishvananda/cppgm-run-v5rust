@@ -1414,6 +1414,7 @@ pub(crate) struct Call {
     pub(crate) callee: Value,
     pub(crate) arguments: Arguments,
     pub(crate) copy_elision: bool,
+    pub(crate) argument_classes: Vec<(u32, super::vocabulary::ObjectClasses)>,
     pub(crate) signature: Option<SignatureId>,
 }
 /// A checked slice in the owning function's mutable extra-operand store.

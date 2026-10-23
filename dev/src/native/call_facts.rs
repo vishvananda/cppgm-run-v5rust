@@ -87,7 +87,7 @@ impl CallPlan {
             types.push(ty);
             passes.push(sig.parameters.get(index).and_then(|p| p.pass));
         }
-        let layout = Layout::classify_call(sig, &types)?;
+        let layout = Layout::classify_call(sig, &types, &call.argument_classes)?;
         // Intrinsic call selection observes emitted declarations, not the
         // signature-only forward boundary of an O0 streaming definition.
         let builtin =

@@ -403,6 +403,7 @@ impl Function<'_, '_, '_, '_> {
             callee: Value::Symbol(symbol),
             arguments,
             copy_elision: false,
+            argument_classes: Vec::new(),
             signature: None,
         }))
     }

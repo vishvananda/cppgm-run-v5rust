@@ -1109,6 +1109,7 @@ impl Symbols<'_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: Vec::new(),
             });
             let returned = if result == Type::Void {
                 builder.effect(call)?;

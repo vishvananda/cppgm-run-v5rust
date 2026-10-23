@@ -65,6 +65,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
+            argument_classes: Vec::new(),
         });
         let value = if call.result() == Type::Void {
             self.effect(instruction)?;
@@ -576,6 +577,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
+                argument_classes: Vec::new(),
             }),
             ty,
         )?;

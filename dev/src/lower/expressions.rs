@@ -886,43 +886,8 @@ impl Function<'_, '_, '_, '_> {
                 self.member_object(expression, arrow)?;
             }
         }
-        for (index, &parameter) in parameters.iter().enumerate() {
-            let argument = supplied
-                .get(index)
-                .copied()
-                .or_else(|| match target {
-                    CallTarget::Direct(entity) => self.graph.lower_default(entity, index),
-                    CallTarget::Indirect(_, _) => None,
-                })
-                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                    "call argument missing",
-                )))?;
-            if matches!(
-                self.graph.lower_type(parameter)?,
-                TypeView::Reference { .. }
-            ) {
-                values.push(self.bind_reference(argument, parameter, Context::Argument)?);
-            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
-                values.push(self.class_argument(argument, parameter)?);
-            } else {
-                // argument() applies its recorded standard sequence to the
-                // raw rvalue; operand()'s member-address folding belongs to
-                // expression operands, not this call boundary.
-                let value = if self.graph.lower_function_conversion(argument)?.is_some() {
-                    self.operand(argument, Context::Argument)?
-                } else {
-                    let value = self.expression(argument, Context::Argument)?;
-                    self.apply_conversion(argument, value, Context::Argument)?
-                };
-                let value = self.fit(value, parameter)?;
-                values.push(value.value);
-            }
-        }
-        if variadic {
-            for &argument in supplied.iter().skip(parameters.len()) {
-                values.push(self.ellipsis_argument(argument)?);
-            }
-        }
+        let argument_classes =
+            self.push_call_arguments(target, parameters, supplied, variadic, &mut values)?;
         let (callee, signature) = match target {
             CallTarget::Direct(entity) => {
                 let dispatch = self.graph.lower_virtual_dispatch(id)?;
@@ -978,6 +943,7 @@ impl Function<'_, '_, '_, '_> {
             callee,
             arguments,
             copy_elision: false,
+            argument_classes: argument_classes.into_iter().rev().collect(),
             signature,
         });
         self.before_lifetime_call(throws)?;

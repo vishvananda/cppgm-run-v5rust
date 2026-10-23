@@ -90,6 +90,7 @@ impl Function<'_, '_, '_, '_> {
             callee,
             arguments,
             copy_elision: false,
+            argument_classes: Vec::new(),
             signature,
         });
         self.before_lifetime_call(throws)?;

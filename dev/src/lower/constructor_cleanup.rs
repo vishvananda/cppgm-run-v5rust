@@ -241,6 +241,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
+            argument_classes: Vec::new(),
         }))?;
         if guarded {
             self.effect(I::Runtime(R::EhEnd))?;
