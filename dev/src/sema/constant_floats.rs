@@ -748,7 +748,9 @@ impl Analyzer<'_> {
                 self.graph.entity_mut(entity).constant = ConstantState::Floating(value);
                 Ok(())
             }
-            Err(Error::NonConstant { location, message }) => Err(Error::at(location, message)),
+            Err(error @ Error::NonConstant { .. }) => {
+                Err(error.constant_initializer(initializer.location))
+            }
             Err(error) => Err(error),
         }
     }

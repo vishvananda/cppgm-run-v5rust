@@ -287,6 +287,9 @@ struct ClassConversion {
 }
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    // Atomic calls are sparse; keep the dense fact record at its existing size.
+    atomic_intrinsics:
+        std::collections::HashMap<ast::ExprId, super::atomic_operations::AtomicIntrinsic>,
     // Allocated only when a floating builtin publishes a value. Its compact
     // handle is indexed directly without enlarging every expression record.
     floating_values: Vec<Option<super::constant_floats::FloatingId>>,
@@ -321,6 +324,25 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn is_intrinsic(&self, id: ast::ExprId, facts: ExprFacts) -> bool {
+        facts.intrinsic.is_some() || self.atomic_intrinsic(id).is_some()
+    }
+
+    pub(super) fn atomic_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::atomic_operations::AtomicIntrinsic> {
+        self.atomic_intrinsics.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_atomic_intrinsic(
+        &mut self,
+        id: ast::ExprId,
+        value: super::atomic_operations::AtomicIntrinsic,
+    ) {
+        let id = self.root(id);
+        self.atomic_intrinsics.insert(id, value);
+    }
+
     pub(super) fn floating_value(
         &self,
         id: ast::ExprId,

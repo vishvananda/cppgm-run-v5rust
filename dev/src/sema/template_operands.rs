@@ -1024,7 +1024,10 @@ impl Analyzer<'_> {
                 Ok(Some(result))
             }
             Err(
-                Error::Diagnostic { location, message } | Error::NonConstant { location, message },
+                Error::Diagnostic { location, message }
+                | Error::NonConstant {
+                    location, message, ..
+                },
             ) => {
                 // Failed lookups may name a class completed later. Keep only
                 // successful facts; a failed trial cannot poison later demand.

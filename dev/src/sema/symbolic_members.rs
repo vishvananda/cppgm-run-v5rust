@@ -517,7 +517,9 @@ impl Analyzer<'_> {
                         ));
                 }
             }
-            Err(Error::NonConstant { location, message }) => {
+            Err(Error::NonConstant {
+                location, message, ..
+            }) => {
                 return Err(Error::at(location, message));
             }
             Err(error) => return Err(error),

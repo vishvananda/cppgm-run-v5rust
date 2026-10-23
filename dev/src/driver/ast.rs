@@ -227,7 +227,9 @@ fn emit_preprocessed(
         );
         Some(analysis.map_err(|error| match error {
             crate::sema::Error::Diagnostic { location, message }
-            | crate::sema::Error::NonConstant { location, message }
+            | crate::sema::Error::NonConstant {
+                location, message, ..
+            }
             | crate::sema::Error::InstantiationDiagnostic { location, message } => {
                 match unit.describe(&ParseError::Syntax { location, message }) {
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
@@ -271,7 +273,9 @@ fn emit_preprocessed(
                 }
                 crate::lower::Error::Semantic(
                     crate::sema::Error::Diagnostic { location, message }
-                    | crate::sema::Error::NonConstant { location, message }
+                    | crate::sema::Error::NonConstant {
+                        location, message, ..
+                    }
                     | crate::sema::Error::InstantiationDiagnostic { location, message },
                 ) => match unit.describe(&ParseError::Syntax { location, message }) {
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
@@ -1383,5 +1387,42 @@ mod tests {
             .collect();
         crate::lower::assert_base_routes(&graph, tree, cursor, &classes);
         assert_eq!(syntax_count, tree.expressions.mark());
+    }
+    #[test]
+    fn atomic_initializers_reach_lowir_without_callee_semantic_facts() {
+        use crate::{
+            lower::{Output, lower_unit},
+            sema::Analyzer,
+            syntax::SyntaxUnit,
+        };
+        let source = SourceBuffer::new(
+            b"int n;int*p;int*q=__atomic_load_n(&p,2);\
+            struct S{int x;S(int v):x(v){}~S(){}};\
+            int f(){static int x=__atomic_fetch_add(&n,1,5);\
+            S s(__atomic_fetch_xor(&n,2,5));return x+s.x;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"atomic-initializers").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut output = Output::default();
+        output.retain_object_definitions(true).unwrap();
+        lower_unit(
+            &mut output,
+            &graph,
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+        )
+        .unwrap();
+        let program = output.finish_program().unwrap();
+        assert!(!program.functions().is_empty());
+        crate::lowir::validate_test_program(&program).unwrap();
     }
 }

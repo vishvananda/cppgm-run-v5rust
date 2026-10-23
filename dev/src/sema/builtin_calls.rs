@@ -24,6 +24,7 @@ pub(crate) enum BuiltinFunction {
     Strlen,
     Unreachable,
     Invoke,
+    Atomic(super::atomic_operations::AtomicBuiltinId),
     Floating(super::floating_intrinsics::FloatingOperation),
     LibraryNan(F),
 }
@@ -116,6 +117,7 @@ pub(super) struct BuiltinNames {
     pub memset: NameId,
     pub strlen: NameId,
     pub unreachable: NameId,
+    pub atomic: super::atomic_operations::AtomicBuiltins,
     pub floating: Vec<(NameId, super::floating_intrinsics::FloatingOperation)>,
 }
 impl Analyzer<'_> {
@@ -142,6 +144,8 @@ impl Analyzer<'_> {
             BuiltinFunction::Unreachable
         } else if key == names.invoke {
             BuiltinFunction::Invoke
+        } else if let Some(id) = names.atomic.find(key) {
+            BuiltinFunction::Atomic(id)
         } else if let Some((_, kind)) = names.floating.iter().find(|&&(name, _)| name == key) {
             BuiltinFunction::Floating(*kind)
         } else {
@@ -176,7 +180,7 @@ impl Analyzer<'_> {
             (void, Vec::new())
         } else if matches!(
             builtin,
-            BuiltinFunction::Floating(_) | BuiltinFunction::Invoke
+            BuiltinFunction::Floating(_) | BuiltinFunction::Atomic(_) | BuiltinFunction::Invoke
         ) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
         } else if matches!(builtin, BuiltinFunction::Expect) {
@@ -215,6 +219,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Unreachable
                     | BuiltinFunction::Invoke
                     | BuiltinFunction::LibraryNan(_)
+                    | BuiltinFunction::Atomic(_)
                     | BuiltinFunction::Floating(_) => {
                         return Err(Error::Invariant("memory builtin signature"));
                     }
@@ -227,7 +232,9 @@ impl Analyzer<'_> {
                 parameters,
                 variadic: matches!(
                     builtin,
-                    BuiltinFunction::Floating(_) | BuiltinFunction::Invoke
+                    BuiltinFunction::Floating(_)
+                        | BuiltinFunction::Atomic(_)
+                        | BuiltinFunction::Invoke
                 ),
                 cv: Cv::default(),
                 reference: None,
@@ -308,6 +315,15 @@ impl Analyzer<'_> {
         {
             return self.floating_builtin(id, arguments, kind, scope).map(Some);
         }
+        if let Some(binding) = found.binding
+            && let Some(BuiltinFunction::Atomic(builtin)) = self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .builtin
+        {
+            let form = builtin.form()?;
+            return self.atomic_builtin(id, arguments, form, scope).map(Some);
+        }
         if components.len() != 1 || found.binding.is_some() {
             return Ok(None);
         }
@@ -328,6 +344,15 @@ impl Analyzer<'_> {
                 return self
                     .floating_builtin(id, arguments, operation, scope)
                     .map(Some);
+            }
+            if let Some(binding) = found.binding
+                && let Some(BuiltinFunction::Atomic(builtin)) = self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .builtin
+            {
+                let form = builtin.form()?;
+                return self.atomic_builtin(id, arguments, form, scope).map(Some);
             }
             return Ok(None);
         }

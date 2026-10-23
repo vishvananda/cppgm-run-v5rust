@@ -271,7 +271,9 @@ impl Analyzer<'_> {
                 Ok(count) => ArgumentCount::Spelled(count),
                 Err(
                     Error::Diagnostic { location, message }
-                    | Error::NonConstant { location, message }
+                    | Error::NonConstant {
+                        location, message, ..
+                    }
                     | Error::InstantiationDiagnostic { location, message },
                 ) => ArgumentCount::Failed { location, message },
                 Err(error) => return Err(error),

@@ -28,7 +28,25 @@ pub(super) enum ConstantState {
     MemberPointer(super::symbolic_members::MemberPointer),
 }
 fn not_constant(location: SourceOffset, message: &'static str) -> Error {
-    Error::NonConstant { location, message }
+    Error::NonConstant {
+        location,
+        message,
+        failure: super::ConstantFailure::Reported,
+    }
+}
+pub(super) enum ConstantRequirement {
+    Optional,
+    Expression,
+    Initializer(SourceOffset),
+}
+impl From<bool> for ConstantRequirement {
+    fn from(required: bool) -> Self {
+        if required {
+            Self::Expression
+        } else {
+            Self::Optional
+        }
+    }
 }
 impl Analyzer<'_> {
     pub(super) fn integral_kind(&self, ty: TypeId) -> Option<IntegralKind> {
@@ -83,8 +101,10 @@ impl Analyzer<'_> {
         &mut self,
         id: ast::ExprId,
         scope: ScopeId,
-        required: bool,
+        requirement: impl Into<ConstantRequirement>,
     ) -> Result<Option<Constant>, Error> {
+        let requirement = requirement.into();
+        let required = !matches!(requirement, ConstantRequirement::Optional);
         let result = if self.semantic() && self.is_address_expression(id) {
             self.evaluate_address(id, scope).and_then(|_| {
                 Err(not_constant(
@@ -101,9 +121,10 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(id).location,
                 "a 128-bit constant beyond the 64-bit integral constants",
             )),
-            Err(Error::NonConstant { location, message }) if required => {
-                Err(Error::at(location, message))
-            }
+            Err(error @ Error::NonConstant { .. }) if required => Err(match requirement {
+                ConstantRequirement::Initializer(location) => error.constant_initializer(location),
+                _ => error.required_constant(),
+            }),
             Ok(_) | Err(Error::NonConstant { .. }) => Ok(None),
             Err(error) => Err(error),
         }
@@ -1346,10 +1367,8 @@ impl Analyzer<'_> {
             match result {
                 Ok(super::constant_addresses::TemporaryValue::Integer(value)) => Some(value),
                 Ok(_) => return Err(Error::Invariant("nonintegral converted initializer")),
-                Err(Error::NonConstant { location, message })
-                    if self.graph.entity(entity).constexpr =>
-                {
-                    return Err(Error::at(location, message));
+                Err(error @ Error::NonConstant { .. }) if self.graph.entity(entity).constexpr => {
+                    return Err(error.constant_initializer(initializer.location));
                 }
                 Err(Error::NonConstant { .. }) => None,
                 Err(error) => return Err(error),
@@ -1373,10 +1392,8 @@ impl Analyzer<'_> {
         } else if self.semantic() && kind.bits > 64 {
             match self.evaluate_constant(expr, scope, false) {
                 Ok(value) => Some(value),
-                Err(Error::NonConstant { location, message })
-                    if self.graph.entity(entity).constexpr =>
-                {
-                    return Err(Error::at(location, message));
+                Err(error @ Error::NonConstant { .. }) if self.graph.entity(entity).constexpr => {
+                    return Err(error.constant_initializer(initializer.location));
                 }
                 Err(Error::NonConstant { .. }) => None,
                 Err(error) => return Err(error),
@@ -1385,7 +1402,11 @@ impl Analyzer<'_> {
             self.constant_value(
                 expr,
                 scope,
-                self.semantic() && self.graph.entity(entity).constexpr,
+                if self.semantic() && self.graph.entity(entity).constexpr {
+                    ConstantRequirement::Initializer(initializer.location)
+                } else {
+                    ConstantRequirement::Optional
+                },
             )?
         };
         self.graph.entity_mut(entity).constant = ConstantState::None;

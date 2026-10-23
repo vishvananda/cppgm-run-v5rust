@@ -721,6 +721,19 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         self.call_into(id, callee_expression, arguments, None)
     }
+    fn intrinsic_call(
+        &mut self,
+        id: ast::ExprId,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+    ) -> Result<RValue, Error> {
+        if let Some(kind) = self.graph.lower_atomic_intrinsic(id)? {
+            self.atomic_intrinsic(id, arguments, kind)
+        } else if let Some(kind) = self.graph.lower_floating_intrinsic(id)? {
+            self.floating_intrinsic(id, arguments, kind)
+        } else {
+            Err(crate::sema::Error::Invariant("intrinsic call without operation").into())
+        }
+    }
     pub(super) fn call_into(
         &mut self,
         id: ast::ExprId,
@@ -729,8 +742,8 @@ impl Function<'_, '_, '_, '_> {
         destination: Option<crate::lowir::model::Value>,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        if let Some(kind) = self.graph.lower_floating_intrinsic(id)? {
-            return self.floating_intrinsic(id, arguments, kind);
+        if self.graph.expression_is_intrinsic(id)? {
+            return self.intrinsic_call(id, arguments);
         }
         if self.graph.lower_destructor_evaluation_only(id)? {
             let callee = self.without_parentheses(callee_expression);

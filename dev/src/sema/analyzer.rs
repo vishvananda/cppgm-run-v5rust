@@ -221,6 +221,7 @@ impl<'tree> Analyzer<'tree> {
                 .intern_name(b"__builtin_unreachable")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
             floating: super::floating_intrinsics::names(cursor)?,
+            atomic: super::atomic_operations::names(cursor)?,
         };
         let mut analyzer = Self {
             library_nans: [None; 3],
@@ -630,7 +631,9 @@ impl<'tree> Analyzer<'tree> {
             self.convert_bool(condition)?;
             self.in_constant_evaluation(|analyzer| analyzer.constant_truth(condition, scope, false))
                 .map_err(|error| match error {
-                    Error::NonConstant { location, message } => Error::at(location, message),
+                    Error::NonConstant {
+                        location, message, ..
+                    } => Error::at(location, message),
                     other => other,
                 })?
         } else {

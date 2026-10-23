@@ -211,6 +211,7 @@ impl Analyzer<'_> {
                 };
                 if let Some(message) = message {
                     return Err(Error::NonConstant {
+                        failure: super::ConstantFailure::Reported,
                         location: self.tree.expressions.get(id).location,
                         message,
                     });

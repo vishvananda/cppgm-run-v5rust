@@ -226,6 +226,7 @@ impl Analyzer<'_> {
             // call, including required defaults, on concrete substitution.
             if self.template_depth != 0 {
                 return Err(Error::NonConstant {
+                    failure: super::ConstantFailure::Reported,
                     location: self.tree.expressions.get(inner).location,
                     message: "not an integral constant expression",
                 });
@@ -261,6 +262,7 @@ impl Analyzer<'_> {
         };
         if self.template_depth != 0 && self.exception_dependent_type(ty) {
             return Err(Error::NonConstant {
+                failure: super::ConstantFailure::Reported,
                 location,
                 message: if alignment {
                     "a value-dependent alignof"
@@ -328,6 +330,7 @@ impl Analyzer<'_> {
             Error::NonConstant {
                 location,
                 message: "size of a dependent type",
+                ..
             } if self.template_depth == 0 => {
                 Error::at(location, "size of a dependent type is not supported here")
             }
@@ -348,6 +351,7 @@ impl Analyzer<'_> {
         {
             if operand.is_some() {
                 return Err(Error::NonConstant {
+                    failure: super::ConstantFailure::Reported,
                     location,
                     message: "size of a dependent type",
                 });
@@ -414,6 +418,7 @@ impl Analyzer<'_> {
             | TypeKind::Expansion(_)
             | TypeKind::BoundPack { .. } => {
                 return Err(Error::NonConstant {
+                    failure: super::ConstantFailure::Reported,
                     location,
                     message: "size of a dependent type",
                 });

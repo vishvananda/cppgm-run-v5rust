@@ -1526,6 +1526,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             // including when a reference cast retypes its presentation item.
             category = facts.category;
         }
+        let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts);
         let label = match node.kind {
             ExprKind::Id(_) if facts.anonymous_member.is_some() => "member-expression",
             ExprKind::Id(_)
@@ -1562,7 +1563,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             | ExprKind::Lambda(_)
             | ExprKind::Statement(_) => "expression",
             ExprKind::Call { .. } => {
-                if facts.functional_call || facts.intrinsic.is_some() {
+                if facts.functional_call || intrinsic {
                     "cast-expression"
                 } else {
                     "call-expression"
@@ -1630,9 +1631,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
                 self.expr(operand, depth + 1);
             }
-            ExprKind::Call { arguments, .. }
-                if facts.functional_call || facts.intrinsic.is_some() =>
-            {
+            ExprKind::Call { arguments, .. } if facts.functional_call || intrinsic => {
                 for &id in self.tree.expr_lists.get(arguments).iter().rev() {
                     self.expr(id, depth + 1);
                 }

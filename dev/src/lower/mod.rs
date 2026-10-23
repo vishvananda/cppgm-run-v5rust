@@ -13,6 +13,7 @@ mod array_initialization;
 mod arrays;
 mod arrow_calls;
 mod assignment;
+mod atomic_intrinsics;
 mod base_initialization;
 mod base_projections;
 mod bit_fields;

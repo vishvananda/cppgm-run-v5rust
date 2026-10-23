@@ -216,8 +216,8 @@ impl Analyzer<'_> {
                     .complete
                     .insert(entity, value);
             }
-            Err(Error::NonConstant { location, message }) if required => {
-                return Err(Error::at(location, message));
+            Err(error @ Error::NonConstant { .. }) if required => {
+                return Err(error.constant_initializer(location));
             }
             Err(Error::NonConstant { .. } | Error::Missing(_)) if !required => (),
             Err(error) => return Err(error),

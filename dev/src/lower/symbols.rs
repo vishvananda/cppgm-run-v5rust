@@ -2163,7 +2163,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     }
                     metadata.object = Some(program.names.intern("abort")?);
                 }
-                B::Memcmp | B::Memset | B::Unreachable | B::Expect | B::Floating(_) => {
+                B::Memcmp
+                | B::Memset
+                | B::Unreachable
+                | B::Expect
+                | B::Floating(_)
+                | B::Atomic(_) => {
                     metadata.linkage = Linkage::C;
                 }
                 B::LibraryNan(ty) => {

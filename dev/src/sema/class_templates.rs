@@ -475,7 +475,9 @@ impl Analyzer<'_> {
                     Ok(ty) => ty,
                     Err(
                         Error::Diagnostic { location, message }
-                        | Error::NonConstant { location, message },
+                        | Error::NonConstant {
+                            location, message, ..
+                        },
                     ) => return Ok(environment.reject_at(location, message)),
                     Err(error) => return Err(error),
                 };
@@ -488,7 +490,10 @@ impl Analyzer<'_> {
         match self.match_argument_list(head, &mut arguments, SourceOffset(0)) {
             Ok(()) => (),
             Err(
-                Error::Diagnostic { location, message } | Error::NonConstant { location, message },
+                Error::Diagnostic { location, message }
+                | Error::NonConstant {
+                    location, message, ..
+                },
             ) => return Ok(environment.reject_at(location, message)),
             Err(error) => return Err(error),
         }

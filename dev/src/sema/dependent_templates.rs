@@ -116,7 +116,9 @@ impl Analyzer<'_> {
                 Ok(ty) => Ok(Some(ty)),
                 Err(
                     Error::Diagnostic { location, message }
-                    | Error::NonConstant { location, message },
+                    | Error::NonConstant {
+                        location, message, ..
+                    },
                 ) => Ok(environment.reject_at(location, message)),
                 Err(error) => Err(error),
             };

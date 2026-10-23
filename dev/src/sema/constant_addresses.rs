@@ -183,7 +183,11 @@ impl Addresses {
     }
 }
 pub(super) fn nonconstant(location: SourceOffset, message: &'static str) -> Error {
-    Error::NonConstant { location, message }
+    Error::NonConstant {
+        location,
+        message,
+        failure: super::ConstantFailure::Reported,
+    }
 }
 impl Analyzer<'_> {
     pub(super) fn in_constant_evaluation<T>(
@@ -1554,10 +1558,10 @@ impl Analyzer<'_> {
                     Ok(())
                 }
             }
-            Err(Error::NonConstant { location, message }) => {
+            Err(error @ Error::NonConstant { .. }) => {
                 self.graph.constant_addresses.finish(entity, None);
                 if self.graph.entity(entity).constexpr {
-                    Err(Error::at(location, message))
+                    Err(error.constant_initializer(initializer.location))
                 } else {
                     Ok(())
                 }

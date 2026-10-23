@@ -9,6 +9,8 @@ mod anonymous_types;
 mod array_allocation;
 mod arrow_calls;
 mod assignment;
+mod atomic_builtins;
+mod atomic_operations;
 mod base_layout;
 mod base_projections;
 mod bit_fields;
@@ -161,6 +163,11 @@ mod virtual_layout;
 mod virtual_members;
 mod vtable_groups;
 use crate::support::source::SourceOffset;
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ConstantFailure {
+    Reported,
+    Unreported,
+}
 #[derive(Debug)]
 pub(crate) enum Error {
     Diagnostic {
@@ -168,6 +175,7 @@ pub(crate) enum Error {
         message: &'static str,
     },
     NonConstant {
+        failure: ConstantFailure,
         location: SourceOffset,
         message: &'static str,
     },
@@ -180,11 +188,30 @@ pub(crate) enum Error {
     Invariant(&'static str),
 }
 impl Error {
+    pub(super) fn required_constant(self) -> Self {
+        match self {
+            Self::NonConstant {
+                location, message, ..
+            } => Self::at(location, message),
+            other => other,
+        }
+    }
+    pub(super) fn constant_initializer(self, location: SourceOffset) -> Self {
+        match self {
+            Self::NonConstant {
+                failure: ConstantFailure::Unreported,
+                ..
+            } => Self::at(location, "a constexpr variable is not constant-initialized"),
+            other => other.required_constant(),
+        }
+    }
+
     pub(super) fn required_instantiation(self) -> Self {
         match self {
-            Self::Diagnostic { location, message } | Self::NonConstant { location, message } => {
-                Self::InstantiationDiagnostic { location, message }
-            }
+            Self::Diagnostic { location, message }
+            | Self::NonConstant {
+                location, message, ..
+            } => Self::InstantiationDiagnostic { location, message },
             other => other,
         }
     }

@@ -2,6 +2,9 @@
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::anonymous_types::{ClassSpelling, UnnamedNumbering};
 pub(crate) use super::assignment::Action as AssignmentAction;
+pub(crate) use super::atomic_operations::{
+    AtomicArithmetic, AtomicIntrinsic, AtomicOperation, AtomicOrder,
+};
 pub(crate) use super::base_projections::{BaseProjection, BaseRoute, BaseRoutes, VcallSignature};
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constexpr_values::TemporaryId;
@@ -2056,6 +2059,18 @@ impl Graph {
                 )
             })
     }
+    pub(crate) fn lower_atomic_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<AtomicIntrinsic>, Error> {
+        self.expression_facts.get(id)?;
+        Ok(self.expression_facts.atomic_intrinsic(id))
+    }
+    pub(crate) fn expression_is_intrinsic(&self, id: ast::ExprId) -> Result<bool, Error> {
+        let facts = self.expression_facts.get(id)?;
+        Ok(self.expression_facts.is_intrinsic(id, facts))
+    }
+
     pub(crate) fn lower_floating_intrinsic(
         &self,
         id: ast::ExprId,

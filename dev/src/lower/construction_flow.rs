@@ -68,10 +68,15 @@ impl Function<'_, '_, '_, '_> {
                     } else {
                         callee
                     };
-                    work.push((callee, conditional));
+                    // Reserved intrinsic callees are untyped source designations;
+                    // the C++ walk visits them as leaves with no facts.
+                    let intrinsic = self.graph.expression_is_intrinsic(id)?;
+                    if !intrinsic {
+                        work.push((callee, conditional));
+                    }
                     let written = self.tree.expr_lists.get(arguments);
                     work.extend(written.iter().map(|&id| (id, conditional)));
-                    if self.graph.lower_floating_intrinsic(id)?.is_none()
+                    if !intrinsic
                         && !self.graph.lower_destructor_evaluation_only(id)?
                         && let CallTarget::Direct(function) = self.graph.lower_call(id)?
                         && let TypeView::Function { parameters, .. } = self

@@ -110,7 +110,7 @@ impl Function<'_, '_, '_, '_> {
             }
             match self.tree.expressions.get(id).kind {
                 ExprKind::Call { callee, arguments } => {
-                    if self.graph.lower_floating_intrinsic(id)?.is_none()
+                    if !self.graph.expression_is_intrinsic(id)?
                         && !self.graph.lower_destructor_evaluation_only(id)?
                     {
                         let target = self.graph.lower_call(id)?;
@@ -124,7 +124,7 @@ impl Function<'_, '_, '_, '_> {
                         )?;
                     }
                     work.extend(self.tree.expr_lists.get(arguments));
-                    if self.graph.lower_floating_intrinsic(id)?.is_none() {
+                    if !self.graph.expression_is_intrinsic(id)? {
                         work.push(callee);
                     }
                 }

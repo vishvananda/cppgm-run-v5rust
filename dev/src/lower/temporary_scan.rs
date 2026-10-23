@@ -492,7 +492,7 @@ impl Function<'_, '_, '_, '_> {
                             work,
                             &mut summary,
                         )?;
-                        if self.graph.lower_floating_intrinsic(id)?.is_none() {
+                        if !self.graph.expression_is_intrinsic(id)? {
                             work.push(callee);
                         }
                     }
@@ -575,7 +575,7 @@ impl Function<'_, '_, '_, '_> {
         work: &mut Vec<ast::ExprId>,
         summary: &mut TemporarySummary,
     ) -> Result<(), Error> {
-        if self.graph.lower_floating_intrinsic(id)?.is_some()
+        if self.graph.expression_is_intrinsic(id)?
             || self.graph.lower_destructor_evaluation_only(id)?
         {
             return Ok(());

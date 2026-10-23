@@ -319,6 +319,24 @@ impl Analyzer<'_> {
         destination: Option<Address>,
     ) -> Result<Returned, Error> {
         let id = self.graph.expression_facts.root(id);
+        if self.graph.expression_facts.atomic_intrinsic(id).is_some() {
+            let ast::ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
+                return Err(Error::Invariant("atomic constant query without call"));
+            };
+            // The frozen intrinsic evaluator attempts its last operand, then
+            // returns false for the non-floating atomic operation without
+            // recording a failure. Required initialization owns that fallback.
+            if let Some(&last) = self.tree.expr_lists.get(arguments).last() {
+                let facts = self.graph.expression_facts.get(last)?;
+                let target = facts.conversion.map_or(facts.ty, |step| step.target);
+                self.constant_operand_value(last, target, scope)?;
+            }
+            return Err(Error::NonConstant {
+                failure: super::ConstantFailure::Unreported,
+                location: self.tree.expressions.get(id).location,
+                message: "not an integral constant expression",
+            });
+        }
         if self.graph.expression_facts.get(id)?.literal_call.is_some() {
             return self.constant_literal_call(id, scope, destination);
         }

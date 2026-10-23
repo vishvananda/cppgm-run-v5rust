@@ -524,7 +524,10 @@ impl Analyzer<'_> {
         match self.specialize_template_name(name, arguments, SourceOffset(0)) {
             Ok(ty) => Ok(Some(ty)),
             Err(
-                Error::Diagnostic { location, message } | Error::NonConstant { location, message },
+                Error::Diagnostic { location, message }
+                | Error::NonConstant {
+                    location, message, ..
+                },
             ) => Ok(environment.reject_at(location, message)),
             Err(error) => Err(error),
         }
