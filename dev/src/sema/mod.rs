@@ -107,6 +107,7 @@ mod member_expressions;
 mod member_initializers;
 mod member_patterns;
 mod name_keys;
+mod nominal_predicates;
 mod operator_candidates;
 mod operator_resolution;
 mod pack_arguments;

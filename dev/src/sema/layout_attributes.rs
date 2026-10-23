@@ -17,6 +17,7 @@ pub(super) struct StorageAttributes {
     pub alignment: u32,
     pub packed: bool,
     pub standard_alignment: bool,
+    pub overlapping: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -25,6 +26,7 @@ pub(super) struct LayoutAttributes {
     packed: bool,
     standard: Option<SourceOffset>,
     pub no_inline: bool,
+    overlapping: bool,
     pub effects: super::graph::FunctionEffect,
     pub instantiation: super::explicit_instantiations::MemberPolicy,
 }
@@ -198,6 +200,7 @@ impl Analyzer<'_> {
                     }
                 }
                 ast::AttributeKind::Packed => result.packed = true,
+                ast::AttributeKind::NoUniqueAddress => result.overlapping = true,
                 ast::AttributeKind::NoInline => result.no_inline = true,
                 ast::AttributeKind::Pure => {
                     result.effects = result.effects.max(super::graph::FunctionEffect::ReadOnly);
@@ -228,6 +231,7 @@ impl Analyzer<'_> {
             let own = self.layout_attributes(node.attributes, scope, false)?;
             attributes.alignment = attributes.alignment.max(own.alignment);
             attributes.packed |= own.packed;
+            attributes.overlapping |= own.overlapping;
             attributes.no_inline |= own.no_inline;
             attributes.effects = attributes.effects.max(own.effects);
             attributes.instantiation.excluded |= own.instantiation.excluded;
@@ -303,6 +307,7 @@ impl Analyzer<'_> {
             old.alignment = target_alignment(attributes.alignment)?;
         }
         old.packed |= attributes.packed;
+        old.overlapping |= attributes.overlapping;
         Ok(())
     }
     pub(super) fn class_layout_attributes(

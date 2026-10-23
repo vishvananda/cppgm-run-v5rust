@@ -1,5 +1,5 @@
 // Translated from sema/analyzer_traits.cpp::shape_trait/trait_constant. See NOTICE.
-//! Classification consumes canonical type shape, without layout or body demand.
+//! Classification consumes canonical types and demands only the queried class facts.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -27,7 +27,12 @@ impl Analyzer<'_> {
         let (first, second, _) = self.predicate_types(syntax, scope, false)?;
         let ty = self.predicate_result_type(predicate)?;
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
-        let bits = self.predicate_value(predicate, first, second)?;
+        let bits = self.predicate_value(
+            predicate,
+            first,
+            second,
+            self.tree.expressions.get(id).location,
+        )?;
         facts.folded = Some(bits);
         super::record(
             &mut self.graph.constant_facts,
@@ -54,7 +59,7 @@ impl Analyzer<'_> {
         }
         Ok(Constant {
             high: 0,
-            bits: self.predicate_value(predicate, first, second)?,
+            bits: self.predicate_value(predicate, first, second, location)?,
             ty: self.predicate_result_type(predicate)?,
         })
     }
@@ -95,11 +100,15 @@ impl Analyzer<'_> {
     }
 
     fn predicate_value(
-        &self,
+        &mut self,
         predicate: T,
         ty: TypeId,
         second: Option<TypeId>,
+        location: SourceOffset,
     ) -> Result<u64, Error> {
+        if let Some(value) = self.class_predicate_value(predicate, ty, second, location)? {
+            return Ok(u64::from(value));
+        }
         let kind = &self.graph.types.get(ty).kind;
         let reference = matches!(kind, TypeKind::Reference { .. });
         let function = matches!(kind, TypeKind::Function { .. });
@@ -202,6 +211,15 @@ impl Analyzer<'_> {
                     element = inner;
                 }
                 return Ok(rank);
+            }
+            T::IsEmpty
+            | T::IsPolymorphic
+            | T::IsAbstract
+            | T::IsFinal
+            | T::IsAggregate
+            | T::HasVirtualDestructor
+            | T::IsBaseOf => {
+                return Err(Error::Invariant("class predicate without a result"));
             }
         };
         Ok(u64::from(value))

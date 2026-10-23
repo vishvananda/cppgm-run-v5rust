@@ -1,5 +1,5 @@
 // Translated from lex/gnu_builtins.{h,cpp}. See NOTICE.
-//! Type-only predicates: their operands never demand class completion.
+//! Typed predicates distinguish shape queries from class-completion queries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum TypePredicate {
     IsClass,
@@ -33,10 +33,17 @@ pub(crate) enum TypePredicate {
     IsScopedEnum,
     IsSame,
     ArrayRank,
+    IsEmpty,
+    IsPolymorphic,
+    IsAbstract,
+    IsFinal,
+    IsAggregate,
+    HasVirtualDestructor,
+    IsBaseOf,
 }
 
 impl TypePredicate {
-    const SPELLINGS: [(Self, &'static str); 31] = [
+    const SPELLINGS: [(Self, &'static str); 38] = [
         (Self::IsClass, "__is_class"),
         (Self::IsEnum, "__is_enum"),
         (Self::IsUnion, "__is_union"),
@@ -71,6 +78,13 @@ impl TypePredicate {
         (Self::IsScopedEnum, "__is_scoped_enum"),
         (Self::IsSame, "__is_same"),
         (Self::ArrayRank, "__array_rank"),
+        (Self::IsEmpty, "__is_empty"),
+        (Self::IsPolymorphic, "__is_polymorphic"),
+        (Self::IsAbstract, "__is_abstract"),
+        (Self::IsFinal, "__is_final"),
+        (Self::IsAggregate, "__is_aggregate"),
+        (Self::HasVirtualDestructor, "__has_virtual_destructor"),
+        (Self::IsBaseOf, "__is_base_of"),
     ];
 
     pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
@@ -84,6 +98,10 @@ impl TypePredicate {
     }
 
     pub(crate) fn arity(self) -> usize {
-        if self == Self::IsSame { 2 } else { 1 }
+        if matches!(self, Self::IsSame | Self::IsBaseOf) {
+            2
+        } else {
+            1
+        }
     }
 }
