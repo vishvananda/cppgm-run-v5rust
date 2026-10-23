@@ -59,6 +59,7 @@ pub(super) struct SymbolTable {
     terminate_pending: bool,
     bad_array_length: Option<SymbolId>,
     unexpected_function: Option<SymbolId>,
+    hosted_runtime: [Option<SymbolId>; 2],
     atexit: Option<SymbolId>,
     guard_functions: [Option<SymbolId>; 3],
     thread_atexit: Option<SymbolId>,
@@ -131,6 +132,59 @@ impl SymbolTable {
 enum EmptyListConstruction {
     Complete(bool),
     DepthCut,
+}
+impl Symbols<'_, '_> {
+    pub(super) fn hosted_runtime_function(
+        &mut self,
+        program: &mut Program,
+        function: super::runtime_intrinsics::RuntimeFunction,
+    ) -> Result<SymbolId, Error> {
+        use super::runtime_intrinsics::RuntimeFunction;
+        use crate::lowir::model::{Boundary, Returns, Signature, Unwind};
+        use crate::lowir::vocabulary::Binding;
+        if let Some(symbol) = self.table.hosted_runtime[function.index()] {
+            return Ok(symbol);
+        }
+        let trap = function == RuntimeFunction::Trap;
+        let (spelling, object) = if trap {
+            ("__cppgm_builtin_trap", "cppgm_builtin_trap")
+        } else {
+            ("__cppgm_libc_fegetround", "fegetround")
+        };
+        let symbol = self.table.allocate(program, spelling, None, true)?;
+        let signature = program.add_signature(Signature {
+            parameters: Vec::new(),
+            result: function.result(),
+            boundary: if trap {
+                Boundary {
+                    unwind: Unwind::No,
+                    returns: Returns::NoReturn,
+                    ..Boundary::default()
+                }
+            } else {
+                Boundary::default()
+            },
+        })?;
+        let object = program.names.intern(object)?;
+        program.add(
+            symbol,
+            crate::lowir::model::Function {
+                name: program.symbol(symbol).name,
+                signature,
+                metadata: Metadata {
+                    linkage: if trap { Linkage::Default } else { Linkage::C },
+                    binding: Some(Binding::Strong),
+                    object: Some(object),
+                    ..Metadata::default()
+                },
+                body: None,
+                location: None,
+            },
+        )?;
+        self.table.hosted_runtime[function.index()] = Some(symbol);
+        program.publish_runtime_declaration(symbol);
+        Ok(symbol)
+    }
 }
 pub(super) struct Symbols<'a, 'source> {
     graph: &'a Graph,
@@ -2241,7 +2295,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         metadata.object = Some(program.names.intern(object)?);
                     }
                 }
-                B::Invoke | B::IsConstantEvaluated => {}
+                B::Trap | B::Runtime(_) | B::Invoke | B::IsConstantEvaluated => {}
             }
             return Ok(metadata);
         }

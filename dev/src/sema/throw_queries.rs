@@ -319,11 +319,7 @@ impl Analyzer<'_> {
                     if matches!(
                         facts.destructor,
                         Some(super::expression_facts::DestructorTarget::Scalar)
-                    ) || self.graph.expression_facts.stack_intrinsic(id).is_some()
-                        || facts.intrinsic.is_some()
-                        || self.graph.expression_facts.integer_intrinsic(id).is_some()
-                        || self.graph.expression_facts.constant_evaluation_query(id)
-                        || self.graph.expression_facts.atomic_intrinsic(id).is_some()
+                    ) || self.graph.expression_facts.is_intrinsic(id, facts)
                     {
                         self.throw_work.push((callee, next));
                         continue;

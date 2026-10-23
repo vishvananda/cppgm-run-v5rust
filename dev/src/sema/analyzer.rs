@@ -223,6 +223,10 @@ impl<'tree> Analyzer<'tree> {
             unreachable: cursor
                 .intern_name(b"__builtin_unreachable")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            trap: cursor
+                .intern_name(b"__builtin_trap")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            runtime: super::runtime_intrinsics::names(cursor)?,
             stack: super::stack_intrinsics::StackNames::new(cursor)?,
             floating: super::floating_intrinsics::names(cursor)?,
             integer: super::integer_intrinsics::names(cursor)?,

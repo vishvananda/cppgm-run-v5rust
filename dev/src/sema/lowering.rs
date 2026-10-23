@@ -19,6 +19,7 @@ pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::integer_intrinsics::BitOperation;
 pub(crate) use super::lambdas::ClosureNamingContext;
 pub(crate) use super::literal_calls::LiteralCall;
+pub(crate) use super::runtime_intrinsics::RuntimeIntrinsic;
 pub(crate) use super::stack_intrinsics::StackIntrinsic;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
@@ -2114,6 +2115,13 @@ impl Graph {
     ) -> Result<Option<StackIntrinsic>, Error> {
         self.expression_facts.get(id)?;
         Ok(self.expression_facts.stack_intrinsic(id))
+    }
+    pub(crate) fn lower_runtime_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<RuntimeIntrinsic>, Error> {
+        self.expression_facts.get(id)?;
+        Ok(self.expression_facts.runtime_intrinsic(id))
     }
     pub(crate) fn lower_integer_intrinsic(
         &self,

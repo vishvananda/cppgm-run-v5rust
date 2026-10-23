@@ -344,6 +344,7 @@ impl Analyzer<'_> {
                         .builtin,
                     Some(
                         super::builtin_calls::BuiltinFunction::Integer(_)
+                            | super::builtin_calls::BuiltinFunction::Runtime(_)
                             | super::builtin_calls::BuiltinFunction::Floating(_)
                             | super::builtin_calls::BuiltinFunction::Invoke
                             | super::builtin_calls::BuiltinFunction::IsConstantEvaluated

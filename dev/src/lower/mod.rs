@@ -71,6 +71,7 @@ mod pointers;
 mod range_for;
 mod reference_lifetimes;
 mod references;
+mod runtime_intrinsics;
 mod runtime_roles;
 mod shutdown;
 mod stack_intrinsics;

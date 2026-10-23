@@ -746,6 +746,8 @@ impl Function<'_, '_, '_, '_> {
             self.zero(ty)
         } else if let Some(kind) = self.graph.lower_stack_intrinsic(id)? {
             self.stack_intrinsic(id, arguments, kind)
+        } else if let Some(kind) = self.graph.lower_runtime_intrinsic(id)? {
+            self.runtime_intrinsic(id, arguments, kind)
         } else if let Some(kind) = self.graph.lower_atomic_intrinsic(id)? {
             self.atomic_intrinsic(id, arguments, kind)
         } else if let Some(kind) = self.graph.lower_integer_intrinsic(id)? {
@@ -807,9 +809,18 @@ impl Function<'_, '_, '_, '_> {
         if let CallTarget::Direct(entity) = target
             && matches!(
                 self.graph.lower_function(entity)?.builtin,
-                Some(crate::sema::lowering::BuiltinFunction::Unreachable)
+                Some(
+                    crate::sema::lowering::BuiltinFunction::Unreachable
+                        | crate::sema::lowering::BuiltinFunction::Trap
+                )
             )
         {
+            if matches!(
+                self.graph.lower_function(entity)?.builtin,
+                Some(crate::sema::lowering::BuiltinFunction::Trap)
+            ) {
+                self.hosted_runtime_call(super::runtime_intrinsics::RuntimeFunction::Trap, source)?;
+            }
             self.effect(I::Unreachable)?;
             self.terminated = true;
             return self.zero(source);

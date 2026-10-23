@@ -291,6 +291,8 @@ pub(super) struct ExpressionFacts {
     constant_evaluation_queries: std::collections::HashSet<ast::ExprId>,
     stack_intrinsics:
         std::collections::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
+    runtime_intrinsics:
+        std::collections::HashMap<ast::ExprId, super::runtime_intrinsics::RuntimeIntrinsic>,
     integer_intrinsics:
         std::collections::HashMap<ast::ExprId, super::integer_intrinsics::BitOperation>,
     atomic_intrinsics:
@@ -331,6 +333,7 @@ pub(super) struct ExpressionFacts {
 impl ExpressionFacts {
     pub(super) fn is_intrinsic(&self, id: ast::ExprId, facts: ExprFacts) -> bool {
         self.stack_intrinsic(id).is_some()
+            || self.runtime_intrinsic(id).is_some()
             || self.constant_evaluation_query(id)
             || facts.intrinsic.is_some()
             || self.integer_intrinsic(id).is_some()
@@ -361,6 +364,19 @@ impl ExpressionFacts {
         id: ast::ExprId,
     ) -> Option<super::integer_intrinsics::BitOperation> {
         self.integer_intrinsics.get(&self.root(id)).copied()
+    }
+    pub(super) fn runtime_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::runtime_intrinsics::RuntimeIntrinsic> {
+        self.runtime_intrinsics.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_runtime_intrinsic(
+        &mut self,
+        id: ast::ExprId,
+        operation: super::runtime_intrinsics::RuntimeIntrinsic,
+    ) {
+        self.runtime_intrinsics.insert(self.root(id), operation);
     }
     pub(super) fn set_integer_intrinsic(
         &mut self,

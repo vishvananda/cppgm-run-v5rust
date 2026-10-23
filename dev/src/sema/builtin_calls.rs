@@ -24,7 +24,9 @@ pub(crate) enum BuiltinFunction {
     Memset,
     Strlen,
     Unreachable,
+    Trap,
     Invoke,
+    Runtime(super::runtime_intrinsics::RuntimeIntrinsic),
     Stack(super::stack_intrinsics::StackIntrinsic),
     Atomic(super::atomic_operations::AtomicBuiltinId),
     Floating(super::floating_intrinsics::FloatingOperation),
@@ -179,6 +181,8 @@ pub(super) struct BuiltinNames {
     pub memset: NameId,
     pub strlen: NameId,
     pub unreachable: NameId,
+    pub trap: NameId,
+    pub runtime: Vec<(NameId, super::runtime_intrinsics::RuntimeIntrinsic)>,
     pub stack: super::stack_intrinsics::StackNames,
     pub atomic: super::atomic_operations::AtomicBuiltins,
     pub integer: Vec<(NameId, super::integer_intrinsics::IntegerBuiltin)>,
@@ -208,10 +212,14 @@ impl Analyzer<'_> {
             BuiltinFunction::Strlen
         } else if key == names.unreachable {
             BuiltinFunction::Unreachable
+        } else if key == names.trap {
+            BuiltinFunction::Trap
         } else if key == names.invoke {
             BuiltinFunction::Invoke
         } else if let Some(operation) = names.stack.find(key) {
             BuiltinFunction::Stack(operation)
+        } else if let Some((_, operation)) = names.runtime.iter().find(|&&(name, _)| name == key) {
+            BuiltinFunction::Runtime(*operation)
         } else if let Some(id) = names.atomic.find(key) {
             BuiltinFunction::Atomic(id)
         } else if let Some((_, kind)) = names.integer.iter().find(|&&(name, _)| name == key) {
@@ -252,12 +260,13 @@ impl Analyzer<'_> {
             signature
         } else if matches!(
             builtin,
-            BuiltinFunction::Abort | BuiltinFunction::Unreachable
+            BuiltinFunction::Abort | BuiltinFunction::Unreachable | BuiltinFunction::Trap
         ) {
             (void, Vec::new())
         } else if matches!(
             builtin,
             BuiltinFunction::Integer(_)
+                | BuiltinFunction::Runtime(_)
                 | BuiltinFunction::Floating(_)
                 | BuiltinFunction::Atomic(_)
                 | BuiltinFunction::Stack(_)
@@ -300,6 +309,8 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Expect
                     | BuiltinFunction::Strlen
                     | BuiltinFunction::Unreachable
+                    | BuiltinFunction::Trap
+                    | BuiltinFunction::Runtime(_)
                     | BuiltinFunction::Invoke
                     | BuiltinFunction::LibraryNan(_)
                     | BuiltinFunction::Library
@@ -319,6 +330,7 @@ impl Analyzer<'_> {
                 variadic: matches!(
                     builtin,
                     BuiltinFunction::Integer(_)
+                        | BuiltinFunction::Runtime(_)
                         | BuiltinFunction::Floating(_)
                         | BuiltinFunction::Stack(_)
                         | BuiltinFunction::Atomic(_)
@@ -436,6 +448,9 @@ impl Analyzer<'_> {
                     .map(Some),
                 Some(BuiltinFunction::Stack(operation)) => self
                     .stack_builtin(id, arguments, operation, scope)
+                    .map(Some),
+                Some(BuiltinFunction::Runtime(operation)) => self
+                    .runtime_builtin(id, arguments, operation, scope)
                     .map(Some),
                 _ => Ok(None),
             };

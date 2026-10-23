@@ -124,6 +124,7 @@ mod qualifier_prefixes;
 mod queries;
 mod range_for;
 mod return_deduction;
+mod runtime_intrinsics;
 mod scalar_casts;
 mod scalar_conversions;
 mod scalar_expressions;

@@ -1,0 +1,127 @@
+// Translated from lower/intrinsic_lowering.cpp and expression_lowering.cpp. See NOTICE.
+//! Expand hosted hints and runtime queries without changing backend policy.
+use super::{
+    Error,
+    conversions::Context,
+    function::{Function, RValue},
+};
+use crate::{
+    lowir::{
+        model::{Call, Facts, InstructionKind as I, Value},
+        vocabulary::{Binary, Type},
+    },
+    sema::lowering::{RuntimeIntrinsic, TypeId},
+    syntax::{ast, storage::List},
+};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum RuntimeFunction {
+    RoundingMode,
+    Trap,
+}
+impl RuntimeFunction {
+    pub(super) fn index(self) -> usize {
+        match self {
+            Self::RoundingMode => 0,
+            Self::Trap => 1,
+        }
+    }
+    pub(super) fn result(self) -> Type {
+        match self {
+            Self::RoundingMode => Type::I32,
+            Self::Trap => Type::Void,
+        }
+    }
+}
+
+impl Function<'_, '_, '_, '_> {
+    pub(super) fn runtime_intrinsic(
+        &mut self,
+        id: ast::ExprId,
+        arguments: List<ast::ExprId>,
+        operation: RuntimeIntrinsic,
+    ) -> Result<RValue, Error> {
+        let source = self.graph.lower_expression(id)?.ty;
+        let arguments = self.tree.expr_lists.get(arguments);
+        match operation {
+            RuntimeIntrinsic::ObjectSize { minimum } => {
+                self.runtime_integer(Type::I64, if minimum { 0 } else { u64::MAX }, source)
+            }
+            RuntimeIntrinsic::Prefetch => {
+                for &argument in arguments {
+                    self.discard(argument)?;
+                }
+                self.zero(source)
+            }
+            RuntimeIntrinsic::AssumeAligned => {
+                let value = self.operand(arguments[0], Context::Argument)?;
+                for &argument in &arguments[1..] {
+                    self.discard(argument)?;
+                }
+                Ok(value)
+            }
+            RuntimeIntrinsic::FltRounds => {
+                let mode = self.hosted_runtime_call(RuntimeFunction::RoundingMode, source)?;
+                let nine = self.runtime_integer(Type::I32, 9, source)?;
+                let shifted = self.runtime_binary(Binary::Shr, mode, nine, source)?;
+                let six = self.runtime_integer(Type::I32, 6, source)?;
+                let shift = self.runtime_binary(Binary::And, shifted, six, source)?;
+                let mapping = self.runtime_integer(Type::I32, 45, source)?;
+                let mapped = self.runtime_binary(Binary::Shr, mapping, shift, source)?;
+                let mask = self.runtime_integer(Type::I32, 3, source)?;
+                self.runtime_binary(Binary::And, mapped, mask, source)
+            }
+        }
+    }
+    pub(super) fn hosted_runtime_call(
+        &mut self,
+        function: RuntimeFunction,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
+        let callee = self
+            .symbols
+            .hosted_runtime_function(self.builder.program(), function)?;
+        let arguments = self.builder.arguments(&[])?;
+        let call = I::Call(Call {
+            result: function.result(),
+            callee: Value::Symbol(callee),
+            arguments,
+            signature: None,
+            copy_elision: false,
+            argument_classes: Vec::new(),
+        });
+        if function.result() == Type::Void {
+            self.effect(call)?;
+            self.zero(source)
+        } else {
+            self.emit(call, source)
+        }
+    }
+    fn runtime_integer(&mut self, ty: Type, bits: u64, source: TypeId) -> Result<RValue, Error> {
+        Ok(RValue {
+            value: self.builder.integer(u128::from(bits))?,
+            ty,
+            source,
+            literal: true,
+            bits: Some(bits),
+        })
+    }
+    fn runtime_binary(
+        &mut self,
+        operation: Binary,
+        left: RValue,
+        right: RValue,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
+        self.emit(
+            I::Binary(
+                operation,
+                Facts::default(),
+                left.ty,
+                left.value,
+                right.value,
+            ),
+            source,
+        )
+    }
+}

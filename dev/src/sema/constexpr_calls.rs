@@ -319,12 +319,14 @@ impl Analyzer<'_> {
         destination: Option<Address>,
     ) -> Result<Returned, Error> {
         let id = self.graph.expression_facts.root(id);
-        if self.graph.expression_facts.atomic_intrinsic(id).is_some() {
+        if self.graph.expression_facts.atomic_intrinsic(id).is_some()
+            || self.graph.expression_facts.runtime_intrinsic(id).is_some()
+        {
             let ast::ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
-                return Err(Error::Invariant("atomic constant query without call"));
+                return Err(Error::Invariant("runtime constant query without call"));
             };
             // The frozen intrinsic evaluator attempts its last operand, then
-            // returns false for the non-floating atomic operation without
+            // returns false for the non-floating runtime operation without
             // recording a failure. Required initialization owns that fallback.
             if let Some(&last) = self.tree.expr_lists.get(arguments).last() {
                 let facts = self.graph.expression_facts.get(last)?;
