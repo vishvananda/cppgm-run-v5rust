@@ -50,6 +50,7 @@ mod function;
 mod globals;
 mod handlers;
 mod initializer_lists;
+mod integer_intrinsics;
 mod lexical_cleanup;
 mod lifetime;
 mod lifetime_regions;

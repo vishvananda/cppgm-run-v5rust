@@ -568,6 +568,9 @@ impl Analyzer<'_> {
         if self.graph.expression_facts.constant_evaluation_query(id) {
             return self.boolean(true);
         }
+        if let Some(kind) = self.graph.expression_facts.integer_intrinsic(id) {
+            return self.constant_integer_intrinsic(id, kind, scope);
+        }
         if let Some(kind) = facts.intrinsic {
             if matches!(
                 kind,

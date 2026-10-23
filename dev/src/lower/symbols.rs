@@ -2218,6 +2218,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 | B::Memset
                 | B::Unreachable
                 | B::Expect
+                | B::Integer(_)
                 | B::Floating(_)
                 | B::Stack(_)
                 | B::Atomic(_) => {

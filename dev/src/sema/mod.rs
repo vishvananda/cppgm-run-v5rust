@@ -87,6 +87,7 @@ mod inherited_constructors;
 mod initialization;
 mod initializer_lists;
 mod instance_definitions;
+mod integer_intrinsics;
 mod integral;
 mod jumps;
 mod lambdas;

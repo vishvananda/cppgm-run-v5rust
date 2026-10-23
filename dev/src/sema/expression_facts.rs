@@ -291,6 +291,8 @@ pub(super) struct ExpressionFacts {
     constant_evaluation_queries: std::collections::HashSet<ast::ExprId>,
     stack_intrinsics:
         std::collections::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
+    integer_intrinsics:
+        std::collections::HashMap<ast::ExprId, super::integer_intrinsics::BitOperation>,
     atomic_intrinsics:
         std::collections::HashMap<ast::ExprId, super::atomic_operations::AtomicIntrinsic>,
     // Allocated only when a floating builtin publishes a value. Its compact
@@ -331,6 +333,7 @@ impl ExpressionFacts {
         self.stack_intrinsic(id).is_some()
             || self.constant_evaluation_query(id)
             || facts.intrinsic.is_some()
+            || self.integer_intrinsic(id).is_some()
             || self.atomic_intrinsic(id).is_some()
     }
 
@@ -352,6 +355,19 @@ impl ExpressionFacts {
         kind: super::stack_intrinsics::StackIntrinsic,
     ) {
         self.stack_intrinsics.insert(self.root(id), kind);
+    }
+    pub(super) fn integer_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::integer_intrinsics::BitOperation> {
+        self.integer_intrinsics.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_integer_intrinsic(
+        &mut self,
+        id: ast::ExprId,
+        operation: super::integer_intrinsics::BitOperation,
+    ) {
+        self.integer_intrinsics.insert(self.root(id), operation);
     }
     pub(super) fn atomic_intrinsic(
         &self,

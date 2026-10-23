@@ -225,6 +225,7 @@ impl<'tree> Analyzer<'tree> {
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
             stack: super::stack_intrinsics::StackNames::new(cursor)?,
             floating: super::floating_intrinsics::names(cursor)?,
+            integer: super::integer_intrinsics::names(cursor)?,
             atomic: super::atomic_operations::names(cursor)?,
         };
         let mut analyzer = Self {

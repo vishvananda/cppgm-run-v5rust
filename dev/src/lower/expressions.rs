@@ -535,7 +535,18 @@ impl Function<'_, '_, '_, '_> {
             b
         };
         if comparison {
-            let unsigned = !types::signed(self.graph, a.source)? && a.ty.float_rank() == 0;
+            let facts = self.graph.lower_expression(left)?;
+            let common = facts.target.unwrap_or(a.source);
+            let common_storage = types::storage(self.graph, common)?;
+            let ty = if a.ty.bits() != 0
+                && common_storage.bits() != 0
+                && a.ty.bits() == common_storage.bits()
+            {
+                common_storage
+            } else {
+                a.ty
+            };
+            let unsigned = !types::signed(self.graph, common)? && a.ty.float_rank() == 0;
             let predicate = match (op, unsigned) {
                 (P::Equal, _) => Compare::Eq,
                 (P::NotEqual, _) => Compare::Ne,
@@ -548,14 +559,17 @@ impl Function<'_, '_, '_, '_> {
                 (P::GreaterEqual, false) => Compare::Ge,
                 _ => Compare::Uge,
             };
-            return self.emit(I::Compare(predicate, a.ty, a.value, b.value), source);
+            return self.emit(I::Compare(predicate, ty, a.value, b.value), source);
         }
-        let signed = types::signed(self.graph, a.source)?;
+        // Arithmetic has the recorded result type even when an intrinsic's
+        // backend value uses another same-width representation (u32 counts).
+        let ty = types::storage(self.graph, source)?;
+        let signed = types::signed(self.graph, source)?;
         let operation = match op {
             P::Add => Binary::Add,
             P::Subtract => Binary::Sub,
             P::Multiply => Binary::Mul,
-            P::Divide if signed || a.ty.float_rank() != 0 => Binary::Div,
+            P::Divide if signed || ty.float_rank() != 0 => Binary::Div,
             P::Divide => Binary::UDiv,
             P::Remainder if signed => Binary::Mod,
             P::Remainder => Binary::UMod,
@@ -571,13 +585,13 @@ impl Function<'_, '_, '_, '_> {
             return Err(Error::Missing("pointer arithmetic lowering"));
         }
         let nowrap = signed
-            && matches!(a.ty, Type::I32 | Type::I64)
+            && matches!(ty, Type::I32 | Type::I64)
             && matches!(operation, Binary::Add | Binary::Sub | Binary::Mul);
         self.emit(
             I::Binary(
                 operation,
                 Facts::arithmetic(nowrap, false),
-                a.ty,
+                ty,
                 a.value,
                 b.value,
             ),
@@ -734,6 +748,8 @@ impl Function<'_, '_, '_, '_> {
             self.stack_intrinsic(id, arguments, kind)
         } else if let Some(kind) = self.graph.lower_atomic_intrinsic(id)? {
             self.atomic_intrinsic(id, arguments, kind)
+        } else if let Some(kind) = self.graph.lower_integer_intrinsic(id)? {
+            self.integer_intrinsic(id, arguments, kind)
         } else if let Some(kind) = self.graph.lower_floating_intrinsic(id)? {
             self.floating_intrinsic(id, arguments, kind)
         } else {

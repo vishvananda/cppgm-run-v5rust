@@ -28,6 +28,7 @@ pub(crate) enum BuiltinFunction {
     Stack(super::stack_intrinsics::StackIntrinsic),
     Atomic(super::atomic_operations::AtomicBuiltinId),
     Floating(super::floating_intrinsics::FloatingOperation),
+    Integer(super::integer_intrinsics::IntegerBuiltin),
     LibraryNan(F),
 }
 
@@ -122,6 +123,7 @@ pub(super) struct BuiltinNames {
     pub unreachable: NameId,
     pub stack: super::stack_intrinsics::StackNames,
     pub atomic: super::atomic_operations::AtomicBuiltins,
+    pub integer: Vec<(NameId, super::integer_intrinsics::IntegerBuiltin)>,
     pub floating: Vec<(NameId, super::floating_intrinsics::FloatingOperation)>,
 }
 impl Analyzer<'_> {
@@ -154,6 +156,8 @@ impl Analyzer<'_> {
             BuiltinFunction::Stack(operation)
         } else if let Some(id) = names.atomic.find(key) {
             BuiltinFunction::Atomic(id)
+        } else if let Some((_, kind)) = names.integer.iter().find(|&&(name, _)| name == key) {
+            BuiltinFunction::Integer(*kind)
         } else if let Some((_, kind)) = names.floating.iter().find(|&&(name, _)| name == key) {
             BuiltinFunction::Floating(*kind)
         } else {
@@ -188,7 +192,8 @@ impl Analyzer<'_> {
             (void, Vec::new())
         } else if matches!(
             builtin,
-            BuiltinFunction::Floating(_)
+            BuiltinFunction::Integer(_)
+                | BuiltinFunction::Floating(_)
                 | BuiltinFunction::Atomic(_)
                 | BuiltinFunction::Stack(_)
                 | BuiltinFunction::Invoke
@@ -234,6 +239,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::LibraryNan(_)
                     | BuiltinFunction::Stack(_)
                     | BuiltinFunction::Atomic(_)
+                    | BuiltinFunction::Integer(_)
                     | BuiltinFunction::Floating(_) => {
                         return Err(Error::Invariant("memory builtin signature"));
                     }
@@ -246,7 +252,8 @@ impl Analyzer<'_> {
                 parameters,
                 variadic: matches!(
                     builtin,
-                    BuiltinFunction::Floating(_)
+                    BuiltinFunction::Integer(_)
+                        | BuiltinFunction::Floating(_)
                         | BuiltinFunction::Stack(_)
                         | BuiltinFunction::Atomic(_)
                         | BuiltinFunction::Invoke
@@ -351,6 +358,9 @@ impl Analyzer<'_> {
                 Some(BuiltinFunction::Invoke) => {
                     self.builtin_invoke(id, arguments, scope).map(Some)
                 }
+                Some(BuiltinFunction::Integer(operation)) => self
+                    .integer_builtin(id, arguments, operation, scope)
+                    .map(Some),
                 Some(BuiltinFunction::Floating(operation)) => self
                     .floating_builtin(id, arguments, operation, scope)
                     .map(Some),

@@ -339,7 +339,8 @@ impl Analyzer<'_> {
                         .entity(self.graph.binding(binding).entity)
                         .builtin,
                     Some(
-                        super::builtin_calls::BuiltinFunction::Floating(_)
+                        super::builtin_calls::BuiltinFunction::Integer(_)
+                            | super::builtin_calls::BuiltinFunction::Floating(_)
                             | super::builtin_calls::BuiltinFunction::Invoke
                             | super::builtin_calls::BuiltinFunction::IsConstantEvaluated
                     )

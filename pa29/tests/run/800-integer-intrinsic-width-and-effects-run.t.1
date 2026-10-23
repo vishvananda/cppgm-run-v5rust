@@ -1,0 +1,16 @@
+int calls;
+int fallback() { ++calls; return -7; }
+int count(unsigned char x) { return ::__builtin_clzg(x, fallback()); }
+int mixed(unsigned x, unsigned long y) {
+  return __builtin_clz(x) + __builtin_ctzl(y) + __builtin_popcount(x);
+}
+int wide(unsigned __int128 x) { return __builtin_popcountg(x); }
+int scan(unsigned __int128 x) { return __builtin_ctzg(x, 128); }
+int main() {
+  if (count(1) != 7 || calls != 1) return 1;
+  if (count(0) != -7 || calls != 2) return 2;
+  if (mixed(8u, 8ul) != 32) return 3;
+  if (wide(((unsigned __int128)0xff << 96) | 3) != 10) return 4;
+  if (scan((unsigned __int128)1 << 95) != 95 || scan(0) != 128) return 5;
+  return 0;
+}
