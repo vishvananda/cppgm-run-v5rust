@@ -201,13 +201,19 @@ impl Function<'_, '_, '_, '_> {
             .tls_wrapper(self.builder.program(), entity, symbol)?
         {
             let arguments = self.builder.arguments(&[])?;
-            Ok(self.builder.generated(I::Call(crate::lowir::model::Call {
+            // expression_lowering.cpp::name_place uses emit_call(false):
+            // a wrapper participates in the active cleanup segment even
+            // though the wrapper call itself adds no throwing-call mark.
+            self.before_lifetime_call(false)?;
+            self.ensure_insertion()?;
+            let value = self.builder.generated(I::Call(crate::lowir::model::Call {
                 result: Type::Ptr,
                 callee: Value::Symbol(wrapper),
                 arguments,
                 copy_elision: false,
                 signature: None,
-            }))?)
+            }))?;
+            self.finish_lifetime_value(value, Type::Ptr, false)
         } else {
             Ok(self.builder.generated(I::Addr(Value::Symbol(symbol)))?)
         }

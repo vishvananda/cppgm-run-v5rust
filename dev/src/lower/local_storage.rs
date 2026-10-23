@@ -277,9 +277,6 @@ impl Function<'_, '_, '_, '_> {
             }
             Ok::<(), Error>(())
         });
-        self.lifetime.construction = construction;
-        self.lifetime.construction_flow = construction_flow;
-        self.lifetime.construction_start = construction_start;
         self.persistent_references = persistent;
         self.symbols.replace_temporary_owner(saved);
         let temporaries = std::mem::replace(&mut self.static_temporaries, previous).ok_or(
@@ -314,6 +311,11 @@ impl Function<'_, '_, '_, '_> {
         self.destroy_temporaries(first)?;
         self.end_lifetime_expression(region)?;
         self.close_lifetime_region()?;
+        // local_object's construction scope includes static completion: the
+        // registrar's scalar result is staged while this region is active.
+        self.lifetime.construction = construction;
+        self.lifetime.construction_flow = construction_flow;
+        self.lifetime.construction_start = construction_start;
         self.jump(ready)?;
         self.place(ready)
     }

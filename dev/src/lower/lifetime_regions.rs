@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     lowir::{
-        model::{Facts, InstructionKind as I, RuntimeInstruction as R},
+        model::{Facts, InstructionKind as I, RuntimeInstruction as R, Value},
         vocabulary::Type,
     },
     sema::lowering::TypeId,
@@ -671,6 +671,20 @@ impl Function<'_, '_, '_, '_> {
         value: RValue,
         throws: bool,
     ) -> Result<RValue, Error> {
+        let result = self.finish_lifetime_value(value.value, value.ty, throws)?;
+        Ok(RValue {
+            value: result,
+            ..value
+        })
+    }
+    /// Preserve a call result using its `LowIR` type, including compiler-created
+    /// calls that have no source-language result type (TLS wrappers).
+    pub(super) fn finish_lifetime_value(
+        &mut self,
+        value: Value,
+        ty: Type,
+        throws: bool,
+    ) -> Result<Value, Error> {
         if throws && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
@@ -679,27 +693,30 @@ impl Function<'_, '_, '_, '_> {
         {
             self.close_lifetime_region()?;
         }
+        // A pending outer call covers a nonthrowing receiver call's result
+        // before its region marker is inserted. It is not an uncovered call
+        // preceding all of the segment's calls and temporaries.
         if !transient
             && (throws || !self.has_tracked_region())
             && (self.lifetime.region
-                || self.lifetime.full_expression && self.lifetime.temporary_segment.is_present())
-            && !matches!(value.ty, Type::Void | Type::Object { .. })
+                || self.lifetime.full_expression
+                    && (self.lifetime.temporary_segment.is_present()
+                        || !throws && !self.lifetime.call_marks.is_empty()))
+            && !matches!(ty, Type::Void | Type::Object { .. })
         {
-            let slot = self.generated_slot("call", value.ty)?;
+            let slot = self.generated_slot("call", ty)?;
             self.effect(I::Store(
-                Facts::memory(false, !matches!(value.ty, Type::I8 | Type::U8)),
-                value.ty,
-                value.value,
+                Facts::memory(false, !matches!(ty, Type::I8 | Type::U8)),
+                ty,
+                value,
                 slot,
             ))?;
-            return self.emit(
-                I::Load(
-                    Facts::memory(false, !matches!(value.ty, Type::I8 | Type::U8)),
-                    value.ty,
-                    slot,
-                ),
-                value.source,
-            );
+            self.ensure_insertion()?;
+            return Ok(self.builder.generated(I::Load(
+                Facts::memory(false, !matches!(ty, Type::I8 | Type::U8)),
+                ty,
+                slot,
+            ))?);
         }
         Ok(value)
     }

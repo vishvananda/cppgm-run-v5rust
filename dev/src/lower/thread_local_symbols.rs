@@ -273,6 +273,9 @@ impl Symbols<'_, '_> {
                 },
             )?;
             if !define {
+                // The synthetic declaration is published at first demand;
+                // ordinary callable declarations remain pending until the end.
+                program.publish_runtime_declaration(symbol);
                 program.optional_reference(symbol);
             }
         }
