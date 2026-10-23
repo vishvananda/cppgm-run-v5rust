@@ -256,6 +256,10 @@ impl Analyzer<'_> {
                             || component.arguments.is_some()
                     }))
             }
+            ExprKind::VaArg { ty, .. } => {
+                let ty = self.type_syntax(ty, scope)?;
+                Ok(self.exception_dependent_type(ty))
+            }
             ExprKind::Cast { ty, operand, .. } => {
                 let ty = self.type_syntax(ty, scope)?;
                 Ok(self.exception_dependent_type(ty)

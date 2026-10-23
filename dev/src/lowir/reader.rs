@@ -319,7 +319,7 @@ impl<'a> Parser<'a> {
         }
         self.expect(Kind::RBracket, "]")
     }
-    fn object_classes(&mut self, ty: Type) -> Result<ObjectClasses, Error> {
+    pub(super) fn object_classes(&mut self, ty: Type) -> Result<ObjectClasses, Error> {
         let bytes = match ty {
             Type::Object { bytes, .. } => bytes,
             Type::I128 | Type::F80 => 16,

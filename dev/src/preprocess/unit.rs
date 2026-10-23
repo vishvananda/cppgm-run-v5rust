@@ -27,6 +27,12 @@ pub struct Preprocessor<'a> {
     directives: u64,
 }
 impl<'a> Preprocessor<'a> {
+    pub(crate) fn enter_builtin_declarations(
+        &mut self,
+        text: &[u8],
+    ) -> Result<(), PreprocessError> {
+        self.source.enter_builtin_declarations(text)
+    }
     pub(crate) fn set_number_options(&mut self, options: crate::lex::number::NumberOptions) {
         self.source.set_binary_exponents(options.binary_exponents);
         self.expander.set_binary_exponents(options.binary_exponents);

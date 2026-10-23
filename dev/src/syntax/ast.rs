@@ -522,6 +522,10 @@ pub(crate) enum ExprKind {
         operand: Option<ExprId>,
         parenthesized: bool,
     },
+    VaArg {
+        operand: ExprId,
+        ty: TypeId,
+    },
     TypeTrait {
         keyword: Keyword,
         ty: Option<TypeId>,

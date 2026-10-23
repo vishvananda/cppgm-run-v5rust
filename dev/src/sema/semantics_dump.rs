@@ -1554,7 +1554,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Conditional { .. } => "conditional-expression",
             ExprKind::Subscript { .. } => "subscript-expression",
             ExprKind::Member { .. } => "member-expression",
-            ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. } => "sizeof-expression",
+            ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. } | ExprKind::VaArg { .. } => {
+                "sizeof-expression"
+            }
             ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
             ExprKind::Braced { .. } => "braced-init-list",
             ExprKind::New { .. }

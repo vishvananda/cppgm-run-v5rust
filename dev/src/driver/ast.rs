@@ -178,22 +178,29 @@ pub(crate) fn emit_compilation_unit(
     )
 }
 fn emit_preprocessed(
-    preprocessor: Preprocessor<'_>,
+    mut preprocessor: Preprocessor<'_>,
     destination: Destination<'_>,
     ordinal: usize,
     stack_budget: crate::support::stack::StackBudget,
     mode: EmitMode,
 ) -> Result<(), AstToolError> {
-    let origin = if mode == EmitMode::LowIr {
-        super::host_declarations::token_origin().map_err(AstToolError::Internal)?
+    let origins = if mode == EmitMode::LowIr {
+        preprocessor
+            .enter_builtin_declarations(super::host_declarations::VA_DECLARATIONS)
+            .map_err(AstToolError::Initialization)?;
+        super::host_declarations::token_origins().map_err(AstToolError::Internal)?
     } else {
-        0
+        super::host_declarations::TokenOrigins {
+            first: 0,
+            source: 0,
+        }
     };
     let numbers = crate::lex::number::NumberOptions {
         dialect: crate::lex::number::NumberDialect::Gnu,
         binary_exponents: mode == EmitMode::LowIr,
     };
-    let mut unit = SyntaxUnit::with_token_origin(preprocessor, origin, numbers);
+    let mut unit = SyntaxUnit::with_token_origin(preprocessor, origins.first, numbers);
+    unit.set_source_origin(origins.source);
     unit.set_stack_budget(stack_budget);
     if let Err(error) = unit.parse() {
         return Err(match error {

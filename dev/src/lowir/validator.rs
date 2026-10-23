@@ -303,11 +303,11 @@ fn runtime_error(
                 return Some("va_start requires a pointer value");
             }
         }
-        R::VaArg(ty, list) => {
+        R::VaArg(ty, list, _) => {
             if value_type(body, list) != Some(Type::Ptr) {
                 return Some("va_arg requires a pointer value");
             }
-            if !matches!(
+            let scalar = matches!(
                 ty,
                 Type::I8
                     | Type::U8
@@ -318,7 +318,10 @@ fn runtime_error(
                     | Type::I64
                     | Type::F64
                     | Type::Ptr
-            ) {
+            );
+            let object =
+                program.object_facts && matches!(ty, Type::Object { .. } | Type::F80 | Type::I128);
+            if !scalar && !object {
                 return Some("va_arg scalar type is not supported");
             }
         }

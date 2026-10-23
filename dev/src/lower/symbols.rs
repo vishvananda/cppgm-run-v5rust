@@ -336,6 +336,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         Ok(Some(flag))
     }
+    pub(super) fn object_argument_classes(
+        &mut self,
+        ty: TypeId,
+    ) -> Result<Option<crate::lowir::vocabulary::ObjectClasses>, Error> {
+        self.object_classes.classify(self.graph, ty, self.budget)
+    }
     pub(super) fn parameter_classes(
         &mut self,
         ty: TypeId,
@@ -2210,6 +2216,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 | B::Unreachable
                 | B::Expect
                 | B::Floating(_)
+                | B::Stack(_)
                 | B::Atomic(_) => {
                     metadata.linkage = Linkage::C;
                 }

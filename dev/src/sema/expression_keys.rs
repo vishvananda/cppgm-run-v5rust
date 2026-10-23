@@ -51,6 +51,7 @@ pub(crate) enum KeyNode {
     Id,
     Name,
     Arguments,
+    VaArg,
     Keyword,
     This,
     Paren,
@@ -250,6 +251,12 @@ impl Analyzer<'_> {
             }
             ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
                 return self.key_size(operand, ty, scope, expr, key);
+            }
+            ExprKind::VaArg { operand, ty } => {
+                key.words.push(KeyWord::Node(KeyNode::VaArg));
+                let ty = self.type_syntax(ty, scope)?;
+                self.key_type(ty, key)?;
+                return self.key_expression(operand, scope, key);
             }
             ExprKind::New { .. } => return self.key_allocation(expr.kind, scope, key),
             ExprKind::Delete {

@@ -1138,6 +1138,14 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.tasks.push(Task::Expression(operand));
                 }
             }
+            ExprKind::VaArg { operand, ty } => {
+                self.open(
+                    "builtin-trait-expression",
+                    Payload::Text("__builtin_va_arg"),
+                )?;
+                self.tasks.push(Task::Expression(operand));
+                self.tasks.push(Task::Type(ty));
+            }
             ExprKind::TypeTrait {
                 keyword,
                 ty,

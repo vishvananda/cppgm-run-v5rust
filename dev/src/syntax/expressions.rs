@@ -271,6 +271,29 @@ impl Parser<'_> {
                 kind: ExprKind::Unary { op, operand },
             });
         }
+        let va_arg = if let Some(name) = self.va_arg {
+            name
+        } else {
+            let name = self.cursor.intern_name(b"__builtin_va_arg")?;
+            self.va_arg = Some(name);
+            name
+        };
+        if matches!(self.token()?.kind, TokenKind::Identifier(name) if name == va_arg) {
+            self.cursor.advance()?;
+            self.expect(P::LeftParen)?;
+            let (operand, ty) = self.without_angle(|parser| {
+                let operand = parser.assignment_expression()?;
+                parser.expect(P::Comma)?;
+                let ty = parser.type_id(false)?;
+                parser.expect(P::RightParen)?;
+                Ok((operand, ty))
+            })?;
+            let expression = self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::VaArg { operand, ty },
+            })?;
+            return self.postfix(expression);
+        }
         match self.keyword()? {
             Some(K::Sizeof) => self.sizeof_expression(location),
             Some(keyword @ (K::Alignof | K::Typeid | K::Noexcept)) => {

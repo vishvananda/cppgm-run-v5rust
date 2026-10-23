@@ -288,6 +288,8 @@ struct ClassConversion {
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
     // Atomic calls are sparse; keep the dense fact record at its existing size.
+    stack_intrinsics:
+        std::collections::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
     atomic_intrinsics:
         std::collections::HashMap<ast::ExprId, super::atomic_operations::AtomicIntrinsic>,
     // Allocated only when a floating builtin publishes a value. Its compact
@@ -325,9 +327,24 @@ pub(super) struct ExpressionFacts {
 }
 impl ExpressionFacts {
     pub(super) fn is_intrinsic(&self, id: ast::ExprId, facts: ExprFacts) -> bool {
-        facts.intrinsic.is_some() || self.atomic_intrinsic(id).is_some()
+        self.stack_intrinsic(id).is_some()
+            || facts.intrinsic.is_some()
+            || self.atomic_intrinsic(id).is_some()
     }
 
+    pub(super) fn stack_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::stack_intrinsics::StackIntrinsic> {
+        self.stack_intrinsics.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_stack_intrinsic(
+        &mut self,
+        id: ast::ExprId,
+        kind: super::stack_intrinsics::StackIntrinsic,
+    ) {
+        self.stack_intrinsics.insert(self.root(id), kind);
+    }
     pub(super) fn atomic_intrinsic(
         &self,
         id: ast::ExprId,

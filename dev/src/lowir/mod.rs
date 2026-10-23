@@ -28,6 +28,7 @@ pub(crate) fn test_program_dialect(
     let mut program = model::Program::default();
     let mut parser = reader::Parser::new(&mut program, source, Path::new("optimizer-test"))?;
     parser.object_facts = object_facts;
+    parser.program.object_facts |= object_facts;
     parser.parse()?;
     program.finish_symbols()?;
     program.legacy_roles();
@@ -103,6 +104,7 @@ fn read_program(
         source_bytes = source_bytes.checked_add(source.len()).ok_or(Error::Limit)?;
         let mut parser = reader::Parser::new(&mut program, &source, path)?;
         parser.object_facts = object_facts;
+        parser.program.object_facts |= object_facts;
         parser.parse()?;
     }
     let parse_ms = start.elapsed().as_secs_f64() * 1000.0;

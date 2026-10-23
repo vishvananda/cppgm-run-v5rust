@@ -237,6 +237,7 @@ struct FunctionSignature {
 
 pub(crate) struct Graph {
     pub(super) hosted: bool,
+    pub(super) triviality: super::triviality::Triviality,
     pub(super) alias_alignments: super::aligned_aliases::AliasAlignments,
     pub(super) symbol_attributes: super::symbol_attributes::SymbolAttributes,
     pub(super) abi_tags: super::abi_tags::AbiTags,
@@ -300,7 +301,7 @@ pub(crate) struct Graph {
     pub(super) static_constructions: super::static_construction::Images,
     pub(super) resolved_names: Vec<Option<BindingId>>,
     pub(super) expression_types: Vec<Option<TypeId>>,
-    pub(super) expression_facts: super::expression_facts::ExpressionFacts,
+    pub(super) expression_facts: Box<super::expression_facts::ExpressionFacts>,
     pub(super) source_exceptions: Box<super::source_exceptions::SourceExceptions>,
     pub(super) expression_scopes: Vec<Option<ScopeId>>,
     pub(super) copy_properties: super::copy_properties::CopyPropertiesStore,
@@ -322,6 +323,7 @@ pub(crate) struct Graph {
     call_bindings: Vec<Option<BindingId>>,
     member_functions: HashMap<MemberKey, BindingId>,
     prototype_parameters: HashMap<EntityId, usize>,
+    parameter_objects: HashMap<EntityId, TypeId>,
     special_values: HashMap<(ScopeId, super::function_names::SpecialName), BindingId>,
     function_sets: HashMap<(ScopeId, super::function_names::ValueKey), Vec<BindingId>>,
     function_positions:
@@ -422,8 +424,22 @@ impl Graph {
         }
         Ok(())
     }
-    pub(super) fn record_prototype_parameter(&mut self, entity: EntityId, index: usize) {
+    pub(super) fn record_prototype_parameter(
+        &mut self,
+        entity: EntityId,
+        index: usize,
+        object: TypeId,
+    ) {
         self.prototype_parameters.insert(entity, index);
+        self.record_parameter_object(entity, object);
+    }
+    pub(super) fn record_parameter_object(&mut self, entity: EntityId, object: TypeId) {
+        if self.entity(entity).ty != Some(object) {
+            self.parameter_objects.insert(entity, object);
+        }
+    }
+    pub(super) fn parameter_object(&self, entity: EntityId) -> Option<TypeId> {
+        self.parameter_objects.get(&entity).copied()
     }
     pub(super) fn prototype_parameter(&self, entity: EntityId) -> Option<usize> {
         self.prototype_parameters.get(&entity).copied()
@@ -442,6 +458,7 @@ impl Graph {
     pub(super) fn new() -> Self {
         Self {
             hosted: false,
+            triviality: super::triviality::Triviality::default(),
             alias_alignments: super::aligned_aliases::AliasAlignments::default(),
             symbol_attributes: super::symbol_attributes::SymbolAttributes::default(),
             abi_tags: super::abi_tags::AbiTags::default(),
@@ -517,7 +534,7 @@ impl Graph {
             array_images: super::static_arrays::Images::default(),
             static_constructions: super::static_construction::Images::default(),
             expression_types: Vec::new(),
-            expression_facts: super::expression_facts::ExpressionFacts::default(),
+            expression_facts: Box::default(),
             source_exceptions: Box::default(),
             expression_scopes: Vec::new(),
             copy_properties: super::copy_properties::CopyPropertiesStore::default(),
@@ -534,6 +551,7 @@ impl Graph {
             call_bindings: Vec::new(),
             member_functions: HashMap::new(),
             prototype_parameters: HashMap::new(),
+            parameter_objects: HashMap::new(),
             special_values: HashMap::new(),
             function_sets: HashMap::new(),
             function_positions: HashMap::new(),

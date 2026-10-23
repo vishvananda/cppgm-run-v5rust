@@ -410,7 +410,8 @@ impl Analyzer<'_> {
             | ExprKind::Literal(_)
             | ExprKind::Sizeof { .. }
             | ExprKind::SizeofPack { .. }
-            | ExprKind::TypeTrait { .. } => false,
+            | ExprKind::TypeTrait { .. }
+            | ExprKind::VaArg { .. } => false,
             ExprKind::Keyword(keyword) => keyword == Keyword::This,
             ExprKind::Paren(inner) => uses(inner),
             ExprKind::Binary { left, right, .. } => uses(left) || uses(right),

@@ -18,6 +18,7 @@ pub(crate) use super::expression_keys::{KeyNode, KeyWord};
 pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::lambdas::ClosureNamingContext;
 pub(crate) use super::literal_calls::LiteralCall;
+pub(crate) use super::stack_intrinsics::StackIntrinsic;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 pub(crate) use super::symbolic_members::MemberPointer as MemberPointerValue;
@@ -1891,7 +1892,11 @@ impl Graph {
                 let binding = self.binding(id);
                 (binding.kind == BindingKind::Parameter).then_some(binding)
             })
-            .filter_map(|binding| binding.ty.map(|ty| (binding.entity, binding.name, ty)))
+            .filter_map(|binding| {
+                self.parameter_object(binding.entity)
+                    .or(binding.ty)
+                    .map(|ty| (binding.entity, binding.name, ty))
+            })
     }
     pub(crate) fn lower_argument_pack(&self, id: TypeId) -> Option<&[TypeId]> {
         match &self.types.get(id).kind {
@@ -2076,6 +2081,13 @@ impl Graph {
         Ok(self.expression_facts.is_intrinsic(id, facts))
     }
 
+    pub(crate) fn lower_stack_intrinsic(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<StackIntrinsic>, Error> {
+        self.expression_facts.get(id)?;
+        Ok(self.expression_facts.stack_intrinsic(id))
+    }
     pub(crate) fn lower_floating_intrinsic(
         &self,
         id: ast::ExprId,

@@ -1,14 +1,13 @@
 // Translated from driver/host_environment.cpp::kBuiltinDeclarations. See NOTICE.
 //! The hosted grammar prefix contributes token provenance to the `LowIR` view.
-//! Its type/template semantics belong to the later hosted compilation stages.
-use crate::{
-    lex::{PostTokenKind, PostTokenizer, number::NumberDialect, pp_lexer::Punctuator},
-    support::source::SourceBuffer,
-};
-const DECLARATIONS: &[u8] = concat!(
+//! The ABI record is parsed into the same tree. Deferred hosted template aliases
+//! retain their reserved token span until their owning grammar group is ported.
+pub(super) const VA_DECLARATIONS: &[u8] = concat!(
     "struct __va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void* overflow_arg_area; ",
     "void* reg_save_area; };\n",
     "typedef __va_list_tag __builtin_va_list[1];\n",
+).as_bytes();
+const TEMPLATE_DECLARATIONS: &[u8] = concat!(
     "template<template<class _Tp, _Tp...> class _Sp, class _Tp, _Tp _Np> using __make_integer_seq = ",
     "_Sp<_Tp, __integer_pack(_Np)...>;\n",
     "template<unsigned long _Ip, class... _Tp> struct __cppgm_type_pack_element;\n",
@@ -19,12 +18,30 @@ const DECLARATIONS: &[u8] = concat!(
     "typename __cppgm_type_pack_element<_Ip, _Tp...>::type;\n",
 ).as_bytes();
 
-pub(super) fn token_origin() -> Result<u64, &'static str> {
-    static TOKENS: std::sync::OnceLock<Result<u64, &'static str>> = std::sync::OnceLock::new();
-    *TOKENS.get_or_init(count_tokens)
+// The actual prefix starts after the reserved hosted-template span. Source
+// relative labels start after both spans, as in the frozen full hosted prefix.
+#[derive(Clone, Copy)]
+pub(super) struct TokenOrigins {
+    pub first: u64,
+    pub source: u64,
 }
-fn count_tokens() -> Result<u64, &'static str> {
-    let source = SourceBuffer::new(DECLARATIONS.to_vec())?;
+pub(super) fn token_origins() -> Result<TokenOrigins, &'static str> {
+    static TOKENS: std::sync::OnceLock<Result<TokenOrigins, &'static str>> =
+        std::sync::OnceLock::new();
+    *TOKENS.get_or_init(|| {
+        let first = count_tokens(TEMPLATE_DECLARATIONS)?;
+        let source = first
+            .checked_add(count_tokens(VA_DECLARATIONS)?)
+            .ok_or("builtin declaration token limit")?;
+        Ok(TokenOrigins { first, source })
+    })
+}
+fn count_tokens(text: &[u8]) -> Result<u64, &'static str> {
+    use crate::{
+        lex::{PostTokenKind, PostTokenizer, number::NumberDialect, pp_lexer::Punctuator},
+        support::source::SourceBuffer,
+    };
+    let source = SourceBuffer::new(text.to_vec())?;
     let mut tokens = PostTokenizer::new(&source, NumberDialect::Cxx11)
         .map_err(|_| "invalid builtin declaration source")?;
     let mut count = 0u64;
@@ -35,7 +52,6 @@ fn count_tokens() -> Result<u64, &'static str> {
         if token.kind == PostTokenKind::EndOfFile {
             return Ok(count);
         }
-        // The parser's token stream splits a >> into its two recorded halves.
         let width = if matches!(token.kind, PostTokenKind::Simple(simple) if simple.as_punctuator() == Some(Punctuator::ShiftRight))
         {
             2

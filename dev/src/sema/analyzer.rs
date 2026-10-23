@@ -220,6 +220,7 @@ impl<'tree> Analyzer<'tree> {
             unreachable: cursor
                 .intern_name(b"__builtin_unreachable")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            stack: super::stack_intrinsics::StackNames::new(cursor)?,
             floating: super::floating_intrinsics::names(cursor)?,
             atomic: super::atomic_operations::names(cursor)?,
         };
@@ -910,6 +911,8 @@ impl<'tree> Analyzer<'tree> {
                 return Err(Error::at(location, "duplicate parameter name"));
             }
             let entity = self.graph.add_entity(Some(ty), name, Keyword::Int)?;
+            let object = self.graph.types.parameter_object(ty)?;
+            self.graph.record_parameter_object(entity, object);
             self.graph
                 .entity_mut(body.entity)
                 .parameter_entities

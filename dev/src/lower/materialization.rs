@@ -665,6 +665,15 @@ impl Function<'_, '_, '_, '_> {
                 self.materialize_class_qualified(source, ty, object, volatile)
             }
             None => match self.tree.expressions.get(id).kind {
+                ExprKind::VaArg { operand, .. } => {
+                    let value = self.va_arg(id, operand)?;
+                    self.effect(I::Store(
+                        crate::lowir::model::Facts::default(),
+                        value.ty,
+                        value.value,
+                        object,
+                    ))
+                }
                 ExprKind::Statement(body) => {
                     self.statement_expression(id, body, Some(object))?;
                     Ok(())

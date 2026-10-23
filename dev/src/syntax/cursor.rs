@@ -82,6 +82,9 @@ impl<'a> Cursor<'a> {
         self.base = origin;
         self.origin = origin;
     }
+    pub(super) fn set_source_origin(&mut self, origin: u64) {
+        self.origin = origin;
+    }
     pub(super) fn peek(&mut self, ahead: usize) -> Result<Token, ParseError> {
         let index = self
             .position

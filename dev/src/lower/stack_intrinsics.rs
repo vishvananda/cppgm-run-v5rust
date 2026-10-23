@@ -1,0 +1,121 @@
+// Translated from lower/intrinsic_lowering.cpp and expression_lowering.cpp. See NOTICE.
+//! Expand semantic stack/variadic operations into the existing typed runtime instructions.
+use super::{
+    Error,
+    conversions::Context,
+    function::{Function, RValue},
+    types,
+};
+use crate::{
+    lowir::{
+        model::{InstructionKind as I, RuntimeInstruction as Runtime, Value},
+        vocabulary::{EightbyteClass, ObjectClasses, Type},
+    },
+    sema::lowering::{StackIntrinsic, TypeView},
+    syntax::{ast, storage::List},
+};
+impl Function<'_, '_, '_, '_> {
+    fn va_list_tag(&mut self, operand: ast::ExprId) -> Result<Value, Error> {
+        let ty = self.graph.lower_expression(operand)?.ty;
+        if matches!(self.graph.lower_type(ty)?, TypeView::Pointer(_)) {
+            Ok(self.operand(operand, Context::Operand)?.value)
+        } else {
+            self.address(operand)
+        }
+    }
+    pub(super) fn stack_intrinsic(
+        &mut self,
+        id: ast::ExprId,
+        arguments: List<ast::ExprId>,
+        operation: StackIntrinsic,
+    ) -> Result<RValue, Error> {
+        let arguments = self.tree.expr_lists.get(arguments);
+        let source = self.graph.lower_expression(id)?.ty;
+        match operation {
+            StackIntrinsic::Alloca => {
+                let size = self.operand(arguments[0], Context::Argument)?;
+                self.emit(I::Runtime(Runtime::StackAlloc(size.value)), source)
+            }
+            StackIntrinsic::VaStart => {
+                let list = self.va_list_tag(arguments[0])?;
+                self.effect(I::Runtime(Runtime::VaStart(list)))?;
+                self.zero(source)
+            }
+            StackIntrinsic::VaEnd => {
+                self.address(arguments[0])?;
+                self.zero(source)
+            }
+            StackIntrinsic::VaCopy => {
+                let destination = self.va_list_tag(arguments[0])?;
+                let source_value = self.va_list_tag(arguments[1])?;
+                let mut ty = self.graph.lower_expression(arguments[0])?.ty;
+                while let TypeView::Pointer(element) | TypeView::Array { element, .. } =
+                    self.graph.lower_type(ty)?
+                {
+                    ty = element;
+                }
+                let (bytes, align) = types::layout(self.graph, ty)?;
+                self.effect(I::CopyObject(bytes, align, source_value, destination))?;
+                self.zero(source)
+            }
+        }
+    }
+    pub(super) fn va_arg(
+        &mut self,
+        id: ast::ExprId,
+        operand: ast::ExprId,
+    ) -> Result<RValue, Error> {
+        let source = self.graph.lower_expression(id)?.ty;
+        let ty = types::storage(self.graph, source)?;
+        let list = self.va_list_tag(operand)?;
+        if matches!(self.graph.lower_type(source)?, TypeView::Class(_))
+            && !self.symbols.object_mode()
+        {
+            let address = self
+                .emit(I::Runtime(Runtime::VaArg(Type::Ptr, list, None)), source)?
+                .value;
+            return self.emit(
+                I::Load(crate::lowir::model::Facts::default(), ty, address),
+                source,
+            );
+        }
+        let wide = ty == Type::I128 && self.symbols.object_mode();
+        let read = if wide {
+            Type::Object {
+                bytes: 16,
+                align: if self.graph.lower_member_pointer_type(source).is_some() {
+                    3
+                } else {
+                    4
+                },
+            }
+        } else {
+            ty
+        };
+        let classes = if self.symbols.object_mode() {
+            self.symbols
+                .object_argument_classes(source)?
+                .map(|classes| match classes {
+                    ObjectClasses::Direct(first, None) => {
+                        ObjectClasses::Direct(first, Some(EightbyteClass::None))
+                    }
+                    other => other,
+                })
+        } else {
+            None
+        };
+        let value = self.emit(I::Runtime(Runtime::VaArg(read, list, classes)), source)?;
+        if !wide {
+            return Ok(value);
+        }
+        let slot = self.generated_slot("arg", read)?;
+        self.effect(I::Store(
+            crate::lowir::model::Facts::default(),
+            read,
+            value.value,
+            slot,
+        ))?;
+        let address = self.emit(I::Addr(slot), source)?.value;
+        self.read_place(address, source)
+    }
+}

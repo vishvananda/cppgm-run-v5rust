@@ -776,7 +776,9 @@ impl Analyzer<'_> {
                 self.graph.types.parameter_object(ty)?
             };
             let entity = self.graph.add_entity(Some(adjusted), name, Keyword::Int)?;
-            self.graph.record_prototype_parameter(entity, position);
+            let object = self.graph.types.parameter_object(ty)?;
+            self.graph
+                .record_prototype_parameter(entity, position, object);
             self.graph.add_binding(
                 scope,
                 // Prototype parameters must be enumerable for substitution.

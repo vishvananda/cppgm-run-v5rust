@@ -27,7 +27,9 @@ fn emit_runtime(
     use crate::lowir::model::RuntimeInstruction as Runtime;
     match *runtime {
         Runtime::VaStart(list) => selection.va_start(list),
-        Runtime::VaArg(ty, list) => selection.va_arg(result.ok_or(Error::Limit)?, ty, list),
+        Runtime::VaArg(ty, list, classes) => {
+            selection.va_arg(result.ok_or(Error::Limit)?, ty, list, classes)
+        }
         Runtime::StackAlloc(size) => selection.stack_alloc(result.ok_or(Error::Limit)?, size),
         Runtime::AtomicLoad(..)
         | Runtime::AtomicStore(..)

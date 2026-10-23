@@ -151,7 +151,7 @@ impl Analyzer<'_> {
                 }
                 self.expression_work.push((base, unevaluated));
             }
-            ExprKind::Cast { ty, operand, .. } => {
+            ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
                 self.type_syntax(ty, scope)?;
                 self.expression_work.push((operand, unevaluated));
             }

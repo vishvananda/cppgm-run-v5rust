@@ -72,7 +72,7 @@ fn rewrite_runtime(runtime: &mut RuntimeInstruction, map: &mut impl Remap) -> Re
     match runtime {
         R::AtomicLoad(_, value, _)
         | R::VaStart(value)
-        | R::VaArg(_, value)
+        | R::VaArg(_, value, _)
         | R::StackAlloc(value)
         | R::Throw(_, value) => *value = map.value(*value)?,
         R::AtomicStore(_, a, b, _) | R::AtomicUpdate(_, _, a, b, _) => {

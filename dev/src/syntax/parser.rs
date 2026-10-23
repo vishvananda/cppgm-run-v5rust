@@ -59,6 +59,7 @@ pub(super) struct Parser<'a> {
     initialized: bool,
     pub extended_types: [Option<NameId>; 10],
     pub complex_types: [Option<NameId>; 3],
+    pub va_arg: Option<NameId>,
 }
 struct Checkpoint {
     conflict: Option<super::conflicts::StatementConflict>,
@@ -126,6 +127,7 @@ impl<'a> Parser<'a> {
             initialized: false,
             extended_types: [None; 10],
             complex_types: [None; 3],
+            va_arg: None,
         }
     }
     pub(super) fn token(&mut self) -> Result<Token, ParseError> {

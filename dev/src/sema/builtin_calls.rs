@@ -24,6 +24,7 @@ pub(crate) enum BuiltinFunction {
     Strlen,
     Unreachable,
     Invoke,
+    Stack(super::stack_intrinsics::StackIntrinsic),
     Atomic(super::atomic_operations::AtomicBuiltinId),
     Floating(super::floating_intrinsics::FloatingOperation),
     LibraryNan(F),
@@ -117,6 +118,7 @@ pub(super) struct BuiltinNames {
     pub memset: NameId,
     pub strlen: NameId,
     pub unreachable: NameId,
+    pub stack: super::stack_intrinsics::StackNames,
     pub atomic: super::atomic_operations::AtomicBuiltins,
     pub floating: Vec<(NameId, super::floating_intrinsics::FloatingOperation)>,
 }
@@ -144,6 +146,8 @@ impl Analyzer<'_> {
             BuiltinFunction::Unreachable
         } else if key == names.invoke {
             BuiltinFunction::Invoke
+        } else if let Some(operation) = names.stack.find(key) {
+            BuiltinFunction::Stack(operation)
         } else if let Some(id) = names.atomic.find(key) {
             BuiltinFunction::Atomic(id)
         } else if let Some((_, kind)) = names.floating.iter().find(|&&(name, _)| name == key) {
@@ -180,7 +184,10 @@ impl Analyzer<'_> {
             (void, Vec::new())
         } else if matches!(
             builtin,
-            BuiltinFunction::Floating(_) | BuiltinFunction::Atomic(_) | BuiltinFunction::Invoke
+            BuiltinFunction::Floating(_)
+                | BuiltinFunction::Atomic(_)
+                | BuiltinFunction::Stack(_)
+                | BuiltinFunction::Invoke
         ) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
         } else if matches!(builtin, BuiltinFunction::Expect) {
@@ -219,6 +226,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Unreachable
                     | BuiltinFunction::Invoke
                     | BuiltinFunction::LibraryNan(_)
+                    | BuiltinFunction::Stack(_)
                     | BuiltinFunction::Atomic(_)
                     | BuiltinFunction::Floating(_) => {
                         return Err(Error::Invariant("memory builtin signature"));
@@ -233,6 +241,7 @@ impl Analyzer<'_> {
                 variadic: matches!(
                     builtin,
                     BuiltinFunction::Floating(_)
+                        | BuiltinFunction::Stack(_)
                         | BuiltinFunction::Atomic(_)
                         | BuiltinFunction::Invoke
                 ),
@@ -297,65 +306,48 @@ impl Analyzer<'_> {
     ) -> Result<Option<ExprFacts>, Error> {
         let node = self.tree.names.get(name);
         let components = self.tree.name_lists.get(node.components);
-        if let Some(binding) = found.binding
-            && matches!(
-                self.graph
-                    .entity(self.graph.binding(binding).entity)
-                    .builtin,
-                Some(BuiltinFunction::Invoke)
-            )
+        let single = if components.len() == 1 {
+            Some(components[0])
+        } else {
+            None
+        };
+        if found.binding.is_none()
+            && let Some(ast::NameComponent {
+                kind: ast::NameKind::Identifier(key),
+                ..
+            }) = single
+            && let Some(builtin) = self.builtin_lookup(key)?
         {
-            return self.builtin_invoke(id, arguments, scope).map(Some);
+            *found = builtin;
         }
-        if let Some(binding) = found.binding
-            && let Some(BuiltinFunction::Floating(kind)) = self
+        if let Some(binding) = found.binding {
+            return match self
                 .graph
                 .entity(self.graph.binding(binding).entity)
                 .builtin
-        {
-            return self.floating_builtin(id, arguments, kind, scope).map(Some);
+            {
+                Some(BuiltinFunction::Invoke) => {
+                    self.builtin_invoke(id, arguments, scope).map(Some)
+                }
+                Some(BuiltinFunction::Floating(operation)) => self
+                    .floating_builtin(id, arguments, operation, scope)
+                    .map(Some),
+                Some(BuiltinFunction::Atomic(builtin)) => self
+                    .atomic_builtin(id, arguments, builtin.form()?, scope)
+                    .map(Some),
+                Some(BuiltinFunction::Stack(operation)) => self
+                    .stack_builtin(id, arguments, operation, scope)
+                    .map(Some),
+                _ => Ok(None),
+            };
         }
-        if let Some(binding) = found.binding
-            && let Some(BuiltinFunction::Atomic(builtin)) = self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .builtin
-        {
-            let form = builtin.form()?;
-            return self.atomic_builtin(id, arguments, form, scope).map(Some);
-        }
-        if components.len() != 1 || found.binding.is_some() {
-            return Ok(None);
-        }
-        let ast::NameKind::Identifier(key) = components[0].kind else {
+        let Some(ast::NameComponent {
+            kind: ast::NameKind::Identifier(key),
+            ..
+        }) = single
+        else {
             return Ok(None);
         };
-        if let Some(builtin) = self.builtin_lookup(key)? {
-            *found = builtin;
-            if key == self.builtin_names.invoke {
-                return self.builtin_invoke(id, arguments, scope).map(Some);
-            }
-            if let Some(binding) = found.binding
-                && let Some(BuiltinFunction::Floating(operation)) = self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .builtin
-            {
-                return self
-                    .floating_builtin(id, arguments, operation, scope)
-                    .map(Some);
-            }
-            if let Some(binding) = found.binding
-                && let Some(BuiltinFunction::Atomic(builtin)) = self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .builtin
-            {
-                let form = builtin.form()?;
-                return self.atomic_builtin(id, arguments, form, scope).map(Some);
-            }
-            return Ok(None);
-        }
         if key != self.builtin_names.constant_p {
             return Ok(None);
         }

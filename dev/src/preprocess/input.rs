@@ -570,6 +570,24 @@ impl<'a> SourceInput<'a> {
         self.command_line = begin..self.next_base;
         Ok(())
     }
+    pub(crate) fn enter_builtin_declarations(
+        &mut self,
+        text: &[u8],
+    ) -> Result<(), PreprocessError> {
+        let file = self.files.add_text(text.to_vec())?;
+        let predefined = self.in_predefined();
+        self.enter(file, b"<builtins>", 0, None)?;
+        // Driver macros precede the grammar prefix, which precedes the primary
+        // source. Installing the prefix must not consume the preprocessing pull.
+        if predefined {
+            let frame = self
+                .suspended
+                .last_mut()
+                .ok_or(PreprocessError::Invariant("builtin source order"))?;
+            std::mem::swap(&mut self.frame, frame);
+        }
+        Ok(())
+    }
     pub(crate) fn command_line_definition(&self, at: SourceOffset) -> bool {
         self.command_line.contains(&at.0)
     }

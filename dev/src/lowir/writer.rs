@@ -716,9 +716,13 @@ impl<W: Write> InstructionWriter<'_, W> {
                 write!(self.out, "va_start ")?;
                 self.value(*list, Type::Void)
             }
-            R::VaArg(ty, list) => {
+            R::VaArg(ty, list, classes) => {
                 write!(self.out, "va_arg {ty} ")?;
-                self.value(*list, Type::Ptr)
+                self.value(*list, Type::Ptr)?;
+                if let Some(classes) = classes {
+                    write!(self.out, " [classes={classes}]")?;
+                }
+                Ok(())
             }
             R::StackAlloc(size) => {
                 write!(self.out, "stack_alloc ")?;

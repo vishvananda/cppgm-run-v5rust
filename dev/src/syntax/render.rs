@@ -696,6 +696,14 @@ impl<'a, 'source> Renderer<'a, 'source> {
                     self.tasks.push(Render::Expression(operand));
                 }
             }
+            ExprKind::VaArg { operand, ty } => {
+                self.text("__builtin_va_arg(");
+                self.tasks.push(Render::Text(")"));
+                // The frozen renderer writes type operands first, then the
+                // value operand without a separator, even for va_arg.
+                self.tasks.push(Render::Expression(operand));
+                self.tasks.push(Render::Type(ty));
+            }
             ExprKind::TypeTrait {
                 keyword,
                 ty,

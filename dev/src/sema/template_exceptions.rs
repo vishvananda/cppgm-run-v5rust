@@ -218,7 +218,8 @@ impl Analyzer<'_> {
                 let entity = self
                     .graph
                     .add_entity(Some(object_type), name, Keyword::Int)?;
-                self.graph.record_prototype_parameter(entity, index);
+                self.graph
+                    .record_prototype_parameter(entity, index, object_type);
                 self.graph.add_binding(
                     scope,
                     None,
@@ -317,7 +318,7 @@ impl Analyzer<'_> {
                         work.push(operand);
                     }
                 }
-                ExprKind::Cast { ty, operand, .. } => {
+                ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
                     let ty = self.type_syntax(ty, scope)?;
                     if self.exception_dependent_type(ty) {
                         return Ok(false);
@@ -504,10 +505,13 @@ impl Analyzer<'_> {
                             (OwnProbe::Expression(base), next),
                             (OwnProbe::Expression(index), next),
                         ]),
-                        ExprKind::Cast { ty, operand, .. } => work.extend([
-                            (OwnProbe::Type(ty), depth),
-                            (OwnProbe::Expression(operand), next),
-                        ]),
+                        ExprKind::VaArg { ty, .. } => work.push((OwnProbe::Type(ty), depth)),
+                        ExprKind::Cast { ty, operand, .. } => {
+                            work.extend([
+                                (OwnProbe::Type(ty), depth),
+                                (OwnProbe::Expression(operand), next),
+                            ]);
+                        }
                         ExprKind::Sizeof { ty, operand, .. }
                         | ExprKind::TypeTrait { ty, operand, .. } => {
                             if let Some(ty) = ty {

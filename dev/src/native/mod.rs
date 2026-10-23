@@ -72,6 +72,7 @@ mod symbol_access;
 mod value_facts;
 mod value_selection;
 mod variadic;
+mod variadic_objects;
 mod wide_compare;
 mod wide_mir;
 mod wide_selection;

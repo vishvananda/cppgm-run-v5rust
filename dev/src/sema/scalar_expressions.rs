@@ -250,6 +250,7 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.semantic_alignment(ty, operand, scope, node.location)?,
+            ExprKind::VaArg { operand, ty } => self.va_arg_expression(id, operand, ty, scope)?,
             ExprKind::SizeofPack(name) => {
                 let count = self.pack_size(name, scope)?.ok_or_else(|| {
                     Error::at(

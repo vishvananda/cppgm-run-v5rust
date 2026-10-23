@@ -130,6 +130,7 @@ impl Graph {
             | ExprKind::PackExpansion(inner)
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Postfix { operand: inner, .. }
+            | ExprKind::VaArg { operand: inner, .. }
             | ExprKind::Cast { operand: inner, .. }
             | ExprKind::Delete { operand: inner, .. }
             | ExprKind::Member { base: inner, .. } => work.push(Step::Visit(inner)),

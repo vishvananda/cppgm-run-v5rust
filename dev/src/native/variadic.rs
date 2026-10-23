@@ -11,7 +11,7 @@ use super::{
 use crate::lowir::{
     Error,
     model::{Program, TempId, Value},
-    vocabulary::Type,
+    vocabulary::{ObjectClasses, Type},
 };
 use std::io::Write;
 #[derive(Clone, Copy)]
@@ -32,8 +32,9 @@ pub(super) struct Start {
 #[derive(Clone, Copy)]
 pub(super) struct Argument {
     ty: Type,
-    destination: R,
+    destination: Operand,
     list: Operand,
+    object: Option<super::variadic_objects::ObjectArgument>,
 }
 impl Start {
     pub(super) fn map_operands(&mut self, mut visit: impl FnMut(&mut Operand, u32)) {
@@ -43,27 +44,43 @@ impl Start {
 }
 impl Argument {
     pub(super) fn map_list(&mut self, mut visit: impl FnMut(&mut Operand, u32)) {
-        visit(&mut self.list, u32::from(super::scalar_mir::bytes(self.ty)));
+        let bytes = self.object.map_or_else(
+            || u32::from(super::scalar_mir::bytes(self.ty)),
+            |object| object.bytes,
+        );
+        visit(&mut self.destination, bytes);
+        visit(&mut self.list, bytes);
     }
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
-        write!(
-            out,
-            "    va_arg.{} {}, ",
-            self.ty,
-            self.destination.spelling()
-        )?;
+        if self.object.is_some() {
+            write!(out, "    va_arg.obj ")?;
+        } else {
+            write!(out, "    va_arg.{} ", self.ty)?;
+        }
+        self.destination.write(program, out)?;
+        write!(out, ", ")?;
         self.list.write(program, out)
     }
     pub(super) fn emit(self, a: &mut Assembler, begin: i32, bytes: u32) -> Result<(), Error> {
         use super::x86::Rm;
-        let floating = self.ty == Type::F64;
-        let scratch_result = !floating && matches!(self.destination, R::R10 | R::R11);
+        if let Some(object) = self.object {
+            return object.emit(
+                a,
+                self.destination.rebase(begin, bytes),
+                self.list.rebase(begin, bytes),
+            );
+        }
+        let to_memory = self.destination.register().is_none();
+        let destination = self.destination.register().unwrap_or(R::xmm(15)?);
+        let wide = self.ty == Type::I128;
+        let floating = matches!(self.ty, Type::F32 | Type::F64 | Type::I128);
+        let scratch_result = !floating && matches!(destination, R::R10 | R::R11);
         let address = if floating {
             R::R10
         } else if scratch_result {
             R::RAX
         } else {
-            self.destination
+            destination
         };
         let offset = if floating { R::RAX } else { R::R10 };
         a.lea(R::R11, self.list.rebase(begin, bytes).rm()?)?;
@@ -83,15 +100,35 @@ impl Argument {
         a.branch(None, load, true);
         a.bind(stack);
         a.load(address, Rm::mem(R::R11, 8), 8, false)?;
-        a.lea(offset, Rm::mem(address, 8))?;
+        if wide {
+            a.alu_ri(0, Rm::Reg(address), 15, 8)?;
+            a.alu_ri(4, Rm::Reg(address), -16, 8)?;
+        }
+        a.lea(offset, Rm::mem(address, if wide { 16 } else { 8 }))?;
         a.store(Rm::mem(R::R11, 8), offset, 8)?;
         a.bind(load);
         if floating {
             a.pop(R::RAX);
-            return a.sse(0xf2, 0x10, self.destination, Rm::mem(address, 0));
+            let prefix = if self.ty == Type::F32 {
+                0xf3
+            } else if wide {
+                0
+            } else {
+                0xf2
+            };
+            a.sse(prefix, 0x10, destination, Rm::mem(address, 0))?;
+            if to_memory {
+                a.sse(
+                    prefix,
+                    0x11,
+                    destination,
+                    self.destination.rebase(begin, bytes).rm()?,
+                )?;
+            }
+            return Ok(());
         }
         a.load(
-            self.destination,
+            destination,
             Rm::mem(address, 0),
             super::scalar_mir::bytes(self.ty),
             super::scalar_mir::signed(self.ty) || self.ty == Type::Ptr,
@@ -179,19 +216,46 @@ impl SaveArea {
     }
 }
 impl Selection<'_> {
-    pub(super) fn va_arg(&mut self, result: TempId, ty: Type, list: Value) -> Result<(), Error> {
+    pub(super) fn va_arg(
+        &mut self,
+        result: TempId,
+        ty: Type,
+        list: Value,
+        classes: Option<ObjectClasses>,
+    ) -> Result<(), Error> {
         let list = self.address(list, R::R10)?;
-        let destination = self.result(result, [None, None], list.mask());
+        let memory = matches!(ty, Type::Object { .. } | Type::I128 | Type::F80);
+        let destination = if memory {
+            Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?)
+        } else {
+            Operand::Register(self.result(result, [None, None], list.mask()))
+        };
+        let object = if memory {
+            Some(super::variadic_objects::ObjectArgument::new(ty, classes)?)
+        } else {
+            None
+        };
         self.mir.instructions.push(Instruction {
             volatile: false,
             op: Op::VaArg(Argument {
-                ty,
+                ty: if let Some(object) = object {
+                    Type::Object {
+                        bytes: u64::from(object.bytes),
+                        align: 0,
+                    }
+                } else {
+                    ty
+                },
                 destination,
                 list,
+                object,
             }),
             location: self.location,
         });
-        self.finish(result, destination)
+        if let Some(register) = destination.register() {
+            self.finish(result, register)?;
+        }
+        Ok(())
     }
     pub(super) fn va_start(&mut self, list: Value) -> Result<(), Error> {
         let save = self

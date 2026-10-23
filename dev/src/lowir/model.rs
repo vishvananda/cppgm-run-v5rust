@@ -100,6 +100,7 @@ pub(crate) trait DefinitionSink: std::any::Any {
 }
 #[derive(Default)]
 pub(crate) struct Program {
+    pub(crate) object_facts: bool,
     definition_sink: Option<Box<dyn DefinitionSink>>,
     retained_definitions: Option<RetainedDefinitions>,
     forward_boundaries: Vec<Option<(SignatureId, Metadata)>>,
@@ -1344,7 +1345,7 @@ pub(crate) enum RuntimeInstruction {
     },
     Fence(Fence, MemoryOrder),
     VaStart(Value),
-    VaArg(Type, Value),
+    VaArg(Type, Value, Option<super::vocabulary::ObjectClasses>),
     StackAlloc(Value),
     Exception(Type),
     ExceptionSelector(Type),
@@ -1369,7 +1370,7 @@ impl RuntimeInstruction {
         match self {
             Self::AtomicLoad(ty, ..)
             | Self::AtomicUpdate(_, ty, ..)
-            | Self::VaArg(ty, _)
+            | Self::VaArg(ty, _, _)
             | Self::Exception(ty) => *ty,
             Self::AtomicCompareExchange { .. } | Self::ExceptionSelector(_) => Type::I64,
             Self::StackAlloc(_) => Type::Ptr,
@@ -1380,7 +1381,7 @@ impl RuntimeInstruction {
         match self {
             Self::AtomicLoad(_, v, _)
             | Self::VaStart(v)
-            | Self::VaArg(_, v)
+            | Self::VaArg(_, v, _)
             | Self::StackAlloc(v)
             | Self::Throw(_, v) => visit(*v),
             Self::AtomicStore(_, a, b, _) | Self::AtomicUpdate(_, _, a, b, _) => {

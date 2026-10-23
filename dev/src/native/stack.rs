@@ -70,12 +70,11 @@ impl Selection<'_> {
             self.load(R::R10, size, Type::I64);
             size = Operand::Register(R::R10);
         }
-        let exclude = if size.register().is_some() {
-            0
-        } else {
-            size.mask()
-        };
-        let destination = self.result(result, [None, None], exclude);
+        let destination = self.result(
+            result,
+            [None, None],
+            size.mask() & (super::abi::CALLER_SAVED | (1 << 3) | (0xf << 12)),
+        );
         self.mir.instructions.push(Instruction {
             volatile: false,
             op: Op::StackAlloc(Allocation { destination, size }),

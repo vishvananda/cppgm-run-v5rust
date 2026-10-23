@@ -60,11 +60,22 @@ impl Parser<'_> {
             "va_arg" => {
                 let ty = self.parse_type()?;
                 let list = self.value(body, Type::Void)?;
-                if self.accept(Kind::LBracket)? {
-                    // Host-object argument classes are enabled only by their later producer.
-                    return Err(self.fail("invalid va_arg metadata"));
-                }
-                R::VaArg(ty, list)
+                let classes = if self.accept(Kind::LBracket)? {
+                    if !self.object_facts || !self.at_word("classes") {
+                        return Err(self.fail("invalid va_arg metadata"));
+                    }
+                    self.advance()?;
+                    self.expect(Kind::Equals, "=")?;
+                    let classes = self.object_classes(Type::Object {
+                        bytes: 16,
+                        align: 3,
+                    })?;
+                    self.expect(Kind::RBracket, "]")?;
+                    Some(classes)
+                } else {
+                    None
+                };
+                R::VaArg(ty, list, classes)
             }
             "stack_alloc" => R::StackAlloc(self.value(body, Type::Void)?),
             "exception" => R::Exception(self.parse_type()?),

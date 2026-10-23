@@ -72,6 +72,7 @@ mod reference_lifetimes;
 mod references;
 mod runtime_roles;
 mod shutdown;
+mod stack_intrinsics;
 mod startup;
 mod statement_expressions;
 mod statements;
@@ -129,6 +130,7 @@ impl Output {
         Ok(())
     }
     pub(crate) fn set_object_mode(&mut self, host_objects: bool) {
+        self.program.object_facts = true;
         self.symbols.object_mode = true;
         self.symbols.host_objects = host_objects;
     }

@@ -265,7 +265,7 @@ impl Analyzer<'_> {
                 );
                 work.extend(braced.map(Probe::Expression));
             }
-            ExprKind::Cast { ty, operand, .. } => {
+            ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
                 work.extend([Probe::Type(ty), Probe::Expression(operand)]);
             }
             ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {

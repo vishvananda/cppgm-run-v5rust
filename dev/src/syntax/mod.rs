@@ -110,6 +110,9 @@ impl<'a> SyntaxUnit<'a> {
             declarations: None,
         }
     }
+    pub(crate) fn set_source_origin(&mut self, origin: u64) {
+        self.parser.cursor.set_source_origin(origin);
+    }
     pub(crate) fn parse(&mut self) -> Result<(), ParseError> {
         if self.declarations.is_some() {
             return Ok(());
