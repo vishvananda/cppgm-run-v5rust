@@ -566,6 +566,7 @@ impl Analyzer<'_> {
             language: super::linkage::Language::C,
             effects: super::graph::FunctionEffect::Default,
             no_inline: false,
+            returns: super::graph::FunctionReturn::MayReturn,
             internal_linkage: false,
             denotes: None,
             is_static: false,

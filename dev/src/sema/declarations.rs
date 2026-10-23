@@ -128,6 +128,25 @@ impl Analyzer<'_> {
             self.resume_declaration_access(scope);
             self.declare_init(specs, *init, scope, location, &mut deduced)?;
             self.apply_storage_attributes(init.declarator, specs, attributes)?;
+            // A partial variable template has no declared entity here. The
+            // frozen owner checks standard noreturn only on a typedef or an
+            // actual variable, and applies effects only to a function.
+            if let Some(binding) = self
+                .graph
+                .declared_bindings
+                .get(init.declarator.index())
+                .copied()
+                .flatten()
+                .map(|binding| self.graph.binding(binding))
+            {
+                let function = (binding.kind == BindingKind::Function).then_some(binding.entity);
+                self.declaration_return_attributes(
+                    function,
+                    declaration.attributes,
+                    init.declarator,
+                    location,
+                )?;
+            }
             self.declarator_symbol_attributes(init.declarator, declaration.attributes)?;
             if init
                 .initializer

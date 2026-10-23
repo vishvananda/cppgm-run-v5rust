@@ -1022,6 +1022,9 @@ fn parameter_no_alias(
 
 pub(super) fn declared_effects(boundary: &mut Boundary, graph: &Graph, entity: Option<EntityId>) {
     use crate::sema::lowering::FunctionEffect;
+    if entity.is_some_and(|entity| graph.lower_no_return(entity)) {
+        boundary.returns = crate::lowir::model::Returns::NoReturn;
+    }
     match entity.map_or(FunctionEffect::Default, |entity| {
         graph.lower_effects(entity)
     }) {

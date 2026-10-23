@@ -154,6 +154,12 @@ impl Analyzer<'_> {
             self.graph.binding(binding).entity,
             self.declarator_effects(attributes.effects, declarator),
         )?;
+        self.declaration_return_attributes(
+            Some(self.graph.binding(binding).entity),
+            declaration.attributes,
+            declarator,
+            location,
+        )?;
         self.declarator_symbol_attributes(declarator, declaration.attributes)?;
         self.note_instantiation_policy(
             self.graph.binding(binding).entity,
@@ -663,6 +669,13 @@ impl Analyzer<'_> {
                 .entity(function)
                 .function
                 .is_some_and(|properties| properties.no_inline),
+            returns: self
+                .graph
+                .entity(function)
+                .function
+                .map_or(super::graph::FunctionReturn::MayReturn, |properties| {
+                    properties.returns
+                }),
             language: super::linkage::Language::Cpp,
             denotes: None,
             internal_linkage: false,

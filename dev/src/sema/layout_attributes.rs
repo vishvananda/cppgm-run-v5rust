@@ -29,6 +29,71 @@ pub(super) struct LayoutAttributes {
     pub instantiation: super::explicit_instantiations::MemberPolicy,
 }
 impl Analyzer<'_> {
+    pub(super) fn reject_no_return(
+        &self,
+        list: List<ast::Attribute>,
+        message: &'static str,
+    ) -> Result<(), Error> {
+        if let Some(attribute) = self.tree.attributes.get(list).iter().find(|attribute| {
+            attribute.kind == ast::AttributeKind::NoReturn
+                && attribute.form == ast::AttributeForm::Standard
+        }) {
+            return Err(Error::at(attribute.location, message));
+        }
+        Ok(())
+    }
+    // analyzer_declarations.cpp::effect_attributes / StandardNoReturn.
+    // The fact belongs to the callable entity, never its canonical function
+    // type: calls through pointers must not inherit a declaration's guarantee.
+    pub(super) fn declaration_return_attributes(
+        &mut self,
+        function: Option<EntityId>,
+        leading: List<ast::Attribute>,
+        declarator: ast::DeclaratorId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let mut requested = false;
+        let mut apply = |list| {
+            for attribute in self.tree.attributes.get(list) {
+                if attribute.kind != ast::AttributeKind::NoReturn {
+                    continue;
+                }
+                if attribute.form == ast::AttributeForm::Standard {
+                    if function.is_none() {
+                        return Err(Error::at(
+                            location,
+                            "noreturn attribute requires a function",
+                        ));
+                    }
+                    if attribute.site != ast::AttributeSite::Entity {
+                        return Err(Error::at(
+                            attribute.location,
+                            "noreturn attribute applied to a type",
+                        ));
+                    }
+                }
+                requested = true;
+            }
+            Ok(())
+        };
+        apply(leading)?;
+        let mut part = Some(declarator);
+        while let Some(id) = part {
+            let node = self.tree.declarators.get(id);
+            apply(node.attributes)?;
+            part = node.nested;
+        }
+        if requested && let Some(entity) = function {
+            self.graph
+                .entity_mut(entity)
+                .function
+                .as_mut()
+                .ok_or(Error::Invariant("return attribute owner without function"))?
+                .returns = super::graph::FunctionReturn::NoReturn;
+        }
+        Ok(())
+    }
+
     pub(super) fn declarator_effects(
         &self,
         mut effect: super::graph::FunctionEffect,
@@ -304,4 +369,68 @@ impl Analyzer<'_> {
 pub(super) fn target_alignment(value: u64) -> Result<u32, Error> {
     // The frozen semantic record stores a target uint32_t request.
     u32::try_from(value & u64::from(u32::MAX)).map_err(|_| Error::Invariant("alignment truncation"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn return_guarantees_belong_to_entities_and_specializations_keep_own_declarations() {
+        use super::super::{graph::FunctionReturn as R, types::Scalar};
+        let source = SourceBuffer::new(
+            b"void stop(); [[noreturn]] void stop(); void plain();\
+              void stop(){throw 1;}\
+              template<class T> [[noreturn]] void raise(T x){throw x;}\
+              template<> void raise<char>(char){}\
+              void use(){raise(1);raise('x');}\
+              template<class T>int value;\
+              template<class T>[[noreturn]]int value<T*> = 1;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"return-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let stop = cursor.intern_name(b"stop").unwrap();
+        let plain = cursor.intern_name(b"plain").unwrap();
+        let raise = cursor.intern_name(b"raise").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let stop = graph
+            .functions_at(graph.global, stop.into())
+            .next()
+            .unwrap();
+        let plain = graph
+            .functions_at(graph.global, plain.into())
+            .next()
+            .unwrap();
+        assert_eq!(graph.binding(stop).ty, graph.binding(plain).ty);
+        assert!(graph.lower_no_return(graph.binding(stop).entity));
+        assert!(!graph.lower_no_return(graph.binding(plain).entity));
+        let mut instances = 0;
+        for (&entity, arguments) in &graph.function_templates.arguments {
+            let function = graph.entity(entity);
+            if function.name != Some(raise) {
+                continue;
+            }
+            let expected = match graph.types.get(arguments[0]).kind {
+                TypeKind::Scalar(Scalar::Basic(crate::types::FundamentalType::Char)) => {
+                    R::MayReturn
+                }
+                TypeKind::Scalar(Scalar::Basic(crate::types::FundamentalType::Int)) => R::NoReturn,
+                _ => panic!("unexpected specialization argument"),
+            };
+            assert!(function.function.unwrap().returns == expected);
+            instances += 1;
+        }
+        assert_eq!(instances, 2);
+    }
 }

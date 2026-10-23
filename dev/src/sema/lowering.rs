@@ -2037,6 +2037,11 @@ impl Graph {
     pub(crate) fn lower_constant_evaluation_query(&self, expression: ast::ExprId) -> bool {
         self.expression_facts.constant_evaluation_query(expression)
     }
+    pub(crate) fn lower_no_return(&self, entity: EntityId) -> bool {
+        self.entity(self.lower_function_entity(entity))
+            .function
+            .is_some_and(|properties| properties.returns == super::graph::FunctionReturn::NoReturn)
+    }
     pub(crate) fn lower_effects(&self, entity: EntityId) -> FunctionEffect {
         self.entity(self.lower_function_entity(entity))
             .function

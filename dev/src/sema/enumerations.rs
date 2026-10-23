@@ -132,6 +132,10 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("enum syntax mismatch"));
         };
+        self.reject_no_return(
+            declaration.attributes,
+            "noreturn attribute on an enumeration",
+        )?;
         let location = declaration.location;
         self.check_enum_parameter_names(name, has_body || lone, enumerators, scope)?;
         let scoped = key.is_some();

@@ -341,6 +341,7 @@ impl Analyzer<'_> {
                 self.graph.entity_mut(entity).function = Some(FunctionProperties {
                     effects: super::graph::FunctionEffect::Default,
                     no_inline: false,
+                    returns: super::graph::FunctionReturn::MayReturn,
                     language: super::linkage::Language::Cpp,
                     denotes: None,
                     internal_linkage: false,

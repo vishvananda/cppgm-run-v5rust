@@ -191,6 +191,7 @@ impl Analyzer<'_> {
             function.function = Some(FunctionProperties {
                 effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
+                returns: super::graph::FunctionReturn::MayReturn,
                 internal_linkage: false,
                 language: super::linkage::Language::Cpp,
                 denotes: None,
@@ -247,6 +248,7 @@ impl Analyzer<'_> {
             function.function = Some(FunctionProperties {
                 effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
+                returns: super::graph::FunctionReturn::MayReturn,
                 internal_linkage: false,
                 language: super::linkage::Language::Cpp,
                 denotes: None,
@@ -603,6 +605,7 @@ impl Analyzer<'_> {
         function.function = Some(FunctionProperties {
             effects: super::graph::FunctionEffect::Default,
             no_inline: false,
+            returns: super::graph::FunctionReturn::MayReturn,
             internal_linkage: false,
             language: super::linkage::Language::Cpp,
             denotes: None,

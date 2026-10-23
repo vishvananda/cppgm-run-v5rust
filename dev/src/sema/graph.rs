@@ -99,12 +99,19 @@ pub(super) enum Access {
 pub(super) struct FunctionProperties {
     pub effects: FunctionEffect,
     pub no_inline: bool,
+    pub returns: FunctionReturn,
     pub internal_linkage: bool,
     pub language: super::linkage::Language,
     pub denotes: Option<EntityId>,
     pub is_static: bool,
     pub special: Option<super::function_names::SpecialName>,
     pub allocation: Option<super::function_names::AllocationOrigin>,
+}
+/// Declaration property, deliberately absent from canonical function types.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum FunctionReturn {
+    MayReturn,
+    NoReturn,
 }
 /// Ordered as the frozen callable's strongest declared memory guarantee.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -1310,6 +1317,7 @@ impl Graph {
         entity.function = Some(FunctionProperties {
             effects: super::graph::FunctionEffect::Default,
             no_inline: false,
+            returns: super::graph::FunctionReturn::MayReturn,
             internal_linkage: false,
             language: super::linkage::Language::Cpp,
             denotes: None,
@@ -1374,6 +1382,7 @@ impl Graph {
         entity.function = Some(FunctionProperties {
             effects: super::graph::FunctionEffect::Default,
             no_inline: false,
+            returns: super::graph::FunctionReturn::MayReturn,
             language: super::linkage::Language::Cpp,
             denotes: None,
             internal_linkage: false,

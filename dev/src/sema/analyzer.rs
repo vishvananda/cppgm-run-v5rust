@@ -477,6 +477,10 @@ impl<'tree> Analyzer<'tree> {
                 directive, target, ..
             } => self.using_declaration(directive, target, scope, location),
             ast::DeclKind::Alias { name, ty } => {
+                self.reject_no_return(
+                    declaration.attributes,
+                    "noreturn attribute on an alias-declaration",
+                )?;
                 let node = *self.tree.types.get(ty);
                 let exceptions = self.declarator_specifies_exceptions(node.declarator);
                 let specs = self.specifiers(node.specifiers, scope, false)?;
@@ -737,6 +741,12 @@ impl<'tree> Analyzer<'tree> {
         self.graph.note_effects(
             entity,
             self.declarator_effects(attributes.effects, declarator),
+        )?;
+        self.declaration_return_attributes(
+            Some(entity),
+            self.tree.declarations.get(declaration).attributes,
+            declarator,
+            location,
         )?;
         self.declarator_symbol_attributes(
             declarator,

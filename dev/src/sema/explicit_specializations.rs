@@ -301,6 +301,7 @@ impl Analyzer<'_> {
             function.availability = FunctionAvailability::Callable;
             if of_template && let Some(properties) = function.function.as_mut() {
                 properties.no_inline = false;
+                properties.returns = super::graph::FunctionReturn::MayReturn;
                 properties.effects = super::graph::FunctionEffect::Default;
             }
         }
