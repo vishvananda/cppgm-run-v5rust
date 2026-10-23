@@ -189,6 +189,7 @@ impl Analyzer<'_> {
             let function = self.graph.entity_mut(invoker);
             function.home = Some(home);
             function.function = Some(FunctionProperties {
+                effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
                 internal_linkage: false,
                 language: super::linkage::Language::Cpp,
@@ -244,6 +245,7 @@ impl Analyzer<'_> {
             let function = self.graph.entity_mut(conversion);
             function.home = Some(home);
             function.function = Some(FunctionProperties {
+                effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
                 internal_linkage: false,
                 language: super::linkage::Language::Cpp,
@@ -599,6 +601,7 @@ impl Analyzer<'_> {
         let call = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
         let function = self.graph.entity_mut(call);
         function.function = Some(FunctionProperties {
+            effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             internal_linkage: false,
             language: super::linkage::Language::Cpp,
@@ -613,6 +616,7 @@ impl Analyzer<'_> {
         function.function_parameters = Some(parameters);
         let attributes = self.layout_attributes(lambda.attributes, scope, false)?;
         self.graph.note_no_inline(call, attributes.no_inline)?;
+        self.graph.note_effects(call, attributes.effects)?;
         let binding = self.graph.add_binding(
             class_scope,
             Some(class_scope),

@@ -33,6 +33,7 @@ impl PredefinedValues {
 /// Driver preprocessing inputs captured once and borrowed by each translation unit.
 #[derive(Default)]
 pub struct DriverOptions {
+    pub host_predefines: Vec<u8>,
     pub command_line: Vec<u8>,
     pub include_paths: Vec<Vec<u8>>,
     pub system_include_paths: Vec<Vec<u8>>,

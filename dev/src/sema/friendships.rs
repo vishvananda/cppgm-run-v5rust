@@ -106,6 +106,7 @@ impl Analyzer<'_> {
             )?;
             self.graph.entity_mut(entity).home = Some(home);
             self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
+                effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
                 internal_linkage: false,
                 language: super::linkage::Language::Cpp,

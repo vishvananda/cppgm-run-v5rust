@@ -228,6 +228,7 @@ impl Analyzer<'_> {
                 node.constructor_exceptions =
                     super::construction::ConstructorExceptionSource::SubobjectPlan;
                 node.function = Some(FunctionProperties {
+                    effects: super::graph::FunctionEffect::Default,
                     no_inline: false,
                     internal_linkage: false,
                     language: super::linkage::Language::Cpp,

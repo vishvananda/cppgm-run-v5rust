@@ -28,6 +28,7 @@ pub enum TokenToolError {
 pub mod abimangle;
 pub mod ast;
 mod host_declarations;
+pub mod host_environment;
 pub mod lowir;
 pub mod lowir2native;
 

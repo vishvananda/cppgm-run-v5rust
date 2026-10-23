@@ -1398,6 +1398,11 @@ impl Symbols<'_, '_> {
         }
         let facts = self.function_facts(entity)?;
         let signature = function::signature(program, self, self.graph, facts.ty, facts.nothrow)?;
+        function::declared_effects(
+            &mut program.signature_mut(signature).boundary,
+            self.graph,
+            Some(entity),
+        );
         let class = facts
             .object
             .ok_or(crate::sema::Error::Invariant("virtual without class"))?;

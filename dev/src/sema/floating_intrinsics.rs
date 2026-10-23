@@ -564,6 +564,7 @@ impl Analyzer<'_> {
             super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
         self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
             language: super::linkage::Language::C,
+            effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             internal_linkage: false,
             denotes: None,

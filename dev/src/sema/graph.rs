@@ -97,6 +97,7 @@ pub(super) enum Access {
 }
 #[derive(Clone, Copy)]
 pub(super) struct FunctionProperties {
+    pub effects: FunctionEffect,
     pub no_inline: bool,
     pub internal_linkage: bool,
     pub language: super::linkage::Language,
@@ -104,6 +105,14 @@ pub(super) struct FunctionProperties {
     pub is_static: bool,
     pub special: Option<super::function_names::SpecialName>,
     pub allocation: Option<super::function_names::AllocationOrigin>,
+}
+/// Ordered as the frozen callable's strongest declared memory guarantee.
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum FunctionEffect {
+    #[default]
+    Default,
+    ReadOnly,
+    ReadNone,
 }
 #[derive(Clone, Copy)]
 pub(super) struct VariableProperties {
@@ -333,6 +342,19 @@ pub(crate) struct Graph {
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
+    pub(super) fn note_effects(
+        &mut self,
+        entity: EntityId,
+        requested: FunctionEffect,
+    ) -> Result<(), Error> {
+        let properties = self
+            .entity_mut(entity)
+            .function
+            .as_mut()
+            .ok_or(Error::Invariant("function effect owner without function"))?;
+        properties.effects = properties.effects.max(requested);
+        Ok(())
+    }
     pub(super) fn set_function_binding_type(&mut self, binding: BindingId, ty: TypeId) {
         self.bindings[binding.0 as usize].ty = Some(ty);
     }
@@ -1286,6 +1308,7 @@ impl Graph {
         });
         entity.assignment = Some(properties);
         entity.function = Some(FunctionProperties {
+            effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             internal_linkage: false,
             language: super::linkage::Language::Cpp,
@@ -1349,6 +1372,7 @@ impl Graph {
             shape: None,
         });
         entity.function = Some(FunctionProperties {
+            effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             language: super::linkage::Language::Cpp,
             denotes: None,

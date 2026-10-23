@@ -1,4 +1,5 @@
 //! Demand-driven phase-7 conversion of typed preprocessing tokens.
+pub(crate) mod builtins;
 pub mod floating;
 pub(crate) mod gnu_keywords;
 pub mod identifiers;

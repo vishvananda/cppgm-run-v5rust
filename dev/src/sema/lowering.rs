@@ -30,7 +30,7 @@ use super::{
     types::TypeKind,
 };
 pub(crate) use super::{
-    graph::{EntityId, ScopeId},
+    graph::{EntityId, FunctionEffect, ScopeId},
     types::{Scalar, TypeId},
 };
 use crate::lex::vocabulary::Keyword;
@@ -2032,6 +2032,14 @@ impl Graph {
         self.entity(self.lower_function_entity(entity))
             .function
             .is_some_and(|properties| properties.no_inline)
+    }
+    pub(crate) fn lower_constant_evaluation_query(&self, expression: ast::ExprId) -> bool {
+        self.expression_facts.constant_evaluation_query(expression)
+    }
+    pub(crate) fn lower_effects(&self, entity: EntityId) -> FunctionEffect {
+        self.entity(self.lower_function_entity(entity))
+            .function
+            .map_or(FunctionEffect::Default, |properties| properties.effects)
     }
     pub(crate) fn lower_always_inline(&self, entity: EntityId) -> bool {
         self.lower_inline_policy(entity).always_inline

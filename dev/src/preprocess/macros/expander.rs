@@ -319,6 +319,12 @@ impl<'a> Expander<'a> {
                     self.counter = self.counter.wrapping_add(1);
                     return Ok(false);
                 }
+                Builtin::HasProvidedName => {
+                    if self.controlling_expression {
+                        self.replace_has_builtin(token, source, names)?;
+                    }
+                    return Ok(false);
+                }
             }
         }
         let context_disabled = self.read_disabled;
@@ -504,6 +510,48 @@ impl<'a> Expander<'a> {
             ));
         }
         Self::set_number(head, Spelling::Source(if reported { b"1" } else { b"0" }));
+        Ok(())
+    }
+    fn replace_has_builtin(
+        &mut self,
+        head: &mut Token<'a>,
+        source: &mut SourceInput<'a>,
+        names: &mut Identifiers,
+    ) -> Result<(), PreprocessError> {
+        if !self
+            .read_operator_operand(source, names)?
+            .is_punctuator(Punctuator::LeftParen)
+        {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected `(` after the probe",
+            ));
+        }
+        let operand = self.read_operator_operand(source, names)?;
+        if matches!(operand.kind, PpTokenKind::EndOfFile | PpTokenKind::NewLine) {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected an operand of the probe",
+            ));
+        }
+        if !self
+            .read_operator_operand(source, names)?
+            .is_punctuator(Punctuator::RightParen)
+        {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected `)` after the probe's operand",
+            ));
+        }
+        if operand.kind != PpTokenKind::Identifier && !Self::identifier_like_operator(&operand) {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected an identifier after __has_builtin",
+            ));
+        }
+        let answer = operand.kind == PpTokenKind::Identifier
+            && crate::lex::builtins::is_provided(operand.spelling.bytes());
+        Self::set_number(head, Spelling::Source(if answer { b"1" } else { b"0" }));
         Ok(())
     }
     fn collect_arguments(

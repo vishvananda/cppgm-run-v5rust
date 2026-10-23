@@ -414,6 +414,7 @@ impl Analyzer<'_> {
             shape: None,
         });
         entity.function = Some(super::graph::FunctionProperties {
+            effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             internal_linkage: false,
             language: super::linkage::Language::Cpp,

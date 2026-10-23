@@ -138,17 +138,55 @@ pub fn emit_unit(
     stack_budget: crate::support::stack::StackBudget,
     mode: EmitMode,
 ) -> Result<(), AstToolError> {
-    let preprocessor = Preprocessor::with_options(
+    emit_configured_unit(
+        source,
+        path,
+        UnitOptions {
+            values,
+            preprocessor: &crate::preprocess::options::DriverOptions::default(),
+            stack_budget,
+        },
+        destination,
+        ordinal,
+        mode,
+    )
+}
+/// Invocation configuration borrowed for one primary source's typed pipeline.
+#[derive(Clone, Copy)]
+pub struct UnitOptions<'a> {
+    pub values: &'a PredefinedValues,
+    pub preprocessor: &'a crate::preprocess::options::DriverOptions,
+    pub stack_budget: crate::support::stack::StackBudget,
+}
+/// Emit a source view with explicit hosted and command-line preprocessing inputs.
+/// # Errors
+/// Returns a located input failure, missing group, or output error.
+pub fn emit_configured_unit(
+    source: &SourceBuffer,
+    path: &[u8],
+    options: UnitOptions<'_>,
+    destination: Destination<'_>,
+    ordinal: usize,
+    mode: EmitMode,
+) -> Result<(), AstToolError> {
+    let preprocessor = Preprocessor::with_driver_options(
         source,
         path,
         crate::preprocess::files::FileServices {
             identity: super::file_identity::query,
             read: super::file_identity::read,
         },
-        values,
+        options.values,
+        options.preprocessor,
     )
     .map_err(AstToolError::Initialization)?;
-    emit_preprocessed(preprocessor, destination, ordinal, stack_budget, mode)
+    emit_preprocessed(
+        preprocessor,
+        destination,
+        ordinal,
+        options.stack_budget,
+        mode,
+    )
 }
 pub(crate) fn emit_compilation_unit(
     source: &SourceBuffer,

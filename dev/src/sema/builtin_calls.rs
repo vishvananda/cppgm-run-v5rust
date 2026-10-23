@@ -15,6 +15,7 @@ use crate::{
 };
 #[derive(Clone, Copy)]
 pub(crate) enum BuiltinFunction {
+    IsConstantEvaluated,
     Abort,
     Expect,
     Memcpy,
@@ -108,6 +109,7 @@ mod tests {
 }
 #[derive(Clone)]
 pub(super) struct BuiltinNames {
+    pub is_constant_evaluated: NameId,
     pub abort: NameId,
     pub expect: NameId,
     pub constant_p: NameId,
@@ -128,7 +130,9 @@ impl Analyzer<'_> {
         key: NameId,
     ) -> Result<Option<super::graph::BindingId>, Error> {
         let names = &self.builtin_names;
-        let builtin = if key == names.abort {
+        let builtin = if key == names.is_constant_evaluated {
+            BuiltinFunction::IsConstantEvaluated
+        } else if key == names.abort {
             BuiltinFunction::Abort
         } else if key == names.expect {
             BuiltinFunction::Expect
@@ -188,6 +192,7 @@ impl Analyzer<'_> {
                 | BuiltinFunction::Atomic(_)
                 | BuiltinFunction::Stack(_)
                 | BuiltinFunction::Invoke
+                | BuiltinFunction::IsConstantEvaluated
         ) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
         } else if matches!(builtin, BuiltinFunction::Expect) {
@@ -221,6 +226,7 @@ impl Analyzer<'_> {
                     BuiltinFunction::Memcmp => (integer, vec![source, source, size]),
                     BuiltinFunction::Memset => (pointer, vec![pointer, integer, size]),
                     BuiltinFunction::Abort
+                    | BuiltinFunction::IsConstantEvaluated
                     | BuiltinFunction::Expect
                     | BuiltinFunction::Strlen
                     | BuiltinFunction::Unreachable
@@ -244,6 +250,7 @@ impl Analyzer<'_> {
                         | BuiltinFunction::Stack(_)
                         | BuiltinFunction::Atomic(_)
                         | BuiltinFunction::Invoke
+                        | BuiltinFunction::IsConstantEvaluated
                 ),
                 cv: Cv::default(),
                 reference: None,
@@ -255,6 +262,7 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).exceptions =
             super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
         self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
+            effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             internal_linkage: false,
             language: super::linkage::Language::C,
@@ -326,6 +334,20 @@ impl Analyzer<'_> {
                 .entity(self.graph.binding(binding).entity)
                 .builtin
             {
+                Some(BuiltinFunction::IsConstantEvaluated) => {
+                    if !self.tree.expr_lists.get(arguments).is_empty() {
+                        return Err(Error::at(
+                            self.tree.expressions.get(id).location,
+                            "__builtin_is_constant_evaluated takes no arguments",
+                        ));
+                    }
+                    let ty = self.graph.types.scalar(Scalar::Bool)?;
+                    let facts = self.new_expression_facts(ty, V::Prvalue)?;
+                    self.graph
+                        .expression_facts
+                        .note_constant_evaluation_query(id);
+                    Ok(Some(facts))
+                }
                 Some(BuiltinFunction::Invoke) => {
                     self.builtin_invoke(id, arguments, scope).map(Some)
                 }

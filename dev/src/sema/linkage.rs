@@ -163,6 +163,7 @@ impl Analyzer<'_> {
                 }
             }
             self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
+                effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
                 internal_linkage: internal,
                 language,

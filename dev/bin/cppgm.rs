@@ -1,6 +1,8 @@
 // Translated from cppgm++.cpp's AST invocation and source loop. See NOTICE.
 use cppgm_rust::{
-    driver::ast::{AstToolError, Destination, EmitMode, LowIrOutput, emit_unit},
+    driver::ast::{
+        AstToolError, Destination, EmitMode, LowIrOutput, UnitOptions, emit_configured_unit,
+    },
     preprocess::error::PreprocessError,
     support::source::SourceBuffer,
 };
@@ -13,6 +15,8 @@ use std::{
 };
 #[path = "source_tool/build_time.rs"]
 mod build_time;
+#[path = "source_tool/host_configuration.rs"]
+mod host_configuration;
 #[path = "source_tool/stack_limit.rs"]
 mod stack_limit;
 enum CliError {
@@ -75,6 +79,7 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
             || arg == "--emit-lowir"
             || lowir && arg == "-g0"
             || lowir && arg == "-O0"
+            || lowir && arg == "--hosted"
         {
             continue;
         }
@@ -121,11 +126,17 @@ fn run() -> Result<(), CliError> {
         let values = build_time::query().map_err(CliError::Message)?;
         let budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
             .map_err(CliError::Internal)?;
+        let host =
+            host_configuration::query().map_err(|error| CliError::Message(error.to_string()))?;
         return cppgm_rust::driver::toolchain::run(
             &args,
             &values,
             budget,
             &std::fs::Permissions::from_mode(0o755),
+            &cppgm_rust::driver::host_environment::HostEnvironment {
+                predefined_macros: &host.macros,
+                include_paths: &host.includes,
+            },
         )
         .map_err(tool_error);
     }
@@ -151,6 +162,16 @@ fn run() -> Result<(), CliError> {
     let values = build_time::query().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
         .map_err(CliError::Internal)?;
+    let mut preprocessor_options = cppgm_rust::preprocess::options::DriverOptions::default();
+    if lowir {
+        let host =
+            host_configuration::query().map_err(|error| CliError::Message(error.to_string()))?;
+        cppgm_rust::driver::host_environment::HostEnvironment {
+            predefined_macros: &host.macros,
+            include_paths: &host.includes,
+        }
+        .apply(&mut preprocessor_options, false);
+    }
     let file = if lowir {
         None
     } else {
@@ -179,17 +200,20 @@ fn run() -> Result<(), CliError> {
         let _read_status = file.read_to_end(&mut bytes);
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
-        emit_unit(
+        emit_configured_unit(
             &source,
             path.as_bytes(),
-            &values,
+            UnitOptions {
+                values: &values,
+                preprocessor: &preprocessor_options,
+                stack_budget,
+            },
             if lowir {
                 Destination::LowIr(&mut lowir_output)
             } else {
                 Destination::Text(&mut output)
             },
             index + 1,
-            stack_budget,
             mode,
         )
         .map_err(|error| match error {

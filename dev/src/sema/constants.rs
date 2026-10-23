@@ -565,6 +565,9 @@ impl Analyzer<'_> {
                 ty: facts.ty,
             });
         }
+        if self.graph.expression_facts.constant_evaluation_query(id) {
+            return self.boolean(true);
+        }
         if let Some(kind) = facts.intrinsic {
             if matches!(
                 kind,

@@ -228,6 +228,7 @@ pub(super) fn lower<'a>(
         ..Boundary::default()
     };
     builtin_boundary(&mut boundary, facts.builtin);
+    declared_effects(&mut boundary, graph, entity);
     builder.boundary(boundary);
     builder.block("entry")?;
     let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
@@ -1019,6 +1020,21 @@ fn parameter_no_alias(
     ) && index < 2
 }
 
+pub(super) fn declared_effects(boundary: &mut Boundary, graph: &Graph, entity: Option<EntityId>) {
+    use crate::sema::lowering::FunctionEffect;
+    match entity.map_or(FunctionEffect::Default, |entity| {
+        graph.lower_effects(entity)
+    }) {
+        FunctionEffect::Default => {}
+        FunctionEffect::ReadOnly => {
+            boundary.effects = Some(crate::lowir::vocabulary::Effects::ReadOnly);
+        }
+        FunctionEffect::ReadNone => {
+            boundary.effects = Some(crate::lowir::vocabulary::Effects::ReadNone);
+        }
+    }
+}
+
 fn builtin_boundary(
     boundary: &mut Boundary,
     builtin: Option<crate::sema::lowering::BuiltinFunction>,
@@ -1139,5 +1155,6 @@ pub(super) fn declaration_signature(
             || parameter_no_alias(facts.builtin, index);
     }
     builtin_boundary(&mut boundary.boundary, facts.builtin);
+    declared_effects(&mut boundary.boundary, graph, entry.entity(graph));
     Ok(signature)
 }

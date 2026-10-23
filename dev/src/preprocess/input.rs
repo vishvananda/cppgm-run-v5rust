@@ -59,6 +59,7 @@ pub(crate) struct SourceInput<'a> {
     pub(crate) allow_va_args: bool,
     predefined: Option<FileId>,
     command_line: std::ops::Range<u32>,
+    host_predefines: std::ops::Range<u32>,
     tokens_read: u64,
     includes: u64,
     guarded_skips: u64,
@@ -132,6 +133,7 @@ impl<'a> SourceInput<'a> {
             allow_va_args: false,
             predefined: None,
             command_line: 0..0,
+            host_predefines: 0..0,
             tokens_read: 0,
             includes: 0,
             guarded_skips: 0,
@@ -555,6 +557,7 @@ impl<'a> SourceInput<'a> {
         &mut self,
         text: Vec<u8>,
         command_line_begin: usize,
+        host_predefines_begin: usize,
     ) -> Result<(), PreprocessError> {
         let file = self.files.add_text(text)?;
         self.predefined = Some(file);
@@ -568,6 +571,15 @@ impl<'a> SourceInput<'a> {
             )
             .ok_or(PreprocessError::Limit("command-line source space"))?;
         self.command_line = begin..self.next_base;
+        let host_begin = self
+            .inclusion()
+            .base
+            .checked_add(
+                u32::try_from(host_predefines_begin)
+                    .map_err(|_| PreprocessError::Limit("host predefined source space"))?,
+            )
+            .ok_or(PreprocessError::Limit("host predefined source space"))?;
+        self.host_predefines = host_begin..begin;
         Ok(())
     }
     pub(crate) fn enter_builtin_declarations(
@@ -589,7 +601,7 @@ impl<'a> SourceInput<'a> {
         Ok(())
     }
     pub(crate) fn command_line_definition(&self, at: SourceOffset) -> bool {
-        self.command_line.contains(&at.0)
+        self.command_line.contains(&at.0) || self.host_predefines.contains(&at.0)
     }
 
     pub(crate) fn in_predefined(&self) -> bool {

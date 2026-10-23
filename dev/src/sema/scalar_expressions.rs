@@ -341,6 +341,7 @@ impl Analyzer<'_> {
                     Some(
                         super::builtin_calls::BuiltinFunction::Floating(_)
                             | super::builtin_calls::BuiltinFunction::Invoke
+                            | super::builtin_calls::BuiltinFunction::IsConstantEvaluated
                     )
                 )
             {

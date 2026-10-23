@@ -39,12 +39,21 @@ pub(crate) enum Builtin {
     HasCppAttribute,
     HasAttribute,
     Counter,
+    HasProvidedName,
 }
 pub(crate) struct Definitions<'a> {
     defined_name: NameId,
     slots: Vec<Option<Rc<Definition<'a>>>>,
 }
 impl<'a> Definitions<'a> {
+    pub(crate) fn add_hosted(&mut self, names: &mut Identifiers) -> Result<(), PreprocessError> {
+        let name = names
+            .intern(b"__has_builtin")
+            .map_err(PreprocessError::Limit)?;
+        let mut definition = Definition::empty(name);
+        definition.builtin = Some(Builtin::HasProvidedName);
+        self.define(definition, crate::support::source::SourceOffset(0))
+    }
     pub(crate) fn new(names: &mut Identifiers) -> Result<Self, PreprocessError> {
         let mut definitions = Self {
             defined_name: names.intern(b"defined").map_err(PreprocessError::Limit)?,

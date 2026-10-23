@@ -33,6 +33,7 @@ enum OptionCheck<'a> {
 }
 #[derive(Default)]
 struct Invocation {
+    nostdinc: bool,
     compile: bool,
     explicit_output: bool,
     output: PathBuf,
@@ -98,6 +99,7 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
         let arg = &args[index];
         let bytes = arg.as_bytes();
         match bytes {
+            b"-nostdinc" => invocation.nostdinc = true,
             b"-c" => invocation.compile = true,
             b"-o" => {
                 invocation.explicit_output = true;
@@ -394,8 +396,11 @@ pub fn run(
     values: &PredefinedValues,
     budget: StackBudget,
     permissions: &std::fs::Permissions,
+    host: &super::host_environment::HostEnvironment<'_>,
 ) -> Result<(), AstToolError> {
-    let invocation = parse(args)?;
+    let mut invocation = parse(args)?;
+    host.apply(&mut invocation.preprocessor, invocation.nostdinc);
+    prune_include_paths(&mut invocation.preprocessor);
     if invocation.compile {
         for input in &invocation.inputs {
             if input.kind == Kind::Library {

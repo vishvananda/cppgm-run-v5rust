@@ -190,6 +190,9 @@ impl<'tree> Analyzer<'tree> {
             }
         }
         let builtin_names = super::builtin_calls::BuiltinNames {
+            is_constant_evaluated: cursor
+                .intern_name(b"__builtin_is_constant_evaluated")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
             abort: cursor
                 .intern_name(b"__builtin_abort")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
@@ -730,6 +733,10 @@ impl<'tree> Analyzer<'tree> {
             false,
         )?;
         self.graph.note_no_inline(entity, attributes.no_inline)?;
+        self.graph.note_effects(
+            entity,
+            self.declarator_effects(attributes.effects, declarator),
+        )?;
         self.declarator_symbol_attributes(
             declarator,
             self.tree.declarations.get(declaration).attributes,

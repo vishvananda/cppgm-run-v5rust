@@ -727,7 +727,10 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
-        if let Some(kind) = self.graph.lower_stack_intrinsic(id)? {
+        if self.graph.lower_constant_evaluation_query(id) {
+            let ty = self.graph.lower_expression(id)?.ty;
+            self.zero(ty)
+        } else if let Some(kind) = self.graph.lower_stack_intrinsic(id)? {
             self.stack_intrinsic(id, arguments, kind)
         } else if let Some(kind) = self.graph.lower_atomic_intrinsic(id)? {
             self.atomic_intrinsic(id, arguments, kind)

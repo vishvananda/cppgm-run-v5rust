@@ -150,6 +150,10 @@ impl Analyzer<'_> {
             ))?;
         self.graph
             .note_no_inline(self.graph.binding(binding).entity, attributes.no_inline)?;
+        self.graph.note_effects(
+            self.graph.binding(binding).entity,
+            self.declarator_effects(attributes.effects, declarator),
+        )?;
         self.declarator_symbol_attributes(declarator, declaration.attributes)?;
         self.note_instantiation_policy(
             self.graph.binding(binding).entity,
@@ -647,6 +651,13 @@ impl Analyzer<'_> {
         self.graph.entity_mut(function).constexpr = specs.constexpr;
         self.record_explicit_condition(function, specs, scope)?;
         self.graph.entity_mut(function).function = Some(super::graph::FunctionProperties {
+            effects: self
+                .graph
+                .entity(function)
+                .function
+                .map_or(super::graph::FunctionEffect::Default, |properties| {
+                    properties.effects
+                }),
             no_inline: self
                 .graph
                 .entity(function)

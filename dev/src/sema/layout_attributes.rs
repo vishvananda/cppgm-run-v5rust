@@ -25,9 +25,29 @@ pub(super) struct LayoutAttributes {
     packed: bool,
     standard: Option<SourceOffset>,
     pub no_inline: bool,
+    pub effects: super::graph::FunctionEffect,
     pub instantiation: super::explicit_instantiations::MemberPolicy,
 }
 impl Analyzer<'_> {
+    pub(super) fn declarator_effects(
+        &self,
+        mut effect: super::graph::FunctionEffect,
+        declarator: ast::DeclaratorId,
+    ) -> super::graph::FunctionEffect {
+        let mut part = Some(declarator);
+        while let Some(id) = part {
+            let node = self.tree.declarators.get(id);
+            for attribute in self.tree.attributes.get(node.attributes) {
+                effect = effect.max(match attribute.kind {
+                    ast::AttributeKind::Const => super::graph::FunctionEffect::ReadNone,
+                    ast::AttributeKind::Pure => super::graph::FunctionEffect::ReadOnly,
+                    _ => super::graph::FunctionEffect::Default,
+                });
+            }
+            part = node.nested;
+        }
+        effect
+    }
     pub(super) fn note_instantiation_policy(
         &mut self,
         entity: EntityId,
@@ -67,6 +87,8 @@ impl Analyzer<'_> {
                 && !matches!(
                     attribute.kind,
                     ast::AttributeKind::NoInline
+                        | ast::AttributeKind::Pure
+                        | ast::AttributeKind::Const
                         | ast::AttributeKind::AlwaysInline
                         | ast::AttributeKind::GnuInline
                         | ast::AttributeKind::ExcludeFromExplicitInstantiation
@@ -112,6 +134,12 @@ impl Analyzer<'_> {
                 }
                 ast::AttributeKind::Packed => result.packed = true,
                 ast::AttributeKind::NoInline => result.no_inline = true,
+                ast::AttributeKind::Pure => {
+                    result.effects = result.effects.max(super::graph::FunctionEffect::ReadOnly);
+                }
+                ast::AttributeKind::Const => {
+                    result.effects = super::graph::FunctionEffect::ReadNone;
+                }
                 ast::AttributeKind::AlwaysInline => result.instantiation.always_inline = true,
                 ast::AttributeKind::GnuInline => result.instantiation.gnu_inline = true,
                 ast::AttributeKind::ExcludeFromExplicitInstantiation => {
@@ -136,6 +164,7 @@ impl Analyzer<'_> {
             attributes.alignment = attributes.alignment.max(own.alignment);
             attributes.packed |= own.packed;
             attributes.no_inline |= own.no_inline;
+            attributes.effects = attributes.effects.max(own.effects);
             attributes.instantiation.excluded |= own.instantiation.excluded;
             attributes.instantiation.always_inline |= own.instantiation.always_inline;
             attributes.instantiation.gnu_inline |= own.instantiation.gnu_inline;
@@ -171,6 +200,8 @@ impl Analyzer<'_> {
         let declared = binding;
         let binding = self.graph.binding(binding);
         if binding.kind == BindingKind::Function {
+            self.graph
+                .note_effects(binding.entity, attributes.effects)?;
             self.graph
                 .function_templates
                 .instantiations

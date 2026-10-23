@@ -109,13 +109,18 @@ impl<'a> Preprocessor<'a> {
         options: &super::options::DriverOptions,
     ) -> Result<Self, PreprocessError> {
         let mut names = Identifiers::default();
-        let definitions = Definitions::new(&mut names)?;
+        let mut definitions = Definitions::new(&mut names)?;
+        if !options.host_predefines.is_empty() {
+            definitions.add_hosted(&mut names)?;
+        }
         let mut input = SourceInput::with_file_services(source, name, services)?;
         input.set_include_paths(options);
         let mut predefined = values.text();
+        let host_predefines_begin = predefined.len();
+        predefined.extend_from_slice(&options.host_predefines);
         let command_line_begin = predefined.len();
         predefined.extend_from_slice(&options.command_line);
-        input.enter_predefined(predefined, command_line_begin)?;
+        input.enter_predefined(predefined, command_line_begin, host_predefines_begin)?;
         Ok(Self {
             source: input,
             names,

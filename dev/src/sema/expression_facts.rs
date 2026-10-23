@@ -288,6 +288,7 @@ struct ClassConversion {
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
     // Atomic calls are sparse; keep the dense fact record at its existing size.
+    constant_evaluation_queries: std::collections::HashSet<ast::ExprId>,
     stack_intrinsics:
         std::collections::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
     atomic_intrinsics:
@@ -328,10 +329,17 @@ pub(super) struct ExpressionFacts {
 impl ExpressionFacts {
     pub(super) fn is_intrinsic(&self, id: ast::ExprId, facts: ExprFacts) -> bool {
         self.stack_intrinsic(id).is_some()
+            || self.constant_evaluation_query(id)
             || facts.intrinsic.is_some()
             || self.atomic_intrinsic(id).is_some()
     }
 
+    pub(super) fn constant_evaluation_query(&self, id: ast::ExprId) -> bool {
+        self.constant_evaluation_queries.contains(&self.root(id))
+    }
+    pub(super) fn note_constant_evaluation_query(&mut self, id: ast::ExprId) {
+        self.constant_evaluation_queries.insert(self.root(id));
+    }
     pub(super) fn stack_intrinsic(
         &self,
         id: ast::ExprId,

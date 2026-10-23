@@ -301,6 +301,7 @@ impl Analyzer<'_> {
             function.availability = FunctionAvailability::Callable;
             if of_template && let Some(properties) = function.function.as_mut() {
                 properties.no_inline = false;
+                properties.effects = super::graph::FunctionEffect::Default;
             }
         }
         if definition == Definition::Deleted {
