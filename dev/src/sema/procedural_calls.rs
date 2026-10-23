@@ -833,6 +833,15 @@ impl Analyzer<'_> {
                 scope,
                 self.tree.expressions.get(id).location,
             )?;
+            // A list initializes the parameter itself. Its selected constructor
+            // (or aggregate initialization) is already recorded; it is not an
+            // expression temporary to copy into a second parameter object.
+            if matches!(
+                self.tree.expressions.get(id).kind,
+                ast::ExprKind::Braced { .. }
+            ) {
+                continue;
+            }
             self.record_class_copy(
                 id,
                 target,

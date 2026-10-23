@@ -386,7 +386,9 @@ impl Analyzer<'_> {
         );
         let args = argument_buffer.as_slice();
         for &arg in args {
-            self.type_call_argument(arg, scope)?;
+            // Placement arguments are expressions, unlike a call's argument
+            // list: analyzer_construction.cpp types each before resolution.
+            self.typed_expression(arg, scope)?;
         }
         self.lookup_location = location;
         let (found, naming) =
