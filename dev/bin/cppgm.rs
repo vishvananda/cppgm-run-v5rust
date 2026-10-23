@@ -134,6 +134,7 @@ fn run() -> Result<(), CliError> {
             budget,
             &std::fs::Permissions::from_mode(0o755),
             &cppgm_rust::driver::host_environment::HostEnvironment {
+                strict_predefined_macros: &host.strict_macros,
                 predefined_macros: &host.macros,
                 include_paths: &host.includes,
             },
@@ -167,6 +168,7 @@ fn run() -> Result<(), CliError> {
         let host =
             host_configuration::query().map_err(|error| CliError::Message(error.to_string()))?;
         cppgm_rust::driver::host_environment::HostEnvironment {
+            strict_predefined_macros: &host.strict_macros,
             predefined_macros: &host.macros,
             include_paths: &host.includes,
         }

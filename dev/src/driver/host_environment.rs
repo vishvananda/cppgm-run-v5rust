@@ -4,6 +4,7 @@ use crate::preprocess::options::DriverOptions;
 
 /// Configuration of the build-selected host, captured at the executable boundary.
 pub struct HostEnvironment<'a> {
+    pub strict_predefined_macros: &'a [u8],
     pub predefined_macros: &'a [u8],
     pub include_paths: &'a [u8],
 }
@@ -11,10 +12,21 @@ pub struct HostEnvironment<'a> {
 impl HostEnvironment<'_> {
     /// Add hosted predefined macros and the configured standard search chain.
     pub fn apply(&self, options: &mut DriverOptions, nostdinc: bool) {
+        options.hosted = true;
         options
             .host_predefines
             .extend_from_slice(b"#define __STDC__ 1\n");
-        for line in self.predefined_macros.split(|&b| b == b'\n') {
+        if options.standard != crate::preprocess::options::LanguageStandard::Cxx11 {
+            options
+                .host_predefines
+                .extend_from_slice(b"#define __cpp_variable_templates 201304L\n");
+        }
+        let macros = if options.strict {
+            self.strict_predefined_macros
+        } else {
+            self.predefined_macros
+        };
+        for line in macros.split(|&b| b == b'\n') {
             let Some(definition) = line.strip_prefix(b"#define ") else {
                 continue;
             };
@@ -22,7 +34,12 @@ impl HostEnvironment<'_> {
                 .iter()
                 .position(|&b| b == b' ' || b == b'(')
                 .unwrap_or(definition.len());
-            if import_macro(&definition[..end]) {
+            let name = &definition[..end];
+            if import_macro(name)
+                && (options.modes.exceptions
+                    || !matches!(name, b"__EXCEPTIONS" | b"__cpp_exceptions"))
+                && (options.modes.rtti || !matches!(name, b"__GXX_RTTI" | b"__cpp_rtti"))
+            {
                 options.host_predefines.extend_from_slice(line);
                 options.host_predefines.push(b'\n');
             }
@@ -81,6 +98,7 @@ mod tests {
         let mut options = DriverOptions::default();
         options.system_include_paths.push(b"explicit".to_vec());
         let host = HostEnvironment {
+            strict_predefined_macros: b"",
             predefined_macros: b"#define unix 1\n#define _lower 1\n#define __cplusplus 7\n#define __DATE__ bad\n#define __FLT128_MAX__ unsupported\n#define __SIZEOF_FLOAT80__ 16\n#define __GNUC__ 15\n#define __INTMAX_C(c) c ## L\n#define _TARGET 9\n",
             include_paths: b"first\nsecond\n",
         };
@@ -104,6 +122,7 @@ mod tests {
             syntax::SyntaxUnit,
         };
         let host = HostEnvironment {
+            strict_predefined_macros: b"",
             predefined_macros: b"#define __GNUC__ 15\n",
             include_paths: b"",
         };

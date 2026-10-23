@@ -40,6 +40,16 @@ pub(crate) enum Builtin {
     HasAttribute,
     Counter,
     HasProvidedName,
+    HasInclude,
+    HasIncludeNext,
+    HasFeature,
+    HasExtension,
+    HasWarning,
+    HasDeclspecAttribute,
+    HasConstantEvaluation,
+    HasReadModifyWrite,
+    BuildingModule,
+    IsIdentifier,
 }
 pub(crate) struct Definitions<'a> {
     defined_name: NameId,
@@ -47,12 +57,25 @@ pub(crate) struct Definitions<'a> {
 }
 impl<'a> Definitions<'a> {
     pub(crate) fn add_hosted(&mut self, names: &mut Identifiers) -> Result<(), PreprocessError> {
-        let name = names
-            .intern(b"__has_builtin")
-            .map_err(PreprocessError::Limit)?;
-        let mut definition = Definition::empty(name);
-        definition.builtin = Some(Builtin::HasProvidedName);
-        self.define(definition, crate::support::source::SourceOffset(0))
+        for (spelling, builtin) in [
+            (b"__has_include".as_slice(), Builtin::HasInclude),
+            (b"__has_include_next", Builtin::HasIncludeNext),
+            (b"__has_builtin", Builtin::HasProvidedName),
+            (b"__has_feature", Builtin::HasFeature),
+            (b"__has_extension", Builtin::HasExtension),
+            (b"__has_warning", Builtin::HasWarning),
+            (b"__has_declspec_attribute", Builtin::HasDeclspecAttribute),
+            (b"__has_constexpr_builtin", Builtin::HasConstantEvaluation),
+            (b"__has_rmw_builtin", Builtin::HasReadModifyWrite),
+            (b"__building_module", Builtin::BuildingModule),
+            (b"__is_identifier", Builtin::IsIdentifier),
+        ] {
+            let name = names.intern(spelling).map_err(PreprocessError::Limit)?;
+            let mut definition = Definition::empty(name);
+            definition.builtin = Some(builtin);
+            self.define(definition, crate::support::source::SourceOffset(0))?;
+        }
+        Ok(())
     }
     pub(crate) fn new(names: &mut Identifiers) -> Result<Self, PreprocessError> {
         let mut definitions = Self {
@@ -274,6 +297,17 @@ impl<'a> Definition<'a> {
             )?;
             token = source.next_in_line(names)?;
             if token.is_punctuator(Punctuator::RightParen) {
+                return Ok(());
+            }
+            if source.hosted && token.is_punctuator(Punctuator::Ellipsis) {
+                self.variadic = true;
+                token = source.next_in_line(names)?;
+                if !token.is_punctuator(Punctuator::RightParen) {
+                    return Err(PreprocessError::at(
+                        token.begin,
+                        "`...` must end the macro parameters",
+                    ));
+                }
                 return Ok(());
             }
             if !token.is_punctuator(Punctuator::Comma) {

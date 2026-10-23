@@ -45,6 +45,7 @@ struct SourceFrame<'a> {
     conditional_depth: usize,
     guard: GuardState,
     open_conditional: Option<SourceOffset>,
+    search_index: Option<usize>,
 }
 pub(crate) struct SourceInput<'a> {
     frame: SourceFrame<'a>,
@@ -64,10 +65,19 @@ pub(crate) struct SourceInput<'a> {
     includes: u64,
     guarded_skips: u64,
     binary_exponents: bool,
+    pub(crate) hosted: bool,
     include_paths: Vec<Vec<u8>>,
+    pub(crate) modes: super::options::FeatureModes,
+}
+struct IncludeMatch {
+    file: FileId,
+    path: Vec<u8>,
+    search_index: Option<usize>,
 }
 impl<'a> SourceInput<'a> {
     pub(crate) fn set_include_paths(&mut self, options: &super::options::DriverOptions) {
+        self.hosted = options.hosted;
+        self.modes = options.modes;
         self.include_paths.clone_from(&options.include_paths);
         self.include_paths
             .extend_from_slice(&options.system_include_paths);
@@ -116,6 +126,7 @@ impl<'a> SourceInput<'a> {
                 conditional_depth: 0,
                 guard: GuardState::Start,
                 open_conditional: None,
+                search_index: None,
             },
             suspended: Vec::new(),
             inclusions: vec![Inclusion {
@@ -138,7 +149,9 @@ impl<'a> SourceInput<'a> {
             includes: 0,
             guarded_skips: 0,
             binary_exponents: false,
+            hosted: false,
             include_paths: Vec::new(),
+            modes: super::options::FeatureModes::default(),
         })
     }
     fn next_base(base: u32, source: &SourceBuffer) -> Result<u32, PreprocessError> {
@@ -484,40 +497,69 @@ impl<'a> SourceInput<'a> {
             .ok_or(PreprocessError::Invariant("missing parent source frame"))?;
         Ok(())
     }
+    fn search_directories(
+        &mut self,
+        name: &[u8],
+        start: usize,
+    ) -> Result<Option<IncludeMatch>, PreprocessError> {
+        for (index, directory) in self.include_paths.iter().enumerate().skip(start) {
+            let mut path = directory.clone();
+            if !path.is_empty() && !path.ends_with(b"/") {
+                path.push(b'/');
+            }
+            path.extend_from_slice(name);
+            if let Some(file) = self.files.open(&path)? {
+                return Ok(Some(IncludeMatch {
+                    file,
+                    path,
+                    search_index: Some(index),
+                }));
+            }
+        }
+        Ok(None)
+    }
     fn find_include(
         &mut self,
         name: &[u8],
         angle: bool,
-        at: SourceOffset,
-    ) -> Result<(FileId, Vec<u8>), PreprocessError> {
-        for paths in if angle { [true, false] } else { [false, true] } {
-            if paths {
-                for directory in &self.include_paths {
-                    let mut path = directory.clone();
-                    if !path.is_empty() && !path.ends_with(b"/") {
-                        path.push(b'/');
-                    }
-                    path.extend_from_slice(name);
-                    if let Some(file) = self.files.open(&path)? {
-                        return Ok((file, path));
-                    }
-                }
-            } else {
-                let current = self.presumed_name();
-                let mut path = current
-                    .iter()
-                    .rposition(|&b| b == b'/')
-                    .map_or_else(Vec::new, |slash| current[..=slash].to_vec());
-                path.extend_from_slice(name);
-                if let Some(file) = self.files.open(&path)? {
-                    return Ok((file, path));
-                }
-            }
+        next: bool,
+    ) -> Result<Option<IncludeMatch>, PreprocessError> {
+        if next {
+            return self
+                .search_directories(name, self.frame.search_index.map_or(0, |index| index + 1));
         }
-        self.files
-            .open(name)?
-            .map(|file| (file, name.to_vec()))
-            .ok_or_else(|| PreprocessError::at(at, "include file not found"))
+        if angle && let Some(found) = self.search_directories(name, 0)? {
+            return Ok(Some(found));
+        }
+        let current = self.presumed_name();
+        let mut path = current
+            .iter()
+            .rposition(|&b| b == b'/')
+            .map_or_else(Vec::new, |slash| current[..=slash].to_vec());
+        path.extend_from_slice(name);
+        if let Some(file) = self.files.open(&path)? {
+            return Ok(Some(IncludeMatch {
+                file,
+                path,
+                search_index: None,
+            }));
+        }
+        if !angle && let Some(found) = self.search_directories(name, 0)? {
+            return Ok(Some(found));
+        }
+        Ok(self.files.open(name)?.map(|file| IncludeMatch {
+            file,
+            path: name.to_vec(),
+            search_index: None,
+        }))
+    }
+    pub(crate) fn can_include(
+        &mut self,
+        name: &[u8],
+        angle: bool,
+        next: bool,
+    ) -> Result<bool, PreprocessError> {
+        Ok(self.find_include(name, angle, next)?.is_some())
     }
     pub(crate) fn include(
         &mut self,
@@ -528,7 +570,13 @@ impl<'a> SourceInput<'a> {
         definitions: &super::macros::definition::Definitions<'a>,
         pragmas: &super::pragmas::Pragmas,
     ) -> Result<(), PreprocessError> {
-        let (file, path) = self.find_include(name, angle, directive.begin)?;
+        let IncludeMatch {
+            file,
+            path,
+            search_index,
+        } = self
+            .find_include(name, angle, directive.spelling.bytes() == b"include_next")?
+            .ok_or_else(|| PreprocessError::at(directive.begin, "include file not found"))?;
         if self
             .files
             .identity(file)
@@ -551,26 +599,26 @@ impl<'a> SourceInput<'a> {
             ));
         }
         self.includes = self.includes.wrapping_add(1);
-        self.enter(file, &path, depth, Some(directive.begin))
+        self.enter(file, &path, depth, Some(directive.begin))?;
+        self.frame.search_index = search_index;
+        Ok(())
+    }
+    pub(crate) fn enter_command_line(&mut self, text: &[u8]) -> Result<(), PreprocessError> {
+        if !text.is_empty() {
+            let file = self.files.add_text(text.to_vec())?;
+            self.enter(file, b"<command-line>", 0, None)?;
+            self.command_line = self.inclusion().base..self.next_base;
+        }
+        Ok(())
     }
     pub(crate) fn enter_predefined(
         &mut self,
         text: Vec<u8>,
-        command_line_begin: usize,
         host_predefines_begin: usize,
     ) -> Result<(), PreprocessError> {
         let file = self.files.add_text(text)?;
         self.predefined = Some(file);
         self.enter(file, b"<predefined>", 0, None)?;
-        let begin = self
-            .inclusion()
-            .base
-            .checked_add(
-                u32::try_from(command_line_begin)
-                    .map_err(|_| PreprocessError::Limit("command-line source space"))?,
-            )
-            .ok_or(PreprocessError::Limit("command-line source space"))?;
-        self.command_line = begin..self.next_base;
         let host_begin = self
             .inclusion()
             .base
@@ -579,7 +627,7 @@ impl<'a> SourceInput<'a> {
                     .map_err(|_| PreprocessError::Limit("host predefined source space"))?,
             )
             .ok_or(PreprocessError::Limit("host predefined source space"))?;
-        self.host_predefines = host_begin..begin;
+        self.host_predefines = host_begin..self.next_base;
         Ok(())
     }
     pub(crate) fn enter_builtin_declarations(
@@ -589,8 +637,8 @@ impl<'a> SourceInput<'a> {
         let file = self.files.add_text(text.to_vec())?;
         let predefined = self.in_predefined();
         self.enter(file, b"<builtins>", 0, None)?;
-        // Driver macros precede the grammar prefix, which precedes the primary
-        // source. Installing the prefix must not consume the preprocessing pull.
+        // Predefined macros precede the grammar prefix, command-line input and
+        // primary source. Installing the prefix must not demand any tokens.
         if predefined {
             let frame = self
                 .suspended
@@ -656,6 +704,7 @@ impl<'a> SourceInput<'a> {
             conditional_depth: depth,
             guard: GuardState::Start,
             open_conditional: None,
+            search_index: None,
         };
         self.suspended
             .push(std::mem::replace(&mut self.frame, frame));

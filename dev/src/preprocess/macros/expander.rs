@@ -319,6 +319,30 @@ impl<'a> Expander<'a> {
                     self.counter = self.counter.wrapping_add(1);
                     return Ok(false);
                 }
+                Builtin::HasInclude | Builtin::HasIncludeNext => {
+                    if self.controlling_expression {
+                        self.replace_has_include(
+                            token,
+                            source,
+                            names,
+                            builtin == Builtin::HasIncludeNext,
+                        )?;
+                    }
+                    return Ok(false);
+                }
+                Builtin::HasFeature
+                | Builtin::HasExtension
+                | Builtin::HasWarning
+                | Builtin::HasDeclspecAttribute
+                | Builtin::HasConstantEvaluation
+                | Builtin::HasReadModifyWrite
+                | Builtin::BuildingModule
+                | Builtin::IsIdentifier => {
+                    if self.controlling_expression {
+                        self.replace_probe(token, source, names, builtin)?;
+                    }
+                    return Ok(false);
+                }
                 Builtin::HasProvidedName => {
                     if self.controlling_expression {
                         self.replace_has_builtin(token, source, names)?;
@@ -518,6 +542,24 @@ impl<'a> Expander<'a> {
         source: &mut SourceInput<'a>,
         names: &mut Identifiers,
     ) -> Result<(), PreprocessError> {
+        let operand = self.read_probe_operand(head, source, names)?;
+        if operand.kind != PpTokenKind::Identifier && !Self::identifier_like_operator(&operand) {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected an identifier after __has_builtin",
+            ));
+        }
+        let answer = operand.kind == PpTokenKind::Identifier
+            && crate::lex::builtins::is_provided(operand.spelling.bytes());
+        Self::set_number(head, Spelling::Source(if answer { b"1" } else { b"0" }));
+        Ok(())
+    }
+    fn read_probe_operand(
+        &mut self,
+        head: &Token<'a>,
+        source: &mut SourceInput<'a>,
+        names: &mut Identifiers,
+    ) -> Result<Token<'a>, PreprocessError> {
         if !self
             .read_operator_operand(source, names)?
             .is_punctuator(Punctuator::LeftParen)
@@ -543,14 +585,108 @@ impl<'a> Expander<'a> {
                 "expected `)` after the probe's operand",
             ));
         }
-        if operand.kind != PpTokenKind::Identifier && !Self::identifier_like_operator(&operand) {
+        Ok(operand)
+    }
+    fn replace_probe(
+        &mut self,
+        head: &mut Token<'a>,
+        source: &mut SourceInput<'a>,
+        names: &mut Identifiers,
+        builtin: Builtin,
+    ) -> Result<(), PreprocessError> {
+        let operand = self.read_probe_operand(head, source, names)?;
+        let spelling = operand.spelling.bytes();
+        let answer = if builtin == Builtin::HasWarning {
+            if operand.kind != PpTokenKind::StringLiteral {
+                return Err(PreprocessError::at(
+                    head.begin,
+                    "expected a string literal after __has_warning",
+                ));
+            }
+            false
+        } else if builtin == Builtin::IsIdentifier {
+            operand.kind == PpTokenKind::Identifier
+                && crate::lex::vocabulary::SimpleToken::identifier(spelling).is_none()
+                && crate::lex::gnu_keywords::syntax_keyword(spelling).is_none()
+                && !crate::lex::builtins::is_trait(spelling)
+        } else {
+            if operand.kind != PpTokenKind::Identifier && !Self::identifier_like_operator(&operand)
+            {
+                return Err(PreprocessError::at(
+                    head.begin,
+                    "expected an identifier operand",
+                ));
+            }
+            matches!(builtin, Builtin::HasFeature | Builtin::HasExtension)
+                && super::features::is_provided(spelling, source.modes)
+        };
+        Self::set_number(head, Spelling::Source(if answer { b"1" } else { b"0" }));
+        Ok(())
+    }
+    fn replace_has_include(
+        &mut self,
+        head: &mut Token<'a>,
+        source: &mut SourceInput<'a>,
+        names: &mut Identifiers,
+        next: bool,
+    ) -> Result<(), PreprocessError> {
+        if !self
+            .read_operator_operand(source, names)?
+            .is_punctuator(Punctuator::LeftParen)
+        {
             return Err(PreprocessError::at(
                 head.begin,
-                "expected an identifier after __has_builtin",
+                "expected `(` after __has_include",
             ));
         }
-        let answer = operand.kind == PpTokenKind::Identifier
-            && crate::lex::builtins::is_provided(operand.spelling.bytes());
+        let first = self.read_operator_operand(source, names)?;
+        let mut name = Vec::new();
+        let angle = first.is_punctuator(Punctuator::Less);
+        if angle {
+            let mut first = true;
+            loop {
+                let token = self.read_operator_operand(source, names)?;
+                if token.is_punctuator(Punctuator::Greater) {
+                    break;
+                }
+                if matches!(token.kind, PpTokenKind::EndOfFile | PpTokenKind::NewLine) {
+                    return Err(PreprocessError::at(
+                        head.begin,
+                        "missing `>` in __has_include",
+                    ));
+                }
+                if !first && token.flags & LEADING_SPACE != 0 {
+                    name.push(b' ');
+                }
+                name.extend_from_slice(token.spelling.bytes());
+                first = false;
+            }
+        } else if let Some(parts) =
+            crate::lex::text::split_text(first.spelling.bytes()).filter(|parts| {
+                first.kind == PpTokenKind::StringLiteral
+                    && parts.prefix == crate::lex::text::EncodingPrefix::None
+                    && !parts.raw
+            })
+        {
+            name.extend_from_slice(
+                &first.spelling.bytes()[parts.body_begin as usize..parts.body_end as usize],
+            );
+        } else {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected a header name after __has_include",
+            ));
+        }
+        if !self
+            .read_operator_operand(source, names)?
+            .is_punctuator(Punctuator::RightParen)
+        {
+            return Err(PreprocessError::at(
+                head.begin,
+                "expected `)` after the header name",
+            ));
+        }
+        let answer = source.can_include(&name, angle, next)?;
         Self::set_number(head, Spelling::Source(if answer { b"1" } else { b"0" }));
         Ok(())
     }

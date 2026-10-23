@@ -61,6 +61,7 @@ fn probe(base: &[String], args: &[&str]) -> Result<Output, Box<dyn Error>> {
 
 pub(super) struct Configuration {
     pub macros: Vec<u8>,
+    pub strict_macros: Vec<u8>,
     pub includes: Vec<u8>,
 }
 
@@ -68,6 +69,7 @@ pub(super) fn query() -> Result<Configuration, Box<dyn Error>> {
     let mut base = words(option_env!("CPPGM_BUILD_HOST_CXX").unwrap_or("c++"))?;
     base.extend(words(option_env!("CPPGM_STDLIB_FLAGS").unwrap_or(""))?);
     let macros = probe(&base, &["-std=gnu++11", "-dM", "-E", "-x", "c++", "-"])?;
+    let strict_macros = probe(&base, &["-std=c++11", "-dM", "-E", "-x", "c++", "-"])?;
     let paths = probe(&base, &["-E", "-x", "c++", "-", "-v"])?;
     let mut collecting = false;
     let mut includes = Vec::new();
@@ -92,6 +94,7 @@ pub(super) fn query() -> Result<Configuration, Box<dyn Error>> {
     }
     Ok(Configuration {
         macros: macros.stdout,
+        strict_macros: strict_macros.stdout,
         includes: includes.join("\n").into_bytes(),
     })
 }

@@ -110,17 +110,16 @@ impl<'a> Preprocessor<'a> {
     ) -> Result<Self, PreprocessError> {
         let mut names = Identifiers::default();
         let mut definitions = Definitions::new(&mut names)?;
-        if !options.host_predefines.is_empty() {
+        if options.hosted {
             definitions.add_hosted(&mut names)?;
         }
         let mut input = SourceInput::with_file_services(source, name, services)?;
         input.set_include_paths(options);
-        let mut predefined = values.text();
+        let mut predefined = values.text(options.standard);
         let host_predefines_begin = predefined.len();
         predefined.extend_from_slice(&options.host_predefines);
-        let command_line_begin = predefined.len();
-        predefined.extend_from_slice(&options.command_line);
-        input.enter_predefined(predefined, command_line_begin, host_predefines_begin)?;
+        input.enter_command_line(&options.command_line)?;
+        input.enter_predefined(predefined, host_predefines_begin)?;
         Ok(Self {
             source: input,
             names,
@@ -176,6 +175,13 @@ impl<'a> Preprocessor<'a> {
                 "invalid preprocessing directive",
             ));
         }
+        if !self.source.hosted && matches!(directive.spelling.bytes(), b"warning" | b"include_next")
+        {
+            return Err(PreprocessError::at(
+                directive.begin,
+                "invalid preprocessing directive",
+            ));
+        }
         match directive.spelling.bytes() {
             b"define" => {
                 let name = self.read_macro_name(&directive)?;
@@ -193,6 +199,7 @@ impl<'a> Preprocessor<'a> {
                 }
                 self.definitions.undefine(name);
             }
+            b"warning" => self.source.skip_line()?,
             b"error" => return Err(PreprocessError::at(directive.begin, "#error")),
             b"if" | b"ifdef" | b"ifndef" | b"elif" | b"else" | b"endif" => {
                 self.conditionals.run(
@@ -203,7 +210,7 @@ impl<'a> Preprocessor<'a> {
                     &mut self.expander,
                 )?;
             }
-            b"include" => {
+            b"include" | b"include_next" => {
                 let (name, angle) = super::inclusion::read_name(
                     &directive,
                     &mut self.source,
@@ -660,6 +667,190 @@ mod inclusion_tests {
             },
         }
     }
+    #[test]
+    fn hosted_directives_and_named_variadics_do_not_escape_to_course_mode() {
+        use crate::preprocess::options::{DriverOptions, PredefinedValues};
+        for text in [
+            b"#warning ignored\n".as_slice(),
+            b"#include_next <header>\n",
+            b"#define V(args...) args\n",
+        ] {
+            let source = SourceBuffer::new(text.to_vec()).unwrap();
+            let mut input = Preprocessor::with_name(&source, b"course").unwrap();
+            assert!(matches!(
+                input.next_non_whitespace_kind(),
+                Err(PreprocessError::Directive { .. })
+            ));
+        }
+        let source = SourceBuffer::new(
+            b"#warning ignored\n#define V(args...) before , ## args after\nV() V(1, 2)\n".to_vec(),
+        )
+        .unwrap();
+        let options = DriverOptions {
+            hosted: true,
+            ..DriverOptions::default()
+        };
+        let mut input = Preprocessor::with_driver_options(
+            &source,
+            b"hosted",
+            FileServices {
+                identity: |_| None,
+                read: |_| None,
+            },
+            &PredefinedValues::default(),
+            &options,
+        )
+        .unwrap();
+        for expected in [
+            b"before".as_slice(),
+            b"after",
+            b"before",
+            b",",
+            b"1",
+            b",",
+            b"2",
+            b"after",
+        ] {
+            let kind = input.next_non_whitespace_kind().unwrap();
+            assert_eq!(input.token(kind).spelling, expected);
+        }
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+    }
+
+    #[test]
+    fn include_probes_retain_search_origin_without_entering_files() {
+        use crate::preprocess::options::{DriverOptions, PredefinedValues};
+        let source = SourceBuffer::new(
+            br"
+#if __has_include(<chain.h>)
+probe_found
+#endif
+#include <chain.h>
+parent
+"
+            .to_vec(),
+        )
+        .unwrap();
+        let options = DriverOptions {
+            hosted: true,
+            include_paths: vec![b"first".to_vec(), b"second".to_vec()],
+            ..DriverOptions::default()
+        };
+        let services = FileServices {
+            identity: |name| match name {
+                b"first/chain.h" => Some(FileIdentity::new(1, 2)),
+                b"second/chain.h" => Some(FileIdentity::new(1, 3)),
+                _ => None,
+            },
+            read: |name| match name {
+                b"first/chain.h" => Some(
+                    br#"
+#if __has_include_next(<chain.h>)
+first
+#endif
+#line 80 "renamed/header"
+#include_next <chain.h>
+first_again
+"#
+                    .to_vec(),
+                ),
+                b"second/chain.h" => Some(
+                    br"
+#if __has_include_next(<chain.h>)
+#error must not restart the search
+#endif
+second
+"
+                    .to_vec(),
+                ),
+                _ => None,
+            },
+        };
+        let mut input = Preprocessor::with_driver_options(
+            &source,
+            b"primary",
+            services,
+            &PredefinedValues::default(),
+            &options,
+        )
+        .unwrap();
+        for expected in [
+            b"probe_found".as_slice(),
+            b"first",
+            b"second",
+            b"first_again",
+            b"parent",
+        ] {
+            let kind = input.next_non_whitespace_kind().unwrap();
+            assert_eq!(input.token(kind).spelling, expected);
+        }
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        assert_eq!(input.counters().includes, 2);
+        assert_eq!(input.source.inclusion_count(), 4); // primary, predefines, two includes
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
+
+    #[test]
+    fn hosted_probes_keep_raw_operands_and_expansion_contexts() {
+        use crate::preprocess::options::{DriverOptions, FeatureModes, PredefinedValues};
+        let source = SourceBuffer::new(br#"
+#define __is_class not_a_trait
+#define PROBE(x) __has_feature(x)
+#if PROBE(__cxx_constexpr__) && __has_feature(is_class) && !__has_feature(cxx_exceptions) && !__has_feature(cxx_rtti)
+features
+#endif
+#if __has_builtin(__is_class) && !__is_identifier(__is_class) && !__is_identifier(__inline__) && !__is_identifier(int) && __is_identifier(ordinary)
+raw_names
+#endif
+#if !__has_warning("-Wanything") && !__has_declspec_attribute(dllexport) && !__has_constexpr_builtin(__builtin_abs) && !__has_rmw_builtin(__atomic_fetch_add) && !__building_module(example)
+guarantees
+#endif
+__has_feature(cxx_constexpr)
+"#.to_vec()).unwrap();
+        let options = DriverOptions {
+            hosted: true,
+            modes: FeatureModes {
+                exceptions: false,
+                rtti: false,
+            },
+            ..DriverOptions::default()
+        };
+        let mut input = Preprocessor::with_driver_options(
+            &source,
+            b"primary",
+            FileServices {
+                identity: |_| None,
+                read: |_| None,
+            },
+            &PredefinedValues::default(),
+            &options,
+        )
+        .unwrap();
+        for expected in [
+            b"features".as_slice(),
+            b"raw_names",
+            b"guarantees",
+            b"__has_feature",
+            b"(",
+            b"cxx_constexpr",
+            b")",
+        ] {
+            let kind = input.next_non_whitespace_kind().unwrap();
+            assert_eq!(input.token(kind).spelling, expected);
+        }
+        assert_eq!(
+            input.next_non_whitespace_kind().unwrap(),
+            PpTokenKind::EndOfFile
+        );
+        assert_eq!(input.expander.live_storage(), [0; 5]);
+    }
+
     #[test]
     fn header_definitions_survive_return_and_guards_skip_aliases_until_undefined() {
         let source = SourceBuffer::new(b"#include \"header\"\n(SAVED)\n#include \"alias\"\n__FILE__ __LINE__\n#undef GUARD\n#include \"header\"\n(7)\n".to_vec()).unwrap();

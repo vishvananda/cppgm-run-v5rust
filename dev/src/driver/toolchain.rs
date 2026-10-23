@@ -30,11 +30,20 @@ struct Input {
 enum OptionCheck<'a> {
     Target(&'a OsStr),
     Optimization(&'a OsStr),
+    Standard(&'a OsStr),
+    Language(&'a OsStr),
+}
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum DriverMode {
+    #[default]
+    Link,
+    Compile,
+    Preprocess,
 }
 #[derive(Default)]
 struct Invocation {
     nostdinc: bool,
-    compile: bool,
+    mode: DriverMode,
     explicit_output: bool,
     output: PathBuf,
     inputs: Vec<Input>,
@@ -62,6 +71,7 @@ fn value<'a>(
             .ok_or_else(|| {
                 let role = match option {
                     "-D" => "macro definition",
+                    "-U" => "macro name",
                     "-l" => "library name",
                     _ => "path",
                 };
@@ -94,13 +104,29 @@ fn target(arg: &OsStr) -> Result<(), AstToolError> {
 fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
     let mut invocation = Invocation::default();
     let mut checks = Vec::new();
+    let mut compile_only = false;
+    let mut preprocess_only = false;
+    let mut forced_includes = Vec::new();
+    let mut pthread = false;
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
         let bytes = arg.as_bytes();
         match bytes {
             b"-nostdinc" => invocation.nostdinc = true,
-            b"-c" => invocation.compile = true,
+            b"-c" => compile_only = true,
+            b"-pthread" => pthread = true,
+            b"-fno-exceptions" | b"-fexceptions" => {
+                invocation.preprocessor.modes.exceptions = bytes == b"-fexceptions";
+            }
+            b"-fno-rtti" | b"-frtti" => invocation.preprocessor.modes.rtti = bytes == b"-frtti",
+            b"-x" => {
+                index += 1;
+                let language = args
+                    .get(index)
+                    .ok_or_else(|| message("missing language after -x"))?;
+                checks.push(OptionCheck::Language(language));
+            }
             b"-o" => {
                 invocation.explicit_output = true;
                 index += 1;
@@ -121,8 +147,20 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             | b"-g0"
             | b"-fvisibility=hidden"
             | b"-fvisibility-inlines-hidden" => {}
-            b"-E" => return Err(AstToolError::Missing("hosted preprocessing mode")),
+            b"-E" => preprocess_only = true,
+            b"-include" => {
+                index += 1;
+                let path = args
+                    .get(index)
+                    .ok_or_else(|| message("missing file after -include"))?;
+                forced_includes.extend_from_slice(b"#include \"");
+                forced_includes.extend_from_slice(path.as_bytes());
+                forced_includes.extend_from_slice(b"\"\n");
+            }
             b"--target=" => return Err(message("missing target after --target")),
+            _ if bytes.starts_with(b"-std=") => {
+                checks.push(OptionCheck::Standard(OsStr::from_bytes(&bytes[5..])));
+            }
             _ if bytes.starts_with(b"--target=") => {
                 checks.push(OptionCheck::Target(OsStr::from_bytes(&bytes[9..])));
             }
@@ -165,6 +203,19 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
                     .extend_from_slice(replacement);
                 invocation.preprocessor.command_line.push(b'\n');
             }
+            _ if bytes.starts_with(b"-U") => {
+                let name = value(args, &mut index, "-U")?
+                    .ok_or(AstToolError::Internal("undefinition argument"))?;
+                invocation
+                    .preprocessor
+                    .command_line
+                    .extend_from_slice(b"#undef ");
+                invocation
+                    .preprocessor
+                    .command_line
+                    .extend_from_slice(name.as_bytes());
+                invocation.preprocessor.command_line.push(b'\n');
+            }
             _ if bytes.starts_with(b"-L") => {
                 let path = value(args, &mut index, "-L")?
                     .ok_or(AstToolError::Internal("library path argument"))?;
@@ -194,6 +245,9 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
         }
         index += 1;
     }
+    if compile_only && preprocess_only {
+        return Err(message("cannot combine -c and -E"));
+    }
     if invocation
         .inputs
         .iter()
@@ -201,7 +255,7 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
     {
         return Err(message("invalid usage"));
     }
-    if invocation.compile
+    if (compile_only || preprocess_only)
         && invocation.explicit_output
         && invocation
             .inputs
@@ -214,14 +268,46 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             "cannot specify -o when generating multiple output files",
         ));
     }
+    invocation.mode = if preprocess_only {
+        DriverMode::Preprocess
+    } else if compile_only {
+        DriverMode::Compile
+    } else {
+        DriverMode::Link
+    };
     // cppgm++.cpp checks the invocation's shape before toolchain.cpp checks
     // option meanings. Preserve that failure precedence without rereading argv.
     for check in checks {
         match check {
             OptionCheck::Target(arg) => target(arg)?,
+            OptionCheck::Language(language) => {
+                if language != "c++" {
+                    return Err(argument("unsupported language: ", language));
+                }
+            }
+            OptionCheck::Standard(name) => {
+                let (standard, strict) =
+                    crate::preprocess::options::LanguageStandard::parse(name.as_bytes())
+                        .ok_or_else(|| argument("unsupported language standard: ", name))?;
+                invocation.preprocessor.standard = standard;
+                invocation.preprocessor.strict = strict;
+            }
             OptionCheck::Optimization(arg) => invocation.level = optimization_level(arg)?,
         }
     }
+    if pthread {
+        invocation
+            .preprocessor
+            .command_line
+            .splice(..0, b"#define _REENTRANT 1\n".iter().copied());
+    }
+    if invocation.level > 0 {
+        invocation
+            .preprocessor
+            .command_line
+            .splice(..0, b"#define __OPTIMIZE__ 1\n".iter().copied());
+    }
+    invocation.preprocessor.command_line.extend(forced_includes);
     prune_include_paths(&mut invocation.preprocessor);
     Ok(invocation)
 }
@@ -280,7 +366,8 @@ fn compile(
     values: &PredefinedValues,
     budget: StackBudget,
 ) -> Result<native::Object, AstToolError> {
-    let host = invocation.compile && !invocation.output.as_os_str().as_bytes().ends_with(b".obj");
+    let host = invocation.mode == DriverMode::Compile
+        && !invocation.output.as_os_str().as_bytes().ends_with(b".obj");
     let model = if host {
         native::ObjectModel::Host
     } else {
@@ -326,6 +413,13 @@ fn compile(
         )
     })?;
     let source = SourceBuffer::new(bytes).map_err(message)?;
+    if invocation.preprocessor.standard != crate::preprocess::options::LanguageStandard::Cxx11
+        || !invocation.preprocessor.modes.exceptions
+    {
+        return Err(AstToolError::Missing(
+            "hosted compile language and exception modes",
+        ));
+    }
     let mut output =
         LowIrOutput::for_object_level(model, invocation.level).map_err(ast::native_error)?;
     ast::emit_compilation_unit(
@@ -401,7 +495,10 @@ pub fn run(
     let mut invocation = parse(args)?;
     host.apply(&mut invocation.preprocessor, invocation.nostdinc);
     prune_include_paths(&mut invocation.preprocessor);
-    if invocation.compile {
+    if invocation.mode == DriverMode::Preprocess {
+        return preprocess(&invocation, values);
+    }
+    if invocation.mode == DriverMode::Compile {
         for input in &invocation.inputs {
             if input.kind == Kind::Library {
                 continue;
@@ -451,15 +548,135 @@ pub fn run(
     })
 }
 
+// The output opens before the first source; every unit writes sof even if
+// source construction fails. Borrow one source at a time and stream its tokens.
+fn preprocess(invocation: &Invocation, values: &PredefinedValues) -> Result<(), AstToolError> {
+    use std::io::Write;
+    for input in &invocation.inputs {
+        if matches!(input.kind, Kind::Object | Kind::LowIr) {
+            return Err(argument(
+                "-E needs C++ source inputs: ",
+                input.path.as_os_str(),
+            ));
+        }
+    }
+    let sources: Vec<_> = invocation
+        .inputs
+        .iter()
+        .filter(|i| i.kind == Kind::Source)
+        .collect();
+    if sources.len() != 1 && !invocation.output.as_os_str().is_empty() {
+        return Err(message("cannot specify -o with -E and several inputs"));
+    }
+    let writer: Box<dyn Write> = if invocation.output.as_os_str().is_empty() {
+        Box::new(std::io::stdout().lock())
+    } else {
+        check_output(invocation, &invocation.output)?;
+        Box::new(
+            std::fs::File::create(&invocation.output)
+                .map_err(|_| argument("cannot write ", invocation.output.as_os_str()))?,
+        )
+    };
+    let mut output = super::preproc::HostedOutput::new(writer);
+    writeln!(output, "preproc {}", sources.len()).map_err(AstToolError::Output)?;
+    for input in sources {
+        output
+            .write_all(b"sof ")
+            .and_then(|()| output.write_all(input.path.as_os_str().as_bytes()))
+            .and_then(|()| output.write_all(b"\n"))
+            .map_err(AstToolError::Output)?;
+        let bytes = if std::fs::metadata(&input.path).is_ok_and(|m| m.is_file()) {
+            std::fs::read(&input.path).ok()
+        } else {
+            None
+        }
+        .ok_or_else(|| argument_source(&input.path, b"cannot open the source file"))?;
+        let source = SourceBuffer::new(bytes).map_err(message)?;
+        super::preproc::emit_hosted(
+            &source,
+            input.path.as_os_str().as_bytes(),
+            values,
+            &invocation.preprocessor,
+            &mut output,
+        )
+        .map_err(|error| match error {
+            super::preproc::PreprocToolError::Initialization(PreprocessError::NotImplemented(
+                group,
+            ))
+            | super::preproc::PreprocToolError::Preprocess {
+                error: PreprocessError::NotImplemented(group),
+                ..
+            } => AstToolError::Missing(group),
+            super::preproc::PreprocToolError::Initialization(PreprocessError::Invariant(
+                message,
+            ))
+            | super::preproc::PreprocToolError::Preprocess {
+                error: PreprocessError::Invariant(message),
+                ..
+            } => AstToolError::Internal(message),
+            super::preproc::PreprocToolError::Initialization(PreprocessError::Source(error)) => {
+                AstToolError::Diagnostic(error.to_string().into_bytes())
+            }
+            super::preproc::PreprocToolError::Initialization(error) => argument_source(
+                &input.path,
+                super::preproc::describe(&source, &error).as_bytes(),
+            ),
+            super::preproc::PreprocToolError::Preprocess { diagnostic, .. } => {
+                AstToolError::Diagnostic(diagnostic)
+            }
+            super::preproc::PreprocToolError::InvalidToken => {
+                argument_source(&input.path, b"invalid phase-7 token")
+            }
+            super::preproc::PreprocToolError::Output(error) => AstToolError::Output(error),
+        })?;
+    }
+    output.flush().map_err(AstToolError::Output)?;
+    output.finish().map_err(AstToolError::Output)
+}
+fn argument_source(path: &Path, diagnostic: &[u8]) -> AstToolError {
+    AstToolError::Diagnostic([path.as_os_str().as_bytes(), b": ", diagnostic].concat())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preprocessing_keeps_command_order_and_defers_forced_includes() {
+        let args = [
+            "-E",
+            "-include",
+            "header",
+            "-DNAME=1",
+            "-pthread",
+            "-UNAME",
+            "-DNAME=2",
+            "-std=c++17",
+            "-fno-exceptions",
+            "-O2",
+            "-x",
+            "c++",
+            "source",
+        ];
+        let args: Vec<_> = args.iter().map(OsString::from).collect();
+        let invocation = parse(&args).unwrap();
+        assert!(invocation.mode == DriverMode::Preprocess);
+        assert_eq!(invocation.preprocessor.command_line, b"#define __OPTIMIZE__ 1\n#define _REENTRANT 1\n#define NAME 1\n#undef NAME\n#define NAME 2\n#include \"header\"\n");
+        assert!(invocation.preprocessor.strict);
+        assert!(!invocation.preprocessor.modes.exceptions);
+        assert_eq!(invocation.preprocessor.standard.macro_value(), b"201703L");
+        assert_eq!(invocation.inputs.len(), 1);
+    }
 
     #[test]
     fn invocation_shape_precedes_option_meaning() {
         let cases: &[(&[&str], &[u8])] = &[
             (&["--target=invalid"], b"invalid usage"),
             (&["-Oinvalid"], b"invalid usage"),
+            (&["-std=invalid"], b"invalid usage"),
+            (&["-x", "c"], b"invalid usage"),
+            (&["-E", "-c"], b"cannot combine -c and -E"),
+            (&["-E", "-U"], b"missing macro name after -U"),
             (&["--target="], b"missing target after --target"),
             (&["--target=invalid", "-I"], b"missing path after -I"),
             (
