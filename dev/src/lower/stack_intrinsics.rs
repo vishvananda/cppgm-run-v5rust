@@ -68,8 +68,8 @@ impl Function<'_, '_, '_, '_> {
         let source = self.graph.lower_expression(id)?.ty;
         let ty = types::storage(self.graph, source)?;
         let list = self.va_list_tag(operand)?;
-        if matches!(self.graph.lower_type(source)?, TypeView::Class(_))
-            && !self.symbols.object_mode()
+        if let TypeView::Class(class) = self.graph.lower_type(source)?
+            && !(self.symbols.object_mode() && self.graph.lower_direct_class_parameter(class)?)
         {
             let address = self
                 .emit(I::Runtime(Runtime::VaArg(Type::Ptr, list, None)), source)?

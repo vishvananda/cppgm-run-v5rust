@@ -1,0 +1,12 @@
+struct M {
+  M(const M&) = default;
+  M(const M&, int = 0) = delete;
+};
+struct S {
+  S(S&&) = delete;
+  M m;
+};
+void read(__builtin_va_list a)
+{
+  __builtin_va_arg(a, S);
+}

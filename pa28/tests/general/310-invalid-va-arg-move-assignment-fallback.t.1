@@ -1,0 +1,12 @@
+struct M {
+  M& operator=(const M&) = default;
+  M& operator=(M) = delete;
+};
+struct S {
+  S& operator=(S&&) = delete;
+  M m;
+};
+void read(__builtin_va_list a)
+{
+  __builtin_va_arg(a, S);
+}

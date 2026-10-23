@@ -83,7 +83,9 @@ impl Analyzer<'_> {
             entity.declared_constructors.clone()
         };
         let mut members = Vec::new();
-        for binding in bindings {
+        // C++'s name index prepends declarations. Selection of a move's
+        // fallback copy observes that order, before the implicit members.
+        for binding in bindings.into_iter().rev() {
             let entity = self.graph.binding(binding).entity;
             let function = self.graph.entity(entity);
             let kind = if assignment {
@@ -151,59 +153,9 @@ impl Analyzer<'_> {
                 }
             }
         }
-        // Deleted implicit moves are omitted from overload candidates, but still
-        // take part in the language's triviality query.
-        if !members
-            .iter()
-            .any(|member| member.kind.reference == RefKind::Rvalue)
-            && self.trait_implicit_move(class)?
-        {
-            let ty = self
-                .graph
-                .entity(class)
-                .ty
-                .ok_or(Error::Invariant("copy trait class type"))?;
-            let parameter = self.graph.types.reference(ty, RefKind::Rvalue)?;
-            members.push(Member {
-                kind: Kind {
-                    reference: RefKind::Rvalue,
-                    assignment,
-                },
-                parameter,
-                count: 1,
-                cv: Cv::default(),
-                deleted: true,
-                trivial: false,
-            });
-        }
+        // implicit_copy_member omits deleted implicit moves entirely. The
+        // explicit deleted members above still participate in this query.
         Ok(members)
-    }
-    fn trait_implicit_move(&self, class: EntityId) -> Result<bool, Error> {
-        let entity = self.graph.entity(class);
-        if entity.declared_destructor.is_some() {
-            return Ok(false);
-        }
-        for &binding in &entity.declared_constructors {
-            if self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .copy_kind
-                .is_some()
-            {
-                return Ok(false);
-            }
-        }
-        let scope = entity
-            .scope
-            .ok_or(Error::Invariant("move trait class scope"))?;
-        Ok(!self
-            .graph
-            .functions_at(scope, super::assignment::key()?)
-            .any(|binding| {
-                let function = self.graph.entity(self.graph.binding(binding).entity);
-                function.assignment_kind.is_some()
-                    && function.assignment_origin == super::assignment::Origin::Declared
-            }))
     }
     fn trait_member_trivial(&mut self, class: EntityId, member: Member) -> Result<bool, Error> {
         if !member.deleted {

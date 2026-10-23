@@ -561,6 +561,12 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn discard(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
+        // The builtin advances the list and produces bytes directly, even
+        // when its class result is discarded (discard_lowering.cpp).
+        if let ExprKind::VaArg { operand, .. } = self.tree.expressions.get(id).kind {
+            self.va_arg(id, operand)?;
+            return Ok(());
+        }
         let facts = self.graph.lower_expression(id)?;
         if !facts.is_place
             && matches!(

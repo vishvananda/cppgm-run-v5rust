@@ -1,0 +1,43 @@
+struct I { int n; };
+struct F { float n; };
+struct D { double n; };
+
+int read(int marker, ...)
+{
+  __builtin_va_list a;
+  __builtin_va_start(a, marker);
+  __builtin_va_arg(a, I);
+  int n = __builtin_va_arg(a, int);
+  F f = __builtin_va_arg(a, F);
+  D d = __builtin_va_arg(a, D);
+  __builtin_va_end(a);
+  return n == 7 && f.n == 2.0f && d.n == 3.0;
+}
+
+extern "C" int host_read();
+int main()
+{
+  return host_read();
+}
+
+struct CopyChoice {
+  CopyChoice(const CopyChoice&) = default;
+  CopyChoice(const CopyChoice&, int = 0) = delete;
+};
+struct Holder { CopyChoice m; };
+struct AssignmentChoice {
+  AssignmentChoice& operator=(const AssignmentChoice&) = default;
+  AssignmentChoice& operator=(AssignmentChoice) = delete;
+};
+struct AssignmentHolder { AssignmentChoice m; };
+struct NoCopy {
+  NoCopy(const NoCopy&) = delete;
+  int n;
+};
+
+void read_discarded(__builtin_va_list a)
+{
+  __builtin_va_arg(a, Holder);
+  __builtin_va_arg(a, AssignmentHolder);
+  __builtin_va_arg(a, NoCopy);
+}

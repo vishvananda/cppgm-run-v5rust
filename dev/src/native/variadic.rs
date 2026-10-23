@@ -11,7 +11,7 @@ use super::{
 use crate::lowir::{
     Error,
     model::{Program, TempId, Value},
-    vocabulary::{ObjectClasses, Type},
+    vocabulary::{EightbyteClass, ObjectClasses, Type},
 };
 use std::io::Write;
 #[derive(Clone, Copy)]
@@ -230,7 +230,27 @@ impl Selection<'_> {
         } else {
             Operand::Register(self.result(result, [None, None], list.mask()))
         };
-        let object = if memory {
+        // A single SSE eightbyte uses the scalar sequence into its memory
+        // home, as emit_values.cpp selects for every object of these classes.
+        let sse_part = if memory
+            && matches!(
+                classes,
+                Some(ObjectClasses::Direct(
+                    EightbyteClass::Sse,
+                    None | Some(EightbyteClass::None)
+                ))
+            )
+            && super::abi::value_bytes(ty)? <= 8
+        {
+            Some(if super::abi::value_bytes(ty)? <= 4 {
+                Type::F32
+            } else {
+                Type::F64
+            })
+        } else {
+            None
+        };
+        let object = if memory && sse_part.is_none() {
             Some(super::variadic_objects::ObjectArgument::new(ty, classes)?)
         } else {
             None
@@ -244,7 +264,7 @@ impl Selection<'_> {
                         align: 0,
                     }
                 } else {
-                    ty
+                    sse_part.unwrap_or(ty)
                 },
                 destination,
                 list,
