@@ -76,6 +76,8 @@ impl LowIrOutput {
             .ok_or(AstToolError::Internal("object output without model"))?;
         if level != 0 {
             crate::opt::optimize(&mut program, level).map_err(native_error)?;
+            program.clear_jump_thunks();
+            crate::native::recover_jump_thunks(&mut program, model);
             program
                 .set_definition_sink(Box::new(
                     crate::native::ObjectBuilder::with_model(level, model).map_err(native_error)?,
@@ -363,6 +365,12 @@ mod tests {
             "struct A{A(int);~A();};const A&f(int n){static const A&a=static_cast<const A&>(n);return a;}",
             "struct A{A();~A();};A global;int main(){A a;return 0;}",
             "struct A{virtual ~A(){};};struct B:A{~B(){}};void f(){B b;}",
+            "struct A{int x;virtual int f(){return x;}};struct B{int y;virtual int g(){return y;}};struct C:A,B{int g(){return 3;}};C c;",
+            "struct A{int x;virtual int f(){return x;}};struct B:virtual A{int f(){return 3;}};B b;",
+            "struct A{virtual void f(...){}};struct B{virtual void g(...){}};struct C:A,B{void g(...){}};C c;",
+            "struct A{virtual ~A(){}};struct B:virtual A{~B(){}};B b;",
+            "struct R{int x;};struct S{int y;};struct T:R,S{};struct A{virtual S* f(){return 0;}};struct B:A{T* f(){return 0;}};B b;",
+            "namespace{struct V{virtual ~V(){}};struct A:virtual V{A();};struct D:A{D(){}};A::A(){}}void f(){D d;}",
         ] {
             let mut results = Vec::new();
             for retained in [false, true] {
@@ -415,6 +423,74 @@ mod tests {
                 results.push(crate::native::object_bytes(&object).unwrap());
             }
             assert_eq!(results[0], results[1], "{source}");
+        }
+    }
+
+    #[test]
+    fn host_jump_thunks_keep_typed_receivers_and_roundtrip_through_bodies() {
+        for (result, receiver) in [("int", 0), ("R", 1)] {
+            let text = format!(
+                "struct R{{long x,y,z;}};struct A{{virtual {result} f()=0;}};struct B{{virtual {result} g()=0;}};struct C:A,B{{{result} f();{result} g();}};{result} C::f(){{return {{}};}}{result} C::g(){{return {{}};}}C c;"
+            );
+            let source = SourceBuffer::new(text.into_bytes()).unwrap();
+            let mut objects = Vec::new();
+            for streamed in [false, true] {
+                let mut output = if streamed {
+                    LowIrOutput::for_object_model(crate::native::ObjectModel::Host).unwrap()
+                } else {
+                    LowIrOutput::host_object_view()
+                };
+                emit_compilation_unit(
+                    &source,
+                    b"jump-thunk-test",
+                    &PredefinedValues::default(),
+                    &crate::preprocess::options::DriverOptions::default(),
+                    &mut output,
+                    StackBudget::default(),
+                )
+                .unwrap();
+                let program = &output.output.program;
+                let thunks: Vec<_> = program
+                    .publications()
+                    .iter()
+                    .filter_map(|&id| program.jump_thunk(id).map(|thunk| (id, thunk)))
+                    .collect();
+                assert!(!thunks.is_empty());
+                for (id, thunk) in thunks {
+                    assert_eq!(thunk.this_index, receiver);
+                    assert!(program.function_defined(thunk.target));
+                    assert!(program.function_defined(id));
+                    assert_eq!(thunk.adjustment, -8);
+                    assert_eq!(thunk.vcall_offset, 0);
+                    assert!(program.function(program.symbol(id)).unwrap().body.is_none());
+                }
+                let object = if streamed {
+                    output.finish_object(b"jump-thunk-test".to_vec()).unwrap()
+                } else {
+                    let mut bytes = Vec::new();
+                    output.write(&mut bytes).unwrap();
+                    let mut program = crate::lowir::test_program(&bytes).unwrap();
+                    assert!(!program.has_jump_thunks());
+                    crate::native::recover_jump_thunks(
+                        &mut program,
+                        crate::native::ObjectModel::Host,
+                    );
+                    assert!(program.has_jump_thunks());
+                    program
+                        .set_definition_sink(Box::new(
+                            crate::native::ObjectBuilder::with_model(
+                                0,
+                                crate::native::ObjectModel::Host,
+                            )
+                            .unwrap(),
+                        ))
+                        .unwrap();
+                    crate::native::compile_object(&mut program, b"jump-thunk-test".to_vec(), 0)
+                        .unwrap()
+                };
+                objects.push(crate::native::object_bytes(&object).unwrap());
+            }
+            assert_eq!(objects[0], objects[1]);
         }
     }
 

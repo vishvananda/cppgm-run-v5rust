@@ -91,6 +91,9 @@ impl Names {
 }
 /// A consumer owns only its phase's encoded state, never front-end facts.
 pub(crate) trait DefinitionSink: std::any::Any {
+    fn reads_jump_thunks(&self) -> bool {
+        false
+    }
     fn append(&mut self, program: &Program, symbol: SymbolId, held: bool) -> Result<(), Error>;
     fn release_held(&mut self);
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
@@ -118,6 +121,16 @@ pub(crate) struct Program {
     aliases: Vec<ObjectAlias>,
     alias_names: HashSet<NameId>,
     reader_vocabulary: bool,
+    jump_thunks: HashMap<SymbolId, JumpThunk>,
+}
+/// Adjustment facts published before a thunk's definition reaches the backend.
+/// Its ordinary body remains the text spelling for non-object consumers.
+#[derive(Clone, Copy)]
+pub(crate) struct JumpThunk {
+    pub(crate) target: SymbolId,
+    pub(crate) this_index: u32,
+    pub(crate) adjustment: i64,
+    pub(crate) vcall_offset: i64,
 }
 #[derive(Default)]
 struct RetainedDefinitions {
@@ -125,6 +138,23 @@ struct RetainedDefinitions {
     held: Vec<SymbolId>,
 }
 impl Program {
+    pub(crate) fn set_jump_thunk(&mut self, symbol: SymbolId, thunk: JumpThunk) {
+        self.jump_thunks.insert(symbol, thunk);
+    }
+    pub(crate) fn jump_thunk(&self, symbol: SymbolId) -> Option<JumpThunk> {
+        self.jump_thunks.get(&symbol).copied()
+    }
+    pub(crate) fn has_jump_thunks(&self) -> bool {
+        !self.jump_thunks.is_empty()
+    }
+    pub(crate) fn clear_jump_thunks(&mut self) {
+        self.jump_thunks.clear();
+    }
+    pub(crate) fn sink_reads_jump_thunks(&self) -> bool {
+        self.definition_sink
+            .as_ref()
+            .is_some_and(|sink| sink.reads_jump_thunks())
+    }
     pub(crate) fn retain_definitions(&mut self) -> Result<(), Error> {
         if self.definition_sink.is_some() || self.retained_definitions.is_some() {
             return Err(Error::Construction(
@@ -218,7 +248,7 @@ impl Program {
     }
     pub(crate) fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);
-        if function.body.is_some() {
+        if function.body.is_some() || self.jump_thunk(symbol).is_some() {
             self.completed_definition = Some(symbol);
         }
         self.symbols[symbol.0 as usize].detail = SymbolDetail::Function(id);
@@ -457,7 +487,7 @@ impl Program {
         self.streamed_functions.contains(&symbol)
             || self
                 .function(self.symbol(symbol))
-                .is_some_and(|f| f.body.is_some())
+                .is_some_and(|f| f.body.is_some() || self.jump_thunk(symbol).is_some())
     }
     pub(crate) fn function_declarations(&self) -> impl Iterator<Item = &Function> {
         self.immediate_declarations

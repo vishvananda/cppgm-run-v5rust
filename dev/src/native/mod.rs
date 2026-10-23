@@ -53,6 +53,7 @@ pub(crate) use elf_reader::read as read_object;
 #[cfg(test)]
 pub(crate) use elf_writer::bytes as object_bytes;
 pub(crate) use elf_writer::write as write_object;
+pub(crate) use jump_thunk::recover as recover_jump_thunks;
 pub(crate) use linker::link as link_objects;
 pub(crate) use object::Object;
 pub(crate) use object_compile::compile as compile_object;
@@ -164,6 +165,7 @@ pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statis
             Err(image::WriteError::Other(error)) => return Err(error),
             Err(image::WriteError::Undefined) => {
                 drop(image);
+                recover_jump_thunks(program, ObjectModel::Course);
                 let source = program
                     .first_source()
                     .map(|p| p.as_os_str().as_encoded_bytes().to_vec())

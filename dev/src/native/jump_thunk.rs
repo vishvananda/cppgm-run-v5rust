@@ -1,18 +1,13 @@
-//! Recover typed variadic adjustment thunks before course object emission. See NOTICE.
+//! Typed adjustment jump emission and explicit `LowIR` body recovery. See NOTICE.
 use super::{
     image::{Image, ImageSymbol, Section},
+    object_compile::ObjectModel,
     x86::{Assembler, Register as R, Rm},
 };
 use crate::lowir::{
     Error,
-    model::{Arity, Body, Function, Instruction, InstructionKind as I, Program, SymbolId, Value},
+    model::{Arity, Body, Instruction, InstructionKind as I, JumpThunk, Program, SymbolId, Value},
 };
-struct Thunk {
-    target: SymbolId,
-    receiver: R,
-    adjustment: i64,
-    vcall: i64,
-}
 fn defined(body: &Body, value: Value) -> Option<&Instruction> {
     let Value::Temp(temp) = value else {
         return None;
@@ -29,7 +24,7 @@ fn offset(body: &Body, value: Value) -> Option<i64> {
             .cast_signed(),
     )
 }
-fn recognize(body: &Body) -> Option<Thunk> {
+fn recognize(body: &Body) -> Option<JumpThunk> {
     let [entry] = body.layout.as_slice() else {
         return None;
     };
@@ -73,7 +68,7 @@ fn recognize(body: &Body) -> Option<Thunk> {
         if receiver.is_some() || index > 1 {
             return None;
         }
-        receiver = Some(if index == 0 { R::RDI } else { R::RSI });
+        receiver = Some(u32::try_from(index).ok()?);
         let outer = defined(body, argument)?;
         let I::Index(_, _, base, amount) = outer.kind else {
             return None;
@@ -112,52 +107,64 @@ fn recognize(body: &Body) -> Option<Thunk> {
         }
         adjustment = offset(body, amount)?;
     }
-    Some(Thunk {
+    Some(JumpThunk {
         target,
-        receiver: receiver?,
+        this_index: receiver?,
         adjustment,
-        vcall,
+        vcall_offset: vcall,
     })
 }
-pub(super) fn emit(
-    program: &Program,
-    symbol: SymbolId,
-    function: &Function,
-    image: &mut Image,
-) -> Result<bool, Error> {
-    if program.signature(function.signature).boundary.arity != Arity::Variadic {
-        return Ok(false);
+/// Explicit `LowIR` (and optimized bodies) has no authoritative lowering record.
+/// Match the frozen adapter only when the program has no published thunk facts.
+pub(crate) fn recover(program: &mut Program, model: ObjectModel) {
+    if program.has_jump_thunks() {
+        return;
     }
-    let Some(object) = function.metadata.object else {
-        return Ok(false);
-    };
-    let object = program.names.bytes(object);
-    if !object.starts_with(b"_ZTh") && !object.starts_with(b"_ZTv") {
-        return Ok(false);
+    for index in 0..program.publications().len() {
+        let symbol = program.publications()[index];
+        let Some(function) = program.function(program.symbol(symbol)) else {
+            continue;
+        };
+        if model != ObjectModel::Host
+            && program.signature(function.signature).boundary.arity != Arity::Variadic
+        {
+            continue;
+        }
+        let Some(object) = function.metadata.object else {
+            continue;
+        };
+        let object = program.names.bytes(object);
+        if !object.starts_with(b"_ZTh") && !object.starts_with(b"_ZTv") {
+            continue;
+        }
+        if let Some(thunk) = function.body.as_ref().and_then(recognize) {
+            program.set_jump_thunk(symbol, thunk);
+        }
     }
-    let Some(body) = &function.body else {
-        return Ok(false);
-    };
-    let Some(thunk) = recognize(body) else {
-        return Ok(false);
+}
+pub(super) fn emit(symbol: SymbolId, thunk: JumpThunk, image: &mut Image) -> Result<(), Error> {
+    let receiver = if thunk.this_index == 0 {
+        R::RDI
+    } else {
+        R::RSI
     };
     let base = image.align_text()?;
     image.define(ImageSymbol::Program(symbol), Section::Text, base);
     let mut a = Assembler::default();
     if thunk.adjustment != 0 {
-        a.alu_ri(0, Rm::Reg(thunk.receiver), thunk.adjustment, 8)?;
+        a.alu_ri(0, Rm::Reg(receiver), thunk.adjustment, 8)?;
     }
-    if thunk.vcall != 0 {
-        a.load(R::R10, Rm::mem(thunk.receiver, 0), 8, false)?;
+    if thunk.vcall_offset != 0 {
+        a.load(R::R10, Rm::mem(receiver, 0), 8, false)?;
         let displacement = i32::from_le_bytes(
-            thunk.vcall.to_le_bytes()[..4]
+            thunk.vcall_offset.to_le_bytes()[..4]
                 .try_into()
                 .map_err(|_| Error::Limit)?,
         );
-        a.alu_rr(0, thunk.receiver, Rm::mem(R::R10, displacement), 8)?;
+        a.alu_rr(0, receiver, Rm::mem(R::R10, displacement), 8)?;
     }
     a.jump_symbol(ImageSymbol::Program(thunk.target))?;
     a.resolve()?;
     image.append(a)?;
-    Ok(true)
+    Ok(())
 }

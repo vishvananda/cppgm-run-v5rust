@@ -226,7 +226,9 @@ impl ObjectBuilder {
         let mut facts = super::host_unwind::Frame::default();
         let lsda_start = self.lsda.len();
         let types_start = self.type_fields.len();
-        if !super::jump_thunk::emit(program, symbol, function, &mut self.image)? {
+        if let Some(thunk) = program.jump_thunk(symbol) {
+            super::jump_thunk::emit(symbol, thunk, &mut self.image)?;
+        } else {
             let mir = super::value_selection::select_for_object(
                 program, symbol, function, level, self.model,
             )?;
@@ -1060,6 +1062,9 @@ impl ObjectBuilder {
 }
 
 impl crate::lowir::model::DefinitionSink for ObjectBuilder {
+    fn reads_jump_thunks(&self) -> bool {
+        true
+    }
     fn append(&mut self, program: &Program, symbol: SymbolId, held: bool) -> Result<(), Error> {
         self.append(program, symbol, self.level)?;
         if held {

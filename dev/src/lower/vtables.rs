@@ -223,6 +223,7 @@ struct Thunk {
     adjustment: ThisAdjustment,
     result: Option<ResultAdjustment>,
     result_row: Option<i64>,
+    jump: bool,
     family: Option<(
         EntityId,
         Option<crate::lowir::model::NameId>,
@@ -397,6 +398,10 @@ impl Symbols<'_, '_> {
             }
         };
         let object = program.names.intern(&object)?;
+        // local_object: only the first internal symbol with this ABI spelling
+        // owns it. Later definitions use their unique LowIR symbol name.
+        let object_name =
+            (!internal || !self.table.objects.contains_key(&object)).then_some(object);
         let symbol = self
             .table
             .allocate(program, &spelling, Some(object), internal)?;
@@ -406,7 +411,7 @@ impl Symbols<'_, '_> {
             } else {
                 Binding::Weak
             }),
-            object: Some(object),
+            object: object_name,
             ..Metadata::default()
         };
         if !program.symbol(symbol).declared() {
@@ -900,6 +905,16 @@ impl Symbols<'_, '_> {
                 },
             },
         };
+        let variadic = signature.boundary.arity == crate::lowir::model::Arity::Variadic;
+        if self.table.object_mode && variadic && result.is_some() {
+            return Err(crate::sema::Error::Diagnostic {
+                location: crate::support::source::SourceOffset(0),
+                message: "a covariant thunk of a variadic function",
+            }
+            .into());
+        }
+        let jump =
+            self.table.object_mode && (variadic || self.table.host_objects && result.is_none());
         let signature = program.add_signature(signature)?;
         self.vtables
             .thunk_symbols
@@ -941,6 +956,7 @@ impl Symbols<'_, '_> {
             adjustment,
             result,
             result_row,
+            jump,
             family,
             metadata: Metadata {
                 object: Some(object),
@@ -969,7 +985,6 @@ impl Symbols<'_, '_> {
             if program.function_defined(thunk.symbol) {
                 continue;
             }
-            let signature = program.signature(thunk.signature);
             if !program.function_defined(thunk.target) {
                 program.add(
                     thunk.symbol,
@@ -990,6 +1005,33 @@ impl Symbols<'_, '_> {
                 )?;
                 continue;
             }
+            if thunk.jump {
+                program.set_jump_thunk(
+                    thunk.symbol,
+                    crate::lowir::model::JumpThunk {
+                        target: thunk.target,
+                        this_index: u32::try_from(thunk.this_index)
+                            .map_err(|_| crate::lowir::Error::Limit)?,
+                        adjustment: thunk.adjustment.offset,
+                        vcall_offset: thunk.adjustment.vcall.unwrap_or(0),
+                    },
+                );
+                if program.sink_reads_jump_thunks() {
+                    program.add(
+                        thunk.symbol,
+                        crate::lowir::model::Function {
+                            name: program.symbol(thunk.symbol).name,
+                            signature: thunk.signature,
+                            metadata: thunk.metadata,
+                            body: None,
+                            location: None,
+                        },
+                    )?;
+                    definitions.stream(program, None)?;
+                    continue;
+                }
+            }
+            let signature = program.signature(thunk.signature);
             let params: Vec<_> = signature
                 .parameters
                 .iter()
@@ -1808,12 +1850,11 @@ impl Symbols<'_, '_> {
         if let Some(&symbol) = self.vtables.vtts.get(&class) {
             return Ok(symbol);
         }
-        // vtt_symbol first publishes the class table. That table can request
-        // its VTT recursively; reuse that completed symbol before reserving.
+        // Preserve the oracle's demand order: a first VTT request publishes
+        // its class table, which can recursively publish a VTT of its own.
+        // External ABI identity coalesces the two requests; internal requests
+        // each allocate a definition, and the outer one becomes the memo.
         self.vtable_symbol(program, class)?;
-        if let Some(&symbol) = self.vtables.vtts.get(&class) {
-            return Ok(symbol);
-        }
         let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Vtt)?;
         self.vtables.vtts.insert(class, symbol);
         if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
