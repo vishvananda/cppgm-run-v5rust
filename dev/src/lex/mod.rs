@@ -3,6 +3,7 @@ pub(crate) mod builtins;
 pub mod floating;
 pub(crate) mod gnu_keywords;
 pub mod identifiers;
+pub(crate) mod library_builtins;
 pub mod number;
 pub mod pp_lexer;
 pub(crate) mod strings;

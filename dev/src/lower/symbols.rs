@@ -1632,6 +1632,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             _ if self.graph.lower_is_closure_invoker(entity) => "_FUN".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memcmp) => "memcmp".to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::Memset) => "memset".to_owned(),
+            Some(crate::sema::lowering::BuiltinFunction::Library) => self
+                .source_function_spelling(facts.name)?
+                .strip_prefix("__builtin_")
+                .ok_or(crate::sema::Error::Invariant("library builtin spelling"))?
+                .to_owned(),
             Some(crate::sema::lowering::BuiltinFunction::LibraryNan(ty)) => match ty {
                 F::Float => "nanf",
                 F::LongDouble => "nanl",
@@ -2216,6 +2221,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 }
                 B::Memcmp
                 | B::Memset
+                | B::Library
                 | B::Unreachable
                 | B::Expect
                 | B::Integer(_)

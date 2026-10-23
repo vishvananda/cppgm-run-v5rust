@@ -30,6 +30,7 @@ pub(crate) enum BuiltinFunction {
     Floating(super::floating_intrinsics::FloatingOperation),
     Integer(super::integer_intrinsics::IntegerBuiltin),
     LibraryNan(F),
+    Library,
 }
 
 #[cfg(test)]
@@ -43,16 +44,73 @@ mod tests {
 
     #[test]
     fn deferred_queries_reuse_builtin_identity_outside_source_visibility() {
-        let source = SourceBuffer::new(b"int f()noexcept(noexcept(&__builtin_memcpy));void*(*p)(void*,const void*,unsigned long)=&__builtin_memcpy;int h(){return noexcept(f());}".to_vec()).unwrap();
-        let mut unit =
-            SyntaxUnit::new(Preprocessor::with_name(&source, b"builtin-identity").unwrap());
+        for (name, source) in [
+            (b"__builtin_memcpy".as_slice(), b"int f()noexcept(noexcept(&__builtin_memcpy));void*(*p)(void*,const void*,unsigned long)=&__builtin_memcpy;int h(){return noexcept(f());}".as_slice()),
+            (b"__builtin_sqrt", b"int f()noexcept(noexcept(&__builtin_sqrt));double(*p)(double)=&__builtin_sqrt;int h(){return noexcept(f());}"),
+        ] {
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"builtin-identity").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let key = cursor.intern_name(name).unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let graph = analyzer.analyze(declarations).unwrap();
+            assert_eq!(graph.functions_at(graph.global, key.into()).count(), 1);
+        }
+    }
+
+    #[test]
+    fn using_first_demand_reuses_the_global_builtin_entity() {
+        let source = SourceBuffer::new(
+            b"namespace N{using ::__builtin_sqrt;using ::__builtin_memcpy;}\
+            double f(double x){return N::__builtin_sqrt(x)+::__builtin_sqrt(x);}\
+            void*g(void*d,const void*s){return N::__builtin_memcpy(d,s,4);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"builtin-using").unwrap());
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let sqrt = cursor.intern_name(b"__builtin_sqrt").unwrap();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let key = analyzer.builtin_names.memcpy;
+        let memcpy = analyzer.builtin_names.memcpy;
         let graph = analyzer.analyze(declarations).unwrap();
-        assert_eq!(graph.functions_at(graph.global, key.into()).count(), 1);
+        for key in [sqrt, memcpy] {
+            assert_eq!(graph.functions_at(graph.global, key.into()).count(), 1);
+        }
+    }
+
+    #[test]
+    fn variadic_library_signature_uses_declared_alias_outside_query_visibility() {
+        let source = SourceBuffer::new(b"typedef int __builtin_va_list;".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"builtin-va-alias").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let key = cursor.intern_name(b"__builtin_vsnprintf").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        // An absent alias must not publish or cache an incomplete signature.
+        assert!(analyzer.ensure_builtin(key).unwrap().is_none());
+        analyzer.declarations(declarations, global).unwrap();
+        analyzer.graph.lookup_limit = Some(0);
+        let binding = analyzer.ensure_builtin(key).unwrap().unwrap();
+        assert_eq!(analyzer.graph.lookup_limit, Some(0));
+        let ty = analyzer.graph.binding(binding).ty.unwrap();
+        let TypeKind::Function { parameters, .. } = &analyzer.graph.types.get(ty).kind else {
+            panic!("library builtin is no function");
+        };
+        assert_eq!(parameters.len(), 4);
+        assert_eq!(
+            analyzer.graph.types.get(parameters[3]).kind,
+            TypeKind::Scalar(Scalar::Basic(F::Int))
+        );
     }
 
     #[test]
@@ -160,6 +218,8 @@ impl Analyzer<'_> {
             BuiltinFunction::Integer(*kind)
         } else if let Some((_, kind)) = names.floating.iter().find(|&&(name, _)| name == key) {
             BuiltinFunction::Floating(*kind)
+        } else if crate::lex::library_builtins::lookup(self.identifiers.bytes(key)).is_some() {
+            BuiltinFunction::Library
         } else {
             return Ok(None);
         };
@@ -185,7 +245,12 @@ impl Analyzer<'_> {
             return Ok(existing);
         }
         let void = self.graph.types.scalar(Scalar::Void)?;
-        let (result, parameters) = if matches!(
+        let (result, parameters) = if matches!(builtin, BuiltinFunction::Library) {
+            let Some(signature) = self.library_builtin_signature(key)? else {
+                return Ok(None);
+            };
+            signature
+        } else if matches!(
             builtin,
             BuiltinFunction::Abort | BuiltinFunction::Unreachable
         ) {
@@ -237,6 +302,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Unreachable
                     | BuiltinFunction::Invoke
                     | BuiltinFunction::LibraryNan(_)
+                    | BuiltinFunction::Library
                     | BuiltinFunction::Stack(_)
                     | BuiltinFunction::Atomic(_)
                     | BuiltinFunction::Integer(_)

@@ -269,86 +269,6 @@ const PROVIDED: &[&[u8]] = &[
     b"__sync_xor_and_fetch",
     b"__type_pack_element",
 ];
-const LIBM: &[&[u8]] = &[
-    b"acos",
-    b"acosh",
-    b"asin",
-    b"asinh",
-    b"atan",
-    b"atan2",
-    b"atanh",
-    b"cabs",
-    b"cacos",
-    b"cacosh",
-    b"carg",
-    b"casin",
-    b"casinh",
-    b"catan",
-    b"catanh",
-    b"cbrt",
-    b"ccos",
-    b"ccosh",
-    b"ceil",
-    b"cexp",
-    b"cimag",
-    b"clog",
-    b"conj",
-    b"copysign",
-    b"cos",
-    b"cosh",
-    b"cpow",
-    b"cproj",
-    b"creal",
-    b"csin",
-    b"csinh",
-    b"csqrt",
-    b"ctan",
-    b"ctanh",
-    b"erf",
-    b"erfc",
-    b"exp",
-    b"exp2",
-    b"expm1",
-    b"fabs",
-    b"fdim",
-    b"floor",
-    b"fma",
-    b"fmax",
-    b"fmin",
-    b"fmod",
-    b"frexp",
-    b"hypot",
-    b"ilogb",
-    b"ldexp",
-    b"lgamma",
-    b"llrint",
-    b"llround",
-    b"log",
-    b"log10",
-    b"log1p",
-    b"log2",
-    b"logb",
-    b"lrint",
-    b"lround",
-    b"modf",
-    b"nearbyint",
-    b"nextafter",
-    b"nexttoward",
-    b"pow",
-    b"remainder",
-    b"remquo",
-    b"rint",
-    b"round",
-    b"scalbln",
-    b"scalbn",
-    b"sin",
-    b"sinh",
-    b"sqrt",
-    b"tan",
-    b"tanh",
-    b"tgamma",
-    b"trunc",
-];
 pub(crate) fn is_provided(name: &[u8]) -> bool {
     // Both frozen registry lookups require two leading underscores, even
     // though the trait vocabulary also lists C's _Atomic and _BitInt.
@@ -358,13 +278,7 @@ pub(crate) fn is_provided(name: &[u8]) -> bool {
     if is_trait(name) || PROVIDED.binary_search(&name).is_ok() {
         return true;
     }
-    let Some(name) = name.strip_prefix(b"__builtin_") else {
-        return false;
-    };
-    LIBM.binary_search(&name).is_ok()
-        || name.split_last().is_some_and(|(suffix, base)| {
-            matches!(suffix, b'f' | b'l') && LIBM.binary_search(&base).is_ok()
-        })
+    super::library_builtins::lookup(name).is_some()
 }
 
 #[cfg(test)]

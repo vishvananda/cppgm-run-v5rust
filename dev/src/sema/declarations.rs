@@ -360,7 +360,17 @@ impl Analyzer<'_> {
             return Ok(());
         }
         self.prepare_assignment_lookup(prefix, target_key, false)?;
-        let found = self.using_lookup(prefix, target_key, location)?;
+        let mut found = self.using_lookup(prefix, target_key, location)?;
+        // analyzer.cpp::using_declaration: an explicitly global builtin is
+        // declared on first naming here, just as it is in a call or address.
+        if found.binding.is_none()
+            && name.global
+            && count == 0
+            && let ast::NameKind::Identifier(key) = last.kind
+            && let Some(builtin) = self.builtin_lookup(key)?
+        {
+            found = builtin;
+        }
         let target_id = found
             .binding
             .ok_or_else(|| Error::at(location, "undeclared name in a using-declaration"))?;
