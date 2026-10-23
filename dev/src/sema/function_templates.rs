@@ -969,6 +969,9 @@ impl Analyzer<'_> {
                 self.deduce_type_list(&pattern, &actual, depth, arguments)
             }
             (TypeKind::Class(p), TypeKind::Class(a)) => {
+                if p == a {
+                    return Ok(true);
+                }
                 if let Some(instance) = self.graph.class_templates.instance(p)
                     && let Some(name) = self
                         .graph
@@ -1078,7 +1081,13 @@ impl Analyzer<'_> {
                 TypeKind::Value { .. } | TypeKind::Address { .. },
                 TypeKind::Value { .. } | TypeKind::Address { .. },
             ) => Ok(self.same_template_value(pattern, actual)),
-            _ => Ok(pattern == actual),
+            // A parameter outside this deduction's depth is a fixed identity,
+            // as in the early parameter branches of C++ deduce_type.
+            (TypeKind::TemplateParameter { .. }, _) => Ok(pattern == actual),
+            // Qualification was checked above. Terminal matching compares
+            // unqualified identities, including a fixed array element when
+            // the bound is the only part that participates in deduction.
+            _ => Ok(self.bare_type(pattern)? == self.bare_type(actual)?),
         }
     }
 
@@ -2184,6 +2193,51 @@ mod tests {
     };
 
     #[test]
+    fn array_bound_deduction_preserves_qualification_and_signature_demand() {
+        let source = SourceBuffer::new(
+            b"struct A{};enum E{value};\
+              template<class H,int N>char f(const H(&)[N]){return H::bad;}\
+              template<int N>char c(const char(&)[N]){return N;}\
+              template<int N>char v(const volatile int(&)[N]){return N;}\
+              template<int N>char p(int*const(&)[N]){return N;}\
+              template<int N>char a(const A(&)[N]){return N;}\
+              template<int N>char e(const E(&)[N]){return N;}\
+              template<int N>char m(const char(&)[N],const char(&)[N]);\
+              long m(...);\
+              template<int N>char r(char(&)[N]);long r(...);\
+              template<int N>char u(unsigned char const(&)[N]);long u(...);\
+              char text[3];volatile int ints[3];int*ptrs[3];A objects[3];E enums[3];\
+              const char constant[3]={};char different[4];\
+              static_assert(sizeof(f(text))==1,\"\");\
+              static_assert(sizeof(c(text))==1,\"\");\
+              static_assert(sizeof(c(constant))==1,\"\");\
+              static_assert(sizeof(v(ints))==1,\"\");\
+              static_assert(sizeof(p(ptrs))==1,\"\");\
+              static_assert(sizeof(a(objects))==1,\"\");\
+              static_assert(sizeof(e(enums))==1,\"\");\
+              static_assert(sizeof(m(text,constant))==1,\"\");\
+              static_assert(sizeof(m(text,different))==8,\"\");\
+              static_assert(sizeof(r(constant))==8,\"\");\
+              static_assert(sizeof(u(text))==8,\"\");"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"array-bound-cv").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        // Unevaluated calls select and memoize signatures without demanding
+        // bodies, including f's deliberately invalid dependent body.
+        assert_eq!(graph.function_templates.signatures.len(), 7);
+        assert!(graph.function_templates.demanded_bodies.is_empty());
+        assert!(graph.function_templates.active_signatures.is_empty());
+        assert!(graph.root_demands.as_slice().is_empty());
+    }
+
+    #[test]
     fn default_pack_trials_reject_before_publication_and_reuse_complete_keys() {
         let source = SourceBuffer::new(
             b"template<class...>struct List;template<class,class>struct Pair;\
@@ -2377,6 +2431,22 @@ mod tests {
         assert!(info.value_type.is_none());
         assert!(analyzer.graph.entity(entity).scope.is_none());
         assert!(analyzer.graph.dependent_type(ty));
+        let const_type = analyzer.graph.types.qualify(ty, Cv(1)).unwrap();
+        let depth = analyzer.graph.templates.depth(head);
+        let mut deduced = [None];
+        // A synthesized ordering parameter belongs to a different depth:
+        // permitted qualification at a terminal must not deduce that identity.
+        assert!(
+            !analyzer
+                .deduce_signature_type(const_type, ty, depth, &mut deduced, true)
+                .unwrap()
+        );
+        assert!(
+            analyzer
+                .deduce_signature_type(const_type, const_type, depth, &mut deduced, true)
+                .unwrap()
+        );
+        assert_eq!(deduced, [None]);
         let parameter = analyzer
             .graph
             .types
