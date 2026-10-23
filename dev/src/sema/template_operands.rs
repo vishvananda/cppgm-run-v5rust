@@ -173,6 +173,22 @@ impl Analyzer<'_> {
             self.template_depth = saved;
             return result;
         }
+        // After semantic fixed-decltype typing, the frozen types-only key
+        // rule also collapses a transform with a concrete type operand.
+        if !value
+            && let Some(key) = key.as_ref().filter(|key| !key.dependent)
+            && let [
+                KeyWord::Transform(transform),
+                KeyWord::Count(1),
+                KeyWord::Type(ty),
+            ] = key.words.as_slice()
+        {
+            return self.transformed_type(
+                *transform,
+                *ty,
+                self.tree.expressions.get(expression).location,
+            );
+        }
         if fixed && !value && self.graph.class_templates.definitions.active_depth() != 0 {
             self.check_fixed_decltype_operands(expression, scope, 0)?;
         }

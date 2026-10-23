@@ -256,6 +256,15 @@ impl Analyzer<'_> {
                             || component.arguments.is_some()
                     }))
             }
+            ExprKind::TypeTransform { types, .. } => {
+                for index in 0..self.tree.type_lists.get(types).len() {
+                    let ty = self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
+                    if self.exception_dependent_type(ty) {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
             ExprKind::VaArg { ty, .. } => {
                 let ty = self.type_syntax(ty, scope)?;
                 Ok(self.exception_dependent_type(ty))

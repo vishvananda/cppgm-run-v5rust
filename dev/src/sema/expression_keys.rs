@@ -23,6 +23,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum KeyWord {
     Node(KeyNode),
+    Transform(crate::lex::type_transforms::TypeTransform),
     Count(usize),
     Flag(bool),
     Operator(SimpleToken),
@@ -251,6 +252,17 @@ impl Analyzer<'_> {
             }
             ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
                 return self.key_size(operand, ty, scope, expr, key);
+            }
+            ExprKind::TypeTransform { transform, types } => {
+                key.words.extend([
+                    KeyWord::Transform(transform),
+                    KeyWord::Count(self.tree.type_lists.get(types).len()),
+                ]);
+                for index in 0..self.tree.type_lists.get(types).len() {
+                    let ty = self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
+                    self.key_type(ty, key)?;
+                }
+                return Ok(true);
             }
             ExprKind::VaArg { operand, ty } => {
                 key.words.push(KeyWord::Node(KeyNode::VaArg));

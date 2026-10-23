@@ -696,6 +696,17 @@ impl<'a, 'source> Renderer<'a, 'source> {
                     self.tasks.push(Render::Expression(operand));
                 }
             }
+            ExprKind::TypeTransform { transform, types } => {
+                self.text(transform.spelling());
+                self.text("(");
+                self.tasks.push(Render::Text(")"));
+                for (index, &ty) in self.tree.type_lists.get(types).iter().enumerate().rev() {
+                    self.tasks.push(Render::Type(ty));
+                    if index != 0 {
+                        self.tasks.push(Render::Text(", "));
+                    }
+                }
+            }
             ExprKind::VaArg { operand, ty } => {
                 self.text("__builtin_va_arg(");
                 self.tasks.push(Render::Text(")"));

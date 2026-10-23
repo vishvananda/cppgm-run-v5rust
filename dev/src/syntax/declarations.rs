@@ -431,6 +431,17 @@ impl Parser<'_> {
             let attributes = self.collect_attributes(self.tree.specs.begin() != start)?;
             self.vector_specifiers(attributes, !type_only)?;
             let location = self.location()?;
+            if !has_type && let Some(transform) = self.at_type_transform()? {
+                let operand = self.transform_operand(transform)?;
+                self.tree.specs.push(Specifier {
+                    location,
+                    kind: SpecifierKind::Decltype(operand),
+                });
+                has_type = true;
+                sign_only = false;
+                complex_only = false;
+                continue;
+            }
             match self.keyword()? {
                 Some(word)
                     if Self::is_specifier(word)

@@ -145,6 +145,7 @@ mod template_defaults;
 mod template_exceptions;
 mod triviality;
 mod type_queries;
+mod type_transforms;
 mod wide_integers;
 pub(crate) use template_bodies::analyze_unit;
 mod named_templates;
@@ -179,6 +180,11 @@ pub(crate) enum Error {
     },
     NonConstant {
         failure: ConstantFailure,
+        location: SourceOffset,
+        message: &'static str,
+    },
+    // C++ Analyzer::error throws even while substitution_error is soft.
+    UnconditionalDiagnostic {
         location: SourceOffset,
         message: &'static str,
     },

@@ -318,6 +318,14 @@ impl Analyzer<'_> {
                         work.push(operand);
                     }
                 }
+                ExprKind::TypeTransform { types, .. } => {
+                    for index in 0..self.tree.type_lists.get(types).len() {
+                        let ty = self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
+                        if self.exception_dependent_type(ty) {
+                            return Ok(false);
+                        }
+                    }
+                }
                 ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
                     let ty = self.type_syntax(ty, scope)?;
                     if self.exception_dependent_type(ty) {
@@ -505,7 +513,16 @@ impl Analyzer<'_> {
                             (OwnProbe::Expression(base), next),
                             (OwnProbe::Expression(index), next),
                         ]),
-                        ExprKind::VaArg { ty, .. } => work.push((OwnProbe::Type(ty), depth)),
+                        ExprKind::TypeTransform { types, .. } => work.extend(
+                            self.tree
+                                .type_lists
+                                .get(types)
+                                .iter()
+                                .map(|&ty| (OwnProbe::Type(ty), depth)),
+                        ),
+                        ExprKind::VaArg { ty, .. } => {
+                            work.push((OwnProbe::Type(ty), depth));
+                        }
                         ExprKind::Cast { ty, operand, .. } => {
                             work.extend([
                                 (OwnProbe::Type(ty), depth),

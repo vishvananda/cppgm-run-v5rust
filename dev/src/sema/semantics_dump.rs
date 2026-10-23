@@ -1527,52 +1527,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             category = facts.category;
         }
         let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts);
-        let label = match node.kind {
-            ExprKind::Id(_) if facts.anonymous_member.is_some() => "member-expression",
-            ExprKind::Id(_)
-                if facts.anonymous_member.is_some()
-                    || facts.object.is_some_and(|object| {
-                        matches!(
-                            object.source,
-                            super::expression_facts::ObjectSource::Implicit
-                        )
-                    }) =>
-            {
-                "member-expression"
-            }
-            ExprKind::Id(_) | ExprKind::Keyword(Keyword::This) => "id-expression",
-            ExprKind::Literal(_) | ExprKind::Keyword(_) => "literal",
-            ExprKind::Unary { .. } => "unary-expression",
-            ExprKind::Postfix { .. } => "postfix-expression",
-            ExprKind::Binary { assignment, .. } => {
-                if assignment {
-                    "assignment-expression"
-                } else {
-                    "binary-expression"
-                }
-            }
-            ExprKind::Conditional { .. } => "conditional-expression",
-            ExprKind::Subscript { .. } => "subscript-expression",
-            ExprKind::Member { .. } => "member-expression",
-            ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. } | ExprKind::VaArg { .. } => {
-                "sizeof-expression"
-            }
-            ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
-            ExprKind::Braced { .. } => "braced-init-list",
-            ExprKind::New { .. }
-            | ExprKind::Delete { .. }
-            | ExprKind::SizeofPack(_)
-            | ExprKind::Lambda(_)
-            | ExprKind::Statement(_) => "expression",
-            ExprKind::Call { .. } => {
-                if facts.functional_call || intrinsic {
-                    "cast-expression"
-                } else {
-                    "call-expression"
-                }
-            }
-            _ => return Err(io::Error::other("unsupported semantic expression view")),
-        };
+        let label = expression_label(node.kind, facts, intrinsic)?;
         self.indent(depth)?;
         write!(self.output, "{label} {} ", category.spelling())?;
         if matches!(node.kind, ExprKind::Id(_))
@@ -1729,6 +1684,60 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             crate::syntax::operator_spelling(op)
         )
     }
+}
+
+fn expression_label(
+    kind: ExprKind,
+    facts: super::expression_facts::ExprFacts,
+    intrinsic: bool,
+) -> io::Result<&'static str> {
+    Ok(match kind {
+        ExprKind::Id(_) if facts.anonymous_member.is_some() => "member-expression",
+        ExprKind::Id(_)
+            if facts.anonymous_member.is_some()
+                || facts.object.is_some_and(|object| {
+                    matches!(
+                        object.source,
+                        super::expression_facts::ObjectSource::Implicit
+                    )
+                }) =>
+        {
+            "member-expression"
+        }
+        ExprKind::Id(_) | ExprKind::Keyword(Keyword::This) => "id-expression",
+        ExprKind::Literal(_) | ExprKind::Keyword(_) => "literal",
+        ExprKind::Unary { .. } => "unary-expression",
+        ExprKind::Postfix { .. } => "postfix-expression",
+        ExprKind::Binary { assignment, .. } => {
+            if assignment {
+                "assignment-expression"
+            } else {
+                "binary-expression"
+            }
+        }
+        ExprKind::Conditional { .. } => "conditional-expression",
+        ExprKind::Subscript { .. } => "subscript-expression",
+        ExprKind::Member { .. } => "member-expression",
+        ExprKind::TypeTransform { .. }
+        | ExprKind::Sizeof { .. }
+        | ExprKind::TypeTrait { .. }
+        | ExprKind::VaArg { .. } => "sizeof-expression",
+        ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
+        ExprKind::Braced { .. } => "braced-init-list",
+        ExprKind::New { .. }
+        | ExprKind::Delete { .. }
+        | ExprKind::SizeofPack(_)
+        | ExprKind::Lambda(_)
+        | ExprKind::Statement(_) => "expression",
+        ExprKind::Call { .. } => {
+            if facts.functional_call || intrinsic {
+                "cast-expression"
+            } else {
+                "call-expression"
+            }
+        }
+        _ => return Err(io::Error::other("unsupported semantic expression view")),
+    })
 }
 
 #[cfg(test)]

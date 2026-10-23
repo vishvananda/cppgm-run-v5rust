@@ -21,6 +21,7 @@ mod scopes;
 mod statements;
 pub(crate) mod storage;
 mod templates;
+mod type_transforms;
 
 use crate::lex::PostTokenizer;
 use crate::preprocess::{error::PreprocessError, unit::Preprocessor};

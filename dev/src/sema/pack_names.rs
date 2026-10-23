@@ -265,6 +265,14 @@ impl Analyzer<'_> {
                 );
                 work.extend(braced.map(Probe::Expression));
             }
+            ExprKind::TypeTransform { types, .. } => work.extend(
+                self.tree
+                    .type_lists
+                    .get(types)
+                    .iter()
+                    .copied()
+                    .map(Probe::Type),
+            ),
             ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
                 work.extend([Probe::Type(ty), Probe::Expression(operand)]);
             }

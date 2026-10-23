@@ -7,6 +7,7 @@ pub mod pp_lexer;
 pub(crate) mod strings;
 pub use strings::TextError;
 pub mod text;
+pub(crate) mod type_transforms;
 pub mod vocabulary;
 
 use crate::support::source::{SourceBuffer, SourceError, SourceOffset};

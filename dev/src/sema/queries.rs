@@ -541,7 +541,9 @@ impl Analyzer<'_> {
                 let saved_call = self.decltype_call;
                 self.decltype_call = matches!(
                     self.tree.expressions.get(tail).kind,
-                    ExprKind::Call { .. } | ExprKind::TypeTrait { .. }
+                    ExprKind::Call { .. }
+                        | ExprKind::TypeTrait { .. }
+                        | ExprKind::TypeTransform { .. }
                 )
                 .then_some(tail);
                 self.unevaluated += 1;
@@ -562,7 +564,9 @@ impl Analyzer<'_> {
                 }
                 if !matches!(
                     self.tree.expressions.get(tail).kind,
-                    ExprKind::Call { .. } | ExprKind::TypeTrait { .. }
+                    ExprKind::Call { .. }
+                        | ExprKind::TypeTrait { .. }
+                        | ExprKind::TypeTransform { .. }
                 ) {
                     self.check_temporary_destruction(
                         facts,
@@ -669,10 +673,10 @@ impl Analyzer<'_> {
         }
         match self.evaluate_constant(operand, scope, true) {
             Ok(value) => Ok(value.ty),
-            Err(Error::NonConstant { .. }) => Err(Error::at(
-                self.tree.expressions.get(operand).location,
-                "unsupported decltype operand",
-            )),
+            Err(Error::NonConstant { .. }) => Err(Error::UnconditionalDiagnostic {
+                location: self.tree.expressions.get(operand).location,
+                message: "unsupported decltype operand",
+            }),
             Err(error) => Err(error),
         }
     }

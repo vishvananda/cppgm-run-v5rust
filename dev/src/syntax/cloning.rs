@@ -372,6 +372,10 @@ impl<'a> Cloner<'a> {
                 operand: self.optional(operand, Self::expression)?,
                 parenthesized,
             },
+            ExprKind::TypeTransform { transform, types } => ExprKind::TypeTransform {
+                transform,
+                types: self.expanded_types(types)?,
+            },
             ExprKind::VaArg { operand, ty } => ExprKind::VaArg {
                 ty: self.ty(ty)?,
                 operand: self.expression(operand)?,

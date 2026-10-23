@@ -151,6 +151,11 @@ impl Analyzer<'_> {
                 }
                 self.expression_work.push((base, unevaluated));
             }
+            ExprKind::TypeTransform { types, .. } => {
+                for index in 0..self.tree.type_lists.get(types).len() {
+                    self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
+                }
+            }
             ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
                 self.type_syntax(ty, scope)?;
                 self.expression_work.push((operand, unevaluated));

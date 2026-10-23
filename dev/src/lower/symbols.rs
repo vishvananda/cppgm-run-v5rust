@@ -1262,6 +1262,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 let node = self.unencoded_placeholder(ty)?;
                 return self.finish_abi_type(ty, node);
             };
+            if matches!(self.abi.get(expression), Node::VendorType(_)) {
+                return self.finish_abi_type(ty, expression);
+            }
             let kind = self.tree.expressions.get(operand).kind;
             if self.graph.lower_value_argument(ty) {
                 Node::ExpressionArgument(expression)

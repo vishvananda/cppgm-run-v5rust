@@ -91,8 +91,17 @@ impl Parser<'_> {
             let location = self.location()?;
             let template_keyword =
                 (qualified || member_context) && self.accept_keyword(K::Template)?;
-            if !qualified && self.accept_keyword(K::Decltype)? {
-                let operand = self.decltype_operand()?;
+            if !qualified
+                && (self.keyword()? == Some(K::Decltype)
+                    || (matches!(mode, NameMode::Expression | NameMode::Type)
+                        && self.at_type_transform()?.is_some()))
+            {
+                let operand = if let Some(transform) = self.at_type_transform()? {
+                    self.transform_operand(transform)?
+                } else {
+                    self.cursor.advance()?;
+                    self.decltype_operand()?
+                };
                 self.tree.name_lists.push(NameComponent {
                     location,
                     kind: NameKind::Decltype(operand),

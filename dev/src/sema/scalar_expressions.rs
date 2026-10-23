@@ -250,21 +250,11 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.semantic_alignment(ty, operand, scope, node.location)?,
-            ExprKind::VaArg { operand, ty } => self.va_arg_expression(id, operand, ty, scope)?,
-            ExprKind::SizeofPack(name) => {
-                let count = self.pack_size(name, scope)?.ok_or_else(|| {
-                    Error::at(
-                        node.location,
-                        "sizeof... of a name that is no parameter pack",
-                    )
-                })?;
-                let ty = self.graph.types.scalar(Scalar::Basic(
-                    crate::types::FundamentalType::UnsignedLongInt,
-                ))?;
-                let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
-                facts.query_value = Some(count);
-                facts
+            ExprKind::TypeTransform { transform, types } => {
+                self.transform_expression(id, transform, types, scope)?
             }
+            ExprKind::VaArg { operand, ty } => self.va_arg_expression(id, operand, ty, scope)?,
+            ExprKind::SizeofPack(name) => self.sizeof_pack_expression(id, name, scope)?,
             ExprKind::Sizeof {
                 ty,
                 operand,
@@ -313,6 +303,25 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(id, facts);
         super::record(&mut self.graph.expression_types, id.index(), facts.ty);
         Ok(())
+    }
+    fn sizeof_pack_expression(
+        &mut self,
+        id: ast::ExprId,
+        name: crate::lex::identifiers::NameId,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let count = self.pack_size(name, scope)?.ok_or_else(|| {
+            Error::at(
+                self.tree.expressions.get(id).location,
+                "sizeof... of a name that is no parameter pack",
+            )
+        })?;
+        let ty = self.graph.types.scalar(Scalar::Basic(
+            crate::types::FundamentalType::UnsignedLongInt,
+        ))?;
+        let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
+        facts.query_value = Some(count);
+        Ok(facts)
     }
     pub(super) fn named_expression(
         &mut self,

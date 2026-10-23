@@ -192,6 +192,17 @@ impl Symbols<'_, '_> {
             return Err(missing());
         }
         let node = match words.next()? {
+            W::Transform(transform) if depth == 0 => {
+                if words.count()? != 1 {
+                    return Err(missing());
+                }
+                let argument = self.abi_type(words.ty()?)?;
+                let name = self.abi.string(transform.spelling().as_bytes())?;
+                return self
+                    .abi
+                    .intern(Node::VendorType(name), &[argument])
+                    .map_err(Error::from);
+            }
             W::FloatingLiteral { ty, bits, .. } => Node::FloatingLiteral {
                 ty: self.abi_type(*ty)?,
                 bits: *bits,

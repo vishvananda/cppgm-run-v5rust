@@ -411,6 +411,7 @@ impl Analyzer<'_> {
             | ExprKind::Sizeof { .. }
             | ExprKind::SizeofPack { .. }
             | ExprKind::TypeTrait { .. }
+            | ExprKind::TypeTransform { .. }
             | ExprKind::VaArg { .. } => false,
             ExprKind::Keyword(keyword) => keyword == Keyword::This,
             ExprKind::Paren(inner) => uses(inner),

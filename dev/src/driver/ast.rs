@@ -237,6 +237,7 @@ fn emit_preprocessed(
             | crate::sema::Error::NonConstant {
                 location, message, ..
             }
+            | crate::sema::Error::UnconditionalDiagnostic { location, message }
             | crate::sema::Error::InstantiationDiagnostic { location, message } => {
                 match unit.describe(&ParseError::Syntax { location, message }) {
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
@@ -283,6 +284,7 @@ fn emit_preprocessed(
                     | crate::sema::Error::NonConstant {
                         location, message, ..
                     }
+                    | crate::sema::Error::UnconditionalDiagnostic { location, message }
                     | crate::sema::Error::InstantiationDiagnostic { location, message },
                 ) => match unit.describe(&ParseError::Syntax { location, message }) {
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
