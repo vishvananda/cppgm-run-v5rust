@@ -205,6 +205,7 @@ impl Analyzer<'_> {
             ExprKind::Literal(_)
             | ExprKind::SizeofPack(_)
             | ExprKind::Sizeof { .. }
+            | ExprKind::TypePredicate { .. }
             | ExprKind::TypeTrait { .. }
             | ExprKind::Delete { .. }
             | ExprKind::Throw(_) => Ok(false),

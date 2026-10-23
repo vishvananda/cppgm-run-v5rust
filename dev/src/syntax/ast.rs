@@ -526,6 +526,10 @@ pub(crate) enum ExprKind {
         transform: crate::lex::type_transforms::TypeTransform,
         types: List<TypeId>,
     },
+    TypePredicate {
+        predicate: crate::lex::predicates::TypePredicate,
+        types: List<TypeId>,
+    },
     VaArg {
         operand: ExprId,
         ty: TypeId,

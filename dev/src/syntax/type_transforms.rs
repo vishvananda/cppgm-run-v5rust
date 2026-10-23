@@ -8,6 +8,56 @@ use super::{
 use crate::lex::{pp_lexer::Punctuator as P, type_transforms::TypeTransform};
 
 impl Parser<'_> {
+    pub(super) fn at_type_predicate(
+        &mut self,
+        ahead: usize,
+    ) -> Result<Option<crate::lex::predicates::TypePredicate>, ParseError> {
+        Ok(
+            if let TokenKind::Identifier(name) = self.cursor.peek(ahead)?.kind
+                && let Some(predicate) =
+                    crate::lex::predicates::TypePredicate::find(self.cursor.name(name))
+                && self.at_ahead(P::LeftParen, ahead + 1)?
+            {
+                Some(predicate)
+            } else {
+                None
+            },
+        )
+    }
+
+    pub(super) fn predicate_operand(
+        &mut self,
+        predicate: crate::lex::predicates::TypePredicate,
+    ) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        self.cursor.advance()?;
+        self.expect(P::LeftParen)?;
+        let types = self.without_angle(|parser| {
+            let start = parser.tree.type_lists.begin();
+            loop {
+                let ty = parser.builtin_type_id(true)?;
+                parser.tree.type_lists.push(ty);
+                if !parser.accept(P::Comma)? {
+                    break;
+                }
+            }
+            let types = parser.tree.type_lists.finish(start)?;
+            // Frozen arity rejection does not add a furthest grammar failure.
+            if parser.tree.type_lists.get(types).len() != predicate.arity() {
+                return Err(ParseError::Syntax {
+                    location: parser.error_mark().1,
+                    message: "syntax error",
+                });
+            }
+            parser.expect(P::RightParen)?;
+            Ok(types)
+        })?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::TypePredicate { predicate, types },
+        })
+    }
+
     pub(super) fn at_type_transform(&mut self) -> Result<Option<TypeTransform>, ParseError> {
         Ok(
             if let TokenKind::Identifier(name) = self.token()?.kind
@@ -55,8 +105,12 @@ impl Parser<'_> {
         })
     }
     fn transform_type_id(&mut self) -> Result<super::ast::TypeId, ParseError> {
+        self.builtin_type_id(false)
+    }
+
+    fn builtin_type_id(&mut self, definite: bool) -> Result<super::ast::TypeId, ParseError> {
         let mentions = self.pack_mentions;
-        let ty = self.type_id(false)?;
+        let ty = self.type_id(definite)?;
         if self
             .tree
             .types

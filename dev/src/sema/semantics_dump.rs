@@ -1719,6 +1719,7 @@ fn expression_label(
         ExprKind::Subscript { .. } => "subscript-expression",
         ExprKind::Member { .. } => "member-expression",
         ExprKind::TypeTransform { .. }
+        | ExprKind::TypePredicate { .. }
         | ExprKind::Sizeof { .. }
         | ExprKind::TypeTrait { .. }
         | ExprKind::VaArg { .. } => "sizeof-expression",

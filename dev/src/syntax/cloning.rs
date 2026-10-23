@@ -376,6 +376,10 @@ impl<'a> Cloner<'a> {
                 transform,
                 types: self.expanded_types(types)?,
             },
+            ExprKind::TypePredicate { predicate, types } => ExprKind::TypePredicate {
+                predicate,
+                types: self.expanded_types(types)?,
+            },
             ExprKind::VaArg { operand, ty } => ExprKind::VaArg {
                 ty: self.ty(ty)?,
                 operand: self.expression(operand)?,

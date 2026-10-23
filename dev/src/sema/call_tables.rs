@@ -325,6 +325,7 @@ impl Graph {
             | ExprKind::Sizeof { .. }
             | ExprKind::TypeTrait { .. }
             | ExprKind::TypeTransform { .. }
+            | ExprKind::TypePredicate { .. }
             | ExprKind::Throw(None) => {}
         }
         Ok(())

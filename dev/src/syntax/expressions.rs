@@ -665,6 +665,9 @@ impl Parser<'_> {
                 ExprKind::Literal(literal)
             }
             TokenKind::Identifier(_) => {
+                if let Some(predicate) = self.at_type_predicate(0)? {
+                    return self.predicate_operand(predicate);
+                }
                 return self.primary_name(location);
             }
             TokenKind::Simple(op) => match op.token.as_keyword() {

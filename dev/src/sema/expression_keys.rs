@@ -24,6 +24,7 @@ use crate::{
 pub(crate) enum KeyWord {
     Node(KeyNode),
     Transform(crate::lex::type_transforms::TypeTransform),
+    Predicate(crate::lex::predicates::TypePredicate),
     Count(usize),
     Flag(bool),
     Operator(SimpleToken),
@@ -256,6 +257,17 @@ impl Analyzer<'_> {
             ExprKind::TypeTransform { transform, types } => {
                 key.words.extend([
                     KeyWord::Transform(transform),
+                    KeyWord::Count(self.tree.type_lists.get(types).len()),
+                ]);
+                for index in 0..self.tree.type_lists.get(types).len() {
+                    let ty = self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
+                    self.key_type(ty, key)?;
+                }
+                return Ok(true);
+            }
+            ExprKind::TypePredicate { predicate, types } => {
+                key.words.extend([
+                    KeyWord::Predicate(predicate),
                     KeyWord::Count(self.tree.type_lists.get(types).len()),
                 ]);
                 for index in 0..self.tree.type_lists.get(types).len() {

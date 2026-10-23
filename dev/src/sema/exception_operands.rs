@@ -187,6 +187,9 @@ impl Analyzer<'_> {
             }
             ExprKind::Paren(inner) => self.exception_type(inner),
             ExprKind::Call { .. } => self.query_call_type(id, scope),
+            ExprKind::TypePredicate { predicate, types } => {
+                Ok(self.predicate_expression(id, predicate, types, scope)?.ty)
+            }
             ExprKind::Sizeof { ty, operand, .. } => {
                 self.exception_query(id, ty, operand, scope, false, location)
             }

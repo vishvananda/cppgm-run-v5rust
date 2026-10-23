@@ -996,6 +996,21 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         ));
         Ok(())
     }
+    fn builtin_types(&mut self, spelling: &'static str, types: List<TypeId>) -> io::Result<()> {
+        self.open("builtin-trait-expression", Payload::Text(spelling))?;
+        self.tasks.extend(
+            self.renderer
+                .tree
+                .type_lists
+                .get(types)
+                .iter()
+                .rev()
+                .copied()
+                .map(Task::Type),
+        );
+        Ok(())
+    }
+
     fn expression(&mut self, id: ExprId) -> io::Result<()> {
         match self.renderer.tree.expressions.get(id).kind {
             ExprKind::Lambda(id) => self.lambda(id)?,
@@ -1139,20 +1154,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
             }
             ExprKind::TypeTransform { transform, types } => {
-                self.open(
-                    "builtin-trait-expression",
-                    Payload::Text(transform.spelling()),
-                )?;
-                self.tasks.extend(
-                    self.renderer
-                        .tree
-                        .type_lists
-                        .get(types)
-                        .iter()
-                        .rev()
-                        .copied()
-                        .map(Task::Type),
-                );
+                self.builtin_types(transform.spelling(), types)?;
+            }
+            ExprKind::TypePredicate { predicate, types } => {
+                self.builtin_types(predicate.spelling(), types)?;
             }
             ExprKind::VaArg { operand, ty } => {
                 self.open(

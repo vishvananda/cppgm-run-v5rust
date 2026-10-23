@@ -482,6 +482,12 @@ fn emit_pending<'a>(
                 // Each variable root owns a complete demand drain, including
                 // functions and thunks its initializer requests.
                 variable += 1;
+                // Host objects demand an integral member's storage through
+                // an emitted address use, unless explicitly instantiated.
+                // A value-only semantic demand still roots course storage.
+                if symbols.host_objects() && graph.lower_value_only_variable_root(entity) {
+                    continue;
+                }
                 symbols.variable_symbol(output.program, entity)?;
             } else {
                 break;

@@ -1,0 +1,89 @@
+// Translated from lex/gnu_builtins.{h,cpp}. See NOTICE.
+//! Type-only predicates: their operands never demand class completion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum TypePredicate {
+    IsClass,
+    IsEnum,
+    IsUnion,
+    IsVoid,
+    IsNullptr,
+    IsIntegral,
+    IsFloatingPoint,
+    IsArray,
+    IsBoundedArray,
+    IsUnboundedArray,
+    IsPointer,
+    IsLvalueReference,
+    IsRvalueReference,
+    IsReference,
+    IsMemberObjectPointer,
+    IsMemberFunctionPointer,
+    IsMemberPointer,
+    IsFunction,
+    IsArithmetic,
+    IsFundamental,
+    IsObject,
+    IsScalar,
+    IsCompound,
+    IsConst,
+    IsVolatile,
+    IsSigned,
+    IsUnsigned,
+    IsReferenceable,
+    IsScopedEnum,
+    IsSame,
+    ArrayRank,
+}
+
+impl TypePredicate {
+    const SPELLINGS: [(Self, &'static str); 31] = [
+        (Self::IsClass, "__is_class"),
+        (Self::IsEnum, "__is_enum"),
+        (Self::IsUnion, "__is_union"),
+        (Self::IsVoid, "__is_void"),
+        (Self::IsNullptr, "__is_nullptr"),
+        (Self::IsIntegral, "__is_integral"),
+        (Self::IsFloatingPoint, "__is_floating_point"),
+        (Self::IsArray, "__is_array"),
+        (Self::IsBoundedArray, "__is_bounded_array"),
+        (Self::IsUnboundedArray, "__is_unbounded_array"),
+        (Self::IsPointer, "__is_pointer"),
+        (Self::IsLvalueReference, "__is_lvalue_reference"),
+        (Self::IsRvalueReference, "__is_rvalue_reference"),
+        (Self::IsReference, "__is_reference"),
+        (Self::IsMemberObjectPointer, "__is_member_object_pointer"),
+        (
+            Self::IsMemberFunctionPointer,
+            "__is_member_function_pointer",
+        ),
+        (Self::IsMemberPointer, "__is_member_pointer"),
+        (Self::IsFunction, "__is_function"),
+        (Self::IsArithmetic, "__is_arithmetic"),
+        (Self::IsFundamental, "__is_fundamental"),
+        (Self::IsObject, "__is_object"),
+        (Self::IsScalar, "__is_scalar"),
+        (Self::IsCompound, "__is_compound"),
+        (Self::IsConst, "__is_const"),
+        (Self::IsVolatile, "__is_volatile"),
+        (Self::IsSigned, "__is_signed"),
+        (Self::IsUnsigned, "__is_unsigned"),
+        (Self::IsReferenceable, "__is_referenceable"),
+        (Self::IsScopedEnum, "__is_scoped_enum"),
+        (Self::IsSame, "__is_same"),
+        (Self::ArrayRank, "__array_rank"),
+    ];
+
+    pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
+        Self::SPELLINGS
+            .iter()
+            .find_map(|&(kind, name)| (name.as_bytes() == spelling).then_some(kind))
+    }
+
+    pub(crate) fn spelling(self) -> &'static str {
+        Self::SPELLINGS[self as usize].1
+    }
+
+    pub(crate) fn arity(self) -> usize {
+        if self == Self::IsSame { 2 } else { 1 }
+    }
+}

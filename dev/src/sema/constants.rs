@@ -343,6 +343,9 @@ impl Analyzer<'_> {
             ExprKind::Sizeof { ty, operand, .. } => {
                 self.constant_query(ty, operand, scope, false, location)?
             }
+            ExprKind::TypePredicate { predicate, types } => {
+                self.predicate_constant(predicate, types, scope, location)?
+            }
             ExprKind::TypeTrait {
                 keyword: Keyword::Alignof,
                 ty,

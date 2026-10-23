@@ -8,6 +8,7 @@ pub mod number;
 pub mod pp_lexer;
 pub(crate) mod strings;
 pub use strings::TextError;
+pub(crate) mod predicates;
 pub mod text;
 pub(crate) mod type_transforms;
 pub mod vocabulary;

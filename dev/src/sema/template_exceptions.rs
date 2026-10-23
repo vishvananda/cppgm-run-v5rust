@@ -318,7 +318,7 @@ impl Analyzer<'_> {
                         work.push(operand);
                     }
                 }
-                ExprKind::TypeTransform { types, .. } => {
+                ExprKind::TypeTransform { types, .. } | ExprKind::TypePredicate { types, .. } => {
                     for index in 0..self.tree.type_lists.get(types).len() {
                         let ty = self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
                         if self.exception_dependent_type(ty) {
@@ -513,7 +513,8 @@ impl Analyzer<'_> {
                             (OwnProbe::Expression(base), next),
                             (OwnProbe::Expression(index), next),
                         ]),
-                        ExprKind::TypeTransform { types, .. } => work.extend(
+                        ExprKind::TypeTransform { types, .. }
+                        | ExprKind::TypePredicate { types, .. } => work.extend(
                             self.tree
                                 .type_lists
                                 .get(types)

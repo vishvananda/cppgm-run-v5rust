@@ -151,7 +151,7 @@ impl Analyzer<'_> {
                 }
                 self.expression_work.push((base, unevaluated));
             }
-            ExprKind::TypeTransform { types, .. } => {
+            ExprKind::TypeTransform { types, .. } | ExprKind::TypePredicate { types, .. } => {
                 for index in 0..self.tree.type_lists.get(types).len() {
                     self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
                 }

@@ -230,8 +230,11 @@ impl Parser<'_> {
     fn template_argument(&mut self) -> Result<TemplateArgument, ParseError> {
         let pack_mentions = self.pack_mentions;
         let location = self.location()?;
-        let named = self.name_starts_ahead(0)?;
-        let kind = if named {
+        let predicate = self.at_type_predicate(0)?;
+        let kind = if let Some(predicate) = predicate {
+            let primary = self.predicate_operand(predicate)?;
+            TemplateArgumentKind::Expression(self.continue_assignment_expression(primary)?)
+        } else if self.name_starts_ahead(0)? {
             // Parse the name and its nested arguments once. Both readings borrow it.
             let (name, binding) = self.name()?;
             let ty = if self.is_type_name(name, binding, false, false) {

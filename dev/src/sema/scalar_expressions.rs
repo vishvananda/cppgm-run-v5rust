@@ -25,6 +25,7 @@ impl Analyzer<'_> {
             ExprKind::Sizeof { .. }
                 | ExprKind::SizeofPack(_)
                 | ExprKind::TypeTrait { .. }
+                | ExprKind::TypePredicate { .. }
                 | ExprKind::Delete { .. }
                 | ExprKind::Throw(_)
         ) {
@@ -252,6 +253,9 @@ impl Analyzer<'_> {
             } => self.semantic_alignment(ty, operand, scope, node.location)?,
             ExprKind::TypeTransform { transform, types } => {
                 self.transform_expression(id, transform, types, scope)?
+            }
+            ExprKind::TypePredicate { predicate, types } => {
+                self.predicate_expression(id, predicate, types, scope)?
             }
             ExprKind::VaArg { operand, ty } => self.va_arg_expression(id, operand, ty, scope)?,
             ExprKind::SizeofPack(name) => self.sizeof_pack_expression(id, name, scope)?,

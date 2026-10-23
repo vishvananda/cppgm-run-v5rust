@@ -544,6 +544,7 @@ impl Analyzer<'_> {
                     ExprKind::Call { .. }
                         | ExprKind::TypeTrait { .. }
                         | ExprKind::TypeTransform { .. }
+                        | ExprKind::TypePredicate { .. }
                 )
                 .then_some(tail);
                 self.unevaluated += 1;
@@ -567,6 +568,7 @@ impl Analyzer<'_> {
                     ExprKind::Call { .. }
                         | ExprKind::TypeTrait { .. }
                         | ExprKind::TypeTransform { .. }
+                        | ExprKind::TypePredicate { .. }
                 ) {
                     self.check_temporary_destruction(
                         facts,

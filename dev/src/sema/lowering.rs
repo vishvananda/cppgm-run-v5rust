@@ -1535,6 +1535,19 @@ impl Graph {
     pub(crate) fn lower_demanded_variables(&self) -> &[EntityId] {
         self.variable_instances.demands()
     }
+    pub(crate) fn lower_value_only_variable_root(&self, entity: EntityId) -> bool {
+        let node = self.entity(entity);
+        let super::constants::ConstantState::Value(value) = node.constant else {
+            return false;
+        };
+        // C++ ConstantState::Value excludes references and full-width values
+        // held only as interpreter objects, unlike this store's Value variant.
+        !self.lower_explicit_variable_root(entity)
+            && node
+                .ty
+                .is_some_and(|ty| !matches!(self.types.get(ty).kind, TypeKind::Reference { .. }))
+            && self.held_integral_constant(value)
+    }
     pub(crate) fn lower_variable_arguments(&self, entity: EntityId) -> Option<&[TypeId]> {
         self.variable_instances.templates.arguments(entity)
     }

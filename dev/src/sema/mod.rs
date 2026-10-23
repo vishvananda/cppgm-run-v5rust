@@ -116,6 +116,7 @@ mod pack_frames;
 mod pack_names;
 mod pack_substitution;
 mod placeholders;
+mod predicates;
 mod procedural_calls;
 mod procedural_statements;
 mod qualifier_prefixes;

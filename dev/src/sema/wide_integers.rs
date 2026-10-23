@@ -28,22 +28,10 @@ impl Constant {
 
 impl Analyzer<'_> {
     pub(super) fn integral_value(&self, ty: TypeId, bits: u64) -> Constant {
-        Constant {
-            ty,
-            bits,
-            high: if self
-                .integral_kind(ty)
-                .is_some_and(|kind| kind.bits > 64 && kind.signed)
-                && bits >> 63 != 0
-            {
-                u64::MAX
-            } else {
-                0
-            },
-        }
+        self.graph.integral_value(ty, bits)
     }
     pub(super) fn held_integral_constant(&self, value: Constant) -> bool {
-        value.high == self.integral_value(value.ty, value.bits).high
+        self.graph.held_integral_constant(value)
     }
     pub(super) fn wide_integer(&self, value: Constant) -> Result<u128, Error> {
         let kind = self
@@ -144,6 +132,25 @@ impl Analyzer<'_> {
             _ => bits,
         };
         Ok(Constant::from_wide(ty, result))
+    }
+}
+
+impl super::graph::Graph {
+    fn integral_value(&self, ty: TypeId, bits: u64) -> Constant {
+        let high = if self
+            .integral_kind(ty)
+            .is_some_and(|kind| kind.bits > 64 && kind.signed)
+            && bits >> 63 != 0
+        {
+            u64::MAX
+        } else {
+            0
+        };
+        Constant { bits, high, ty }
+    }
+
+    pub(super) fn held_integral_constant(&self, value: Constant) -> bool {
+        value.high == self.integral_value(value.ty, value.bits).high
     }
 }
 
