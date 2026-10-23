@@ -1,0 +1,8 @@
+preproc 1
+sof tests/preproc/300-identifier-probe-c-type-guards.t
+identifier atomic_identifier
+identifier bitint_identifier
+identifier c_types_not_builtins
+identifier double_underscore_traits
+identifier keywords
+eof

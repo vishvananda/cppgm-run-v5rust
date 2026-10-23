@@ -94,7 +94,9 @@ const TRAITS: &[&[u8]] = &[
     b"__underlying_type",
 ];
 pub(crate) fn is_trait(name: &[u8]) -> bool {
-    TRAITS.binary_search(&name).is_ok()
+    // FindGnuTrait guards its vocabulary lookup, including the single-underscore
+    // C type spellings that occur in the table but are not queried as traits.
+    name.len() >= 6 && name.starts_with(b"__") && TRAITS.binary_search(&name).is_ok()
 }
 const PROVIDED: &[&[u8]] = &[
     b"__atomic_add_fetch",
