@@ -571,7 +571,10 @@ pub(crate) use reference_lifetimes::tests::assert_extended_ownership;
 pub(crate) use temporary_scan::tests::assert_constructor_parameter_temporaries;
 
 #[cfg(test)]
-pub(crate) use symbols::{assert_covariant_routes, assert_hierarchy_flags, assert_table_demand};
+pub(crate) use symbols::{
+    assert_covariant_routes, assert_definition_destructor_targets, assert_hierarchy_flags,
+    assert_table_demand,
+};
 
 #[cfg(test)]
 pub(crate) use symbols::assert_base_routes;

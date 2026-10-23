@@ -2831,7 +2831,10 @@ impl Symbols<'_, '_> {
 }
 
 #[cfg(test)]
-pub(crate) use vtables::{assert_covariant_routes, assert_hierarchy_flags, assert_table_demand};
+pub(crate) use vtables::{
+    assert_covariant_routes, assert_definition_destructor_targets, assert_hierarchy_flags,
+    assert_table_demand,
+};
 
 #[cfg(test)]
 pub(crate) use virtual_bases::assert_base_routes;

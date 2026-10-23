@@ -1246,6 +1246,37 @@ mod tests {
         }
     }
     #[test]
+    fn definition_destructor_targets_demand_entries_without_publishing_tables() {
+        use crate::{
+            preprocess::unit::Preprocessor, sema::Analyzer, support::source::SourceBuffer,
+            syntax::ast,
+        };
+        let source = SourceBuffer::new(
+            b"struct A{virtual ~A();};struct B:virtual A{~B();};B::~B(){}".to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"thunk-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax_count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let declaration = *tree.decl_lists.get(declarations).last().unwrap();
+        let ast::DeclKind::SpecialMember { declarator, .. } =
+            tree.declarations.get(declaration).kind
+        else {
+            panic!("destructor definition");
+        };
+        crate::lower::assert_definition_destructor_targets(
+            &graph,
+            tree,
+            cursor,
+            graph.lower_declared(declarator).unwrap(),
+        );
+        assert_eq!(syntax_count, tree.expressions.mark());
+    }
+    #[test]
     fn table_demand_reuses_identity_and_leaves_unrelated_classes_untouched() {
         use crate::{
             preprocess::unit::Preprocessor,

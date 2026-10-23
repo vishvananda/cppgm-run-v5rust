@@ -513,6 +513,17 @@ impl Symbols<'_, '_> {
         target: TableTarget,
         binding: Option<Binding>,
     ) -> Result<DataItem, Error> {
+        Ok(self
+            .table_entry_symbol(program, target, binding, false)?
+            .map_or_else(|| integer(Type::Ptr, 0), |symbol| address(symbol, 0)))
+    }
+    fn table_entry_symbol(
+        &mut self,
+        program: &mut Program,
+        target: TableTarget,
+        binding: Option<Binding>,
+        strong: bool,
+    ) -> Result<Option<SymbolId>, Error> {
         let TableTarget {
             function,
             kind,
@@ -521,29 +532,31 @@ impl Symbols<'_, '_> {
             through,
         } = target;
         if adjustment.unused {
-            return Ok(integer(Type::Ptr, 0));
+            return Ok(None);
         }
         if self.graph.lower_virtual_pure(function) {
-            return Ok(address(self.pure_virtual_symbol(program, function)?, 0));
+            return Ok(Some(self.pure_virtual_symbol(program, function)?));
         }
         let entry = if matches!(kind, SlotKind::DeletingDestructor) {
             Entry::DestructorDeleting(function)
         } else {
             Entry::Function(function)
         };
-        if matches!(kind, SlotKind::Function) {
-            self.demand(function);
-        } else {
+        let result = self.result_adjustment(function, kind, adjusted, through)?;
+        if matches!(kind, SlotKind::CompleteDestructor) {
+            // Both table data and definition-owned thunks request the pair,
+            // even when this unit never emits the class's own table.
             self.demand_entry(Entry::DestructorDeleting(function));
             self.demand_entry(Entry::Function(function));
+        } else if matches!(kind, SlotKind::Function) {
+            self.demand(function);
         }
-        let result = self.result_adjustment(function, kind, adjusted, through)?;
         let symbol = if !adjustment.is_zero() || result.is_some() {
-            self.thunk_symbol(program, entry, adjustment, result, binding, false)?
+            self.thunk_symbol(program, entry, adjustment, result, binding, strong)?
         } else {
             self.entry_symbol(program, entry)?
         };
-        Ok(address(symbol, 0))
+        Ok(Some(symbol))
     }
     fn result_adjustment(
         &mut self,
@@ -1708,21 +1721,9 @@ impl Symbols<'_, '_> {
                 let node = &self.vtables.definition_targets.nodes[index];
                 let target = node.target;
                 next = node.next;
-                if target.adjustment.unused {
-                    continue;
-                }
-                let result =
-                    self.result_adjustment(entity, target.kind, target.adjusted, target.through)?;
-                let entry = if matches!(target.kind, SlotKind::DeletingDestructor) {
-                    Entry::DestructorDeleting(entity)
-                } else {
-                    Entry::Function(entity)
-                };
-                self.thunk_symbol(
+                self.table_entry_symbol(
                     program,
-                    entry,
-                    target.adjustment,
-                    result,
+                    target,
                     binding,
                     binding == Some(Binding::Strong),
                 )?;
@@ -1735,6 +1736,83 @@ impl Symbols<'_, '_> {
         }
         Ok(())
     }
+}
+
+#[cfg(test)]
+pub(crate) fn assert_definition_destructor_targets(
+    graph: &crate::sema::Graph,
+    tree: &crate::syntax::ast::Tree,
+    cursor: &crate::syntax::cursor::Cursor<'_>,
+    function: EntityId,
+) {
+    let through = graph.lower_function(function).unwrap().object.unwrap();
+    let mut table = crate::lower::symbols::SymbolTable {
+        object_mode: true,
+        host_objects: true,
+        ..crate::lower::symbols::SymbolTable::default()
+    };
+    let mut symbols = Symbols::new(
+        graph,
+        tree,
+        cursor,
+        crate::support::stack::StackBudget::default(),
+        &mut table,
+    );
+    let mut program = Program::default();
+    let target = TableTarget {
+        function,
+        kind: SlotKind::CompleteDestructor,
+        adjustment: ThisAdjustment {
+            vcall: Some(-24),
+            ..ThisAdjustment::default()
+        },
+        adjusted: function,
+        through,
+    };
+    let unused = TableTarget {
+        adjustment: ThisAdjustment {
+            unused: true,
+            ..target.adjustment
+        },
+        ..target
+    };
+    assert!(
+        symbols
+            .table_entry_symbol(&mut program, unused, Some(Binding::Weak), false)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(symbols.pending.len(), 0);
+    assert!(program.symbols().is_empty());
+
+    let first = symbols
+        .table_entry_symbol(&mut program, target, Some(Binding::Weak), false)
+        .unwrap();
+    assert!(first.is_some());
+    assert!(matches!(
+        symbols.pending.next(),
+        Some(Entry::DestructorDeleting(entity)) if entity == function
+    ));
+    assert!(matches!(
+        symbols.pending.next(),
+        Some(Entry::Function(entity)) if entity == function
+    ));
+    assert!(symbols.pending.next().is_none());
+    assert_eq!(
+        first,
+        symbols
+            .table_entry_symbol(&mut program, target, Some(Binding::Strong), true)
+            .unwrap()
+    );
+    assert!(symbols.pending.next().is_none());
+    assert_eq!(symbols.vtables.thunks.len(), 1);
+    assert_eq!(
+        symbols.vtables.thunks[0].metadata.binding,
+        Some(Binding::Strong)
+    );
+    assert!(symbols.vtables.objects.is_empty());
+    assert!(symbols.vtables.typeinfos.is_empty());
+    assert!(program.globals().is_empty());
 }
 
 #[cfg(test)]
