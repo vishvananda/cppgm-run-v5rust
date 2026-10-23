@@ -427,7 +427,7 @@ impl Selection<'_> {
                 Operand::Immediate(u128::from(stack)),
             ));
         }
-        if call.result == Type::F80 {
+        if plan.layout.x87_result {
             let destination = if let Some(result) = result.filter(|_| used) {
                 Some(Operand::Frame(self.placement.home(
                     self.body,

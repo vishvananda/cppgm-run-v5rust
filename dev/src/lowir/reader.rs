@@ -16,6 +16,7 @@ pub(super) struct Parser<'a> {
     pub(super) source_id: SourceId,
     pub(super) arguments: Vec<Value>,
     pub(super) floating: crate::types::floating::FloatingScanner,
+    pub(super) object_facts: bool,
 }
 impl<'a> Parser<'a> {
     pub(super) fn new(
@@ -33,6 +34,7 @@ impl<'a> Parser<'a> {
             source_id,
             arguments: Vec::new(),
             floating: crate::types::floating::FloatingScanner::default(),
+            object_facts: false,
         })
     }
     pub(super) fn fail(&self, message: impl Into<String>) -> Error {
@@ -318,14 +320,20 @@ impl<'a> Parser<'a> {
         self.expect(Kind::RBracket, "]")
     }
     fn object_classes(&mut self, ty: Type) -> Result<ObjectClasses, Error> {
-        let Type::Object { bytes, .. } = ty else {
-            return Err(self.fail("classes metadata requires a direct object of matching size"));
+        let bytes = match ty {
+            Type::Object { bytes, .. } => bytes,
+            Type::I128 | Type::F80 => 16,
+            other => u64::from(other.bits().div_ceil(8)),
         };
-        if bytes > 16 {
+        if !self.object_facts && (!matches!(ty, Type::Object { .. }) || bytes > 16) {
             return Err(self.fail("classes metadata requires a direct object of matching size"));
         }
         let classes = if self.at(Kind::Word) {
-            ObjectClasses::parse(self.lexer.token.word(), bytes)
+            if self.object_facts && self.at_word("x87") {
+                Some(ObjectClasses::X87)
+            } else {
+                ObjectClasses::parse(self.lexer.token.word(), bytes)
+            }
         } else {
             None
         };
@@ -452,7 +460,7 @@ impl<'a> Parser<'a> {
                     }
                     "result_classes" => {
                         let classes = self.object_classes(result)?;
-                        if matches!(classes, ObjectClasses::Memory) {
+                        if !self.object_facts && matches!(classes, ObjectClasses::Memory) {
                             return Err(self.fail("a memory-class result is returned through an indirect_result parameter"));
                         }
                         boundary.result_classes = Some(classes);

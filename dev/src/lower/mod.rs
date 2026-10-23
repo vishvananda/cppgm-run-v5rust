@@ -63,6 +63,7 @@ mod member_pointers;
 mod mutations;
 mod null_initialization;
 mod object_arrays;
+mod object_classes;
 mod operator_calls;
 mod pointers;
 mod range_for;

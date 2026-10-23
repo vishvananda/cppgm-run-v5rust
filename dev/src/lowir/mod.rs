@@ -18,8 +18,17 @@ pub use statistics::Statistics;
 mod validator;
 #[cfg(test)]
 pub(crate) fn test_program(source: &[u8]) -> Result<model::Program, Error> {
+    test_program_dialect(source, false)
+}
+#[cfg(test)]
+pub(crate) fn test_program_dialect(
+    source: &[u8],
+    object_facts: bool,
+) -> Result<model::Program, Error> {
     let mut program = model::Program::default();
-    reader::Parser::new(&mut program, source, Path::new("optimizer-test"))?.parse()?;
+    let mut parser = reader::Parser::new(&mut program, source, Path::new("optimizer-test"))?;
+    parser.object_facts = object_facts;
+    parser.parse()?;
     program.finish_symbols()?;
     program.legacy_roles();
     validator::validate(&program)?;
@@ -73,6 +82,18 @@ pub(crate) fn read_files(
     paths: &[PathBuf],
     statistics: bool,
 ) -> Result<(model::Program, Statistics), Error> {
+    read_program(paths, statistics, false)
+}
+/// The object driver's explicit text adapter accepts host ABI facts; course
+/// tools continue to reject host-only class spellings.
+pub(crate) fn read_object_file(path: &Path) -> Result<model::Program, Error> {
+    read_program(&[path.to_path_buf()], false, true).map(|(program, _)| program)
+}
+fn read_program(
+    paths: &[PathBuf],
+    statistics: bool,
+    object_facts: bool,
+) -> Result<(model::Program, Statistics), Error> {
     let mut program = model::Program::default();
     let start = std::time::Instant::now();
     let mut source_bytes = 0_usize;
@@ -80,7 +101,9 @@ pub(crate) fn read_files(
         let source =
             std::fs::read(path).map_err(|_| Error::argument("cannot read ", path.as_os_str()))?;
         source_bytes = source_bytes.checked_add(source.len()).ok_or(Error::Limit)?;
-        reader::Parser::new(&mut program, &source, path)?.parse()?;
+        let mut parser = reader::Parser::new(&mut program, &source, path)?;
+        parser.object_facts = object_facts;
+        parser.parse()?;
     }
     let parse_ms = start.elapsed().as_secs_f64() * 1000.0;
     let start = std::time::Instant::now();

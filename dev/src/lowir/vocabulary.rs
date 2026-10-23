@@ -193,6 +193,7 @@ impl MemoryOrder {
 #[derive(Clone, Copy)]
 pub(crate) enum ObjectClasses {
     Memory,
+    X87,
     Direct(EightbyteClass, Option<EightbyteClass>),
 }
 impl ObjectClasses {
@@ -200,7 +201,7 @@ impl ObjectClasses {
         if text == "memory" {
             return Some(Self::Memory);
         }
-        if bytes > 8 {
+        if bytes == 0 || bytes > 8 {
             let (first, second) = text.split_once('_')?;
             Some(Self::Direct(
                 EightbyteClass::parse(first)?,
@@ -215,6 +216,7 @@ impl std::fmt::Display for ObjectClasses {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Memory => f.write_str("memory"),
+            Self::X87 => f.write_str("x87"),
             Self::Direct(first, second) => {
                 f.write_str(first.spelling())?;
                 if let Some(second) = second {

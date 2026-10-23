@@ -377,6 +377,9 @@ mod tests {
             "struct S{int v;S(int n):v(n){}~S(){}};template<class T>struct A{static const S&r;};template<class T>const S&A<T>::r=S(1);int f(){return A<int>::r.v;}",
             "struct S{int v;S(int n):v(n){}~S(){}};struct R{const int&a;const S&b;};int n();template<class T>struct A{static R r;};template<class T>R A<T>::r={n(),S(2)};int f(){return A<int>::r.b.v;}",
             "struct S{int v;S(int n):v(n){}~S(){}};template<class T>const S&r=S(1);int f(){return r<int>.v;}",
+            "struct A{long double x;};struct B{A a[1];};B h();B f(B b){h();return b;}void g(){h();B b=h();f(b);}",
+            "union A{long double x;double d;};A h();A f(A a){h();return a;}void g(){h();}",
+            "struct A{void f();};typedef void(A::*P)();P id(P p){return p;}P g(){return &A::f;}",
         ] {
             let mut results = Vec::new();
             for retained in [false, true] {
@@ -498,6 +501,122 @@ mod tests {
         let text = std::str::from_utf8(&text).unwrap();
         assert!(text.contains("addr @f\n"));
         assert_eq!(text.matches("function @f.always_inline").count(), 2);
+    }
+
+    #[test]
+    fn host_x87_class_boundaries_keep_parameter_and_result_roles_distinct() {
+        use crate::lowir::vocabulary::ObjectClasses;
+        let source = SourceBuffer::new(
+            b"struct A{long double x;};struct B{A a[1];};B f(B b){return b;}".to_vec(),
+        )
+        .unwrap();
+        for host in [false, true] {
+            let mut output = if host {
+                LowIrOutput::host_object_view()
+            } else {
+                LowIrOutput::default()
+            };
+            emit_compilation_unit(
+                &source,
+                b"x87-class-boundary",
+                &PredefinedValues::default(),
+                &crate::preprocess::options::DriverOptions::default(),
+                &mut output,
+                StackBudget::default(),
+            )
+            .unwrap();
+            let program = &output.output.program;
+            let function = program
+                .functions()
+                .iter()
+                .find(|function| program.names.get(function.name) == "f")
+                .unwrap();
+            let signature = program.signature(function.signature);
+            assert!(matches!(
+                signature.parameters[0].classes,
+                Some(ObjectClasses::Memory)
+            ));
+            if host {
+                assert!(matches!(
+                    signature.boundary.result_classes,
+                    Some(ObjectClasses::X87)
+                ));
+            } else {
+                assert!(signature.boundary.result_classes.is_none());
+            }
+            assert_eq!(
+                signature.parameters.len(),
+                1,
+                "no indirect result parameter"
+            );
+            let mut text = Vec::new();
+            output.write(&mut text).unwrap();
+            assert_eq!(
+                std::str::from_utf8(&text)
+                    .unwrap()
+                    .contains("result_classes=x87"),
+                host
+            );
+        }
+    }
+
+    #[test]
+    fn host_class_text_reconstructs_call_and_return_facts_without_frontends() {
+        for shape in [
+            "struct A{long double x;};struct B{A a[1];};",
+            "struct A{long double x;};struct B:A{};",
+            "union B{long double x;long a;};",
+            "union B{long double x;double a;};",
+            "struct __attribute__((packed)) B{char x;double y;};",
+        ] {
+            let source = SourceBuffer::new(
+                format!("{shape} B h();B f(B b){{h();return b;}}void g(){{h();B b=h();f(b);}}")
+                    .into_bytes(),
+            )
+            .unwrap();
+            let mut objects = Vec::new();
+            for text in [false, true] {
+                let model = crate::native::ObjectModel::Host;
+                let mut output = if text {
+                    LowIrOutput::host_object_view()
+                } else {
+                    LowIrOutput::for_object_model(model).unwrap()
+                };
+                emit_compilation_unit(
+                    &source,
+                    b"class-text-adapter",
+                    &PredefinedValues::default(),
+                    &crate::preprocess::options::DriverOptions::default(),
+                    &mut output,
+                    StackBudget::default(),
+                )
+                .unwrap();
+                let object = if text {
+                    let mut bytes = Vec::new();
+                    output.write(&mut bytes).unwrap();
+                    if std::str::from_utf8(&bytes)
+                        .unwrap()
+                        .contains("result_classes=x87")
+                    {
+                        assert!(crate::lowir::test_program(&bytes).is_err());
+                    }
+                    let mut program = crate::lowir::test_program_dialect(&bytes, true).unwrap();
+                    program
+                        .set_definition_sink(Box::new(
+                            crate::native::ObjectBuilder::with_model(0, model).unwrap(),
+                        ))
+                        .unwrap();
+                    crate::native::compile_object(&mut program, b"class-text-adapter".to_vec(), 0)
+                        .unwrap()
+                } else {
+                    output
+                        .finish_object(b"class-text-adapter".to_vec())
+                        .unwrap()
+                };
+                objects.push(crate::native::object_bytes(&object).unwrap());
+            }
+            assert_eq!(objects[0], objects[1], "{shape}");
+        }
     }
 
     #[test]

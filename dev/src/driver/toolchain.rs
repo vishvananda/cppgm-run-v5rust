@@ -253,8 +253,32 @@ fn compile(
     values: &PredefinedValues,
     budget: StackBudget,
 ) -> Result<native::Object, AstToolError> {
+    let host = invocation.compile && !invocation.output.as_os_str().as_bytes().ends_with(b".obj");
+    let model = if host {
+        native::ObjectModel::Host
+    } else {
+        native::ObjectModel::Course
+    };
     if input.kind == Kind::LowIr {
-        return Err(AstToolError::Missing("LowIR object input"));
+        let mut program = crate::lowir::read_object_file(&input.path).map_err(ast::native_error)?;
+        native::recover_jump_thunks(&mut program, model);
+        if invocation.level != 0 {
+            crate::opt::optimize(&mut program, invocation.level).map_err(ast::native_error)?;
+            program.clear_jump_thunks();
+            native::recover_jump_thunks(&mut program, model);
+        }
+        program
+            .set_definition_sink(Box::new(
+                native::ObjectBuilder::with_model(invocation.level, model)
+                    .map_err(ast::native_error)?,
+            ))
+            .map_err(ast::native_error)?;
+        return native::compile_object(
+            &mut program,
+            input.path.as_os_str().as_bytes().to_vec(),
+            invocation.level,
+        )
+        .map_err(ast::native_error);
     }
     if !std::fs::metadata(&input.path).is_ok_and(|m| m.is_file()) {
         return Err(AstToolError::Diagnostic(
@@ -275,12 +299,6 @@ fn compile(
         )
     })?;
     let source = SourceBuffer::new(bytes).map_err(message)?;
-    let host = invocation.compile && !invocation.output.as_os_str().as_bytes().ends_with(b".obj");
-    let model = if host {
-        native::ObjectModel::Host
-    } else {
-        native::ObjectModel::Course
-    };
     let mut output =
         LowIrOutput::for_object_level(model, invocation.level).map_err(ast::native_error)?;
     ast::emit_compilation_unit(

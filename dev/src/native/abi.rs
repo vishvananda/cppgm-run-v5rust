@@ -75,6 +75,7 @@ pub(super) struct Layout {
     pub(super) indirect_result: bool,
     pub(super) result: [Option<Part>; 2],
     pub(super) classified_result: bool,
+    pub(super) x87_result: bool,
     pub(super) stack_align: u32,
     gprs: usize,
     xmms: u8,
@@ -102,9 +103,16 @@ impl Layout {
         ));
         let classified_result = matches!(signature.result, Type::Object { .. })
             && signature.boundary.result_classes.is_some();
+        let x87_result = signature.result == Type::F80
+            || !indirect_result
+                && classified_result
+                && matches!(signature.boundary.result_classes, Some(ObjectClasses::X87));
         let mut result = [None; 2];
         let mut result_count = 0;
-        if !indirect_result && matches!(signature.result, Type::Object { .. } | Type::I128) {
+        if !indirect_result
+            && !x87_result
+            && matches!(signature.result, Type::Object { .. } | Type::I128)
+        {
             let bytes = value_bytes(signature.result)?;
             let mut gprs = 0;
             let mut xmms = 0;
@@ -142,6 +150,7 @@ impl Layout {
         } else if signature.result != Type::Void
             && signature.result.float_rank() == 0
             && !indirect_result
+            && !x87_result
         {
             result[0] = Some(Part {
                 register: Some(R::RAX),
@@ -156,6 +165,7 @@ impl Layout {
             indirect_result,
             result,
             classified_result,
+            x87_result,
             stack_align: 16,
             gprs: usize::from(indirect_result),
             xmms: 0,
@@ -216,7 +226,7 @@ impl Layout {
             };
             if bytes > 16
                 || bytes == 0 && classes.is_none()
-                || matches!(classes, Some(ObjectClasses::Memory))
+                || matches!(classes, Some(ObjectClasses::Memory | ObjectClasses::X87))
                 || self.gprs + gprs > 6
                 || self.xmms + xmms > 8
             {

@@ -185,6 +185,10 @@ impl Selection<'_> {
             });
             return Ok(());
         }
+        if self.mir.layout.x87_result {
+            self.floating(super::floating_mir::FloatingOp::Return(source));
+            return Ok(());
+        }
         if !self.mir.layout.classified_result
             && let Operand::Immediate(bits) = source
         {

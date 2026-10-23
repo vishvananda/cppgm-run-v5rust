@@ -187,6 +187,7 @@ pub(super) struct Symbols<'a, 'source> {
     class_storage: HashMap<EntityId, super::types::ClassStorage>,
     empty_list_constructions: HashMap<EntityId, bool>,
     class_parameters: super::class_parameters::Classes,
+    object_classes: super::object_classes::Classes,
     class_labels: specialization_labels::Labels,
     rooted_destructors: std::collections::HashSet<EntityId>,
     inert_destructors: HashMap<(EntityId, bool), bool>,
@@ -274,6 +275,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             class_storage: HashMap::new(),
             empty_list_constructions: HashMap::new(),
             class_parameters: super::class_parameters::Classes::default(),
+            object_classes: super::object_classes::Classes::default(),
             class_labels: specialization_labels::Labels::default(),
             rooted_destructors: std::collections::HashSet::new(),
             inert_destructors: HashMap::new(),
@@ -335,6 +337,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if !self.graph.lower_direct_class_parameter(class)?)
         {
             return Ok(None);
+        }
+        if self.object_mode() {
+            return Ok(self
+                .object_classes
+                .classify(self.graph, ty, self.budget)?
+                .map(|classes| match classes {
+                    crate::lowir::vocabulary::ObjectClasses::X87 => {
+                        crate::lowir::vocabulary::ObjectClasses::Memory
+                    }
+                    other => other,
+                }));
         }
         self.class_parameters.parameter(self.graph, ty, self.budget)
     }
@@ -2915,13 +2928,19 @@ impl Symbols<'_, '_> {
             }
             boundary.indirect = !self.graph.lower_direct_class_parameter(class)?
                 || super::types::layout(self.graph, ty)?.0 > 16
-                || self.class_result_memory(class)?;
+                || !self.object_mode() && self.class_result_memory(class)?;
             if boundary.indirect {
                 return Ok(boundary);
             }
-            boundary.classes = self.parameter_classes(ty)?.filter(|classes| {
-                !matches!(classes, crate::lowir::vocabulary::ObjectClasses::Memory)
-            });
+            boundary.classes = if self.object_mode() {
+                self.object_classes.classify(self.graph, ty, self.budget)?
+            } else {
+                self.parameter_classes(ty)?.filter(|classes| {
+                    !matches!(classes, crate::lowir::vocabulary::ObjectClasses::Memory)
+                })
+            };
+        } else if self.object_mode() {
+            boundary.classes = self.object_classes.classify(self.graph, ty, self.budget)?;
         }
         boundary.ty = super::types::storage(self.graph, ty)?;
         Ok(boundary)
