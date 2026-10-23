@@ -27,10 +27,16 @@ enum Instance {
     InProgress,
     Ready(BindingId),
 }
+#[derive(Clone, Copy)]
+struct Inheritance {
+    source: BindingId,
+    root: EntityId,
+    full: bool,
+}
 #[derive(Default)]
 pub(super) struct InheritedConstructors {
     bases: HashMap<EntityId, EntityId>,
-    sources: HashMap<EntityId, BindingId>,
+    sources: HashMap<EntityId, Inheritance>,
     #[expect(
         clippy::box_collection,
         reason = "Demand-only cache keeps the by-value semantic graph out of the measured oversized analyze_unit stack frame"
@@ -52,10 +58,57 @@ impl InheritedConstructors {
         }
     }
     pub(super) fn source(&self, function: EntityId) -> Option<BindingId> {
-        self.sources.get(&function).copied()
+        self.sources.get(&function).map(|record| record.source)
+    }
+    pub(super) fn full_root(&self, function: EntityId) -> Option<EntityId> {
+        self.sources
+            .get(&function)
+            .filter(|record| record.full)
+            .map(|record| record.root)
     }
 }
 impl Analyzer<'_> {
+    fn record_inherited_constructor(
+        &mut self,
+        function: EntityId,
+        source: BindingId,
+    ) -> Result<(), Error> {
+        // C++ record_inherited_constructor: retain the original declaring
+        // constructor even through shortened/default-argument forwarding forms.
+        let parent = self.graph.binding(source).entity;
+        let root = self
+            .graph
+            .inherited_constructors
+            .sources
+            .get(&parent)
+            .map_or(parent, |record| record.root);
+        let own = self.graph.lower_entity_type(function)?;
+        let declared = self.graph.lower_entity_type(root)?;
+        let (
+            TypeKind::Function {
+                parameters,
+                variadic,
+                ..
+            },
+            TypeKind::Function {
+                parameters: root_parameters,
+                variadic: root_variadic,
+                ..
+            },
+        ) = (
+            &self.graph.types.get(own).kind,
+            &self.graph.types.get(declared).kind,
+        )
+        else {
+            return Err(Error::Invariant("inherited constructor signature"));
+        };
+        let full = parameters.len() == root_parameters.len() && variadic == root_variadic;
+        self.graph
+            .inherited_constructors
+            .sources
+            .insert(function, Inheritance { source, root, full });
+        Ok(())
+    }
     pub(super) fn note_inherited_constructors(
         &mut self,
         scope: ScopeId,
@@ -204,10 +257,7 @@ impl Analyzer<'_> {
                     },
                     binding,
                 );
-                self.graph
-                    .inherited_constructors
-                    .sources
-                    .insert(function, source);
+                self.record_inherited_constructor(function, source)?;
             }
         }
         Ok(())
@@ -318,10 +368,7 @@ impl Analyzer<'_> {
             },
         )?;
         self.graph.inherit_binding_access(binding, forwarded);
-        self.graph
-            .inherited_constructors
-            .sources
-            .insert(inherited, forwarded);
+        self.record_inherited_constructor(inherited, forwarded)?;
         self.graph
             .inherited_constructors
             .set_instance(key, Instance::InProgress);
@@ -587,6 +634,33 @@ mod tests {
                 .collect();
             counts.sort_unstable();
             assert_eq!(counts, [1, 2]);
+            for &binding in declarations {
+                let function = graph.binding(binding).entity;
+                let record = graph.inherited_constructors.sources[&function];
+                assert_eq!(
+                    graph.entity(record.root).member_function.unwrap().class,
+                    base
+                );
+                let count = graph
+                    .types
+                    .function_parameter_count(graph.binding(binding).ty.unwrap())
+                    .unwrap();
+                assert_eq!(record.full, count == 2);
+                assert_eq!(
+                    graph
+                        .lower_function_in_mode(function, true)
+                        .unwrap()
+                        .inherited_constructor,
+                    (count == 2).then_some(record.root)
+                );
+                assert!(
+                    graph
+                        .lower_function(function)
+                        .unwrap()
+                        .inherited_constructor
+                        .is_none()
+                );
+            }
             assert!(matches!(
                 graph.entity(owner).default_construction,
                 ConstructorState::NotStarted
@@ -734,6 +808,10 @@ mod tests {
                 .entity(analyzer.graph.binding(binding).entity);
             assert_eq!(entity.parameter_entities.len(), key.count);
             assert!(entity.constructor.is_some());
+            let record = analyzer.graph.inherited_constructors.sources
+                [&analyzer.graph.binding(binding).entity];
+            assert_eq!(record.root, key.source);
+            assert_eq!(record.full, key.count == 2);
         }
         assert_eq!(analyzer.tree.expressions.mark(), mark);
         assert_eq!(analyzer.constexpr_frames.depth(), 0);

@@ -2658,15 +2658,29 @@ impl<'a, 'source> Symbols<'a, 'source> {
         facts: &crate::sema::lowering::FunctionFacts,
         variant: super::construction::Variant,
     ) -> Result<NodeId, Error> {
-        let level = if facts.template_instance.is_some() {
-            self.graph.lower_instance_levels(facts.home)?
+        let inherited = facts
+            .inherited_constructor
+            .map(|root| self.function_facts(root))
+            .transpose()?;
+        let specialization = inherited.as_ref().unwrap_or(facts);
+        let level = if specialization.template_instance.is_some() {
+            self.graph.lower_instance_levels(specialization.home)?
         } else {
             0
         };
+        let inherited_base = inherited
+            .as_ref()
+            .map(|root| {
+                let class = root.object.ok_or(crate::sema::Error::Invariant(
+                    "inherited constructor root without class",
+                ))?;
+                self.abi_type(self.graph.lower_entity_type(class)?)
+            })
+            .transpose()?;
         let saved = (self.own_level, self.bound_pattern);
         self.own_level = level;
         self.bound_pattern = false;
-        let result = self.encode_function_inner(facts, variant);
+        let result = self.encode_function_inner(facts, specialization, inherited_base, variant);
         (self.own_level, self.bound_pattern) = saved;
         result
     }
@@ -2674,6 +2688,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
     fn encode_function_inner(
         &mut self,
         facts: &crate::sema::lowering::FunctionFacts,
+        specialization: &crate::sema::lowering::FunctionFacts,
+        inherited_base: Option<NodeId>,
         variant: super::construction::Variant,
     ) -> Result<NodeId, Error> {
         if facts.c_linkage
@@ -2698,7 +2714,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         // The frozen encoder uses the primary's written parameter count for
         // operator arity, just as it uses that signature for parameter types.
         // An empty expansion must not turn a binary terminal into a unary one.
-        let template = facts
+        let template = specialization
             .template_instance
             .map(|instance| self.graph.lower_template_signature(instance))
             .transpose()?;
@@ -2724,7 +2740,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         }
                         _ => abi::vocabulary::Terminal::ConstructorComplete,
                     },
-                    inherited: None,
+                    inherited: inherited_base,
                 },
                 &[],
             )?
@@ -2757,7 +2773,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )
             .map_err(Error::from)?;
         let mut name = name;
-        if let Some((instance, (_, arguments))) = facts.template_instance.zip(template) {
+        if let Some((instance, (_, arguments))) = specialization.template_instance.zip(template) {
             let mut nodes = Vec::with_capacity(arguments.len());
             for (index, &argument) in arguments.iter().enumerate() {
                 nodes.push(self.declared_template_argument(instance, index, argument)?);
@@ -2776,10 +2792,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         let mut args = Vec::with_capacity(parameters.len());
         for (index, &parameter) in parameters.iter().enumerate() {
-            let parameter = if facts.template_instance.is_some()
+            let parameter = if specialization.template_instance.is_some()
                 && self.unmangled_placeholder(parameter)?
             {
-                let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
+                let TypeView::Function { parameters, .. } =
+                    self.graph.lower_type(specialization.ty)?
+                else {
                     return Err(Error::Missing("specialization without function type"));
                 };
                 *parameters
@@ -2790,7 +2808,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             };
             args.push(self.abi_type(parameter)?);
         }
-        let result = if facts.template_instance.is_some()
+        let result = if specialization.template_instance.is_some()
             && !matches!(
                 facts.name,
                 FunctionName::Constructor(_)
@@ -2798,7 +2816,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     | FunctionName::Conversion(_)
             ) {
             let result = if self.unmangled_placeholder(result)? {
-                let TypeView::Function { result, .. } = self.graph.lower_type(facts.ty)? else {
+                let TypeView::Function { result, .. } = self.graph.lower_type(specialization.ty)?
+                else {
                     return Err(Error::Missing("specialization without function type"));
                 };
                 result

@@ -182,6 +182,7 @@ pub(crate) struct Allocation {
 }
 pub(crate) struct FunctionFacts {
     pub template_instance: Option<EntityId>,
+    pub inherited_constructor: Option<EntityId>,
     pub name: FunctionName,
     pub label: Option<ast::Name>,
     pub home: ScopeId,
@@ -558,6 +559,7 @@ impl Graph {
         let class = self.entity(plan.class);
         Ok(FunctionFacts {
             template_instance: None,
+            inherited_constructor: None,
             name: FunctionName::Constructor(self.lower_class_spelling(plan.class)?),
             label: None,
             home: class
@@ -1687,6 +1689,9 @@ impl Graph {
             });
         Ok(FunctionFacts {
             template_instance: self.function_templates.primary(id).map(|_| id),
+            inherited_constructor: object_mode
+                .then(|| self.inherited_constructors.full_root(id))
+                .flatten(),
             object,
             qualifiers,
             name: match function.special {
