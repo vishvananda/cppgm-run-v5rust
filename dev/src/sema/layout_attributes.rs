@@ -41,6 +41,7 @@ impl Analyzer<'_> {
                 policy.excluded |=
                     attribute.kind == ast::AttributeKind::ExcludeFromExplicitInstantiation;
                 policy.always_inline |= attribute.kind == ast::AttributeKind::AlwaysInline;
+                policy.gnu_inline |= attribute.kind == ast::AttributeKind::GnuInline;
             }
             current = node.nested;
         }
@@ -67,6 +68,7 @@ impl Analyzer<'_> {
                     attribute.kind,
                     ast::AttributeKind::NoInline
                         | ast::AttributeKind::AlwaysInline
+                        | ast::AttributeKind::GnuInline
                         | ast::AttributeKind::ExcludeFromExplicitInstantiation
                 )
             {
@@ -111,6 +113,7 @@ impl Analyzer<'_> {
                 ast::AttributeKind::Packed => result.packed = true,
                 ast::AttributeKind::NoInline => result.no_inline = true,
                 ast::AttributeKind::AlwaysInline => result.instantiation.always_inline = true,
+                ast::AttributeKind::GnuInline => result.instantiation.gnu_inline = true,
                 ast::AttributeKind::ExcludeFromExplicitInstantiation => {
                     result.instantiation.excluded = true;
                 }
@@ -135,6 +138,7 @@ impl Analyzer<'_> {
             attributes.no_inline |= own.no_inline;
             attributes.instantiation.excluded |= own.instantiation.excluded;
             attributes.instantiation.always_inline |= own.instantiation.always_inline;
+            attributes.instantiation.gnu_inline |= own.instantiation.gnu_inline;
             attributes.standard = attributes.standard.or(own.standard);
             part = node.nested;
         }

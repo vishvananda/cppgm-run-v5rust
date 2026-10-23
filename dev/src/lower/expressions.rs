@@ -929,8 +929,10 @@ impl Function<'_, '_, '_, '_> {
                     self.demand_virtual_call_table()?;
                     callee
                 } else {
-                    self.symbols.demand(entity);
-                    (self.symbols.callee(entity, &mut self.builder)?, None)
+                    (
+                        self.symbols.direct_callee(self.builder.program(), entity)?,
+                        None,
+                    )
                 }
             }
             CallTarget::Indirect(function_type, nothrow) => {

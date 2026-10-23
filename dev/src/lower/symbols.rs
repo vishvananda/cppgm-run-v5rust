@@ -6,6 +6,8 @@ mod argument_declarations;
 mod call_signatures;
 #[path = "exception_information.rs"]
 mod exception_information;
+#[path = "inline_definitions.rs"]
+mod inline_definitions;
 #[path = "lifetime_symbols.rs"]
 mod lifetime_symbols;
 #[path = "placeholder_mangling.rs"]
@@ -147,6 +149,8 @@ pub(super) struct Symbols<'a, 'source> {
     pub aggregate_helpers: super::aggregate_helpers::Helpers,
     seen: std::collections::HashSet<super::construction::Entry>,
     entries: HashMap<super::construction::Entry, SymbolId>,
+    pub(super) pending_copies: Vec<EntityId>,
+    inline_static_owners: Vec<EntityId>,
     entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
     entry_families:
         HashMap<crate::sema::lowering::ConstructorId, super::definition_order::FamilyId>,
@@ -236,6 +240,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             aggregate_helpers: super::aggregate_helpers::Helpers::default(),
             seen: std::collections::HashSet::new(),
             entries: HashMap::new(),
+            pending_copies: Vec::new(),
+            inline_static_owners: Vec::new(),
             entry_objects: HashMap::new(),
             entry_families: HashMap::new(),
             destructor_families: HashMap::new(),
@@ -1856,6 +1862,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         let facts = self.graph.lower_variable(entity)?;
         let owner = self.function_symbol(program, function)?;
+        if self
+            .entries
+            .contains_key(&super::construction::Entry::InlineCopy(function))
+        {
+            self.inline_static_owners.push(function);
+        }
         let owner_name = program.names.get(program.symbol(owner).name).to_owned();
         let weak = self.metadata(program, function, &owner_name)?.binding == Some(Binding::Weak);
         let instantiated = self.graph.lower_function_instantiated(function);
@@ -1958,9 +1970,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
         )?;
         let object = program.names.intern_bytes(&bytes)?;
         let local_object = (weak || !self.table.objects.contains_key(&object)).then_some(object);
+        // Each unit's parsed static owns storage identity, even when its weak
+        // ABI name is shared. Unit-local copies can lower both declarations.
         let symbol = self
             .table
-            .allocate(program, &spelling, Some(object), !weak)?;
+            .allocate(program, &spelling, Some(object), true)?;
         self.callees.insert(entity, Value::Symbol(symbol));
         let metadata = Metadata {
             binding: Some(if weak {
@@ -1990,7 +2004,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 (weak || !self.table.objects.contains_key(&object)).then_some(object);
             let guard =
                 self.table
-                    .allocate(program, &format!("{spelling}__guard"), Some(object), !weak)?;
+                    .allocate(program, &format!("{spelling}__guard"), Some(object), true)?;
             Some((
                 guard,
                 Metadata {
@@ -2111,7 +2125,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if self.graph.lower_is_closure_invoker(entity) {
             metadata.flags |= 4;
         }
-        if self.graph.lower_function_local_class(entity)? {
+        if self
+            .graph
+            .lower_function_local_class(entity, self.object_mode())?
+        {
             metadata.flags |= 2;
         }
         if let Some(builtin) = facts.builtin {
@@ -2234,7 +2251,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             Entry::Constructor(id, variant) => (self.graph.lower_constructor_entity(id), variant),
             Entry::DestructorBase(entity) => (Some(entity), Variant::Base),
             Entry::DestructorDeleting(entity) => (Some(entity), Variant::Deleting),
-            Entry::Function(_) => return Err(Error::Missing("entry kind")),
+            Entry::Function(_) | Entry::InlineCopy(_) => return Err(Error::Missing("entry kind")),
         };
         if variant == Variant::Complete
             && let Some(entity) = entity
@@ -2301,6 +2318,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         symbol: SymbolId,
     ) -> Result<Metadata, Error> {
         let name = program.names.get(program.symbol(symbol).name).to_owned();
+        if let super::construction::Entry::InlineCopy(entity) = entry {
+            return self.inline_copy_metadata(program, entity, symbol);
+        }
         let mut metadata = self.entry_metadata(program, entry, &name)?;
         let facts = self.entry_facts(entry)?;
         let base = matches!(
@@ -2348,11 +2368,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Entry::Function(entity) = entry {
             return self.metadata(program, entity, name);
         }
+        if let Entry::InlineCopy(entity) = entry {
+            let symbol = self.entries[&entry];
+            return self.inline_copy_metadata(program, entity, symbol);
+        }
         let (entity, variant) = match entry {
             Entry::Constructor(id, variant) => (self.graph.lower_constructor_entity(id), variant),
             Entry::DestructorBase(entity) => (Some(entity), Variant::Base),
             Entry::DestructorDeleting(entity) => (Some(entity), Variant::Deleting),
-            Entry::Function(_) => return Err(Error::Missing("entry kind")),
+            Entry::Function(_) | Entry::InlineCopy(_) => return Err(Error::Missing("entry kind")),
         };
         if variant == Variant::Complete
             && let Some(entity) = entity

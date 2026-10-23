@@ -170,6 +170,7 @@ fn finish_unit<'a>(
     definitions.release_held(program);
     definitions.generated(&mut symbols.generated_definitions)?;
     thread_local::finish_unit(program, definitions, symbols, graph, tree, budget)?;
+    symbols.finish_inline_declarations(program)?;
     globals::finish(program, symbols, graph)?;
     symbols.finish_class_declarations(program, None)?;
     symbols.resolve_runtime_roles(program, definitions)?;
@@ -444,12 +445,27 @@ fn emit_pending<'a>(
     ),
     budget: StackBudget,
 ) -> Result<(), Error> {
-    exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
-    aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;
     let mut explicit = 0;
     let mut variable = 0;
     loop {
         globals::emit_instance_variables(output, symbols, (graph, tree))?;
+        if let Some(entity) = symbols.pending_copies.pop() {
+            let entry = construction::Entry::InlineCopy(entity);
+            let body = function::definition_body(graph, tree, entity)?;
+            function::lower(
+                output.function_output(),
+                symbols,
+                graph,
+                tree,
+                entry,
+                body,
+                budget,
+            )?;
+            symbols.stream_definition(output.program, output.definitions, entry)?;
+            continue;
+        }
+        exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
+        aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;
         let Some(entry) = symbols.pending.next() else {
             // Each C++ emit_demanded drain finishes its thunks before the
             // next explicit-instantiation or variable-root demand boundary.
@@ -475,6 +491,12 @@ fn emit_pending<'a>(
         | construction::Entry::DestructorDeleting(entity) = entry
         {
             if matches!(entry, construction::Entry::Function(_)) && !emitted.insert(entity) {
+                continue;
+            }
+            if graph.lower_gnu_inline(entity) {
+                if symbols.has_entry_symbol(entry) {
+                    function::declare(output.program, symbols, graph, entry)?;
+                }
                 continue;
             }
             let facts = graph.lower_function(entity)?;
@@ -531,8 +553,6 @@ fn emit_pending<'a>(
             budget,
         )?;
         symbols.stream_definition(output.program, output.definitions, entry)?;
-        exception_helpers::emit_pending(output.program, symbols, output.definitions)?;
-        aggregate_helpers::emit_pending(output.program, symbols, graph, output.definitions)?;
     }
     Ok(())
 }

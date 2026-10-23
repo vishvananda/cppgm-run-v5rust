@@ -19,6 +19,7 @@ use std::collections::HashMap;
 pub(super) struct MemberPolicy {
     pub excluded: bool,
     pub always_inline: bool,
+    pub gnu_inline: bool,
 }
 
 #[cfg(test)]
@@ -165,10 +166,11 @@ pub(super) struct Instantiations {
 }
 impl Instantiations {
     pub(super) fn note_policy(&mut self, entity: EntityId, policy: MemberPolicy) {
-        if policy.excluded || policy.always_inline {
+        if policy.excluded || policy.always_inline || policy.gnu_inline {
             let old = self.policies.entry(entity).or_default();
             old.excluded |= policy.excluded;
             old.always_inline |= policy.always_inline;
+            old.gnu_inline |= policy.gnu_inline;
         }
     }
     pub(super) fn policy(&self, entity: EntityId) -> MemberPolicy {

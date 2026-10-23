@@ -30,6 +30,7 @@ pub(super) enum Variant {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Entry {
     Function(EntityId),
+    InlineCopy(EntityId),
     Constructor(ConstructorId, Variant),
     DestructorBase(EntityId),
     DestructorDeleting(EntityId),
@@ -45,6 +46,7 @@ impl Entry {
     ) -> Result<FunctionFacts, Error> {
         Ok(match self {
             Self::Function(entity)
+            | Self::InlineCopy(entity)
             | Self::DestructorBase(entity)
             | Self::DestructorDeleting(entity) => {
                 graph.lower_function_in_mode(entity, object_mode)?
@@ -66,6 +68,7 @@ impl Entry {
     pub(super) fn entity(self, graph: &Graph) -> Option<EntityId> {
         match self {
             Self::Function(entity)
+            | Self::InlineCopy(entity)
             | Self::DestructorBase(entity)
             | Self::DestructorDeleting(entity) => Some(entity),
             Self::Constructor(id, _) => graph.lower_constructor_entity(id),

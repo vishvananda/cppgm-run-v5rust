@@ -228,6 +228,7 @@ impl Graph {
         super::explicit_instantiations::MemberPolicy {
             excluded: own.excluded || pattern.excluded,
             always_inline: own.always_inline || pattern.always_inline,
+            gnu_inline: own.gnu_inline || pattern.gnu_inline,
         }
     }
     pub(super) fn class_instantiation_suppressed(&self, entity: EntityId) -> bool {

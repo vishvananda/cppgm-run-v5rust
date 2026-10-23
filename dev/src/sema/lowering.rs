@@ -1762,6 +1762,7 @@ impl Graph {
             emission: if entity.definition_emission
                 == super::function_demands::DefinitionEmission::Demanded
                 || entity.inline == super::specifiers::InlinePreference::Inline
+                || function.internal_linkage && self.lower_always_inline(id)
             {
                 Emission::Demanded
             } else {
@@ -2013,6 +2014,42 @@ impl Graph {
         self.entity(self.lower_function_entity(entity))
             .function
             .is_some_and(|properties| properties.no_inline)
+    }
+    pub(crate) fn lower_always_inline(&self, entity: EntityId) -> bool {
+        self.lower_inline_policy(entity).always_inline
+    }
+    pub(crate) fn lower_gnu_inline(&self, entity: EntityId) -> bool {
+        self.lower_inline_policy(entity).gnu_inline
+    }
+    fn lower_inline_policy(
+        &self,
+        entity: EntityId,
+    ) -> super::explicit_instantiations::MemberPolicy {
+        let entity = self.lower_function_entity(entity);
+        let mut policy = self.instance_member_policy(entity);
+        if let Some(primary) = self.function_templates.primary(entity) {
+            let primary = self
+                .function_templates
+                .instantiations
+                .policy(self.binding(primary).entity);
+            policy.always_inline |= primary.always_inline;
+            policy.gnu_inline |= primary.gnu_inline;
+        }
+        policy
+    }
+    pub(crate) fn lower_inline_copy_available(&self, entity: EntityId) -> bool {
+        let entity = self.lower_function_entity(entity);
+        (self.entity(entity).inline == super::specifiers::InlinePreference::Inline
+            || self.lower_function_instantiated(entity))
+            && !self.function_instantiation_suppressed(entity)
+            && self.lower_function_body(entity).is_some()
+            && self.lower_virtual_slot(entity).is_none()
+            && !self.entity(entity).member_function.is_some_and(|member| {
+                matches!(
+                    member.kind,
+                    super::graph::MemberKind::Constructor | super::graph::MemberKind::Destructor
+                )
+            })
     }
     pub(crate) fn lower_floating_intrinsic(
         &self,

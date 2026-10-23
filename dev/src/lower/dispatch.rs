@@ -190,8 +190,10 @@ impl Function<'_, '_, '_, '_> {
         source: TypeId,
     ) -> Result<(Value, Option<SignatureId>), Error> {
         if !dispatch {
-            self.symbols.demand(entity);
-            return Ok((self.symbols.callee(entity, &mut self.builder)?, None));
+            return Ok((
+                self.symbols.direct_callee(self.builder.program(), entity)?,
+                None,
+            ));
         }
         if !self.graph.lower_virtual_pure(entity)
             && !self.symbols.host_objects()

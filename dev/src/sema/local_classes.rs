@@ -392,12 +392,20 @@ impl Graph {
             class = owner;
         }
     }
-    pub(crate) fn lower_function_local_class(&self, function: EntityId) -> Result<bool, Error> {
+    pub(crate) fn lower_function_local_class(
+        &self,
+        function: EntityId,
+        object_mode: bool,
+    ) -> Result<bool, Error> {
         self.entity(function)
             .home
             .filter(|&home| self.scope(home).kind == ScopeKind::Class)
             .and_then(|home| self.scope(home).owner)
-            .map(|owner| self.lower_class_no_linkage(owner))
+            .map(|owner| {
+                Ok(self.lower_class_no_linkage(owner)?
+                    && (!object_mode
+                        || self.lower_object_type_unit_local(self.lower_entity_type(owner)?)?))
+            })
             .transpose()
             .map(|local| local.unwrap_or(false))
     }

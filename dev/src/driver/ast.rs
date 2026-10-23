@@ -371,6 +371,9 @@ mod tests {
             "struct A{virtual ~A(){}};struct B:virtual A{~B(){}};B b;",
             "struct R{int x;};struct S{int y;};struct T:R,S{};struct A{virtual S* f(){return 0;}};struct B:A{T* f(){return 0;}};B b;",
             "namespace{struct V{virtual ~V(){}};struct A:virtual V{A();};struct D:A{D(){}};A::A(){}}void f(){D d;}",
+            "__attribute__((always_inline)) inline int f(int n){static int s;return s+=n;}int(*p)(int)=f;int g(){return f(2)+p(3);}",
+            "__attribute__((always_inline)) inline int f(){auto a=[] {static int s;return ++s;};return a();}int g(){return f();}",
+            "struct R{long a,b,c;};__attribute__((always_inline)) inline R f(long n){return {n,2,3};}R g(){return f(1);}",
         ] {
             let mut results = Vec::new();
             for retained in [false, true] {
@@ -424,6 +427,74 @@ mod tests {
             }
             assert_eq!(results[0], results[1], "{source}");
         }
+    }
+
+    #[test]
+    fn inline_copies_are_unit_owned_while_addresses_and_statics_share_the_original() {
+        use crate::lowir::vocabulary::Binding;
+        let mut output = LowIrOutput::default();
+        for name in ["g", "h"] {
+            let source = SourceBuffer::new(format!(
+                "__attribute__((always_inline)) inline int f(int n){{static int s;return s+=n;}}\
+                 int {name}(){{int(*p)(int)=f;return f(2)+p(3);}}"
+            ).into_bytes()).unwrap();
+            emit_compilation_unit(
+                &source,
+                b"inline-ownership",
+                &PredefinedValues::default(),
+                &crate::preprocess::options::DriverOptions::default(),
+                &mut output,
+                StackBudget::default(),
+            )
+            .unwrap();
+        }
+        let program = &output.output.program;
+        let copies: Vec<_> = program
+            .functions()
+            .iter()
+            .filter(|function| {
+                program
+                    .names
+                    .get(function.name)
+                    .starts_with("f.always_inline")
+            })
+            .collect();
+        assert_eq!(copies.len(), 2);
+        assert!(copies.iter().all(
+            |function| function.metadata.binding == Some(Binding::Internal)
+                && function.body.is_none()
+        ));
+        assert_ne!(copies[0].name, copies[1].name);
+        let original: Vec<_> = program
+            .functions_in_symbol_order()
+            .filter(|function| program.names.get(function.name) == "f")
+            .collect();
+        assert_eq!(original.len(), 1);
+        assert_eq!(original[0].metadata.binding, Some(Binding::Weak));
+        let statics: Vec<_> = program
+            .globals()
+            .iter()
+            .filter(|global| {
+                program
+                    .names
+                    .get(global.name)
+                    .starts_with("__local_static__f__")
+            })
+            .collect();
+        assert_eq!(statics.len(), 2);
+        assert_ne!(statics[0].name, statics[1].name);
+        for storage in statics {
+            assert_eq!(storage.metadata.binding, Some(Binding::Weak));
+            assert_eq!(
+                program.names.get(storage.metadata.object.unwrap()),
+                "_ZZ1fiE1s"
+            );
+        }
+        let mut text = Vec::new();
+        output.write(&mut text).unwrap();
+        let text = std::str::from_utf8(&text).unwrap();
+        assert!(text.contains("addr @f\n"));
+        assert_eq!(text.matches("function @f.always_inline").count(), 2);
     }
 
     #[test]
