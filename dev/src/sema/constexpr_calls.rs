@@ -319,6 +319,13 @@ impl Analyzer<'_> {
         destination: Option<Address>,
     ) -> Result<Returned, Error> {
         let id = self.graph.expression_facts.root(id);
+        if let Some(super::runtime_intrinsics::RuntimeIntrinsic::Overflow(operation)) =
+            self.graph.expression_facts.runtime_intrinsic(id)
+        {
+            return self
+                .constant_overflow_intrinsic(id, operation, scope)
+                .map(|value| Returned::Value(Value::Integer(value)));
+        }
         if self.graph.expression_facts.atomic_intrinsic(id).is_some()
             || self.graph.expression_facts.runtime_intrinsic(id).is_some()
         {

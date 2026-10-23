@@ -189,6 +189,35 @@ pub(super) struct BuiltinNames {
     pub floating: Vec<(NameId, super::floating_intrinsics::FloatingOperation)>,
 }
 impl Analyzer<'_> {
+    // A call-expanded builtin has a canonical lookup identity but no
+    // addressable function definition, including through a using declaration.
+    pub(super) fn check_intrinsic_designation(
+        &self,
+        binding: super::graph::BindingId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
+        if matches!(
+            self.graph
+                .entity(self.graph.binding(binding).entity)
+                .builtin,
+            Some(
+                BuiltinFunction::Integer(_)
+                    | BuiltinFunction::Runtime(_)
+                    | BuiltinFunction::Floating(_)
+                    | BuiltinFunction::Atomic(_)
+                    | BuiltinFunction::Stack(_)
+                    | BuiltinFunction::Invoke
+                    | BuiltinFunction::IsConstantEvaluated
+            )
+        ) {
+            return Err(Error::at(
+                location,
+                "a builtin expanded where it is called named other than in a call",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn ensure_builtin(
         &mut self,
         key: NameId,

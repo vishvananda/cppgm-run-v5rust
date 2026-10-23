@@ -110,6 +110,7 @@ mod name_keys;
 mod nominal_predicates;
 mod operator_candidates;
 mod operator_resolution;
+mod overflow_intrinsics;
 mod pack_arguments;
 mod pack_deduction;
 mod pack_formation;

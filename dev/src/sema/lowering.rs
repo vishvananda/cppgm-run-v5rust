@@ -19,6 +19,7 @@ pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::integer_intrinsics::BitOperation;
 pub(crate) use super::lambdas::ClosureNamingContext;
 pub(crate) use super::literal_calls::LiteralCall;
+pub(crate) use super::overflow_intrinsics::OverflowOperation;
 pub(crate) use super::runtime_intrinsics::RuntimeIntrinsic;
 pub(crate) use super::stack_intrinsics::StackIntrinsic;
 pub(crate) use super::static_arrays::Item as StaticItem;

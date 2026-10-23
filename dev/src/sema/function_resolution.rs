@@ -133,6 +133,9 @@ impl Analyzer<'_> {
         if self.graph.binding(binding).kind != BindingKind::Function {
             return Ok(None);
         }
+        if found.functions.as_slice().len() == 1 {
+            self.check_intrinsic_designation(binding, node.location)?;
+        }
         let address = self.graph.expression_facts.add_member_address(
             super::expression_facts::MemberAddress {
                 naming: (self.graph.scope(prefix).kind == ScopeKind::Class)

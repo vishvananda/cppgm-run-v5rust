@@ -571,6 +571,11 @@ impl Analyzer<'_> {
         if self.graph.expression_facts.constant_evaluation_query(id) {
             return self.boolean(true);
         }
+        if let Some(super::runtime_intrinsics::RuntimeIntrinsic::Overflow(operation)) =
+            self.graph.expression_facts.runtime_intrinsic(id)
+        {
+            return self.constant_overflow_intrinsic(id, operation, scope);
+        }
         if let Some(kind) = self.graph.expression_facts.integer_intrinsic(id) {
             return self.constant_integer_intrinsic(id, kind, scope);
         }

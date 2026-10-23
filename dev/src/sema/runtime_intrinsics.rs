@@ -19,9 +19,11 @@ pub(crate) enum RuntimeIntrinsic {
     Prefetch,
     AssumeAligned,
     FltRounds,
+    Overflow(super::overflow_intrinsics::OverflowOperation),
 }
 
 pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntrinsic)>, Error> {
+    use super::overflow_intrinsics::OverflowOperation as O;
     use RuntimeIntrinsic as R;
     [
         ("__builtin_object_size", R::ObjectSize { minimum: false }),
@@ -32,6 +34,9 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntri
         ("__builtin_prefetch", R::Prefetch),
         ("__builtin_assume_aligned", R::AssumeAligned),
         ("__builtin_flt_rounds", R::FltRounds),
+        ("__builtin_add_overflow", R::Overflow(O::Add)),
+        ("__builtin_sub_overflow", R::Overflow(O::Subtract)),
+        ("__builtin_mul_overflow", R::Overflow(O::Multiply)),
     ]
     .into_iter()
     .map(|(name, kind)| {
@@ -60,6 +65,7 @@ impl Analyzer<'_> {
         let void = self.graph.types.scalar(Scalar::Void)?;
         let integer = self.graph.types.scalar(Scalar::Basic(F::Int))?;
         let result = match operation {
+            R::Overflow(kind) => return self.overflow_builtin(id, arguments, kind, scope),
             R::ObjectSize { .. } => {
                 if count != 2 {
                     return Err(Error::at(

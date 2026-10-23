@@ -41,9 +41,11 @@ impl Function<'_, '_, '_, '_> {
         arguments: List<ast::ExprId>,
         operation: RuntimeIntrinsic,
     ) -> Result<RValue, Error> {
+        let argument_list = arguments;
         let source = self.graph.lower_expression(id)?.ty;
         let arguments = self.tree.expr_lists.get(arguments);
         match operation {
+            RuntimeIntrinsic::Overflow(kind) => self.overflow_intrinsic(id, argument_list, kind),
             RuntimeIntrinsic::ObjectSize { minimum } => {
                 self.runtime_integer(Type::I64, if minimum { 0 } else { u64::MAX }, source)
             }
