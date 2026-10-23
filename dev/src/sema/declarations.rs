@@ -100,7 +100,7 @@ impl Analyzer<'_> {
                 self.declarator_layout_attributes(attributes, init.declarator, scope)?;
             self.resume_declaration_access(scope);
             self.declare_init(specs, *init, scope, location, &mut deduced)?;
-            self.apply_storage_attributes(init.declarator, attributes)?;
+            self.apply_storage_attributes(init.declarator, specs, attributes)?;
             self.declarator_symbol_attributes(init.declarator, declaration.attributes)?;
             if init
                 .initializer

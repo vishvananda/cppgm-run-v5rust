@@ -508,8 +508,8 @@ impl<'tree> Analyzer<'tree> {
                     self.declare_alias_template(name, alias_type, scope, location)
                         .map(|_| ())
                 } else {
-                    self.declare_alias(name, alias_type, scope, location)
-                        .map(|_| ())
+                    let binding = self.declare_alias(name, alias_type, scope, location)?;
+                    self.alias_declaration_alignment(binding, specs, declaration.attributes, scope)
                 }
             }
             ast::DeclKind::Simple {
@@ -521,6 +521,7 @@ impl<'tree> Analyzer<'tree> {
                 let storage = self.anonymous_union(
                     super::specifiers::Specifiers {
                         dependent_uses: self.dependent_uses.get(),
+                        alias_alignment: 0,
                         friendship: super::specifiers::Friendship::Ordinary,
                         auto_cv: super::types::Cv::default(),
                         inline: super::specifiers::InlinePreference::Unspecified,

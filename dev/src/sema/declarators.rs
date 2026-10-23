@@ -122,6 +122,11 @@ impl Analyzer<'_> {
             return Err(Error::at(node.location, "auto in a type-id"));
         }
         super::record(&mut self.graph.type_facts, id.index(), ty);
+        if ty == specs.ty {
+            self.graph
+                .alias_alignments
+                .record_type(id, specs.alias_alignment);
+        }
         Ok(ty)
     }
     pub(super) fn declarator_environment(

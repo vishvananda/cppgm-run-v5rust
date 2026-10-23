@@ -217,7 +217,15 @@ impl Analyzer<'_> {
                 let attributes = self.layout_attributes(node.attributes, scope, false)?;
                 let attributes =
                     self.declarator_layout_attributes(attributes, declarator, scope)?;
-                self.apply_storage_attributes(declarator, attributes)?;
+                // C++ bit_field_declaration does not inherit typedef alignment.
+                self.apply_storage_attributes(
+                    declarator,
+                    super::specifiers::Specifiers {
+                        alias_alignment: 0,
+                        ..specs
+                    },
+                    attributes,
+                )?;
                 entity
             } else {
                 let entity = self.graph.add_entity(Some(ty), None, Keyword::Int)?;

@@ -21,7 +21,7 @@ pub(super) struct StorageAttributes {
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct LayoutAttributes {
-    alignment: u64,
+    pub(super) alignment: u64,
     packed: bool,
     standard: Option<SourceOffset>,
     pub no_inline: bool,
@@ -147,6 +147,7 @@ impl Analyzer<'_> {
     pub(super) fn apply_storage_attributes(
         &mut self,
         declarator: ast::DeclaratorId,
+        specs: super::specifiers::Specifiers,
         attributes: LayoutAttributes,
     ) -> Result<(), Error> {
         let binding = self
@@ -167,6 +168,7 @@ impl Analyzer<'_> {
             }
             return Err(Error::Invariant("attributes without declaration"));
         };
+        let declared = binding;
         let binding = self.graph.binding(binding);
         if binding.kind == BindingKind::Function {
             self.graph
@@ -183,11 +185,9 @@ impl Analyzer<'_> {
                     "an alignment-specifier on a typedef or function declaration",
                 ));
             }
-            if binding.kind == BindingKind::Alias && attributes.alignment != 0 {
-                return Err(Error::Missing("aligned typedef storage"));
-            }
-            return Ok(());
+            return self.record_alias_alignment(specs, declared, attributes.alignment);
         }
+        self.record_alias_alignment(specs, declared, 0)?;
         let ty = binding
             .ty
             .ok_or(Error::Invariant("aligned variable without type"))?;
@@ -270,7 +270,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 }
-fn target_alignment(value: u64) -> Result<u32, Error> {
+pub(super) fn target_alignment(value: u64) -> Result<u32, Error> {
     // The frozen semantic record stores a target uint32_t request.
     u32::try_from(value & u64::from(u32::MAX)).map_err(|_| Error::Invariant("alignment truncation"))
 }

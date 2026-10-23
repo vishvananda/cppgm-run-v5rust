@@ -54,6 +54,7 @@ pub(super) enum Friendship {
 #[derive(Clone, Copy)]
 pub(super) struct Specifiers {
     pub dependent_uses: u64,
+    pub alias_alignment: u32,
     pub friendship: Friendship,
     pub auto_cv: Cv,
     pub inline: InlinePreference,
@@ -73,6 +74,7 @@ impl Specifiers {
     pub(super) fn implicit(ty: TypeId, dependent_uses: u64) -> Self {
         Self {
             dependent_uses,
+            alias_alignment: 0,
             friendship: Friendship::Ordinary,
             auto_cv: Cv::default(),
             inline: InlinePreference::Unspecified,
@@ -218,6 +220,7 @@ impl Analyzer<'_> {
         let mut int128 = false;
         let mut ty = None;
         let mut declared = None;
+        let mut alias_alignment = 0;
         for syntax_index in 0..self.tree.specs.get(list).len() {
             let specifier = self.tree.specs.get(list)[syntax_index];
             if matches!(
@@ -241,6 +244,16 @@ impl Analyzer<'_> {
             } else {
                 self.specifier_type(specifier, scope, lone)?
             };
+            if let SpecifierKind::Named(name) = specifier.kind
+                && let Some(binding) = self
+                    .graph
+                    .resolved_names
+                    .get(name.index())
+                    .copied()
+                    .flatten()
+            {
+                alias_alignment = self.graph.alias_alignments.alias(binding);
+            }
             if !fundamental.is_empty()
                 && !int128
                 && self.graph.types.get(named).kind
@@ -317,6 +330,7 @@ impl Analyzer<'_> {
         Ok((
             Specifiers {
                 dependent_uses,
+                alias_alignment,
                 friendship,
                 auto_cv: cv,
                 inline,

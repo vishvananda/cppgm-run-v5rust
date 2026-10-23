@@ -126,6 +126,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<super::expression_facts::ExprFacts, Error> {
         let type_operand = ty.is_some();
+        let syntax_type = ty;
         let mut ty = if let Some(ty) = ty {
             self.type_syntax(ty, scope)?
         } else {
@@ -156,7 +157,17 @@ impl Analyzer<'_> {
                 "alignof of an incomplete or function type",
             ));
         }
-        let (_, alignment) = self.semantic_type_size(ty, location)?;
+        let (_, natural) = self.semantic_type_size(ty, location)?;
+        let aliased = if let Some(syntax) = syntax_type {
+            self.graph.alias_alignments.type_operand(syntax)
+        } else {
+            operand.map_or(Ok(0), |operand| self.expression_alias_alignment(operand))?
+        };
+        let alignment = if aliased == 0 {
+            natural
+        } else {
+            u64::from(aliased)
+        };
         let ty = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
         let mut facts =
             self.new_expression_facts(ty, super::expression_facts::ValueCategory::Prvalue)?;

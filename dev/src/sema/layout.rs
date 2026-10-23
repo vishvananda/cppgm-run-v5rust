@@ -710,7 +710,12 @@ impl Analyzer<'_> {
             {
                 requested.max(1)
             } else {
-                natural.max(requested)
+                let declared = if self.graph.entity(member).bit_field.is_none() {
+                    self.graph.alias_alignments.object(member, natural)
+                } else {
+                    natural
+                };
+                declared.max(requested)
             };
             if pack != 0 {
                 member_alignment = member_alignment.min(pack);

@@ -2,6 +2,7 @@
 mod address_arguments;
 mod aggregate_initialization;
 mod alias_templates;
+mod aligned_aliases;
 mod allocation;
 mod analyzer;
 mod anonymous_types;
