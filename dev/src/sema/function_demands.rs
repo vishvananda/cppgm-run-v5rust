@@ -29,6 +29,7 @@ enum DemandKey {
 pub(super) struct DemandList {
     records: Vec<Demand>,
     index: std::collections::HashMap<DemandKey, usize>,
+    pub(super) names_enclosing_statics: bool,
 }
 impl DemandList {
     fn record(&mut self, key: DemandKey, demand: Demand) {

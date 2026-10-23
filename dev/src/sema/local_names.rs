@@ -53,6 +53,34 @@ impl Analyzer<'_> {
             .variable
             .is_some_and(|variable| !variable.automatic)
         {
+            if self
+                .graph
+                .entity(binding.entity)
+                .variable
+                .is_some_and(|variable| {
+                    variable.static_specifier == super::specifiers::StaticSpecifier::Present
+                })
+            {
+                for function in self
+                    .body_context
+                    .iter()
+                    .map(|body| body.entity)
+                    .chain(self.enclosing_bodies.iter().rev().copied())
+                {
+                    if self
+                        .graph
+                        .entity(function)
+                        .scope
+                        .is_some_and(|scope| self.graph.encloses(scope, owner))
+                    {
+                        break;
+                    }
+                    self.graph
+                        .entity_mut(function)
+                        .demands
+                        .names_enclosing_statics = true;
+                }
+            }
             return Ok(());
         }
         if binding.kind == BindingKind::Variable

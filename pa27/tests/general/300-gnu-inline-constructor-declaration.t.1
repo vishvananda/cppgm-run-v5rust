@@ -1,0 +1,10 @@
+struct Gnu {
+  int value;
+  __attribute__((gnu_inline)) Gnu(int n) : value(n + 1) {}
+};
+
+int main()
+{
+  Gnu g(4);
+  return g.value == 9 ? 0 : 1;
+}

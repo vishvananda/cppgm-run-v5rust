@@ -2218,6 +2218,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn demand_entry(&mut self, entry: super::construction::Entry) {
         if self.seen.insert(entry) {
+            if let Some(entity) = entry.entity(self.graph)
+                && !self.graph.lower_gnu_inline(entity)
+                && let Some(owner) = self.graph.lower_enclosing_static_owner(entity)
+            {
+                self.demand(owner);
+            }
             self.pending.function(entry);
         }
     }

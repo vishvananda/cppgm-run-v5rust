@@ -486,17 +486,20 @@ fn emit_pending<'a>(
         if !entries.insert(entry) {
             continue;
         }
+        if entry
+            .entity(graph)
+            .is_some_and(|entity| graph.lower_gnu_inline(entity))
+        {
+            if symbols.has_entry_symbol(entry) {
+                function::declare(output.program, symbols, graph, entry)?;
+            }
+            continue;
+        }
         let body = if let construction::Entry::Function(entity)
         | construction::Entry::DestructorBase(entity)
         | construction::Entry::DestructorDeleting(entity) = entry
         {
             if matches!(entry, construction::Entry::Function(_)) && !emitted.insert(entity) {
-                continue;
-            }
-            if graph.lower_gnu_inline(entity) {
-                if symbols.has_entry_symbol(entry) {
-                    function::declare(output.program, symbols, graph, entry)?;
-                }
                 continue;
             }
             let facts = graph.lower_function(entity)?;

@@ -1,0 +1,18 @@
+__attribute__((always_inline)) inline int f()
+{
+  static int count;
+  auto next = [] { return ++count; };
+  return next();
+}
+
+__attribute__((always_inline)) inline int g()
+{
+  static int count;
+  struct Next { static int next() { return ++count; } };
+  return Next::next();
+}
+
+int main()
+{
+  return f() == 1 && g() == 1 && f() == 2 && g() == 2 ? 0 : 1;
+}

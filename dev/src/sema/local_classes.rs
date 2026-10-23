@@ -82,6 +82,24 @@ impl Analyzer<'_> {
     }
 }
 impl Graph {
+    pub(crate) fn lower_enclosing_static_owner(&self, function: EntityId) -> Option<EntityId> {
+        let node = self.entity(function);
+        if !node.demands.names_enclosing_statics {
+            return None;
+        }
+        let mut home = node.home?;
+        if self.scope(home).kind != ScopeKind::Class {
+            return None;
+        }
+        loop {
+            let scope = self.scope(home);
+            match scope.kind {
+                ScopeKind::Function => return scope.owner,
+                ScopeKind::Namespace => return None,
+                _ => home = scope.parent?,
+            }
+        }
+    }
     pub(super) fn unnamed_local_ordinal(&self, entity: EntityId) -> Option<u32> {
         self.local_classes
             .unnamed
