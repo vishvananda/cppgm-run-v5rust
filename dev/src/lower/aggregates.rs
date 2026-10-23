@@ -967,6 +967,13 @@ impl Function<'_, '_, '_, '_> {
                     count.rows = rows;
                 }
             }
+            // A persistent temporary's Storage path still takes the symbol's
+            // address for each element. The prefix cleanup owns its separate
+            // base address; it must not replace this initialization path.
+            if matches!(path.root, Root::Slot(_)) && path.steps.is_empty() {
+                self.named_contents(ty, input, path, field)?;
+                return self.end_counted_elements(scope);
+            }
             let mut child = Path {
                 root: if matches!(path.root, Root::ArrayStorage(_)) {
                     Root::ArrayStorage(root)

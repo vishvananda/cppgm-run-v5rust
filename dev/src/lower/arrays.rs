@@ -95,11 +95,6 @@ impl Function<'_, '_, '_, '_> {
         }
         let owner = self.extended_temporary_owner(id);
         let destructor = self.symbols.storage_destructor(ty)?;
-        if destructor.is_some() && owner.is_none() {
-            return Err(Error::Missing(
-                "full-expression class array temporary cleanup",
-            ));
-        }
         if destructor.is_some() && self.lifetime.full_expression && !self.lifetime.region {
             self.open_temporary_region()?;
         }
@@ -124,11 +119,13 @@ impl Function<'_, '_, '_, '_> {
                 self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
             }
         }
-        if destructor.is_some()
-            && let Some(owner) = owner
-        {
-            self.close_lifetime_region()?;
-            self.register_extended_temporary(ty, address, owner);
+        if destructor.is_some() {
+            if let Some(owner) = owner {
+                self.close_lifetime_region()?;
+                self.register_extended_temporary(ty, address, owner);
+            } else {
+                self.temporary_alive(ty, address)?;
+            }
         }
         Ok(address)
     }
