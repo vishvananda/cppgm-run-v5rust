@@ -35,4 +35,5 @@ impl PredefinedValues {
 pub struct DriverOptions {
     pub command_line: Vec<u8>,
     pub include_paths: Vec<Vec<u8>>,
+    pub system_include_paths: Vec<Vec<u8>>,
 }

@@ -135,6 +135,14 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
                     .include_paths
                     .push(dir.as_bytes().to_vec());
             }
+            _ if bytes.starts_with(b"-isystem") => {
+                let dir = value(args, &mut index, "-isystem")?
+                    .ok_or(AstToolError::Internal("system include argument"))?;
+                invocation
+                    .preprocessor
+                    .system_include_paths
+                    .push(dir.as_bytes().to_vec());
+            }
             _ if bytes.starts_with(b"-D") => {
                 let define = value(args, &mut index, "-D")?
                     .ok_or(AstToolError::Internal("definition argument"))?
@@ -212,7 +220,24 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             OptionCheck::Optimization(arg) => invocation.level = optimization_level(arg)?,
         }
     }
+    prune_include_paths(&mut invocation.preprocessor);
     Ok(invocation)
+}
+// A directory shared with the system chain is ignored in the user chain.
+// Follow stat identity, including aliases, while retaining first spellings and
+// nonexistent/non-directory entries just as the frozen driver does.
+fn prune_include_paths(options: &mut DriverOptions) {
+    let mut seen = std::collections::HashSet::new();
+    for paths in [
+        &mut options.system_include_paths,
+        &mut options.include_paths,
+    ] {
+        paths.retain(|path| {
+            std::fs::metadata(OsStr::from_bytes(path)).map_or(true, |metadata| {
+                !metadata.is_dir() || seen.insert((metadata.dev(), metadata.ino()))
+            })
+        });
+    }
 }
 fn optimization_level(arg: &OsStr) -> Result<u8, AstToolError> {
     let text = &arg.as_bytes()[2..];

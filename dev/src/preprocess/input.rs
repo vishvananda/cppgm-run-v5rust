@@ -66,8 +66,10 @@ pub(crate) struct SourceInput<'a> {
     include_paths: Vec<Vec<u8>>,
 }
 impl<'a> SourceInput<'a> {
-    pub(crate) fn set_include_paths(&mut self, paths: &[Vec<u8>]) {
-        self.include_paths = paths.to_vec();
+    pub(crate) fn set_include_paths(&mut self, options: &super::options::DriverOptions) {
+        self.include_paths.clone_from(&options.include_paths);
+        self.include_paths
+            .extend_from_slice(&options.system_include_paths);
     }
 
     pub(crate) fn set_binary_exponents(&mut self, enabled: bool) {
