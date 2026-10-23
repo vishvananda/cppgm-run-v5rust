@@ -656,6 +656,22 @@ impl Program {
             None
         }
     }
+    pub(crate) fn set_global_binding_and_object(
+        &mut self,
+        symbol: SymbolId,
+        binding: super::vocabulary::Binding,
+        object: NameId,
+    ) -> Result<(), Error> {
+        let SymbolDetail::Global(id) = self.symbol(symbol).detail else {
+            return Err(Error::Construction(
+                "global metadata on a nonglobal symbol".into(),
+            ));
+        };
+        let metadata = &mut self.globals[id.0 as usize].metadata;
+        metadata.binding = Some(binding);
+        metadata.object = Some(object);
+        Ok(())
+    }
     pub(crate) fn add_alias(&mut self, alias: ObjectAlias) -> bool {
         if !self.alias_names.insert(alias.object) {
             return false;

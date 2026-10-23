@@ -180,6 +180,12 @@ impl Variables {
         }
     }
 }
+impl super::Graph {
+    pub(crate) fn lower_variable_instantiated(&self, entity: EntityId) -> bool {
+        self.variable_instances.member_source(entity).is_some()
+            || self.variable_instances.templates.primary(entity).is_some()
+    }
+}
 impl Analyzer<'_> {
     // template_specializations.cpp::explicit_variable_specialization. A
     // declaration without an initializer blocks primary-definition demand,

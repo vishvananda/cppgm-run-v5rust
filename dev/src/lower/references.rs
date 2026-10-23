@@ -93,7 +93,7 @@ impl Function<'_, '_, '_, '_> {
             );
         self.bind_reference_with_persistence(id, reference, context, persistent)
     }
-    fn bind_reference_with_persistence(
+    pub(super) fn bind_reference_with_persistence(
         &mut self,
         id: ast::ExprId,
         reference: TypeId,

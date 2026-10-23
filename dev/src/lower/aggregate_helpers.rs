@@ -376,12 +376,12 @@ impl Function<'_, '_, '_, '_> {
                             "empty helper reference list",
                         )))?;
                 }
-                if self.reference_lifetimes.static_object
-                    && self.reference_lifetimes.aggregate.is_none()
-                {
-                    self.bind_reference(id, ty, Context::Initialization)?
+                if let Some(owner) = self.reference_lifetimes.aggregate {
+                    self.bind_extended_reference(id, ty, owner)?
                 } else {
-                    self.bind_aggregate_reference(id, ty)?
+                    // The helper's arguments have ordinary full-expression
+                    // lifetimes, even when its aggregate destination persists.
+                    self.bind_reference_with_persistence(id, ty, Context::Initialization, false)?
                 }
             } else if let Some(id) = expr {
                 let value = self.operand(id, Context::Argument)?;

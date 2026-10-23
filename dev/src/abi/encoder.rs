@@ -32,6 +32,10 @@ pub enum Target {
         owner: NodeId,
         sequence: u32,
     },
+    TemporaryGuard {
+        owner: NodeId,
+        sequence: u32,
+    },
     Thunk {
         function: NodeId,
         this: CallOffset,
@@ -950,8 +954,13 @@ impl<'a> Encoder<'a> {
                 });
                 self.encode_type(id)?;
             }
-            Target::ReferenceTemporary { owner, sequence } => {
-                self.put(b"_ZGR");
+            Target::ReferenceTemporary { owner, sequence }
+            | Target::TemporaryGuard { owner, sequence } => {
+                self.put(if matches!(target, Target::TemporaryGuard { .. }) {
+                    b"_ZGV"
+                } else {
+                    b"_ZGR"
+                });
                 self.name(owner, Qualifiers::default())?;
                 if sequence != 0 {
                     let mut value = sequence - 1;

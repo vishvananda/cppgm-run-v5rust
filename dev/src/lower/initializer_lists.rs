@@ -166,8 +166,15 @@ impl Function<'_, '_, '_, '_> {
         storage: Value,
         owner: Option<EntityId>,
     ) -> Result<(), Error> {
-        if self.symbols.object_mode()
-            || owner.is_none()
+        // finish_backing_array registers the whole backing array directly.
+        // It does not use persistent_alive's per-temporary shared guard path.
+        if self.symbols.object_mode() {
+            let Value::Symbol(global) = storage else {
+                return Err(crate::sema::Error::Invariant("persistent list storage").into());
+            };
+            return self.register_static_destruction(global, array);
+        }
+        if owner.is_none() && self.symbols.temporary_owner_is_reference()?
             || self
                 .static_temporaries
                 .as_ref()

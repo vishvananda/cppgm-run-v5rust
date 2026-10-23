@@ -179,6 +179,7 @@ pub(super) struct Symbols<'a, 'source> {
     type_information: type_information::Information,
     exception_information: exception_information::Information,
     temporary_owner: Option<(EntityId, u32)>,
+    owned_temporaries: lifetime_symbols::OwnedTemporaries,
     local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
     local_discriminators: HashMap<EntityId, u32>,
     tls: thread_local_symbols::State,
@@ -265,6 +266,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             type_information: type_information::Information::default(),
             exception_information: exception_information::Information::default(),
             temporary_owner: None,
+            owned_temporaries: lifetime_symbols::OwnedTemporaries::default(),
             local_counts: HashMap::new(),
             local_discriminators: HashMap::new(),
             tls: thread_local_symbols::State::default(),
@@ -915,7 +917,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 .ok_or(crate::lowir::Error::Limit)?;
             format!("__ref_tmp__{}", self.table.reference_temporaries)
         };
-        self.named_reference_temporary(program, &spelling)
+        let result = self.named_reference_temporary(program, &spelling)?;
+        self.note_owned_temporary(result.0);
+        Ok(result)
     }
     fn named_reference_temporary(
         &mut self,
@@ -932,19 +936,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let owner = if let Some(&name) = self.local_static_names.get(&owner) {
             name
         } else {
-            let facts = self.graph.lower_variable(owner)?;
-            let parent = self.scope(facts.home)?;
-            let terminal = self.abi.string(self.cursor.name(facts.named()?))?;
-            self.abi.intern(
-                Node::Name {
-                    parent,
-                    terminal,
-                    internal: facts.internal,
-                    data_member: false,
-                    occurrence: 0,
-                },
-                &[],
-            )?
+            self.variable_abi_name(owner)?
         };
         let mut bytes = Vec::new();
         abi::encoder::Encoder::encode(
@@ -963,6 +955,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
         owner: Option<(EntityId, u32)>,
     ) -> Option<(EntityId, u32)> {
         std::mem::replace(&mut self.temporary_owner, owner)
+    }
+    pub(super) fn temporary_owner_is_reference(&self) -> Result<bool, Error> {
+        let Some((owner, _)) = self.temporary_owner else {
+            return Ok(false);
+        };
+        Ok(matches!(
+            self.graph
+                .lower_type(self.graph.lower_entity_type(owner)?)?,
+            TypeView::Reference { .. }
+        ))
     }
     pub(super) fn data_symbol(
         &mut self,

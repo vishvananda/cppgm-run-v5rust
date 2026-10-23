@@ -107,9 +107,21 @@ impl Startup {
             finalizers,
         });
         let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
+        let unordered = guard.is_some() && dynamic;
+        if unordered {
+            function.symbols.begin_owned_temporaries(entity);
+        }
         let result = function.initialize_guarded_global(entity, initializer, guard, dynamic);
+        let finished = if unordered {
+            function
+                .symbols
+                .end_owned_temporaries(function.builder.program())
+        } else {
+            Ok(())
+        };
         function.symbols.replace_temporary_owner(saved);
         result?;
+        finished?;
         self.next_block = function.next_block;
         self.terminated = function.terminated;
         self.selector = function.handlers.next_selector;

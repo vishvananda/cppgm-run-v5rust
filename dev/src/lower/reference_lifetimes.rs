@@ -29,6 +29,33 @@ impl Function<'_, '_, '_, '_> {
         let Value::Symbol(global) = storage else {
             return Ok(());
         };
+        if self.symbols.storage_destructor(ty)?.is_none() {
+            return Ok(());
+        }
+        if self.static_temporaries.is_none()
+            && let Some(guard) = self
+                .symbols
+                .temporary_registration_guard(self.builder.program(), global)?
+        {
+            use crate::lowir::{
+                model::{Facts, InstructionKind as I},
+                vocabulary::{Compare, Type},
+            };
+            let flag = Value::Symbol(guard);
+            let loaded = self.emit(I::Load(Facts::memory(false, true), Type::I64, flag), ty)?;
+            let zero = self.builder.integer(0)?;
+            let test = self.emit(I::Compare(Compare::Ne, Type::I64, loaded.value, zero), ty)?;
+            let run = self.new_block("local_static_ctor_run")?;
+            let done = self.new_block("local_static_ctor_done")?;
+            self.effect(I::Branch(test.value, done, run))?;
+            self.terminated = true;
+            self.place(run)?;
+            let one = self.builder.integer(1)?;
+            self.effect(I::Store(Facts::memory(false, true), Type::I64, one, flag))?;
+            self.register_static_destruction(global, ty)?;
+            self.jump(done)?;
+            return self.place(done);
+        }
         // A static reference registers its successfully initialized temporaries
         // together. A static object's reference-member temporary registers as
         // soon as it completes, before later members can throw.

@@ -374,6 +374,9 @@ mod tests {
             "__attribute__((always_inline)) inline int f(int n){static int s;return s+=n;}int(*p)(int)=f;int g(){return f(2)+p(3);}",
             "__attribute__((always_inline)) inline int f(){auto a=[] {static int s;return ++s;};return a();}int g(){return f();}",
             "struct R{long a,b,c;};__attribute__((always_inline)) inline R f(long n){return {n,2,3};}R g(){return f(1);}",
+            "struct S{int v;S(int n):v(n){}~S(){}};template<class T>struct A{static const S&r;};template<class T>const S&A<T>::r=S(1);int f(){return A<int>::r.v;}",
+            "struct S{int v;S(int n):v(n){}~S(){}};struct R{const int&a;const S&b;};int n();template<class T>struct A{static R r;};template<class T>R A<T>::r={n(),S(2)};int f(){return A<int>::r.b.v;}",
+            "struct S{int v;S(int n):v(n){}~S(){}};template<class T>const S&r=S(1);int f(){return r<int>.v;}",
         ] {
             let mut results = Vec::new();
             for retained in [false, true] {
