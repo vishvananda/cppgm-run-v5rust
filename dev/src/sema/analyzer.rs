@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum AnalysisMode {
+pub(crate) enum AnalysisMode {
     Types,
     Semantics,
     Lowering,
@@ -556,6 +556,7 @@ impl<'tree> Analyzer<'tree> {
             ast::DeclKind::Simple {
                 specifiers,
                 declarators,
+                ..
             } => self.simple_declaration(id, specifiers, declarators, scope),
             ast::DeclKind::Class(specifier) => {
                 let ty = self.specifier_type(specifier, scope, true)?;

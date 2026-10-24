@@ -573,6 +573,13 @@ impl<'a> Encoder<'a> {
                 self.put(b"li");
                 self.source_name(suffix);
             }
+            Node::DecompositionName => {
+                self.put(b"DC");
+                for &name in self.graph.items(terminal) {
+                    self.source_name(name);
+                }
+                self.put(b"E");
+            }
             Node::UnnamedType(number) => {
                 self.put(b"Ut");
                 if number != 0 {

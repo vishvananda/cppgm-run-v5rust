@@ -88,7 +88,7 @@ impl Function<'_, '_, '_, '_> {
         tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
         let facts = self.graph.lower_variable(entity)?;
-        if facts.name.is_none() {
+        if facts.name.is_none() && self.graph.lower_decomposition(entity).is_none() {
             return self.anonymous_static(entity);
         }
         let aggregate = matches!(

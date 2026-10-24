@@ -938,6 +938,7 @@ impl Renderer<'_, '_> {
             DeclKind::Simple {
                 specifiers,
                 declarators,
+                ..
             } => {
                 self.tasks.push(Render::Text(";"));
                 for (index, &init) in self

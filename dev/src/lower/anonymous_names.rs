@@ -229,3 +229,46 @@ impl Declarations {
         Ok(None)
     }
 }
+
+pub(super) fn decomposition_spelling(
+    graph: &Graph,
+    cursor: &crate::syntax::cursor::Cursor<'_>,
+    entity: EntityId,
+) -> Result<Option<String>, Error> {
+    let Some(bindings) = graph.lower_decomposition(entity) else {
+        return Ok(None);
+    };
+    let mut spelling = String::from("__binding");
+    for &binding in bindings {
+        let name = graph.lower_variable(binding)?.named()?;
+        spelling.push_str("__");
+        spelling.push_str(
+            std::str::from_utf8(cursor.name(name))
+                .map_err(|_| Error::Missing("local name spelling"))?,
+        );
+    }
+    Ok(Some(spelling))
+}
+pub(super) fn variable_terminal(
+    graph: &Graph,
+    cursor: &crate::syntax::cursor::Cursor<'_>,
+    abi: &mut AbiGraph,
+    entity: EntityId,
+) -> Result<NodeId, Error> {
+    if let Some(bindings) = graph.lower_decomposition(entity) {
+        let mut names = Vec::with_capacity(bindings.len());
+        for &binding in bindings {
+            let name = graph.lower_variable(binding)?.named()?;
+            names.push(abi.string(cursor.name(name))?);
+        }
+        return Ok(abi.intern(Node::DecompositionName, &names)?);
+    }
+    let facts = graph.lower_variable(entity)?;
+    let identifier = facts
+        .name
+        .or_else(|| graph.lower_first_named_member(facts.ty))
+        .ok_or(crate::sema::Error::Invariant(
+            "anonymous object without named member",
+        ))?;
+    Ok(abi.string(cursor.name(identifier))?)
+}

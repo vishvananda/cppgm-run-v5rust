@@ -926,6 +926,7 @@ fn source_facts_preserve_specifier_initializer_and_declarator_boundaries() {
     let DeclKind::Simple {
         specifiers,
         declarators,
+        ..
     } = tree
         .declarations
         .get(tree.decl_lists.get(unit.declarations.unwrap())[0])
@@ -2406,6 +2407,7 @@ fn attributes_retain_typed_operands_sites_and_owner_order() {
     let DeclKind::Simple {
         specifiers,
         declarators,
+        ..
     } = node.kind
     else {
         panic!("expected object");

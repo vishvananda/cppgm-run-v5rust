@@ -776,10 +776,14 @@ impl Parser<'_> {
                 attributes: super::storage::List::default(),
                 location,
                 kind: DeclKind::Simple {
+                    decomposition: false,
                     specifiers,
                     declarators: List::default(),
                 },
             });
+        }
+        if !self.in_class() && self.at_structured_binding()? {
+            return self.structured_binding(specifiers, location);
         }
         if self.in_class() && self.at(P::Colon)? {
             return self.bit_field(location, specifiers, None);
@@ -865,6 +869,7 @@ impl Parser<'_> {
             attributes: super::storage::List::default(),
             location,
             kind: DeclKind::Simple {
+                decomposition: false,
                 specifiers,
                 declarators,
             },

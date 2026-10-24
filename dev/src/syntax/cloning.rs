@@ -674,7 +674,9 @@ impl<'a> Cloner<'a> {
             DeclKind::Simple {
                 specifiers,
                 declarators,
+                decomposition,
             } => DeclKind::Simple {
+                decomposition,
                 specifiers: self.specifiers(specifiers)?,
                 declarators: self.list(
                     declarators,

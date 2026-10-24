@@ -276,7 +276,10 @@ impl Function<'_, '_, '_, '_> {
         entity: EntityId,
         initializer: Option<ast::Initializer>,
     ) -> Result<bool, Error> {
-        if !self.graph.lower_is_variable(entity) || self.graph.lower_program_storage(entity) {
+        if self.graph.lower_binding_alias(entity).is_some()
+            || !self.graph.lower_is_variable(entity)
+            || self.graph.lower_program_storage(entity)
+        {
             return Ok(false);
         }
         if let Some(constructor) = self.graph.lower_construction(entity)

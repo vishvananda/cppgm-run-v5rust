@@ -197,6 +197,7 @@ fn body_parameter_source(
 /// Semantic analysis exclusively borrows the unit syntax: defaults append at
 /// selected calls, while this driver drains unit-tail body demands. Both paths
 /// read ordinary slab IDs directly, with no pattern redirection or overlay map.
+#[cfg(test)]
 pub(crate) fn analyze_unit(
     tree: &mut ast::Tree,
     cursor: &mut Cursor<'_>,
@@ -205,11 +206,28 @@ pub(crate) fn analyze_unit(
     semantics: bool,
     lowering: bool,
 ) -> Result<Graph, Error> {
+    let mode = if lowering {
+        super::analyzer::AnalysisMode::Lowering
+    } else if semantics {
+        super::analyzer::AnalysisMode::Semantics
+    } else {
+        super::analyzer::AnalysisMode::Types
+    };
+    analyze_unit_with_mode(tree, cursor, declarations, budget, mode, lowering)
+}
+
+pub(crate) fn analyze_unit_with_mode(
+    tree: &mut ast::Tree,
+    cursor: &mut Cursor<'_>,
+    declarations: List<ast::DeclId>,
+    budget: StackBudget,
+    mode: super::analyzer::AnalysisMode,
+    hosted: bool,
+) -> Result<Graph, Error> {
     let mut analyzer = Analyzer::new(tree, cursor, budget)?;
-    // The supported LowIR invocation selects the host environment. Dump
-    // invocations use the course environment. Retain this independently of
-    // analysis mode when demanded bodies borrow the graph again.
-    analyzer.set_hosted(lowering);
+    analyzer.set_hosted(hosted);
+    let semantics = mode != super::analyzer::AnalysisMode::Types;
+    let lowering = mode == super::analyzer::AnalysisMode::Lowering;
     analyzer.set_semantics(semantics);
     if lowering {
         analyzer.set_lowering();

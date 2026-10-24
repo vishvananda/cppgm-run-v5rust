@@ -523,6 +523,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             DeclKind::Simple {
                 specifiers,
                 declarators,
+                ..
             } => {
                 self.open("simple-declaration", Payload::None)?;
                 if !declarators.is_empty() {

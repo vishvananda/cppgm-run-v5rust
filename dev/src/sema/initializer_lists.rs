@@ -648,6 +648,7 @@ mod tests {
             let ast::DeclKind::Simple {
                 specifiers,
                 declarators,
+                ..
             } = declaration.kind
             else {
                 panic!("placeholder declaration");

@@ -1,0 +1,9 @@
+struct Pair{int x;int y;};
+auto [gx,gy]=Pair{1,2};
+inline int f(){static auto [x,y]=Pair{3,4}; x+=1; return x+y;}
+constexpr int constant_sum(){ Pair p={2,3}; auto& [x,y]=p; x+=y; int a[2]={x,4}; auto& [b,c]=a; return b+c; }
+static_assert(constant_sum()==9, "bindings preserve constant storage");
+constexpr int source[2]={7,8};
+const auto& [cx,cy]=source;
+static_assert(cx+cy==15,"constant array aliases");
+int main(){gx=5; return cx+cy==15 && constant_sum()==9 && gy==2 && f()==8 && f()==9?0:1;}

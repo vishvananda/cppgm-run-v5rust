@@ -394,6 +394,7 @@ impl Analyzer<'_> {
             ast::DeclKind::Simple {
                 specifiers,
                 declarators,
+                ..
             } => {
                 let declarators = self.tree.init_declarators.get(declarators);
                 if declarators.len() != 1 || declarators[0].initializer.is_some() {

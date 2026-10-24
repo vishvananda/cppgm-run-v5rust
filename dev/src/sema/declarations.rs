@@ -48,6 +48,15 @@ impl Analyzer<'_> {
         let specs =
             self.declaration_specifiers(specifiers, scope, first, declarators.is_empty())?;
         self.keep_specifier_access();
+        if matches!(
+            declaration.kind,
+            ast::DeclKind::Simple {
+                decomposition: true,
+                ..
+            }
+        ) {
+            return self.structured_binding_declaration(specs, declarators, scope, location);
+        }
         if specs.friendship == super::specifiers::Friendship::Friend && declarators.is_empty() {
             self.friend_type(specs.ty, scope, location)?;
             return Ok(());

@@ -307,6 +307,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 let inner = depth + usize::from(block);
                 for init in self.tree.init_declarators.get(declarators).iter().rev() {
                     let binding = self.declared(init.declarator)?;
+                    if self
+                        .graph
+                        .lower_binding_alias(self.graph.binding(binding).entity)
+                        .is_some()
+                    {
+                        continue;
+                    }
                     self.work
                         .push((Item::Binding(binding, init.initializer), inner));
                 }

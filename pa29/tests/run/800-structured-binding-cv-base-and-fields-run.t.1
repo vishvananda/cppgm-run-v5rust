@@ -1,0 +1,5 @@
+struct Base { int first; int second; };
+struct Derived: Base {};
+struct Flags { unsigned first:3; unsigned second:5; };
+struct Const { mutable int first; int second; };
+int main(){ Derived d; d.first=2; d.second=3; auto& [a,b]=d; a=4; Flags f={2,3}; auto& [x,y]=f; x+=1; y=7; const Const c={1,2}; const auto& [m,n]=c; m=8; return d.first==4 && x==3 && y==7 && n==2 && c.first==8?0:1; }

@@ -7,6 +7,7 @@ pub(crate) use super::atomic_operations::{
     AtomicArithmetic, AtomicIntrinsic, AtomicOperation, AtomicOrder,
 };
 pub(crate) use super::base_projections::{BaseProjection, BaseRoute, BaseRoutes, VcallSignature};
+pub(crate) use super::bindings::{BindingAlias, BindingTarget};
 pub(crate) use super::builtin_calls::BuiltinFunction;
 pub(crate) use super::constexpr_values::TemporaryId;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
@@ -1646,7 +1647,8 @@ impl Graph {
         let Some(mut home) = entity.home else {
             return false;
         };
-        if !properties.automatic
+        if self.lower_binding_alias(id).is_some()
+            || !properties.automatic
             || self.scope(home).kind != ScopeKind::Block
             || self.types.get(ty).cv.0 & 2 != 0
             || !matches!((&self.types.get(ty).kind, &self.types.get(result).kind),
@@ -2479,7 +2481,16 @@ impl Graph {
         let binding = facts
             .member
             .ok_or(Error::Invariant("bit-field without designation"))?;
-        Ok(self.binding(binding).entity)
+        let entity = self.binding(binding).entity;
+        Ok(
+            if let Some(alias) = self.lower_binding_alias(entity)
+                && let BindingTarget::Member { member, .. } = alias.target
+            {
+                member
+            } else {
+                entity
+            },
+        )
     }
     pub(crate) fn lower_unnamed_bit_field(&self, entity: EntityId) -> bool {
         self.unnamed_bit_field(entity)

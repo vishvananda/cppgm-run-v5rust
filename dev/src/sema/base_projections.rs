@@ -110,7 +110,7 @@ pub(super) enum OffsetSearch {
     Constant,
 }
 impl Graph {
-    pub(super) fn lower_path_projection(&self, path: BasePathId) -> Result<BaseProjection, Error> {
+    pub(crate) fn lower_path_projection(&self, path: BasePathId) -> Result<BaseProjection, Error> {
         let edges = self.base_paths.get(path);
         if edges
             .iter()

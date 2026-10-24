@@ -683,6 +683,9 @@ impl Analyzer<'_> {
                     .or_else(|| self.graph.resolved_name(name))
                     .ok_or(Error::Invariant("constant place without selected binding"))?;
                 let binding = self.graph.binding(binding);
+                if let Some(alias) = self.graph.lower_binding_alias(binding.entity) {
+                    return self.constant_binding_place(alias, facts.ty, location);
+                }
                 if let Some(mut place) = self.constexpr_frames.local(binding.entity) {
                     place.designated = facts.ty;
                     return Ok(place);

@@ -433,7 +433,12 @@ impl Parser<'_> {
                 if !parser.specifiers_have_type(specifiers) {
                     return parser.decline_operand();
                 }
-                let declarator = parser.declarator(super::declarators::Mode::Named)?;
+                let (declarator, bindings) = if parser.at_structured_binding()? {
+                    let (object, names) = parser.binding_names(location)?;
+                    (object, Some(names))
+                } else {
+                    (parser.declarator(super::declarators::Mode::Named)?, None)
+                };
                 if !parser.accept(P::Colon)? {
                     return Err(ParseError::Syntax {
                         location: parser.location()?,
@@ -441,10 +446,19 @@ impl Parser<'_> {
                     });
                 }
                 parser.declare_from_specifiers(declarator, specifiers);
-                Ok((specifiers, declarator))
+                let bindings = bindings
+                    .map(|names| {
+                        let object = parser
+                            .tree
+                            .declarators
+                            .add(*parser.tree.declarators.get(declarator))?;
+                        parser.binding_declaration(specifiers, location, object, &names, None)
+                    })
+                    .transpose()?;
+                Ok((specifiers, declarator, bindings))
             })?
         };
-        if let Some((specifiers, declarator)) = range_declaration {
+        if let Some((specifiers, declarator, bindings)) = range_declaration {
             let range = if self.at(P::LeftBrace)? {
                 self.braced_list()?
             } else {
@@ -452,6 +466,22 @@ impl Parser<'_> {
             };
             self.expect(P::RightParen)?;
             let body = self.statement()?;
+            let body = if let Some(declaration) = bindings {
+                let declaration = self.tree.statements.add(super::ast::Statement {
+                    location,
+                    kind: StmtKind::Declaration(declaration),
+                })?;
+                let start = self.tree.stmt_lists.begin();
+                self.tree.stmt_lists.push(declaration);
+                self.tree.stmt_lists.push(body);
+                let items = self.tree.stmt_lists.finish(start)?;
+                self.tree.statements.add(super::ast::Statement {
+                    location,
+                    kind: StmtKind::Compound(items),
+                })?
+            } else {
+                body
+            };
             return Ok(StmtKind::RangeFor {
                 specifiers,
                 declarator,

@@ -400,6 +400,7 @@ pub(crate) enum DeclKind {
     },
     Empty,
     Simple {
+        decomposition: bool,
         specifiers: List<Specifier>,
         declarators: List<InitDeclarator>,
     },

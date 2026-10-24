@@ -321,7 +321,14 @@ impl Analyzer<'_> {
                 continue;
             };
             let binding = self.graph.binding(binding);
-            if binding.kind == BindingKind::Variable {
+            if binding.kind == BindingKind::Variable
+                && self.graph.lower_binding_alias(binding.entity).is_none()
+            {
+                if self.graph.lower_decomposition(binding.entity).is_some()
+                    && item.initializer.is_none()
+                {
+                    continue;
+                }
                 self.constant_local_variable(binding.entity, item.initializer, node.location)?;
             }
         }

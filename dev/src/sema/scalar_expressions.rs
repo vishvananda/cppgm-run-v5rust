@@ -528,6 +528,15 @@ impl Analyzer<'_> {
             facts.field_identity = self.graph.entity(binding.entity).bit_field;
             facts.set_bit_field(facts.field_identity.is_some());
         }
+        if let Some(alias) = self.graph.lower_binding_alias(binding.entity)
+            && let super::bindings::BindingTarget::Member { member, .. } = alias.target
+        {
+            let bit_field = self.graph.entity(member).bit_field.is_some();
+            facts.set_bit_field(bit_field);
+            if bit_field {
+                facts.member = found.binding;
+            }
+        }
         self.local_name(
             id,
             &mut facts,

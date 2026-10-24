@@ -122,6 +122,7 @@ pub enum Node {
         occurrence: u32,
     },
     UnnamedType(u32),
+    DecompositionName,
     ClosureName {
         /// Zero when omitted; otherwise the Itanium closure number plus one.
         number: u32,

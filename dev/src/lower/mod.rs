@@ -18,6 +18,7 @@ mod atomic_intrinsics;
 mod atomic_places;
 mod base_initialization;
 mod base_projections;
+mod bindings;
 mod bit_fields;
 mod block_calls;
 mod class_conditionals;

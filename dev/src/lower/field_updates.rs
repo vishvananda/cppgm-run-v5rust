@@ -154,7 +154,22 @@ impl Function<'_, '_, '_, '_> {
         let entity = self.graph.lower_designated_bit_field(id)?;
         let field = self.field(entity)?;
         let source = self.graph.lower_expression(id)?.ty;
-        let root = if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
+        let alias = if let ExprKind::Id(name) = self.tree.expressions.get(id).kind {
+            self.graph.lower_binding_alias(self.graph.lower_name(name)?)
+        } else {
+            None
+        };
+        let root = if let Some(alias) = alias {
+            let object = self.binding_object(alias, self.tree.expressions.get(id).location)?;
+            if let crate::sema::lowering::BindingTarget::Member {
+                path: Some(path), ..
+            } = alias.target
+            {
+                self.base_projection(object, source, self.graph.lower_path_projection(path)?)?
+            } else {
+                object
+            }
+        } else if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
             if op.token.as_punctuator() == Some(P::Arrow) {
                 self.arrow_operand(base)?.value
             } else {

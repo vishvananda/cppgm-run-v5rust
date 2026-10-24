@@ -24,7 +24,8 @@ impl Function<'_, '_, '_, '_> {
         initializer: Option<ast::Initializer>,
         live: Option<LiveId>,
     ) -> Result<Option<LiveId>, Error> {
-        if self.graph.lower_is_variable(entity)
+        if self.graph.lower_binding_alias(entity).is_none()
+            && self.graph.lower_is_variable(entity)
             && self.graph.lower_automatic(entity)
             && (self.automatic_destructor(entity)?.is_some()
                 || self.initializer_extends_temporary(initializer)?)
@@ -252,6 +253,9 @@ impl Function<'_, '_, '_, '_> {
         };
         for init in self.tree.init_declarators.get(declarators) {
             let entity = self.graph.lower_declared(init.declarator)?;
+            if self.graph.lower_binding_alias(entity).is_some() {
+                continue;
+            }
             if *alive && self.variable_throws(entity, init.initializer)? {
                 return Ok(true);
             }

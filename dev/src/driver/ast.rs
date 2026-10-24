@@ -264,12 +264,16 @@ fn emit_preprocessed(
         let (tree, cursor, declarations) = unit
             .semantic_inputs()
             .map_err(|_| AstToolError::Internal("missing syntax"))?;
-        let analysis = crate::sema::analyze_unit(
+        let analysis = crate::sema::analyze_unit_with_mode(
             tree,
             cursor,
             declarations,
             stack_budget,
-            matches!(mode, EmitMode::Semantics | EmitMode::LowIr),
+            match mode {
+                EmitMode::Ast | EmitMode::Types => crate::sema::AnalysisMode::Types,
+                EmitMode::LowIr if hosted => crate::sema::AnalysisMode::Lowering,
+                EmitMode::Semantics | EmitMode::LowIr => crate::sema::AnalysisMode::Semantics,
+            },
             hosted,
         );
         Some(analysis.map_err(|error| match error {
@@ -406,6 +410,39 @@ pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hosted_environment_keeps_type_and_semantic_analysis_distinct() {
+        let source =
+            SourceBuffer::new(b"int f(){return 1;}int g(){auto x=f();return x;}".to_vec()).unwrap();
+        let options = crate::preprocess::options::DriverOptions {
+            hosted: true,
+            ..Default::default()
+        };
+        let values = PredefinedValues::default();
+        for mode in [EmitMode::Types, EmitMode::Semantics] {
+            let mut output = Vec::new();
+            let result = emit_configured_unit(
+                &source,
+                b"hosted-analysis-mode",
+                UnitOptions {
+                    values: &values,
+                    preprocessor: &options,
+                    stack_budget: StackBudget::default(),
+                },
+                Destination::Text(&mut output),
+                1,
+                mode,
+            );
+            if matches!(mode, EmitMode::Types) {
+                assert!(
+                    matches!(result, Err(AstToolError::Diagnostic(bytes)) if bytes.windows(b"unsupported decltype operand".len()).any(|bytes| bytes == b"unsupported decltype operand"))
+                );
+            } else {
+                assert!(result.is_ok());
+            }
+        }
+    }
+
     #[test]
     fn explicit_variable_labels_bypass_abi_name_demand() {
         use crate::{

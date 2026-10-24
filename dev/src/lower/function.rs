@@ -659,6 +659,12 @@ impl Function<'_, '_, '_, '_> {
         tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
         let entity = self.graph.lower_declared(declarator)?;
+        if self.graph.lower_binding_alias(entity).is_some() {
+            return Ok(());
+        }
+        if self.graph.lower_decomposition(entity).is_some() && initializer.is_none() {
+            return Ok(());
+        }
         self.local_entity(entity, initializer, tokens)
     }
     pub(super) fn begin_local_initializer(

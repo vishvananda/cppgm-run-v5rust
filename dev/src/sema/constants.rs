@@ -758,7 +758,8 @@ impl Analyzer<'_> {
             return Err(not_constant(location, "a value-dependent constant"));
         }
         if self.semantic() && !skipping && binding.kind == BindingKind::Variable
-            && binding.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Reference { element, .. } if self.integral_kind(element).is_some()))
+            && (self.graph.lower_binding_alias(binding.entity).is_some()
+                || binding.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Reference { element, .. } if self.integral_kind(element).is_some())))
         {
             let place = self.constant_place(id, scope)?;
             return self.read_constant_integer(place, location);

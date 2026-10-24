@@ -16,6 +16,7 @@ mod atomic_builtins;
 mod atomic_operations;
 mod base_layout;
 mod base_projections;
+mod bindings;
 mod bit_fields;
 mod bit_layout;
 mod builtin_calls;
@@ -163,7 +164,10 @@ mod triviality;
 mod type_queries;
 mod type_transforms;
 mod wide_integers;
+pub(crate) use analyzer::AnalysisMode;
+#[cfg(test)]
 pub(crate) use template_bodies::analyze_unit;
+pub(crate) use template_bodies::analyze_unit_with_mode;
 mod named_templates;
 mod partial_classes;
 mod partial_specializations;

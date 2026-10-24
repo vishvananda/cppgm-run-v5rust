@@ -1,0 +1,5 @@
+int copies, destroyed;
+struct Box{int value;Box(int x):value(x){} Box(const Box& x):value(x.value){++copies;} ~Box(){++destroyed;}};
+struct Pair{Box x;int y;};
+Box f(){Pair p={Box(3),4};auto& [x,y]=p; return x;}
+int main(){int result; {Box x=f();result=x.value;} return result==3 && copies==1 && destroyed==2?0:1;}

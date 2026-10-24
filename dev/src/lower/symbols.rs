@@ -1727,7 +1727,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let mut components = vec![if let Some(name) = facts.name {
             self.identifier(name)?.to_owned()
         } else {
-            "__anonymous_union_object".to_owned()
+            super::anonymous_names::decomposition_spelling(self.graph, self.cursor, entity)?
+                .unwrap_or_else(|| "__anonymous_union_object".to_owned())
         }];
         let mut scope = facts.home;
         while let (Some(parent), name) = self.graph.lower_presentation_scope(scope) {
@@ -1739,14 +1740,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
         // Ordinary named variables publish their ABI identity even when their
         // external spelling is direct. An explicit object label bypasses ABI
         // name construction, as variable_object does in the frozen owner.
-        let named_identity = facts
-            .name
-            .filter(|_| self.graph.lower_asm_label(entity).is_none())
-            .map(|_| self.variable_abi_name(entity))
-            .transpose()?;
+        let named_identity = if (facts.name.is_some()
+            || self.graph.lower_decomposition(entity).is_some())
+            && self.graph.lower_asm_label(entity).is_none()
+        {
+            Some(self.variable_abi_name(entity)?)
+        } else {
+            None
+        };
         let object = if let Some(label) = self.graph.lower_asm_label(entity) {
             Some(program.names.intern_bytes(label)?)
-        } else if facts.name.is_none() && self.graph.lower_first_named_member(facts.ty).is_none() {
+        } else if facts.name.is_none()
+            && self.graph.lower_decomposition(entity).is_none()
+            && self.graph.lower_first_named_member(facts.ty).is_none()
+        {
             None
         } else if facts.name.is_some()
             && (facts.c_linkage
@@ -1926,13 +1933,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         let facts = self.graph.lower_variable(entity)?;
         let parent = self.scope(facts.home)?;
-        let identifier = facts
-            .name
-            .or_else(|| self.graph.lower_first_named_member(facts.ty))
-            .ok_or(crate::sema::Error::Invariant(
-                "anonymous object without named member",
-            ))?;
-        let terminal = self.abi.string(self.cursor.name(identifier))?;
+        let terminal = super::anonymous_names::variable_terminal(
+            self.graph,
+            self.cursor,
+            &mut self.abi,
+            entity,
+        )?;
         if facts.c_linkage {
             let name = self.abi.name(None, terminal, &[])?;
             self.variable_names.insert(entity, name);
@@ -1942,7 +1948,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             Node::Name {
                 parent,
                 terminal,
-                internal: facts.name.is_some()
+                internal: (facts.name.is_some()
+                    || self.graph.lower_decomposition(entity).is_some())
                     && facts.internal
                     && !self.graph.lower_anonymous_namespace(facts.home),
                 hidden_tags: false,
@@ -2006,7 +2013,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             } else {
                 owner_name
             };
-        if facts.name.is_none() {
+        if facts.name.is_none() && self.graph.lower_decomposition(entity).is_none() {
             let spelling = format!("__local_static__{owner_name}__decl{ordinal}__object");
             let object = self.table.allocate(program, &spelling, None, !weak)?;
             let metadata = Metadata {
@@ -2043,7 +2050,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.local_statics.insert(entity, symbols);
             return Ok(symbols);
         }
-        let name = self.identifier(facts.named()?)?;
+        let name = facts
+            .name
+            .map(|name| self.identifier(name))
+            .transpose()?
+            .unwrap_or("object");
         let spelling = if let Some(tokens) =
             tokens.filter(|span| !weak && !instantiated && span.end > span.begin)
         {
@@ -2063,13 +2074,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             &[],
         )?;
-        let terminal = self.abi.string(self.cursor.name(facts.named()?))?;
-        let count = self
-            .local_counts
-            .entry((lexical, facts.named()?))
-            .or_default();
-        let occurrence = *count;
-        *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
+        let terminal = super::anonymous_names::variable_terminal(
+            self.graph,
+            self.cursor,
+            &mut self.abi,
+            entity,
+        )?;
+        let occurrence = if let Some(identifier) = facts.name {
+            let count = self.local_counts.entry((lexical, identifier)).or_default();
+            let occurrence = *count;
+            *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
+            occurrence
+        } else {
+            0
+        };
         let name = self.tagged_entity_name(
             Node::Name {
                 parent: Some(parent),

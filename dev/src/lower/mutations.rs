@@ -282,7 +282,18 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         entity: crate::sema::lowering::EntityId,
     ) -> Result<Value, Error> {
-        let location = self.tree.expressions.get(id).location;
+        self.entity_place(
+            entity,
+            self.graph.lower_expression(id)?.ty,
+            self.tree.expressions.get(id).location,
+        )
+    }
+    pub(super) fn entity_place(
+        &mut self,
+        entity: crate::sema::lowering::EntityId,
+        source: crate::sema::lowering::TypeId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Value, Error> {
         if let Some(place) = self
             .symbols
             .predefined_variable(self.builder.program(), entity)?
@@ -293,6 +304,8 @@ impl Function<'_, '_, '_, '_> {
             Ok(place)
         } else if let Some(&place) = self.locals.get(&entity) {
             self.reference_holder(place, self.local_object_type(entity)?)
+        } else if let Some(alias) = self.graph.lower_binding_alias(entity) {
+            self.binding_alias_place(alias, source, location)
         } else if !self.graph.lower_is_variable(entity) {
             self.symbols.demand(entity);
             self.symbols
@@ -316,7 +329,7 @@ impl Function<'_, '_, '_, '_> {
                 .into());
             }
             if let Some(value) = self.graph.lower_evaluated_reference(entity)? {
-                return self.evaluated_reference_place(value, self.graph.lower_expression(id)?.ty);
+                return self.evaluated_reference_place(value, source);
             }
             let place = self.global_place(entity)?;
             self.reference_holder(place, self.graph.lower_entity_type(entity)?)

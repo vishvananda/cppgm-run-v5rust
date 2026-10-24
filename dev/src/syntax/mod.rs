@@ -3,6 +3,7 @@ mod angles;
 mod assembly;
 pub(crate) mod ast;
 mod attributes;
+mod bindings;
 mod classes;
 pub(crate) mod cloning;
 mod conflicts;
