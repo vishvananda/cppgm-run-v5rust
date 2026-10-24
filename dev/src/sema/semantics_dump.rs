@@ -472,9 +472,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 break;
             }
             if node.name.is_some()
-                || node
-                    .owner
-                    .is_some_and(|class| self.graph.lower_closure(class).is_some())
+                || node.owner.is_some_and(|class| {
+                    self.graph.lower_closure(class).is_some()
+                        || self.graph.entity(class).local_type_ordinal.is_some()
+                })
             {
                 parts.push(id);
             }
@@ -488,6 +489,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             let node = self.graph.scope(scope);
             if let Some(closure) = node.owner.and_then(|class| self.graph.lower_closure(class)) {
                 write!(self.output, "__lambda{}", closure.ordinal)?;
+            } else if let Some(ordinal) = node
+                .owner
+                .and_then(|class| self.graph.entity(class).local_type_ordinal)
+            {
+                write!(self.output, "__local_type{ordinal}")?;
             } else {
                 self.name(node.name)?;
             }
@@ -712,11 +718,20 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         qualified.map_or(Item::This(object), |(ty, cv)| Item::QualifiedThis(ty, cv))
     }
     fn function_type(&mut self, id: BindingId) -> io::Result<()> {
-        let ty = self
+        let binding = self.graph.binding(id);
+        // Return deduction publishes the signature on the shared entity and
+        // its origin binding. A later declaration's binding can still contain
+        // the placeholder; it must display the entity's deduced signature.
+        let ty = if self
             .graph
-            .binding(id)
-            .ty
-            .ok_or_else(|| io::Error::other("function without type"))?;
+            .predefined_variables
+            .placeholder_result(binding.entity)
+        {
+            self.graph.entity(binding.entity).ty
+        } else {
+            binding.ty
+        }
+        .ok_or_else(|| io::Error::other("function without type"))?;
         let ty = self.graph.types.canonical_view(ty);
         let Some((object, cv)) = self.function_object(id) else {
             return self.ty(ty);

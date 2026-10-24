@@ -245,6 +245,45 @@ mod tests {
     };
 
     #[test]
+    fn redeclarations_display_the_shared_deduced_signature() {
+        let source = SourceBuffer::new(
+            b"auto f();auto f();auto f(){return 1;}\
+              struct C{auto g();};auto C::g(){return 2L;}\
+              auto& r();int object;auto& r(){return object;}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"deduced-redeclarations").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        graph
+            .print_semantics(tree, cursor, declarations, &mut output)
+            .unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("function-definition f function of () returning int\n"));
+        assert!(output.contains(
+            "function-definition C::g function of (pointer to struct C) returning long int\n"
+        ));
+        assert!(
+            output.contains(
+                "function-definition r function of () returning lvalue-reference to int\n"
+            )
+        );
+        assert!(!output.contains("typename auto"));
+    }
+
+    #[test]
     fn selected_result_demands_reuse_one_body_and_preserve_template_patterns() {
         let source = SourceBuffer::new(
             b"template<class T>auto identity(T value){return value;}\

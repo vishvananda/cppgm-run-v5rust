@@ -1,0 +1,25 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable value struct __local_type1
+    constructor-action __local_type1::__local_type1
+      call-expression prvalue void
+        callee __local_type1::__local_type1 function of (pointer to struct __local_type1) returning void
+        unary-expression prvalue pointer to struct __local_type1 OP_AMP:&
+          id-expression lvalue struct __local_type1 value
+  function-definition result function of () returning int
+    compound-statement
+      return-statement
+        call-expression prvalue int
+          callee __local_type1::read function of (pointer to struct __local_type1) returning int
+          unary-expression prvalue pointer to struct __local_type1 OP_AMP:&
+            id-expression lvalue struct __local_type1 value
+  function-definition __local_type1::__local_type1 function of (pointer to struct __local_type1) returning void
+    parameter this pointer to struct __local_type1
+    compound-statement
+  function-definition __local_type1::read function of (pointer to struct __local_type1) returning int
+    parameter this pointer to struct __local_type1
+    compound-statement
+      return-statement
+        literal prvalue int 7
+end translation unit
