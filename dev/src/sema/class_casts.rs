@@ -130,7 +130,11 @@ impl Analyzer<'_> {
         if class == source || self.graph.is_base_of(class, source) {
             return Ok(false);
         }
-        if self.visible_conversion_functions(source)?.is_empty() {
+        if self
+            .visible_conversion_functions(source)?
+            .as_slice(&self.graph)
+            .is_empty()
+        {
             return Ok(true);
         }
         self.single_constructor_not_viable(class, facts)

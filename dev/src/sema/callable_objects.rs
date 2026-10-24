@@ -142,11 +142,12 @@ impl Analyzer<'_> {
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
         let args = argument_buffer.as_slice();
-        let count = self.visible_conversion_functions(class)?.len();
+        let visible = self.visible_conversion_functions(class)?;
+        let count = visible.as_slice(&self.graph).len();
         let mut best = None;
         let mut ambiguous = false;
         for index in 0..count {
-            let binding = self.visible_conversion_functions(class)?[index];
+            let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.explicitness == Explicitness::Explicit || entity.template_head.is_some() {
                 continue;

@@ -261,10 +261,11 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("class initialization without class"));
         };
         if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
-            return Err(Error::at(
+            // initialize_class uses error(), even within a soft trait query.
+            return Err(Error::UnconditionalDiagnostic {
                 location,
-                "initialization of an incomplete class object",
-            ));
+                message: "initialization of an incomplete class object",
+            });
         }
 
         let list = match initializer.kind {
@@ -450,7 +451,10 @@ impl Analyzer<'_> {
             && let Some(source) = self
                 .graph
                 .class_of(self.graph.expression_facts.get(*id)?.ty)
-            && !self.visible_conversion_functions(source)?.is_empty()
+            && !self
+                .visible_conversion_functions(source)?
+                .as_slice(&self.graph)
+                .is_empty()
         {
             let sequence = self.class_initializer_conversion(*id, target, context, location)?;
             match sequence.user_conversion {

@@ -46,9 +46,10 @@ impl Analyzer<'_> {
         if !self.graph.entity(class).complete {
             return Ok(());
         }
-        let count = self.visible_conversion_functions(class)?.len();
+        let visible = self.visible_conversion_functions(class)?;
+        let count = visible.as_slice(&self.graph).len();
         for index in 0..count {
-            let binding = self.visible_conversion_functions(class)?[index];
+            let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.explicitness == Explicitness::Explicit {
                 continue;

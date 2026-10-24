@@ -27,13 +27,7 @@ impl Analyzer<'_> {
         let (first, second, _) = self.predicate_types(syntax, scope, false)?;
         let ty = self.predicate_result_type(predicate)?;
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
-        let bits = self.predicate_value(
-            predicate,
-            first,
-            second,
-            self.tree.expressions.get(id).location,
-            scope,
-        )?;
+        let bits = self.predicate_value(id, predicate, first, second, scope)?;
         facts.folded = Some(bits);
         super::record(
             &mut self.graph.constant_facts,
@@ -45,6 +39,7 @@ impl Analyzer<'_> {
 
     pub(super) fn predicate_constant(
         &mut self,
+        id: ast::ExprId,
         predicate: T,
         syntax: List<ast::TypeId>,
         scope: ScopeId,
@@ -60,7 +55,7 @@ impl Analyzer<'_> {
         }
         Ok(Constant {
             high: 0,
-            bits: self.predicate_value(predicate, first, second, location, scope)?,
+            bits: self.predicate_value(id, predicate, first, second, scope)?,
             ty: self.predicate_result_type(predicate)?,
         })
     }
@@ -102,12 +97,24 @@ impl Analyzer<'_> {
 
     fn predicate_value(
         &mut self,
+        id: ast::ExprId,
         predicate: T,
         ty: TypeId,
         second: Option<TypeId>,
-        location: SourceOffset,
         scope: ScopeId,
     ) -> Result<u64, Error> {
+        let location = self.tree.expressions.get(id).location;
+        if predicate.is_expression() {
+            return self
+                .expression_predicate(
+                    id,
+                    predicate,
+                    ty,
+                    second.ok_or(Error::Invariant("expression predicate without second type"))?,
+                    scope,
+                )
+                .map(u64::from);
+        }
         if predicate.is_property() {
             return self
                 .property_predicate(predicate, ty, scope, location)
@@ -242,6 +249,12 @@ impl Analyzer<'_> {
             | T::HasNothrowCopy
             | T::HasNothrowAssign => {
                 return Err(Error::Invariant("class predicate without a result"));
+            }
+            T::IsAssignable | T::IsNothrowAssignable | T::IsTriviallyAssignable => {
+                return Err(Error::Invariant("assignment predicate without a result"));
+            }
+            T::IsConvertible | T::IsConvertibleTo | T::IsNothrowConvertible => {
+                return Err(Error::Invariant("conversion predicate without a result"));
             }
         };
         Ok(u64::from(value))

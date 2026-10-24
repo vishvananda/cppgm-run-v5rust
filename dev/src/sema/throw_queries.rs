@@ -13,7 +13,7 @@ use super::{
 use crate::syntax::ast::{self, ExprKind};
 
 impl Analyzer<'_> {
-    fn constructor_function_may_throw(
+    pub(super) fn constructor_function_may_throw(
         &mut self,
         id: super::construction::ConstructorId,
     ) -> Result<bool, Error> {
@@ -117,7 +117,7 @@ impl Analyzer<'_> {
         result
     }
 
-    fn aggregate_destruction_may_throw(
+    pub(super) fn aggregate_destruction_may_throw(
         &mut self,
         class: super::graph::EntityId,
     ) -> Result<bool, Error> {

@@ -71,6 +71,7 @@ mod explicit_instantiations;
 mod explicit_specializations;
 mod expression_facts;
 mod expression_keys;
+mod expression_predicates;
 mod expressions;
 mod final_overriders;
 mod fixed_expressions;

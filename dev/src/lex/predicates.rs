@@ -55,10 +55,16 @@ pub(crate) enum TypePredicate {
     HasNothrowConstructor,
     HasNothrowCopy,
     HasNothrowAssign,
+    IsAssignable,
+    IsNothrowAssignable,
+    IsTriviallyAssignable,
+    IsConvertible,
+    IsConvertibleTo,
+    IsNothrowConvertible,
 }
 
 impl TypePredicate {
-    const SPELLINGS: [(Self, &'static str); 53] = [
+    const SPELLINGS: [(Self, &'static str); 59] = [
         (Self::IsClass, "__is_class"),
         (Self::IsEnum, "__is_enum"),
         (Self::IsUnion, "__is_union"),
@@ -115,6 +121,12 @@ impl TypePredicate {
         (Self::HasNothrowConstructor, "__has_nothrow_constructor"),
         (Self::HasNothrowCopy, "__has_nothrow_copy"),
         (Self::HasNothrowAssign, "__has_nothrow_assign"),
+        (Self::IsAssignable, "__is_assignable"),
+        (Self::IsNothrowAssignable, "__is_nothrow_assignable"),
+        (Self::IsTriviallyAssignable, "__is_trivially_assignable"),
+        (Self::IsConvertible, "__is_convertible"),
+        (Self::IsConvertibleTo, "__is_convertible_to"),
+        (Self::IsNothrowConvertible, "__is_nothrow_convertible"),
     ];
 
     pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
@@ -128,11 +140,22 @@ impl TypePredicate {
     }
 
     pub(crate) fn is_property(self) -> bool {
-        self as usize >= Self::IsTrivial as usize
+        self as usize >= Self::IsTrivial as usize && !self.is_expression()
+    }
+
+    pub(crate) fn is_expression(self) -> bool {
+        self as usize >= Self::IsAssignable as usize
+    }
+
+    pub(crate) fn is_assignment(self) -> bool {
+        matches!(
+            self,
+            Self::IsAssignable | Self::IsNothrowAssignable | Self::IsTriviallyAssignable
+        )
     }
 
     pub(crate) fn arity(self) -> usize {
-        if matches!(self, Self::IsSame | Self::IsBaseOf) {
+        if matches!(self, Self::IsSame | Self::IsBaseOf) || self.is_expression() {
             2
         } else {
             1

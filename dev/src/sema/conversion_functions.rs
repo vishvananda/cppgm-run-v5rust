@@ -19,6 +19,22 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::{HashMap, HashSet};
 
+/// Completed declarations have a unit-owned immutable set. A class still being
+/// defined has a query-owned snapshot, which nested lookup cannot overwrite.
+pub(super) struct VisibleConversions(ConversionSet);
+enum ConversionSet {
+    Complete(EntityId),
+    Current(Vec<BindingId>),
+}
+impl VisibleConversions {
+    pub(super) fn as_slice<'a>(&'a self, graph: &'a super::graph::Graph) -> &'a [BindingId] {
+        match &self.0 {
+            ConversionSet::Complete(class) => &graph.conversion_sets[class],
+            ConversionSet::Current(bindings) => bindings,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ConversionUse {
     Scalar,
@@ -144,11 +160,12 @@ impl Analyzer<'_> {
         // 12.3.2, 10.2: a conversion-function-id uses canonical result
         // identity, independent of the tokens (including aliases) naming it.
         // Hiding precedes filtering and ordinary object overload resolution.
-        let count = self.visible_conversion_functions(class)?.len();
+        let visible = self.visible_conversion_functions(class)?;
+        let count = visible.as_slice(&self.graph).len();
         let mut found = super::lookup::LookupResult::default();
         let mut declared = None;
         for index in 0..count {
-            let binding = self.graph.conversion_sets[&class][index];
+            let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.template_head.is_some() {
                 continue;
@@ -176,7 +193,7 @@ impl Analyzer<'_> {
         if found.binding.is_none() {
             let mut specializations = Vec::new();
             for index in 0..count {
-                let binding = self.graph.conversion_sets[&class][index];
+                let binding = visible.as_slice(&self.graph)[index];
                 if self
                     .graph
                     .entity(self.graph.binding(binding).entity)
@@ -256,10 +273,11 @@ impl Analyzer<'_> {
         class: EntityId,
         target: ConversionTarget,
     ) -> Result<Option<BindingId>, Error> {
-        let count = self.visible_conversion_functions(class)?.len();
+        let visible = self.visible_conversion_functions(class)?;
+        let count = visible.as_slice(&self.graph).len();
         let mut found = None;
         for index in 0..count {
-            let binding = self.graph.conversion_sets[&class][index];
+            let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.explicitness == Explicitness::Explicit || entity.template_head.is_some() {
                 continue;
@@ -341,11 +359,9 @@ impl Analyzer<'_> {
     pub(super) fn visible_conversion_functions(
         &mut self,
         class: EntityId,
-    ) -> Result<&[BindingId], Error> {
-        if !self.graph.entity(class).complete {
-            return Err(Error::Missing("conversion set of an incomplete class"));
-        }
-        if !self.graph.conversion_sets.contains_key(&class) {
+    ) -> Result<VisibleConversions, Error> {
+        let complete = self.graph.entity(class).complete;
+        if !complete || !self.graph.conversion_sets.contains_key(&class) {
             let mut out = Vec::new();
             let mut hiding = HashMap::<(TypeId, bool), u32>::new();
             let mut seen = HashMap::<EntityId, u8>::new();
@@ -388,9 +404,12 @@ impl Analyzer<'_> {
                     }
                 }
             }
+            if !complete {
+                return Ok(VisibleConversions(ConversionSet::Current(out)));
+            }
             self.graph.conversion_sets.insert(class, out);
         }
-        Ok(&self.graph.conversion_sets[&class])
+        Ok(VisibleConversions(ConversionSet::Complete(class)))
     }
 
     fn conversion_hiding_key(&mut self, binding: BindingId) -> Result<(TypeId, bool), Error> {
@@ -464,6 +483,12 @@ impl Analyzer<'_> {
         let Some(class) = self.graph.class_of(source.ty) else {
             return Ok(());
         };
+        // user_conversion/direct_reference_conversion require a complete
+        // source before admitting its functions as implicit candidates. Named
+        // conversion lookup inside the class still uses its current snapshot.
+        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+            return Ok(());
+        }
         let object = match self.graph.types.get(target).kind {
             TypeKind::Reference { element, .. } => element,
             _ => target,
@@ -479,9 +504,10 @@ impl Analyzer<'_> {
             ty: source.ty,
             category: source.category,
         };
-        let count = self.visible_conversion_functions(class)?.len();
+        let visible = self.visible_conversion_functions(class)?;
+        let count = visible.as_slice(&self.graph).len();
         for index in 0..count {
-            let binding = self.graph.conversion_sets[&class][index];
+            let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.explicitness == Explicitness::Explicit && !direct {
                 continue;

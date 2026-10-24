@@ -347,7 +347,7 @@ impl Analyzer<'_> {
                 self.offsetof_constant(ty, designator, scope, location)?
             }
             ExprKind::TypePredicate { predicate, types } => {
-                self.predicate_constant(predicate, types, scope, location)?
+                self.predicate_constant(id, predicate, types, scope, location)?
             }
             ExprKind::TypeTrait {
                 keyword: Keyword::Alignof,
