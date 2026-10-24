@@ -680,7 +680,7 @@ impl Analyzer<'_> {
             || self.graph.entity(entity).layout_category == LayoutCategory::NonPod
             || !self.graph.entity(entity).bases.is_empty();
         let mut packs_all = true;
-        let mut data_bits = data_size * 8;
+        let mut data_bits = data_size.wrapping_mul(8);
         for index in 0..self.graph.entity(entity).members.len() {
             let member = self.graph.entity(entity).members[index];
             let ty = self
@@ -774,7 +774,7 @@ impl Analyzer<'_> {
                 )?;
                 self.graph.entity_mut(member).member_offset = Some(offset);
                 if !empty {
-                    data_bits = tail * 8;
+                    data_bits = tail.wrapping_mul(8);
                     bits.end_run(offset);
                 }
                 size = size.max(offset.wrapping_add(bytes));
@@ -801,7 +801,7 @@ impl Analyzer<'_> {
             }
             self.graph.entity_mut(member).member_offset = Some(offset);
             bits.end_run(offset);
-            data_bits = data_size * 8;
+            data_bits = data_size.wrapping_mul(8);
             size = if union {
                 size.max(bytes)
             } else {
