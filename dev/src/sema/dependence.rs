@@ -260,6 +260,17 @@ impl Analyzer<'_> {
                             || component.arguments.is_some()
                     }))
             }
+            ExprKind::Typeof { ty, operand } => {
+                if let Some(operand) = operand {
+                    self.expression_type_dependence(operand, scope, precise)
+                } else {
+                    let ty = self.type_syntax(
+                        ty.ok_or(Error::Invariant("typeof without operand"))?,
+                        scope,
+                    )?;
+                    Ok(self.exception_dependent_type(ty))
+                }
+            }
             ExprKind::TypeTransform { types, .. } => {
                 for index in 0..self.tree.type_lists.get(types).len() {
                     let ty = self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;

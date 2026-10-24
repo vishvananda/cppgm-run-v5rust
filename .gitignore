@@ -51,3 +51,5 @@ dev/obj-clang-libcxx/
 **/__pycache__/
 /.test_failed
 /.test_summary*
+
+/artifacts/pa29-typeof/

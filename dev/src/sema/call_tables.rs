@@ -326,6 +326,7 @@ impl Graph {
             | ExprKind::Keyword(_)
             | ExprKind::Sizeof { .. }
             | ExprKind::TypeTrait { .. }
+            | ExprKind::Typeof { .. }
             | ExprKind::TypeTransform { .. }
             | ExprKind::TypePredicate { .. }
             | ExprKind::OffsetOf { .. }

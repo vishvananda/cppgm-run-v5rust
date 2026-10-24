@@ -997,6 +997,22 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         ));
         Ok(())
     }
+    fn builtin_query(
+        &mut self,
+        spelling: &'static str,
+        ty: Option<TypeId>,
+        operand: Option<ExprId>,
+    ) -> io::Result<()> {
+        self.open("builtin-trait-expression", Payload::Text(spelling))?;
+        if let Some(operand) = operand {
+            self.tasks.push(Task::Expression(operand));
+        }
+        if let Some(ty) = ty {
+            self.tasks.push(Task::Type(ty));
+        }
+        Ok(())
+    }
+
     fn builtin_types(&mut self, spelling: &'static str, types: List<TypeId>) -> io::Result<()> {
         self.open("builtin-trait-expression", Payload::Text(spelling))?;
         self.tasks.extend(
@@ -1168,6 +1184,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     self.tasks.push(Task::Expression(operand));
                 }
             }
+            ExprKind::Typeof { ty, operand } => self.builtin_query("__typeof__", ty, operand)?,
             ExprKind::TypeTransform { transform, types } => {
                 self.builtin_types(transform.spelling(), types)?;
             }
@@ -1175,27 +1192,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 self.builtin_types(predicate.spelling(), types)?;
             }
             ExprKind::OffsetOf { ty, designator } => {
-                self.open(
-                    "builtin-trait-expression",
-                    Payload::Text("__builtin_offsetof"),
-                )?;
-                self.tasks.push(Task::Expression(designator));
-                self.tasks.push(Task::Type(ty));
+                self.builtin_query("__builtin_offsetof", Some(ty), Some(designator))?;
             }
             ExprKind::OffsetOfBase(ty) => {
-                self.open(
-                    "builtin-trait-expression",
-                    Payload::Text("__builtin_offsetof"),
-                )?;
-                self.tasks.push(Task::Type(ty));
+                self.builtin_query("__builtin_offsetof", Some(ty), None)?;
             }
             ExprKind::VaArg { operand, ty } => {
-                self.open(
-                    "builtin-trait-expression",
-                    Payload::Text("__builtin_va_arg"),
-                )?;
-                self.tasks.push(Task::Expression(operand));
-                self.tasks.push(Task::Type(ty));
+                self.builtin_query("__builtin_va_arg", Some(ty), Some(operand))?;
             }
             ExprKind::TypeTrait {
                 keyword,

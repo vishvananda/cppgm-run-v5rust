@@ -189,7 +189,7 @@ impl Analyzer<'_> {
                     }
                 }
             }
-            ExprKind::TypeTrait { ty, operand, .. } => {
+            ExprKind::Typeof { ty, operand } | ExprKind::TypeTrait { ty, operand, .. } => {
                 if let Some(ty) = ty {
                     self.type_syntax(ty, scope)?;
                 }

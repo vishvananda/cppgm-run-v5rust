@@ -1867,7 +1867,8 @@ fn expression_label(
         ExprKind::Conditional { .. } => "conditional-expression",
         ExprKind::Subscript { .. } => "subscript-expression",
         ExprKind::Member { .. } => "member-expression",
-        ExprKind::TypeTransform { .. }
+        ExprKind::Typeof { .. }
+        | ExprKind::TypeTransform { .. }
         | ExprKind::TypePredicate { .. }
         | ExprKind::OffsetOf { .. }
         | ExprKind::OffsetOfBase(_)

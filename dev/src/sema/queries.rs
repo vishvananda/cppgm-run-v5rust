@@ -1,4 +1,4 @@
-// Translated from sema/constant_evaluator.cpp and layout.cpp's scalar queries. See NOTICE.
+// Translated from sema/{constant_evaluator,analyzer_traits}.cpp and layout.cpp. See NOTICE.
 //! Unevaluated operands consume declared types; they never demand an object construction.
 use super::{
     Error,
@@ -15,6 +15,42 @@ use crate::{
     types::FundamentalType as F,
 };
 impl Analyzer<'_> {
+    pub(super) fn typeof_expression(
+        &mut self,
+        id: ast::ExprId,
+        ty: Option<ast::TypeId>,
+        operand: Option<ast::ExprId>,
+        scope: ScopeId,
+    ) -> Result<super::expression_facts::ExprFacts, Error> {
+        use super::expression_facts::ValueCategory as V;
+        let (ty, category) = if let Some(operand) = operand {
+            // The enclosing decltype establishes the unevaluated context. Its
+            // final-call exemption belongs to this query, not its operand:
+            // typeof still checks destruction of a class prvalue operand.
+            let facts = self.typed_expression(operand, scope)?;
+            self.check_resolved_function(operand)?;
+            self.check_temporary_destruction(facts, scope, self.tree.expressions.get(id).location)?;
+            (facts.ty, V::Prvalue)
+        } else {
+            // Facts never hold reference types. The enclosing decltype puts
+            // a type-id's reference back from this category.
+            let ty =
+                self.type_syntax(ty.ok_or(Error::Invariant("typeof without operand"))?, scope)?;
+            match self.graph.types.get(ty).kind {
+                TypeKind::Reference { element, kind } => (
+                    element,
+                    if kind == RefKind::Lvalue {
+                        V::Lvalue
+                    } else {
+                        V::Xvalue
+                    },
+                ),
+                _ => (ty, V::Prvalue),
+            }
+        };
+        self.new_expression_facts(ty, category)
+    }
+
     pub(super) fn semantic_size(
         &mut self,
         ty: Option<ast::TypeId>,
@@ -549,6 +585,7 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(tail).kind,
                     ExprKind::Call { .. }
                         | ExprKind::TypeTrait { .. }
+                        | ExprKind::Typeof { .. }
                         | ExprKind::TypeTransform { .. }
                         | ExprKind::TypePredicate { .. }
                         | ExprKind::OffsetOf { .. }
@@ -575,6 +612,7 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(tail).kind,
                     ExprKind::Call { .. }
                         | ExprKind::TypeTrait { .. }
+                        | ExprKind::Typeof { .. }
                         | ExprKind::TypeTransform { .. }
                         | ExprKind::TypePredicate { .. }
                         | ExprKind::OffsetOf { .. }

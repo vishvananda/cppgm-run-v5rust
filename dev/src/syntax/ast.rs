@@ -532,6 +532,10 @@ pub(crate) enum ExprKind {
         operand: Option<ExprId>,
         parenthesized: bool,
     },
+    Typeof {
+        ty: Option<TypeId>,
+        operand: Option<ExprId>,
+    },
     TypeTransform {
         transform: crate::lex::type_transforms::TypeTransform,
         types: List<TypeId>,

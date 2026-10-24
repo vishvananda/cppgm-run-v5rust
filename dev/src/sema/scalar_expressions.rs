@@ -250,6 +250,7 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.semantic_alignment(ty, operand, scope, node.location)?,
+            ExprKind::Typeof { ty, operand } => self.typeof_expression(id, ty, operand, scope)?,
             ExprKind::TypeTransform { transform, types } => {
                 self.transform_expression(id, transform, types, scope)?
             }

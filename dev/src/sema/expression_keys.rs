@@ -55,6 +55,7 @@ pub(crate) enum KeyNode {
     Arguments,
     OffsetOf,
     OffsetOfBase,
+    Typeof,
     VaArg,
     Keyword,
     This,
@@ -290,6 +291,7 @@ impl Analyzer<'_> {
             ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
                 return self.key_size(operand, ty, scope, expr, key);
             }
+            ExprKind::Typeof { ty, operand } => return self.key_typeof(ty, operand, scope, key),
             ExprKind::TypeTransform { transform, types } => {
                 key.words.extend([
                     KeyWord::Transform(transform),
@@ -476,6 +478,25 @@ impl Analyzer<'_> {
             }
         }
         Ok(())
+    }
+
+    fn key_typeof(
+        &mut self,
+        ty: Option<ast::TypeId>,
+        operand: Option<ast::ExprId>,
+        scope: ScopeId,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
+        key.words.push(KeyWord::Node(KeyNode::Typeof));
+        if let Some(ty) = ty {
+            let ty = self.type_syntax(ty, scope)?;
+            self.key_type(ty, key)?;
+        }
+        if let Some(operand) = operand {
+            self.key_expression(operand, scope, key)
+        } else {
+            Ok(true)
+        }
     }
 
     fn key_this(&mut self, scope: ScopeId, key: &mut ExpressionKey) -> Result<(), Error> {

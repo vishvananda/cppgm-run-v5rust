@@ -411,6 +411,7 @@ impl Analyzer<'_> {
             | ExprKind::Sizeof { .. }
             | ExprKind::SizeofPack { .. }
             | ExprKind::TypeTrait { .. }
+            | ExprKind::Typeof { .. }
             | ExprKind::TypeTransform { .. }
             | ExprKind::TypePredicate { .. }
             | ExprKind::OffsetOf { .. }

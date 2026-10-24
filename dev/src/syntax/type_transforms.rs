@@ -9,6 +9,13 @@ use super::{
 use crate::lex::{pp_lexer::Punctuator as P, type_transforms::TypeTransform};
 
 impl Parser<'_> {
+    pub(super) fn at_typeof(&mut self, ahead: usize) -> Result<bool, ParseError> {
+        Ok(
+            matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(name)
+            if matches!(self.cursor.name(name), b"__typeof" | b"__typeof__")),
+        )
+    }
+
     pub(super) fn at_integer_pack(&mut self, ahead: usize) -> Result<bool, ParseError> {
         Ok(
             matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(name)

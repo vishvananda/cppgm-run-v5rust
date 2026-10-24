@@ -299,7 +299,9 @@ impl Analyzer<'_> {
                     work.extend(self.tree.expr_lists.get(arguments).iter().rev().copied());
                     work.push(callee);
                 }
-                ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
+                ExprKind::Typeof { ty, operand }
+                | ExprKind::Sizeof { ty, operand, .. }
+                | ExprKind::TypeTrait { ty, operand, .. } => {
                     if let Some(ty) = ty {
                         let ty = self.type_syntax(ty, scope)?;
                         if self.exception_dependent_type(ty) {
@@ -546,7 +548,8 @@ impl Analyzer<'_> {
                                 (OwnProbe::Expression(operand), next),
                             ]);
                         }
-                        ExprKind::Sizeof { ty, operand, .. }
+                        ExprKind::Typeof { ty, operand }
+                        | ExprKind::Sizeof { ty, operand, .. }
                         | ExprKind::TypeTrait { ty, operand, .. } => {
                             if let Some(ty) = ty {
                                 work.push((OwnProbe::Type(ty), depth));

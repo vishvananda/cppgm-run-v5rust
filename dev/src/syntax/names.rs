@@ -48,7 +48,8 @@ impl Parser<'_> {
             (matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(_))
                 && self.at_type_predicate(ahead)?.is_none()
                 && !self.at_offsetof(ahead)?
-                && !self.at_integer_pack(ahead)?)
+                && !self.at_integer_pack(ahead)?
+                && !self.at_typeof(ahead)?)
                 || (self.at_ahead(P::Scope, ahead)?
                     && matches!(self.cursor.peek(ahead + 1)?.kind, TokenKind::Identifier(_))),
         )
@@ -97,9 +98,11 @@ impl Parser<'_> {
             if !qualified
                 && (self.keyword()? == Some(K::Decltype)
                     || (matches!(mode, NameMode::Expression | NameMode::Type)
-                        && self.at_type_transform()?.is_some()))
+                        && (self.at_type_transform()?.is_some() || self.at_typeof(0)?)))
             {
-                let operand = if let Some(transform) = self.at_type_transform()? {
+                let operand = if self.at_typeof(0)? {
+                    self.typeof_operand()?
+                } else if let Some(transform) = self.at_type_transform()? {
                     self.transform_operand(transform)?
                 } else {
                     self.cursor.advance()?;

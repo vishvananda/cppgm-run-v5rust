@@ -284,7 +284,9 @@ impl Analyzer<'_> {
             | ExprKind::Cast { ty, operand, .. } => {
                 work.extend([Probe::Type(ty), Probe::Expression(operand)]);
             }
-            ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
+            ExprKind::Typeof { ty, operand }
+            | ExprKind::Sizeof { ty, operand, .. }
+            | ExprKind::TypeTrait { ty, operand, .. } => {
                 work.extend(ty.map(Probe::Type));
                 work.extend(operand.map(Probe::Expression));
             }

@@ -596,13 +596,13 @@ impl Parser<'_> {
                 .iter()
                 .any(|specifier| matches!(specifier.kind, SpecifierKind::Named(_)))
     }
-    fn named_operand(&mut self) -> Result<Operand, ParseError> {
+    fn named_operand(&mut self, function_types: bool) -> Result<Operand, ParseError> {
         let location = self.location()?;
         let (name, binding) = self.name()?;
         if self.is_type_name(name, binding, false, false)
             && let Some(ty) = self.attempt(|parser| {
                 let ty = parser.type_from_name(name, location)?;
-                parser.operand_type_end(ty, false)
+                parser.operand_type_end(ty, function_types)
             })?
         {
             return Ok(Operand::Type(ty));
@@ -668,7 +668,7 @@ impl Parser<'_> {
             let reading = if keyword == K::Noexcept {
                 Operand::Expression(parser.expression()?)
             } else if named {
-                parser.named_operand()?
+                parser.named_operand(false)?
             } else {
                 let ty = if keyword == K::Alignof || parser.type_specifier_start(0)? {
                     parser.attempt(|parser| {
@@ -717,11 +717,36 @@ impl Parser<'_> {
                 kind: ExprKind::SizeofPack(name),
             });
         }
+        let (ty, operand, parenthesized) = self.sizeof_operand(false)?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Sizeof {
+                ty,
+                operand,
+                parenthesized,
+            },
+        })
+    }
+    pub(super) fn typeof_operand(&mut self) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        self.cursor.advance()?;
+        let (ty, operand, _) = self.sizeof_operand(true)?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Typeof { ty, operand },
+        })
+    }
+    fn sizeof_operand(
+        &mut self,
+        function_types: bool,
+    ) -> Result<(Option<TypeId>, Option<ExprId>, bool), ParseError> {
+        // typeof reads a named T() as a function type-id; sizeof reads the
+        // functional cast. Both retain the same bounded name/operand reading.
         if self.at(P::LeftParen)? && self.name_starts_ahead(1)? {
             let start = self.location()?;
             self.cursor.advance()?;
             let reading = self.without_angle(|parser| {
-                let reading = parser.named_operand()?;
+                let reading = parser.named_operand(function_types)?;
                 parser.expect(P::RightParen)?;
                 Ok(reading)
             })?;
@@ -743,21 +768,14 @@ impl Parser<'_> {
                     }
                 }
             };
-            return self.tree.expressions.add(Expression {
-                location,
-                kind: ExprKind::Sizeof {
-                    ty,
-                    operand,
-                    parenthesized,
-                },
-            });
+            return Ok((ty, operand, parenthesized));
         }
         let mut parenthesized = false;
         let ty = if self.at(P::LeftParen)? && self.type_specifier_start(1)? {
             self.attempt(|parser| {
                 parser.cursor.advance()?;
                 let ty = parser.without_angle(|parser| parser.type_id(false))?;
-                if parser.named_function_type(ty) {
+                if !function_types && parser.named_function_type(ty) {
                     return Err(ParseError::Syntax {
                         location: parser.location()?,
                         message: "syntax error",
@@ -782,14 +800,7 @@ impl Parser<'_> {
         } else {
             None
         };
-        self.tree.expressions.add(Expression {
-            location,
-            kind: ExprKind::Sizeof {
-                ty,
-                operand,
-                parenthesized,
-            },
-        })
+        Ok((ty, operand, parenthesized))
     }
     pub(super) fn primary(&mut self) -> Result<ExprId, ParseError> {
         let token = self.token()?;

@@ -773,6 +773,15 @@ impl<'a, 'source> Renderer<'a, 'source> {
             ExprKind::VaArg { operand, ty } => {
                 self.builtin_expression("__builtin_va_arg", ty, Some(operand));
             }
+            ExprKind::Typeof { ty, operand } => {
+                self.text("__typeof__(");
+                self.tasks.push(Render::Text(")"));
+                if let Some(ty) = ty {
+                    self.tasks.push(Render::Type(ty));
+                } else if let Some(operand) = operand {
+                    self.tasks.push(Render::Expression(operand));
+                }
+            }
             ExprKind::TypeTrait {
                 keyword,
                 ty,

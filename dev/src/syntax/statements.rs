@@ -45,6 +45,9 @@ impl Parser<'_> {
             Some(_) => return Ok(StatementHead::Expression),
             None => (),
         }
+        if self.at_typeof(0)? {
+            return Ok(StatementHead::TentativeDeclaration);
+        }
         if !matches!(self.token()?.kind, TokenKind::Identifier(_)) && !self.at(P::Scope)? {
             return Ok(StatementHead::Expression);
         }
