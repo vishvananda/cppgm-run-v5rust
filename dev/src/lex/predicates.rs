@@ -61,10 +61,16 @@ pub(crate) enum TypePredicate {
     IsConvertible,
     IsConvertibleTo,
     IsNothrowConvertible,
+    IsConstructible,
+    IsNothrowConstructible,
+    IsTriviallyConstructible,
+    ReferenceBindsToTemporary,
+    ReferenceConstructsFromTemporary,
+    ReferenceConvertsFromTemporary,
 }
 
 impl TypePredicate {
-    const SPELLINGS: [(Self, &'static str); 59] = [
+    const SPELLINGS: [(Self, &'static str); 65] = [
         (Self::IsClass, "__is_class"),
         (Self::IsEnum, "__is_enum"),
         (Self::IsUnion, "__is_union"),
@@ -127,6 +133,24 @@ impl TypePredicate {
         (Self::IsConvertible, "__is_convertible"),
         (Self::IsConvertibleTo, "__is_convertible_to"),
         (Self::IsNothrowConvertible, "__is_nothrow_convertible"),
+        (Self::IsConstructible, "__is_constructible"),
+        (Self::IsNothrowConstructible, "__is_nothrow_constructible"),
+        (
+            Self::IsTriviallyConstructible,
+            "__is_trivially_constructible",
+        ),
+        (
+            Self::ReferenceBindsToTemporary,
+            "__reference_binds_to_temporary",
+        ),
+        (
+            Self::ReferenceConstructsFromTemporary,
+            "__reference_constructs_from_temporary",
+        ),
+        (
+            Self::ReferenceConvertsFromTemporary,
+            "__reference_converts_from_temporary",
+        ),
     ];
 
     pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
@@ -155,10 +179,28 @@ impl TypePredicate {
     }
 
     pub(crate) fn arity(self) -> usize {
-        if matches!(self, Self::IsSame | Self::IsBaseOf) || self.is_expression() {
+        if self.is_construction() {
+            0
+        } else if matches!(self, Self::IsSame | Self::IsBaseOf) || self.is_expression() {
             2
         } else {
             1
         }
+    }
+
+    pub(crate) fn is_construction(self) -> bool {
+        matches!(
+            self,
+            Self::IsConstructible | Self::IsNothrowConstructible | Self::IsTriviallyConstructible
+        )
+    }
+
+    pub(crate) fn is_temporary_binding(self) -> bool {
+        matches!(
+            self,
+            Self::ReferenceBindsToTemporary
+                | Self::ReferenceConstructsFromTemporary
+                | Self::ReferenceConvertsFromTemporary
+        )
     }
 }

@@ -16,6 +16,43 @@ use crate::{
     types::FundamentalType as F,
 };
 
+/// Canonical query operands. Ordinary traits and short constructor queries
+/// allocate no argument buffer; only long expanded packs need owned storage.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(super) enum PredicateTypes {
+    Inline { values: [TypeId; 4], count: usize },
+    Many(Vec<TypeId>),
+}
+impl PredicateTypes {
+    fn new(first: TypeId) -> Self {
+        Self::Inline {
+            values: [first; 4],
+            count: 1,
+        }
+    }
+    fn push(&mut self, ty: TypeId) {
+        match self {
+            Self::Inline { values, count } if *count < values.len() => {
+                values[*count] = ty;
+                *count += 1;
+            }
+            Self::Inline { values, .. } => {
+                let mut many = Vec::with_capacity(8);
+                many.extend_from_slice(values);
+                many.push(ty);
+                *self = Self::Many(many);
+            }
+            Self::Many(values) => values.push(ty),
+        }
+    }
+    pub(super) fn as_slice(&self) -> &[TypeId] {
+        match self {
+            Self::Inline { values, count } => &values[..*count],
+            Self::Many(values) => values,
+        }
+    }
+}
+
 impl Analyzer<'_> {
     pub(super) fn predicate_expression(
         &mut self,
@@ -24,10 +61,10 @@ impl Analyzer<'_> {
         syntax: List<ast::TypeId>,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        let (first, second, _) = self.predicate_types(syntax, scope, false)?;
+        let (types, _) = self.predicate_types(syntax, scope, false)?;
         let ty = self.predicate_result_type(predicate)?;
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
-        let bits = self.predicate_value(id, predicate, first, second, scope)?;
+        let bits = self.predicate_value(id, predicate, &types, scope)?;
         facts.folded = Some(bits);
         super::record(
             &mut self.graph.constant_facts,
@@ -45,7 +82,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Constant, Error> {
-        let (first, second, dependent) = self.predicate_types(syntax, scope, true)?;
+        let (types, dependent) = self.predicate_types(syntax, scope, true)?;
         if dependent {
             return Err(Error::NonConstant {
                 failure: super::ConstantFailure::Reported,
@@ -55,7 +92,7 @@ impl Analyzer<'_> {
         }
         Ok(Constant {
             high: 0,
-            bits: self.predicate_value(id, predicate, first, second, scope)?,
+            bits: self.predicate_value(id, predicate, &types, scope)?,
             ty: self.predicate_result_type(predicate)?,
         })
     }
@@ -73,24 +110,22 @@ impl Analyzer<'_> {
         syntax: List<ast::TypeId>,
         scope: ScopeId,
         check_dependence: bool,
-    ) -> Result<(TypeId, Option<TypeId>, bool), Error> {
+    ) -> Result<(PredicateTypes, bool), Error> {
         // Substitution expands the retained parsed type list. Check every
         // resulting type, as trait_types does, before consuming the operands.
-        let mut first = None;
-        let mut second = None;
+        let mut types: Option<PredicateTypes> = None;
         let mut dependent = false;
         for index in 0..self.tree.type_lists.get(syntax).len() {
             let ty = self.type_syntax(self.tree.type_lists.get(syntax)[index], scope)?;
-            if first.is_none() {
-                first = Some(ty);
-            } else if second.is_none() {
-                second = Some(ty);
+            if let Some(types) = &mut types {
+                types.push(ty);
+            } else {
+                types = Some(PredicateTypes::new(ty));
             }
             dependent |= check_dependence && self.graph.dependent_type(ty);
         }
         Ok((
-            first.ok_or(Error::Invariant("type predicate without an operand"))?,
-            second,
+            types.ok_or(Error::Invariant("type predicate without an operand"))?,
             dependent,
         ))
     }
@@ -99,22 +134,17 @@ impl Analyzer<'_> {
         &mut self,
         id: ast::ExprId,
         predicate: T,
-        ty: TypeId,
-        second: Option<TypeId>,
+        types: &PredicateTypes,
         scope: ScopeId,
     ) -> Result<u64, Error> {
         let location = self.tree.expressions.get(id).location;
         if predicate.is_expression() {
             return self
-                .expression_predicate(
-                    id,
-                    predicate,
-                    ty,
-                    second.ok_or(Error::Invariant("expression predicate without second type"))?,
-                    scope,
-                )
+                .expression_predicate(id, predicate, types, scope)
                 .map(u64::from);
         }
+        let ty = types.as_slice()[0];
+        let second = types.as_slice().get(1).copied();
         if predicate.is_property() {
             return self
                 .property_predicate(predicate, ty, scope, location)
@@ -255,6 +285,16 @@ impl Analyzer<'_> {
             }
             T::IsConvertible | T::IsConvertibleTo | T::IsNothrowConvertible => {
                 return Err(Error::Invariant("conversion predicate without a result"));
+            }
+            T::IsConstructible
+            | T::IsNothrowConstructible
+            | T::IsTriviallyConstructible
+            | T::ReferenceBindsToTemporary
+            | T::ReferenceConstructsFromTemporary
+            | T::ReferenceConvertsFromTemporary => {
+                return Err(Error::Invariant(
+                    "initialization predicate without a result",
+                ));
             }
         };
         Ok(u64::from(value))

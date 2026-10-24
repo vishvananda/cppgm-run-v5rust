@@ -130,7 +130,7 @@ impl Analyzer<'_> {
             .map_or(Ok(false), |class| self.class_trivially_copyable(class))
     }
 
-    fn property_default_trivial(&mut self, ty: TypeId) -> Result<bool, Error> {
+    pub(super) fn property_default_trivial(&mut self, ty: TypeId) -> Result<bool, Error> {
         let ty = self.property_element(ty);
         if self.property_scalar(ty) {
             return Ok(true);

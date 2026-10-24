@@ -705,6 +705,23 @@ impl Analyzer<'_> {
             return self.copy_constant_subobjects(id, target, source, location);
         }
         let binding = self.graph.constructors.get(id).binding;
+        // default_definition marks a later default as synthesized, but not
+        // defaulted. Unlike the synthesized copy path above, evaluable() still
+        // requires its non-copy constructor to have been declared constexpr.
+        if let Some(binding) = binding {
+            let function = self.graph.entity(self.graph.binding(binding).entity);
+            if !function.constexpr
+                && matches!(
+                    function.special_definition,
+                    Some(super::special_members::SpecialDefinition::Defaulted { first: false, .. })
+                )
+            {
+                return Err(nonconstant(
+                    location,
+                    "a call of a function that is not constexpr",
+                ));
+            }
+        }
         let class = self.graph.constructors.get(id).class;
         let returns = self.graph.types.scalar(Scalar::Void)?;
         let function = binding
@@ -1107,6 +1124,46 @@ mod tests {
             assert_eq!(analyzer.tree.expressions.mark(), syntax);
             assert!(!analyzer.constexpr_frames.active());
             assert!(analyzer.constant_evaluation.is_none());
+        }
+    }
+
+    #[test]
+    fn later_defaulted_constructor_keeps_declared_constant_eligibility() {
+        let source = SourceBuffer::new(
+            br"
+            struct Late { Late() noexcept; };
+            Late::Late() noexcept = default;
+            struct Constant { constexpr Constant() noexcept; };
+            constexpr Constant::Constant() noexcept = default;
+            Late dynamic;
+            Constant constant;
+            "
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"later-default").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), syntax);
+        for (name, constant) in [
+            (b"dynamic".as_slice(), false),
+            (b"constant".as_slice(), true),
+        ] {
+            let binding = graph
+                .own(
+                    graph.global,
+                    cursor.intern_name(name).unwrap(),
+                    Filter::Ordinary,
+                )
+                .unwrap();
+            let entity = graph.binding(binding).entity;
+            assert_eq!(graph.lower_array_image(entity).is_some(), constant);
+            let constructor = graph.lower_construction(entity).unwrap();
+            assert!(!graph.lower_constructor_trivial(constructor));
         }
     }
 }

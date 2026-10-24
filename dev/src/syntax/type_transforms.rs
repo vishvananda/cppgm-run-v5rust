@@ -104,7 +104,9 @@ impl Parser<'_> {
             }
             let types = parser.tree.type_lists.finish(start)?;
             // Frozen arity rejection does not add a furthest grammar failure.
-            if parser.tree.type_lists.get(types).len() != predicate.arity() {
+            if predicate.arity() != 0
+                && parser.tree.type_lists.get(types).len() != predicate.arity()
+            {
                 return Err(ParseError::Syntax {
                     location: parser.error_mark().1,
                     message: "syntax error",

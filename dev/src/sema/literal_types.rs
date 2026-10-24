@@ -164,7 +164,7 @@ impl Analyzer<'_> {
                 && function.copy_origin != super::copy_construction::Origin::Implicit
                 && !matches!(
                     function.special_definition,
-                    Some(SpecialDefinition::Defaulted { .. })
+                    Some(SpecialDefinition::Defaulted { first: true, .. })
                 )
             {
                 return Ok(function.constexpr);
