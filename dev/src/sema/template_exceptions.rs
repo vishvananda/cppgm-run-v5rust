@@ -286,6 +286,7 @@ impl Analyzer<'_> {
                 }
                 ExprKind::IntegerPack(inner)
                 | ExprKind::Paren(inner)
+                | ExprKind::ComplexPart { operand: inner, .. }
                 | ExprKind::Unary { operand: inner, .. }
                 | ExprKind::Postfix { operand: inner, .. }
                 | ExprKind::Delete { operand: inner, .. } => work.push(inner),
@@ -494,6 +495,7 @@ impl Analyzer<'_> {
                         ExprKind::Id(name) => work.push((OwnProbe::Name(name), depth)),
                         ExprKind::IntegerPack(inner)
                         | ExprKind::Paren(inner)
+                        | ExprKind::ComplexPart { operand: inner, .. }
                         | ExprKind::Unary { operand: inner, .. }
                         | ExprKind::Postfix { operand: inner, .. }
                         | ExprKind::PackExpansion(inner) => {

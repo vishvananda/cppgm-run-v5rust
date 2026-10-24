@@ -111,6 +111,10 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
                     visit(right, access_bytes(*ty));
                 }
             }
+            FloatingOp::ReturnPair(real, imaginary) => {
+                visit(real, 10);
+                visit(imaginary, 10);
+            }
             FloatingOp::Return(source) => visit(source, 10),
             FloatingOp::Pop(destination) => {
                 if let Some(destination) = destination {

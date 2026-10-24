@@ -411,6 +411,12 @@ impl Analyzer<'_> {
         }
         let mut alignment = None;
         let mut size = match self.graph.types.get(ty).kind {
+            TypeKind::Complex(element) => {
+                let (size, align) = self.type_size(element, location)?;
+                alignment = Some(align);
+                size.checked_mul(2)
+                    .ok_or(Error::Limit("target complex size"))?
+            }
             TypeKind::Auto => {
                 return Err(Error::Invariant("layout requested before auto deduction"));
             }

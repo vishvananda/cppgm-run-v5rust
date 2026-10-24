@@ -134,6 +134,7 @@ pub(crate) enum TypeView<'a> {
         bits: u64,
     },
     Scalar(Scalar),
+    Complex(TypeId),
     Pointer(TypeId),
     BlockPointer(TypeId),
     Array {
@@ -1948,6 +1949,7 @@ impl Graph {
                 bits: *bits,
             },
             TypeKind::Scalar(scalar) => TypeView::Scalar(*scalar),
+            TypeKind::Complex(element) => TypeView::Complex(*element),
             TypeKind::Pointer(element) => TypeView::Pointer(*element),
             TypeKind::BlockPointer(element) => TypeView::BlockPointer(*element),
             TypeKind::Array { element, bound, .. } => TypeView::Array {
@@ -2124,6 +2126,9 @@ impl Graph {
     ) -> Result<Option<AtomicIntrinsic>, Error> {
         self.expression_facts.get(id)?;
         Ok(self.expression_facts.atomic_intrinsic(id))
+    }
+    pub(crate) fn lower_complex_construction(&self, id: ast::ExprId) -> bool {
+        self.expression_facts.complex_construction(id)
     }
     pub(crate) fn expression_is_intrinsic(&self, id: ast::ExprId) -> Result<bool, Error> {
         let facts = self.expression_facts.get(id)?;

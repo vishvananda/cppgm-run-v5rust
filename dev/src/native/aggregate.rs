@@ -161,6 +161,13 @@ impl Selection<'_> {
     pub(super) fn aggregate_return(&mut self, ty: Type, value: Value) -> Result<(), Error> {
         let source = self.aggregate_operand(value, ty)?;
         let bytes = abi::value_bytes(ty)?;
+        if self.mir.layout.x87_pair_result() {
+            self.floating(super::floating_mir::FloatingOp::ReturnPair(
+                source,
+                source.displaced(16),
+            ));
+            return Ok(());
+        }
         if self.mir.layout.indirect_result {
             self.emit(ScalarOp::Load(
                 R::RAX,
@@ -185,7 +192,7 @@ impl Selection<'_> {
             });
             return Ok(());
         }
-        if self.mir.layout.x87_result {
+        if self.mir.layout.x87_result() {
             self.floating(super::floating_mir::FloatingOp::Return(source));
             return Ok(());
         }

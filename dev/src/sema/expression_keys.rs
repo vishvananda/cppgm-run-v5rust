@@ -57,6 +57,7 @@ pub(crate) enum KeyNode {
     OffsetOfBase,
     Typeof,
     VaArg,
+    ComplexPart,
     Keyword,
     This,
     Paren,
@@ -155,6 +156,10 @@ impl Analyzer<'_> {
                 None => true,
             })
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "One structural-key dispatch over the original syntax vocabulary"
+    )]
     fn key_expression(
         &mut self,
         operand: ast::ExprId,
@@ -176,6 +181,11 @@ impl Analyzer<'_> {
                 }
                 key.words.push(KeyWord::Node(KeyNode::Id));
                 return self.key_name(name, scope, true, key);
+            }
+            ExprKind::ComplexPart { imaginary, operand } => {
+                key.words.push(KeyWord::Node(KeyNode::ComplexPart));
+                key.words.push(KeyWord::Flag(imaginary));
+                return self.key_expression(operand, scope, key);
             }
             ExprKind::Literal(literal) => self.key_literal(literal, key)?,
             ExprKind::Keyword(keyword) => self.key_keyword(keyword, scope, key)?,

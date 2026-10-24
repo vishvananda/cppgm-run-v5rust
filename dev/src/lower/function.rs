@@ -620,6 +620,13 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn zero(&mut self, source: TypeId) -> Result<RValue, Error> {
+        if super::complex::part(self.graph, source)?.is_some() {
+            let ty = types::storage(self.graph, source)?;
+            let (bytes, align) = types::layout(self.graph, source)?;
+            let slot = self.generated_slot("complex", ty)?;
+            self.effect(I::ZeroInit(bytes, align, slot))?;
+            return self.read_place(slot, source);
+        }
         if let Some(kind) = super::soft_float::kind(self.graph, source)? {
             return self.soft_constant(kind, 0, source);
         }

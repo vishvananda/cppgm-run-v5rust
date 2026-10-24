@@ -143,6 +143,12 @@ impl Classes {
             return Ok(());
         }
         match graph.lower_type(ty)? {
+            TypeView::Complex(element) => {
+                let (size, _) = types::layout(graph, element)?;
+                for at in [offset, offset.wrapping_add(size)] {
+                    self.member_quarters(graph, element, at, quarters, budget, base)?;
+                }
+            }
             TypeView::Array { element, bound } => {
                 let (size, _) = types::layout(graph, element)?;
                 if size != 0 {

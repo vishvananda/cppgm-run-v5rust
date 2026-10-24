@@ -550,6 +550,10 @@ pub(crate) enum ExprKind {
         designator: ExprId,
     },
     OffsetOfBase(TypeId),
+    ComplexPart {
+        imaginary: bool,
+        operand: ExprId,
+    },
     VaArg {
         operand: ExprId,
         ty: TypeId,

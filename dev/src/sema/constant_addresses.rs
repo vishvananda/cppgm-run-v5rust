@@ -679,6 +679,9 @@ impl Analyzer<'_> {
             return self.constant_operator_place(id, scope);
         }
         match node.kind {
+            ExprKind::ComplexPart { imaginary, operand } => {
+                self.constant_component_place(operand, imaginary, scope, location)
+            }
             ExprKind::Id(name) => {
                 let binding = facts
                     .function
@@ -847,6 +850,14 @@ impl Analyzer<'_> {
             ExprKind::Unary { op, operand }
                 if matches!(op.token.as_punctuator(), Some(P::Increment | P::Decrement)) =>
             {
+                if self.complex_part_type(facts.ty).is_some() {
+                    return self.constant_complex_step(
+                        id,
+                        operand,
+                        op.token.as_punctuator() == Some(P::Decrement),
+                        scope,
+                    );
+                }
                 self.constant_increment_values(
                     id,
                     operand,
@@ -1361,6 +1372,10 @@ impl Analyzer<'_> {
                 let node = *self.tree.expressions.get(id);
                 self.check_deferred_constant(id)?;
                 let facts = self.graph.expression_facts.get(id)?;
+                if self.complex_part_type(facts.ty).is_some() {
+                    self.constant_complex_parts(id, facts.ty, scope)?;
+                    continue;
+                }
                 if facts.literal_call.is_some()
                     || facts.call_form == super::expression_facts::CallForm::Operator
                 {

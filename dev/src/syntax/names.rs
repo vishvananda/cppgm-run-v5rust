@@ -46,6 +46,7 @@ impl Parser<'_> {
     pub(super) fn name_starts_ahead(&mut self, ahead: usize) -> Result<bool, ParseError> {
         Ok(
             (matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(_))
+                && self.complex_component_ahead(ahead)?.is_none()
                 && self.at_type_predicate(ahead)?.is_none()
                 && !self.at_offsetof(ahead)?
                 && !self.at_integer_pack(ahead)?

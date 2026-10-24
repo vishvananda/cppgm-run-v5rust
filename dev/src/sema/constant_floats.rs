@@ -305,6 +305,9 @@ impl Analyzer<'_> {
             return self.read_constant_floating(place, node.location);
         }
         let value = match node.kind {
+            ExprKind::ComplexPart { imaginary, operand } => {
+                self.constant_component(id, operand, imaginary, scope)?
+            }
             ExprKind::Literal(literal) => {
                 let PostTokenKind::Literal { ty, data, .. } = literal.kind else {
                     return Err(nonconstant(

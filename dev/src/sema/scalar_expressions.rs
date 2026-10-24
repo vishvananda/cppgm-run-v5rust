@@ -75,6 +75,10 @@ impl Analyzer<'_> {
         }
         Ok(false)
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "One semantic source-expression dispatch retains parse-once facts"
+    )]
     fn typed_expression_form(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
         if self.expression_already_typed(id)? {
             return Ok(());
@@ -263,6 +267,9 @@ impl Analyzer<'_> {
             ExprKind::OffsetOfBase(ty) => {
                 let ty = self.type_syntax(ty, scope)?;
                 self.new_expression_facts(ty, V::Lvalue)?
+            }
+            ExprKind::ComplexPart { imaginary, operand } => {
+                self.complex_component(id, operand, imaginary, scope)?
             }
             ExprKind::VaArg { operand, ty } => self.va_arg_expression(id, operand, ty, scope)?,
             ExprKind::SizeofPack(name) => self.sizeof_pack_expression(id, name, scope)?,

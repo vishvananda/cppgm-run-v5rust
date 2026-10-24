@@ -383,6 +383,9 @@ impl Function<'_, '_, '_, '_> {
                 let place = self.scalar_place(id)?;
                 self.read_place(place, source)
             }
+            ExprKind::ComplexPart { imaginary, operand } => {
+                self.complex_component_value(id, operand, imaginary)
+            }
             ExprKind::Unary { op, operand } => self.unary_expression(id, op, operand),
             ExprKind::Binary {
                 op,
@@ -451,6 +454,9 @@ impl Function<'_, '_, '_, '_> {
                 else_expr,
             } => self.conditional_value(id, condition, then_expr, else_expr),
             ExprKind::Braced { elements, .. } => {
+                if super::complex::part(self.graph, source)?.is_some() {
+                    return self.complex_list(source, elements, Context::Initialization);
+                }
                 if let Some(&id) = self.tree.expr_lists.get(elements).first() {
                     let value = self.operand(id, Context::Initialization)?;
                     self.fit(value, source)
@@ -547,6 +553,12 @@ impl Function<'_, '_, '_, '_> {
         } else {
             b
         };
+        if super::complex::part(self.graph, source)?.is_some() {
+            return self.complex_arithmetic(op, source, a, b);
+        }
+        if comparison && super::complex::part(self.graph, a.source)?.is_some() {
+            return self.complex_equal(op == P::Equal, a, b, source);
+        }
         if comparison {
             let facts = self.graph.lower_expression(left)?;
             let common = facts.target.unwrap_or(a.source);
@@ -700,6 +712,16 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.operand(operand, Context::Unary)?
         };
+        if super::complex::part(self.graph, value.source)?.is_some()
+            && matches!(op.token.as_punctuator(), Some(P::Subtract | P::Complement))
+        {
+            return self.complex_unary(
+                op.token
+                    .as_punctuator()
+                    .ok_or(crate::sema::Error::Invariant("complex unary token"))?,
+                value,
+            );
+        }
         match op.token.as_punctuator() {
             Some(P::Add) => Ok(value),
             Some(P::Subtract) => {
@@ -713,6 +735,11 @@ impl Function<'_, '_, '_, '_> {
                 self.emit(I::Unary(Unary::BitNot, value.ty, value.value), source)
             }
             Some(P::LogicalNot) => {
+                if super::complex::part(self.graph, value.source)?.is_some() {
+                    let truth = self.complex_truth(value, source)?;
+                    let zero = self.builder.integer(0)?;
+                    return self.emit(I::Compare(Compare::Eq, truth.ty, truth.value, zero), source);
+                }
                 if let Some(kind) = super::soft_float::kind(self.graph, value.source)? {
                     let zero = self.soft_constant(kind, 0, value.source)?;
                     let truth = self.soft_compare(Compare::Ne, kind, value, zero, source)?;
@@ -745,6 +772,9 @@ impl Function<'_, '_, '_, '_> {
             let ExprKind::Braced { elements, .. } = self.tree.expressions.get(braced).kind else {
                 return Err(crate::sema::Error::Invariant("functional cast without list").into());
             };
+            if super::complex::part(self.graph, source)?.is_some() {
+                return self.complex_list(source, elements, Context::Cast);
+            }
             // Scalar list initialization records the conversion on its element;
             // the enclosing list is syntax, with no expression facts of its own.
             return if let Some(&element) = self.tree.expr_lists.get(elements).first() {
@@ -780,7 +810,9 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
-        if let Some(kind) = self.graph.lower_source_location(id)? {
+        if self.graph.lower_complex_construction(id) {
+            self.make_complex(id, arguments)
+        } else if let Some(kind) = self.graph.lower_source_location(id)? {
             self.source_location(id, kind)
         } else if self.graph.lower_constant_evaluation_query(id) {
             let ty = self.graph.lower_expression(id)?.ty;

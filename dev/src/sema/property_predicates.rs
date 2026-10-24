@@ -116,7 +116,10 @@ impl Analyzer<'_> {
             TypeKind::Scalar(scalar) if scalar != Scalar::Void)
             || matches!(
                 self.graph.types.get(ty).kind,
-                TypeKind::Enum(_) | TypeKind::Pointer(_) | TypeKind::MemberPointer { .. }
+                TypeKind::Enum(_)
+                    | TypeKind::Pointer(_)
+                    | TypeKind::MemberPointer { .. }
+                    | TypeKind::Complex(_)
             )
     }
 

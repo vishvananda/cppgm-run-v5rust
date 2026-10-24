@@ -88,6 +88,9 @@ impl Function<'_, '_, '_, '_> {
             );
         }
         match self.tree.expressions.get(id).kind {
+            ExprKind::ComplexPart { imaginary, operand } => {
+                self.complex_component_place(operand, imaginary)
+            }
             ExprKind::Paren(inner) => self.scalar_place(inner),
             ExprKind::Literal(literal) => {
                 let crate::sema::lowering::TypeView::Array { element, .. } =
@@ -445,7 +448,9 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 (None, self.read_place(place, source)?)
             };
-        let result = if old.ty == Type::Ptr {
+        let result = if super::complex::part(self.graph, source)?.is_some() {
+            self.complex_increment(old, decrement)?
+        } else if old.ty == Type::Ptr {
             self.pointer_step(old, decrement)?
         } else if let Some(kind) = super::soft_float::kind(self.graph, source)? {
             let one = self.soft_constant(
@@ -540,7 +545,9 @@ impl Function<'_, '_, '_, '_> {
             };
             let value =
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(right).kind {
-                    if let Some(&element) = self.tree.expr_lists.get(elements).first() {
+                    if super::complex::part(self.graph, source)?.is_some() {
+                        self.complex_list(source, elements, Context::Assignment)?
+                    } else if let Some(&element) = self.tree.expr_lists.get(elements).first() {
                         self.operand(element, Context::Assignment)?
                     } else {
                         self.zero(source)?
@@ -611,6 +618,19 @@ impl Function<'_, '_, '_, '_> {
                 return Ok((place, value));
             }
             let lhs = self.convert(old, operation, Context::CompoundAssignment)?;
+            if super::complex::part(self.graph, operation)?.is_some() {
+                let token = match op {
+                    P::AddAssign => P::Add,
+                    P::SubtractAssign => P::Subtract,
+                    P::MultiplyAssign => P::Multiply,
+                    P::DivideAssign => P::Divide,
+                    _ => return Err(crate::sema::Error::Invariant("complex compound token").into()),
+                };
+                let value = self.complex_arithmetic(token, operation, lhs, rhs)?;
+                let value = self.convert(value, source, Context::CompoundAssignment)?;
+                self.write_place(place, source, value.value)?;
+                return Ok((place, value));
+            }
             let signed = types::signed(self.graph, operation)?;
             let code = match op {
                 P::AddAssign => Binary::Add,

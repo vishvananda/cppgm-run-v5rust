@@ -506,6 +506,10 @@ impl Analyzer<'_> {
                     .map(|ty| self.graph.types.qualify(ty, cv))
                     .transpose()?
             }
+            TypeKind::Complex(element) => self
+                .substitute_signature_type(element, environment)?
+                .map(|element| self.graph.types.intern(TypeKind::Complex(element), cv))
+                .transpose()?,
             TypeKind::Pointer(element) => {
                 let Some(element) = self.substitute_signature_type(element, environment)? else {
                     return Ok(None);

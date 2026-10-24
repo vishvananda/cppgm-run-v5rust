@@ -16,6 +16,7 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(crate) enum BuiltinFunction {
     IsConstantEvaluated,
+    MakeComplex,
     Abort,
     Expect,
     Memcpy,
@@ -216,6 +217,7 @@ mod tests {
 #[derive(Clone)]
 pub(super) struct BuiltinNames {
     pub is_constant_evaluated: NameId,
+    pub make_complex: NameId,
     pub abort: NameId,
     pub expect: NameId,
     pub constant_p: NameId,
@@ -235,6 +237,63 @@ pub(super) struct BuiltinNames {
     pub atomic: super::atomic_operations::AtomicBuiltins,
     pub integer: Vec<(NameId, super::integer_intrinsics::IntegerBuiltin)>,
     pub floating: Vec<(NameId, super::floating_intrinsics::FloatingOperation)>,
+}
+impl BuiltinNames {
+    pub(super) fn new(cursor: &mut crate::syntax::cursor::Cursor<'_>) -> Result<Self, Error> {
+        Ok(Self {
+            make_complex: cursor
+                .intern_name(b"__builtin_complex")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            is_constant_evaluated: cursor
+                .intern_name(b"__builtin_is_constant_evaluated")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            abort: cursor
+                .intern_name(b"__builtin_abort")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            expect: cursor
+                .intern_name(b"__builtin_expect")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            constant_p: cursor
+                .intern_name(b"__builtin_constant_p")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            invoke: cursor
+                .intern_name(b"__builtin_invoke")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            operator_new: cursor
+                .intern_name(b"__builtin_operator_new")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            operator_delete: cursor
+                .intern_name(b"__builtin_operator_delete")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memcpy: cursor
+                .intern_name(b"__builtin_memcpy")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memmove: cursor
+                .intern_name(b"__builtin_memmove")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memcmp: cursor
+                .intern_name(b"__builtin_memcmp")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            memset: cursor
+                .intern_name(b"__builtin_memset")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            strlen: cursor
+                .intern_name(b"__builtin_strlen")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            unreachable: cursor
+                .intern_name(b"__builtin_unreachable")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            trap: cursor
+                .intern_name(b"__builtin_trap")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            runtime: super::runtime_intrinsics::names(cursor)?,
+            source_locations: super::source_locations::names(cursor)?,
+            stack: super::stack_intrinsics::StackNames::new(cursor)?,
+            floating: super::floating_intrinsics::names(cursor)?,
+            integer: super::integer_intrinsics::names(cursor)?,
+            atomic: super::atomic_operations::names(cursor)?,
+        })
+    }
 }
 impl Analyzer<'_> {
     // analyzer_calls.cpp::template_callee checks the template-id before
@@ -299,6 +358,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Stack(_)
                     | BuiltinFunction::Invoke
                     | BuiltinFunction::Allocation(_)
+                    | BuiltinFunction::MakeComplex
                     | BuiltinFunction::IsConstantEvaluated
             )
         ) {
@@ -315,7 +375,9 @@ impl Analyzer<'_> {
         key: NameId,
     ) -> Result<Option<super::graph::BindingId>, Error> {
         let names = &self.builtin_names;
-        let builtin = if key == names.is_constant_evaluated {
+        let builtin = if key == names.make_complex {
+            BuiltinFunction::MakeComplex
+        } else if key == names.is_constant_evaluated {
             BuiltinFunction::IsConstantEvaluated
         } else if key == names.abort {
             BuiltinFunction::Abort
@@ -404,6 +466,7 @@ impl Analyzer<'_> {
                 | BuiltinFunction::Stack(_)
                 | BuiltinFunction::Invoke
                 | BuiltinFunction::Allocation(_)
+                | BuiltinFunction::MakeComplex
                 | BuiltinFunction::IsConstantEvaluated
         ) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
@@ -438,6 +501,7 @@ impl Analyzer<'_> {
                     BuiltinFunction::Memcmp => (integer, vec![source, source, size]),
                     BuiltinFunction::Memset => (pointer, vec![pointer, integer, size]),
                     BuiltinFunction::Abort
+                    | BuiltinFunction::MakeComplex
                     | BuiltinFunction::IsConstantEvaluated
                     | BuiltinFunction::Expect
                     | BuiltinFunction::Strlen
@@ -472,6 +536,7 @@ impl Analyzer<'_> {
                         | BuiltinFunction::Atomic(_)
                         | BuiltinFunction::Invoke
                         | BuiltinFunction::Allocation(_)
+                        | BuiltinFunction::MakeComplex
                         | BuiltinFunction::IsConstantEvaluated
                 ),
                 cv: Cv::default(),
@@ -571,6 +636,9 @@ impl Analyzer<'_> {
                 .entity(self.graph.binding(binding).entity)
                 .builtin
             {
+                Some(BuiltinFunction::MakeComplex) => {
+                    self.make_complex_builtin(id, arguments, scope).map(Some)
+                }
                 Some(BuiltinFunction::IsConstantEvaluated) => {
                     if !self.tree.expr_lists.get(arguments).is_empty() {
                         return Err(Error::at(

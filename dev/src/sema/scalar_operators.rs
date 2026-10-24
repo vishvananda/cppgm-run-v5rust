@@ -20,6 +20,16 @@ impl Analyzer<'_> {
             )
     }
     pub(super) fn arithmetic_type(&mut self, a: TypeId, b: TypeId) -> Result<TypeId, Error> {
+        if self.complex_part_type(a).is_some() || self.complex_part_type(b).is_some() {
+            let part = self.arithmetic_type(
+                self.complex_part_type(a).unwrap_or(a),
+                self.complex_part_type(b).unwrap_or(b),
+            )?;
+            return self
+                .graph
+                .types
+                .intern(TypeKind::Complex(part), super::types::Cv::default());
+        }
         let rank = |ty| match self.graph.types.get(ty).kind {
             TypeKind::Scalar(Scalar::Basic(f)) => f.floating_rank(),
             _ => 0,
@@ -147,7 +157,9 @@ impl Analyzer<'_> {
                 self.graph.types.get(facts.ty).kind,
                 TypeKind::Scalar(Scalar::Bool)
             ) && op == P::Decrement
-                || !(self.is_arithmetic_type(facts.ty) || self.object_pointer(facts.ty).is_some())
+                || !(self.is_arithmetic_type(facts.ty)
+                    || self.complex_part_type(facts.ty).is_some()
+                    || self.object_pointer(facts.ty).is_some())
             {
                 return Err(self.operator_error(id, "invalid operand of increment or decrement"));
             }
@@ -194,8 +206,12 @@ impl Analyzer<'_> {
         let pointer_plus =
             op == P::Add && matches!(self.graph.types.get(ty).kind, TypeKind::Pointer(_));
         if !pointer_plus
-            && (op == P::Complement && !self.is_integral_operand(ty)
-                || matches!(op, P::Add | P::Subtract) && !self.is_arithmetic_operand(ty))
+            && (op == P::Complement
+                && !self.is_integral_operand(ty)
+                && self.complex_part_type(ty).is_none()
+                || matches!(op, P::Add | P::Subtract)
+                    && !self.is_arithmetic_operand(ty)
+                    && self.complex_part_type(ty).is_none())
         {
             return Err(self.operator_error(
                 id,
@@ -250,6 +266,9 @@ impl Analyzer<'_> {
             op,
             P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual
         );
+        if self.complex_part_type(a).is_some() || self.complex_part_type(b).is_some() {
+            return self.complex_binary(id, op, [left, right], [a, b]);
+        }
         if compare {
             if (self.scoped_enum(a) || self.scoped_enum(b)) && a != b {
                 return Err(
@@ -555,7 +574,10 @@ impl Analyzer<'_> {
         let target = self.bare_type(left.ty)?;
         let scalar = match self.graph.types.get(target).kind {
             TypeKind::Scalar(scalar) => scalar != Scalar::Void,
-            TypeKind::Enum(_) | TypeKind::Pointer(_) | TypeKind::MemberPointer { .. } => true,
+            TypeKind::Enum(_)
+            | TypeKind::Pointer(_)
+            | TypeKind::MemberPointer { .. }
+            | TypeKind::Complex(_) => true,
             _ => false,
         };
         if op != P::Assign || !scalar {
@@ -632,14 +654,38 @@ impl Analyzer<'_> {
                         | P::OrAssign
                         | P::XorAssign
                 );
-                if !self.is_arithmetic_type(target)
-                    || !self.is_arithmetic_operand(rt)
+                if !(self.is_arithmetic_type(target) || self.complex_part_type(target).is_some())
+                    || !(self.is_arithmetic_operand(rt) || self.complex_part_type(rt).is_some())
                     || integral_only
                         && (!self.is_integral_operand(target) || !self.is_integral_operand(rt))
                 {
                     return Err(
                         self.operator_error(id, "invalid operands to a compound assignment")
                     );
+                }
+                if self.complex_part_type(target).is_some() {
+                    let common = self.arithmetic_type(target, rt)?;
+                    let component = self
+                        .complex_part_type(common)
+                        .ok_or(Error::Invariant("complex compound type"))?;
+                    self.convert_operand_scalar(
+                        right,
+                        if self.complex_part_type(rt).is_some() {
+                            common
+                        } else {
+                            component
+                        },
+                        false,
+                    )?;
+                    let right_type = self
+                        .graph
+                        .expression_facts
+                        .get(right)?
+                        .conversion
+                        .ok_or(Error::Invariant("complex compound conversion"))?
+                        .result;
+                    self.graph.record_arithmetic_types(id, common, right_type);
+                    return self.new_expression_facts(lf.ty, V::Lvalue);
                 }
                 let promoted_left = self.field_type(lf, target)?;
                 let common = if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
@@ -764,7 +810,9 @@ impl Analyzer<'_> {
         let bt = self.decayed_type(b.ty)?;
         let ty = if at == bt {
             at
-        } else if self.is_arithmetic_operand(at) && self.is_arithmetic_operand(bt) {
+        } else if (self.is_arithmetic_operand(at) || self.complex_part_type(at).is_some())
+            && (self.is_arithmetic_operand(bt) || self.complex_part_type(bt).is_some())
+        {
             self.arithmetic_type(at, bt)?
         } else {
             self.composite_pointer(a, b, false)?

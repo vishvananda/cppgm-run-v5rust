@@ -463,6 +463,10 @@ impl Analyzer<'_> {
             );
         }
         if let Some(braced) = braced {
+            if self.complex_part_type(target).is_some() {
+                self.list_initialize(braced, target, scope)?;
+                return self.new_expression_facts(target, V::Prvalue);
+            }
             if matches!(self.graph.types.get(target).kind, TypeKind::Array { .. }) {
                 let ty = self.array_braced_list(braced, target, scope)?;
                 return self.new_expression_facts(ty, V::Prvalue);
@@ -495,6 +499,9 @@ impl Analyzer<'_> {
             ));
         }
         let ty = self.bare_type(target)?;
+        if self.complex_part_type(ty).is_some() {
+            return self.new_expression_facts(ty, V::Prvalue);
+        }
         if !matches!(
             self.graph.types.get(ty).kind,
             TypeKind::Scalar(_)

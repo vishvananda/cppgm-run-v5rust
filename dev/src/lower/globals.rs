@@ -303,7 +303,7 @@ fn define_storage<'a>(
                 && !graph.lower_trivial_default_construction(entity)?);
     let array = matches!(
         graph.lower_type(facts.ty)?,
-        TypeView::Array { .. } | TypeView::Class(_)
+        TypeView::Array { .. } | TypeView::Class(_) | TypeView::Complex(_)
     );
     let mut ty = if array {
         None
@@ -599,7 +599,7 @@ pub(super) fn finish(
         let ty = if graph.lower_complete_object(facts.ty)?
             && !matches!(
                 graph.lower_type(facts.ty)?,
-                TypeView::Array { .. } | TypeView::Class(_)
+                TypeView::Array { .. } | TypeView::Class(_) | TypeView::Complex(_)
             ) {
             Some(types::storage(graph, facts.ty)?)
         } else {

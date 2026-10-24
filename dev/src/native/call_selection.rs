@@ -427,7 +427,7 @@ impl Selection<'_> {
                 Operand::Immediate(u128::from(stack)),
             ));
         }
-        if plan.layout.x87_result {
+        if plan.layout.x87_result() || plan.layout.x87_pair_result() {
             let destination = if let Some(result) = result.filter(|_| used) {
                 Some(Operand::Frame(self.placement.home(
                     self.body,
@@ -438,6 +438,11 @@ impl Selection<'_> {
                 None
             };
             self.floating(super::floating_mir::FloatingOp::Pop(destination));
+            if plan.layout.x87_pair_result() {
+                self.floating(super::floating_mir::FloatingOp::Pop(
+                    destination.map(|value| value.displaced(16)),
+                ));
+            }
         } else if let Some(result) = result.filter(|_| used) {
             if super::aggregate::memory_value(call.result) {
                 self.aggregate_call_result(result, &plan.layout)?;

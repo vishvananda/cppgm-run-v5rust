@@ -315,6 +315,25 @@ impl Analyzer<'_> {
             // publishing a fresh scalar fact here would erase its plan.
             return Ok(facts.ty);
         }
+        if let TypeKind::Complex(part) = self.graph.types.get(target).kind
+            && values.len() == 2
+        {
+            for &value in values {
+                if matches!(
+                    self.tree.expressions.get(value).kind,
+                    ExprKind::Braced { .. }
+                ) {
+                    self.list_initialize(value, part, scope)?;
+                    let mut facts = self.graph.expression_facts.get(value)?;
+                    facts.category = V::Prvalue;
+                    self.graph.expression_facts.set(value, facts);
+                } else {
+                    self.ensure_typed(value, scope)?;
+                    self.convert_scalar(value, part, false)?;
+                }
+            }
+            return self.publish_list(id, target, V::Lvalue);
+        }
         if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target).kind {
             if values.len() == 1
                 && self.character_element(element)

@@ -368,6 +368,25 @@ impl Parser<'_> {
             },
         })
     }
+    pub(super) fn complex_component_keyword(&mut self) -> Result<Option<bool>, ParseError> {
+        self.complex_component_ahead(0)
+    }
+    pub(super) fn complex_component_ahead(
+        &mut self,
+        ahead: usize,
+    ) -> Result<Option<bool>, ParseError> {
+        Ok(
+            if let TokenKind::Identifier(name) = self.cursor.peek(ahead)?.kind {
+                match self.cursor.name(name) {
+                    b"__real__" | b"__real" => Some(false),
+                    b"__imag__" | b"__imag" => Some(true),
+                    _ => None,
+                }
+            } else {
+                None
+            },
+        )
+    }
     fn unary_inner(&mut self) -> Result<ExprId, ParseError> {
         let location = self.location()?;
         if self.at(P::Scope)?
@@ -398,6 +417,14 @@ impl Parser<'_> {
             return self.tree.expressions.add(Expression {
                 location,
                 kind: ExprKind::Unary { op, operand },
+            });
+        }
+        if let Some(imaginary) = self.complex_component_keyword()? {
+            self.cursor.advance()?;
+            let operand = self.unary()?;
+            return self.tree.expressions.add(Expression {
+                location,
+                kind: ExprKind::ComplexPart { imaginary, operand },
             });
         }
         let va_arg = if let Some(name) = self.va_arg {

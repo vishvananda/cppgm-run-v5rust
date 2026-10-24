@@ -211,6 +211,7 @@ impl Analyzer<'_> {
             ExprKind::Id(name) => work.push(Probe::Name(name, true)),
             ExprKind::IntegerPack(expr)
             | ExprKind::Paren(expr)
+            | ExprKind::ComplexPart { operand: expr, .. }
             | ExprKind::Unary { operand: expr, .. }
             | ExprKind::Postfix { operand: expr, .. }
             | ExprKind::Delete { operand: expr, .. } => work.push(Probe::Expression(expr)),

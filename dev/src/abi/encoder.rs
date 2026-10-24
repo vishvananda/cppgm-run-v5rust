@@ -218,6 +218,7 @@ impl<'a> Encoder<'a> {
             let next = match node {
                 Node::Modified { modifier, operand } => {
                     match modifier {
+                        Modifier::Complex => self.put(b"C"),
                         Modifier::Pointer => self.put(b"P"),
                         Modifier::LvalueReference => self.put(b"R"),
                         Modifier::RvalueReference => self.put(b"O"),

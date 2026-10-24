@@ -86,6 +86,19 @@ impl Analyzer<'_> {
         scope: ScopeId,
         skipping: bool,
     ) -> Result<bool, Error> {
+        if self.semantic()
+            && self
+                .graph
+                .expression_facts
+                .get(id)
+                .is_ok_and(|facts| self.complex_part_type(facts.ty).is_some())
+        {
+            return if skipping {
+                Ok(false)
+            } else {
+                self.constant_complex_truth(id, scope)
+            };
+        }
         if self.semantic() && self.member_pointer_expression(id) {
             return if skipping {
                 Ok(false)

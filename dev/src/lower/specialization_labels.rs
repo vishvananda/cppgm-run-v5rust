@@ -186,6 +186,10 @@ impl Symbols<'_, '_> {
                     write!(out, "{bits}").map_err(|_| Error::Missing("class label formatting"))?;
                 }
             }
+            TypeView::Complex(part) => {
+                out.push_str("_Complex ");
+                self.append_type_label(part, out, limit)?;
+            }
             TypeView::Scalar(scalar) => out.push_str(match scalar {
                 Scalar::Basic(kind) => kind.name(),
                 Scalar::Void => "void",

@@ -608,6 +608,11 @@ impl<'a, 'source> Renderer<'a, 'source> {
 
     fn expression(&mut self, id: ExprId) -> std::io::Result<()> {
         match self.tree.expressions.get(id).kind {
+            ExprKind::ComplexPart { imaginary, operand } => {
+                self.text(if imaginary { "__imag__(" } else { "__real__(" });
+                self.tasks.push(Render::Text(")"));
+                self.tasks.push(Render::Expression(operand));
+            }
             ExprKind::Lambda(id) => self.lambda_expression(id)?,
             ExprKind::Id(name) => self.tasks.push(Render::Name(name, true)),
             ExprKind::SizeofPack(name) => {

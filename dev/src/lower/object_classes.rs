@@ -74,6 +74,32 @@ impl Classes {
         if let Some(kind) = super::soft_float::kind(graph, ty)? {
             return Ok(Some(super::soft_float::classes(kind)));
         }
+        if let TypeView::Complex(part) = graph.lower_type(ty)? {
+            if types::storage(graph, part)? == Type::F80 {
+                return Ok(Some(ObjectClasses::ComplexX87));
+            }
+            let (size, _) = types::layout(graph, ty)?;
+            if size > 16 {
+                return Ok(Some(ObjectClasses::Memory));
+            }
+            let mut classes = [Class::None; 2];
+            let marker = 0u8;
+            classify_fields(
+                graph,
+                ty,
+                0,
+                &mut classes,
+                budget,
+                std::ptr::from_ref(&marker).addr(),
+            )?;
+            return Ok(Some(
+                if let (Some(a), Some(b)) = (classes[0].direct(), classes[1].direct()) {
+                    ObjectClasses::Direct(a, (size > 8).then_some(b))
+                } else {
+                    ObjectClasses::Memory
+                },
+            ));
+        }
         let TypeView::Class(class) = graph.lower_type(ty)? else {
             return Ok(None);
         };
@@ -146,6 +172,17 @@ fn classify_fields(
         return Ok(());
     }
     match view {
+        TypeView::Complex(part) => {
+            classify_fields(graph, part, offset, classes, budget, base)?;
+            classify_fields(
+                graph,
+                part,
+                offset.wrapping_add(size / 2),
+                classes,
+                budget,
+                base,
+            )?;
+        }
         TypeView::Array { element, bound } => {
             let (bytes, _) = types::layout(graph, element)?;
             if bytes == 0 {

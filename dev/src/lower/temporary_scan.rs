@@ -511,7 +511,8 @@ impl Function<'_, '_, '_, '_> {
                 } => {
                     work.extend([condition, then_expr, else_expr]);
                 }
-                ExprKind::Unary { operand, .. }
+                ExprKind::ComplexPart { operand, .. }
+                | ExprKind::Unary { operand, .. }
                 | ExprKind::Postfix { operand, .. }
                 | ExprKind::Cast { operand, .. }
                 | ExprKind::Delete { operand, .. }

@@ -25,8 +25,10 @@ impl ObjectArgument {
         };
         let classes = if ty == Type::F80
             || bytes > 16
-            || matches!(classes, Some(ObjectClasses::Memory | ObjectClasses::X87))
-        {
+            || matches!(
+                classes,
+                Some(ObjectClasses::Memory | ObjectClasses::X87 | ObjectClasses::ComplexX87)
+            ) {
             ObjectClasses::Memory
         } else {
             classes.unwrap_or(ObjectClasses::Direct(

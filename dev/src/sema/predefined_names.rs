@@ -443,6 +443,10 @@ impl Printer<'_> {
         let mut out = Self::cv(node.cv);
         match &node.kind {
             TypeKind::Scalar(scalar) => out.extend_from_slice(Self::scalar(*scalar).as_bytes()),
+            TypeKind::Complex(part) => {
+                out.extend_from_slice(b"_Complex ");
+                out.extend(self.ty(*part, Vec::new())?);
+            }
             TypeKind::Class(class) => out.extend(self.class(*class)?),
             TypeKind::Enum(entity) => {
                 let node = self.graph.entity(*entity);

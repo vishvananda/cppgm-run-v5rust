@@ -319,6 +319,10 @@ impl<'a> Cloner<'a> {
             ExprKind::Paren(id) => ExprKind::Paren(self.expression(id)?),
             ExprKind::PackExpansion(id) => ExprKind::PackExpansion(self.expression(id)?),
             ExprKind::Id(id) => ExprKind::Id(self.name(id)?),
+            ExprKind::ComplexPart { imaginary, operand } => ExprKind::ComplexPart {
+                imaginary,
+                operand: self.expression(operand)?,
+            },
             ExprKind::Unary { op, operand } => ExprKind::Unary {
                 op,
                 operand: self.expression(operand)?,

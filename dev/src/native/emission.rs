@@ -471,7 +471,11 @@ impl<'a> Pass<'a> {
             Op::Floating(op) => {
                 op.rebase(f.aligned_disp, f.aligned_bytes)
                     .emit(&mut self.assembler, image)?;
-                if matches!(op, super::floating_mir::FloatingOp::Return(_)) {
+                if matches!(
+                    op,
+                    super::floating_mir::FloatingOp::Return(_)
+                        | super::floating_mir::FloatingOp::ReturnPair(_, _)
+                ) {
                     self.stats.returns += 1;
                     self.return_jump(last)?;
                 }

@@ -1,0 +1,18 @@
+typedef _Complex double D;
+typedef __complex__ float F;
+typedef _Complex long double L;
+D pass(D x) { return x; }
+F make(float a, float b) { return __builtin_complex(a,b); }
+L wide(long double a, long double b) { return __builtin_complex(a,b); }
+D* once(D* p, int& n) { ++n; return p; }
+int main() {
+ D a = {2.0,1.0}, b = {3.0,4.0};
+ int n=0; __imag__ *once(&a,n)=2.0;
+ D c=pass(a); c+=b; c*=2; c-=1; c/=2;
+ D d=~(-c); D old=d++; --d;
+ F f=make(1,2); L l=wide(3,4);
+ _Complex int q={8,3}, r={2,1}; q/=r;
+ return !(n==1 && __real__ a==2 && __imag__ a==2 && __real__ c==4.5 && __imag__ c==6 &&
+  __real__ d==__real__ old && __imag__ d==__imag__ old && __real__ f==1 && __imag__ f==2 &&
+  __real__ l==3 && __imag__ l==4 && q && !D{} && D{1,2}==D{1,2});
+}

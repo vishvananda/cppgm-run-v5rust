@@ -101,7 +101,9 @@ impl Function<'_, '_, '_, '_> {
                     }
                     work.extend([child(right), child(left)]);
                 }
-                ExprKind::Unary { operand, .. } | ExprKind::Cast { operand, .. } => {
+                ExprKind::ComplexPart { operand, .. }
+                | ExprKind::Unary { operand, .. }
+                | ExprKind::Cast { operand, .. } => {
                     work.push(child(operand));
                 }
                 ExprKind::Call { arguments, .. } => {
@@ -246,7 +248,8 @@ impl Function<'_, '_, '_, '_> {
                     }
                     work.extend([left, right].map(child));
                 }
-                ExprKind::Unary { operand, .. }
+                ExprKind::ComplexPart { operand, .. }
+                | ExprKind::Unary { operand, .. }
                 | ExprKind::Postfix { operand, .. }
                 | ExprKind::Cast { operand, .. }
                 | ExprKind::Member { base: operand, .. } => work.push(child(operand)),

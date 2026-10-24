@@ -77,6 +77,7 @@ impl Analyzer<'_> {
         use OperandStep::{Boolean, Visit};
         match kind {
             ExprKind::Paren(inner)
+            | ExprKind::ComplexPart { operand: inner, .. }
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Cast { operand: inner, .. } => {
                 self.exception_work.push((inner, Visit));

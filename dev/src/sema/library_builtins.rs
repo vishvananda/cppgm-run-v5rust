@@ -50,7 +50,12 @@ impl Analyzer<'_> {
             Type::Void => self.graph.types.scalar(Scalar::Void)?,
             Type::Scalar(ty) => self.graph.types.scalar(Scalar::Basic(ty))?,
             Type::Floating => self.graph.types.scalar(Scalar::Basic(floating))?,
-            Type::Complex => return Err(Error::Missing("complex library builtin types")),
+            Type::Complex => {
+                let part = self.graph.types.scalar(Scalar::Basic(floating))?;
+                self.graph
+                    .types
+                    .intern(TypeKind::Complex(part), Cv::default())?
+            }
             Type::VaList => {
                 let key = self
                     .identifiers

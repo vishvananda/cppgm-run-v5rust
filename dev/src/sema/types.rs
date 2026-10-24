@@ -49,6 +49,7 @@ pub(super) enum RefKind {
 pub(super) enum TypeKind {
     Auto,
     Scalar(Scalar),
+    Complex(TypeId),
     Class(EntityId),
     Enum(EntityId),
     Template(EntityId),
@@ -440,6 +441,7 @@ impl Types {
                 work.push((id, true));
                 match &self.get(id).kind {
                     TypeKind::Pointer(element)
+                    | TypeKind::Complex(element)
                     | TypeKind::BlockPointer(element)
                     | TypeKind::Reference { element, .. }
                     | TypeKind::Expansion(element) => {
@@ -496,6 +498,9 @@ impl Types {
                     parameter,
                     depth,
                 },
+                TypeKind::Complex(element) => {
+                    TypeKind::Complex(self.canonical_child(element, declaration)?)
+                }
                 TypeKind::Pointer(element) => {
                     TypeKind::Pointer(self.canonical_child(element, declaration)?)
                 }

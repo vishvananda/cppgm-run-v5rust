@@ -53,6 +53,7 @@ pub(super) enum FloatingOp {
         right: Option<Operand>,
     },
     Return(Operand),
+    ReturnPair(Operand, Operand),
     Pop(Option<Operand>),
 }
 pub(super) fn write_operand(
@@ -142,6 +143,12 @@ impl FloatingOp {
                 }
                 Ok(())
             }
+            Self::ReturnPair(real, imaginary) => {
+                write!(out, "    fret.f80 ")?;
+                write_operand(program, out, Type::F80, real)?;
+                write!(out, ", ")?;
+                write_operand(program, out, Type::F80, imaginary)
+            }
             Self::Return(value) => {
                 write!(out, "    fret.f80 ")?;
                 write_operand(program, out, Type::F80, value)
@@ -191,6 +198,7 @@ impl FloatingOp {
                 right: right.map(rebase),
             },
             Self::Return(v) => Self::Return(rebase(v)),
+            Self::ReturnPair(real, imaginary) => Self::ReturnPair(rebase(real), rebase(imaginary)),
             Self::Pop(v) => Self::Pop(v.map(rebase)),
         }
     }
@@ -204,6 +212,10 @@ impl FloatingOp {
                 left,
                 right,
             } => set(a, image, predicate, ty, destination, left, right),
+            Self::ReturnPair(real, imaginary) => {
+                x87_load(a, image, imaginary, Type::F80)?;
+                x87_load(a, image, real, Type::F80)
+            }
             Self::Return(v) => x87_load(a, image, v, Type::F80),
             Self::Pop(Some(v)) => a.x87(0xdb, 7, v.rm()?),
             Self::Pop(None) => {

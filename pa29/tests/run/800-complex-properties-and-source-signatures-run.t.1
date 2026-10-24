@@ -1,0 +1,16 @@
+typedef _Complex double D;
+typedef _Complex float F;
+static_assert(sizeof(D)==16 && alignof(D)==8,"layout");
+static_assert(__is_trivial(D) && __is_trivially_copyable(D) && __is_standard_layout(D) && __is_literal_type(D),"properties");
+static_assert(!__is_scalar(D) && !__is_arithmetic(D) && __is_compound(D),"classification");
+constexpr int select(double){return 1;} constexpr int select(D){return 2;}
+static_assert(select(1.0)==1,"real rank");
+constexpr int promote(D){return 3;} constexpr int promote(_Complex long double){return 4;}
+static_assert(promote(F{})==3,"promotion");
+constexpr D source={5,6}; constexpr const double* ptr=&__imag__ source;
+static_assert(*ptr==6,"component address");
+D throwing();
+static_assert(!noexcept(__imag__ throwing()),"component unwind");
+static_assert(noexcept(__builtin_complex(1.0,2.0)),"intrinsic unwind");
+const char* signature(D) { return __PRETTY_FUNCTION__; }
+int main(){D value{};value={1,2};return signature(value)[0]=='c' && __real__ value==1 && __imag__ value==2 ? 0:1;}

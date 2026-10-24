@@ -76,6 +76,7 @@ impl Abbreviation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Modifier {
+    Complex,
     Pointer,
     LvalueReference,
     RvalueReference,

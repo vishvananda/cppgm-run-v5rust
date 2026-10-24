@@ -61,3 +61,5 @@ dev/obj-clang-libcxx/
 /artifacts/pa29-soft-float/
 
 /artifacts/pa29-reserved-wrappers/
+
+/artifacts/pa29-complex/

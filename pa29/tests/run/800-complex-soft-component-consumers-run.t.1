@@ -1,0 +1,7 @@
+typedef _Complex _Float16 H;
+typedef _Complex __float128 Q;
+H add(H a,H b){return a+b;}
+Q product(Q a,Q b){return a*b;}
+Q quotient(Q a,Q b){return a/b;}
+H make(_Float16 a,_Float16 b){return __builtin_complex(a,b);}
+int main(){ H h=make(1,2);h=add(h,h);return __real__ h==2 && __imag__ h==4 ? 0:1; }

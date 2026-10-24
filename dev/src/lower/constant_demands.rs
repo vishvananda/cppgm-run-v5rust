@@ -59,7 +59,9 @@ impl Symbols<'_, '_> {
                 ExprKind::Binary { left, right, .. } => {
                     work.extend([(right, depth + 1), (left, depth + 1)]);
                 }
-                ExprKind::Unary { operand, .. } | ExprKind::Cast { operand, .. } => {
+                ExprKind::ComplexPart { operand, .. }
+                | ExprKind::Unary { operand, .. }
+                | ExprKind::Cast { operand, .. } => {
                     work.push((operand, depth + 1));
                 }
                 ExprKind::Member { base, .. } => work.push((base, depth + 1)),

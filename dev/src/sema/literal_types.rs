@@ -420,7 +420,8 @@ impl Analyzer<'_> {
             ExprKind::Keyword(keyword) => keyword == Keyword::This,
             ExprKind::Paren(inner) => uses(inner),
             ExprKind::Binary { left, right, .. } => uses(left) || uses(right),
-            ExprKind::Unary { operand, .. }
+            ExprKind::ComplexPart { operand, .. }
+            | ExprKind::Unary { operand, .. }
             | ExprKind::Postfix { operand, .. }
             | ExprKind::Cast { operand, .. } => uses(operand),
             ExprKind::Conditional {

@@ -239,6 +239,7 @@ impl Function<'_, '_, '_, '_> {
                     else_expr,
                 } => work.extend([condition, then_expr, else_expr]),
                 ExprKind::Paren(id)
+                | ExprKind::ComplexPart { operand: id, .. }
                 | ExprKind::Unary { operand: id, .. }
                 | ExprKind::Postfix { operand: id, .. }
                 | ExprKind::Cast { operand: id, .. }

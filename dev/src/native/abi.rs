@@ -75,19 +75,31 @@ pub(super) struct Argument {
     first: usize,
     count: usize,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum X87Result {
+    None,
+    Single,
+    Pair,
+}
 pub(super) struct Layout {
     pub(super) arguments: Vec<Argument>,
     parts: Vec<Part>,
     pub(super) indirect_result: bool,
     pub(super) result: [Option<Part>; 2],
     pub(super) classified_result: bool,
-    pub(super) x87_result: bool,
+    x87: X87Result,
     pub(super) stack_align: u32,
     gprs: usize,
     xmms: u8,
     pub(super) stack: u32,
 }
 impl Layout {
+    pub(super) fn x87_result(&self) -> bool {
+        self.x87 == X87Result::Single
+    }
+    pub(super) fn x87_pair_result(&self) -> bool {
+        self.x87 == X87Result::Pair
+    }
     pub(super) fn gpr_count(&self) -> usize {
         self.gprs
     }
@@ -103,10 +115,16 @@ impl Layout {
         {
             value_bytes(signature.result)?;
         }
-        let indirect_result = matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16 || matches!(
-            signature.boundary.result_classes,
-            Some(ObjectClasses::Memory)
-        ));
+        let x87_pair_result = matches!(signature.result, Type::Object { .. })
+            && matches!(
+                signature.boundary.result_classes,
+                Some(ObjectClasses::ComplexX87)
+            );
+        let indirect_result = !x87_pair_result
+            && matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16 || matches!(
+                signature.boundary.result_classes,
+                Some(ObjectClasses::Memory)
+            ));
         let classified_result = matches!(signature.result, Type::Object { .. })
             && signature.boundary.result_classes.is_some();
         let x87_result = signature.result == Type::F80
@@ -117,6 +135,7 @@ impl Layout {
         let mut result_count: usize = 0;
         if !indirect_result
             && !x87_result
+            && !x87_pair_result
             && matches!(signature.result, Type::Object { .. } | Type::I128)
         {
             let bytes = value_bytes(signature.result)?;
@@ -164,6 +183,7 @@ impl Layout {
             && signature.result.float_rank() == 0
             && !indirect_result
             && !x87_result
+            && !x87_pair_result
         {
             result[0] = Some(Part {
                 register: Some(R::RAX),
@@ -178,7 +198,13 @@ impl Layout {
             indirect_result,
             result,
             classified_result,
-            x87_result,
+            x87: if x87_pair_result {
+                X87Result::Pair
+            } else if x87_result {
+                X87Result::Single
+            } else {
+                X87Result::None
+            },
             stack_align: 16,
             gprs: usize::from(indirect_result),
             xmms: 0,
@@ -250,7 +276,10 @@ impl Layout {
             };
             if bytes > 16
                 || bytes == 0 && classes.is_none()
-                || matches!(classes, Some(ObjectClasses::Memory | ObjectClasses::X87))
+                || matches!(
+                    classes,
+                    Some(ObjectClasses::Memory | ObjectClasses::X87 | ObjectClasses::ComplexX87)
+                )
                 || self.gprs + gprs > 6
                 || self.xmms + xmms > 8
             {

@@ -56,7 +56,8 @@ impl Function<'_, '_, '_, '_> {
                     work.push((right, conditional || logical));
                     work.push((left, conditional));
                 }
-                ExprKind::Unary { operand, .. }
+                ExprKind::ComplexPart { operand, .. }
+                | ExprKind::Unary { operand, .. }
                 | ExprKind::Postfix { operand, .. }
                 | ExprKind::Cast { operand, .. } => work.push((operand, conditional)),
                 ExprKind::Call { arguments, .. } if self.graph.lower_functional_call(id)? => {

@@ -216,6 +216,7 @@ impl Analyzer<'_> {
                 Ok(keyword == Keyword::This && self.dependent_class_scope(scope))
             }
             ExprKind::Paren(inner)
+            | ExprKind::ComplexPart { operand: inner, .. }
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Postfix { operand: inner, .. } => {
                 self.expression_type_dependence(inner, scope, precise)
@@ -373,6 +374,7 @@ impl Analyzer<'_> {
         match kind {
             ExprKind::Member { base: operand, .. }
             | ExprKind::Paren(operand)
+            | ExprKind::ComplexPart { operand, .. }
             | ExprKind::Unary { operand, .. }
             | ExprKind::Postfix { operand, .. }
             | ExprKind::Cast { operand, .. } => {
@@ -580,7 +582,9 @@ impl super::graph::Graph {
                     return true;
                 }
                 TypeKind::Enum(entity) if self.type_has_template_owner(*entity) => return true,
-                TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
+                TypeKind::Pointer(element)
+                | TypeKind::Complex(element)
+                | TypeKind::Reference { element, .. } => {
                     work.push(*element);
                 }
                 TypeKind::Array {

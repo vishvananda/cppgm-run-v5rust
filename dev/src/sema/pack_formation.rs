@@ -134,7 +134,9 @@ impl Analyzer<'_> {
                         work.extend(instance.arguments.iter().rev().copied());
                     }
                 }
-                TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
+                TypeKind::Pointer(element)
+                | TypeKind::Complex(element)
+                | TypeKind::Reference { element, .. } => {
                     work.push(*element);
                 }
                 TypeKind::Array {

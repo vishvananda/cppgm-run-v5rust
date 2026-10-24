@@ -183,7 +183,8 @@ impl Function<'_, '_, '_, '_> {
                     work.push(right);
                     work.push(left);
                 }
-                ExprKind::Unary { operand, .. }
+                ExprKind::ComplexPart { operand, .. }
+                | ExprKind::Unary { operand, .. }
                 | ExprKind::Postfix { operand, .. }
                 | ExprKind::Cast { operand, .. } => work.push(operand),
                 ExprKind::Conditional {

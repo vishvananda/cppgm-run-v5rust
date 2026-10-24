@@ -329,7 +329,9 @@ impl<'a> Parser<'a> {
             return Err(self.fail("classes metadata requires a direct object of matching size"));
         }
         let classes = if self.at(Kind::Word) {
-            if self.object_facts && self.at_word("x87") {
+            if self.object_facts && self.at_word("complex_x87") {
+                Some(ObjectClasses::ComplexX87)
+            } else if self.object_facts && self.at_word("x87") {
                 Some(ObjectClasses::X87)
             } else {
                 ObjectClasses::parse(self.lexer.token.word(), bytes).filter(|classes| {

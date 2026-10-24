@@ -58,14 +58,14 @@ impl Analyzer<'_> {
             if !self.graph.lower_variable(entity)?.thread_local
                 && matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::Class(_) | TypeKind::Array { .. }
+                    TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
                 )
                 && !self
                     .graph
                     .class_of(ty)
                     .is_some_and(|class| self.graph.lower_polymorphic(class))
             {
-                if constructed {
+                if constructed || self.complex_part_type(ty).is_some() {
                     self.record_aggregate_constant(entity, initializer, scope, false)?;
                 }
                 if self.record_completed_image(entity)? {
@@ -87,7 +87,7 @@ impl Analyzer<'_> {
                 && self.graph.lower_array_image(entity).is_none()
                 && matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::Class(_) | TypeKind::Array { .. }
+                    TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
                 )
                 && !self
                     .graph

@@ -43,6 +43,7 @@ pub(super) enum ValueConversion {
     IntegralPromotion,
     FloatingPromotion,
     Arithmetic,
+    Complex,
     Boolean,
     PointerBoolean,
     NullPointer,
@@ -55,6 +56,7 @@ pub(super) enum ConversionRank {
     Exact,
     Promotion,
     Conversion,
+    ComplexReal,
     UserDefined,
     Ellipsis,
 }
@@ -310,6 +312,7 @@ pub(super) struct ExpressionFacts {
     // independently of the typed facts consumed by lowering.
     call_views: std::collections::HashMap<ast::ExprId, CallView>,
     // Atomic calls are sparse; keep the dense fact record at its existing size.
+    complex_constructions: std::collections::HashSet<ast::ExprId>,
     constant_evaluation_queries: std::collections::HashSet<ast::ExprId>,
     stack_intrinsics:
         std::collections::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
@@ -390,6 +393,7 @@ impl ExpressionFacts {
             || self.stack_intrinsic(id).is_some()
             || self.runtime_intrinsic(id).is_some()
             || self.constant_evaluation_query(id)
+            || self.complex_construction(id)
             || facts.intrinsic.is_some()
             || self.integer_intrinsic(id).is_some()
             || self.atomic_intrinsic(id).is_some()
@@ -407,6 +411,12 @@ impl ExpressionFacts {
         kind: super::source_locations::SourceLocation,
     ) {
         self.source_locations.insert(self.root(id), kind);
+    }
+    pub(super) fn complex_construction(&self, id: ast::ExprId) -> bool {
+        self.complex_constructions.contains(&self.root(id))
+    }
+    pub(super) fn note_complex_construction(&mut self, id: ast::ExprId) {
+        self.complex_constructions.insert(self.root(id));
     }
     pub(super) fn constant_evaluation_query(&self, id: ast::ExprId) -> bool {
         self.constant_evaluation_queries.contains(&self.root(id))

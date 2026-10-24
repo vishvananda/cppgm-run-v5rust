@@ -194,6 +194,7 @@ impl MemoryOrder {
 pub(crate) enum ObjectClasses {
     Memory,
     X87,
+    ComplexX87,
     Direct(EightbyteClass, Option<EightbyteClass>),
 }
 impl ObjectClasses {
@@ -217,6 +218,7 @@ impl std::fmt::Display for ObjectClasses {
         match self {
             Self::Memory => f.write_str("memory"),
             Self::X87 => f.write_str("x87"),
+            Self::ComplexX87 => f.write_str("complex_x87"),
             Self::Direct(first, second) => {
                 f.write_str(first.spelling())?;
                 if let Some(second) = second {

@@ -218,6 +218,7 @@ impl Analyzer<'_> {
                 spec.location
             });
         let mut int128 = false;
+        let mut complex = false;
         let mut ty = None;
         let mut declared = None;
         let mut alias_alignment = 0;
@@ -227,6 +228,16 @@ impl Analyzer<'_> {
                 specifier.kind,
                 SpecifierKind::Keyword(_) | SpecifierKind::ExplicitCondition(_)
             ) {
+                continue;
+            }
+            if self.complex_specifier(specifier) {
+                if complex {
+                    return Err(Error::at(
+                        specifier.location,
+                        "_Complex repeated in a decl-specifier-seq",
+                    ));
+                }
+                complex = true;
                 continue;
             }
             let named = if friendship == Friendship::Friend {
@@ -289,7 +300,7 @@ impl Analyzer<'_> {
                 declared = Some(named);
             }
         }
-        let has_written_type = auto_type || ty.is_some() || !fundamental.is_empty();
+        let has_written_type = auto_type || complex || ty.is_some() || !fundamental.is_empty();
         let ty = if auto_type {
             if ty.is_some() || !fundamental.is_empty() {
                 return Err(Error::at(location, "auto with another type specifier"));
@@ -314,6 +325,8 @@ impl Analyzer<'_> {
                 } else {
                     F::Int128
                 }))
+            } else if complex && fundamental.is_empty() {
+                Some(Scalar::Basic(F::Double))
             } else if special && fundamental.is_empty() {
                 Some(Scalar::Void)
             } else {
@@ -321,6 +334,23 @@ impl Analyzer<'_> {
             }
             .ok_or_else(|| Error::at(location, "invalid combination of type specifiers"))?;
             self.graph.types.scalar(scalar)?
+        };
+        let ty = if complex {
+            if !matches!(self.graph.types.get(ty).kind, super::types::TypeKind::Scalar(scalar)
+                if !matches!(scalar, Scalar::Void | Scalar::Bool | Scalar::Nullptr))
+            {
+                return Err(Error::at(
+                    location,
+                    "_Complex of a type that is no arithmetic type",
+                ));
+            }
+            let part = self.bare_type(ty)?;
+            self.graph.types.intern(
+                super::types::TypeKind::Complex(part),
+                self.graph.types.get(ty).cv,
+            )?
+        } else {
+            ty
         };
         let ty = if auto_type {
             ty

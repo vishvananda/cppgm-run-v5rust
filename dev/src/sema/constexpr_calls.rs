@@ -142,6 +142,20 @@ impl Analyzer<'_> {
                 return self.zero_constant_scalar(target);
             }
         }
+        if matches!(
+            self.graph.types.get(target).kind,
+            TypeKind::Scalar(Scalar::Bool)
+        ) && self
+            .graph
+            .expression_facts
+            .get(id)
+            .is_ok_and(|facts| self.complex_part_type(facts.ty).is_some())
+        {
+            let truth = self.constant_complex_truth(id, scope)?;
+            return Ok(Value::Integer(
+                self.integral_value(target, u64::from(truth)),
+            ));
+        }
         if let TypeKind::Pointer(element) = self.graph.types.get(target).kind {
             let mut value = self.address_operand(id, scope)?;
             value.designated = element;
@@ -248,7 +262,7 @@ impl Analyzer<'_> {
             )?;
             return Ok(place);
         }
-        if self.graph.class_of(element).is_some() {
+        if self.graph.class_of(element).is_some() || self.complex_part_type(element).is_some() {
             let place = self.constant_object_place(id, scope)?;
             let mut place = self.constant_project_path(
                 place,
@@ -574,7 +588,9 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("constant function without function type"));
         };
-        let destination = if self.graph.class_of(returns).is_some() {
+        let destination = if self.graph.class_of(returns).is_some()
+            || self.complex_part_type(returns).is_some()
+        {
             Some(if let Some(destination) = destination {
                 destination
             } else {
@@ -715,7 +731,7 @@ impl Analyzer<'_> {
             {
                 let value = match self.graph.types.get(parameter).kind {
                     TypeKind::Reference { .. } => Returned::Place(source),
-                    TypeKind::Class(_) => {
+                    TypeKind::Class(_) | TypeKind::Complex(_) => {
                         let place = self.allocate_constant_object(parameter, None, location)?;
                         self.copy_constant_object(place, source, location)?;
                         Returned::Place(place)
@@ -756,7 +772,7 @@ impl Analyzer<'_> {
                         TypeKind::Reference { element, .. } => Ok(Returned::Place(
                             analyzer.bind_constant_reference(argument, element, scope)?,
                         )),
-                        TypeKind::Class(_) => {
+                        TypeKind::Class(_) | TypeKind::Complex(_) => {
                             let place =
                                 analyzer.allocate_constant_object(parameter, None, location)?;
                             analyzer.initialize_constant_class_from(argument, place, scope)?;

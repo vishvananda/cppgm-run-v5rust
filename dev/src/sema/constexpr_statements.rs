@@ -85,7 +85,9 @@ impl Analyzer<'_> {
                         self.graph.types.get(target).kind
                     {
                         Returned::Place(self.bind_constant_reference(expr, element, scope)?)
-                    } else if self.graph.class_of(target).is_some() {
+                    } else if self.graph.class_of(target).is_some()
+                        || self.complex_part_type(target).is_some()
+                    {
                         let place = self.constexpr_frames.current()?.destination.ok_or(
                             Error::Invariant("constant class result without destination"),
                         )?;

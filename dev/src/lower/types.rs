@@ -62,6 +62,13 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
         );
     }
     Ok(match graph.lower_type(ty)? {
+        TypeView::Complex(part) => {
+            let (bytes, align) = layout(graph, part)?;
+            Type::Object {
+                bytes: bytes.checked_mul(2).ok_or(crate::lowir::Error::Limit)?,
+                align,
+            }
+        }
         TypeView::Scalar(scalar) => match scalar {
             Scalar::Void => Type::Void,
             Scalar::Bool | Scalar::UnsignedChar => Type::U8,

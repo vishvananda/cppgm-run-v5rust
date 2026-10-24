@@ -553,7 +553,9 @@ impl Analyzer<'_> {
                         self.deducible_pattern_list(&instance.arguments, true, &mut work);
                     }
                 }
-                TypeKind::Pointer(element) | TypeKind::Reference { element, .. } => {
+                TypeKind::Pointer(element)
+                | TypeKind::Complex(element)
+                | TypeKind::Reference { element, .. } => {
                     work.push(*element);
                 }
                 TypeKind::Array {

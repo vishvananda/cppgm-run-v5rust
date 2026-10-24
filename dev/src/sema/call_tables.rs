@@ -128,6 +128,7 @@ impl Graph {
         match tree.expressions.get(id).kind {
             ExprKind::Paren(inner)
             | ExprKind::PackExpansion(inner)
+            | ExprKind::ComplexPart { operand: inner, .. }
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Postfix { operand: inner, .. }
             | ExprKind::VaArg { operand: inner, .. }

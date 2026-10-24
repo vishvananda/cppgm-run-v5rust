@@ -1897,6 +1897,7 @@ fn expression_label(
         | ExprKind::OffsetOfBase(_)
         | ExprKind::Sizeof { .. }
         | ExprKind::TypeTrait { .. }
+        | ExprKind::ComplexPart { .. }
         | ExprKind::VaArg { .. } => "sizeof-expression",
         ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
         ExprKind::Braced { .. } => "braced-init-list",

@@ -242,56 +242,7 @@ impl<'tree> Analyzer<'tree> {
         });
         let [func, function, pretty] = predefined_names;
         let predefined_names = [func?, function?, pretty?];
-        let builtin_names = super::builtin_calls::BuiltinNames {
-            is_constant_evaluated: cursor
-                .intern_name(b"__builtin_is_constant_evaluated")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            abort: cursor
-                .intern_name(b"__builtin_abort")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            expect: cursor
-                .intern_name(b"__builtin_expect")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            constant_p: cursor
-                .intern_name(b"__builtin_constant_p")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            invoke: cursor
-                .intern_name(b"__builtin_invoke")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            operator_new: cursor
-                .intern_name(b"__builtin_operator_new")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            operator_delete: cursor
-                .intern_name(b"__builtin_operator_delete")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            memcpy: cursor
-                .intern_name(b"__builtin_memcpy")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            memmove: cursor
-                .intern_name(b"__builtin_memmove")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            memcmp: cursor
-                .intern_name(b"__builtin_memcmp")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            memset: cursor
-                .intern_name(b"__builtin_memset")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            strlen: cursor
-                .intern_name(b"__builtin_strlen")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            unreachable: cursor
-                .intern_name(b"__builtin_unreachable")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            trap: cursor
-                .intern_name(b"__builtin_trap")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            runtime: super::runtime_intrinsics::names(cursor)?,
-            source_locations: super::source_locations::names(cursor)?,
-            stack: super::stack_intrinsics::StackNames::new(cursor)?,
-            floating: super::floating_intrinsics::names(cursor)?,
-            integer: super::integer_intrinsics::names(cursor)?,
-            atomic: super::atomic_operations::names(cursor)?,
-        };
+        let builtin_names = super::builtin_calls::BuiltinNames::new(cursor)?;
         let decltype_name = cursor
             .intern_name(b"decltype(...)")
             .map_err(|_| Error::Limit("semantic identifier limit"))?;

@@ -33,6 +33,18 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<Address, Error> {
         let location = self.tree.expressions.get(id).location;
+        if self
+            .complex_part_type(self.graph.expression_facts.get(left)?.ty)
+            .is_some()
+        {
+            return self.constant_complex_assignment(
+                id,
+                left,
+                right,
+                op.ok_or(Error::Invariant("complex assignment token"))?,
+                scope,
+            );
+        }
         // Simple assignment evaluates and converts the RHS before designation.
         // Compound assignment designates the LHS once and reads it first.
         let (place, value) = if op == Some(P::Assign) {

@@ -32,6 +32,9 @@ impl Analyzer<'_> {
         let location = self.tree.expressions.get(id).location;
         self.constant_step(location)?;
         target.designated = self.bare_type(target.designated)?;
+        if self.complex_part_type(target.designated).is_some() {
+            return self.initialize_constant_complex(id, target, scope);
+        }
         if facts.category != ValueCategory::Prvalue {
             let mut source = self.constant_place(id, scope)?;
             source.designated = self.bare_type(source.designated)?;
@@ -217,6 +220,26 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         self.constant_step(location)?;
+        if self.complex_part_type(target.designated).is_some()
+            && let Some(initializer) = initializer
+        {
+            let elements = match initializer.kind {
+                InitializerKind::Braced(id) | InitializerKind::Assign(id) => {
+                    if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
+                        Some(elements)
+                    } else {
+                        return self.initialize_constant_complex(id, target, scope);
+                    }
+                }
+                InitializerKind::Parenthesized(elements) => Some(elements),
+                _ => None,
+            };
+            if let Some(elements) = elements {
+                let parts =
+                    self.constant_complex_list(elements, target.designated, scope, location)?;
+                return self.store_complex_parts(target, parts, location);
+            }
+        }
         let Some(initializer) = initializer else {
             if let Some(constructor) = constructor
                 && self.graph.constructors.get(constructor).nontrivial()

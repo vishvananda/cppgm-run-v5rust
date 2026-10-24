@@ -59,6 +59,7 @@ impl Analyzer<'_> {
             }
             ExprKind::Paren(operand)
             | ExprKind::IntegerPack(operand)
+            | ExprKind::ComplexPart { operand, .. }
             | ExprKind::Unary { operand, .. }
             | ExprKind::Postfix { operand, .. }
             | ExprKind::Delete { operand, .. } => self.expression_work.push((operand, unevaluated)),

@@ -434,6 +434,10 @@ impl Graph {
                         write_name(cursor, name, output)?;
                     }
                 }
+                TypeKind::Complex(element) => {
+                    output.write_all(b"complex ")?;
+                    tasks.push(Task::Type(*element));
+                }
                 TypeKind::Pointer(element) => {
                     output.write_all(b"pointer to ")?;
                     tasks.push(Task::Type(*element));

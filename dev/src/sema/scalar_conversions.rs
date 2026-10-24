@@ -159,6 +159,7 @@ impl Analyzer<'_> {
             C::FloatingPromotion
         } else if matches!(gk, TypeKind::Scalar(Scalar::Bool)) {
             if self.is_arithmetic_operand(source)
+                || self.complex_part_type(source).is_some()
                 || sk.pointer_level().is_some()
                 || direct && matches!(sk, TypeKind::Scalar(Scalar::Nullptr))
             {
@@ -170,6 +171,10 @@ impl Analyzer<'_> {
             } else {
                 return Ok(None);
             }
+        } else if self.complex_part_type(goal).is_some()
+            && (self.is_arithmetic_operand(source) || self.complex_part_type(source).is_some())
+        {
+            C::Complex
         } else if self.is_arithmetic_operand(source) && self.is_arithmetic_type(goal) {
             use crate::types::FundamentalType as F;
             if context == SequenceContext::Ordinary
@@ -239,6 +244,8 @@ impl Analyzer<'_> {
             rank: match second {
                 C::None => R::Exact,
                 C::IntegralPromotion | C::FloatingPromotion => R::Promotion,
+                C::Complex if self.complex_part_type(source).is_none() => R::ComplexReal,
+                C::Complex if self.complex_promotion(source, goal)? => R::Promotion,
                 _ => R::Conversion,
             },
             qualification,

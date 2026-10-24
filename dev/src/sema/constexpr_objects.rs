@@ -121,6 +121,7 @@ impl Analyzer<'_> {
     ) -> Result<u64, Error> {
         self.check_stack()?;
         let count = match self.graph.types.get(ty).kind {
+            TypeKind::Complex(_) => 3,
             TypeKind::Array { element, bound, .. } => bound
                 .max(1)
                 .saturating_mul(self.constant_object_leaves(element, depth, location)?),
@@ -165,6 +166,20 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.types.get(place.designated).kind {
+            TypeKind::Complex(part) => {
+                let size = self.type_size(part, location)?.0;
+                for offset in [0, size] {
+                    let child = Address {
+                        designated: part,
+                        offset: place.offset.wrapping_add(super::integral::signed(offset)),
+                        ..place
+                    };
+                    let child_cell = self
+                        .constexpr_frames
+                        .add_child(cell, child, None, location)?;
+                    self.constant_skeleton(child, child_cell, location)?;
+                }
+            }
             TypeKind::Array { element, bound, .. } => {
                 let size = self.type_size(element, location)?.0;
                 for index in 0..bound {
@@ -375,7 +390,7 @@ impl Analyzer<'_> {
             let child = self.constexpr_frames.cell_place(place, index);
             if matches!(
                 self.graph.types.get(child.designated).kind,
-                TypeKind::Class(_) | TypeKind::Array { .. }
+                TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
             ) {
                 continue;
             }
@@ -642,6 +657,18 @@ impl Analyzer<'_> {
                 continue;
             }
             match self.graph.types.get(ty).kind {
+                TypeKind::Complex(element) => {
+                    let size = self.type_size(element, location)?.0;
+                    for start in [0, super::integral::signed(size)] {
+                        self.queue_constant_subobject(
+                            &mut query.work,
+                            element,
+                            start,
+                            offset,
+                            location,
+                        )?;
+                    }
+                }
                 TypeKind::Array { element, bound, .. } => {
                     let size = self.type_size(element, location)?.0;
                     let offset = offset.cast_unsigned();

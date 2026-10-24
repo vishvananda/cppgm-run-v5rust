@@ -1,0 +1,8 @@
+extern "C" {
+ _Complex float cabs_identity(_Complex float x){return x;}
+ _Complex long double wide_identity(_Complex long double x){return x;}
+}
+struct Box{ _Complex double v; int n; };
+Box f(Box b){return b;}
+_Complex int consume(_Complex int x, const _Complex int& y){return x+y;}
+int main(){ _Complex long double x=__builtin_complex(1.L,2.L); auto y=wide_identity(x); return __real__ y==1 && __imag__ y==2 ? 0:1;}

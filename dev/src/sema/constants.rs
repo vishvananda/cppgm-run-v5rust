@@ -139,6 +139,10 @@ impl Analyzer<'_> {
             analyzer.evaluate_constant_inner(id, scope, skipping)
         })
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "One source-expression dispatch preserves constant-evaluation order and diagnostics"
+    )]
     fn evaluate_constant_inner(
         &mut self,
         id: ast::ExprId,
@@ -177,6 +181,33 @@ impl Analyzer<'_> {
             })
         {
             return self.constant_call(id, scope, skipping);
+        }
+        if self.semantic()
+            && let ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: false,
+            } = expr.kind
+            && matches!(op.token.as_punctuator(), Some(P::Equal | P::NotEqual))
+            && self.graph.expression_facts.get(left).is_ok_and(|facts| {
+                self.complex_part_type(facts.ty).is_some()
+                    || facts
+                        .conversion
+                        .is_some_and(|c| self.complex_part_type(c.result).is_some())
+            })
+        {
+            return if skipping {
+                Ok(self.integral_value(self.graph.expression_facts.get(id)?.ty, 0))
+            } else {
+                self.constant_complex_equal(
+                    id,
+                    left,
+                    right,
+                    op.token.as_punctuator() == Some(P::Equal),
+                    scope,
+                )
+            };
         }
         if self.semantic() && self.floating_binary(id) {
             return self.integral_floating_operation(id, scope, skipping);
@@ -266,6 +297,13 @@ impl Analyzer<'_> {
                 self.evaluate_constant(right, scope, skipping)?
             }
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
+            ExprKind::ComplexPart { imaginary, operand } => {
+                let value = self.constant_component(id, operand, imaginary, scope)?;
+                let super::constant_addresses::TemporaryValue::Integer(value) = value else {
+                    return Err(Error::Invariant("integral complex component"));
+                };
+                value
+            }
             ExprKind::Unary { op, operand } => {
                 self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?
             }
@@ -905,6 +943,11 @@ impl Analyzer<'_> {
                     || self.consumes_address(id)
                     || self.consumes_member_pointer(id)
                     || self.floating_binary(id)
+                    || self
+                        .graph
+                        .expression_facts
+                        .get(left)
+                        .is_ok_and(|facts| self.complex_part_type(facts.ty).is_some())
                     || op.token.as_punctuator() == Some(P::Comma))
             {
                 break;
@@ -1123,7 +1166,15 @@ impl Analyzer<'_> {
         id: ast::ExprId,
     ) -> Result<Constant, Error> {
         let location = self.tree.expressions.get(id).location;
-        if self.semantic() && op == Some(P::LogicalNot) && self.floating_expression(operand) {
+        if self.semantic()
+            && op == Some(P::LogicalNot)
+            && (self.floating_expression(operand)
+                || self
+                    .graph
+                    .expression_facts
+                    .get(operand)
+                    .is_ok_and(|facts| self.complex_part_type(facts.ty).is_some()))
+        {
             let truth = self.constant_truth(operand, scope, skipping)?;
             return self.boolean(!truth);
         }
@@ -1220,6 +1271,21 @@ impl Analyzer<'_> {
             .graph
             .types
             .intern(self.graph.types.get(ty).kind.clone(), Cv::default())?;
+        if self.semantic()
+            && matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Scalar(Scalar::Bool)
+            )
+            && let Some(operand) = operand
+            && self
+                .graph
+                .expression_facts
+                .get(operand)
+                .is_ok_and(|facts| self.complex_part_type(facts.ty).is_some())
+        {
+            let truth = !skipping && self.constant_complex_truth(operand, scope)?;
+            return Ok(self.integral_value(ty, u64::from(truth)));
+        }
         if self.semantic()
             && operand.is_some_and(|id| {
                 self.floating_expression(id) || self.member_pointer_expression(id)
@@ -1336,7 +1402,7 @@ impl Analyzer<'_> {
             && self.graph.entity(entity).constexpr
             && matches!(
                 self.graph.types.get(ty).kind,
-                TypeKind::Class(_) | TypeKind::Array { .. }
+                TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
             )
         {
             return self.record_aggregate_constant(entity, Some(initializer), scope, true);

@@ -46,6 +46,8 @@ impl Function<'_, '_, '_, '_> {
         context: Context,
     ) -> Result<RValue, Error> {
         if value.source == target
+            || matches!((self.graph.lower_type(value.source)?, self.graph.lower_type(target)?),
+                (crate::sema::lowering::TypeView::Complex(a), crate::sema::lowering::TypeView::Complex(b)) if a == b)
             || matches!(
                 (self.graph.lower_type(value.source)?, self.graph.lower_type(target)?),
                 (crate::sema::lowering::TypeView::Scalar(from), crate::sema::lowering::TypeView::Scalar(to))
@@ -64,6 +66,9 @@ impl Function<'_, '_, '_, '_> {
             return Ok(value);
         }
         if types::boolean(self.graph, target)? {
+            if super::complex::part(self.graph, value.source)?.is_some() {
+                return self.complex_truth(value, target);
+            }
             if self.graph.lower_member_pointer_type(value.source).is_some() {
                 let truth = self.member_pointer_truth(value)?;
                 let zero = self.builder.integer(0)?;
@@ -81,6 +86,13 @@ impl Function<'_, '_, '_, '_> {
                 I::Compare(Compare::Ne, value.ty, value.value, zero.value),
                 target,
             );
+        }
+        if super::complex::part(self.graph, target)?.is_some() {
+            return self.complex_convert(value, target, context);
+        }
+        if super::complex::part(self.graph, value.source)?.is_some() {
+            let [real, _] = self.complex_parts(value)?;
+            return self.convert(real, target, context);
         }
         if super::soft_float::kind(self.graph, value.source)?.is_some()
             || super::soft_float::kind(self.graph, target)?.is_some()

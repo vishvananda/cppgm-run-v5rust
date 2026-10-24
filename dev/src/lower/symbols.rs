@@ -8,6 +8,8 @@ mod argument_declarations;
 mod call_signatures;
 #[path = "callable_encoding.rs"]
 mod callable_encoding;
+#[path = "complex.rs"]
+pub(super) mod complex;
 #[path = "exception_information.rs"]
 mod exception_information;
 #[path = "inline_definitions.rs"]
@@ -202,6 +204,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub instance_variables: std::collections::VecDeque<EntityId>,
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
+    complex_helpers: HashMap<(bool, char), SymbolId>,
     pub(super) soft_float_helpers: HashMap<super::soft_float::Helper, SymbolId>,
     numeric_scanner: crate::types::floating::FloatingScanner,
     pub data: super::data::Objects,
@@ -320,6 +323,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             generated_definitions: Vec::new(),
             signatures: HashMap::new(),
             soft_float_helpers: HashMap::new(),
+            complex_helpers: HashMap::new(),
             numeric_scanner: crate::types::floating::FloatingScanner::default(),
         }
     }
@@ -384,7 +388,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 .object_classes
                 .classify(self.graph, ty, self.budget)?
                 .map(|classes| match classes {
-                    crate::lowir::vocabulary::ObjectClasses::X87 => {
+                    crate::lowir::vocabulary::ObjectClasses::X87
+                    | crate::lowir::vocabulary::ObjectClasses::ComplexX87 => {
                         crate::lowir::vocabulary::ObjectClasses::Memory
                     }
                     other => other,
@@ -1312,6 +1317,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 TypeView::Value { ty, bits } => Node::Literal {
                     ty: self.abi_type(ty)?,
                     bits,
+                },
+                TypeView::Complex(part) => Node::Modified {
+                    modifier: Modifier::Complex,
+                    operand: self.abi_type(part)?,
                 },
                 TypeView::Scalar(scalar) => Node::Builtin(super::types::abi_scalar(scalar)),
                 TypeView::Pointer(element) => Node::Modified {
@@ -2283,7 +2292,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         metadata.object = Some(program.names.intern(object)?);
                     }
                 }
-                B::Trap
+                B::MakeComplex
+                | B::Trap
                 | B::SourceLocation(_)
                 | B::Runtime(_)
                 | B::Invoke

@@ -144,7 +144,7 @@ impl Analyzer<'_> {
         if !value.complete(|ty| {
             matches!(
                 self.graph.types.get(ty).kind,
-                TypeKind::Class(_) | TypeKind::Array { .. }
+                TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
             )
         }) {
             return Err(nonconstant(
@@ -175,7 +175,7 @@ impl Analyzer<'_> {
         let ty = self.graph.lower_entity_type(entity)?;
         if !matches!(
             self.graph.types.get(ty).kind,
-            TypeKind::Class(_) | TypeKind::Array { .. }
+            TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
         ) || self.graph.aggregate_constants.get(entity).is_some()
         {
             return Ok(());
@@ -287,7 +287,7 @@ impl Analyzer<'_> {
         if !value.complete(|ty| {
             matches!(
                 self.graph.types.get(ty).kind,
-                TypeKind::Class(_) | TypeKind::Array { .. }
+                TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
             )
         }) {
             return Err(nonconstant(

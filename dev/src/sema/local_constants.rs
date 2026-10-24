@@ -26,7 +26,10 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("local scalar without type"))?;
         if matches!(
             self.graph.types.get(ty).kind,
-            TypeKind::Reference { .. } | TypeKind::Array { .. } | TypeKind::Class(_)
+            TypeKind::Reference { .. }
+                | TypeKind::Array { .. }
+                | TypeKind::Class(_)
+                | TypeKind::Complex(_)
         ) {
             return Ok(());
         }
@@ -95,9 +98,9 @@ impl Analyzer<'_> {
                 self.initializer_names_member(left, depth + 1)
                     || self.initializer_names_member(right, depth + 1)
             }
-            ExprKind::Unary { operand, .. } | ExprKind::Cast { operand, .. } => {
-                self.initializer_names_member(operand, depth + 1)
-            }
+            ExprKind::ComplexPart { operand, .. }
+            | ExprKind::Unary { operand, .. }
+            | ExprKind::Cast { operand, .. } => self.initializer_names_member(operand, depth + 1),
             ExprKind::Conditional {
                 condition,
                 then_expr,

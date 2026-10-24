@@ -29,6 +29,8 @@ mod captures;
 mod class_casts;
 mod class_conditionals;
 mod class_templates;
+mod complex_constants;
+mod complex_values;
 mod constant_addresses;
 mod constant_floats;
 mod constant_mutations;

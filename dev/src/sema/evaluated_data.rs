@@ -160,7 +160,7 @@ impl Analyzer<'_> {
             }
             if matches!(
                 self.graph.types.get(ty).kind,
-                TypeKind::Class(_) | TypeKind::Array { .. }
+                TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
             ) {
                 continue;
             }

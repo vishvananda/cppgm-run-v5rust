@@ -15,6 +15,9 @@ enum StatementHead {
 }
 impl Parser<'_> {
     fn statement_head(&mut self) -> Result<StatementHead, ParseError> {
+        if self.complex_component_keyword()?.is_some() {
+            return Ok(StatementHead::Expression);
+        }
         match self.keyword()? {
             Some(word) if Self::is_specifier(word) && !Self::has_type_keyword(word) => {
                 return Ok(StatementHead::Declaration);

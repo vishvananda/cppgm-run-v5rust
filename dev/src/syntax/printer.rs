@@ -1040,6 +1040,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     fn expression(&mut self, id: ExprId) -> io::Result<()> {
         match self.renderer.tree.expressions.get(id).kind {
             ExprKind::Lambda(id) => self.lambda(id)?,
+            ExprKind::ComplexPart { imaginary, operand } => {
+                self.open(
+                    "builtin-trait-expression",
+                    Payload::Text(if imaginary { "__imag__" } else { "__real__" }),
+                )?;
+                self.tasks.push(Task::Expression(operand));
+            }
             ExprKind::IntegerPack(operand) => {
                 self.open("builtin-trait-expression", Payload::Text("__integer_pack"))?;
                 self.tasks.push(Task::Expression(operand));
