@@ -171,6 +171,17 @@ pub enum Node {
     Call,
     ConversionList(NodeId),
     BracedList(Option<NodeId>),
+    ParenthesizedList,
+    Allocation {
+        array: bool,
+        global: bool,
+        ty: NodeId,
+        initializer: Option<NodeId>,
+    },
+    Deallocation {
+        array: bool,
+        global: bool,
+    },
     ParenthesizedCall,
     PrefixStep {
         increment: bool,

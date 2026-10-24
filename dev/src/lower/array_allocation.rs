@@ -370,6 +370,28 @@ impl Function<'_, '_, '_, '_> {
         storage: Value,
         size: Value,
     ) -> Result<(), Error> {
+        // Frozen zero_bytes uses the shared fill runtime for host objects;
+        // course LowIR retains its explicit byte loop.
+        if self.symbols.host_objects() {
+            let callee = self.symbols.hosted_runtime_function(
+                self.builder.program(),
+                super::runtime_intrinsics::RuntimeFunction::Memset,
+            )?;
+            let zero = self.builder.integer(0)?;
+            let arguments = self.builder.arguments(&[storage, zero, size])?;
+            let _result = self.emit(
+                I::Call(Call {
+                    result: Type::Ptr,
+                    callee: Value::Symbol(callee),
+                    arguments,
+                    signature: None,
+                    copy_elision: false,
+                    argument_classes: Vec::new(),
+                }),
+                source,
+            )?;
+            return Ok(());
+        }
         let slot = self.generated_slot("zeroinit_offset", Type::I64)?;
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;

@@ -51,6 +51,7 @@ struct Context {
     unevaluated: u32,
     template_arguments: u32,
     dependent_uses: std::cell::Cell<u64>,
+    allocation: super::allocation::GlobalAllocationContext,
     c_language: bool,
     linkage: Option<super::linkage::Specification>,
     suppress_implicit: bool,
@@ -102,6 +103,10 @@ impl Context {
             &mut analyzer.template_arguments,
         );
         swap(&mut self.dependent_uses, &mut analyzer.dependent_uses);
+        swap(
+            &mut self.allocation,
+            &mut analyzer.global_allocation_context,
+        );
         swap(&mut self.c_language, &mut analyzer.c_language);
         swap(&mut self.linkage, &mut analyzer.linkage_specification);
         swap(&mut self.suppress_implicit, &mut analyzer.suppress_implicit);
@@ -178,6 +183,8 @@ mod tests {
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         analyzer.instantiation_depth = 7;
+        analyzer.global_allocation_context =
+            super::super::allocation::GlobalAllocationContext::Declaration;
         analyzer.dependent_uses.set(11);
         analyzer.operand_home = Some(analyzer.graph.global);
         analyzer.initializing_declarator = Some(declarator);
@@ -188,6 +195,10 @@ mod tests {
             .unwrap();
         analyzer.closure_default_argument = Some((function, 2));
         let result = analyzer.instantiation_context(2047, SourceOffset(0), 0, |inner| {
+            assert!(matches!(
+                inner.global_allocation_context,
+                super::super::allocation::GlobalAllocationContext::Instantiation
+            ));
             assert_eq!(inner.instantiation_depth, 2048);
             assert!(inner.operand_home.is_none());
             assert!(inner.initializing_declarator.is_none());
@@ -197,6 +208,10 @@ mod tests {
             Ok(())
         });
         assert!(result.is_ok());
+        assert!(matches!(
+            analyzer.global_allocation_context,
+            super::super::allocation::GlobalAllocationContext::Declaration
+        ));
         assert_eq!(analyzer.instantiation_depth, 7);
         assert_eq!(analyzer.dependent_uses.get(), 11);
         assert_eq!(analyzer.operand_home, Some(analyzer.graph.global));
@@ -204,11 +219,19 @@ mod tests {
         assert!(analyzer.declaration_access.before_owner_declarator);
         assert_eq!(analyzer.closure_default_argument, Some((function, 2)));
         let result = analyzer.instantiation_context(0, SourceOffset(0), 0, |inner| {
+            assert!(matches!(
+                inner.global_allocation_context,
+                super::super::allocation::GlobalAllocationContext::Instantiation
+            ));
             assert!(inner.initializing_declarator.is_none());
             inner.note_dependent_use();
             Err::<(), _>(Error::Missing("test substitution"))
         });
         assert!(result.is_err());
+        assert!(matches!(
+            analyzer.global_allocation_context,
+            super::super::allocation::GlobalAllocationContext::Declaration
+        ));
         assert_eq!(analyzer.dependent_uses.get(), 11);
         assert_eq!(analyzer.initializing_declarator, Some(declarator));
         assert_eq!(analyzer.closure_default_argument, Some((function, 2)));

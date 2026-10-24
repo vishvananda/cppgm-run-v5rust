@@ -19,6 +19,15 @@ use crate::{
     types::FundamentalType,
 };
 
+/// Delayed ordinary declarations use their lexical point; instantiations can
+/// see later global allocation declarations after definition-time viability.
+#[derive(Clone, Copy, Default)]
+pub(super) enum GlobalAllocationContext {
+    #[default]
+    Instantiation,
+    Declaration,
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct Allocation {
     pub function: BindingId,
@@ -388,6 +397,7 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        let uses = self.dependent_uses.get();
         let node = self.tree.expressions.get(id);
         let ast::ExprKind::New {
             global,
@@ -461,8 +471,13 @@ impl Analyzer<'_> {
             self.typed_expression(arg, scope)?;
         }
         self.lookup_location = location;
+        let bound = self.graph.lookup_limit.is_some() && self.dependent_uses.get() == uses;
+        let size = self
+            .graph
+            .types
+            .scalar(Scalar::Basic(FundamentalType::UnsignedLongInt))?;
         let (found, naming) =
-            self.allocation_lookup((global, count.is_some()), class, Keyword::New)?;
+            self.new_allocation_lookup((global, count.is_some()), class, args, size, bound)?;
         if !found
             .binding
             .is_some_and(|binding| self.graph.binding(binding).kind == BindingKind::Function)
@@ -473,10 +488,6 @@ impl Analyzer<'_> {
             ));
         }
         let set = self.graph.overloads.add(found.functions.as_slice())?;
-        let size = self
-            .graph
-            .types
-            .scalar(Scalar::Basic(FundamentalType::UnsignedLongInt))?;
         let mut scratch = std::mem::take(&mut self.call_scratch);
         let selected = (|| {
             self.rank_prefixed_call(
@@ -618,10 +629,64 @@ impl Analyzer<'_> {
                 return Ok((found, Some(class)));
             }
         }
-        Ok((
-            self.qualified_result(self.graph.global, key, Filter::Ordinary)?,
-            None,
-        ))
+        let saved_limit = self.graph.lookup_limit;
+        if matches!(
+            self.global_allocation_context,
+            GlobalAllocationContext::Instantiation
+        ) {
+            self.graph.lookup_limit = None;
+        }
+        let found = self.qualified_result(self.graph.global, key, Filter::Ordinary);
+        self.graph.lookup_limit = saved_limit;
+        Ok((found?, None))
+    }
+
+    fn new_allocation_lookup(
+        &mut self,
+        form: (bool, bool),
+        class: Option<EntityId>,
+        args: &[ast::ExprId],
+        size: TypeId,
+        bound: bool,
+    ) -> Result<(LookupResult, Option<EntityId>), Error> {
+        let location = self.lookup_location;
+        let (found, naming) = self.allocation_lookup(form, class, Keyword::New)?;
+        if !bound || naming.is_some() {
+            return Ok((found, naming));
+        }
+        // A nondependent call must have a viable global candidate in the
+        // definition context, before selection at the instantiation point.
+        // Initializer dependence does not participate in this decision.
+        let declared = self.qualified_result(
+            self.graph.global,
+            key(Keyword::New, form.1),
+            Filter::Ordinary,
+        )?;
+        if !declared
+            .binding
+            .is_some_and(|binding| self.graph.binding(binding).kind == BindingKind::Function)
+        {
+            return Err(Error::at(
+                location,
+                "no allocation function for the new-expression",
+            ));
+        }
+        let set = self.graph.overloads.add(declared.functions.as_slice())?;
+        let mut scratch = std::mem::take(&mut self.call_scratch);
+        let viable = (|| {
+            self.rank_prefixed_call(
+                Candidates::Functions(set),
+                args,
+                None,
+                Some(ExprFacts::new(size, ValueCategory::Prvalue)),
+                &mut scratch,
+            )?;
+            self.select_call(location, args.len() + 1, 0, &scratch)
+        })();
+        scratch.clear();
+        self.call_scratch = scratch;
+        viable?;
+        Ok((found, naming))
     }
 
     fn sized_array_deallocation(&mut self, class: Option<EntityId>) -> Result<bool, Error> {

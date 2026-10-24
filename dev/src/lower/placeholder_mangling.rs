@@ -377,6 +377,16 @@ impl Symbols<'_, '_> {
                 return self.operand_operation(words, O::SizeofExpression, 1, depth);
             }
             W::Node(N::SizeofPack) => return self.operand_pack_size(words),
+            W::Node(N::New) => return self.operand_allocation(words, depth),
+            W::Node(N::Delete) => {
+                let global = words.flag()?;
+                let array = words.flag()?;
+                let operand = self.operand_expression(words, depth + 1)?;
+                return self
+                    .abi
+                    .intern(Node::Deallocation { array, global }, &[operand])
+                    .map_err(Error::from);
+            }
             W::Node(N::Trait) => {
                 let W::Keyword(Some(keyword)) = words.next()? else {
                     return Err(missing());
@@ -398,6 +408,48 @@ impl Symbols<'_, '_> {
             _ => return Err(missing()),
         };
         self.abi.intern(node, &[]).map_err(Error::from)
+    }
+
+    fn operand_allocation(&mut self, words: &mut Words<'_>, depth: u8) -> Result<NodeId, Error> {
+        let placed = words.count()?;
+        let global = words.flag()?;
+        let array = words.flag()?;
+        let form = words.count()?;
+        let count = words.count()?;
+        let ty = self.abi_type(words.ty()?)?;
+        // The array bound is consumed in source order but not encoded.
+        if array {
+            self.operand_expression(words, depth + 1)?;
+        }
+        let mut placement = Vec::new();
+        for _ in 0..placed {
+            placement.push(self.operand_expression(words, depth + 1)?);
+        }
+        let initializer = match form {
+            0 => None,
+            1 | 2 => Some(self.operand_list(
+                words,
+                if form == 1 {
+                    Node::ParenthesizedList
+                } else {
+                    Node::BracedList(None)
+                },
+                count,
+                depth,
+            )?),
+            _ => return Err(missing()),
+        };
+        self.abi
+            .intern(
+                Node::Allocation {
+                    array,
+                    global,
+                    ty,
+                    initializer,
+                },
+                &placement,
+            )
+            .map_err(Error::from)
     }
 
     fn operand_pack_size(&mut self, words: &mut Words<'_>) -> Result<NodeId, Error> {

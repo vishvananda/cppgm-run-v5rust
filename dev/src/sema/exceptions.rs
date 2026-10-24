@@ -484,6 +484,12 @@ impl Analyzer<'_> {
                 pending.entity,
             ));
         }
+        let saved_allocation_context = self.global_allocation_context;
+        self.global_allocation_context = if matches!(pending.mode, SpecificationMode::Ordinary) {
+            super::allocation::GlobalAllocationContext::Declaration
+        } else {
+            super::allocation::GlobalAllocationContext::Instantiation
+        };
         let result = if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
             self.graph
                 .entity(pending.entity)
@@ -506,6 +512,7 @@ impl Analyzer<'_> {
         self.default_argument_scope = saved_default;
         self.member_initializer_class = saved_member;
         self.graph.lookup_limit = saved_limit;
+        self.global_allocation_context = saved_allocation_context;
         let result = result?;
         if pending.first {
             self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Value(result);

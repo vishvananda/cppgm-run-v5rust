@@ -796,6 +796,43 @@ impl<'a> Encoder<'a> {
                     self.expression(*item)?;
                 }
             }
+            Node::Allocation {
+                array,
+                global,
+                ty,
+                initializer,
+            } => {
+                if global {
+                    self.put(b"gs");
+                }
+                self.put(if array { b"na" } else { b"nw" });
+                for &item in self.graph.items(id) {
+                    self.expression(item)?;
+                }
+                self.put(b"_");
+                self.encode_type(ty)?;
+                if let Some(initializer) = initializer {
+                    self.expression(initializer)?;
+                } else {
+                    self.put(b"E");
+                }
+            }
+            Node::Deallocation { array, global } => {
+                if global {
+                    self.put(b"gs");
+                }
+                self.put(if array { b"da" } else { b"dl" });
+                for &item in self.graph.items(id) {
+                    self.expression(item)?;
+                }
+            }
+            Node::ParenthesizedList => {
+                self.put(b"pi");
+                for &item in self.graph.items(id) {
+                    self.expression(item)?;
+                }
+                self.put(b"E");
+            }
             Node::BracedList(ty) => {
                 if let Some(ty) = ty {
                     self.put(b"tl");

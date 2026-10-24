@@ -226,11 +226,20 @@ impl Graph {
                 children.push(object);
                 true
             }
+            Node::Allocation {
+                ty, initializer, ..
+            } => {
+                children.push(ty);
+                children.extend(initializer);
+                true
+            }
             Node::ClosureName { .. }
             | Node::TemplateParameter
             | Node::ArgumentPack
             | Node::Operation(_)
             | Node::Call
+            | Node::Deallocation { .. }
+            | Node::ParenthesizedList
             | Node::ParenthesizedCall
             | Node::PrefixStep { .. } => true,
             _ => false,
