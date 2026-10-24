@@ -15,7 +15,53 @@ use crate::{
     syntax::ast::{self, ExprKind},
     types::float_value::Operation,
 };
+
+#[derive(Clone, Copy)]
+enum ComplexValue {
+    Parts([Value; 2]),
+    Storage(Address, TypeId),
+}
+
 impl Analyzer<'_> {
+    fn complex_read_storage(
+        &mut self,
+        place: Address,
+        part: TypeId,
+        location: SourceOffset,
+    ) -> Result<ComplexValue, Error> {
+        if self.graph.types.get(place.designated).cv.0 & 2 != 0 {
+            return Err(nonconstant(location, "a read of a volatile glvalue"));
+        }
+        if place.past_end {
+            return Err(nonconstant(
+                location,
+                "an access one past the end of an array",
+            ));
+        }
+        if matches!(place.root, super::constant_addresses::Root::Object(_)) {
+            let designated = self.bare_type(place.designated)?;
+            self.constexpr_frames.locate(
+                Address {
+                    designated,
+                    ..place
+                },
+                location,
+            )?;
+        } else {
+            self.stored_complex_parts(place, part, location)?;
+        }
+        Ok(ComplexValue::Storage(place, part))
+    }
+    fn complex_value_parts(
+        &mut self,
+        value: ComplexValue,
+        location: SourceOffset,
+    ) -> Result<[Value; 2], Error> {
+        match value {
+            ComplexValue::Parts(parts) => Ok(parts),
+            ComplexValue::Storage(place, part) => self.stored_complex_parts(place, part, location),
+        }
+    }
     pub(super) fn constant_component_place(
         &mut self,
         operand: ast::ExprId,
@@ -75,6 +121,10 @@ impl Analyzer<'_> {
         part: TypeId,
         location: SourceOffset,
     ) -> Result<[Value; 2], Error> {
+        let part = self
+            .graph
+            .types
+            .qualify(part, self.graph.types.get(place.designated).cv)?;
         let first = Address {
             designated: part,
             ..place
@@ -96,9 +146,28 @@ impl Analyzer<'_> {
         parts: [Value; 2],
         location: SourceOffset,
     ) -> Result<(), Error> {
+        self.store_complex_parts_in(target, parts, location, true)
+    }
+    fn write_complex_parts(
+        &mut self,
+        target: Address,
+        parts: [Value; 2],
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.store_complex_parts_in(target, parts, location, false)
+    }
+    fn store_complex_parts_in(
+        &mut self,
+        target: Address,
+        parts: [Value; 2],
+        location: SourceOffset,
+        initializing: bool,
+    ) -> Result<(), Error> {
         let part = self
             .complex_part_type(target.designated)
             .ok_or(Error::Invariant("constant complex target"))?;
+        // The frozen interpreter checks cv on reads, while its object writes
+        // consume the unqualified value after semantic modifiability checks.
         for (index, value) in parts.into_iter().enumerate() {
             let offset = if index == 0 {
                 0
@@ -111,7 +180,11 @@ impl Analyzer<'_> {
                 ..target
             };
             let value = self.convert_constant_scalar(value, part, location)?;
-            self.store_constant_value(place, value, location)?;
+            if initializing {
+                self.store_constant_value(place, value, location)?;
+            } else {
+                self.write_constant_value(place, value, location)?;
+            }
         }
         Ok(())
     }
@@ -121,6 +194,15 @@ impl Analyzer<'_> {
         target: TypeId,
         scope: ScopeId,
     ) -> Result<[Value; 2], Error> {
+        let value = self.constant_complex_value(id, target, scope)?;
+        self.complex_value_parts(value, self.tree.expressions.get(id).location)
+    }
+    fn constant_complex_value(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        scope: ScopeId,
+    ) -> Result<ComplexValue, Error> {
         self.check_stack()?;
         self.check_deferred_constant(id)?;
         let id = self.graph.expression_facts.root(id);
@@ -130,28 +212,32 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("constant complex conversion type"))?;
         let facts = self.graph.expression_facts.get(id)?;
         let source = facts.ty;
-        let parts = if self.complex_part_type(source).is_none() {
-            [
+        let value = if self.complex_part_type(source).is_none() {
+            ComplexValue::Parts([
                 self.scalar_value(id, scope)?,
                 self.zero_constant_scalar(part)?,
-            ]
+            ])
         } else if facts.category != super::expression_facts::ValueCategory::Prvalue
             && !matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
         {
             let place = self.constant_place(id, scope)?;
-            self.stored_complex_parts(
+            self.complex_read_storage(
                 place,
                 self.complex_part_type(source)
                     .ok_or(Error::Invariant("constant complex source part"))?,
                 location,
             )?
         } else {
-            self.evaluate_complex_parts(id, scope)?
+            self.evaluate_complex_value(id, scope)?
         };
-        Ok([
+        if self.complex_part_type(source) == Some(part) {
+            return Ok(value);
+        }
+        let parts = self.complex_value_parts(value, location)?;
+        Ok(ComplexValue::Parts([
             self.convert_constant_scalar(parts[0], part, location)?,
             self.convert_constant_scalar(parts[1], part, location)?,
-        ])
+        ]))
     }
     pub(super) fn initialize_constant_complex(
         &mut self,
@@ -162,25 +248,25 @@ impl Analyzer<'_> {
         let parts = self.constant_complex_parts(id, target.designated, scope)?;
         self.store_complex_parts(target, parts, self.tree.expressions.get(id).location)
     }
-    fn evaluate_complex_parts(
+    fn evaluate_complex_value(
         &mut self,
         id: ast::ExprId,
         scope: ScopeId,
-    ) -> Result<[Value; 2], Error> {
+    ) -> Result<ComplexValue, Error> {
         let node = *self.tree.expressions.get(id);
         let ty = self.graph.expression_facts.get(id)?.ty;
         let part = self
             .complex_part_type(ty)
             .ok_or(Error::Invariant("complex expression part"))?;
         match node.kind {
-            ExprKind::Paren(inner) => self.constant_complex_parts(inner, ty, scope),
+            ExprKind::Paren(inner) => self.constant_complex_value(inner, ty, scope),
             ExprKind::Braced { elements, .. } => {
-                self.constant_complex_list(elements, ty, scope, node.location)
+                self.complex_list_value(elements, ty, scope, node.location)
             }
             ExprKind::Call { arguments, .. }
                 if self.graph.expression_facts.complex_construction(id) =>
             {
-                self.constant_complex_list(arguments, ty, scope, node.location)
+                self.complex_list_value(arguments, ty, scope, node.location)
             }
             ExprKind::FunctionalCast {
                 arguments, braced, ..
@@ -190,29 +276,29 @@ impl Analyzer<'_> {
                     else {
                         return Err(Error::Invariant("complex cast list"));
                     };
-                    return self.constant_complex_list(elements, ty, scope, node.location);
+                    return self.complex_list_value(elements, ty, scope, node.location);
                 }
                 let first = self.tree.expr_lists.get(arguments).first().copied();
                 if let Some(first) = first {
-                    self.constant_complex_parts(first, ty, scope)
+                    self.constant_complex_value(first, ty, scope)
                 } else {
-                    Ok([
+                    Ok(ComplexValue::Parts([
                         self.zero_constant_scalar(part)?,
                         self.zero_constant_scalar(part)?,
-                    ])
+                    ]))
                 }
             }
-            ExprKind::Cast { operand, .. } => self.constant_complex_parts(operand, ty, scope),
+            ExprKind::Cast { operand, .. } => self.constant_complex_value(operand, ty, scope),
             ExprKind::Call { arguments, .. }
                 if self.graph.expression_facts.get(id)?.functional_call =>
             {
                 if let Some(&first) = self.tree.expr_lists.get(arguments).first() {
-                    self.constant_complex_parts(first, ty, scope)
+                    self.constant_complex_value(first, ty, scope)
                 } else {
-                    Ok([
+                    Ok(ComplexValue::Parts([
                         self.zero_constant_scalar(part)?,
                         self.zero_constant_scalar(part)?,
-                    ])
+                    ]))
                 }
             }
             ExprKind::Call { .. } => {
@@ -224,18 +310,19 @@ impl Analyzer<'_> {
                         "a complex operand outside constant evaluation",
                     ));
                 };
-                self.stored_complex_parts(place, part, node.location)
+                self.complex_read_storage(place, part, node.location)
             }
             ExprKind::Unary { op, operand } => {
-                let mut parts = self.constant_complex_parts(operand, ty, scope)?;
+                let value = self.constant_complex_value(operand, ty, scope)?;
                 if op.token.as_punctuator() == Some(P::Add) {
-                    return Ok(parts);
+                    return Ok(value);
                 }
+                let mut parts = self.complex_value_parts(value, node.location)?;
                 if op.token.as_punctuator() == Some(P::Subtract) {
                     parts[0] = self.constant_part_negate(part, parts[0], node.location)?;
                 }
                 parts[1] = self.constant_part_negate(part, parts[1], node.location)?;
-                Ok(parts)
+                Ok(ComplexValue::Parts(parts))
             }
             ExprKind::Binary {
                 op,
@@ -244,22 +331,24 @@ impl Analyzer<'_> {
                 assignment: false,
             } if op.token.as_punctuator() == Some(P::Comma) => {
                 self.discard_constant(left, scope)?;
-                self.constant_complex_parts(right, ty, scope)
+                self.constant_complex_value(right, ty, scope)
             }
             ExprKind::Binary {
                 op,
                 left,
                 right,
                 assignment: false,
-            } => self.constant_complex_binary(
-                id,
-                op.token
-                    .as_punctuator()
-                    .ok_or(Error::Invariant("complex binary token"))?,
-                [left, right],
-                ty,
-                scope,
-            ),
+            } => self
+                .constant_complex_binary(
+                    id,
+                    op.token
+                        .as_punctuator()
+                        .ok_or(Error::Invariant("complex binary token"))?,
+                    [left, right],
+                    ty,
+                    scope,
+                )
+                .map(ComplexValue::Parts),
             ExprKind::Conditional {
                 condition,
                 then_expr,
@@ -270,17 +359,19 @@ impl Analyzer<'_> {
                 } else {
                     else_expr
                 };
-                self.constant_complex_parts(selected, ty, scope)
+                self.constant_complex_value(selected, ty, scope)
             }
             ExprKind::Postfix { op, operand } => {
-                let old = self.constant_complex_parts(operand, ty, scope)?;
-                self.constant_complex_step(
-                    id,
-                    operand,
+                let place = self.constant_place(operand, scope)?;
+                let old = self.stored_complex_parts(place, part, node.location)?;
+                let parts = self.stepped_complex_parts(
+                    part,
+                    old,
                     op.token.as_punctuator() == Some(P::Decrement),
-                    scope,
+                    node.location,
                 )?;
-                Ok(old)
+                self.write_complex_parts(place, parts, node.location)?;
+                Ok(ComplexValue::Parts(old))
             }
             _ => Err(nonconstant(
                 node.location,
@@ -295,20 +386,30 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<[Value; 2], Error> {
+        let value = self.complex_list_value(elements, ty, scope, location)?;
+        self.complex_value_parts(value, location)
+    }
+    fn complex_list_value(
+        &mut self,
+        elements: crate::syntax::storage::List<ast::ExprId>,
+        ty: TypeId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<ComplexValue, Error> {
         let args = super::call_arguments::Arguments::new(self.tree.expr_lists.get(elements));
         let part = self
             .complex_part_type(ty)
             .ok_or(Error::Invariant("complex list part"))?;
         match args.as_slice() {
-            [] => Ok([
+            [] => Ok(ComplexValue::Parts([
                 self.zero_constant_scalar(part)?,
                 self.zero_constant_scalar(part)?,
-            ]),
-            [single] => self.constant_complex_parts(*single, ty, scope),
-            [real, imaginary] => Ok([
+            ])),
+            [single] => self.constant_complex_value(*single, ty, scope),
+            [real, imaginary] => Ok(ComplexValue::Parts([
                 self.constant_operand_value(*real, part, scope)?,
                 self.constant_operand_value(*imaginary, part, scope)?,
-            ]),
+            ])),
             _ => Err(nonconstant(location, "a complex value of no two parts")),
         }
     }
@@ -390,8 +491,11 @@ impl Analyzer<'_> {
         let right_complex = self
             .complex_part_type(self.graph.expression_facts.get(right)?.ty)
             .is_some();
-        let [a, b] = self.constant_complex_parts(left, ty, scope)?;
-        let [c, d] = self.constant_complex_parts(right, ty, scope)?;
+        let left_value = self.constant_complex_value(left, ty, scope)?;
+        let right_value = self.constant_complex_value(right, ty, scope)?;
+        let location = self.tree.expressions.get(id).location;
+        let [a, b] = self.complex_value_parts(left_value, location)?;
+        let [c, d] = self.complex_value_parts(right_value, location)?;
         self.constant_complex_operation(
             op,
             ty,
@@ -541,8 +645,11 @@ impl Analyzer<'_> {
             .conversion
             .ok_or(Error::Invariant("complex comparison type"))?
             .result;
-        let a = self.constant_complex_parts(left, ty, scope)?;
-        let b = self.constant_complex_parts(right, ty, scope)?;
+        let a = self.constant_complex_value(left, ty, scope)?;
+        let b = self.constant_complex_value(right, ty, scope)?;
+        let location = self.tree.expressions.get(id).location;
+        let a = self.complex_value_parts(a, location)?;
+        let b = self.complex_value_parts(b, location)?;
         let same = a.into_iter().zip(b).all(|(a, b)| match (a, b) {
             (Value::Integer(a), Value::Integer(b)) => a.wide() == b.wide(),
             (Value::Floating(a), Value::Floating(b)) => {
@@ -567,15 +674,40 @@ impl Analyzer<'_> {
         let ty = self.graph.expression_facts.get(left)?.ty;
         let location = self.tree.expressions.get(id).location;
         if op == P::Assign {
+            // Frozen assignment consumes the first braced operand, then
+            // converts it to the complex target (an empty list still zeros it).
+            let right =
+                if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(right).kind {
+                    self.tree
+                        .expr_lists
+                        .get(elements)
+                        .first()
+                        .copied()
+                        .unwrap_or(right)
+                } else {
+                    right
+                };
             let parts = self.constant_complex_parts(right, ty, scope)?;
             let place = self.constant_place(left, scope)?;
-            self.store_complex_parts(place, parts, location)?;
+            self.write_complex_parts(place, parts, location)?;
             return Ok(place);
         }
         let place = self.constant_place(left, scope)?;
         let common = self.graph.arithmetic_types(id)?.0;
-        let [a, b] = self.constant_complex_parts(left, common, scope)?;
+        let part = self
+            .complex_part_type(ty)
+            .ok_or(Error::Invariant("complex compound source part"))?;
+        // Frozen read() retains the complex array's storage until the RHS has
+        // run. Validate the read now, then consume its possibly changed parts
+        // without evaluating the left-hand designation again.
+        let old = self.complex_read_storage(place, part, location)?;
         let [c, d] = self.constant_complex_parts(right, common, scope)?;
+        let [a, b] = self.complex_value_parts(old, location)?;
+        let part = self
+            .complex_part_type(common)
+            .ok_or(Error::Invariant("complex compound operation part"))?;
+        let a = self.convert_constant_scalar(a, part, location)?;
+        let b = self.convert_constant_scalar(b, part, location)?;
         let token = match op {
             P::AddAssign => P::Add,
             P::SubtractAssign => P::Subtract,
@@ -588,7 +720,7 @@ impl Analyzer<'_> {
             .is_some();
         let parts =
             self.constant_complex_operation(token, common, [a, b, c, d], [true, rc], location)?;
-        self.store_complex_parts(place, parts, location)?;
+        self.write_complex_parts(place, parts, location)?;
         Ok(place)
     }
     pub(super) fn constant_complex_step(
@@ -604,7 +736,18 @@ impl Analyzer<'_> {
         let part = self
             .complex_part_type(ty)
             .ok_or(Error::Invariant("complex increment type"))?;
-        let mut parts = self.stored_complex_parts(place, part, location)?;
+        let parts = self.stored_complex_parts(place, part, location)?;
+        let parts = self.stepped_complex_parts(part, parts, decrement, location)?;
+        self.write_complex_parts(place, parts, location)?;
+        Ok(place)
+    }
+    fn stepped_complex_parts(
+        &mut self,
+        part: TypeId,
+        mut parts: [Value; 2],
+        decrement: bool,
+        location: SourceOffset,
+    ) -> Result<[Value; 2], Error> {
         let int = self
             .graph
             .types
@@ -620,7 +763,6 @@ impl Analyzer<'_> {
             }),
             location,
         )?;
-        self.store_complex_parts(place, parts, location)?;
-        Ok(place)
+        Ok(parts)
     }
 }

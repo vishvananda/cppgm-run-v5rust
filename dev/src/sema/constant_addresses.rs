@@ -1372,10 +1372,6 @@ impl Analyzer<'_> {
                 let node = *self.tree.expressions.get(id);
                 self.check_deferred_constant(id)?;
                 let facts = self.graph.expression_facts.get(id)?;
-                if self.complex_part_type(facts.ty).is_some() {
-                    self.constant_complex_parts(id, facts.ty, scope)?;
-                    continue;
-                }
                 if facts.literal_call.is_some()
                     || facts.call_form == super::expression_facts::CallForm::Operator
                 {
@@ -1422,6 +1418,9 @@ impl Analyzer<'_> {
                     }
                     _ if facts.category != ValueCategory::Prvalue => {
                         self.constant_place(id, scope)?;
+                    }
+                    _ if self.complex_part_type(facts.ty).is_some() => {
+                        self.constant_complex_parts(id, facts.ty, scope)?;
                     }
                     _ if self.graph.class_of(facts.ty).is_some() => {
                         self.constant_object_place(id, scope)?;
