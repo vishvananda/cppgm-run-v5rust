@@ -287,6 +287,10 @@ struct ClassConversion {
 }
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    // The C++ allocation builtin types only its outer callee. A parenthesized
+    // inner name remains untyped and the semantic printer shows a cast view.
+    // Keep full Rust designation facts and retain that sparse source provenance.
+    cast_call_views: std::collections::HashSet<ast::ExprId>,
     // Atomic calls are sparse; keep the dense fact record at its existing size.
     constant_evaluation_queries: std::collections::HashSet<ast::ExprId>,
     stack_intrinsics:
@@ -370,6 +374,12 @@ impl ExpressionFacts {
         id: ast::ExprId,
     ) -> Option<super::runtime_intrinsics::RuntimeIntrinsic> {
         self.runtime_intrinsics.get(&self.root(id)).copied()
+    }
+    pub(super) fn cast_call_view(&self, id: ast::ExprId) -> bool {
+        self.cast_call_views.contains(&self.root(id))
+    }
+    pub(super) fn note_cast_call_view(&mut self, id: ast::ExprId) {
+        self.cast_call_views.insert(self.root(id));
     }
     pub(super) fn set_runtime_intrinsic(
         &mut self,

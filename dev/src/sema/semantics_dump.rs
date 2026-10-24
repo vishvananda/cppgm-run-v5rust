@@ -1526,7 +1526,8 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             // including when a reference cast retypes its presentation item.
             category = facts.category;
         }
-        let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts);
+        let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts)
+            || self.graph.expression_facts.cast_call_view(id);
         let label = expression_label(node.kind, facts, intrinsic)?;
         self.indent(depth)?;
         write!(self.output, "{label} {} ", category.spelling())?;

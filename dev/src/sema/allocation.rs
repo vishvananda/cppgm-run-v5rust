@@ -47,6 +47,12 @@ pub(super) struct Deletion {
     pub sized_array_delete: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum AllocationBuiltin {
+    New,
+    Delete,
+}
+
 pub(super) fn key(keyword: Keyword, array: bool) -> ValueKey {
     ValueKey::Special(SpecialName::Operator {
         token: SimpleToken::keyword(keyword),
@@ -55,6 +61,110 @@ pub(super) fn key(keyword: Keyword, array: bool) -> ValueKey {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn allocation_template_callee(
+        &mut self,
+        id: ast::ExprId,
+        component: ast::NameComponent,
+        found: &mut LookupResult,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let ast::ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("allocation template callee without call"));
+        };
+        let mut named = callee;
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
+            named = inner;
+        }
+        let component = ast::NameComponent {
+            location: self.tree.expressions.get(named).location,
+            ..component
+        };
+        if !found.functions.iter().any(|&binding| {
+            self.graph
+                .entity(self.graph.binding(binding).entity)
+                .template_head
+                .is_some()
+        }) {
+            self.explicit_function_arguments(
+                component
+                    .arguments
+                    .ok_or(Error::Invariant("missing explicit allocation arguments"))?,
+                scope,
+                component.location,
+                None,
+            )?;
+            return Err(Error::at(
+                component.location,
+                "template-id does not name a function template",
+            ));
+        }
+        self.explicit_function_specializations(component, found, scope, true)
+    }
+
+    // analyzer_builtins.cpp::allocation_builtin selects the ordinary global
+    // operator family, without class lookup or argument-dependent lookup.
+    pub(super) fn allocation_builtin(
+        &mut self,
+        id: ast::ExprId,
+        arguments: List<ast::ExprId>,
+        operation: AllocationBuiltin,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let buffer = super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
+        for &argument in buffer.as_slice() {
+            self.typed_expression(argument, scope)?;
+        }
+        let keyword = match operation {
+            AllocationBuiltin::New => Keyword::New,
+            AllocationBuiltin::Delete => Keyword::Delete,
+        };
+        // The frozen direct name-index query sees the global family at the
+        // point of instantiation, including declarations after the pattern.
+        let family: super::lookup::FunctionCandidates = self
+            .graph
+            .associated_functions_at(self.graph.global, key(keyword, false), None)
+            .collect();
+        let bindings = family.as_slice();
+        let first = *bindings
+            .first()
+            .ok_or(Error::Invariant("missing global allocation family"))?;
+        let facts = self.function_designation(first, bindings)?;
+        let functions = facts
+            .functions
+            .ok_or(Error::Invariant("allocation overload set"))?;
+        let ast::ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("allocation builtin without call syntax"));
+        };
+        // Record the designation on the original callee. Parentheses share its
+        // selected facts; no syntax is synthesized or rewritten for lowering.
+        let mut named = callee;
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
+            named = inner;
+        }
+        self.graph.expression_facts.set(named, facts);
+        let mut parenthesized = callee;
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(parenthesized).kind {
+            self.graph.expression_facts.share(parenthesized, named);
+            parenthesized = inner;
+        }
+        let mut scratch = std::mem::take(&mut self.call_scratch);
+        let selected = self.resolve_call(
+            self.tree.expressions.get(id).location,
+            Candidates::Functions(functions),
+            buffer.as_slice(),
+            None,
+            &mut scratch,
+        );
+        let result = selected
+            .and_then(|selected| self.finish_selected_call(id, facts, scope, selected, &scratch));
+        scratch.clear();
+        self.call_scratch = scratch;
+        if result.is_ok() && named != callee {
+            self.graph.expression_facts.note_cast_call_view(id);
+        }
+        result
+    }
+
     fn initialize_allocated_class(
         &mut self,
         target: TypeId,
@@ -687,6 +797,126 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn builtin_calls_retain_selected_operators_without_rewriting_or_unrelated_demand() {
+        let source = SourceBuffer::new(
+            b"template<class T>void*operator new(unsigned long,T*){T::missing();}\
+              void*operator new(unsigned long,void*)noexcept;\
+              void operator delete(void*,void*)noexcept;struct Unused{int n;};\
+              void f(void*p){((__builtin_operator_new))(4,p);((__builtin_operator_delete))(p,p);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"allocation-builtins").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let expressions = tree.expressions.mark();
+        let bodies = tree.bodies.mark();
+        let declaration_count = tree.declarations.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), expressions);
+        assert_eq!(tree.declarations.mark(), declaration_count);
+        assert_eq!(tree.bodies.mark(), bodies);
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[4])
+            .kind
+        else {
+            panic!("function syntax");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed function");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("function compound");
+        };
+        for &statement in tree.stmt_lists.get(statements) {
+            let ast::StmtKind::Expression(Some(id)) = tree.statements.get(statement).kind else {
+                panic!("builtin call statement");
+            };
+            let ast::ExprKind::Call { callee, arguments } = tree.expressions.get(id).kind else {
+                panic!("builtin call syntax");
+            };
+            let Some(super::super::function_resolution::CallTarget::Direct(binding)) =
+                graph.expression_facts.get(id).unwrap().call
+            else {
+                panic!("direct operator call");
+            };
+            let selected = graph.entity(graph.binding(binding).entity);
+            assert!(selected.builtin.is_none());
+            assert_eq!(selected.home, Some(graph.global));
+            assert_eq!(
+                graph.expression_facts.get(callee).unwrap().function,
+                Some(binding)
+            );
+            assert!(matches!(
+                selected.exceptions,
+                super::super::exceptions::ExceptionState::Value(
+                    super::super::exceptions::ExceptionSet::None
+                )
+            ));
+            for &argument in tree.expr_lists.get(arguments) {
+                assert!(
+                    graph
+                        .expression_facts
+                        .get(argument)
+                        .unwrap()
+                        .conversion
+                        .is_some()
+                );
+            }
+        }
+        let unused = cursor.intern_name(b"Unused").unwrap();
+        let unused = graph
+            .binding(graph.own(graph.global, unused, Filter::Elaborated).unwrap())
+            .entity;
+        assert!(matches!(
+            graph.entity(unused).layout,
+            super::super::layout::LayoutState::NotStarted
+        ));
+        let template = graph
+            .functions_at(graph.global, key(Keyword::New, false))
+            .find(|&binding| {
+                graph
+                    .entity(graph.binding(binding).entity)
+                    .template_head
+                    .is_some()
+            })
+            .unwrap();
+        assert!(
+            !graph
+                .function_templates
+                .body_demanded(graph.binding(template).entity)
+        );
+    }
+
+    #[test]
+    fn rejected_builtin_call_returns_overload_scratch_after_nested_arguments() {
+        let source = SourceBuffer::new(
+            b"void f(){__builtin_operator_delete(__builtin_operator_new(4),42);}".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"allocation-failure").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        assert!(matches!(
+            analyzer.declarations(declarations, global),
+            Err(Error::Diagnostic { .. })
+        ));
+        assert!(!analyzer.call_scratch.has_candidates());
+        assert_eq!(analyzer.unevaluated, 0);
+        assert!(analyzer.pretyped_callable.is_none());
+    }
 
     #[test]
     fn allocated_reference_member_materializes_only_its_reached_temporary() {

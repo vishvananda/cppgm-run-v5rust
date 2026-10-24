@@ -100,8 +100,12 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     fn runtime_integer(&mut self, ty: Type, bits: u64, source: TypeId) -> Result<RValue, Error> {
+        // FunctionLowering::integer builds an IntLiteral from int64_t even
+        // for an unsigned source result. Untyped call operands expose its sign.
+        let literal =
+            u128::from_le_bytes(i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes());
         Ok(RValue {
-            value: self.builder.integer(u128::from(bits))?,
+            value: self.builder.integer(literal)?,
             ty,
             source,
             literal: true,

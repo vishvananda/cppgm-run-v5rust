@@ -205,6 +205,12 @@ impl<'tree> Analyzer<'tree> {
             invoke: cursor
                 .intern_name(b"__builtin_invoke")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            operator_new: cursor
+                .intern_name(b"__builtin_operator_new")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            operator_delete: cursor
+                .intern_name(b"__builtin_operator_delete")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?,
             memcpy: cursor
                 .intern_name(b"__builtin_memcpy")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,

@@ -26,6 +26,7 @@ pub(crate) enum BuiltinFunction {
     Unreachable,
     Trap,
     Invoke,
+    Allocation(super::allocation::AllocationBuiltin),
     Runtime(super::runtime_intrinsics::RuntimeIntrinsic),
     Stack(super::stack_intrinsics::StackIntrinsic),
     Atomic(super::atomic_operations::AtomicBuiltinId),
@@ -175,6 +176,8 @@ pub(super) struct BuiltinNames {
     pub expect: NameId,
     pub constant_p: NameId,
     pub invoke: NameId,
+    pub operator_new: NameId,
+    pub operator_delete: NameId,
     pub memcpy: NameId,
     pub memmove: NameId,
     pub memcmp: NameId,
@@ -207,6 +210,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Atomic(_)
                     | BuiltinFunction::Stack(_)
                     | BuiltinFunction::Invoke
+                    | BuiltinFunction::Allocation(_)
                     | BuiltinFunction::IsConstantEvaluated
             )
         ) {
@@ -245,6 +249,10 @@ impl Analyzer<'_> {
             BuiltinFunction::Trap
         } else if key == names.invoke {
             BuiltinFunction::Invoke
+        } else if key == names.operator_new {
+            BuiltinFunction::Allocation(super::allocation::AllocationBuiltin::New)
+        } else if key == names.operator_delete {
+            BuiltinFunction::Allocation(super::allocation::AllocationBuiltin::Delete)
         } else if let Some(operation) = names.stack.find(key) {
             BuiltinFunction::Stack(operation)
         } else if let Some((_, operation)) = names.runtime.iter().find(|&&(name, _)| name == key) {
@@ -300,6 +308,7 @@ impl Analyzer<'_> {
                 | BuiltinFunction::Atomic(_)
                 | BuiltinFunction::Stack(_)
                 | BuiltinFunction::Invoke
+                | BuiltinFunction::Allocation(_)
                 | BuiltinFunction::IsConstantEvaluated
         ) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
@@ -341,6 +350,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Trap
                     | BuiltinFunction::Runtime(_)
                     | BuiltinFunction::Invoke
+                    | BuiltinFunction::Allocation(_)
                     | BuiltinFunction::LibraryNan(_)
                     | BuiltinFunction::Library
                     | BuiltinFunction::Stack(_)
@@ -364,6 +374,7 @@ impl Analyzer<'_> {
                         | BuiltinFunction::Stack(_)
                         | BuiltinFunction::Atomic(_)
                         | BuiltinFunction::Invoke
+                        | BuiltinFunction::Allocation(_)
                         | BuiltinFunction::IsConstantEvaluated
                 ),
                 cv: Cv::default(),
@@ -429,6 +440,7 @@ impl Analyzer<'_> {
     ) -> Result<Option<ExprFacts>, Error> {
         let node = self.tree.names.get(name);
         let components = self.tree.name_lists.get(node.components);
+        let last = components.last().copied();
         let single = if components.len() == 1 {
             Some(components[0])
         } else {
@@ -444,6 +456,19 @@ impl Analyzer<'_> {
             *found = builtin;
         }
         if let Some(binding) = found.binding {
+            if matches!(
+                self.graph
+                    .entity(self.graph.binding(binding).entity)
+                    .builtin,
+                Some(BuiltinFunction::Allocation(_))
+            ) && let Some(component) = last.filter(|last| last.arguments.is_some())
+            {
+                // template_callee precedes intrinsic dispatch in the C++ owner.
+                // A registry placeholder is no template; diagnose its explicit
+                // arguments before visiting the call's operands.
+                self.allocation_template_callee(id, component, found, scope)?;
+                return Ok(None);
+            }
             return match self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -466,6 +491,9 @@ impl Analyzer<'_> {
                 Some(BuiltinFunction::Invoke) => {
                     self.builtin_invoke(id, arguments, scope).map(Some)
                 }
+                Some(BuiltinFunction::Allocation(operation)) => self
+                    .allocation_builtin(id, arguments, operation, scope)
+                    .map(Some),
                 Some(BuiltinFunction::Integer(operation)) => self
                     .integer_builtin(id, arguments, operation, scope)
                     .map(Some),

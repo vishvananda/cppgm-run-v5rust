@@ -2295,7 +2295,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         metadata.object = Some(program.names.intern(object)?);
                     }
                 }
-                B::Trap | B::Runtime(_) | B::Invoke | B::IsConstantEvaluated => {}
+                B::Trap | B::Runtime(_) | B::Invoke | B::Allocation(_) | B::IsConstantEvaluated => {
+                }
             }
             return Ok(metadata);
         }
