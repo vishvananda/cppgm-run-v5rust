@@ -12,6 +12,7 @@ mod array_deletion;
 mod array_initialization;
 mod arrays;
 mod arrow_calls;
+mod assembly;
 mod assignment;
 mod atomic_intrinsics;
 mod atomic_places;

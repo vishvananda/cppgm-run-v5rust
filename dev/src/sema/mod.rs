@@ -9,6 +9,8 @@ mod analyzer;
 mod anonymous_types;
 mod array_allocation;
 mod arrow_calls;
+mod asm_templates;
+mod assembly;
 mod assignment;
 mod atomic_builtins;
 mod atomic_operations;

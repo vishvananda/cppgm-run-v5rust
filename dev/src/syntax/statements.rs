@@ -206,12 +206,7 @@ impl Parser<'_> {
                 let handlers = self.handlers()?;
                 StmtKind::Try { body, handlers }
             }
-            Some(K::Asm) => {
-                self.cursor.advance()?;
-                self.accept_keyword(K::Volatile)?;
-                self.expect(P::LeftParen)?;
-                return Err(ParseError::NotImplemented("assembly statement syntax"));
-            }
+            Some(K::Asm) => self.asm_statement()?,
             _ => {
                 if self.accept(P::Semicolon)? {
                     StmtKind::Expression(None)

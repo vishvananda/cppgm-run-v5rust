@@ -1,6 +1,7 @@
 // Translated from sema/semantic_unit.h's lowering facts. See NOTICE.
 //! Read-only views of analyzed facts; the syntax and semantic stores remain their owners.
 pub(crate) use super::anonymous_types::{ClassSpelling, UnnamedNumbering};
+pub(crate) use super::assembly::{Instruction as AsmInstruction, Operation as AsmOperation};
 pub(crate) use super::assignment::Action as AssignmentAction;
 pub(crate) use super::atomic_operations::{
     AtomicArithmetic, AtomicIntrinsic, AtomicOperation, AtomicOrder,

@@ -574,7 +574,22 @@ pub(crate) enum Condition {
     },
 }
 #[derive(Clone, Copy, Debug)]
+pub(crate) struct AsmOperand {
+    pub location: SourceOffset,
+    pub name: Option<NameId>,
+    pub constraint: Literal,
+    pub expression: ExprId,
+}
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AsmStatement {
+    pub text: Literal,
+    pub outputs: List<AsmOperand>,
+    pub inputs: List<AsmOperand>,
+    pub clobbers: List<Literal>,
+}
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum StmtKind {
+    Asm(Id<AsmStatement>),
     Ambiguous {
         name: Name,
         component: u32,
@@ -665,6 +680,9 @@ pub(crate) struct Tree {
     pub classes: Store<ClassSyntax>,
     pub bodies: Store<Body>,
     pub statements: Store<Statement>,
+    pub assembly: Store<AsmStatement>,
+    pub asm_operands: Lists<AsmOperand>,
+    pub asm_clobbers: Lists<Literal>,
     pub statement_readings: Lists<StatementReading>,
     pub decl_lists: Lists<DeclId>,
     pub expr_lists: Lists<ExprId>,
@@ -700,6 +718,9 @@ pub(crate) struct TreeMark {
     classes: usize,
     bodies: usize,
     statements: usize,
+    assembly: usize,
+    asm_operands: ListMark,
+    asm_clobbers: ListMark,
     statement_readings: ListMark,
     decl_lists: ListMark,
     expr_lists: ListMark,
@@ -794,6 +815,9 @@ impl Tree {
             classes: self.classes.mark(),
             bodies: self.bodies.mark(),
             statements: self.statements.mark(),
+            assembly: self.assembly.mark(),
+            asm_operands: self.asm_operands.mark(),
+            asm_clobbers: self.asm_clobbers.mark(),
             statement_readings: self.statement_readings.mark(),
             decl_lists: self.decl_lists.mark(),
             expr_lists: self.expr_lists.mark(),
@@ -830,6 +854,9 @@ impl Tree {
         self.classes.rewind(mark.classes);
         self.bodies.rewind(mark.bodies);
         self.statements.rewind(mark.statements);
+        self.assembly.rewind(mark.assembly);
+        self.asm_operands.rewind(mark.asm_operands);
+        self.asm_clobbers.rewind(mark.asm_clobbers);
         self.statement_readings.rewind(mark.statement_readings);
         self.decl_lists.rewind(mark.decl_lists);
         self.expr_lists.rewind(mark.expr_lists);

@@ -4,7 +4,7 @@
 use super::{
     ParseError,
     ast::{
-        Attribute, Base, BitField, Body, BodyId, ClassId, Condition, DeclId, DeclKind,
+        AsmOperand, Attribute, Base, BitField, Body, BodyId, ClassId, Condition, DeclId, DeclKind,
         DeclaratorId, Enumerator, ExceptionDeclaration, ExprId, ExprKind, Handler, InitDeclarator,
         Initializer, InitializerKind, MemInitializer, Name, NameComponent, NameKind, Parameter,
         ParameterClause, Pointer, Qualifier, QualifierKind, Specifier, SpecifierKind,
@@ -512,6 +512,20 @@ impl<'a> Cloner<'a> {
             StmtKind::Compound(ids) => {
                 StmtKind::Compound(self.list(ids, |tree| &mut tree.stmt_lists, Self::statement)?)
             }
+            StmtKind::Asm(id) => {
+                let mut assembly = *self.tree.assembly.get(id);
+                assembly.outputs = self.list(
+                    assembly.outputs,
+                    |tree| &mut tree.asm_operands,
+                    Self::asm_operand,
+                )?;
+                assembly.inputs = self.list(
+                    assembly.inputs,
+                    |tree| &mut tree.asm_operands,
+                    Self::asm_operand,
+                )?;
+                StmtKind::Asm(self.tree.assembly.add(assembly)?)
+            }
             StmtKind::Expression(id) => StmtKind::Expression(self.optional(id, Self::expression)?),
             StmtKind::Return(id) => StmtKind::Return(self.optional(id, Self::expression)?),
             StmtKind::Throw(id) => StmtKind::Throw(self.optional(id, Self::expression)?),
@@ -591,6 +605,10 @@ impl<'a> Cloner<'a> {
             self.restore_shadows(mark);
         }
         self.tree.statements.add(node)
+    }
+    fn asm_operand(&mut self, mut operand: AsmOperand) -> Result<AsmOperand, ParseError> {
+        operand.expression = self.expression(operand.expression)?;
+        Ok(operand)
     }
     fn copied_readings(
         &mut self,

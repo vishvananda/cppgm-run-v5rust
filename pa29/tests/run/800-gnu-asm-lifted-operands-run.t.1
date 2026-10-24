@@ -1,0 +1,44 @@
+template<class T> T reverse(T value) {
+  __asm__ inline volatile("bswap %0" : "+r"(value));
+  return value;
+}
+inline int unused_unsupported() {
+  __asm__("outside_lifted_set");
+  return 0;
+}
+int evaluations;
+int global_value = 2;
+int& target() { ++evaluations; return global_value; }
+int read_input() { ++evaluations; return 3; }
+int main() {
+  int value = 3;
+  __asm__("addl $2, %0; subl $1, %0; andl $7, %0; orl $8, %0; xorl $3, %0; negl %0; notl %0" : "+r"(value));
+  if (value != 14) return 1;
+  int copied = 0;
+  __asm__("addl %2, %[out]" : [out] "=r"(copied) : "[out]"(value), "r"(4));
+  if (copied != 18 || value != 14) return 2;
+  int numeric = 0;
+  __asm__("addl %2, %1" : "=r"(numeric) : "4294967296"(5), "i"(3));
+  if (numeric != 8) return 3;
+  int second = 29;
+  __asm__("xchgl %0, %1" : "+r"(copied), "+r"(second));
+  if (copied != 29 || second != 18) return 4;
+  int memory = 6;
+  __asm__("lock; addl $2, %0; lock; subl $1, %0; lock; orl $8, %0; lock; andl $14, %0; lock; xorl $3, %0; lock; negl %0; lock; notl %0" : "+m"(memory) : : "memory");
+  if (memory != 12) return 5;
+  __asm__("xchgl %0, %1" : "+m"(memory), "+r"(second));
+  if (memory != 18 || second != 12) return 6;
+  unsigned long wide = 0x1122334455667788UL;
+  __asm__("incb %0; decb %0; incw %0" : "+m"(wide));
+  if (wide != 0x1122334455667789UL) return 7;
+  if (reverse(0x11223344u) != 0x44332211u) return 8;
+  if (reverse(0x1122334455667788UL) != 0x8877665544332211UL) return 9;
+  float input = 1.0f;
+  int bits = 0;
+  __asm__("orl %1, %0" : "+r"(bits) : "r"(input));
+  if (bits != 0x3f800000) return 10;
+  __asm__("mfence; lfence; sfence; repz; nop; pause" ::: "memory");
+  __asm__("addl %1, %0" : "+m"(target()) : "r"(read_input()));
+  if (global_value != 5 || evaluations != 2) return 11;
+  return 0;
+}

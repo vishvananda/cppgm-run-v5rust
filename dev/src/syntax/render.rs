@@ -1209,6 +1209,7 @@ impl Renderer<'_, '_> {
                 self.tasks.push(Render::Specs(specifiers));
                 self.tasks.push(Render::Text("for("));
             }
+            StmtKind::Asm(_) => self.tasks.push(Render::Text("asm(...);")),
             StmtKind::Break => self.tasks.push(Render::Text("break;")),
             StmtKind::Continue => self.tasks.push(Render::Text("continue;")),
             StmtKind::Goto(name) => {

@@ -1354,6 +1354,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 self.tasks
                     .push(Task::Line("range-declaration", Payload::None, true));
             }
+            StmtKind::Asm(_) => self.line("asm-statement", Payload::None, false)?,
             StmtKind::Break => self.line("break-statement", Payload::None, false)?,
             StmtKind::Continue => self.line("continue-statement", Payload::None, false)?,
             StmtKind::Goto(name) => {

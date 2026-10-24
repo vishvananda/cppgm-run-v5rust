@@ -110,6 +110,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         match self.tree.statements.get(id).kind {
+            StmtKind::Asm(assembly) => self.asm_statement(id, *self.tree.assembly.get(assembly))?,
             StmtKind::Compound(statements) => {
                 let depth = self.lifetime.cleanups.len();
                 for &id in self.tree.stmt_lists.get(statements) {

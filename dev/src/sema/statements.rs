@@ -66,6 +66,9 @@ impl Analyzer<'_> {
             self.semantic_jump(id)?;
         }
         match self.tree.statements.get(id).kind {
+            StmtKind::Asm(assembly) => {
+                self.asm_statement(id, *self.tree.assembly.get(assembly), scope)
+            }
             StmtKind::Compound(list) => self.compound(list, scope, false),
             StmtKind::Declaration(decl) => self.declaration(decl, scope),
             StmtKind::Return(operand) if self.semantic() && self.template_depth == 0 => {

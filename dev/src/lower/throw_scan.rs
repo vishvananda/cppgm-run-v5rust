@@ -322,6 +322,17 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn statement_throws(&mut self, id: ast::StmtId) -> Result<bool, Error> {
         self.check_stack()?;
         Ok(match self.tree.statements.get(id).kind {
+            StmtKind::Asm(assembly) => {
+                let assembly = self.tree.assembly.get(assembly);
+                for list in [assembly.outputs, assembly.inputs] {
+                    for operand in self.tree.asm_operands.get(list) {
+                        if self.expression_throws(operand.expression)? {
+                            return Ok(true);
+                        }
+                    }
+                }
+                false
+            }
             StmtKind::Compound(items) => {
                 for &item in self.tree.stmt_lists.get(items) {
                     if self.statement_throws(item)? {

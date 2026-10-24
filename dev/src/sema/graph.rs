@@ -334,6 +334,7 @@ pub(crate) struct Graph {
     pub(super) root_demands: super::function_demands::DemandList,
     pub(super) declaration_storage: Vec<Option<BindingId>>,
     pub(super) overloads: super::function_resolution::FunctionSets,
+    pub(super) assembly: super::assembly::Programs,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     condition_functions: std::collections::HashMap<
@@ -582,6 +583,7 @@ impl Graph {
             root_demands: super::function_demands::DemandList::default(),
             declaration_storage: Vec::new(),
             overloads: super::function_resolution::FunctionSets::default(),
+            assembly: super::assembly::Programs::default(),
             statement_readings: Vec::new(),
             arithmetic_types: Vec::new(),
             condition_functions: std::collections::HashMap::new(),

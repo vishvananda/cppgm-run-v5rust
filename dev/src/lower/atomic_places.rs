@@ -152,6 +152,17 @@ impl Function<'_, '_, '_, '_> {
         let Some(bits) = bits(storage) else {
             return Ok(None);
         };
+        self.begin_atomic_bits_loop(place, source, storage, bits)
+            .map(Some)
+    }
+
+    pub(super) fn begin_atomic_bits_loop(
+        &mut self,
+        place: Value,
+        source: TypeId,
+        storage: Type,
+        bits: Type,
+    ) -> Result<(AtomicLoop, RValue), Error> {
         let expected = self.generated_slot("atomic_expected", bits)?;
         let seen = self.emit(
             I::Runtime(R::AtomicLoad(bits, place, Order::Relaxed, Facts::default())),
@@ -170,14 +181,14 @@ impl Function<'_, '_, '_, '_> {
             let address = self.storage_address(expected, source)?;
             self.emit(I::Load(plain_memory(storage), storage, address), source)?
         };
-        Ok(Some((
+        Ok((
             AtomicLoop {
                 bits,
                 expected,
                 retry,
             },
             old,
-        )))
+        ))
     }
 
     pub(super) fn end_atomic_place_loop(
@@ -188,6 +199,17 @@ impl Function<'_, '_, '_, '_> {
         updated: RValue,
     ) -> Result<(), Error> {
         let storage = types::storage(self.graph, source)?;
+        self.end_atomic_bits_loop(place, source, storage, state, updated)
+    }
+
+    pub(super) fn end_atomic_bits_loop(
+        &mut self,
+        place: Value,
+        source: TypeId,
+        storage: Type,
+        state: AtomicLoop,
+        updated: RValue,
+    ) -> Result<(), Error> {
         let desired = if storage == Type::Ptr {
             self.emit(I::Copy(state.bits, updated.value), source)?
         } else if storage != state.bits {
