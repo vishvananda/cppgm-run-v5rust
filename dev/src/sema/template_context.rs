@@ -43,6 +43,7 @@ struct Context {
     initializing_declarator: Option<ast::DeclaratorId>,
     base: Option<EntityId>,
     member: Option<EntityId>,
+    reserved: super::reserved_wrappers::Context,
     template_depth: usize,
     specialization_levels: u32,
     specialization_mode: SpecializationMode,
@@ -83,6 +84,7 @@ impl Context {
         );
         swap(&mut self.base, &mut analyzer.base_object);
         swap(&mut self.member, &mut analyzer.member_initializer_class);
+        swap(&mut self.reserved, &mut analyzer.reserved_context);
         swap(&mut self.template_depth, &mut analyzer.template_depth);
         swap(
             &mut self.specialization_mode,

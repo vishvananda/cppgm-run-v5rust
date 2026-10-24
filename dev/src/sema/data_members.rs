@@ -23,6 +23,7 @@ impl Analyzer<'_> {
     ) -> bool {
         self.semantic()
             && self.template_depth == 0
+            && !self.reserved_context.pattern
             && (self.graph.scope(home).kind != ScopeKind::Class
                 || info.home.is_some()
                 || specs.is_static && initialized)
@@ -59,6 +60,10 @@ impl Analyzer<'_> {
         declaration: ast::InitDeclarator,
         info: &DeclaratorInfo,
     ) -> Result<(), Error> {
+        if self.reserved_context.pattern || self.graph.reserved_deferrals.initializer(entity) {
+            return Ok(());
+        }
+
         let initializer = declaration
             .initializer
             .ok_or(Error::Invariant("declared constant without initializer"))?;

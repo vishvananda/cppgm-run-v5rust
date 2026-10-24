@@ -98,6 +98,25 @@ pub(super) fn definition_body(
         },
     )
 }
+fn require_analyzed_body(
+    graph: &Graph,
+    tree: &ast::Tree,
+    entity: Option<EntityId>,
+    body: Option<ast::BodyId>,
+) -> Result<(), Error> {
+    if let Some(entity) = entity
+        && graph.lower_reserved_body(entity)
+        && let Some(body) = body
+        && let ast::Body::Parsed(body) = tree.bodies.get(body)
+    {
+        return Err(Error::Semantic(crate::sema::Error::Diagnostic {
+            location: tree.statements.get(body.compound).location,
+            message: "an emitted inline function that calls a reserved builtin this compiler lacks",
+        }));
+    }
+    Ok(())
+}
+
 pub(super) fn lower<'a>(
     output: super::startup::FunctionOutput<'_>,
     symbols: &mut Symbols<'a, '_>,
@@ -107,6 +126,7 @@ pub(super) fn lower<'a>(
     body: Option<ast::BodyId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
+    require_analyzed_body(graph, tree, entry.entity(graph), body)?;
     let program = output.program;
     let facts = entry.facts(graph)?;
     let entity = entry.entity(graph);

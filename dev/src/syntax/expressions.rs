@@ -946,6 +946,21 @@ impl Parser<'_> {
         loop {
             let location = self.tree.expressions.get(expr).location;
             let kind = if self.accept(P::LeftParen)? {
+                if self.reserved_call.is_none()
+                    && let ExprKind::Id(name) = self.tree.expressions.get(expr).kind
+                    && let [part] = self
+                        .tree
+                        .name_lists
+                        .get(self.tree.names.get(name).components)
+                    && let super::ast::NameKind::Identifier(identifier) = part.kind
+                {
+                    let spelling = self.cursor.name(identifier);
+                    if spelling.starts_with(b"__builtin_")
+                        && !crate::lex::builtins::is_provided(spelling)
+                    {
+                        self.reserved_call = Some(identifier);
+                    }
+                }
                 ExprKind::Call {
                     callee: expr,
                     arguments: self.expression_list(P::RightParen)?,

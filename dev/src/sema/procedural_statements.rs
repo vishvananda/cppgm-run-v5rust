@@ -14,6 +14,8 @@ use crate::{
 pub(super) struct BodyContext {
     pub return_deduction: super::return_deduction::ReturnDeduction,
     pub placeholder: Option<TypeId>,
+    pub undeduced: bool,
+    pub reserved_pending: bool,
     pub entity: super::graph::EntityId,
     pub result: TypeId,
     pub loops: usize,
@@ -40,6 +42,8 @@ impl BodyContext {
         Self {
             return_deduction: super::return_deduction::ReturnDeduction::Fixed,
             placeholder: None,
+            undeduced: false,
+            reserved_pending: false,
             entity,
             result,
             loops: 0,
@@ -379,7 +383,12 @@ impl Analyzer<'_> {
         condition: Condition,
         switch: bool,
     ) -> Result<Option<TypeId>, Error> {
-        if !self.semantic() || self.template_depth != 0 {
+        if !self.semantic() || self.template_depth != 0 || self.reserved_context.pattern {
+            return Ok(None);
+        }
+        if let Condition::Expression(id) = condition
+            && self.graph.reserved_deferrals.expression(id)
+        {
             return Ok(None);
         }
         let (facts, expr, location) = match condition {

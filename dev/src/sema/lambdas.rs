@@ -453,6 +453,7 @@ impl Analyzer<'_> {
             .tree
             .bodies
             .add(ast::Body::Parsed(ast::FunctionBody {
+                reserved_call: None,
                 initializer_location: None,
                 initializers: List::default(),
                 compound,
@@ -513,6 +514,9 @@ impl Analyzer<'_> {
             .entity(class)
             .ty
             .ok_or(Error::Invariant("closure type"))?;
+        if self.reserved_context.deferring && self.graph.reserved_deferrals.undeduced(call) {
+            return Err(Error::DeferredBuiltin);
+        }
         self.new_expression_facts(ty, ValueCategory::Prvalue)
     }
 

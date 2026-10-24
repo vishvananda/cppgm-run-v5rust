@@ -1182,28 +1182,77 @@ impl Analyzer<'_> {
                 ));
             }
         }
+        let mut deferred = false;
         let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
         for index in 0..self.graph.entity(class).bases.len() {
             let base = self.graph.entity(class).bases[index].class;
-            bases.push(self.written_base_plan(class, base, &written, scope, location)?);
+            bases.push(self.reserved_base_plan(
+                class,
+                base,
+                &written,
+                scope,
+                location,
+                &mut deferred,
+            )?);
         }
         let super::member_construction::MemberActions {
             members: plans,
             written_members,
             subobjects,
-        } = self.written_member_plans(class, &written, scope, location)?;
+            deferred: pending,
+        } = self.written_member_plans(class, &written, scope, location, deferred)?;
+        deferred |= pending;
         let mut indirect_bases = Vec::new();
         for base in self.indirect_constructor_bases(class) {
-            indirect_bases.push(self.written_base_plan(class, base, &written, scope, location)?);
+            indirect_bases.push(self.reserved_base_plan(
+                class,
+                base,
+                &written,
+                scope,
+                location,
+                &mut deferred,
+            )?);
         }
         self.graph.constructors.records[id.0 as usize].members = plans;
         self.graph.constructors.records[id.0 as usize].written_members = written_members;
         self.graph.constructors.records[id.0 as usize].bases = bases;
         self.graph.constructors.records[id.0 as usize].indirect_bases = indirect_bases;
         self.graph.constructors.records[id.0 as usize].subobjects = subobjects;
+        if deferred {
+            return Err(Error::DeferredBuiltin);
+        }
         self.check_subobject_destruction(class, scope, location)?;
         self.prepare_destruction(class)?;
         Ok(())
+    }
+
+    fn reserved_base_plan(
+        &mut self,
+        class: EntityId,
+        base: EntityId,
+        written: &std::collections::HashMap<EntityId, ast::MemInitializer>,
+        scope: ScopeId,
+        location: SourceOffset,
+        deferred: &mut bool,
+    ) -> Result<BaseInitialization, Error> {
+        match self.written_base_plan(class, base, written, scope, location) {
+            Err(Error::DeferredBuiltin) if self.reserved_context.deferring => *deferred = true,
+            result => return result,
+        }
+        let initializer = written.get(&base).map(|written| ast::Initializer {
+            location: written.location,
+            ..written.initializer
+        });
+        if let Some(initializer) = initializer {
+            self.note_deferred_initializer(initializer);
+        }
+        Ok(BaseInitialization {
+            class: base,
+            constructor: None,
+            arguments: None,
+            initializer,
+            forwards: false,
+        })
     }
 
     fn written_base_plan(

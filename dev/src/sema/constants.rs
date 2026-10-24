@@ -123,7 +123,7 @@ impl Analyzer<'_> {
             )),
             Err(error @ Error::NonConstant { .. }) if required => Err(match requirement {
                 ConstantRequirement::Initializer(location) => error.constant_initializer(location),
-                _ => error.required_constant(),
+                _ => error.required_expression(self.tree.expressions.get(id).location),
             }),
             Ok(_) | Err(Error::NonConstant { .. }) => Ok(None),
             Err(error) => Err(error),
@@ -145,6 +145,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         skipping: bool,
     ) -> Result<Constant, Error> {
+        self.check_deferred_constant(id)?;
         self.check_stack()?;
         let id = if self.semantic() {
             self.graph.expression_facts.root(id)

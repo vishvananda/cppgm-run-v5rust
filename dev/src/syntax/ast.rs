@@ -357,6 +357,7 @@ pub(crate) struct MemInitializer {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FunctionBody {
+    pub reserved_call: Option<NameId>,
     #[cfg_attr(
         not(test),
         expect(

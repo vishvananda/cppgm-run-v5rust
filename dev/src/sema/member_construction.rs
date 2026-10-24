@@ -16,6 +16,7 @@ pub(super) struct MemberActions {
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub written_members: Vec<bool>,
     pub subobjects: Vec<MemberConstruction>,
+    pub deferred: bool,
 }
 
 impl Analyzer<'_> {
@@ -65,8 +66,16 @@ impl Analyzer<'_> {
         written: &Written,
         scope: ScopeId,
         location: SourceOffset,
+        deferred: bool,
     ) -> Result<MemberActions, Error> {
-        self.member_actions(class, written, scope, location, &mut Designations::new())
+        self.member_actions(
+            class,
+            written,
+            scope,
+            location,
+            &mut Designations::new(),
+            deferred,
+        )
     }
     fn member_actions<'a>(
         &mut self,
@@ -75,6 +84,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
         known: &mut Designations<'a>,
+        mut deferred: bool,
     ) -> Result<MemberActions, Error> {
         self.check_stack()?;
         let variant = self.graph.entity(class).key == Keyword::Union;
@@ -115,8 +125,9 @@ impl Analyzer<'_> {
             if let TypeKind::Class(child) = self.graph.types.get(ty).kind
                 && self.graph.anonymous_member_storage(child).is_some()
             {
-                let constructor =
-                    self.anonymous_member_plan(child, written, scope, location, known)?;
+                let (constructor, pending) =
+                    self.anonymous_member_plan(child, written, scope, location, known, deferred)?;
+                deferred |= pending;
                 subobjects.push(MemberConstruction {
                     member,
                     constructor,
@@ -143,9 +154,15 @@ impl Analyzer<'_> {
                     location: written.location,
                     ..written.initializer
                 };
-                if let Some((constructor, arguments)) =
-                    self.written_member_construction(ty, initializer, scope)?
-                {
+                let selected = match self.written_member_construction(ty, initializer, scope) {
+                    Err(Error::DeferredBuiltin) if self.reserved_context.deferring => {
+                        deferred = true;
+                        self.note_deferred_initializer(initializer);
+                        None
+                    }
+                    result => result?,
+                };
+                if let Some((constructor, arguments)) = selected {
                     subobjects.push(MemberConstruction {
                         member,
                         constructor,
@@ -199,6 +216,7 @@ impl Analyzer<'_> {
             plans.push((member, source));
         }
         Ok(MemberActions {
+            deferred,
             written_members: plans
                 .iter()
                 .map(|(member, _)| written.contains_key(member))
@@ -214,15 +232,17 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
         known: &mut Designations<'a>,
-    ) -> Result<ConstructorId, Error> {
+        deferred: bool,
+    ) -> Result<(ConstructorId, bool), Error> {
         let MemberActions {
             members,
             written_members,
             subobjects,
-        } = self.member_actions(class, written, scope, location, known)?;
+            deferred,
+        } = self.member_actions(class, written, scope, location, known, deferred)?;
         let mut nothrow = true;
         for &(_, initializer) in &members {
-            if let Some(initializer) = initializer {
+            if !deferred && let Some(initializer) = initializer {
                 nothrow &= !self.initializer_may_throw(initializer)?;
             }
         }
@@ -231,7 +251,7 @@ impl Analyzer<'_> {
         }
         let (object_pointer, presentation_type, callable_type) =
             self.constructor_types(class, None)?;
-        self.publish_constructor(Constructor {
+        let constructor = self.publish_constructor(Constructor {
             copy: None,
             copy_transfer: super::construction::CopyTransfer::Call,
             class,
@@ -249,6 +269,7 @@ impl Analyzer<'_> {
             subobjects,
             delegation: None,
             triviality: Triviality::Trivial,
-        })
+        })?;
+        Ok((constructor, deferred))
     }
 }

@@ -79,6 +79,7 @@ impl Analyzer<'_> {
         self.in_constant_evaluation(|analyzer| analyzer.scalar_value_inner(id, scope))
     }
     fn scalar_value_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Value, Error> {
+        self.check_deferred_constant(id)?;
         if let Some(step) = self.graph.expression_facts.function_conversion(id) {
             let returned = self.constant_conversion_result(id, scope)?;
             let location = self.tree.expressions.get(id).location;

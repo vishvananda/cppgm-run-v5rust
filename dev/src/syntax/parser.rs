@@ -66,6 +66,7 @@ pub(super) struct Parser<'a> {
     pub extended_types: [Option<NameId>; 10],
     pub complex_types: [Option<NameId>; 3],
     pub va_arg: Option<NameId>,
+    pub reserved_call: Option<NameId>,
 }
 struct Checkpoint {
     conflict: Option<super::conflicts::StatementConflict>,
@@ -90,6 +91,7 @@ struct Checkpoint {
     deferred: usize,
     lambdas: usize,
     runs: usize,
+    reserved_call: Option<NameId>,
 }
 impl<'a> Parser<'a> {
     pub(super) fn new(cursor: Cursor<'a>) -> Self {
@@ -135,6 +137,7 @@ impl<'a> Parser<'a> {
             extended_types: [None; 10],
             complex_types: [None; 3],
             va_arg: None,
+            reserved_call: None,
         }
     }
     pub(super) fn token(&mut self) -> Result<Token, ParseError> {
@@ -435,6 +438,7 @@ impl<'a> Parser<'a> {
             deferred: self.deferred.len(),
             lambdas: self.lambdas.len(),
             runs: self.cursor.runs_mark(),
+            reserved_call: self.reserved_call,
         };
         self.transactions.push(mark);
         Ok(())
@@ -467,6 +471,7 @@ impl<'a> Parser<'a> {
         self.deferred.truncate(mark.deferred);
         self.lambdas.truncate(mark.lambdas);
         self.cursor.rewind_runs(mark.runs);
+        self.reserved_call = mark.reserved_call;
         Ok(())
     }
     pub(super) fn token_ordinal(&self) -> Result<u32, ParseError> {

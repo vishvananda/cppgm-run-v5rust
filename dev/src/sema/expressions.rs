@@ -13,7 +13,7 @@ use crate::{
 };
 impl Analyzer<'_> {
     pub(super) fn expression(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
-        if self.semantic() && self.template_depth == 0 {
+        if self.semantic() && self.template_depth == 0 && !self.reserved_context.pattern {
             self.typed_expression(id, scope)?;
             self.check_resolved_function(id)?;
             if self.template_depth == 0 && self.body_context.is_some() {
@@ -25,19 +25,23 @@ impl Analyzer<'_> {
             }
             return Ok(());
         }
-        if self.semantic() {
+        if self.semantic() && self.template_depth != 0 {
             self.validate_fixed_expression(id, scope)?;
         }
         let base = self.expression_work.len();
         self.expression_work.push((id, false));
-        while self.expression_work.len() > base {
-            let (id, unevaluated) = self
-                .expression_work
-                .pop()
-                .ok_or(Error::Invariant("missing expression work"))?;
-            self.expression_names(id, scope, unevaluated)?;
-        }
-        Ok(())
+        let result = (|| {
+            while self.expression_work.len() > base {
+                let (id, unevaluated) = self
+                    .expression_work
+                    .pop()
+                    .ok_or(Error::Invariant("missing expression work"))?;
+                self.expression_names(id, scope, unevaluated)?;
+            }
+            Ok(())
+        })();
+        self.expression_work.truncate(base);
+        result
     }
     fn expression_names(
         &mut self,
@@ -80,6 +84,14 @@ impl Analyzer<'_> {
                 self.expression_work
                     .extend(arguments.iter().rev().map(|&id| (id, unevaluated)));
                 if let ExprKind::Id(name) = self.tree.expressions.get(callee).kind {
+                    if self.reserved_context.deferring
+                        && let Some(identifier) = self.deferred_builtin_name(name)
+                        && self
+                            .unqualified(scope, identifier, Filter::Ordinary)?
+                            .is_none()
+                    {
+                        return Ok(());
+                    }
                     let callee =
                         self.check_expression_name(name, scope, !arguments.is_empty(), true)?;
                     if callee.is_none() && self.template_depth != 0 && !arguments.is_empty() {

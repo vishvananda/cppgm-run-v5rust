@@ -903,7 +903,7 @@ impl Analyzer<'_> {
 
                 if member {
                     self.defer_member_initializer(binding, info.lookup);
-                } else if self.template_depth == 0 {
+                } else if self.template_depth == 0 && !self.reserved_context.pattern {
                     ty = self.initialize_variable(binding, initializer, info.lookup, location)?;
                     if member || definition {
                         self.check_object_type(ty, member, location)?;
@@ -1962,35 +1962,7 @@ impl Analyzer<'_> {
         }
         if self.class_depth == 0 {
             self.finish_class_exceptions()?;
-            let bodies = std::mem::take(&mut self.deferred);
-            for body in &bodies {
-                if let super::analyzer::DeferredMember::Initializer(member) = *body {
-                    self.finish_member_initializer(member)?;
-                }
-            }
-            for body in bodies {
-                match body {
-                    super::analyzer::DeferredMember::Initializer(_) => (),
-                    super::analyzer::DeferredMember::AggregateConstant(
-                        entity,
-                        initializer,
-                        scope,
-                    ) => {
-                        self.finish_deferred_aggregate_constant(entity, initializer, scope)?;
-                    }
-                    super::analyzer::DeferredMember::Constant(entity, initializer, scope) => {
-                        self.record_member_pointer_initializer(entity, initializer, scope)?;
-                    }
-                    super::analyzer::DeferredMember::Body(body) => {
-                        if self.graph.entity(body.entity).scope.is_none() {
-                            self.function_body(body)?;
-                        }
-                    }
-                    super::analyzer::DeferredMember::Defaults(defaults) => {
-                        self.type_function_defaults(defaults)?;
-                    }
-                }
-            }
+            self.finish_class_nesting()?;
         }
         Ok(ty)
     }

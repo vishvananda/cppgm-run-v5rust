@@ -1004,6 +1004,9 @@ impl Graph {
                 || self.entity(entity).inline == super::specifiers::InlinePreference::Inline
         }
     }
+    pub(crate) fn lower_reserved_body(&self, id: EntityId) -> bool {
+        self.reserved_deferrals.body(id)
+    }
     pub(crate) fn lower_function_body(&self, id: EntityId) -> Option<ast::BodyId> {
         if let Some(body) = self.function_templates.bodies.body(id) {
             return Some(body);

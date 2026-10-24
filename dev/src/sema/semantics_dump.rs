@@ -277,13 +277,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             depth,
         ));
     }
-    fn declared(&self, id: ast::DeclaratorId) -> io::Result<BindingId> {
+    fn declared(&self, id: ast::DeclaratorId) -> Option<BindingId> {
         self.graph
             .declared_bindings
             .get(id.index())
             .copied()
             .flatten()
-            .ok_or_else(|| io::Error::other("declarator without binding"))
     }
     fn declaration(&mut self, id: ast::DeclId, depth: usize, block: bool) -> io::Result<()> {
         match self.tree.declarations.get(id).kind {
@@ -306,7 +305,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
                 let inner = depth + usize::from(block);
                 for init in self.tree.init_declarators.get(declarators).iter().rev() {
-                    let binding = self.declared(init.declarator)?;
+                    let Some(binding) = self
+                        .graph
+                        .declared_bindings
+                        .get(init.declarator.index())
+                        .copied()
+                        .flatten()
+                    else {
+                        continue;
+                    };
                     if self
                         .graph
                         .lower_binding_alias(self.graph.binding(binding).entity)
@@ -328,20 +335,22 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
             }
             DeclKind::Alias { name, ty } => {
+                let Some(ty) = self.graph.type_fact(ty) else {
+                    return Ok(());
+                };
                 self.indent(depth)?;
                 self.output.write_all(b"type-alias ")?;
                 self.name(Some(name))?;
                 self.output.write_all(b" ")?;
-                self.ty(self
-                    .graph
-                    .type_fact(ty)
-                    .ok_or_else(|| io::Error::other("alias without type"))?)?;
+                self.ty(ty)?;
                 writeln!(self.output)?;
             }
             DeclKind::Function {
                 declarator, body, ..
             } => {
-                let binding = self.declared(declarator)?;
+                let Some(binding) = self.declared(declarator) else {
+                    return Ok(());
+                };
                 if self
                     .graph
                     .entity(self.graph.binding(binding).entity)
@@ -357,7 +366,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 body,
                 ..
             } => {
-                let binding = self.declared(declarator)?;
+                let Some(binding) = self.declared(declarator) else {
+                    return Ok(());
+                };
                 if body.is_some()
                     || initializer
                         .is_some_and(|init| matches!(init.kind, ast::InitializerKind::Default))
@@ -1105,26 +1116,40 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 initializer,
                 ..
             } => {
-                self.graph
-                    .condition_conversion(declarator)
-                    .map_err(|_| io::Error::other("condition declaration without conversion"))?;
                 self.line("condition-declaration", depth + 1)?;
-                let binding = self.declared(declarator)?;
-                self.work
-                    .push((Item::Binding(binding, Some(initializer)), depth + 2));
+                if let Some(binding) = self
+                    .graph
+                    .declared_bindings
+                    .get(declarator.index())
+                    .copied()
+                    .flatten()
+                {
+                    self.graph.condition_conversion(declarator).map_err(|_| {
+                        io::Error::other("condition declaration without conversion")
+                    })?;
+                    self.work
+                        .push((Item::Binding(binding, Some(initializer)), depth + 2));
+                }
             }
         }
         Ok(())
     }
     fn statement(&mut self, id: ast::StmtId, depth: usize) -> io::Result<()> {
         match self.tree.statements.get(id).kind {
-            StmtKind::Ambiguous { .. } => {
+            StmtKind::Ambiguous { readings, .. } => {
                 let reading = self
                     .graph
                     .statement_readings
                     .get(id.index())
                     .copied()
                     .flatten()
+                    .or_else(|| {
+                        self.tree
+                            .statement_readings
+                            .get(readings)
+                            .first()
+                            .map(|reading| reading.statement)
+                    })
                     .ok_or_else(|| io::Error::other("statement without reading"))?;
                 self.work.push((Item::Statement(reading), depth));
             }
@@ -1516,11 +1541,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         retyped: Option<(TypeId, V)>,
     ) -> io::Result<()> {
         let id = self.graph.expression_facts.root(id);
-        let mut facts = self
-            .graph
-            .expression_facts
-            .get(id)
-            .map_err(|_| io::Error::other("expression without facts"))?;
+        let Some(mut facts) = self.graph.expression_facts.known(id) else {
+            return Ok(());
+        };
         if let Some(converted) = self.graph.expression_facts.function_conversion(id)
             && matches!(
                 converted.usage,
@@ -1901,6 +1924,41 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn deferred_wrapper_views_consume_only_published_facts() {
+        let source = SourceBuffer::new(
+            b"inline int f(){int x=__builtin_unprovided();return x;}\
+              inline int g(){auto x=__builtin_unprovided();using Ignored=int;void ignored();missing();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"deferred-view").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let mark = tree.expressions.mark();
+        let mut output = Vec::new();
+        graph
+            .print_semantics(tree, cursor, declarations, &mut output)
+            .unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("function-definition f "));
+        assert!(output.contains("simple-declaration"));
+        assert!(!output.contains("__builtin_unprovided"));
+        assert!(!output.contains("missing"));
+        assert!(!output.contains("Ignored"));
+        assert!(!output.contains("ignored"));
+        assert_eq!(tree.expressions.mark(), mark);
+    }
 
     #[test]
     fn scalar_conversion_keeps_the_receivers_declared_reference_call_view() {

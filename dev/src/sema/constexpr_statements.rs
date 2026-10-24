@@ -28,11 +28,21 @@ impl Analyzer<'_> {
         mut id: ast::StmtId,
     ) -> Result<Flow, Error> {
         self.constant_step(self.tree.statements.get(id).location)?;
-        if matches!(
-            self.tree.statements.get(id).kind,
-            StmtKind::Ambiguous { .. }
-        ) {
-            id = self.graph.lower_statement(id)?;
+        if let StmtKind::Ambiguous { readings, .. } = self.tree.statements.get(id).kind {
+            id = self
+                .graph
+                .statement_readings
+                .get(id.index())
+                .copied()
+                .flatten()
+                .or_else(|| {
+                    self.tree
+                        .statement_readings
+                        .get(readings)
+                        .first()
+                        .map(|reading| reading.statement)
+                })
+                .ok_or(Error::Invariant("statement without reading"))?;
         }
         let stmt = *self.tree.statements.get(id);
         if self.constexpr_frames.seeking().is_some() {
@@ -138,8 +148,13 @@ impl Analyzer<'_> {
         }
     }
     fn constant_range_for(&mut self, id: ast::StmtId, body: ast::StmtId) -> Result<Flow, Error> {
-        let facts = self.graph.lower_range_for(id)?;
         let location = self.tree.statements.get(id).location;
+        let facts = self.graph.known_range_for(id).ok_or_else(|| {
+            nonconstant(
+                location,
+                "a range-based for statement outside constant evaluation",
+            )
+        })?;
         let scope = self.constexpr_frames.current()?.scope;
         let region = self.constexpr_frames.region();
         let result = (|| {
@@ -274,6 +289,24 @@ impl Analyzer<'_> {
         self.constexpr_frames.release(region);
         result
     }
+    fn constant_condition_entity(
+        &self,
+        declarator: ast::DeclaratorId,
+        location: SourceOffset,
+    ) -> Result<EntityId, Error> {
+        self.graph
+            .declared_bindings
+            .get(declarator.index())
+            .copied()
+            .flatten()
+            .map(|binding| self.graph.binding(binding).entity)
+            .ok_or(Error::NonConstant {
+                failure: super::ConstantFailure::Unreported,
+                location,
+                message: "not an integral constant expression",
+            })
+    }
+
     fn constant_condition(
         &mut self,
         condition: ast::Condition,
@@ -287,7 +320,7 @@ impl Analyzer<'_> {
                 initializer,
                 ..
             } => {
-                let entity = self.graph.lower_declared(declarator)?;
+                let entity = self.constant_condition_entity(declarator, location)?;
                 self.constant_local_variable(entity, Some(initializer), location)?;
                 let place = self
                     .constexpr_frames
@@ -392,7 +425,7 @@ impl Analyzer<'_> {
                     initializer,
                     ..
                 } => {
-                    let entity = self.graph.lower_declared(declarator)?;
+                    let entity = self.constant_condition_entity(declarator, location)?;
                     self.constant_local_variable(entity, Some(initializer), location)?;
                     let place = self
                         .constexpr_frames

@@ -136,6 +136,7 @@ mod property_predicates;
 mod qualifier_prefixes;
 mod queries;
 mod range_for;
+mod reserved_wrappers;
 mod return_deduction;
 mod runtime_intrinsics;
 mod scalar_casts;
@@ -216,11 +217,21 @@ pub(crate) enum Error {
         location: SourceOffset,
         message: &'static str,
     },
+    DeferredBuiltin,
     Missing(&'static str),
     Limit(&'static str),
     Invariant(&'static str),
 }
 impl Error {
+    pub(super) fn required_expression(self, location: SourceOffset) -> Self {
+        match self {
+            Self::NonConstant {
+                failure: ConstantFailure::Unreported,
+                ..
+            } => Self::at(location, "not an integral constant expression"),
+            other => other.required_constant(),
+        }
+    }
     pub(super) fn required_constant(self) -> Self {
         match self {
             Self::NonConstant {

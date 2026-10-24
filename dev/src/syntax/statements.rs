@@ -325,6 +325,16 @@ impl Parser<'_> {
         Ok(kind)
     }
     pub(super) fn function_body(&mut self, constructor: bool) -> Result<FunctionBody, ParseError> {
+        let saved = self.reserved_call.take();
+        let result = self.function_body_inner(constructor);
+        let reserved_call = self.reserved_call;
+        self.reserved_call = saved;
+        result.map(|mut body| {
+            body.reserved_call = reserved_call;
+            body
+        })
+    }
+    fn function_body_inner(&mut self, constructor: bool) -> Result<FunctionBody, ParseError> {
         let try_block = self.accept_keyword(K::Try)?;
         let initializer_location = if constructor && self.at(P::Colon)? {
             Some(self.location()?)
@@ -343,6 +353,7 @@ impl Parser<'_> {
             None
         };
         Ok(FunctionBody {
+            reserved_call: None,
             initializer_location,
             initializers,
             compound,

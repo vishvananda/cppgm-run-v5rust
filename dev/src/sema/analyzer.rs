@@ -86,6 +86,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) static_addresses: super::static_addresses::Queries,
     pub(super) static_initializers:
         Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
+    pub(super) reserved_context: super::reserved_wrappers::Context,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
     pub(super) enclosing_bodies: Vec<super::graph::EntityId>,
     pub(super) capture_scan: Option<super::graph::EntityId>,
@@ -354,6 +355,7 @@ impl<'tree> Analyzer<'tree> {
             static_addresses: super::static_addresses::Queries::default(),
             static_initializers: Vec::new(),
             body_context: None,
+            reserved_context: super::reserved_wrappers::Context::default(),
             enclosing_bodies: Vec::new(),
             capture_scan: None,
             capture_frames: Box::default(),
@@ -705,11 +707,8 @@ impl<'tree> Analyzer<'tree> {
             }
             self.convert_bool(condition)?;
             self.in_constant_evaluation(|analyzer| analyzer.constant_truth(condition, scope, false))
-                .map_err(|error| match error {
-                    Error::NonConstant {
-                        location, message, ..
-                    } => Error::at(location, message),
-                    other => other,
+                .map_err(|error| {
+                    error.required_expression(self.tree.expressions.get(condition).location)
                 })?
         } else {
             let value = self
@@ -877,6 +876,12 @@ impl<'tree> Analyzer<'tree> {
         self.deferred.push(DeferredMember::Body(body));
     }
     pub(super) fn function_body(&mut self, body: DeferredBody) -> Result<(), Error> {
+        let pattern = std::mem::replace(&mut self.reserved_context.pattern, false);
+        let result = self.function_body_inner(body);
+        self.reserved_context.pattern = pattern;
+        result
+    }
+    fn function_body_inner(&mut self, body: DeferredBody) -> Result<(), Error> {
         self.deferred_constexpr.remove(&body.entity);
         if body.template_depth != 0 && self.graph.entity(body.entity).template_head.is_none() {
             self.graph
@@ -944,7 +949,28 @@ impl<'tree> Analyzer<'tree> {
         if let Some(frame) = sealed {
             self.capture_frames.push(frame)?;
         }
+        let saved_deferring = self.reserved_context.deferring;
+        let saved_pattern = self.reserved_context.pattern;
+        self.reserved_context.pattern = false;
+        self.reserved_context.deferring = self.reserved_wrapper(body)?;
+        if self.reserved_context.deferring
+            && body.template_depth == 0
+            && matches!(self.tree.bodies.get(body.body), ast::Body::Parsed(parsed) if parsed.reserved_call.is_some())
+        {
+            self.graph.reserved_deferrals.note_body(body.entity);
+        }
         let result = self.function_body_scopes(body);
+        if self.body_context.as_ref().is_some_and(|context| {
+            context.undeduced
+                && !matches!(
+                    context.return_deduction,
+                    super::return_deduction::ReturnDeduction::Fixed
+                )
+        }) {
+            self.graph.reserved_deferrals.note_undeduced(body.entity);
+        }
+        self.reserved_context.deferring = saved_deferring;
+        self.reserved_context.pattern = saved_pattern;
         if has_frame {
             let _frame = self.capture_frames.pop()?;
         }
@@ -1079,11 +1105,12 @@ impl<'tree> Analyzer<'tree> {
                 .member_function
                 .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor)
         {
-            self.written_constructor_plan(body.entity, parsed, scope)?;
-            self.check_constant_constructor_plan(
-                body.entity,
-                self.tree.statements.get(parsed.compound).location,
-            )?;
+            if self.reserved_constructor_plan(body.entity, parsed, scope)? {
+                self.check_constant_constructor_plan(
+                    body.entity,
+                    self.tree.statements.get(parsed.compound).location,
+                )?;
+            }
         } else {
             for syntax_index in 0..self.tree.mem_initializers.get(parsed.initializers).len() {
                 let syntax_item = self.tree.mem_initializers.get(parsed.initializers)[syntax_index];

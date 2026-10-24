@@ -32,6 +32,44 @@ impl Initializers {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn finish_class_nesting(&mut self) -> Result<(), Error> {
+        let context = std::mem::take(&mut self.reserved_context);
+        let result = (|| {
+            let bodies = std::mem::take(&mut self.deferred);
+            for body in &bodies {
+                if let super::analyzer::DeferredMember::Initializer(member) = *body {
+                    self.finish_member_initializer(member)?;
+                }
+            }
+            for body in bodies {
+                match body {
+                    super::analyzer::DeferredMember::Initializer(_) => (),
+                    super::analyzer::DeferredMember::AggregateConstant(
+                        entity,
+                        initializer,
+                        scope,
+                    ) => {
+                        self.finish_deferred_aggregate_constant(entity, initializer, scope)?;
+                    }
+                    super::analyzer::DeferredMember::Constant(entity, initializer, scope) => {
+                        self.record_member_pointer_initializer(entity, initializer, scope)?;
+                    }
+                    super::analyzer::DeferredMember::Body(body) => {
+                        if self.graph.entity(body.entity).scope.is_none() {
+                            self.function_body(body)?;
+                        }
+                    }
+                    super::analyzer::DeferredMember::Defaults(defaults) => {
+                        self.type_function_defaults(defaults)?;
+                    }
+                }
+            }
+            Ok(())
+        })();
+        self.reserved_context = context;
+        result
+    }
+
     pub(super) fn defer_member_initializer(&mut self, binding: BindingId, scope: ScopeId) {
         let entity = self.graph.binding(binding).entity;
         let home = self.graph.entity(entity).home;
@@ -90,9 +128,11 @@ impl Analyzer<'_> {
             )
         } else {
             let body = self.body_context.take();
+            let reserved = std::mem::take(&mut self.reserved_context);
             let context = self.closure_default_argument.take();
             let result = self.type_member_initializer(pending, initializer);
             self.body_context = body;
+            self.reserved_context = reserved;
             self.closure_default_argument = context;
             result
         };

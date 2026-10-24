@@ -41,6 +41,7 @@ impl Analyzer<'_> {
         if !self.graph.lower_automatic(entity) {
             self.initializing = Some(entity);
         }
+        let unevaluated = self.unevaluated;
         let completed = if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
             self.initialize_class_object(target, initializer, scope, location)
                 .map(|selected| {
@@ -55,6 +56,18 @@ impl Analyzer<'_> {
         };
         self.initializing = saved_initializing;
         self.member_initializer_class = saved;
+        if matches!(completed, Err(Error::DeferredBuiltin)) && self.reserved_context.deferring {
+            self.unevaluated = unevaluated;
+            self.mark_reserved_body();
+            self.graph.reserved_deferrals.note_initializer(entity);
+            self.note_deferred_initializer(initializer);
+            let saved = self.reserved_context.pattern;
+            self.reserved_context.pattern = true;
+            let names = self.initializer_names(initializer, scope, target);
+            self.reserved_context.pattern = saved;
+            names?;
+            return Ok(target);
+        }
         let completed = completed?;
         self.graph.complete_variable_type(binding, completed)?;
         self.check_nothrow_initializer(self.graph.binding(binding).entity, initializer)?;

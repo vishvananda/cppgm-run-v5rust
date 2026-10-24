@@ -212,6 +212,7 @@ impl Analyzer<'_> {
         element: TypeId,
         scope: ScopeId,
     ) -> Result<Address, Error> {
+        self.check_deferred_constant(id)?;
         let root = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(root)?;
         let location = self.tree.expressions.get(id).location;

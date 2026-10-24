@@ -127,6 +127,14 @@ impl Analyzer<'_> {
                         self.missing_callee_message(name),
                     ));
                 }
+                if found.binding.is_none()
+                    && callee == named
+                    && self.reserved_context.deferring
+                    && self.deferred_builtin_name(name).is_some()
+                {
+                    self.graph.reserved_deferrals.note_expression(id);
+                    return Err(Error::DeferredBuiltin);
+                }
                 if let Some(binding) = found.binding {
                     let binding = self.graph.binding(binding);
                     if matches!(

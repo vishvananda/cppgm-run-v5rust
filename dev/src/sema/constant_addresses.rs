@@ -249,6 +249,7 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let node = *self.tree.expressions.get(id);
+        self.check_deferred_constant(id)?;
         let facts = self.graph.expression_facts.get(id)?;
         let location = node.location;
         self.constant_step(location)?;
@@ -662,6 +663,7 @@ impl Analyzer<'_> {
         }
     }
     fn constant_place_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Address, Error> {
+        self.check_deferred_constant(id)?;
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let node = *self.tree.expressions.get(id);
@@ -1357,6 +1359,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("discard work disappeared"))?;
                 let id = self.graph.expression_facts.root(id);
                 let node = *self.tree.expressions.get(id);
+                self.check_deferred_constant(id)?;
                 let facts = self.graph.expression_facts.get(id)?;
                 if facts.literal_call.is_some()
                     || facts.call_form == super::expression_facts::CallForm::Operator

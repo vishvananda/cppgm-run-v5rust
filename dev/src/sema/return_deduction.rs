@@ -227,7 +227,9 @@ impl Analyzer<'_> {
 
     pub(super) fn finish_return_deduction(&mut self, location: SourceOffset) -> Result<(), Error> {
         if self.body_context.as_ref().is_some_and(|body| {
-            body.placeholder.is_some() && matches!(body.return_deduction, ReturnDeduction::Pending)
+            !body.undeduced
+                && body.placeholder.is_some()
+                && matches!(body.return_deduction, ReturnDeduction::Pending)
         }) {
             self.publish_return(None, location)?;
         }

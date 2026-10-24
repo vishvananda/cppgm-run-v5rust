@@ -26,6 +26,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<(), Error> {
         self.check_stack()?;
+        self.check_deferred_constant(id)?;
         let id = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
@@ -155,6 +156,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        self.check_deferred_constant(expr)?;
         if let Some((constructor, arguments)) = self.graph.expression_facts.class_conversion(expr)
             && self.graph.class_of(target.designated)
                 == Some(self.graph.constructors.get(constructor).class)
@@ -240,6 +242,19 @@ impl Analyzer<'_> {
         let values = match initializer.kind {
             InitializerKind::Assign(expr) | InitializerKind::Braced(expr) => {
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind {
+                    if constructor.is_none()
+                        && self.graph.reserved_deferrals.expression(expr)
+                        && self
+                            .graph
+                            .class_of(target.designated)
+                            .is_some_and(|class| !self.graph.aggregate_class(class))
+                        && !elements.is_empty()
+                    {
+                        return Err(nonconstant(
+                            location,
+                            "a list-initialization outside constant evaluation",
+                        ));
+                    }
                     if constructor.is_none()
                         && matches!(
                             self.graph.types.get(target.designated).kind,

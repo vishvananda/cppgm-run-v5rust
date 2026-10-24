@@ -295,6 +295,9 @@ fn emit_preprocessed(
                     Err(error) => AstToolError::Initialization(error),
                 }
             }
+            crate::sema::Error::DeferredBuiltin => {
+                AstToolError::Internal("unconsumed reserved builtin deferral")
+            }
             crate::sema::Error::Missing(group) => AstToolError::Missing(group),
             crate::sema::Error::Limit(message) => {
                 AstToolError::Diagnostic(message.as_bytes().to_vec())
@@ -341,6 +344,9 @@ fn emit_preprocessed(
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
                     Err(error) => AstToolError::Initialization(error),
                 },
+                crate::lower::Error::Semantic(crate::sema::Error::DeferredBuiltin) => {
+                    AstToolError::Internal("unconsumed reserved builtin deferral")
+                }
                 crate::lower::Error::Semantic(crate::sema::Error::Invariant(message)) => {
                     AstToolError::Internal(message)
                 }

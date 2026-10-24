@@ -273,6 +273,10 @@ impl Analyzer<'_> {
         if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expression).kind {
             return self.deduce_list_object(declared, cv, elements, scope, location, known);
         }
+        if self.reserved_context.pattern && self.reserved_context.deferring {
+            self.expression(expression, scope)?;
+            return Err(Error::DeferredBuiltin);
+        }
         let placeholder = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
         let pattern = self.replace_auto(declared, placeholder, cv)?;
         let mut arguments = [None];

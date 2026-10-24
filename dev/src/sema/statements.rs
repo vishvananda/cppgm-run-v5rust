@@ -23,8 +23,48 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn statement(&mut self, id: ast::StmtId, scope: ScopeId) -> Result<(), Error> {
+        if self.reserved_context.deferring
+            && self
+                .body_context
+                .as_ref()
+                .is_some_and(|body| body.reserved_pending)
+        {
+            return Ok(());
+        }
         let initialized = self.switch_initialized();
+        let unevaluated = self.unevaluated;
         let result = self.statement_scoped(id, scope);
+        let result =
+            if matches!(result, Err(Error::DeferredBuiltin)) && self.reserved_context.deferring {
+                self.unevaluated = unevaluated;
+                self.mark_reserved_body();
+                if let StmtKind::Expression(Some(operand))
+                | StmtKind::Return(Some(operand))
+                | StmtKind::Throw(Some(operand)) = self.tree.statements.get(id).kind
+                {
+                    self.graph.reserved_deferrals.note_expression(operand);
+                }
+                if matches!(self.tree.statements.get(id).kind, StmtKind::Return(_))
+                    && let Some(body) = self.body_context.as_mut()
+                {
+                    body.undeduced = true;
+                }
+                let saved = self.reserved_context.pattern;
+                self.reserved_context.pattern = true;
+                let result = self.statement_scoped(id, scope);
+                self.reserved_context.pattern = saved;
+                if matches!(result, Err(Error::DeferredBuiltin)) {
+                    if let Some(body) = self.body_context.as_mut() {
+                        body.reserved_pending = true;
+                        body.undeduced = true;
+                    }
+                    Ok(())
+                } else {
+                    result
+                }
+            } else {
+                result
+            };
         let mut selected = id;
         if matches!(
             self.tree.statements.get(id).kind,
@@ -71,10 +111,18 @@ impl Analyzer<'_> {
             }
             StmtKind::Compound(list) => self.compound(list, scope, false),
             StmtKind::Declaration(decl) => self.declaration(decl, scope),
-            StmtKind::Return(operand) if self.semantic() && self.template_depth == 0 => {
+            StmtKind::Return(operand)
+                if self.semantic()
+                    && self.template_depth == 0
+                    && !self.reserved_context.pattern =>
+            {
                 self.semantic_return(id, operand, scope)
             }
-            StmtKind::Throw(operand) if self.semantic() && self.template_depth == 0 => {
+            StmtKind::Throw(operand)
+                if self.semantic()
+                    && self.template_depth == 0
+                    && !self.reserved_context.pattern =>
+            {
                 if let Some(operand) = operand {
                     self.throw_operand(operand, scope, self.tree.statements.get(id).location)?;
                 }
@@ -139,8 +187,12 @@ impl Analyzer<'_> {
                     Control::Loop,
                     self.tree.statements.get(id).location,
                 )?;
-                self.expression(condition, block)?;
-                if self.semantic() && self.template_depth == 0 {
+                let typed = self.reserved_expression(condition, block)?;
+                if typed
+                    && self.semantic()
+                    && self.template_depth == 0
+                    && !self.reserved_context.pattern
+                {
                     self.convert_bool(condition)?;
                 }
                 Ok(())
@@ -156,14 +208,14 @@ impl Analyzer<'_> {
                 if let Some(declaration) = declaration {
                     self.declaration(declaration, block)?;
                 } else if let Some(init) = init {
-                    self.expression(init, block)?;
+                    self.reserved_expression(init, block)?;
                 }
                 if let Some(condition) = condition {
                     self.condition(condition, block)?;
                     self.condition_conversion(condition, false)?;
                 }
                 if let Some(iteration) = iteration {
-                    self.expression(iteration, block)?;
+                    self.reserved_expression(iteration, block)?;
                 }
                 self.control_substatement(
                     body,
@@ -293,7 +345,7 @@ impl Analyzer<'_> {
 
     fn condition(&mut self, condition: Condition, scope: ScopeId) -> Result<(), Error> {
         match condition {
-            Condition::Expression(expr) => self.expression(expr, scope),
+            Condition::Expression(expr) => self.reserved_expression(expr, scope).map(|_| ()),
             Condition::Declaration {
                 specifiers,
                 declarator,
@@ -347,7 +399,11 @@ impl Analyzer<'_> {
                     return Err(Error::at(location, "exception declaration without a type"));
                 }
                 let info = self.declarator(declarator, specs.ty, block)?;
-                if self.semantic() && self.template_depth == 0 && self.body_context.is_some() {
+                if self.semantic()
+                    && self.template_depth == 0
+                    && !self.reserved_context.pattern
+                    && self.body_context.is_some()
+                {
                     self.exception_declaration(handler.body, &info, declarator, block, location)?;
                 } else if let Some(name) = info.name {
                     let entity = self
@@ -414,8 +470,24 @@ impl Analyzer<'_> {
             }
         }
         let block = self.block_scope(scope)?;
-        if self.semantic() && self.template_depth == 0 {
-            self.range_for_equivalent(id, specifiers, declarator, range, block)?;
+        if self.semantic() && self.template_depth == 0 && !self.reserved_context.pattern {
+            let unevaluated = self.unevaluated;
+            match self.range_for_equivalent(id, specifiers, declarator, range, block) {
+                Err(Error::DeferredBuiltin) if self.reserved_context.deferring => {
+                    self.unevaluated = unevaluated;
+                    let specs = self.specifiers(specifiers, scope, false)?;
+                    if self.holds_auto(specs.ty) {
+                        return Err(Error::DeferredBuiltin);
+                    }
+                    self.mark_reserved_body();
+                    let saved = self.reserved_context.pattern;
+                    self.reserved_context.pattern = true;
+                    let result = self.range_for_names(id, specifiers, declarator, range, block);
+                    self.reserved_context.pattern = saved;
+                    result?;
+                }
+                result => result?,
+            }
             return self.control_substatement(
                 body,
                 block,
@@ -423,6 +495,18 @@ impl Analyzer<'_> {
                 self.tree.statements.get(id).location,
             );
         }
+        self.range_for_names(id, specifiers, declarator, range, block)?;
+        self.substatement(body, block)
+    }
+
+    fn range_for_names(
+        &mut self,
+        id: ast::StmtId,
+        specifiers: List<ast::Specifier>,
+        declarator: ast::DeclaratorId,
+        range: ast::ExprId,
+        block: ScopeId,
+    ) -> Result<(), Error> {
         let uses = self.dependent_uses.get();
         self.expression(range, block)?;
         let specs = self.specifiers(specifiers, block, false)?;
@@ -461,6 +545,6 @@ impl Analyzer<'_> {
             declarator.index(),
             binding,
         );
-        self.substatement(body, block)
+        Ok(())
     }
 }

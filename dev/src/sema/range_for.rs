@@ -58,6 +58,9 @@ pub(super) struct RangeLoops {
     objects: HashSet<EntityId>,
 }
 impl Graph {
+    pub(super) fn known_range_for(&self, id: ast::StmtId) -> Option<RangeForFacts> {
+        self.range_loops.records.get(&id).copied()
+    }
     pub(crate) fn lower_range_for(&self, id: ast::StmtId) -> Result<RangeForFacts, Error> {
         self.range_loops
             .records
