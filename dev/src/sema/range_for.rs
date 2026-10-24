@@ -174,6 +174,7 @@ impl Analyzer<'_> {
             parameters: None,
             qualifiers: None,
             syntax_name: Some(syntax_name),
+            asm_label: None,
         };
         self.declare_analyzed_init(specs, init, scope, &mut None, info)?;
         let binding = self.graph.declared_bindings[declarator.index()]

@@ -650,6 +650,7 @@ impl Analyzer<'_> {
             )?;
         }
         self.check_template_function_defaults(info, head, earlier.is_none(), location)?;
+        self.note_asm_label(function, info.asm_label)?;
         if let Some(head) = head {
             self.merge_template_head(function, head, location)?;
         }

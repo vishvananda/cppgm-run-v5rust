@@ -509,6 +509,7 @@ impl Parser<'_> {
         let result = self.function_qualifiers_with_attributes(true);
         self.scopes.current = enclosing;
         let qualifiers = result?;
+        self.declarator_asm_label()?;
         let attributes = self.tree.attributes.finish(attribute_start)?;
         let start = self.tree.suffixes.begin();
         self.tree.suffixes.push(Suffix::Function {

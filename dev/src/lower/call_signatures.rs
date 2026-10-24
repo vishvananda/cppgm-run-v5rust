@@ -108,7 +108,11 @@ impl Symbols<'_, '_> {
         let name = self.name(entity)?;
         let facts = self.function_facts(entity)?;
         let mut metadata = self.metadata(program, entity, &name)?;
-        let object = if facts.builtin.is_some() {
+        let object = if facts.builtin.is_none()
+            && let Some(label) = self.graph.lower_asm_label(entity)
+        {
+            Some(program.names.intern_bytes(label)?)
+        } else if facts.builtin.is_some() {
             metadata.object.or(Some(program.names.intern(&name)?))
         } else if facts.c_linkage && !facts.internal
             || metadata.role == Some(crate::lowir::vocabulary::Role::Entry)
@@ -129,7 +133,9 @@ impl Symbols<'_, '_> {
             .table
             .allocate(program, &name, object, facts.internal)?;
         let local_object = if facts.c_linkage && !facts.internal {
-            local_object.or(object.filter(|&object| program.symbol(symbol).name != object))
+            local_object.or(object.filter(|&object| {
+                !program.names.get(object).is_empty() && program.symbol(symbol).name != object
+            }))
         } else {
             local_object
         };
@@ -160,7 +166,10 @@ impl Symbols<'_, '_> {
                     },
                 });
         }
-        if self.table.object_mode && !program.symbol(symbol).declared() {
+        if self.table.object_mode
+            && !program.symbol(symbol).declared()
+            && program.forward_boundary(symbol).is_none()
+        {
             let signature = crate::lower::function::declaration_signature(
                 program,
                 self,

@@ -180,7 +180,24 @@ impl Parser<'_> {
             });
         }
         let suffixes = self.tree.suffixes.finish(suffix_start)?;
-        if mode == Mode::Named && self.keyword()? == Some(K::Asm) {
+        if mode == Mode::Named {
+            self.declarator_asm_label()?;
+        }
+        let attributes = self.tree.attributes.finish(attribute_start)?;
+        self.tree.declarators.add(Declarator {
+            member_scope: member,
+            attributes,
+            location,
+            abstract_form: matches!(mode, Mode::Abstract | Mode::New | Mode::Conversion),
+            pointers,
+            pack,
+            name,
+            nested,
+            suffixes,
+        })
+    }
+    pub(super) fn declarator_asm_label(&mut self) -> Result<(), ParseError> {
+        if self.keyword()? == Some(K::Asm) {
             let location = self.location()?;
             self.cursor.advance()?;
             self.expect(P::LeftParen)?;
@@ -198,18 +215,7 @@ impl Parser<'_> {
             let attributes = self.collect_attributes(false)?;
             self.tree.attributes.extend(attributes);
         }
-        let attributes = self.tree.attributes.finish(attribute_start)?;
-        self.tree.declarators.add(Declarator {
-            member_scope: member,
-            attributes,
-            location,
-            abstract_form: matches!(mode, Mode::Abstract | Mode::New | Mode::Conversion),
-            pointers,
-            pack,
-            name,
-            nested,
-            suffixes,
-        })
+        Ok(())
     }
     fn bound_lookup_scope(
         &mut self,

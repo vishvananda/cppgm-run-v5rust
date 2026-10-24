@@ -96,6 +96,30 @@ impl<'a> FunctionBuilder<'a> {
         if program.function_defined(symbol) {
             return Err(Error::Diagnostic("duplicate constructed function".into()));
         }
+        Self::construct(program, symbol, parameters, result)
+    }
+    /// Emit another ABI entry of a source function sharing an explicit object
+    /// label. The lowering owner verifies the source and variant provenance.
+    pub(crate) fn rebuild_abi_entry(
+        program: &'a mut Program,
+        symbol: SymbolId,
+        parameters: &[(&str, Type)],
+        result: Type,
+    ) -> Result<Self, Error> {
+        if !program.function_defined(symbol) {
+            return Err(Error::Construction(
+                "ABI entry without prior definition".into(),
+            ));
+        }
+        Self::construct(program, symbol, parameters, result)
+    }
+    fn construct(
+        program: &'a mut Program,
+        symbol: SymbolId,
+        parameters: &[(&str, Type)],
+        result: Type,
+    ) -> Result<Self, Error> {
+        let name = program.symbol(symbol).name;
         let mut signature = Signature {
             parameters: Vec::new(),
             result,
@@ -588,6 +612,30 @@ impl<'a> FunctionBuilder<'a> {
 mod tests {
     use super::*;
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
+
+    #[test]
+    fn rebuilding_an_abi_entry_keeps_symbol_identity_and_new_rejects_duplicates()
+    -> Result<(), Error> {
+        let mut program = Program::default();
+        let mut first = FunctionBuilder::new(&mut program, "entry", &[], Type::Void)?;
+        first.block("entry")?;
+        first.effect(I::Return(Type::Void, None))?;
+        first.finish()?;
+        let symbol = program.publications()[0];
+        assert!(FunctionBuilder::new(&mut program, "entry", &[], Type::Void).is_err());
+        let mut next = FunctionBuilder::rebuild_abi_entry(&mut program, symbol, &[], Type::I32)?;
+        next.block("entry")?;
+        let value = next.integer(7)?;
+        next.effect(I::Return(Type::I32, Some(value)))?;
+        next.finish()?;
+        assert_eq!(program.publications(), &[symbol, symbol]);
+        let function = program
+            .function(program.symbol(symbol))
+            .ok_or(Error::Limit)?;
+        assert_eq!(program.signature(function.signature).result, Type::I32);
+        validator::validate_constructed(&program)?;
+        Ok(())
+    }
 
     #[test]
     fn completed_runtime_body_retains_parameter_names_and_anonymous_storage() -> Result<(), Error> {

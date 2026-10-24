@@ -372,6 +372,7 @@ impl Analyzer<'_> {
             parameters: lambda.parameters,
             qualifiers: None,
             syntax_name: None,
+            asm_label: None,
         };
         if let Some(exception) = lambda.exception {
             let start = self.tree.qualifiers.begin();

@@ -36,6 +36,7 @@ pub(super) struct DeclaratorInfo {
     pub parameters: Option<ast::ParameterClause>,
     pub qualifiers: Option<crate::syntax::storage::List<ast::Qualifier>>,
     pub syntax_name: Option<ast::Name>,
+    pub asm_label: Option<ast::ExprId>,
 }
 #[derive(Clone, Copy, Default)]
 pub(super) struct FunctionContext {
@@ -424,6 +425,15 @@ impl Analyzer<'_> {
             parameters,
             qualifiers: function_qualifiers,
             syntax_name,
+            asm_label: root.and_then(|root| {
+                self.tree
+                    .attributes
+                    .get(self.tree.declarators.get(root).attributes)
+                    .iter()
+                    .rev()
+                    .find(|attribute| attribute.kind == ast::AttributeKind::AsmLabel)
+                    .and_then(|attribute| attribute.expression)
+            }),
         })
     }
 

@@ -860,6 +860,7 @@ impl Analyzer<'_> {
                 .set_binding_dependence(binding, self.dependent_uses.get() != specs.dependent_uses);
         }
         let entity = self.publish_object_declaration(init.declarator, binding)?;
+        self.note_asm_label(entity, info.asm_label)?;
         if self.semantic() {
             ty = self.graph.publish_variable_type(binding)?;
         }
@@ -1282,6 +1283,7 @@ impl Analyzer<'_> {
         }
         if kind == BindingKind::Function {
             if let Some((info, _)) = function {
+                self.note_asm_label(entity, info.asm_label)?;
                 self.check_template_function_defaults(info, head, existing.is_none(), location)?;
             }
             if let Some(head) = head {

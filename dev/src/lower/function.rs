@@ -164,18 +164,7 @@ pub(super) fn lower<'a>(
         ));
     }
     let symbol = symbols.entry_symbol(program, entry)?;
-    if program.function_defined(symbol) {
-        let declaration =
-            facts
-                .definition
-                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                    "function definition without source",
-                )))?;
-        return Err(Error::Semantic(crate::sema::Error::Diagnostic {
-            location: tree.declarations.get(declaration).location,
-            message: "redefinition of a function across translation units",
-        }));
-    }
+    let replaces_entry = symbols.definition_replacement(program, entry, symbol)?;
     let name = program.names.get(program.symbol(symbol).name).to_owned();
     let metadata = symbols.definition_metadata(program, entry, symbol)?;
     let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
@@ -183,7 +172,11 @@ pub(super) fn lower<'a>(
         .iter()
         .map(|(name, ty)| (name.as_str(), *ty))
         .collect();
-    let mut builder = FunctionBuilder::new(program, &name, &parameters, result_boundary.ty)?;
+    let mut builder = if replaces_entry {
+        FunctionBuilder::rebuild_abi_entry(program, symbol, &parameters, result_boundary.ty)?
+    } else {
+        FunctionBuilder::new(program, &name, &parameters, result_boundary.ty)?
+    };
     builder.metadata(metadata);
     let distinct = entity.is_some_and(|entity| graph.lower_copy_constructor(entity));
     if result_boundary.indirect {

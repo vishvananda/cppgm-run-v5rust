@@ -294,6 +294,9 @@ fn emit_source_definitions<'a>(
                 if matches!(facts.name, sema::lowering::FunctionName::Destructor(_)) {
                     if facts.emission == sema::lowering::Emission::Always && emitted.insert(entity)
                     {
+                        // define_function publishes the complete symbol before
+                        // any ABI entry; an explicit label may make them share it.
+                        let _symbol = symbols.function_symbol(output.program, entity)?;
                         let variants = [
                             Some(construction::Entry::DestructorBase(entity)),
                             graph
@@ -318,6 +321,7 @@ fn emit_source_definitions<'a>(
                     continue;
                 }
                 if facts.emission == crate::sema::lowering::Emission::Always {
+                    let _symbol = symbols.function_symbol(output.program, entity)?;
                     let id = graph
                         .lower_construction(entity)
                         .ok_or(Error::Missing("special member construction plan"))?;
@@ -591,3 +595,6 @@ pub(crate) use symbols::assert_base_routes;
 
 #[cfg(test)]
 pub(crate) use symbols::assert_construction_context;
+
+#[cfg(test)]
+pub(crate) use symbols::assert_label_name_demand;

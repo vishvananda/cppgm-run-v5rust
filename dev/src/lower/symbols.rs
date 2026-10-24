@@ -211,6 +211,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub aggregate_helpers: super::aggregate_helpers::Helpers,
     seen: std::collections::HashSet<super::construction::Entry>,
     entries: HashMap<super::construction::Entry, SymbolId>,
+    labeled_entries: HashMap<SymbolId, super::construction::Entry>,
     pub(super) pending_copies: Vec<EntityId>,
     inline_static_owners: Vec<EntityId>,
     entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
@@ -305,6 +306,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             aggregate_helpers: super::aggregate_helpers::Helpers::default(),
             seen: std::collections::HashSet::new(),
             entries: HashMap::new(),
+            labeled_entries: HashMap::new(),
             pending_copies: Vec::new(),
             inline_static_owners: Vec::new(),
             entry_objects: HashMap::new(),
@@ -1745,43 +1747,46 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         components.reverse();
         let spelling = components.join("__");
-        // Named variables publish their ABI identity even when their external
-        // spelling is emitted directly, preserving the original demand order.
+        // Ordinary named variables publish their ABI identity even when their
+        // external spelling is direct. An explicit object label bypasses ABI
+        // name construction, as variable_object does in the frozen owner.
         let named_identity = facts
             .name
+            .filter(|_| self.graph.lower_asm_label(entity).is_none())
             .map(|_| self.variable_abi_name(entity))
             .transpose()?;
-        let object =
-            if facts.name.is_none() && self.graph.lower_first_named_member(facts.ty).is_none() {
-                None
-            } else if facts.name.is_some()
-                && (facts.c_linkage
-                    || self.graph.lower_presentation_scope(facts.home).0.is_none()
-                        && !facts.internal
-                        && self.graph.lower_variable_arguments(entity).is_none()
-                        && (!self.graph.lower_has_abi_tags()
-                            || named_identity.is_some_and(|name| self.abi.items(name).is_empty())))
-            {
-                Some(
-                    program
-                        .names
-                        .intern_bytes(self.cursor.name(facts.named()?))?,
-                )
+        let object = if let Some(label) = self.graph.lower_asm_label(entity) {
+            Some(program.names.intern_bytes(label)?)
+        } else if facts.name.is_none() && self.graph.lower_first_named_member(facts.ty).is_none() {
+            None
+        } else if facts.name.is_some()
+            && (facts.c_linkage
+                || self.graph.lower_presentation_scope(facts.home).0.is_none()
+                    && !facts.internal
+                    && self.graph.lower_variable_arguments(entity).is_none()
+                    && (!self.graph.lower_has_abi_tags()
+                        || named_identity.is_some_and(|name| self.abi.items(name).is_empty())))
+        {
+            Some(
+                program
+                    .names
+                    .intern_bytes(self.cursor.name(facts.named()?))?,
+            )
+        } else {
+            let name = if let Some(name) = named_identity {
+                name
             } else {
-                let name = if let Some(name) = named_identity {
-                    name
-                } else {
-                    self.variable_abi_name(entity)?
-                };
-                let mut bytes = Vec::new();
-                abi::encoder::Encoder::encode(
-                    &self.abi,
-                    abi::encoder::Target::Entity(name),
-                    &mut bytes,
-                    self.budget,
-                )?;
-                Some(program.names.intern_bytes(&bytes)?)
+                self.variable_abi_name(entity)?
             };
+            let mut bytes = Vec::new();
+            abi::encoder::Encoder::encode(
+                &self.abi,
+                abi::encoder::Target::Entity(name),
+                &mut bytes,
+                self.budget,
+            )?;
+            Some(program.names.intern_bytes(&bytes)?)
+        };
         let local_object = if facts.locality == crate::sema::lowering::Locality::Unit
             && (facts.c_linkage
                 || object.is_some_and(|object| self.table.objects.contains_key(&object)))
@@ -2096,7 +2101,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             &mut bytes,
             self.budget,
         )?;
-        let object = program.names.intern_bytes(&bytes)?;
+        let object = program
+            .names
+            .intern_bytes(self.graph.lower_asm_label(entity).unwrap_or(&bytes))?;
         let local_object = (weak || !self.table.objects.contains_key(&object)).then_some(object);
         // Each unit's parsed static owns storage identity, even when its weak
         // ABI name is shared. Unit-local copies can lower both declarations.
@@ -2111,7 +2118,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 Binding::Internal
             }),
             storage: facts.thread_local.then_some(Storage::ThreadLocal),
-            object: local_object,
+            object: local_object.filter(|&object| !program.names.get(object).is_empty()),
             section: self
                 .graph
                 .lower_variable_section(entity)
@@ -2173,8 +2180,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .copied()
             .flatten()
             .filter(|&object| {
-                facts.locality == crate::sema::lowering::Locality::Unit
-                    || object != program.symbol(symbol).name
+                !program.names.get(object).is_empty()
+                    && (facts.locality == crate::sema::lowering::Locality::Unit
+                        || object != program.symbol(symbol).name)
             });
         let mut metadata = Metadata {
             linkage: if facts.c_linkage {
@@ -2318,6 +2326,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if facts.c_linkage {
             metadata.linkage = Linkage::C;
         }
+        if let Some(label) = self.graph.lower_asm_label(entity) {
+            metadata.object = if let Some(&object) = self.objects.get(&entity) {
+                object
+            } else if label.is_empty() || label == name.as_bytes() {
+                None
+            } else {
+                Some(program.names.intern_bytes(label)?)
+            };
+            return Ok(metadata);
+        }
         if facts.c_linkage && !facts.internal {
             metadata.object = self.objects.get(&entity).copied().flatten();
             return Ok(metadata);
@@ -2440,7 +2458,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .allocate(program, &name, metadata.object, facts.internal)?;
         self.entry_objects.insert(entry, object);
         self.entries.insert(entry, symbol);
-        if self.table.object_mode && !program.symbol(symbol).declared() {
+        if self.table.object_mode
+            && !program.symbol(symbol).declared()
+            && program.forward_boundary(symbol).is_none()
+        {
             let signature =
                 super::function::declaration_signature(program, self, self.graph, entry)?;
             program.set_forward_boundary(symbol, signature, metadata);
@@ -2533,6 +2554,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let facts = self.entry_facts(entry)?;
         let object = if let Some(&object) = self.entry_objects.get(&entry) {
             object
+        } else if let Some(label) = entity.and_then(|entity| self.graph.lower_asm_label(entity)) {
+            Some(program.names.intern_bytes(label)?)
         } else {
             let function = self.encode_function(&facts, variant)?;
             let mut object = Vec::new();
@@ -2588,6 +2611,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         symbol: SymbolId,
     ) -> Result<(), Error> {
         use super::construction::{Entry, Variant};
+        if entry
+            .entity(self.graph)
+            .is_some_and(|entity| self.graph.lower_asm_label(entity).is_some())
+        {
+            self.labeled_entries.insert(symbol, entry);
+        }
         if let Some(function) = entry.entity(self.graph) {
             self.name_local_classes(function)?;
         }
@@ -2613,16 +2642,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             {
                 return Ok(());
             }
-            let facts = self.function_facts(entity)?;
-            let encoding = self.encode_function(&facts, Variant::Base)?;
-            let mut bytes = Vec::new();
-            abi::encoder::Encoder::encode(
-                &self.abi,
-                abi::encoder::Target::Entity(encoding),
-                &mut bytes,
-                self.budget,
-            )?;
-            let object = program.names.intern_bytes(&bytes)?;
+            let object = self.base_entry_object(program, entry)?;
             self.table
                 .entry_aliases
                 .push(crate::lowir::model::ObjectAlias {
@@ -2636,16 +2656,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             {
                 return Ok(());
             }
-            let facts = self.entry_facts(entry)?;
-            let encoding = self.encode_function(&facts, Variant::Base)?;
-            let mut object = Vec::new();
-            abi::encoder::Encoder::encode(
-                &self.abi,
-                abi::encoder::Target::Entity(encoding),
-                &mut object,
-                self.budget,
-            )?;
-            let object = program.names.intern_bytes(&object)?;
+            let object = self.base_entry_object(program, entry)?;
             self.table
                 .entry_aliases
                 .push(crate::lowir::model::ObjectAlias {
@@ -2654,6 +2665,70 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 });
         }
         Ok(())
+    }
+    // Explicit object labels bypass ABI-name work. Local-static guard names
+    // remain separate and are still formed by their storage owner.
+    fn base_entry_object(
+        &mut self,
+        program: &mut Program,
+        entry: super::construction::Entry,
+    ) -> Result<NameId, Error> {
+        if let Some(label) = entry
+            .entity(self.graph)
+            .and_then(|entity| self.graph.lower_asm_label(entity))
+        {
+            return Ok(program.names.intern_bytes(label)?);
+        }
+        let facts = self.entry_facts(entry)?;
+        let encoding = self.encode_function(&facts, super::construction::Variant::Base)?;
+        let mut bytes = Vec::new();
+        abi::encoder::Encoder::encode(
+            &self.abi,
+            abi::encoder::Target::Entity(encoding),
+            &mut bytes,
+            self.budget,
+        )?;
+        Ok(program.names.intern_bytes(&bytes)?)
+    }
+    // An asm label can give one function's ABI variants the same symbol.
+    // emit_definition still emits each requested variant. This provenance
+    // permits rebuilding that symbol, never another entity's definition.
+    pub(super) fn definition_replacement(
+        &self,
+        program: &Program,
+        entry: super::construction::Entry,
+        symbol: SymbolId,
+    ) -> Result<bool, Error> {
+        use super::construction::Entry;
+        if !program.function_defined(symbol) {
+            return Ok(false);
+        }
+        let shared = self.labeled_entries.get(&symbol).is_some_and(|&previous| {
+            previous != entry
+                && previous.entity(self.graph) == entry.entity(self.graph)
+                && matches!(
+                    (previous, entry),
+                    (Entry::Constructor(_, _), Entry::Constructor(_, _))
+                        | (
+                            Entry::DestructorBase(_),
+                            Entry::Function(_) | Entry::DestructorDeleting(_)
+                        )
+                        | (Entry::DestructorDeleting(_), Entry::Function(_))
+                )
+        });
+        if shared {
+            return Ok(true);
+        }
+        let declaration =
+            self.entry_facts(entry)?
+                .definition
+                .ok_or(crate::sema::Error::Invariant(
+                    "function definition without source",
+                ))?;
+        Err(Error::Semantic(crate::sema::Error::Diagnostic {
+            location: self.tree.declarations.get(declaration).location,
+            message: "redefinition of a function across translation units",
+        }))
     }
     pub(super) fn stream_definition(
         &mut self,
@@ -2683,16 +2758,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 let object = if facts.internal {
                     None
                 } else {
-                    let encoding =
-                        self.encode_function(&facts, super::construction::Variant::Base)?;
-                    let mut object = Vec::new();
-                    abi::encoder::Encoder::encode(
-                        &self.abi,
-                        abi::encoder::Target::Entity(encoding),
-                        &mut object,
-                        self.budget,
-                    )?;
-                    Some(program.names.intern_bytes(&object)?)
+                    Some(self.base_entry_object(program, entry)?)
                 };
                 let family = output.family(object)?;
                 self.entry_families.insert(id, family);
@@ -2707,16 +2773,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 let object = if facts.internal {
                     None
                 } else {
-                    let encoding =
-                        self.encode_function(&facts, super::construction::Variant::Base)?;
-                    let mut bytes = Vec::new();
-                    abi::encoder::Encoder::encode(
-                        &self.abi,
-                        abi::encoder::Target::Entity(encoding),
-                        &mut bytes,
-                        self.budget,
-                    )?;
-                    Some(program.names.intern_bytes(&bytes)?)
+                    Some(self.base_entry_object(program, entry)?)
                 };
                 let family = output.family(object)?;
                 self.destructor_families.insert(entity, family);
@@ -2910,6 +2967,42 @@ pub(crate) use virtual_bases::assert_base_routes;
 
 #[cfg(test)]
 pub(crate) use vtables::assert_construction_context;
+
+#[cfg(test)]
+pub(crate) fn assert_label_name_demand(
+    graph: &Graph,
+    tree: &ast::Tree,
+    cursor: &Cursor<'_>,
+    declarations: crate::syntax::storage::List<ast::DeclId>,
+) {
+    let entities: Vec<_> = tree
+        .decl_lists
+        .get(declarations)
+        .iter()
+        .map(|&declaration| {
+            let ast::DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind
+            else {
+                panic!("object declaration");
+            };
+            graph
+                .lower_declared(tree.init_declarators.get(declarators)[0].declarator)
+                .unwrap()
+        })
+        .collect();
+    let syntax_count = tree.expressions.mark();
+    let mut program = Program::default();
+    let mut table = SymbolTable::default();
+    let mut symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
+    let first = symbols.variable_symbol(&mut program, entities[0]).unwrap();
+    assert!(!symbols.variable_names.contains_key(&entities[0]));
+    assert_eq!(
+        symbols.variable_symbol(&mut program, entities[0]).unwrap(),
+        first
+    );
+    symbols.variable_symbol(&mut program, entities[1]).unwrap();
+    assert!(symbols.variable_names.contains_key(&entities[1]));
+    assert_eq!(tree.expressions.mark(), syntax_count);
+}
 
 #[cfg(test)]
 mod tests {

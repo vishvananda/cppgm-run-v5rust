@@ -404,6 +404,23 @@ pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn explicit_variable_labels_bypass_abi_name_demand() {
+        use crate::{
+            preprocess::unit::Preprocessor, support::source::SourceBuffer, syntax::SyntaxUnit,
+        };
+        let source =
+            SourceBuffer::new(br#"extern int x asm("object"); extern int y;"#.to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"label-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer =
+            crate::sema::Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        crate::lower::assert_label_name_demand(&graph, tree, cursor, declarations);
+    }
+
     use super::*;
     use crate::support::stack::StackBudget;
 
