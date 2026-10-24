@@ -343,6 +343,9 @@ impl Analyzer<'_> {
             ExprKind::Sizeof { ty, operand, .. } => {
                 self.constant_query(ty, operand, scope, false, location)?
             }
+            ExprKind::OffsetOf { ty, designator } => {
+                self.offsetof_constant(ty, designator, scope, location)?
+            }
             ExprKind::TypePredicate { predicate, types } => {
                 self.predicate_constant(predicate, types, scope, location)?
             }

@@ -120,7 +120,7 @@ impl Analyzer<'_> {
                     ))?;
             let path = self.conversion_base_path(object, conversion, scope, location, false)?;
             self.demand_specialization_body(binding);
-            self.demand_function(binding, true);
+            self.demand_function(binding, true)?;
             let function = self
                 .graph
                 .binding(binding)

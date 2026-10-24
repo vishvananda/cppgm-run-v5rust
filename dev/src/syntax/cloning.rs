@@ -380,6 +380,11 @@ impl<'a> Cloner<'a> {
                 predicate,
                 types: self.expanded_types(types)?,
             },
+            ExprKind::OffsetOf { ty, designator } => ExprKind::OffsetOf {
+                ty: self.ty(ty)?,
+                designator: self.expression(designator)?,
+            },
+            ExprKind::OffsetOfBase(ty) => ExprKind::OffsetOfBase(self.ty(ty)?),
             ExprKind::VaArg { operand, ty } => ExprKind::VaArg {
                 ty: self.ty(ty)?,
                 operand: self.expression(operand)?,

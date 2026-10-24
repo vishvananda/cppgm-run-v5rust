@@ -206,6 +206,8 @@ impl Analyzer<'_> {
             | ExprKind::SizeofPack(_)
             | ExprKind::Sizeof { .. }
             | ExprKind::TypePredicate { .. }
+            | ExprKind::OffsetOf { .. }
+            | ExprKind::OffsetOfBase(_)
             | ExprKind::TypeTrait { .. }
             | ExprKind::Delete { .. }
             | ExprKind::Throw(_) => Ok(false),

@@ -217,7 +217,7 @@ impl Analyzer<'_> {
                     .function_origin(self.graph.binding(binding).entity)?,
             ));
             self.graph.record_call_binding(id, binding);
-            self.demand_function(binding, true);
+            self.demand_function(binding, true)?;
         }
         Ok(facts)
     }

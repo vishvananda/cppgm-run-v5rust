@@ -1862,6 +1862,8 @@ fn expression_label(
         ExprKind::Member { .. } => "member-expression",
         ExprKind::TypeTransform { .. }
         | ExprKind::TypePredicate { .. }
+        | ExprKind::OffsetOf { .. }
+        | ExprKind::OffsetOfBase(_)
         | ExprKind::Sizeof { .. }
         | ExprKind::TypeTrait { .. }
         | ExprKind::VaArg { .. } => "sizeof-expression",

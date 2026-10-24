@@ -262,7 +262,7 @@ impl Analyzer<'_> {
             {
                 if let Some(selected) = self.graph.constructors.get(constructor).binding {
                     self.demand_specialization_body(selected);
-                    self.demand_function(selected, true);
+                    self.demand_function(selected, true)?;
                 } else {
                     self.record_demand(super::function_demands::Demand::Constructor(constructor));
                 }
@@ -1249,7 +1249,7 @@ impl Analyzer<'_> {
             if let Some(binding) = record.binding {
                 self.check_special_member_access(binding, class, scope, location)?;
             }
-            self.demand_constructor_use(id);
+            self.demand_constructor_use(id)?;
             Some((id, ConstructorArguments::Value))
         };
         Ok(BaseInitialization {

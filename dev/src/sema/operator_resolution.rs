@@ -370,7 +370,7 @@ impl Analyzer<'_> {
             return Ok(Some(facts));
         }
         self.demand_specialization_body(binding);
-        self.demand_function(binding, true);
+        self.demand_function(binding, true)?;
         let ty = self
             .graph
             .binding(binding)

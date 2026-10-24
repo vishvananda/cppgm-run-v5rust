@@ -169,7 +169,7 @@ impl Analyzer<'_> {
                         ));
                     }
                     if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }) {
-                        self.demand_constructor_use(constructor);
+                        self.demand_constructor_use(constructor)?;
                     }
                     subobjects.push(MemberConstruction {
                         member,

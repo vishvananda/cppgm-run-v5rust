@@ -1,4 +1,5 @@
-// Translated from syntax/parser_specifiers.cpp::parse_transform_specifier. See NOTICE.
+// Translated from syntax/parser_specifiers.cpp::parse_transform_specifier and
+// syntax/parser_expressions.cpp::parse_builtin_trait. See NOTICE.
 use super::{
     ParseError,
     ast::{ExprId, ExprKind, Expression},
@@ -8,6 +9,66 @@ use super::{
 use crate::lex::{pp_lexer::Punctuator as P, type_transforms::TypeTransform};
 
 impl Parser<'_> {
+    pub(super) fn at_offsetof(&mut self, ahead: usize) -> Result<bool, ParseError> {
+        Ok(
+            matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(name)
+            if self.cursor.name(name) == b"__builtin_offsetof")
+                && self.at_ahead(P::LeftParen, ahead + 1)?,
+        )
+    }
+
+    pub(super) fn offsetof_expression(&mut self) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        self.cursor.advance()?;
+        self.expect(P::LeftParen)?;
+        let (ty, designator) = self.without_angle(|parser| {
+            let ty = parser.type_id(false)?;
+            parser.expect(P::Comma)?;
+            let object_location = parser.location()?;
+            let mut designator = parser.tree.expressions.add(Expression {
+                location: object_location,
+                kind: ExprKind::OffsetOfBase(ty),
+            })?;
+            let mut member = true;
+            loop {
+                let location = parser.location()?;
+                let kind = if member {
+                    if !matches!(parser.token()?.kind, TokenKind::Identifier(_)) {
+                        return parser.fail();
+                    }
+                    let (member, _) = parser.member_name()?;
+                    ExprKind::Member {
+                        base: designator,
+                        op: Self::make_operator(P::Dot)?,
+                        member,
+                    }
+                } else {
+                    parser.cursor.advance()?;
+                    let index = parser.expression()?;
+                    parser.expect(P::RightBracket)?;
+                    ExprKind::Subscript {
+                        base: designator,
+                        index,
+                    }
+                };
+                designator = parser.tree.expressions.add(Expression { location, kind })?;
+                if parser.accept(P::Dot)? {
+                    member = true;
+                } else if parser.at(P::LeftBracket)? {
+                    member = false;
+                } else {
+                    break;
+                }
+            }
+            parser.expect(P::RightParen)?;
+            Ok((ty, designator))
+        })?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::OffsetOf { ty, designator },
+        })
+    }
+
     pub(super) fn at_type_predicate(
         &mut self,
         ahead: usize,

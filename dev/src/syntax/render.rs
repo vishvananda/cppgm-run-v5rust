@@ -548,6 +548,17 @@ impl<'a, 'source> Renderer<'a, 'source> {
             self.tasks.push(Render::Text("enum "));
         }
     }
+    fn builtin_expression(&mut self, spelling: &str, ty: TypeId, operand: Option<ExprId>) {
+        self.text(spelling);
+        self.text("(");
+        self.tasks.push(Render::Text(")"));
+        // Frozen builtin views write the type first, then the operand without
+        // a separator, including the synthetic offsetof base object.
+        if let Some(operand) = operand {
+            self.tasks.push(Render::Expression(operand));
+        }
+        self.tasks.push(Render::Type(ty));
+    }
     fn expression(&mut self, id: ExprId) -> std::io::Result<()> {
         match self.tree.expressions.get(id).kind {
             ExprKind::Lambda(id) => {
@@ -718,13 +729,14 @@ impl<'a, 'source> Renderer<'a, 'source> {
                     }
                 }
             }
+            ExprKind::OffsetOf { ty, designator } => {
+                self.builtin_expression("__builtin_offsetof", ty, Some(designator));
+            }
+            ExprKind::OffsetOfBase(ty) => {
+                self.builtin_expression("__builtin_offsetof", ty, None);
+            }
             ExprKind::VaArg { operand, ty } => {
-                self.text("__builtin_va_arg(");
-                self.tasks.push(Render::Text(")"));
-                // The frozen renderer writes type operands first, then the
-                // value operand without a separator, even for va_arg.
-                self.tasks.push(Render::Expression(operand));
-                self.tasks.push(Render::Type(ty));
+                self.builtin_expression("__builtin_va_arg", ty, Some(operand));
             }
             ExprKind::TypeTrait {
                 keyword,

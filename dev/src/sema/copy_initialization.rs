@@ -389,7 +389,7 @@ impl Analyzer<'_> {
                 .is_none()
         {
             let constructor = self.selected_constructor_plan(binding, location)?;
-            self.demand_constructor_use(constructor);
+            self.demand_constructor_use(constructor)?;
             return Ok(CopyAction::Constructor {
                 constructor,
                 elision: false,
@@ -409,7 +409,7 @@ impl Analyzer<'_> {
                 Some(SpecialDefinition::Defaulted { .. })));
         if provided || !properties.trivial || written_move || empty_lifetime {
             let constructor = self.copy_constructor_plan(class, selected, location)?;
-            self.demand_constructor_use(constructor);
+            self.demand_constructor_use(constructor)?;
             return Ok(CopyAction::Constructor {
                 constructor,
                 elision: false,
@@ -418,7 +418,7 @@ impl Analyzer<'_> {
         }
         // A written defaulted declaration is odr-used even for a byte transfer.
         if let CopyOrigin::Declared(binding) = selected.origin {
-            self.demand_function(binding, true);
+            self.demand_function(binding, true)?;
         }
         Ok(CopyAction::Storage {
             reference: selected.binding.target,
@@ -888,7 +888,7 @@ impl Analyzer<'_> {
             .lower_constructor_entity(constructor)
             .ok_or(Error::Invariant("single constructor without entity"))?;
         self.check_constructor_parameters(function, &[argument], scope, input.list.is_some())?;
-        self.demand_constructor_use(constructor);
+        self.demand_constructor_use(constructor)?;
         Ok(constructor)
     }
     fn check_copy_selection(

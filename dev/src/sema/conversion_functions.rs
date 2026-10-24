@@ -622,7 +622,7 @@ impl Analyzer<'_> {
         // demand remains observable in the semantic tool's output.
         if !defer_demand || path.is_err() {
             self.demand_specialization_body(binding);
-            self.demand_function(binding, true);
+            self.demand_function(binding, true)?;
         }
         path
     }
@@ -718,7 +718,7 @@ impl Analyzer<'_> {
             // before odr_use of the conversion function. Keep that order on
             // the owning demand list, independently of emission queues.
             self.demand_specialization_body(selected.binding);
-            self.demand_function(selected.binding, true);
+            self.demand_function(selected.binding, true)?;
         }
         self.graph
             .expression_facts

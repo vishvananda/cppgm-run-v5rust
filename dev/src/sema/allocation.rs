@@ -154,7 +154,7 @@ impl Analyzer<'_> {
         // ordinary local initialization can transfer storage directly. Publish
         // that plan here, before lowering borrows the immutable semantic graph.
         let constructor = self.copy_constructor_plan(class, selected, location)?;
-        self.demand_constructor_use(constructor);
+        self.demand_constructor_use(constructor)?;
         Ok(Some((constructor, ConstructorArguments::Single(source))))
     }
 
@@ -295,7 +295,7 @@ impl Analyzer<'_> {
             if !self.graph.destructor_trivial(class)?
                 && let Some(binding) = self.destructor_callable(class)?
             {
-                self.demand_function(binding, true);
+                self.demand_function(binding, true)?;
             }
         }
         self.lookup_location = location;
@@ -329,7 +329,7 @@ impl Analyzer<'_> {
         {
             self.check_named_member_access(declaration, naming, naming, scope, location)?;
         }
-        self.demand_function(function, true);
+        self.demand_function(function, true)?;
         if !incomplete && self.unevaluated == 0 {
             self.request_object_layout(target, location);
         }
@@ -506,7 +506,7 @@ impl Analyzer<'_> {
         self.record_argument_base_paths(args, scope)?;
         self.check_class_argument_slice(function, args, 1, scope)?;
         self.demand_specialization_body(function);
-        self.demand_function(function, true);
+        self.demand_function(function, true)?;
         let array = if let Some(count) = count {
             Some(self.initialize_array_allocation(
                 count,
@@ -532,7 +532,7 @@ impl Analyzer<'_> {
             let constructor = self.default_constructor(class, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
             self.validate_const_default(target, constructor, location)?;
-            self.demand_constructor_use(constructor);
+            self.demand_constructor_use(constructor)?;
             Some((constructor, ConstructorArguments::Values(List::default())))
         } else {
             if self.graph.types.get(target).cv.0 & 1 != 0 {
@@ -674,7 +674,7 @@ impl Analyzer<'_> {
             {
                 self.check_named_member_access(declaration, naming, naming, scope, location)?;
             }
-            self.demand_function(binding, true);
+            self.demand_function(binding, true)?;
         }
         Ok(selected)
     }

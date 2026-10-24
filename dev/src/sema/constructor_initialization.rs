@@ -357,7 +357,7 @@ impl Analyzer<'_> {
         if args.is_empty() && self.class_has_default_constructor(class)? {
             let constructor = self.default_constructor(class, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
-            self.demand_constructor_use(constructor);
+            self.demand_constructor_use(constructor)?;
             if let Some(id) = list {
                 self.publish_constructor_list(id, target, constructor)?;
             }
@@ -526,7 +526,7 @@ impl Analyzer<'_> {
             let constructor = self.selected_constructor_plan(selected.binding, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
             self.apply_call_arguments(selected, args, scope, &scratch)?;
-            self.demand_constructor_use(constructor);
+            self.demand_constructor_use(constructor)?;
             Ok((constructor, function))
         });
         scratch.clear();
@@ -628,7 +628,7 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    pub(super) fn demand_constructor_use(&mut self, id: ConstructorId) {
+    pub(super) fn demand_constructor_use(&mut self, id: ConstructorId) -> Result<(), Error> {
         if self.deferring_type_query() {
             self.type_queries
                 .uses
@@ -640,15 +640,16 @@ impl Analyzer<'_> {
                 .anonymous_member_storage(self.graph.constructors.get(id).class)
                 .is_some()
         {
-            return;
+            return Ok(());
         }
         self.note_initializer_constructor(id);
         if let Some(binding) = self.graph.constructors.get(id).binding {
             self.demand_specialization_body(binding);
-            self.demand_function(binding, true);
+            self.demand_function(binding, true)?;
         } else {
             self.record_demand(super::function_demands::Demand::Constructor(id));
         }
+        Ok(())
     }
     pub(super) fn note_initializer_constructor(&mut self, id: ConstructorId) {
         if self.body_context.is_some() || !self.graph.constructors.get(id).nontrivial() {

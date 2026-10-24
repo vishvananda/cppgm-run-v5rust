@@ -156,6 +156,13 @@ impl Analyzer<'_> {
                     self.type_syntax(self.tree.type_lists.get(types)[index], scope)?;
                 }
             }
+            ExprKind::OffsetOfBase(ty) => {
+                self.type_syntax(ty, scope)?;
+            }
+            ExprKind::OffsetOf { ty, designator } => {
+                self.type_syntax(ty, scope)?;
+                self.expression_work.push((designator, false));
+            }
             ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
                 self.type_syntax(ty, scope)?;
                 self.expression_work.push((operand, unevaluated));

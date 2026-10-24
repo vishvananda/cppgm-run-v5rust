@@ -326,7 +326,18 @@ impl Analyzer<'_> {
                         }
                     }
                 }
-                ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
+                ExprKind::OffsetOfBase(ty) => {
+                    let ty = self.type_syntax(ty, scope)?;
+                    if self.exception_dependent_type(ty) {
+                        return Ok(false);
+                    }
+                }
+                ExprKind::OffsetOf {
+                    ty,
+                    designator: operand,
+                }
+                | ExprKind::VaArg { ty, operand }
+                | ExprKind::Cast { ty, operand, .. } => {
                     let ty = self.type_syntax(ty, scope)?;
                     if self.exception_dependent_type(ty) {
                         return Ok(false);
@@ -521,7 +532,9 @@ impl Analyzer<'_> {
                                 .iter()
                                 .map(|&ty| (OwnProbe::Type(ty), depth)),
                         ),
-                        ExprKind::VaArg { ty, .. } => {
+                        ExprKind::VaArg { ty, .. }
+                        | ExprKind::OffsetOfBase(ty)
+                        | ExprKind::OffsetOf { ty, .. } => {
                             work.push((OwnProbe::Type(ty), depth));
                         }
                         ExprKind::Cast { ty, operand, .. } => {

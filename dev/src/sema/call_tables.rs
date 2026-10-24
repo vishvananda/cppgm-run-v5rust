@@ -326,6 +326,8 @@ impl Graph {
             | ExprKind::TypeTrait { .. }
             | ExprKind::TypeTransform { .. }
             | ExprKind::TypePredicate { .. }
+            | ExprKind::OffsetOf { .. }
+            | ExprKind::OffsetOfBase(_)
             | ExprKind::Throw(None) => {}
         }
         Ok(())

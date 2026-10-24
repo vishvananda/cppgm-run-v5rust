@@ -530,6 +530,11 @@ pub(crate) enum ExprKind {
         predicate: crate::lex::predicates::TypePredicate,
         types: List<TypeId>,
     },
+    OffsetOf {
+        ty: TypeId,
+        designator: ExprId,
+    },
+    OffsetOfBase(TypeId),
     VaArg {
         operand: ExprId,
         ty: TypeId,

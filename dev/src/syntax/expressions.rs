@@ -665,6 +665,9 @@ impl Parser<'_> {
                 ExprKind::Literal(literal)
             }
             TokenKind::Identifier(_) => {
+                if self.at_offsetof(0)? {
+                    return self.offsetof_expression();
+                }
                 if let Some(predicate) = self.at_type_predicate(0)? {
                     return self.predicate_operand(predicate);
                 }

@@ -413,6 +413,8 @@ impl Analyzer<'_> {
             | ExprKind::TypeTrait { .. }
             | ExprKind::TypeTransform { .. }
             | ExprKind::TypePredicate { .. }
+            | ExprKind::OffsetOf { .. }
+            | ExprKind::OffsetOfBase(_)
             | ExprKind::VaArg { .. } => false,
             ExprKind::Keyword(keyword) => keyword == Keyword::This,
             ExprKind::Paren(inner) => uses(inner),

@@ -545,6 +545,8 @@ impl Analyzer<'_> {
                         | ExprKind::TypeTrait { .. }
                         | ExprKind::TypeTransform { .. }
                         | ExprKind::TypePredicate { .. }
+                        | ExprKind::OffsetOf { .. }
+                        | ExprKind::OffsetOfBase(_)
                 )
                 .then_some(tail);
                 self.unevaluated += 1;
@@ -569,6 +571,8 @@ impl Analyzer<'_> {
                         | ExprKind::TypeTrait { .. }
                         | ExprKind::TypeTransform { .. }
                         | ExprKind::TypePredicate { .. }
+                        | ExprKind::OffsetOf { .. }
+                        | ExprKind::OffsetOfBase(_)
                 ) {
                     self.check_temporary_destruction(
                         facts,

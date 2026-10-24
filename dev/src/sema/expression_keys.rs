@@ -53,6 +53,8 @@ pub(crate) enum KeyNode {
     Id,
     Name,
     Arguments,
+    OffsetOf,
+    OffsetOfBase,
     VaArg,
     Keyword,
     This,
@@ -275,6 +277,18 @@ impl Analyzer<'_> {
                     self.key_type(ty, key)?;
                 }
                 return Ok(true);
+            }
+            ExprKind::OffsetOfBase(ty) => {
+                key.words.push(KeyWord::Node(KeyNode::OffsetOfBase));
+                let ty = self.type_syntax(ty, scope)?;
+                self.key_type(ty, key)?;
+                return Ok(true);
+            }
+            ExprKind::OffsetOf { ty, designator } => {
+                key.words.push(KeyWord::Node(KeyNode::OffsetOf));
+                let ty = self.type_syntax(ty, scope)?;
+                self.key_type(ty, key)?;
+                return self.key_expression(designator, scope, key);
             }
             ExprKind::VaArg { operand, ty } => {
                 key.words.push(KeyWord::Node(KeyNode::VaArg));

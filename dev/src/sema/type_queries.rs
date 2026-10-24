@@ -303,7 +303,7 @@ impl Analyzer<'_> {
             match self.type_queries.uses[index] {
                 DeferredUse::Function(binding, call) => {
                     self.demand_specialization_body(binding);
-                    self.demand_function(binding, call);
+                    self.demand_function(binding, call)?;
                 }
                 DeferredUse::Local(id, binding, scope) => {
                     let mut facts = self.graph.expression_facts.get(id)?;
@@ -316,7 +316,7 @@ impl Analyzer<'_> {
                     self.demand_storage_layout(entity, location)?;
                 }
                 DeferredUse::Constructor(id) => {
-                    self.demand_constructor_use(id);
+                    self.demand_constructor_use(id)?;
                     let class = self.graph.constructors.get(id).class;
                     self.request_object_layout(
                         self.graph.lower_entity_type(class)?,

@@ -33,10 +33,12 @@ impl Analyzer<'_> {
             if let Some(ty) = self.graph.expression_type(root) {
                 return Ok(ty);
             }
-            // A specification records normal expression/conversion facts but
-            // never demands output or storage for the functions it mentions.
+            // noexcept_value types a potentially evaluated specification.
+            // Nested noexcept/sizeof operands establish their own unevaluated
+            // scopes; an enclosing query must not suppress the specification's
+            // ordinary function demand.
             let saved = self.unevaluated;
-            self.unevaluated = 1;
+            self.unevaluated = 0;
             let result = self.typed_expression(root, scope).map(|facts| facts.ty);
             self.unevaluated = saved;
             return result;
@@ -187,6 +189,9 @@ impl Analyzer<'_> {
             }
             ExprKind::Paren(inner) => self.exception_type(inner),
             ExprKind::Call { .. } => self.query_call_type(id, scope),
+            ExprKind::OffsetOf { designator, .. } => {
+                Ok(self.offsetof_expression(id, designator, scope)?.ty)
+            }
             ExprKind::TypePredicate { predicate, types } => {
                 Ok(self.predicate_expression(id, predicate, types, scope)?.ty)
             }
@@ -322,7 +327,7 @@ impl Analyzer<'_> {
                     self.exception_arithmetic_type(a, b, false, location)
                 }
             }
-            ExprKind::Cast { ty, .. } => self.type_syntax(ty, scope),
+            ExprKind::Cast { ty, .. } | ExprKind::OffsetOfBase(ty) => self.type_syntax(ty, scope),
             ExprKind::FunctionalCast { specifiers, .. } => {
                 Ok(self.specifiers(specifiers, scope, false)?.ty)
             }

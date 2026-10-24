@@ -313,7 +313,7 @@ impl Analyzer<'_> {
             self.check_special_member_access(binding, class, scope, location)?;
         }
         let constructor = self.copy_constructor_plan(class, selected, location)?;
-        self.demand_constructor_use(constructor);
+        self.demand_constructor_use(constructor)?;
         Ok(constructor)
     }
 }

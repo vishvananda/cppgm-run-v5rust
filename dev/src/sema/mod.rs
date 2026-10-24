@@ -109,6 +109,7 @@ mod member_initializers;
 mod member_patterns;
 mod name_keys;
 mod nominal_predicates;
+mod offset_of;
 mod operator_candidates;
 mod operator_resolution;
 mod overflow_intrinsics;

@@ -274,7 +274,13 @@ impl Analyzer<'_> {
                         .copied()
                         .map(Probe::Type),
                 ),
-            ExprKind::VaArg { ty, operand } | ExprKind::Cast { ty, operand, .. } => {
+            ExprKind::OffsetOfBase(ty) => work.push(Probe::Type(ty)),
+            ExprKind::OffsetOf {
+                ty,
+                designator: operand,
+            }
+            | ExprKind::VaArg { ty, operand }
+            | ExprKind::Cast { ty, operand, .. } => {
                 work.extend([Probe::Type(ty), Probe::Expression(operand)]);
             }
             ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {

@@ -1159,6 +1159,21 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::TypePredicate { predicate, types } => {
                 self.builtin_types(predicate.spelling(), types)?;
             }
+            ExprKind::OffsetOf { ty, designator } => {
+                self.open(
+                    "builtin-trait-expression",
+                    Payload::Text("__builtin_offsetof"),
+                )?;
+                self.tasks.push(Task::Expression(designator));
+                self.tasks.push(Task::Type(ty));
+            }
+            ExprKind::OffsetOfBase(ty) => {
+                self.open(
+                    "builtin-trait-expression",
+                    Payload::Text("__builtin_offsetof"),
+                )?;
+                self.tasks.push(Task::Type(ty));
+            }
             ExprKind::VaArg { operand, ty } => {
                 self.open(
                     "builtin-trait-expression",

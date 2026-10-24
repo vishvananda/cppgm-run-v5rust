@@ -337,7 +337,7 @@ impl Analyzer<'_> {
         self.record_argument_base_paths(argument_buffer.as_slice(), scope)?;
         self.check_class_arguments(binding, arguments, scope)?;
         self.select_function_designation(callee, binding)?;
-        self.demand_function(binding, true);
+        self.demand_function(binding, true)?;
         let ty = self.graph.types.canonical_function(
             self.graph
                 .entity(self.graph.binding(binding).entity)

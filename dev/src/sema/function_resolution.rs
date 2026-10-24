@@ -422,7 +422,7 @@ impl Analyzer<'_> {
         // function-to-pointer operand conversions. Only unresolved overload
         // designations use the oracle's immediate-unary rewrite below.
         if self.graph.expression_facts.get(root)?.functions.is_none() {
-            self.demand_function(binding, false);
+            self.demand_function(binding, false)?;
             return Ok(());
         }
         let inner = match self.tree.expressions.get(root).kind {
@@ -455,7 +455,7 @@ impl Analyzer<'_> {
             self.graph.expression_facts.set(current, facts);
             super::record(&mut self.graph.expression_types, current.index(), facts.ty);
         }
-        self.demand_function(binding, false);
+        self.demand_function(binding, false)?;
         Ok(())
     }
     pub(super) fn compare_sequences(

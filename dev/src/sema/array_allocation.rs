@@ -152,7 +152,7 @@ impl Analyzer<'_> {
         let constructor = if trailing {
             let constructor = self.default_constructor(class, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
-            self.demand_constructor_use(constructor);
+            self.demand_constructor_use(constructor)?;
             Some((constructor, ConstructorArguments::Values(List::default())))
         } else {
             None

@@ -392,7 +392,7 @@ impl Analyzer<'_> {
         self.graph
             .expression_facts
             .set_user_conversion(id, constructor, sequence.conversion);
-        self.demand_constructor_use(constructor);
+        self.demand_constructor_use(constructor)?;
         self.request_constructor_defaults(binding, 1)?;
         Ok(true)
     }

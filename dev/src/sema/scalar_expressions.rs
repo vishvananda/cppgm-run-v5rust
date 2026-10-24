@@ -26,6 +26,7 @@ impl Analyzer<'_> {
                 | ExprKind::SizeofPack(_)
                 | ExprKind::TypeTrait { .. }
                 | ExprKind::TypePredicate { .. }
+                | ExprKind::OffsetOf { .. }
                 | ExprKind::Delete { .. }
                 | ExprKind::Throw(_)
         ) {
@@ -256,6 +257,13 @@ impl Analyzer<'_> {
             }
             ExprKind::TypePredicate { predicate, types } => {
                 self.predicate_expression(id, predicate, types, scope)?
+            }
+            ExprKind::OffsetOf { designator, .. } => {
+                self.offsetof_expression(id, designator, scope)?
+            }
+            ExprKind::OffsetOfBase(ty) => {
+                let ty = self.type_syntax(ty, scope)?;
+                self.new_expression_facts(ty, V::Lvalue)?
             }
             ExprKind::VaArg { operand, ty } => self.va_arg_expression(id, operand, ty, scope)?,
             ExprKind::SizeofPack(name) => self.sizeof_pack_expression(id, name, scope)?,

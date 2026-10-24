@@ -1,6 +1,7 @@
 // Translated from analyzer_expressions.cpp::odr_use and semantics_dump.cpp::trailing. See NOTICE.
 //! Function-owned demand edges, separate from declaration and body analysis order.
 use super::{
+    Error,
     analyzer::Analyzer,
     construction::ConstructorId,
     graph::{BindingId, EntityId, ScopeKind},
@@ -55,16 +56,31 @@ impl Analyzer<'_> {
             self.graph.function_templates.bodies.demand(entity);
         }
     }
-    pub(super) fn demand_function(&mut self, binding: BindingId, call: bool) {
+    pub(super) fn demand_function(&mut self, binding: BindingId, call: bool) -> Result<(), Error> {
         if self.deferring_type_query() {
             self.type_queries
                 .uses
                 .push(super::type_queries::DeferredUse::Function(binding, call));
         }
         if self.unevaluated != 0 || self.template_depth != 0 {
-            return;
+            return Ok(());
+        }
+        // odr_use requires a pending specification before recording this edge.
+        // Its own calls therefore retain their earlier semantic demand order.
+        let entity = self.graph.binding(binding).entity;
+        if matches!(
+            self.graph.entity(entity).exceptions,
+            super::exceptions::ExceptionState::Pending(_)
+        ) || self.graph.function_templates.primary(entity).is_some()
+            && matches!(
+                self.graph.entity(entity).exceptions,
+                super::exceptions::ExceptionState::Template(_)
+            )
+        {
+            self.function_may_throw(entity)?;
         }
         self.record_demand(Demand::Function { binding, call });
+        Ok(())
     }
 
     pub(super) fn record_demand(&mut self, demand: Demand) {
