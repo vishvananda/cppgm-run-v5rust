@@ -25,9 +25,17 @@ enum Answer {
 }
 #[derive(Default)]
 pub(super) struct Queries {
-    // Keys are complete canonical classes; default selection is immutable once
-    // declarations complete. Later definition demand does not invalidate it.
+    // Keys are complete canonical classes. Like queried_default_constructor,
+    // successful selections survive later declarations. An absent selection
+    // must be retried when that class's constructors acquire new defaults.
     defaults: HashMap<EntityId, Answer>,
+}
+impl Queries {
+    pub(super) fn added_defaults(&mut self, class: EntityId) {
+        if matches!(self.defaults.get(&class), Some(Answer::Ready(None))) {
+            self.defaults.remove(&class);
+        }
+    }
 }
 impl Analyzer<'_> {
     pub(super) fn queried_default_properties(

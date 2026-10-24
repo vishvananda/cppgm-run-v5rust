@@ -186,6 +186,13 @@ impl Analyzer<'_> {
                 template: None,
             });
         }
+        if any
+            && !first
+            && let Some(member) = self.graph.entity(entity).member_function
+            && member.kind == super::graph::MemberKind::Constructor
+        {
+            self.graph.constructor_queries.added_defaults(member.class);
+        }
         let defaults = PendingDefaults {
             function: entity,
             clause,
