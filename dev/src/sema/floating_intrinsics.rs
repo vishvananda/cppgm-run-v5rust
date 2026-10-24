@@ -330,8 +330,7 @@ impl FloatingBits {
     fn exponent_width(&self) -> u32 {
         match self.kind.floating_representation() {
             F::Float16 => 5,
-            F::BFloat16 => 8,
-            F::Float => 8,
+            F::BFloat16 | F::Float => 8,
             F::Double => 11,
             _ => 15,
         }
