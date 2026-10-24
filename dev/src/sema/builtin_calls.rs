@@ -647,7 +647,7 @@ impl Analyzer<'_> {
         } else {
             self.constant_value(operand, scope, false)?.is_some()
         };
-        // Floating, null and string-literal address constants are supported by this query.
+        // Null and string-literal address constants are supported by this query.
         let mut inner = operand;
         while let ast::ExprKind::Paren(expr) = self.tree.expressions.get(inner).kind {
             inner = expr;
@@ -656,24 +656,27 @@ impl Analyzer<'_> {
             self.tree.expressions.get(inner).kind,
             ast::ExprKind::Keyword(Keyword::Nullptr)
                 | ast::ExprKind::Literal(ast::Literal {
-                    kind: PostTokenKind::String { .. }
-                        | PostTokenKind::Literal {
-                            ty: F::Float | F::Double | F::LongDouble,
-                            ..
-                        },
+                    kind: PostTokenKind::String { .. },
                     ..
                 })
         );
         if !constant
             && !address
+            && self.semantic()
+            && self.template_depth == 0
             && matches!(
                 self.graph.types.get(facts.ty).kind,
-                TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+                TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
             )
         {
-            return Err(Error::Missing(
-                "floating and address constant interpretation",
-            ));
+            if self.float_format(facts.ty).is_none() {
+                return Err(Error::Missing("extended floating constant interpretation"));
+            }
+            constant = match self.scalar_value(operand, scope) {
+                Ok(super::constant_addresses::TemporaryValue::Floating(_)) => true,
+                Ok(_) | Err(Error::NonConstant { .. }) => false,
+                Err(error) => return Err(error),
+            };
         }
         if matches!(
             self.graph.types.get(facts.ty).kind,
