@@ -19,3 +19,12 @@ Prior: 520.059s fresh, 12.594s reused.
 Rust quality: 53.889s fresh, 9.037s reused.
 Full evidence and input/receipt inventories: `/home/vishvananda/work/private/v5rust/artifacts/owner-validation-reuse-20261024`. These are host elapsed
 times, not candidate compiler performance or new implementation progress.
+
+
+The startup check exposed agent NO_COLOR=1 versus an unset runner value.
+Validation now fixes NO_COLOR=1 alongside LC_ALL=C and TZ=UTC. Full owner
+and real Node-runner fingerprints were verified equal before fresh checks.
+Normalized timings: prior 511.872s fresh / 12.854s reused;
+quality 53.894s fresh / 8.625s reused. Stage remains
+310/495 with preservation passing. Logs use the normalized suffix in the
+owner evidence directory. Compiler and Ralph configuration are unchanged.

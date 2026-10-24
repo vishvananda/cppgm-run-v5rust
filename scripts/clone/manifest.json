@@ -31476,7 +31476,7 @@
     "dev/frontend_source_sets.mk": "5bd02ff6b685d82f9cf389519b0e9f152e48b62cf3a3b9a3708c5c7be0da656b",
     "dev/clippy.toml": "1876ffe4dc1bd441c40c21b89324238a49e6cb576fc5dbdf5eb843b50f993e71",
     "scripts/clone/clone_adapter.py": "8464dc57290f379e545ae34abbd9079301bff0d1b8e7753407a4b18978da259d",
-    "scripts/clone/clone_common.py": "1cc47db0d6a9bfffe3052a3cf64eb4c21455436205eac804be593569896ad090",
+    "scripts/clone/clone_common.py": "a26908e84cc94dac1ccc8dbdb06c2ecb54e8b81d983866a594c162a5653742fa",
     "scripts/clone/test_clone_harness.py": "5f6d21c23c4880420440e71df5639305898b458422ddaad62f00a0ea976d301d",
     "scripts/clone/rust_audit.py": "69f3aa804ee449697326aed3561e49fa312e0dcf4b426d2988c105ef6a1118df",
     "scripts/clone/clone_check.py": "dc3deaf1d41d65384be43a5a81ee976531fc5182933d35940a1647c5e79678d7",
@@ -32117,7 +32117,7 @@
     "pa33/tests/behavior/o3/900-wide-slot-copy-store-o3.t": "6f89a3a9fb9069b2644ba50b8f468111101b276c813b80f19acec85d4971c54a",
     "scripts/audit_test_requirements.py": "6f5b4369946a56496023c9fd09e6fc039cbd0a8280204e80e30a31728187ca6f",
     "scripts/clone/clone_evidence.py": "27b43bb1920a4e3da86d0c6d902c637ca8ae3350b2266364b71eaaca3796374a",
-    "scripts/clone/test_clone_evidence.py": "701d2eca4b8ad32450b092ab6ea102a16cfb1c80eee10f7f83a7a3867cb6b3b0",
+    "scripts/clone/test_clone_evidence.py": "a6e03401b3b26e852202a7439d9d372eebe80bb43c32559f3cd0edc18df8f9bd",
     "scripts/clone_evidence.py": "76f724e908ae54fafce2ea16058fa65849f8344f26d66160a862eff85e6ed6be",
     "scripts/clone/settings.json": "15ce00d7183a3ec92b68ce1896d0a268bc01df56ba71a9cdea083bbc1a357ffa"
   },
