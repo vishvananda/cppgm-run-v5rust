@@ -1,0 +1,23 @@
+int global_function() { return 7; }
+struct Holder {
+  int value;
+  int run() {
+    auto stateless = [=]<class T>(T) { return &global_function; };
+    if (sizeof(stateless) != 1 || stateless(0)() != 7) return -1;
+    int delta = 2;
+    auto f = [&, this]<class T>(T x, int extra = 3) noexcept(sizeof(T) > 0) -> int {
+      auto nested = [&]<class U>(U y) { return this->value + delta + y; };
+      return nested(x) + extra;
+    };
+    return f(4) + f('a', 1);
+  }
+};
+template<class T> int instantiate(T seed) {
+  auto unused = []<class U>(U u) { return u.missing(); };
+  auto f = [seed]<class U>(U u) mutable { seed += u; return seed; };
+  return f(2) + f(3);
+}
+int main() {
+  Holder h = {5};
+  return h.run() == 119 && instantiate(1) == 9 ? 0 : 1;
+}

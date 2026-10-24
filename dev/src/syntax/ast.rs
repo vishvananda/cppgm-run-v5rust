@@ -45,6 +45,7 @@ pub(crate) enum LambdaBody {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Lambda {
+    pub template_parameters: Option<TemplateParameterClause>,
     pub capture_default: Option<CaptureDefault>,
     pub captures: List<LambdaCapture>,
     pub parameters: Option<ParameterClause>,

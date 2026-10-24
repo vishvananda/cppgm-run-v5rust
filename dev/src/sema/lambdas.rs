@@ -43,6 +43,7 @@ pub(crate) struct Closure {
     pub body_token: u32,
     pub this_member: Option<EntityId>,
     pub convertible: bool,
+    pub template: Option<ast::LambdaId>,
 }
 #[derive(Clone, Copy)]
 pub(crate) struct Capture {
@@ -76,7 +77,11 @@ impl Graph {
             .entity(function)
             .home
             .and_then(|home| self.scope(home).owner)?;
-        (self.closure_call(class) == Some(function)).then_some(class)
+        let primary = self
+            .function_templates
+            .primary(function)
+            .map_or(function, |binding| self.binding(binding).entity);
+        (self.closure_call(class) == Some(primary)).then_some(class)
     }
     pub(crate) fn lower_closure_invocation(&self, id: ast::ExprId) -> Option<EntityId> {
         self.closures
@@ -312,6 +317,7 @@ impl Analyzer<'_> {
         {
             return self.new_expression_facts(facts.ty, ValueCategory::Prvalue);
         }
+        let lambda_id = lambda;
         let lambda = *self.tree.lambdas.get(lambda);
         let ast::LambdaBody::Parsed(compound) = lambda.body else {
             return Err(Error::Invariant("unparsed lambda body"));
@@ -338,8 +344,26 @@ impl Analyzer<'_> {
             ellipsis: false,
             ellipsis_without_comma: false,
         });
-        let (call, ty) =
-            self.declare_closure_call(class_scope, lambda, parameters, scope, location)?;
+        let (signature_scope, head) = if let Some(parameters) = lambda.template_parameters {
+            let parent =
+                self.graph
+                    .add_scope(ScopeKind::TemplateParameters, scope, Some(scope), None)?;
+            let head = self.template_parameters(parameters, parent, true)?;
+            (parent, Some(head))
+        } else {
+            (scope, None)
+        };
+        let saved_depth = self.template_depth;
+        let saved_head = self.template_head;
+        if head.is_some() {
+            self.template_depth += 1;
+            self.template_head = head;
+        }
+        let declared =
+            self.declare_closure_call(class_scope, lambda, parameters, signature_scope, location);
+        self.template_depth = saved_depth;
+        self.template_head = saved_head;
+        let (call, ty) = declared?;
         let enclosing = self.body_context.as_ref().map(|body| body.entity);
         let context = self.closure_context(home);
         let naming_context = self.closure_naming_context(home);
@@ -361,7 +385,10 @@ impl Analyzer<'_> {
                 clause_token: lambda.clause_token,
                 body_token: lambda.body_token,
                 this_member: None,
-                convertible: lambda.capture_default.is_none() && lambda.captures.is_empty(),
+                convertible: head.is_none()
+                    && lambda.capture_default.is_none()
+                    && lambda.captures.is_empty(),
+                template: head.map(|_| lambda_id),
             },
         );
         let mut info = super::declarators::DeclaratorInfo {
@@ -374,9 +401,17 @@ impl Analyzer<'_> {
             syntax_name: None,
             asm_label: None,
         };
-        if let Some(exception) = lambda.exception {
+        if lambda.exception.is_some() || lambda.trailing.is_some() {
             let start = self.tree.qualifiers.begin();
-            self.tree.qualifiers.push(exception);
+            if let Some(exception) = lambda.exception {
+                self.tree.qualifiers.push(exception);
+            }
+            if let Some(trailing) = lambda.trailing {
+                self.tree.qualifiers.push(ast::Qualifier {
+                    location,
+                    kind: ast::QualifierKind::Trailing(trailing),
+                });
+            }
             info.qualifiers = Some(
                 self.tree
                     .qualifiers
@@ -384,8 +419,30 @@ impl Analyzer<'_> {
                     .map_err(|_| Error::Limit("closure exception limit"))?,
             );
         }
-        self.record_function_exceptions(call, &info, scope, location, self.graph.binding_limit())?;
-        self.record_function_defaults(call, parameters, scope, ty, true)?;
+        let saved_depth = self.template_depth;
+        let saved_head = self.template_head;
+        if head.is_some() {
+            self.template_depth += 1;
+            self.template_head = head;
+        }
+        let signature = (|| {
+            self.record_function_exceptions(
+                call,
+                &info,
+                signature_scope,
+                location,
+                self.graph.binding_limit(),
+            )?;
+            if head.is_some() {
+                self.record_template_result_order(call, &info);
+                self.record_template_function_defaults(call, parameters, signature_scope, ty)
+            } else {
+                self.record_function_defaults(call, parameters, scope, ty, true)
+            }
+        })();
+        self.template_depth = saved_depth;
+        self.template_head = saved_head;
+        signature?;
         let body = self
             .tree
             .bodies
@@ -413,12 +470,16 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("closure pack signature"))?,
             )?
         } else {
-            scope
+            signature_scope
         };
         self.capture_frames.push(frame)?;
         let saved_unevaluated = self.unevaluated;
         let saved_callee = self.callee_name.take();
         self.unevaluated = 0;
+        let saved_scan = self.capture_scan;
+        if head.is_some() {
+            self.capture_scan = Some(call);
+        }
         let analyzed = self.function_body(DeferredBody {
             entity: call,
             name: None,
@@ -427,9 +488,10 @@ impl Analyzer<'_> {
             body,
             parent,
             print: class_scope,
-            template_depth: 0,
-            definition_head: None,
+            template_depth: usize::from(head.is_some()),
+            definition_head: head,
         });
+        self.capture_scan = saved_scan;
         self.unevaluated = saved_unevaluated;
         self.callee_name = saved_callee;
         let frame = self.capture_frames.pop()?;
@@ -583,7 +645,7 @@ impl Analyzer<'_> {
             .qualifiers
             .finish(start)
             .map_err(|_| Error::Limit("closure qualifier limit"))?;
-        let result = if lambda.trailing.is_some() {
+        let result = if lambda.trailing.is_some() || lambda.template_parameters.is_some() {
             self.graph.types.intern(TypeKind::Auto, Cv::default())?
         } else {
             self.graph.types.scalar(Scalar::Void)?
@@ -594,7 +656,10 @@ impl Analyzer<'_> {
             qualifiers,
             scope,
             location,
-            super::declarators::FunctionContext::default(),
+            super::declarators::FunctionContext {
+                placeholder_result: lambda.template_parameters.is_some(),
+                ..super::declarators::FunctionContext::default()
+            },
         )?;
         let special = SpecialName::Operator {
             token: crate::lex::vocabulary::SimpleToken::punctuator(Punctuator::LeftParen)
@@ -621,6 +686,13 @@ impl Analyzer<'_> {
         let attributes = self.layout_attributes(lambda.attributes, scope, false)?;
         self.graph.note_no_inline(call, attributes.no_inline)?;
         self.graph.note_effects(call, attributes.effects)?;
+        if lambda.template_parameters.is_some() {
+            let head = self
+                .template_head
+                .ok_or(Error::Invariant("closure template head"))?;
+            self.check_function_packs(ty, head, location)?;
+            self.merge_template_head(call, head, location)?;
+        }
         let binding = self.graph.add_binding(
             class_scope,
             Some(class_scope),
@@ -654,6 +726,39 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn member_template_calls_share_fixed_captures_but_own_their_body_facts() {
+        let source = SourceBuffer::new(
+            b"int main(){const int n=4;int x=1;auto f=[=]<class T>(T t,int y=3){return x+n+t+y;};return f(1)+f('a');}".to_vec()
+        ).unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"templated-closure-ownership").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let pattern_count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(graph.closures.records.len(), 1);
+        let (&class, closure) = graph.closures.records.iter().next().unwrap();
+        assert!(closure.template.is_some());
+        assert!(!closure.convertible);
+        assert!(graph.entity(closure.call).template_head.is_some());
+        let captures = graph.lower_closure_captures(class);
+        assert_eq!(captures.len(), 2);
+        assert_ne!(captures[0].entity, captures[1].entity);
+        let mut bodies = Vec::new();
+        for &entity in graph.function_templates.arguments.keys() {
+            if graph.lower_call_closure(entity) == Some(class) {
+                bodies.push(graph.entity(entity).analyzed_body.unwrap());
+            }
+        }
+        assert_eq!(bodies.len(), 2);
+        assert_ne!(bodies[0], bodies[1]);
+        assert!(tree.expressions.mark() > pattern_count);
+    }
 
     #[test]
     fn closure_numbers_separate_object_signatures_and_member_contexts() {

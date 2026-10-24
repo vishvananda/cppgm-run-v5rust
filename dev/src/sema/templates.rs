@@ -429,7 +429,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn template_parameters(
+    pub(super) fn template_parameters(
         &mut self,
         syntax: ast::TemplateParameterClause,
         scope: ScopeId,

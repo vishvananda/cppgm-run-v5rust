@@ -432,6 +432,9 @@ impl<'a> Cloner<'a> {
         let mut node = *self.tree.lambdas.get(id);
         node.captures = self.closure_captures(node.captures)?;
         let mark = self.shadow_mark();
+        if let Some(head) = node.template_parameters {
+            self.shadow_template_packs(head);
+        }
         let pack_mark = self.parameter_packs().len();
         let pattern = node.parameters;
         node.parameters = self.optional(node.parameters, Self::parameters)?;

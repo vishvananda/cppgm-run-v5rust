@@ -63,7 +63,9 @@ impl Parser<'_> {
             },
         })
     }
-    fn template_parameter_clause(&mut self) -> Result<TemplateParameterClause, ParseError> {
+    pub(super) fn template_parameter_clause(
+        &mut self,
+    ) -> Result<TemplateParameterClause, ParseError> {
         let location = self.location()?;
         self.expect(P::Less)?;
         let saved = self.angle;

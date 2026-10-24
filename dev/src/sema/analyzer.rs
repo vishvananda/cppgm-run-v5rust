@@ -87,6 +87,7 @@ pub(crate) struct Analyzer<'tree> {
         Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
     pub(super) body_context: Option<super::procedural_statements::BodyContext>,
     pub(super) enclosing_bodies: Vec<super::graph::EntityId>,
+    pub(super) capture_scan: Option<super::graph::EntityId>,
     pub(super) capture_frames: Box<super::captures::Frames>,
     pub(super) signature_object: Option<super::types::TypeId>,
     pub(super) default_argument_scope: Option<ScopeId>,
@@ -320,6 +321,7 @@ impl<'tree> Analyzer<'tree> {
             static_initializers: Vec::new(),
             body_context: None,
             enclosing_bodies: Vec::new(),
+            capture_scan: None,
             capture_frames: Box::default(),
             signature_object: None,
             binary_spine: Vec::new(),
@@ -898,7 +900,19 @@ impl<'tree> Analyzer<'tree> {
                 context.return_deduction = super::return_deduction::ReturnDeduction::Pending;
             }
         }
+        let sealed = if body.template_depth == 0 {
+            self.sealed_closure_frame(body.entity)?
+        } else {
+            None
+        };
+        let has_frame = sealed.is_some();
+        if let Some(frame) = sealed {
+            self.capture_frames.push(frame)?;
+        }
         let result = self.function_body_scopes(body);
+        if has_frame {
+            let _frame = self.capture_frames.pop()?;
+        }
         if saved_context.is_some() {
             self.enclosing_bodies.pop();
         }

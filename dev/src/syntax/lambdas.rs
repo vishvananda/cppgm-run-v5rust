@@ -8,7 +8,7 @@ use super::{
         LambdaCapture, LambdaId, Qualifier, StmtId,
     },
     parser::Parser,
-    scopes::ScopeId,
+    scopes::{ScopeId, ScopeKind},
     storage::List,
 };
 use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
@@ -58,7 +58,9 @@ impl Parser<'_> {
         let pending = self.pending_template;
         let function = self.function_scope;
         self.pending_template = false;
+        let enclosing = self.scopes.current;
         let result = self.lambda_after_captures(capture_default, captures);
+        self.scopes.current = enclosing;
         self.pending_template = pending;
         self.function_scope = function;
         let lambda = result?;
@@ -72,7 +74,14 @@ impl Parser<'_> {
         capture_default: Option<CaptureDefault>,
         captures: List<LambdaCapture>,
     ) -> Result<LambdaId, ParseError> {
+        let template_parameters = if self.at(P::Less)? {
+            self.scopes.push_kind(ScopeKind::Template)?;
+            Some(self.template_parameter_clause()?)
+        } else {
+            None
+        };
         let mut lambda = Lambda {
+            template_parameters,
             pattern_parameters: None,
             parameter_packs: List::default(),
             capture_default,

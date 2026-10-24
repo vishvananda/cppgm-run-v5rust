@@ -48,7 +48,10 @@ impl Analyzer<'_> {
         match self.tree.expressions.get(id).kind {
             ExprKind::Statement(body) => self.statement_block(id, body, scope)?,
             ExprKind::Id(name) => {
-                self.check_expression_name(name, scope, false, unevaluated)?;
+                let binding = self.check_expression_name(name, scope, false, unevaluated)?;
+                if !unevaluated && let Some(binding) = binding {
+                    self.scan_capture(binding, self.tree.expressions.get(id).location)?;
+                }
             }
             ExprKind::Paren(operand)
             | ExprKind::Unary { operand, .. }
@@ -257,7 +260,9 @@ impl Analyzer<'_> {
             ExprKind::SizeofPack(name) => {
                 self.check_sizeof_pack_name(name, scope, self.tree.expressions.get(id).location)?;
             }
-            ExprKind::Literal(_) | ExprKind::Keyword(_) | ExprKind::Lambda(_) => (),
+            ExprKind::Lambda(lambda) if !unevaluated => self.scan_nested_lambda(lambda, scope)?,
+            ExprKind::Keyword(crate::lex::vocabulary::Keyword::This) => self.scan_capture_this()?,
+            ExprKind::Lambda(_) | ExprKind::Literal(_) | ExprKind::Keyword(_) => (),
         }
         Ok(())
     }

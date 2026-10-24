@@ -19,6 +19,7 @@ pub(super) struct Frame {
     mutable: bool,
     location: SourceOffset,
     this_captured: bool,
+    sealed: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -85,6 +86,12 @@ impl Frame {
         copy: bool,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        if self.sealed && !self.captured.contains_key(&entity) {
+            return Err(Error::at(
+                location,
+                "a templated lambda's body names an automatic variable its closure did not capture",
+            ));
+        }
         if let std::collections::hash_map::Entry::Vacant(entry) = self.captured.entry(entity) {
             entry.insert(copy);
             self.captures.push(entity);
@@ -95,6 +102,202 @@ impl Frame {
     }
 }
 impl Analyzer<'_> {
+    /// Scan resolved uses while checking the member-template definition. This
+    /// fixes capture order before any specialization can be demanded.
+    pub(super) fn scan_capture(
+        &mut self,
+        binding: super::graph::BindingId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let Some(call) = self.capture_scan else {
+            return Ok(());
+        };
+        let binding = self.graph.binding(binding);
+        let entity = self.graph.entity(binding.entity);
+        let Some(owner) = entity.home else {
+            return Ok(());
+        };
+        let frame = self
+            .capture_frames
+            .get(call)
+            .ok_or(Error::Invariant("capture scan frame"))?;
+        if frame.default.is_none() {
+            return Ok(());
+        }
+        if entity.data_member == Some(DataMemberKind::Instance)
+            || self.graph.scope(owner).kind == ScopeKind::Class
+                && entity.function.is_some_and(|function| !function.is_static)
+        {
+            if frame.object.is_some() {
+                self.capture_frames
+                    .get_mut(call)
+                    .ok_or(Error::Invariant("capture scan frame"))?
+                    .this_captured = true;
+            }
+            return Ok(());
+        }
+        let automatic = binding.kind == BindingKind::Parameter
+            || binding.kind == BindingKind::Variable
+                && entity.variable.is_some_and(|variable| variable.automatic)
+                && matches!(
+                    self.graph.scope(owner).kind,
+                    ScopeKind::Block | ScopeKind::Function
+                );
+        let class_scope = self
+            .graph
+            .entity(frame.class)
+            .scope
+            .ok_or(Error::Invariant("closure scan scope"))?;
+        if automatic
+            && !self.graph.encloses(class_scope, owner)
+            && !self
+                .graph
+                .entity(call)
+                .scope
+                .is_some_and(|scope| self.graph.encloses(scope, owner))
+        {
+            let copy = matches!(frame.default, Some(ast::CaptureDefault::Copy));
+            // Capture through any enclosing ordinary lambda before retaining the
+            // current definition's fixed member list.
+            self.capture_variable(binding.entity, location)?;
+            self.capture_frames
+                .get_mut(call)
+                .ok_or(Error::Invariant("capture scan frame"))?
+                .add(binding.entity, false, copy, location)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn scan_capture_this(&mut self) -> Result<(), Error> {
+        if let Some(call) = self.capture_scan {
+            let frame = self
+                .capture_frames
+                .get_mut(call)
+                .ok_or(Error::Invariant("this capture scan"))?;
+            if frame.default.is_some() {
+                frame.this_captured = true;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn scan_nested_lambda(
+        &mut self,
+        lambda: ast::LambdaId,
+        mut scope: ScopeId,
+    ) -> Result<(), Error> {
+        if self.capture_scan.is_none() {
+            return Ok(());
+        }
+        let lambda = *self.tree.lambdas.get(lambda);
+        for index in 0..self.tree.captures.get(lambda.captures).len() {
+            let capture = self.tree.captures.get(lambda.captures)[index];
+            match capture.kind {
+                ast::CaptureKind::This => {
+                    if let Some(call) = self.capture_scan {
+                        let frame = self
+                            .capture_frames
+                            .get_mut(call)
+                            .ok_or(Error::Invariant("nested capture scan"))?;
+                        if frame.default.is_some() {
+                            frame.this_captured = true;
+                        }
+                    }
+                }
+                ast::CaptureKind::Copy(name) | ast::CaptureKind::Reference(name) => {
+                    if let Some(binding) =
+                        self.unqualified(scope, name, super::lookup::Filter::Ordinary)?
+                    {
+                        self.scan_capture(binding, SourceOffset(0))?;
+                    }
+                }
+            }
+        }
+        if let Some(parameters) = lambda.template_parameters {
+            scope = self
+                .graph
+                .add_scope(ScopeKind::TemplateParameters, scope, None, None)?;
+            self.template_parameters(parameters, scope, true)?;
+        }
+        let inner = self.graph.add_scope(ScopeKind::Block, scope, None, None)?;
+        let ty = self.graph.types.scalar(super::types::Scalar::Basic(
+            crate::types::FundamentalType::Int,
+        ))?;
+        if let Some(parameters) = lambda.parameters {
+            for index in 0..self.tree.parameters.get(parameters.parameters).len() {
+                let parameter = self.tree.parameters.get(parameters.parameters)[index];
+                let name = self.declarator_name(parameter.declarator)?;
+                if let Some(name) = name {
+                    let entity = self.graph.add_entity(Some(ty), Some(name), Keyword::Int)?;
+                    let _binding = self.graph.add_binding(
+                        inner,
+                        Some(inner),
+                        super::graph::Binding {
+                            kind: BindingKind::Parameter,
+                            entity,
+                            name: Some(name),
+                            ty: Some(ty),
+                            key: Keyword::Int,
+                        },
+                    )?;
+                }
+            }
+        }
+        if let ast::LambdaBody::Parsed(body) = lambda.body {
+            self.statement(body, inner)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn sealed_closure_frame(&self, call: EntityId) -> Result<Option<Frame>, Error> {
+        let Some(class) = self.graph.lower_call_closure(call) else {
+            return Ok(None);
+        };
+        let closure = self
+            .graph
+            .lower_closure(class)
+            .ok_or(Error::Invariant("closure frame facts"))?;
+        let Some(lambda) = closure.template else {
+            return Ok(None);
+        };
+        let lambda = self.tree.lambdas.get(lambda);
+        let object = closure
+            .this_member
+            .map(|member| self.graph.lower_entity_type(member))
+            .transpose()?
+            .and_then(|ty| {
+                if let TypeKind::Pointer(object) = self.graph.types.get(ty).kind {
+                    Some(object)
+                } else {
+                    None
+                }
+            });
+        let mut frame = Frame {
+            class,
+            call,
+            object,
+            default: lambda.capture_default,
+            captures: Vec::new(),
+            captured: std::collections::HashMap::new(),
+            mutable: lambda.is_mutable,
+            location: SourceOffset(0),
+            this_captured: closure.this_member.is_some(),
+            sealed: false,
+        };
+        for capture in self.graph.lower_closure_captures(class) {
+            let copy = !matches!(
+                self.graph
+                    .types
+                    .get(self.graph.lower_entity_type(capture.member)?)
+                    .kind,
+                TypeKind::Reference { .. }
+            );
+            frame.add(capture.entity, false, copy, SourceOffset(0))?;
+        }
+        frame.sealed = true;
+        Ok(Some(frame))
+    }
+
     pub(super) fn explicit_captures(
         &mut self,
         class: EntityId,
@@ -113,6 +316,7 @@ impl Analyzer<'_> {
             mutable: lambda.is_mutable,
             location,
             this_captured: false,
+            sealed: false,
         };
         for index in 0..self.tree.captures.get(lambda.captures).len() {
             let capture = self.tree.captures.get(lambda.captures)[index];
@@ -239,6 +443,17 @@ impl Analyzer<'_> {
             let Some(&index) = self.capture_frames.by_call.get(&function) else {
                 return Ok(false);
             };
+            let frame = self.capture_frames.frame_mut(index);
+            if frame.sealed {
+                if !frame.captured.contains_key(&entity) {
+                    return Err(Error::at(
+                        location,
+                        "a templated lambda's body names an automatic variable its closure did not capture",
+                    ));
+                }
+                reached = true;
+                break;
+            }
             crossed.push(index);
         }
         if !reached {
