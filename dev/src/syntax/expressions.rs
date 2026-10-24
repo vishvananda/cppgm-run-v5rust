@@ -31,7 +31,8 @@ impl Parser<'_> {
         self.expression_rest(left)
     }
     pub(super) fn expression_rest(&mut self, mut left: ExprId) -> Result<ExprId, ParseError> {
-        while self.accept(P::Comma)? {
+        while self.at(P::Comma)? && !self.at_ahead(P::Ellipsis, 1)? {
+            self.cursor.advance()?;
             let right = self.assignment_expression()?;
             let location = self.tree.expressions.get(left).location;
             left = self.tree.expressions.add(Expression {
@@ -103,7 +104,8 @@ impl Parser<'_> {
                     | P::XorAssign
                     | P::OrAssign
             )
-        ) {
+        ) && !self.at_ahead(P::Ellipsis, 1)?
+        {
             let op = self.operator()?;
             let right = self.initializer_clause()?;
             return self.tree.expressions.add(Expression {
@@ -192,6 +194,10 @@ impl Parser<'_> {
     }
     fn parenthesized_or_cast(&mut self) -> Result<ExprId, ParseError> {
         let location = self.location()?;
+        if self.at_ahead(P::Ellipsis, 1)? {
+            let fold = self.without_angle(|parser| parser.left_fold(location))?;
+            return self.postfix(fold);
+        }
         if self.at_ahead(P::LeftBrace, 1)? {
             self.cursor.advance()?;
             let body = self.without_angle(Self::compound_statement)?;
@@ -231,13 +237,106 @@ impl Parser<'_> {
         // The ordinary parenthesized reading owns only its location and
         // child ID across recursion, rather than a general primary payload.
         self.cursor.advance()?;
-        let inner = self.without_angle(Self::expression)?;
+        let expression = self.without_angle(|parser| {
+            let inner = parser.expression()?;
+            parser.parenthesized_end(location, inner)
+        })?;
+        self.postfix(expression)
+    }
+    fn parenthesized_end(
+        &mut self,
+        location: SourceOffset,
+        inner: ExprId,
+    ) -> Result<ExprId, ParseError> {
+        if self.fold_operator()?.is_some() {
+            return self.fold_rest(location, inner);
+        }
         self.expect(P::RightParen)?;
         let paren = self.tree.expressions.add(Expression {
             location,
             kind: ExprKind::Paren(inner),
         })?;
-        self.postfix(paren)
+        Ok(paren)
+    }
+    fn fold_operator(&mut self) -> Result<Option<(Operator, usize)>, ParseError> {
+        let operator = if let Some((op, _, width)) = self.binary_operator()? {
+            Some((op, width))
+        } else if let TokenKind::Simple(op) = self.token()?.kind {
+            (op.token.as_punctuator() == Some(P::Comma) || assignment_operator(op))
+                .then_some((op, 1))
+        } else {
+            None
+        };
+        Ok(match operator {
+            Some((op, width)) if self.at_ahead(P::Ellipsis, width)? => Some((op, width)),
+            _ => None,
+        })
+    }
+    fn fold_rest(&mut self, location: SourceOffset, pattern: ExprId) -> Result<ExprId, ParseError> {
+        if matches!(
+            self.tree.expressions.get(pattern).kind,
+            ExprKind::Binary { .. } | ExprKind::Conditional { .. } | ExprKind::Throw(_)
+        ) {
+            return self.fail();
+        }
+        let (mut op, width) = self
+            .fold_operator()?
+            .ok_or(ParseError::Invariant("fold operator"))?;
+        op.alternative = false;
+        for _ in 0..=width {
+            self.cursor.advance()?;
+        }
+        let init = if self.at(P::RightParen)? {
+            None
+        } else {
+            let (second, second_width) = self.fold_token()?;
+            if second.token != op.token {
+                return self.fail();
+            }
+            for _ in 0..second_width {
+                self.cursor.advance()?;
+            }
+            Some(self.unary()?)
+        };
+        self.expect(P::RightParen)?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Fold {
+                op,
+                pattern,
+                init,
+                right: true,
+            },
+        })
+    }
+    fn fold_token(&mut self) -> Result<(Operator, usize), ParseError> {
+        if let Some((op, _, width)) = self.binary_operator()? {
+            Ok((op, width))
+        } else if let TokenKind::Simple(op) = self.token()?.kind {
+            Ok((op, 1))
+        } else {
+            self.fail()
+        }
+    }
+    fn left_fold(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
+        self.cursor.advance()?;
+        self.cursor.advance()?;
+        let (mut op, width) = self.fold_token()?;
+        op.alternative = false;
+        for _ in 0..width {
+            self.cursor.advance()?;
+        }
+        let pattern = self.unary()?;
+        self.expect(P::RightParen)?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Fold {
+                op,
+                pattern,
+                init: None,
+                right: false,
+            },
+        })
     }
     fn unary_inner(&mut self) -> Result<ExprId, ParseError> {
         let location = self.location()?;
@@ -505,8 +604,9 @@ impl Parser<'_> {
             }
             let primary = parser.primary_from_name(name, binding, start)?;
             let inner = parser.continue_expression(primary)?;
-            parser.expect(P::RightParen)?;
-            Ok(Operand::Expression(inner))
+            Ok(Operand::Expression(
+                parser.parenthesized_end(location, inner)?,
+            ))
         })?;
         match reading {
             Operand::Type(ty) => {
@@ -520,13 +620,7 @@ impl Parser<'_> {
                     },
                 })
             }
-            Operand::Expression(inner) => {
-                let paren = self.tree.expressions.add(Expression {
-                    location,
-                    kind: ExprKind::Paren(inner),
-                })?;
-                self.postfix(paren)
-            }
+            Operand::Expression(inner) => self.postfix(inner),
         }
     }
     fn type_trait(&mut self, location: SourceOffset, keyword: K) -> Result<ExprId, ParseError> {
@@ -708,10 +802,15 @@ impl Parser<'_> {
                 }
                 _ => match op.token.as_punctuator() {
                     Some(P::LeftParen) => {
-                        self.cursor.advance()?;
-                        let inner = self.without_angle(Self::expression)?;
-                        self.expect(P::RightParen)?;
-                        ExprKind::Paren(inner)
+                        return self.without_angle(|parser| {
+                            if parser.at_ahead(P::Ellipsis, 1)? {
+                                parser.left_fold(location)
+                            } else {
+                                parser.cursor.advance()?;
+                                let inner = parser.expression()?;
+                                parser.parenthesized_end(location, inner)
+                            }
+                        });
                     }
                     Some(P::Scope) => return self.primary_name(location),
                     Some(P::LeftBrace) => return self.braced_list(),
@@ -883,4 +982,23 @@ impl Parser<'_> {
         self.expect(close)?;
         self.tree.expr_lists.finish(start)
     }
+}
+
+pub(super) fn assignment_operator(op: Operator) -> bool {
+    matches!(
+        op.token.as_punctuator(),
+        Some(
+            P::Assign
+                | P::AddAssign
+                | P::SubtractAssign
+                | P::MultiplyAssign
+                | P::DivideAssign
+                | P::RemainderAssign
+                | P::ShiftLeftAssign
+                | P::ShiftRightAssign
+                | P::AndAssign
+                | P::XorAssign
+                | P::OrAssign
+        )
+    )
 }

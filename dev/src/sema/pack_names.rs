@@ -314,6 +314,7 @@ impl Analyzer<'_> {
             | ExprKind::Literal(_)
             | ExprKind::Keyword(_)
             | ExprKind::SizeofPack(_)
+            | ExprKind::Fold { .. }
             | ExprKind::PackExpansion(_) => (),
             ExprKind::Lambda(_) => return Err(Error::Missing("lambda expression pack names")),
         }

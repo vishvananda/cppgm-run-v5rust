@@ -344,6 +344,124 @@ impl Cloner<'_> {
         }
         Ok(count.map(|count| (names, count)))
     }
+    // ast_clone.cpp::expanded_fold: expand into the ordinary syntax owned by
+    // this instantiation; no second semantic tree or token replay is needed.
+    pub(super) fn expanded_fold(
+        &mut self,
+        location: SourceOffset,
+        mut op: ast::Operator,
+        mut pattern: ExprId,
+        mut init: Option<ExprId>,
+        mut right: bool,
+    ) -> Result<Option<ExprId>, ParseError> {
+        let mut packs = self.pattern_packs(Pattern::Expression(pattern), location)?;
+        if packs.is_none()
+            && let Some(initializer) = init
+        {
+            packs = self.pattern_packs(Pattern::Expression(initializer), location)?;
+            if packs.is_some() {
+                init = Some(pattern);
+                pattern = initializer;
+                right = false;
+            }
+        }
+        let Some((names, count)) = packs else {
+            return Ok(None);
+        };
+        let saved = std::mem::take(
+            &mut self
+                .expansion
+                .as_mut()
+                .ok_or(ParseError::Invariant("fold copy without context"))?
+                .renames,
+        );
+        let elements = (|| {
+            let mut elements = Vec::with_capacity(count);
+            for index in 0..count {
+                self.expansion
+                    .as_mut()
+                    .ok_or(ParseError::Invariant("fold copy without context"))?
+                    .rename_to(&names, index)?;
+                elements.push(self.expression(pattern)?);
+            }
+            Ok::<_, ParseError>(elements)
+        })();
+        self.expansion
+            .as_mut()
+            .ok_or(ParseError::Invariant("fold copy lost context"))?
+            .renames = saved;
+        let mut elements = elements?;
+        let mut accumulated = self.optional(init, Self::expression)?;
+        if accumulated.is_none() && elements.is_empty() {
+            return self.empty_fold(location, op);
+        }
+        // As in C++, a generated operator always uses its canonical spelling.
+        op.alternative = false;
+        let assignment = super::super::expressions::assignment_operator(op);
+        if right {
+            if accumulated.is_none() {
+                accumulated = elements.pop();
+            }
+            elements.reverse();
+        }
+        for element in elements {
+            accumulated = Some(if let Some(previous) = accumulated {
+                let (left, right) = if right {
+                    (element, previous)
+                } else {
+                    (previous, element)
+                };
+                self.tree.expressions.add(ast::Expression {
+                    location,
+                    kind: ExprKind::Binary {
+                        op,
+                        left,
+                        right,
+                        assignment,
+                    },
+                })?
+            } else {
+                element
+            });
+        }
+        let inner = accumulated.ok_or(ParseError::Invariant("nonempty fold without expression"))?;
+        self.tree
+            .expressions
+            .add(ast::Expression {
+                location,
+                kind: ExprKind::Paren(inner),
+            })
+            .map(Some)
+    }
+    fn empty_fold(
+        &mut self,
+        location: SourceOffset,
+        op: ast::Operator,
+    ) -> Result<Option<ExprId>, ParseError> {
+        use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
+        let kind = match op.token.as_punctuator() {
+            Some(P::LogicalAnd) => ExprKind::Keyword(K::True),
+            Some(P::LogicalOr) => ExprKind::Keyword(K::False),
+            Some(P::Comma) => {
+                let start = self.tree.specs.begin();
+                self.tree.specs.push(ast::Specifier {
+                    location,
+                    kind: ast::SpecifierKind::Keyword(K::Void),
+                });
+                let specifiers = self.tree.specs.finish(start)?;
+                ExprKind::FunctionalCast {
+                    specifiers,
+                    arguments: List::default(),
+                    braced: None,
+                }
+            }
+            _ => return Ok(None),
+        };
+        self.tree
+            .expressions
+            .add(ast::Expression { location, kind })
+            .map(Some)
+    }
     fn expanded_list<T: Copy>(
         &mut self,
         list: List<T>,

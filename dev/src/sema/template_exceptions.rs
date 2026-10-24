@@ -354,6 +354,7 @@ impl Analyzer<'_> {
                 | ExprKind::FunctionalCast { .. }
                 | ExprKind::New { .. }
                 | ExprKind::Lambda(_)
+                | ExprKind::Fold { .. }
                 | ExprKind::PackExpansion(_)
                 | ExprKind::SizeofPack(_) => return Ok(false),
                 ExprKind::Throw(operand) => work.extend(operand),

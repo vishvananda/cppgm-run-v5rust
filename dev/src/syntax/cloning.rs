@@ -289,10 +289,32 @@ impl<'a> Cloner<'a> {
     pub(crate) fn expression(&mut self, id: ExprId) -> Result<ExprId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.expressions.get(id);
-        if matches!(node.kind, ExprKind::PackExpansion(_)) && self.collecting() {
+        if matches!(
+            node.kind,
+            ExprKind::PackExpansion(_) | ExprKind::Fold { .. }
+        ) && self.collecting()
+        {
             return Ok(id);
         }
         node.kind = match node.kind {
+            ExprKind::Fold {
+                op,
+                pattern,
+                init,
+                right,
+            } => {
+                if let Some(expanded) =
+                    self.expanded_fold(node.location, op, pattern, init, right)?
+                {
+                    return Ok(expanded);
+                }
+                ExprKind::Fold {
+                    op,
+                    pattern: self.expression(pattern)?,
+                    init: self.optional(init, Self::expression)?,
+                    right,
+                }
+            }
             ExprKind::Statement(body) => ExprKind::Statement(self.statement(body)?),
             ExprKind::Paren(id) => ExprKind::Paren(self.expression(id)?),
             ExprKind::PackExpansion(id) => ExprKind::PackExpansion(self.expression(id)?),

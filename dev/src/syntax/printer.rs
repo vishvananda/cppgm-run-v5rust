@@ -1012,6 +1012,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         Ok(())
     }
 
+    fn fold(&mut self, pattern: ExprId, init: Option<ExprId>) -> io::Result<()> {
+        self.open("fold-expression", Payload::None)?;
+        if let Some(init) = init {
+            self.tasks.push(Task::Expression(init));
+        }
+        self.tasks.push(Task::Expression(pattern));
+        Ok(())
+    }
+
     fn expression(&mut self, id: ExprId) -> io::Result<()> {
         match self.renderer.tree.expressions.get(id).kind {
             ExprKind::Lambda(id) => self.lambda(id)?,
@@ -1022,6 +1031,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::SizeofPack(name) => {
                 self.line("sizeof-pack-expression", Payload::Identifier(name), false)?;
             }
+            ExprKind::Fold { pattern, init, .. } => self.fold(pattern, init)?,
             ExprKind::PackExpansion(pattern) => {
                 self.open("pack-expansion-expression", Payload::None)?;
                 self.tasks.push(Task::Expression(pattern));

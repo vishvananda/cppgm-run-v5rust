@@ -565,35 +565,62 @@ impl<'a, 'source> Renderer<'a, 'source> {
         self.tasks.push(Render::Text(")"));
         self.tasks.push(Render::Expression(operand));
     }
+    fn fold(&mut self, op: Operator, pattern: ExprId, init: Option<ExprId>, right: bool) {
+        self.text("(");
+        self.tasks.push(Render::Text(")"));
+        if let Some(init) = init {
+            self.tasks.push(Render::Expression(init));
+            self.tasks.push(Render::Operator(op));
+        }
+        if right {
+            self.tasks.push(Render::Text("..."));
+            self.tasks.push(Render::Operator(op));
+        }
+        self.tasks.push(Render::Expression(pattern));
+        if !right {
+            self.tasks.push(Render::Operator(op));
+            self.tasks.push(Render::Text("..."));
+        }
+    }
+
+    fn lambda_expression(&mut self, id: super::ast::LambdaId) -> std::io::Result<()> {
+        let lambda = self.tree.lambdas.get(id);
+        let super::ast::LambdaBody::Parsed(body) = lambda.body else {
+            return Err(std::io::Error::other("unparsed deferred lambda body"));
+        };
+        self.tasks.push(Render::Statement(body));
+        if let Some(parameters) = lambda.parameters {
+            if let Some(trailing) = lambda.trailing {
+                self.tasks.push(Render::Type(trailing));
+                self.tasks.push(Render::Text("->"));
+            }
+            if let Some(exception) = lambda.exception {
+                self.tasks.push(Render::Qualifier(exception));
+            }
+            if lambda.is_mutable {
+                self.tasks.push(Render::Text("mutable"));
+            }
+            self.tasks.push(Render::Clause(parameters));
+        }
+        self.tasks.push(Render::LambdaIntroducer(id));
+        Ok(())
+    }
+
     fn expression(&mut self, id: ExprId) -> std::io::Result<()> {
         match self.tree.expressions.get(id).kind {
-            ExprKind::Lambda(id) => {
-                let lambda = self.tree.lambdas.get(id);
-                let super::ast::LambdaBody::Parsed(body) = lambda.body else {
-                    return Err(std::io::Error::other("unparsed deferred lambda body"));
-                };
-                self.tasks.push(Render::Statement(body));
-                if let Some(parameters) = lambda.parameters {
-                    if let Some(trailing) = lambda.trailing {
-                        self.tasks.push(Render::Type(trailing));
-                        self.tasks.push(Render::Text("->"));
-                    }
-                    if let Some(exception) = lambda.exception {
-                        self.tasks.push(Render::Qualifier(exception));
-                    }
-                    if lambda.is_mutable {
-                        self.tasks.push(Render::Text("mutable"));
-                    }
-                    self.tasks.push(Render::Clause(parameters));
-                }
-                self.tasks.push(Render::LambdaIntroducer(id));
-            }
+            ExprKind::Lambda(id) => self.lambda_expression(id)?,
             ExprKind::Id(name) => self.tasks.push(Render::Name(name, true)),
             ExprKind::SizeofPack(name) => {
                 self.text("sizeof...(");
                 self.tasks.push(Render::Text(")"));
                 self.tasks.push(Render::Identifier(name));
             }
+            ExprKind::Fold {
+                op,
+                pattern,
+                init,
+                right,
+            } => self.fold(op, pattern, init, right),
             ExprKind::PackExpansion(pattern) => {
                 self.tasks.push(Render::Text("..."));
                 self.tasks.push(Render::Expression(pattern));

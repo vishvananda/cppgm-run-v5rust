@@ -316,6 +316,7 @@ impl Graph {
                 work.push(Step::Visit(operand));
             }
             ExprKind::Throw(Some(operand)) => work.push(Step::Visit(operand)),
+            ExprKind::Fold { .. } => return Err(Error::Invariant("unexpanded fold call effect")),
             ExprKind::Statement(_)
             | ExprKind::Lambda(_)
             | ExprKind::IntegerPack(_)

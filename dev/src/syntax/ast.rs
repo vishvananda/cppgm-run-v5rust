@@ -468,6 +468,12 @@ pub(crate) struct Expression {
 pub(crate) enum ExprKind {
     Lambda(LambdaId),
     PackExpansion(ExprId),
+    Fold {
+        op: Operator,
+        pattern: ExprId,
+        init: Option<ExprId>,
+        right: bool,
+    },
     SizeofPack(NameId),
     IntegerPack(ExprId),
     Id(Name),

@@ -257,6 +257,12 @@ impl Analyzer<'_> {
                     self.expression_work.push((operand, unevaluated));
                 }
             }
+            ExprKind::Fold { pattern, init, .. } => {
+                self.expression_work.push((pattern, unevaluated));
+                if let Some(init) = init {
+                    self.expression_work.push((init, unevaluated));
+                }
+            }
             ExprKind::PackExpansion(pattern) => self.expression_work.push((pattern, unevaluated)),
             ExprKind::SizeofPack(name) => {
                 self.check_sizeof_pack_name(name, scope, self.tree.expressions.get(id).location)?;

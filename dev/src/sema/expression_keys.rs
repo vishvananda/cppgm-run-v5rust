@@ -76,6 +76,7 @@ pub(crate) enum KeyNode {
     Delete,
     Throw,
     PackExpansion,
+    Fold,
     SizeofPack,
     IntegerPack,
     Function,
@@ -126,6 +127,33 @@ impl Analyzer<'_> {
         Ok(())
     }
 
+    fn key_fold(
+        &mut self,
+        operand: ast::ExprId,
+        scope: ScopeId,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
+        let ExprKind::Fold {
+            op,
+            pattern,
+            init,
+            right,
+        } = self.tree.expressions.get(operand).kind
+        else {
+            return Err(Error::Invariant("fold key without fold syntax"));
+        };
+        key.words.extend([
+            KeyWord::Node(KeyNode::Fold),
+            KeyWord::Operator(op.token),
+            KeyWord::Flag(right),
+            KeyWord::Flag(init.is_some()),
+        ]);
+        Ok(self.key_expression(pattern, scope, key)?
+            && match init {
+                Some(init) => self.key_expression(init, scope, key)?,
+                None => true,
+            })
+    }
     fn key_expression(
         &mut self,
         operand: ast::ExprId,
@@ -150,6 +178,7 @@ impl Analyzer<'_> {
             }
             ExprKind::Literal(literal) => self.key_literal(literal, key)?,
             ExprKind::Keyword(keyword) => self.key_keyword(keyword, scope, key)?,
+            ExprKind::Fold { .. } => return self.key_fold(operand, scope, key),
             ExprKind::Paren(inner) | ExprKind::PackExpansion(inner) => {
                 key.words
                     .push(KeyWord::Node(if matches!(expr.kind, ExprKind::Paren(_)) {

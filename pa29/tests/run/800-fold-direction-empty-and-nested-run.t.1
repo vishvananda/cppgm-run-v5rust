@@ -1,0 +1,25 @@
+template<int... N> struct F {
+ static_assert((N - ...) == 18, "right");
+ static_assert((... - N) == 12, "left");
+ static_assert((N - ... - 1) == 17, "right init");
+ static_assert((30 - ... - N) == 2, "left init");
+ static_assert((N >> ...) == 20, "split right shift");
+};
+F<20,5,3> f;
+template<class... T> using Sum = decltype((T() + ...));
+Sum<int,long> sum;
+template<int... N> int assign(int x) { return (x += ... += N); }
+template<class... T> void empty(T... t) { (t, ...); }
+template<class... T> int nested(T... t) { return (0 + ... + (t + (t + ...))); }
+template<class... T> auto last(T&... t)->decltype((t, ...)) { return (t, ...); }
+template<class... T> struct Empty {
+ static_assert((T::value && ...), "empty and");
+ static_assert(!(... || T::value), "empty or");
+};
+Empty<> identities;
+int main() {
+ int a = 1, b = 2;
+ last(a,b) = 7;
+ empty();
+ return b == 7 && assign<1,2,3>(0) == 6 && nested(1,2,3) == 24 ? 0 : 1;
+}

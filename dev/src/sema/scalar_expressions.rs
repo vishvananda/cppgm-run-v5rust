@@ -110,15 +110,7 @@ impl Analyzer<'_> {
                 let ty = self.graph.types.scalar(scalar)?;
                 self.new_expression_facts(ty, V::Prvalue)?
             }
-            ExprKind::Keyword(Keyword::This) => {
-                self.note_dependent_use();
-                let object = self.current_object_type()?.ok_or_else(|| {
-                    Error::at(node.location, "`this` outside a non-static member function")
-                })?;
-                let pointer = self.graph.types.pointer(object)?;
-                self.capture_this(node.location)?;
-                self.new_expression_facts(pointer, V::Prvalue)?
-            }
+            ExprKind::Keyword(Keyword::This) => self.this_expression(node.location)?,
             ExprKind::Unary { op, operand } | ExprKind::Postfix { op, operand } => {
                 if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd)
                     && let Some(facts) = self.qualified_function_address(id, operand, scope)?
@@ -310,6 +302,12 @@ impl Analyzer<'_> {
             // still present here (for example, `(sizeof...(N))...`, which
             // names no unexpanded pack) reaches the frozen expression
             // dispatcher's ordinary unsupported-expression diagnostic.
+            ExprKind::Fold { .. } => {
+                return Err(Error::UnconditionalDiagnostic {
+                    location: node.location,
+                    message: "a fold-expression without a pack to expand",
+                });
+            }
             ExprKind::PackExpansion(_) => {
                 return Err(Error::at(node.location, "unsupported expression"));
             }
@@ -321,6 +319,18 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(id, facts);
         super::record(&mut self.graph.expression_types, id.index(), facts.ty);
         Ok(())
+    }
+    fn this_expression(
+        &mut self,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<ExprFacts, Error> {
+        self.note_dependent_use();
+        let object = self
+            .current_object_type()?
+            .ok_or_else(|| Error::at(location, "`this` outside a non-static member function"))?;
+        let pointer = self.graph.types.pointer(object)?;
+        self.capture_this(location)?;
+        self.new_expression_facts(pointer, V::Prvalue)
     }
     fn sizeof_pack_expression(
         &mut self,
