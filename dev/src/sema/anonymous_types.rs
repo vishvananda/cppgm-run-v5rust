@@ -421,6 +421,7 @@ impl Analyzer<'_> {
                 .owner
                 .ok_or(Error::Invariant("class without owner"))?;
             let storage = self.graph.add_entity(Some(specs.ty), None, Keyword::Int)?;
+            self.graph.entity_mut(storage).member_access = self.graph.scope(scope).member_access;
             self.graph.entity_mut(owner).members.push(storage);
             if self.graph.scope(scope).member_access != super::graph::Access::Public {
                 self.graph.entity_mut(owner).layout_category =

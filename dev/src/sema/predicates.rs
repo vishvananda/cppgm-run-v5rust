@@ -32,6 +32,7 @@ impl Analyzer<'_> {
             first,
             second,
             self.tree.expressions.get(id).location,
+            scope,
         )?;
         facts.folded = Some(bits);
         super::record(
@@ -59,7 +60,7 @@ impl Analyzer<'_> {
         }
         Ok(Constant {
             high: 0,
-            bits: self.predicate_value(predicate, first, second, location)?,
+            bits: self.predicate_value(predicate, first, second, location, scope)?,
             ty: self.predicate_result_type(predicate)?,
         })
     }
@@ -105,7 +106,13 @@ impl Analyzer<'_> {
         ty: TypeId,
         second: Option<TypeId>,
         location: SourceOffset,
+        scope: ScopeId,
     ) -> Result<u64, Error> {
+        if predicate.is_property() {
+            return self
+                .property_predicate(predicate, ty, scope, location)
+                .map(u64::from);
+        }
         if let Some(value) = self.class_predicate_value(predicate, ty, second, location)? {
             return Ok(u64::from(value));
         }
@@ -218,7 +225,22 @@ impl Analyzer<'_> {
             | T::IsFinal
             | T::IsAggregate
             | T::HasVirtualDestructor
-            | T::IsBaseOf => {
+            | T::IsBaseOf
+            | T::IsTrivial
+            | T::IsTriviallyCopyable
+            | T::IsStandardLayout
+            | T::IsPod
+            | T::IsLiteralType
+            | T::HasTrivialDestructor
+            | T::IsDestructible
+            | T::IsNothrowDestructible
+            | T::IsTriviallyDestructible
+            | T::HasTrivialConstructor
+            | T::HasTrivialCopy
+            | T::HasTrivialAssign
+            | T::HasNothrowConstructor
+            | T::HasNothrowCopy
+            | T::HasNothrowAssign => {
                 return Err(Error::Invariant("class predicate without a result"));
             }
         };

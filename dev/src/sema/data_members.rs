@@ -145,6 +145,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let entity = self.graph.binding(binding).entity;
         if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
+            self.graph.entity_mut(entity).member_access = self.graph.binding_access(binding);
             self.graph.entity_mut(entity).member_initializer = init.initializer;
             self.graph.entity_mut(entity).mutability = specs.mutability;
             self.graph.entity_mut(entity).data_member = Some(if specs.is_static {

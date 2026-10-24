@@ -40,10 +40,25 @@ pub(crate) enum TypePredicate {
     IsAggregate,
     HasVirtualDestructor,
     IsBaseOf,
+    IsTrivial,
+    IsTriviallyCopyable,
+    IsStandardLayout,
+    IsPod,
+    IsLiteralType,
+    HasTrivialDestructor,
+    IsDestructible,
+    IsNothrowDestructible,
+    IsTriviallyDestructible,
+    HasTrivialConstructor,
+    HasTrivialCopy,
+    HasTrivialAssign,
+    HasNothrowConstructor,
+    HasNothrowCopy,
+    HasNothrowAssign,
 }
 
 impl TypePredicate {
-    const SPELLINGS: [(Self, &'static str); 38] = [
+    const SPELLINGS: [(Self, &'static str); 53] = [
         (Self::IsClass, "__is_class"),
         (Self::IsEnum, "__is_enum"),
         (Self::IsUnion, "__is_union"),
@@ -85,6 +100,21 @@ impl TypePredicate {
         (Self::IsAggregate, "__is_aggregate"),
         (Self::HasVirtualDestructor, "__has_virtual_destructor"),
         (Self::IsBaseOf, "__is_base_of"),
+        (Self::IsTrivial, "__is_trivial"),
+        (Self::IsTriviallyCopyable, "__is_trivially_copyable"),
+        (Self::IsStandardLayout, "__is_standard_layout"),
+        (Self::IsPod, "__is_pod"),
+        (Self::IsLiteralType, "__is_literal_type"),
+        (Self::HasTrivialDestructor, "__has_trivial_destructor"),
+        (Self::IsDestructible, "__is_destructible"),
+        (Self::IsNothrowDestructible, "__is_nothrow_destructible"),
+        (Self::IsTriviallyDestructible, "__is_trivially_destructible"),
+        (Self::HasTrivialConstructor, "__has_trivial_constructor"),
+        (Self::HasTrivialCopy, "__has_trivial_copy"),
+        (Self::HasTrivialAssign, "__has_trivial_assign"),
+        (Self::HasNothrowConstructor, "__has_nothrow_constructor"),
+        (Self::HasNothrowCopy, "__has_nothrow_copy"),
+        (Self::HasNothrowAssign, "__has_nothrow_assign"),
     ];
 
     pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
@@ -95,6 +125,10 @@ impl TypePredicate {
 
     pub(crate) fn spelling(self) -> &'static str {
         Self::SPELLINGS[self as usize].1
+    }
+
+    pub(crate) fn is_property(self) -> bool {
+        self as usize >= Self::IsTrivial as usize
     }
 
     pub(crate) fn arity(self) -> usize {

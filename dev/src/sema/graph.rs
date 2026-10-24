@@ -175,6 +175,7 @@ pub(super) struct Entity {
     pub special_definition: Option<super::special_members::SpecialDefinition>,
     pub destructor_specification: super::exceptions::DestructorSpecification,
     pub data_member: Option<DataMemberKind>,
+    pub member_access: Access,
     pub mutability: Mutability,
     pub exceptions: super::exceptions::ExceptionState,
     pub target_unwind: super::exceptions::TargetUnwind,
@@ -255,6 +256,8 @@ struct FunctionSignature {
 pub(crate) struct Graph {
     pub(super) hosted: bool,
     pub(super) predefined_variables: super::predefined_variables::Variables,
+    pub(super) constructor_queries: super::constructor_queries::Queries,
+    pub(super) property_predicates: super::property_predicates::Properties,
     pub(super) triviality: super::triviality::Triviality,
     pub(super) alias_alignments: super::aligned_aliases::AliasAlignments,
     pub(super) symbol_attributes: super::symbol_attributes::SymbolAttributes,
@@ -490,6 +493,8 @@ impl Graph {
         Self {
             hosted: false,
             predefined_variables: super::predefined_variables::Variables::default(),
+            constructor_queries: super::constructor_queries::Queries::default(),
+            property_predicates: super::property_predicates::Properties::default(),
             triviality: super::triviality::Triviality::default(),
             alias_alignments: super::aligned_aliases::AliasAlignments::default(),
             symbol_attributes: super::symbol_attributes::SymbolAttributes::default(),
@@ -712,6 +717,7 @@ impl Graph {
             special_definition: None,
             destructor_specification: super::exceptions::DestructorSpecification::Explicit,
             data_member: None,
+            member_access: Access::Public,
             mutability: Mutability::Ordinary,
             exceptions: super::exceptions::ExceptionState::Absent,
             target_unwind: super::exceptions::TargetUnwind::MayThrow,

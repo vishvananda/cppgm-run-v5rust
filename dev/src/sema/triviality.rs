@@ -12,6 +12,7 @@ use std::collections::HashMap;
 struct Kind {
     reference: RefKind,
     assignment: bool,
+    nothrow: bool,
 }
 #[derive(Clone, Copy)]
 enum Answer {
@@ -31,6 +32,12 @@ struct Member {
     cv: Cv,
     deleted: bool,
     trivial: bool,
+    exceptions: MemberExceptions,
+}
+#[derive(Clone, Copy)]
+enum MemberExceptions {
+    Declared(EntityId),
+    Implicit(bool),
 }
 impl Analyzer<'_> {
     pub(super) fn class_trivially_copyable(&mut self, class: EntityId) -> Result<bool, Error> {
@@ -66,6 +73,43 @@ impl Analyzer<'_> {
         }
         result
     }
+    pub(super) fn legacy_copy_trait(
+        &mut self,
+        class: EntityId,
+        assignment: bool,
+        nothrow: bool,
+    ) -> Result<bool, Error> {
+        self.prepare_copy_properties(class)?;
+        let mut found = false;
+        for member in self.trait_copy_members(class, assignment)? {
+            if member.kind.reference != RefKind::Lvalue {
+                continue;
+            }
+            found = true;
+            if !(self.trait_member_trivial(class, member)?
+                || nothrow && self.trait_member_nothrow(class, member)?)
+            {
+                return Ok(false);
+            }
+        }
+        Ok(found)
+    }
+    fn trait_member_nothrow(&mut self, class: EntityId, member: Member) -> Result<bool, Error> {
+        match member.exceptions {
+            MemberExceptions::Implicit(_) if member.deleted => self.trait_subobjects(
+                class,
+                Kind {
+                    nothrow: true,
+                    ..member.kind
+                },
+            ),
+            MemberExceptions::Implicit(nothrow) => Ok(nothrow),
+            MemberExceptions::Declared(function) => {
+                self.function_may_throw(function).map(|throws| !throws)
+            }
+        }
+    }
+
     fn trait_copy_members(
         &mut self,
         class: EntityId,
@@ -107,11 +151,27 @@ impl Analyzer<'_> {
                 kind: Kind {
                     reference,
                     assignment,
+                    nothrow: false,
                 },
                 parameter: parameters[0],
                 count: parameters.len(),
                 cv: *cv,
                 deleted: function.availability == FunctionAvailability::Deleted,
+                exceptions: if if assignment {
+                    function.assignment_origin == super::assignment::Origin::Implicit
+                } else {
+                    function.copy_origin == super::copy_construction::Origin::Implicit
+                } {
+                    MemberExceptions::Implicit(if assignment {
+                        function.assignment.as_ref().is_some_and(|p| p.nothrow)
+                    } else {
+                        function
+                            .copy_properties
+                            .is_some_and(|id| self.graph.copy_properties.get(id).nothrow)
+                    })
+                } else {
+                    MemberExceptions::Declared(entity)
+                },
                 trivial: if assignment {
                     function.assignment.as_ref().is_some_and(|p| p.trivial)
                 } else {
@@ -143,12 +203,14 @@ impl Analyzer<'_> {
                         kind: Kind {
                             reference,
                             assignment,
+                            nothrow: false,
                         },
                         parameter,
                         count: 1,
                         cv: Cv::default(),
                         deleted: facts.deleted,
                         trivial: facts.trivial,
+                        exceptions: MemberExceptions::Implicit(facts.nothrow),
                     });
                 }
             }
@@ -196,7 +258,9 @@ impl Analyzer<'_> {
     }
     fn trait_subobject_selection(&mut self, class: EntityId, kind: Kind) -> Result<bool, Error> {
         let entity = self.graph.entity(class);
-        if entity.polymorphism.is_dynamic() || entity.bases.iter().any(|edge| edge.is_virtual) {
+        if !kind.nothrow
+            && (entity.polymorphism.is_dynamic() || entity.bases.iter().any(|edge| edge.is_virtual))
+        {
             return Ok(false);
         }
         let count = entity.bases.len() + entity.members.len();
@@ -215,7 +279,7 @@ impl Analyzer<'_> {
         let mut selected = members
             .iter()
             .copied()
-            .find(|m| m.kind == kind)
+            .find(|m| m.kind.reference == kind.reference && m.kind.assignment == kind.assignment)
             .or_else(|| {
                 members
                     .iter()
@@ -226,12 +290,13 @@ impl Analyzer<'_> {
             return Ok(false);
         }
         if kind.reference == RefKind::Lvalue {
-            let const_reference = members.iter().any(|m| m.kind == kind && m.cv.0 & 2 == 0 && matches!(self.graph.types.get(m.parameter).kind, TypeKind::Reference { element, .. } if self.graph.types.get(element).cv == Cv::CONST));
+            let const_reference = members.iter().any(|m| m.kind.reference == kind.reference && m.kind.assignment == kind.assignment && m.cv.0 & 2 == 0 && matches!(self.graph.types.get(m.parameter).kind, TypeKind::Reference { element, .. } if self.graph.types.get(element).cv == Cv::CONST));
             let best: Vec<_> = members
                 .iter()
                 .copied()
                 .filter(|m| {
-                    m.kind == kind
+                    m.kind.reference == kind.reference
+                        && m.kind.assignment == kind.assignment
                         && match self.graph.types.get(m.parameter).kind {
                             TypeKind::Reference { element, .. } => {
                                 let cv = self.graph.types.get(element).cv;
@@ -242,6 +307,9 @@ impl Analyzer<'_> {
                 })
                 .collect();
             if best.len() > 1 {
+                if kind.nothrow {
+                    return Ok(true);
+                }
                 for member in best {
                     if !member.deleted && !self.trait_member_trivial(child, member)? {
                         return Ok(false);
@@ -254,7 +322,8 @@ impl Analyzer<'_> {
             }
         }
         if let Some(member) = selected
-            && !self.trait_member_trivial(child, member)?
+            && !(self.trait_member_trivial(child, member)?
+                || kind.nothrow && self.trait_member_nothrow(child, member)?)
         {
             return Ok(false);
         }
