@@ -203,6 +203,7 @@ impl Analyzer<'_> {
         self.check_stack()?;
         match self.tree.expressions.get(id).kind {
             ExprKind::Literal(_)
+            | ExprKind::IntegerPack(_)
             | ExprKind::SizeofPack(_)
             | ExprKind::Sizeof { .. }
             | ExprKind::TypePredicate { .. }

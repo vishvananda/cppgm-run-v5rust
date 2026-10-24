@@ -18,6 +18,12 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        if matches!(self.tree.expressions.get(id).kind, ExprKind::IntegerPack(_)) {
+            return Err(Error::at(
+                self.tree.expressions.get(id).location,
+                "__integer_pack outside a template argument pack expansion",
+            ));
+        }
         let uses = self.dependent_uses.get();
         let result = self.typed_expression_form(id, scope);
         if matches!(

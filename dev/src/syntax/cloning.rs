@@ -372,6 +372,7 @@ impl<'a> Cloner<'a> {
                 operand: self.optional(operand, Self::expression)?,
                 parenthesized,
             },
+            ExprKind::IntegerPack(operand) => ExprKind::IntegerPack(self.expression(operand)?),
             ExprKind::TypeTransform { transform, types } => ExprKind::TypeTransform {
                 transform,
                 types: self.expanded_types(types)?,

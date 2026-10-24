@@ -224,7 +224,7 @@ fn emit_preprocessed(
 ) -> Result<(), AstToolError> {
     let origins = if mode == EmitMode::LowIr {
         preprocessor
-            .enter_builtin_declarations(super::host_declarations::VA_DECLARATIONS)
+            .enter_builtin_declarations(super::host_declarations::DECLARATIONS)
             .map_err(AstToolError::Initialization)?;
         super::host_declarations::token_origins().map_err(AstToolError::Internal)?
     } else {

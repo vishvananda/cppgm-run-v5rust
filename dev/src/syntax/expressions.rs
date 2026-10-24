@@ -665,6 +665,16 @@ impl Parser<'_> {
                 ExprKind::Literal(literal)
             }
             TokenKind::Identifier(_) => {
+                if self.at_integer_pack(0)? {
+                    self.cursor.advance()?;
+                    self.expect(P::LeftParen)?;
+                    let operand = self.without_angle(Self::assignment_expression)?;
+                    self.expect(P::RightParen)?;
+                    return self.tree.expressions.add(Expression {
+                        location,
+                        kind: ExprKind::IntegerPack(operand),
+                    });
+                }
                 if self.at_offsetof(0)? {
                     return self.offsetof_expression();
                 }

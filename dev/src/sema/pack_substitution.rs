@@ -103,15 +103,35 @@ impl Analyzer<'_> {
                     bound_element: None,
                 };
                 whole.selection = Some(&selection);
-                if let Some(ty) = self.substitute_signature_type(element, &mut whole)? {
-                    result.push(
-                        self.graph
-                            .types
-                            .intern(TypeKind::Expansion(ty), Cv::default())?,
-                    );
-                } else {
+                let Some(ty) = self.substitute_signature_type(element, &mut whole)? else {
+                    if environment.failure.is_none() {
+                        environment.failure = whole.failure;
+                        environment.failure_location = whole.failure_location;
+                    }
                     valid = false;
+                    continue;
+                };
+                if !has_parameters
+                    && packs.bound.is_empty()
+                    && matches!(self.graph.types.get(ty).kind, TypeKind::Value { .. })
+                {
+                    match self.integer_pack_values(
+                        ty,
+                        crate::support::source::SourceOffset(0),
+                        &mut result,
+                    ) {
+                        Ok(()) => continue,
+                        Err(Error::Diagnostic { location, message }) => {
+                            return Ok(environment.reject_at(location, message));
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
+                result.push(
+                    self.graph
+                        .types
+                        .intern(TypeKind::Expansion(ty), Cv::default())?,
+                );
                 continue;
             }
             let mut elements = environment

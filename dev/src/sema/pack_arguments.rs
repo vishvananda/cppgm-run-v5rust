@@ -50,6 +50,65 @@ impl Graph {
 }
 
 impl Analyzer<'_> {
+    /// Frozen `analyzer_traits.cpp::integer_pack_argument`: generate values only
+    /// at a template argument expansion; retain a dependent count as a typed
+    /// value placeholder for `substitute_list` to expand when it becomes known.
+    pub(super) fn integer_pack_argument(
+        &mut self,
+        argument: crate::syntax::ast::TemplateArgument,
+        scope: ScopeId,
+        out: &mut Vec<TypeId>,
+    ) -> Result<bool, Error> {
+        use crate::syntax::ast::{ExprKind, TemplateArgumentKind};
+        let TemplateArgumentKind::Expression(mut expression) = argument.kind else {
+            return Ok(false);
+        };
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(expression).kind {
+            expression = inner;
+        }
+        let ExprKind::IntegerPack(count) = self.tree.expressions.get(expression).kind else {
+            return Ok(false);
+        };
+        if !argument.pack {
+            return Ok(false);
+        }
+        let value = self.template_value(count, scope, None, false)?;
+        if matches!(self.graph.types.get(value).kind, TypeKind::Value { .. }) {
+            self.integer_pack_values(value, self.tree.expressions.get(count).location, out)?;
+        } else {
+            out.push(
+                self.graph
+                    .types
+                    .intern(TypeKind::Expansion(value), Cv::default())?,
+            );
+        }
+        Ok(true)
+    }
+
+    pub(super) fn integer_pack_values(
+        &mut self,
+        value: TypeId,
+        location: SourceOffset,
+        out: &mut Vec<TypeId>,
+    ) -> Result<(), Error> {
+        let TypeKind::Value { ty, bits } = self.graph.types.get(value).kind else {
+            return Err(Error::Invariant("integer pack count without value"));
+        };
+        if self.integral_kind(ty).is_some_and(|kind| kind.signed)
+            && super::integral::signed(bits) < 0
+        {
+            return Err(Error::at(location, "__integer_pack of a negative count"));
+        }
+        for bits in 0..bits {
+            out.push(
+                self.graph
+                    .types
+                    .intern(TypeKind::Value { ty, bits }, Cv::default())?,
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn template_argument_parameter(
         &self,
         head: HeadId,

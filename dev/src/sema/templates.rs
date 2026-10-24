@@ -815,6 +815,7 @@ impl Analyzer<'_> {
             .add_entity(Some(ty), Some(name), Keyword::Typedef)?;
         self.graph.entity_mut(entity).template_head = Some(head);
         self.record_alias_parameters(entity, head, ty);
+        self.record_type_pack_element(entity, home, head);
         self.graph.add_binding(
             home,
             None,

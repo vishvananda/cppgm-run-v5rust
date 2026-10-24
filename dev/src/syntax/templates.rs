@@ -236,6 +236,8 @@ impl Parser<'_> {
         let kind = if let Some(predicate) = predicate {
             let primary = self.predicate_operand(predicate)?;
             TemplateArgumentKind::Expression(self.continue_assignment_expression(primary)?)
+        } else if self.at_integer_pack(0)? {
+            TemplateArgumentKind::Expression(self.assignment_expression()?)
         } else if self.name_starts_ahead(0)? {
             // Parse the name and its nested arguments once. Both readings borrow it.
             let (name, binding) = self.name()?;

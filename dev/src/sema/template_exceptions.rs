@@ -284,7 +284,8 @@ impl Analyzer<'_> {
                         }
                     }
                 }
-                ExprKind::Paren(inner)
+                ExprKind::IntegerPack(inner)
+                | ExprKind::Paren(inner)
                 | ExprKind::Unary { operand: inner, .. }
                 | ExprKind::Postfix { operand: inner, .. }
                 | ExprKind::Delete { operand: inner, .. } => work.push(inner),
@@ -488,7 +489,8 @@ impl Analyzer<'_> {
                     }
                     match self.tree.expressions.get(expr).kind {
                         ExprKind::Id(name) => work.push((OwnProbe::Name(name), depth)),
-                        ExprKind::Paren(inner)
+                        ExprKind::IntegerPack(inner)
+                        | ExprKind::Paren(inner)
                         | ExprKind::Unary { operand: inner, .. }
                         | ExprKind::Postfix { operand: inner, .. }
                         | ExprKind::PackExpansion(inner) => {

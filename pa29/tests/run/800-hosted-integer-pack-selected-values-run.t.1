@@ -1,0 +1,38 @@
+template<class T, T... I>
+struct sequence {
+  static const unsigned long size = sizeof...(I);
+};
+
+template<class T, T N>
+using indices = sequence<T, (__integer_pack(N))...>;
+
+template<unsigned long I, class... T>
+auto select(int) -> __type_pack_element<I, T...>;
+
+template<unsigned long I, class... T>
+long select(...);
+
+template<class T>
+struct last_type {
+  using type = __type_pack_element<1, char, T>;
+};
+
+static_assert(indices<unsigned, 0>::size == 0, "empty generation");
+static_assert(indices<unsigned, 3>::size == 3, "dependent generation");
+static_assert(__is_same(__make_integer_seq<sequence, unsigned, (unsigned int)3ULL>,
+                       sequence<unsigned, 0, 1, 2>), "canonical values");
+static_assert(__is_same(last_type<const long&>::type, const long&), "qualified reference");
+static_assert(__is_same(decltype(select<2, char, int>(0)), long), "substitution failure");
+static_assert(__is_same(decltype(select<0, char, int>(0)), char), "successful substitution");
+
+template<unsigned... I>
+int total(sequence<unsigned, I...>) {
+  int values[] = { int(I)... };
+  int result = 0;
+  for (unsigned i = 0; i < sizeof...(I); ++i) result += values[i];
+  return result;
+}
+
+int main() {
+  return total(indices<unsigned, 5>()) == 10 ? 0 : 1;
+}

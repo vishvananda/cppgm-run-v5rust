@@ -559,6 +559,12 @@ impl<'a, 'source> Renderer<'a, 'source> {
         }
         self.tasks.push(Render::Type(ty));
     }
+    fn builtin_operand(&mut self, spelling: &'static str, operand: ExprId) {
+        self.text(spelling);
+        self.text("(");
+        self.tasks.push(Render::Text(")"));
+        self.tasks.push(Render::Expression(operand));
+    }
     fn expression(&mut self, id: ExprId) -> std::io::Result<()> {
         match self.tree.expressions.get(id).kind {
             ExprKind::Lambda(id) => {
@@ -707,6 +713,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                     self.tasks.push(Render::Expression(operand));
                 }
             }
+            ExprKind::IntegerPack(operand) => self.builtin_operand("__integer_pack", operand),
             ExprKind::TypeTransform { transform, types } => {
                 self.text(transform.spelling());
                 self.text("(");

@@ -27,6 +27,9 @@ impl Analyzer<'_> {
         let mut arguments = Vec::new();
         for index in 0..self.tree.template_arguments.get(syntax).len() {
             let argument = self.tree.template_arguments.get(syntax)[index];
+            if self.integer_pack_argument(argument, scope, &mut arguments)? {
+                continue;
+            }
             let index = arguments.len();
             let position = if let Some(head) = head {
                 let count = self.graph.templates.parameters(head).len();
@@ -148,8 +151,12 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
+        let mut expanded = Vec::new();
         for syntax_index in 0..self.tree.template_arguments.get(arguments).len() {
             let syntax_item = self.tree.template_arguments.get(arguments)[syntax_index];
+            if self.integer_pack_argument(syntax_item, scope, &mut expanded)? {
+                continue;
+            }
             let argument = &syntax_item;
             let ty = self.template_argument_at(*argument, scope, location, None, None, true)?;
             if argument.pack {

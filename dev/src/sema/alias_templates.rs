@@ -20,6 +20,7 @@ struct Key {
 
 #[derive(Default)]
 pub(super) struct Aliases {
+    type_pack_element: Option<EntityId>,
     specializations: HashMap<Key, TypeId>,
     bindings: HashMap<TypeId, BindingId>,
     discarded: HashMap<EntityId, u64>,
@@ -49,6 +50,39 @@ impl super::graph::Graph {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn record_type_pack_element(
+        &mut self,
+        alias: EntityId,
+        home: super::graph::ScopeId,
+        head: HeadId,
+    ) {
+        if self.hosted()
+            && home == self.graph.global
+            && self
+                .graph
+                .class_templates
+                .aliases
+                .type_pack_element
+                .is_none()
+            && self
+                .graph
+                .entity(alias)
+                .name
+                .is_some_and(|name| self.identifiers.bytes(name) == b"__type_pack_element")
+        {
+            let parameters = self.graph.templates.parameters(head);
+            if parameters.len() == 2
+                && self
+                    .graph
+                    .entity(parameters[0])
+                    .template_parameter
+                    .is_some_and(|info| info.value_type.is_some())
+                && self.argument_parameter_pack(head, 1)
+            {
+                self.graph.class_templates.aliases.type_pack_element = Some(alias);
+            }
+        }
+    }
     /// Identify the declaration before forming its arguments or checking the
     /// terminal name's access. Elaborated types and explicit instantiations
     /// reject alias template-ids even when the aliased result is a class.
@@ -199,6 +233,36 @@ impl Analyzer<'_> {
         if let Some(&ty) = self.graph.class_templates.aliases.specializations.get(&key) {
             return Ok(ty);
         }
+        let pack_element = self.graph.class_templates.aliases.type_pack_element == Some(alias);
+        if pack_element
+            && key
+                .arguments
+                .iter()
+                .all(|&ty| !self.graph.dependent_type(ty))
+        {
+            let TypeKind::Value { bits, .. } = self.graph.types.get(key.arguments[0]).kind else {
+                return Err(Error::at(
+                    location,
+                    "a __type_pack_element index outside its pack",
+                ));
+            };
+            let elements = self.graph.types.pack_elements(key.arguments[1])?;
+            let ty = usize::try_from(bits)
+                .ok()
+                .and_then(|index| elements.get(index))
+                .copied()
+                .ok_or(Error::at(
+                    location,
+                    "a __type_pack_element index outside its pack",
+                ))?;
+            self.specialization_binding(ty, alias)?;
+            self.graph
+                .class_templates
+                .aliases
+                .specializations
+                .insert(key, ty);
+            return Ok(ty);
+        }
         let pattern = self
             .graph
             .entity(alias)
@@ -235,14 +299,15 @@ impl Analyzer<'_> {
             .get(&alias)
             .copied()
             .unwrap_or(0);
-        let dropped = key
-            .arguments
-            .iter()
-            .take(64)
-            .enumerate()
-            .any(|(index, &argument)| {
-                discarded >> index & 1 != 0 && self.graph.dependent_type(argument)
-            });
+        let dropped = pack_element
+            || key
+                .arguments
+                .iter()
+                .take(64)
+                .enumerate()
+                .any(|(index, &argument)| {
+                    discarded >> index & 1 != 0 && self.graph.dependent_type(argument)
+                });
         let ty = if dropped {
             let primary = self.alias_stand_in(alias)?;
             let entity = self.class_specialization(primary, key.arguments.clone())?;

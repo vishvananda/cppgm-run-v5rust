@@ -1014,6 +1014,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     fn expression(&mut self, id: ExprId) -> io::Result<()> {
         match self.renderer.tree.expressions.get(id).kind {
             ExprKind::Lambda(id) => self.lambda(id)?,
+            ExprKind::IntegerPack(operand) => {
+                self.open("builtin-trait-expression", Payload::Text("__integer_pack"))?;
+                self.tasks.push(Task::Expression(operand));
+            }
             ExprKind::SizeofPack(name) => {
                 self.line("sizeof-pack-expression", Payload::Identifier(name), false)?;
             }

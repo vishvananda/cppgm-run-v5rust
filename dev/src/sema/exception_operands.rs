@@ -187,6 +187,10 @@ impl Analyzer<'_> {
                 }
                 self.binding_expression_type(found)
             }
+            ExprKind::IntegerPack(_) => Err(Error::at(
+                location,
+                "__integer_pack outside a template argument pack expansion",
+            )),
             ExprKind::Paren(inner) => self.exception_type(inner),
             ExprKind::Call { .. } => self.query_call_type(id, scope),
             ExprKind::OffsetOf { designator, .. } => {

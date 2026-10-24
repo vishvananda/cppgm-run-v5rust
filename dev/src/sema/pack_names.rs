@@ -209,7 +209,8 @@ impl Analyzer<'_> {
     fn pack_expression_probes(&self, id: ast::ExprId, work: &mut Vec<Probe>) -> Result<(), Error> {
         match self.tree.expressions.get(id).kind {
             ExprKind::Id(name) => work.push(Probe::Name(name, true)),
-            ExprKind::Paren(expr)
+            ExprKind::IntegerPack(expr)
+            | ExprKind::Paren(expr)
             | ExprKind::Unary { operand: expr, .. }
             | ExprKind::Postfix { operand: expr, .. }
             | ExprKind::Delete { operand: expr, .. } => work.push(Probe::Expression(expr)),
