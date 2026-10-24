@@ -40,12 +40,7 @@ impl Analyzer<'_> {
         parameter: TypeId,
     ) -> Result<Option<ArgumentSequence>, Error> {
         self.check_stack()?;
-        let ExprKind::Braced {
-            elements,
-            designators,
-            ..
-        } = self.tree.expressions.get(id).kind
-        else {
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("list sequence without list"));
         };
         let reference = match self.graph.types.get(parameter).kind {
@@ -56,9 +51,6 @@ impl Analyzer<'_> {
         if reference.is_some_and(|(_, kind)| kind == RefKind::Lvalue)
             && self.type_cv(target) != Cv::CONST
         {
-            return Ok(None);
-        }
-        if !designators.is_empty() && self.graph.class_of(target).is_none() {
             return Ok(None);
         }
         let mut sequence = Conversion {

@@ -18,6 +18,25 @@ use crate::{
 };
 
 impl Analyzer<'_> {
+    // initialize_class rejects these after aggregate selection, before any
+    // initializer-list or ordinary constructor is demanded. Ranked arguments
+    // reach the same check only after overload selection.
+    pub(super) fn check_constructor_designators(
+        &self,
+        list: Option<ast::ExprId>,
+    ) -> Result<(), Error> {
+        if let Some(id) = list
+            && let ExprKind::Braced { designators, .. } = self.tree.expressions.get(id).kind
+            && !designators.is_empty()
+        {
+            return Err(Error::UnconditionalDiagnostic {
+                location: self.tree.expressions.get(id).location,
+                message: "designated initializers of a class that is no aggregate",
+            });
+        }
+        Ok(())
+    }
+
     pub(super) fn designated_list(
         &mut self,
         id: ast::ExprId,

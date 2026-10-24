@@ -285,6 +285,7 @@ impl Analyzer<'_> {
             self.class_list_initialize(id, target, scope)?;
             return Ok(None);
         }
+        self.check_constructor_designators(list)?;
         if let Some(id) = list
             && self.initializer_list_element(target).is_some()
         {
@@ -343,6 +344,7 @@ impl Analyzer<'_> {
             context,
             selected,
         } = input;
+        self.check_constructor_designators(list)?;
 
         let single;
         let args = match arguments {
