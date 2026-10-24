@@ -78,13 +78,11 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             Scalar::Basic(F::Float | F::Float32) => Type::F32,
             Scalar::Basic(F::Double | F::Float64 | F::Float32x) => Type::F64,
             Scalar::Basic(F::LongDouble | F::Float64x) => Type::F80,
-            // These identities and their semantic layouts are available to
-            // hosted declarations. Their object values require the separate
-            // soft_float_lowering.cpp owner, including its call classes and
-            // runtime operations; ordinary integer/f80 emission cannot carry them.
-            Scalar::Basic(F::Float16 | F::BFloat16 | F::Float128 | F::GnuFloat128) => {
-                return Err(Error::Missing("soft-float value lowering"));
-            }
+            Scalar::Basic(F::Float16 | F::BFloat16) => Type::Object { bytes: 2, align: 1 },
+            Scalar::Basic(F::Float128 | F::GnuFloat128) => Type::Object {
+                bytes: 16,
+                align: 4,
+            },
         },
         TypeView::Pointer(_)
         | TypeView::BlockPointer(_)
@@ -242,6 +240,6 @@ pub(super) fn memory(graph: &Graph, ty: TypeId) -> Result<crate::lowir::model::F
     let volatile = graph.lower_cv(ty) & 2 != 0;
     Ok(crate::lowir::model::Facts::memory(
         volatile,
-        !volatile && !matches!(ty_ir, Type::I8 | Type::U8),
+        !volatile && !matches!(ty_ir, Type::I8 | Type::U8 | Type::Object { .. }),
     ))
 }

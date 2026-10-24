@@ -143,6 +143,10 @@ impl Function<'_, '_, '_, '_> {
         if self.graph.lower_member_pointer_type(value.source).is_some() {
             return self.member_pointer_truth(value);
         }
+        if let Some(kind) = super::soft_float::kind(self.graph, value.source)? {
+            let zero = self.soft_constant(kind, 0, value.source)?;
+            return self.soft_compare(Compare::Ne, kind, value, zero, value.source);
+        }
         if value.ty.float_rank() != 0 {
             let zero = self.zero(value.source)?;
             self.emit(

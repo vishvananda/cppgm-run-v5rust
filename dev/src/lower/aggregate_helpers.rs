@@ -502,7 +502,10 @@ fn emit(program: &mut Program, graph: &Graph, key: Key, symbol: SymbolId) -> Res
         let slot = builder.named_slot(name, ty)?;
         let incoming = builder.parameter(index)?;
         builder.effect(I::Store(
-            Facts::memory(false, !matches!(ty, Type::I8 | Type::U8)),
+            Facts::memory(
+                false,
+                !matches!(ty, Type::I8 | Type::U8 | Type::Object { .. }),
+            ),
             ty,
             incoming,
             slot,
@@ -519,7 +522,10 @@ fn emit(program: &mut Program, graph: &Graph, key: Key, symbol: SymbolId) -> Res
                 None
             } else {
                 Some(builder.generated(I::Load(
-                    Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
+                    Facts::memory(
+                        false,
+                        !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
+                    ),
                     storage,
                     slot,
                 ))?)
@@ -550,7 +556,7 @@ fn emit(program: &mut Program, graph: &Graph, key: Key, symbol: SymbolId) -> Res
             builder.effect(I::Store(
                 Facts::memory(
                     volatile,
-                    !volatile && !matches!(storage, Type::I8 | Type::U8),
+                    !volatile && !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
                 ),
                 storage,
                 value.ok_or(Error::Semantic(crate::sema::Error::Invariant(

@@ -17,6 +17,7 @@ enum Class {
     None,
     Integer,
     Sse,
+    SseUp,
     X87,
     X87Upper,
     Memory,
@@ -44,6 +45,7 @@ impl Class {
             Self::None => Some(EightbyteClass::None),
             Self::Integer => Some(EightbyteClass::Integer),
             Self::Sse => Some(EightbyteClass::Sse),
+            Self::SseUp => Some(EightbyteClass::SseUp),
             _ => None,
         }
     }
@@ -69,6 +71,9 @@ impl Classes {
                 Some(EightbyteClass::Integer),
             )));
         }
+        if let Some(kind) = super::soft_float::kind(graph, ty)? {
+            return Ok(Some(super::soft_float::classes(kind)));
+        }
         let TypeView::Class(class) = graph.lower_type(ty)? else {
             return Ok(None);
         };
@@ -87,6 +92,9 @@ impl Classes {
                 budget,
                 std::ptr::from_ref(&marker).addr(),
             )?;
+        }
+        if classes[1] == Class::SseUp && classes[0] != Class::Sse {
+            classes[1] = Class::Sse;
         }
         let result = if size > 16 {
             ObjectClasses::Memory
@@ -191,6 +199,12 @@ fn classify_fields(
                         base,
                     )?;
                 }
+            }
+        }
+        _ if super::soft_float::kind(graph, ty)?.is_some() => {
+            mark(classes, offset / 8, Class::Sse);
+            if size == 16 {
+                mark(classes, offset / 8 + 1, Class::SseUp);
             }
         }
         _ => match types::storage(graph, ty)? {

@@ -1,0 +1,47 @@
+#include <cstring>
+
+static __float128 quad_value = (__float128)(unsigned __int128)(-1);
+static _Float16 half_value = (_Float16)3.0Q;
+static const __float128& shared_quad = 4.0Q;
+static const _Float16& shared_half = (_Float16)3;
+static double double_value = (double)3.5Q;
+static double mixed_value = (double)3.5Q + (double)1.0Q;
+static unsigned integer_value = (unsigned)3.5Q;
+static _Float16 stored_half() { static _Float16 x = (_Float16)3; return x; }
+static __float128 stored_quad() { static __float128 x = 4.0Q; return x; }
+int main() {
+  volatile int i = -3;
+  volatile unsigned u = 3;
+  volatile long long l = -3;
+  volatile unsigned long long ul = 3;
+  volatile __int128 w = -3;
+  volatile unsigned __int128 uw = 3;
+  volatile float f = 3.5f;
+  volatile double d = 3.5;
+  volatile long double ld = 3.5L;
+  volatile __float128 q = 3.5Q;
+  volatile _Float16 h = (_Float16)3.5;
+  volatile __bf16 b = (__bf16)3.5;
+  if ((__float128)i != -3 || (__float128)u != 3 || (__float128)l != -3 ||
+      (__float128)ul != 3 || (__float128)w != -3 || (__float128)uw != 3) return 1;
+  if ((_Float16)i != -3 || (_Float16)w != -3 || (_Float16)uw != 3) return 2;
+  if ((__float128)f != q || (__float128)d != q || (__float128)ld != q ||
+      (_Float16)f != h || (_Float16)d != h || (_Float16)ld != h) return 3;
+  if ((float)q != f || (double)q != d || (long double)q != ld ||
+      (float)h != f || (double)h != d || (long double)h != ld) return 4;
+  if ((int)q != 3 || (unsigned)q != 3 || (long long)q != 3 ||
+      (unsigned long long)q != 3 || (__int128)q != 3 || (unsigned __int128)q != 3 ||
+      (signed char)q != 3 || (unsigned short)q != 3) return 5;
+  if ((__int128)h != 3 || (unsigned __int128)h != 3 || (int)h != 3 ||
+      (unsigned)h != 3 || (long long)h != 3) return 6;
+  if ((_Float16)q != h || (__float128)h != q || (__bf16)q != b ||
+      h + b != (_Float16)7 || (__float128)b != q) return 7;
+  if (stored_half() != 3 || stored_quad() != 4 || half_value != 3 ||
+      double_value != 3.5 || integer_value != 3 || quad_value <= 0) return 8;
+  if (shared_quad != 4 || shared_half != 3 || mixed_value != 4.5) return 10;
+  const _Float16& local_half = (_Float16)3;
+  if (local_half != 3) return 11;
+  bool flag = false; flag += (__bf16)0.5;
+  if (!flag) return 9;
+  return 0;
+}

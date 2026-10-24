@@ -284,7 +284,10 @@ impl Function<'_, '_, '_, '_> {
                     self.graph.lower_cv(ty) & 2 != 0,
                     self.graph.lower_cv(ty) & 2 == 0
                         && !union
-                        && !matches!(super::types::storage(self.graph, ty)?, Type::I8 | Type::U8),
+                        && !matches!(
+                            super::types::storage(self.graph, ty)?,
+                            Type::I8 | Type::U8 | Type::Object { .. }
+                        ),
                 ),
                 super::types::storage(self.graph, ty)?,
                 value,

@@ -447,6 +447,23 @@ impl Function<'_, '_, '_, '_> {
             };
         let result = if old.ty == Type::Ptr {
             self.pointer_step(old, decrement)?
+        } else if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+            let one = self.soft_constant(
+                kind,
+                match kind {
+                    super::soft_float::Kind::Half => 0x3c00,
+                    super::soft_float::Kind::BFloat => 0x3f80,
+                    super::soft_float::Kind::Quad => 0x3fff_u128 << 112,
+                },
+                source,
+            )?;
+            self.soft_arithmetic(
+                if decrement { Binary::Sub } else { Binary::Add },
+                kind,
+                old,
+                one,
+                source,
+            )?
         } else if types::boolean(self.graph, source)? {
             RValue {
                 value: self.builder.integer(1)?,
@@ -536,7 +553,13 @@ impl Function<'_, '_, '_, '_> {
             (place, value)
         } else {
             let (operation, _) = self.graph.lower_arithmetic_types(id)?;
-            let mut rhs = self.operand(right, Context::CompoundAssignment)?;
+            let bfloat = super::soft_float::kind(self.graph, operation)?
+                == Some(super::soft_float::Kind::BFloat);
+            let mut rhs = if bfloat {
+                self.bfloat_promoted(right)?
+            } else {
+                self.operand(right, Context::CompoundAssignment)?
+            };
             if matches!(op, P::ShiftLeftAssign | P::ShiftRightAssign) {
                 rhs = self.convert(rhs, operation, Context::CompoundAssignment)?;
             }
@@ -567,13 +590,39 @@ impl Function<'_, '_, '_, '_> {
                 } else {
                     (None, self.read_place(place, source)?)
                 };
+            if bfloat {
+                let code = match op {
+                    P::AddAssign => Binary::Add,
+                    P::SubtractAssign => Binary::Sub,
+                    P::MultiplyAssign => Binary::Mul,
+                    P::DivideAssign => Binary::Div,
+                    _ => {
+                        return Err(
+                            crate::sema::Error::Invariant("bfloat compound operator").into()
+                        );
+                    }
+                };
+                let value = self.bfloat_compound(code, old, rhs, operation, source)?;
+                if let Some(state) = state {
+                    self.end_atomic_place_loop(place, source, state, value)?;
+                } else {
+                    self.write_place(place, source, value.value)?;
+                }
+                return Ok((place, value));
+            }
             let lhs = self.convert(old, operation, Context::CompoundAssignment)?;
             let signed = types::signed(self.graph, operation)?;
             let code = match op {
                 P::AddAssign => Binary::Add,
                 P::SubtractAssign => Binary::Sub,
                 P::MultiplyAssign => Binary::Mul,
-                P::DivideAssign if signed || lhs.ty.float_rank() != 0 => Binary::Div,
+                P::DivideAssign
+                    if signed
+                        || lhs.ty.float_rank() != 0
+                        || super::soft_float::kind(self.graph, operation)?.is_some() =>
+                {
+                    Binary::Div
+                }
                 P::DivideAssign => Binary::UDiv,
                 P::RemainderAssign if signed => Binary::Mod,
                 P::RemainderAssign => Binary::UMod,
@@ -588,16 +637,20 @@ impl Function<'_, '_, '_, '_> {
             let nowrap = signed
                 && matches!(lhs.ty, Type::I32 | Type::I64)
                 && matches!(code, Binary::Add | Binary::Sub | Binary::Mul);
-            let value = self.emit(
-                I::Binary(
-                    code,
-                    Facts::arithmetic(nowrap, false),
-                    lhs.ty,
-                    lhs.value,
-                    rhs.value,
-                ),
-                operation,
-            )?;
+            let value = if let Some(kind) = super::soft_float::kind(self.graph, operation)? {
+                self.soft_arithmetic(code, kind, lhs, rhs, operation)?
+            } else {
+                self.emit(
+                    I::Binary(
+                        code,
+                        Facts::arithmetic(nowrap, false),
+                        lhs.ty,
+                        lhs.value,
+                        rhs.value,
+                    ),
+                    operation,
+                )?
+            };
             let value = self.convert(value, source, Context::CompoundAssignment)?;
             let value = self.fit(value, source)?;
             if let Some(state) = state {

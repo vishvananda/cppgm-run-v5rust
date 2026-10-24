@@ -408,7 +408,10 @@ impl Function<'_, '_, '_, '_> {
             _ => {
                 self.emit(
                     I::Load(
-                        Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
+                        Facts::memory(
+                            false,
+                            !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
+                        ),
                         storage,
                         caught,
                     ),
@@ -418,7 +421,10 @@ impl Function<'_, '_, '_, '_> {
             }
         };
         self.effect(I::Store(
-            Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
+            Facts::memory(
+                false,
+                !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
+            ),
             storage,
             value,
             slot,

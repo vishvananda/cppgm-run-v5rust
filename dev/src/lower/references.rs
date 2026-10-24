@@ -199,7 +199,10 @@ impl Function<'_, '_, '_, '_> {
                 self.temporary_storage(target, persistent, stem)?
             };
             self.effect(I::Store(
-                Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
+                Facts::memory(
+                    false,
+                    !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
+                ),
                 storage,
                 value.value,
                 slot,

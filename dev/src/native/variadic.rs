@@ -247,6 +247,17 @@ impl Selection<'_> {
             } else {
                 Type::F64
             })
+        } else if memory
+            && matches!(
+                classes,
+                Some(ObjectClasses::Direct(
+                    EightbyteClass::Sse,
+                    Some(EightbyteClass::SseUp)
+                ))
+            )
+            && super::abi::value_bytes(ty)? == 16
+        {
+            Some(Type::I128)
         } else {
             None
         };

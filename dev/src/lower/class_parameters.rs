@@ -170,6 +170,14 @@ impl Classes {
                 }
             }
             _ => {
+                if let Some(kind) = super::soft_float::kind(graph, ty)? {
+                    if kind == super::soft_float::Kind::Quad {
+                        *quarters |= UNMODELED;
+                    } else {
+                        merge(quarters, offset, offset.wrapping_add(size), 2);
+                    }
+                    return Ok(());
+                }
                 let class = match types::storage(graph, ty)? {
                     Type::F32 | Type::F64 => 2,
                     Type::F80 => {

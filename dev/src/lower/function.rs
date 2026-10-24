@@ -600,6 +600,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn zero(&mut self, source: TypeId) -> Result<RValue, Error> {
+        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+            return self.soft_constant(kind, 0, source);
+        }
         let ty = types::storage(self.graph, source)?;
         let bits = if self.data_member_pointer(source) {
             u64::MAX
@@ -872,6 +875,33 @@ impl Function<'_, '_, '_, '_> {
         }
         if matches!(self.graph.lower_type(ty)?, TypeView::Class(_)) {
             return self.local_aggregate(entity, ty, slot, initializer);
+        }
+        if let Some(value) = self.graph.lower_variable(entity)?.initializer {
+            let soft = super::soft_float::kind(self.graph, ty)?;
+            let value = match value {
+                crate::sema::lowering::StaticValue::Floating(_, _)
+                    if soft.is_some_and(|kind| kind != super::soft_float::Kind::BFloat) =>
+                {
+                    None
+                }
+                crate::sema::lowering::StaticValue::Floating(_, bits) if soft.is_some() => Some(
+                    self.soft_constant(
+                        soft.ok_or(crate::sema::Error::Invariant("local soft kind"))?,
+                        bits,
+                        ty,
+                    )?
+                    .value,
+                ),
+                crate::sema::lowering::StaticValue::Integer(_)
+                | crate::sema::lowering::StaticValue::WideInteger(_)
+                | crate::sema::lowering::StaticValue::Floating(..) => {
+                    Some(self.builder.constant(super::data::constant(value)?)?)
+                }
+                _ => None,
+            };
+            if let Some(value) = value {
+                return self.write_place(slot, ty, value);
+            }
         }
         self.initialize_scalar(ty, slot, initializer)
     }

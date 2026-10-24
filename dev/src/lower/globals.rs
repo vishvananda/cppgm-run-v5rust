@@ -373,6 +373,16 @@ fn define_storage<'a>(
         GlobalInit::Zero
     } else {
         match facts.initializer {
+            Some(value) if data::soft_item(value).is_some() => {
+                let crate::lowir::model::DataItem::Constant(stored, constant) =
+                    data::soft_item(value)
+                        .ok_or(crate::sema::Error::Invariant("soft static item"))?
+                else {
+                    return Err(crate::sema::Error::Invariant("soft scalar constant").into());
+                };
+                ty = Some(stored);
+                GlobalInit::Constant(constant)
+            }
             Some(value @ StaticValue::MemberPointer(_)) => {
                 GlobalInit::Data(data::member_items(output, symbols, graph, value)?)
             }

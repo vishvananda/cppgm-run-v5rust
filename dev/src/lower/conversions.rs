@@ -72,11 +72,20 @@ impl Function<'_, '_, '_, '_> {
             if types::boolean(self.graph, value.source)? {
                 return Ok(value);
             }
+            if let Some(kind) = super::soft_float::kind(self.graph, value.source)? {
+                let zero = self.soft_constant(kind, 0, value.source)?;
+                return self.soft_compare(Compare::Ne, kind, value, zero, target);
+            }
             let zero = self.zero(value.source)?;
             return self.emit(
                 I::Compare(Compare::Ne, value.ty, value.value, zero.value),
                 target,
             );
+        }
+        if super::soft_float::kind(self.graph, value.source)?.is_some()
+            || super::soft_float::kind(self.graph, target)?.is_some()
+        {
+            return self.soft_convert(value, target);
         }
         let from_signed = types::signed(self.graph, value.source)?;
         let to_signed = types::signed(self.graph, target)?;

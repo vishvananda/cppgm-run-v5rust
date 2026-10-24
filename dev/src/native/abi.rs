@@ -59,7 +59,13 @@ pub(super) struct Part {
 impl Part {
     pub(super) fn move_type(self) -> Type {
         if self.register.is_some_and(|r| r.code() >= 16) {
-            if self.size <= 4 { Type::F32 } else { Type::F64 }
+            if self.size > 8 {
+                Type::I128
+            } else if self.size <= 4 {
+                Type::F32
+            } else {
+                Type::F64
+            }
         } else {
             Type::I64
         }
@@ -107,8 +113,8 @@ impl Layout {
             || !indirect_result
                 && classified_result
                 && matches!(signature.boundary.result_classes, Some(ObjectClasses::X87));
-        let mut result = [None; 2];
-        let mut result_count = 0;
+        let mut result: [Option<Part>; 2] = [None; 2];
+        let mut result_count: usize = 0;
         if !indirect_result
             && !x87_result
             && matches!(signature.result, Type::Object { .. } | Type::I128)
@@ -124,6 +130,13 @@ impl Layout {
                 };
                 let register = match class {
                     EightbyteClass::None => continue,
+                    EightbyteClass::SseUp => {
+                        let previous: &mut Option<Part> = result
+                            .get_mut(result_count.checked_sub(1).ok_or(Error::Limit)?)
+                            .ok_or(Error::Limit)?;
+                        previous.as_mut().ok_or(Error::Limit)?.size = bytes;
+                        continue;
+                    }
                     EightbyteClass::Integer => {
                         let r = if gprs == 0 { R::RAX } else { R::RDX };
                         gprs += 1;
@@ -254,6 +267,10 @@ impl Layout {
                     let class = eightbyte_class(classes, k);
                     let reg = match class {
                         EightbyteClass::None => continue,
+                        EightbyteClass::SseUp => {
+                            self.parts.last_mut().ok_or(Error::Limit)?.size = bytes;
+                            continue;
+                        }
                         EightbyteClass::Integer => {
                             let reg = GPRS[self.gprs];
                             self.gprs += 1;

@@ -430,6 +430,15 @@ impl Function<'_, '_, '_, '_> {
             GlobalInit::Address(self.static_reference_temporary(entity, false)?, 0)
         } else if let Some(value) = facts.initializer.filter(|_| initializer.is_some()) {
             match value {
+                value if data::soft_item(value).is_some() => {
+                    let crate::lowir::model::DataItem::Constant(_, constant) =
+                        data::soft_item(value)
+                            .ok_or(crate::sema::Error::Invariant("soft static local item"))?
+                    else {
+                        return Err(crate::sema::Error::Invariant("soft local constant").into());
+                    };
+                    GlobalInit::Constant(constant)
+                }
                 StaticValue::MemberPointer(_) => self
                     .static_data_items(&[crate::sema::lowering::StaticItem::Scalar(
                         facts.ty, value,
@@ -475,7 +484,10 @@ impl Function<'_, '_, '_, '_> {
                 self.symbols.object_mode(),
             )?
         } else {
-            Some(types::storage(self.graph, facts.ty)?)
+            Some(match facts.initializer.and_then(data::soft_item) {
+                Some(crate::lowir::model::DataItem::Constant(ty, _)) => ty,
+                _ => types::storage(self.graph, facts.ty)?,
+            })
         };
         super::globals::align_storage(
             self.graph,

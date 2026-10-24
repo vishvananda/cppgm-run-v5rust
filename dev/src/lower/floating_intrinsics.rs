@@ -40,8 +40,8 @@ impl Function<'_, '_, '_, '_> {
             });
         }
         if kind.comparison() {
-            let x = self.operand(arguments[0], Context::Operand)?;
-            let y = self.operand(arguments[1], Context::Operand)?;
+            let x = self.floating_operand(arguments[0])?;
+            let y = self.floating_operand(arguments[1])?;
             return match kind {
                 Intrinsic::IsLessGreater => {
                     let greater = self.floating_truth(Compare::Gt, x, y, source)?;
@@ -76,7 +76,7 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "floating operand invariant",
             )))?;
-        let x = self.operand(operand, Context::Operand)?;
+        let x = self.floating_operand(operand)?;
         match kind {
             Intrinsic::IsFinite => self.classify_finite(x, source),
             Intrinsic::IsInf => self.classify_infinite(x, source),
@@ -102,6 +102,45 @@ impl Function<'_, '_, '_, '_> {
                 "floating classification invariant",
             ))),
         }
+    }
+    fn floating_operand(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
+        let value = self.operand(id, Context::Operand)?;
+        if super::soft_float::kind(self.graph, value.source)?
+            == Some(super::soft_float::Kind::BFloat)
+        {
+            self.bfloat_widened(value)
+        } else {
+            Ok(value)
+        }
+    }
+    fn soft_operand_kind(value: RValue) -> Option<super::soft_float::Kind> {
+        match value.ty {
+            Type::Object { bytes: 2, .. } => Some(super::soft_float::Kind::Half),
+            Type::Object { bytes: 16, .. } => Some(super::soft_float::Kind::Quad),
+            _ => None,
+        }
+    }
+    fn soft_magnitude_at_least(
+        &mut self,
+        x: RValue,
+        least: bool,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
+        let kind = Self::soft_operand_kind(x)
+            .ok_or(crate::sema::Error::Invariant("soft magnitude kind"))?;
+        let quad = kind == super::soft_float::Kind::Quad;
+        let bits = match (quad, least) {
+            (false, false) => 0x7c00,
+            (false, true) => 0x0400,
+            (true, false) => 0x7fff_u128 << 112,
+            (true, true) => 1 << 112,
+        };
+        let positive = self.soft_constant(kind, bits, x.source)?;
+        let negative =
+            self.soft_constant(kind, bits | if quad { 1 << 127 } else { 1 << 15 }, x.source)?;
+        let below = self.floating_truth(Compare::Le, x, negative, source)?;
+        let above = self.floating_truth(Compare::Ge, x, positive, source)?;
+        self.intrinsic_binary(Binary::Or, above, below, source)
     }
     fn intrinsic_integer(&mut self, bits: u128, source: TypeId) -> Result<RValue, Error> {
         Ok(RValue {
@@ -131,7 +170,11 @@ impl Function<'_, '_, '_, '_> {
         y: RValue,
         source: TypeId,
     ) -> Result<RValue, Error> {
-        let value = self.emit(I::Compare(op, x.ty, x.value, y.value), source)?;
+        let value = if let Some(kind) = Self::soft_operand_kind(x) {
+            self.soft_compare(op, kind, x, y, source)?
+        } else {
+            self.emit(I::Compare(op, x.ty, x.value, y.value), source)?
+        };
         self.emit(
             I::Convert(Convert::Truncate, Type::I32, Type::I64, value.value),
             source,
@@ -141,6 +184,9 @@ impl Function<'_, '_, '_, '_> {
         self.floating_truth(Compare::Ne, x, x, source)
     }
     fn classify_infinite(&mut self, x: RValue, source: TypeId) -> Result<RValue, Error> {
+        if Self::soft_operand_kind(x).is_some() {
+            return self.soft_magnitude_at_least(x, false, source);
+        }
         let positive = self.floating_constant(x, false)?;
         let negative = self.emit(I::Unary(Unary::Neg, x.ty, positive.value), x.source)?;
         let above = self.floating_truth(Compare::Eq, x, positive, source)?;
@@ -156,6 +202,11 @@ impl Function<'_, '_, '_, '_> {
         self.intrinsic_binary(Binary::And, not_nan, not_infinite, source)
     }
     fn classify_normal(&mut self, x: RValue, source: TypeId) -> Result<RValue, Error> {
+        if Self::soft_operand_kind(x).is_some() {
+            let large = self.soft_magnitude_at_least(x, true, source)?;
+            let finite = self.classify_finite(x, source)?;
+            return self.intrinsic_binary(Binary::And, finite, large, source);
+        }
         let positive = self.floating_constant(x, true)?;
         let negative = self.emit(I::Unary(Unary::Neg, x.ty, positive.value), x.source)?;
         let above = self.floating_truth(Compare::Ge, x, positive, source)?;
@@ -193,11 +244,17 @@ impl Function<'_, '_, '_, '_> {
         quiet: bool,
     ) -> Result<RValue, Error> {
         let slot = self.generated_slot("floating_signbit", x.ty)?;
-        self.effect(I::Store(Facts::memory(false, true), x.ty, x.value, slot))?;
+        self.effect(I::Store(
+            Facts::memory(false, !matches!(x.ty, Type::Object { .. })),
+            x.ty,
+            x.value,
+            slot,
+        ))?;
         let mut address = self.emit(I::Addr(slot), source)?.value;
+        let soft = Self::soft_operand_kind(x);
         let bits = if x.ty == Type::F32 {
             Type::I32
-        } else if x.ty == Type::F80 && !quiet {
+        } else if x.ty == Type::F80 && !quiet || soft == Some(super::soft_float::Kind::Half) {
             Type::I16
         } else {
             Type::I64
@@ -205,6 +262,27 @@ impl Function<'_, '_, '_, '_> {
         if x.ty == Type::F80 && !quiet {
             let index = self.builder.integer(4)?;
             let size = self.builder.integer(2)?;
+            let offset = self
+                .emit(
+                    I::Binary(Binary::Mul, Facts::default(), Type::I64, index, size),
+                    source,
+                )?
+                .value;
+            address = self
+                .emit(
+                    I::Index(
+                        Type::I8,
+                        Some(crate::lowir::vocabulary::Projection::ArrayElement),
+                        address,
+                        offset,
+                    ),
+                    source,
+                )?
+                .value;
+        }
+        if soft == Some(super::soft_float::Kind::Quad) {
+            let index = self.builder.integer(1)?;
+            let size = self.builder.integer(8)?;
             let offset = self
                 .emit(
                     I::Binary(Binary::Mul, Facts::default(), Type::I64, index, size),
@@ -235,6 +313,8 @@ impl Function<'_, '_, '_, '_> {
         let position = self.builder.integer(match x.ty {
             Type::F32 => 22,
             Type::F64 => 51,
+            Type::Object { bytes: 2, .. } => 9,
+            Type::Object { .. } => 47,
             _ => 62,
         })?;
         let shifted = self.emit(
@@ -250,7 +330,16 @@ impl Function<'_, '_, '_, '_> {
             Ok(bit)
         } else {
             self.emit(
-                I::Convert(Convert::Truncate, Type::I32, bits, bit.value),
+                I::Convert(
+                    if bits == Type::I16 {
+                        Convert::ZeroExtend
+                    } else {
+                        Convert::Truncate
+                    },
+                    Type::I32,
+                    bits,
+                    bit.value,
+                ),
                 source,
             )
         }
@@ -286,12 +375,15 @@ impl Function<'_, '_, '_, '_> {
         let not_nan = self.intrinsic_binary(Binary::Sub, one, nan, source)?;
         let not_infinite = self.intrinsic_binary(Binary::Sub, one, infinite, source)?;
         let finite = self.intrinsic_binary(Binary::And, not_nan, not_infinite, source)?;
-        let kind = FloatKind::from_type(x.ty).ok_or(Error::Semantic(
-            crate::sema::Error::Invariant("floating zero invariant"),
-        ))?;
-        let zero = RValue {
-            value: self.builder.constant(Constant::Float(kind, 0))?,
-            ..x
+        let zero = if let Some(kind) = Self::soft_operand_kind(x) {
+            self.soft_constant(kind, 0, x.source)?
+        } else {
+            let kind = FloatKind::from_type(x.ty)
+                .ok_or(crate::sema::Error::Invariant("floating zero invariant"))?;
+            RValue {
+                value: self.builder.constant(Constant::Float(kind, 0))?,
+                ..x
+            }
         };
         let zero = self.floating_truth(Compare::Eq, x, zero, source)?;
         let normal = self.classify_normal(x, source)?;

@@ -10,6 +10,12 @@ use super::{
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
 use crate::syntax::ast;
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SequenceContext {
+    Ordinary,
+    Arithmetic,
+}
+
 impl Analyzer<'_> {
     pub(super) fn type_cv(&self, mut ty: TypeId) -> Cv {
         while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
@@ -70,6 +76,15 @@ impl Analyzer<'_> {
         facts: ExprFacts,
         target: TypeId,
         direct: bool,
+    ) -> Result<Option<Conversion>, Error> {
+        self.standard_conversion_in(facts, target, direct, SequenceContext::Ordinary)
+    }
+    fn standard_conversion_in(
+        &mut self,
+        facts: ExprFacts,
+        target: TypeId,
+        direct: bool,
+        context: SequenceContext,
     ) -> Result<Option<Conversion>, Error> {
         let target = self.graph.types.canonical_function(target)?;
         let source = self.decayed_type(facts.ty)?;
@@ -156,6 +171,21 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
         } else if self.is_arithmetic_operand(source) && self.is_arithmetic_type(goal) {
+            use crate::types::FundamentalType as F;
+            if context == SequenceContext::Ordinary
+                && matches!(
+                    (sk, gk),
+                    (
+                        TypeKind::Scalar(Scalar::Basic(F::BFloat16)),
+                        TypeKind::Scalar(Scalar::Basic(F::Float16))
+                    ) | (
+                        TypeKind::Scalar(Scalar::Basic(F::Float16)),
+                        TypeKind::Scalar(Scalar::Basic(F::BFloat16))
+                    )
+                )
+            {
+                return Ok(None);
+            }
             C::Arithmetic
         } else if (facts.null_literal || matches!(sk, TypeKind::Scalar(Scalar::Nullptr)))
             && (gk.pointer_level().is_some()
@@ -280,6 +310,15 @@ impl Analyzer<'_> {
         target: TypeId,
         direct: bool,
     ) -> Result<Option<Conversion>, Error> {
+        self.scalar_sequence_in(facts, target, direct, SequenceContext::Ordinary)
+    }
+    fn scalar_sequence_in(
+        &mut self,
+        facts: ExprFacts,
+        target: TypeId,
+        direct: bool,
+        context: SequenceContext,
+    ) -> Result<Option<Conversion>, Error> {
         if matches!(
             self.graph.types.get(facts.ty).kind,
             TypeKind::Scalar(Scalar::Void)
@@ -352,7 +391,7 @@ impl Analyzer<'_> {
             {
                 None
             } else {
-                let mut conversion = self.standard_conversion(facts, element, false)?;
+                let mut conversion = self.standard_conversion_in(facts, element, false, context)?;
                 if let Some(c) = &mut conversion {
                     c.target = target;
                     c.result = if c.second == C::NullPointer && facts.null_literal {
@@ -370,7 +409,7 @@ impl Analyzer<'_> {
                 conversion
             }
         } else {
-            self.standard_conversion(facts, target, direct)?
+            self.standard_conversion_in(facts, target, direct, context)?
         };
         Ok(conversion)
     }
@@ -379,6 +418,15 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         target: TypeId,
         direct: bool,
+    ) -> Result<(), Error> {
+        self.convert_scalar_in(id, target, direct, SequenceContext::Ordinary)
+    }
+    fn convert_scalar_in(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        direct: bool,
+        context: SequenceContext,
     ) -> Result<(), Error> {
         let facts = self.builtin_operand_facts(id)?;
         if facts.functions.is_some() {
@@ -398,7 +446,7 @@ impl Analyzer<'_> {
         }
         self.check_bound_function(id)?;
         let facts = self.builtin_operand_facts(id)?;
-        let conversion = self.scalar_sequence(facts, target, direct)?;
+        let conversion = self.scalar_sequence_in(facts, target, direct, context)?;
         let Some(conversion) = conversion else {
             if let Some(sequence) = self.user_conversion_sequence(facts, target, direct)? {
                 let scope = self.graph.expression_scopes
@@ -479,7 +527,7 @@ impl Analyzer<'_> {
         target: TypeId,
         direct: bool,
     ) -> Result<(), Error> {
-        self.convert_scalar(id, target, direct)?;
+        self.convert_scalar_in(id, target, direct, SequenceContext::Arithmetic)?;
         let mut facts = self.graph.expression_facts.get(id)?;
         facts
             .conversion

@@ -144,7 +144,10 @@ impl Function<'_, '_, '_, '_> {
                 let value = this.fit(value, ty)?;
                 let storage = types::storage(this.graph, ty)?;
                 this.effect(I::Store(
-                    Facts::memory(false, !matches!(storage, Type::I8 | Type::U8)),
+                    Facts::memory(
+                        false,
+                        !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
+                    ),
                     storage,
                     value.value,
                     object,

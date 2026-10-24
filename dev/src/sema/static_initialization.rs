@@ -43,6 +43,14 @@ impl Analyzer<'_> {
         // order: a preceding dynamic initializer cannot see a later retry.
         for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
             let ty = self.graph.lower_entity_type(entity)?;
+            if self.graph.lower_automatic(entity)
+                && !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. })
+            {
+                if let Some(initializer) = initializer {
+                    self.record_static_initializer(entity, initializer, scope)?;
+                }
+                continue;
+            }
             let constructed = self
                 .graph
                 .lower_construction(entity)
@@ -110,6 +118,11 @@ impl Analyzer<'_> {
         let eligible_array = matches!(self.graph.types.get(ty).kind, TypeKind::Array { element, .. }
             if (self.graph.entity(entity).constexpr || !matches!(self.graph.types.get(element).kind, TypeKind::Array { .. }))
                 && self.graph.lower_cv(ty) & 2 == 0);
+        if self.graph.lower_automatic(entity)
+            && let Some(initializer) = initializer
+        {
+            self.queue_local_scalar(entity, initializer, scope)?;
+        }
         if self.graph.scope(home).kind == super::graph::ScopeKind::Namespace
             || !self.graph.lower_automatic(entity)
             || eligible_array
@@ -273,6 +286,7 @@ impl Analyzer<'_> {
         if let Some(Value::Floating(ty, bits)) = value
             && let Some(kind) = self.integral_kind(target)
             && kind.bits != 1
+            && !crate::types::interchange::soft(ty)
         {
             let floating = Format::of(ty)
                 .and_then(|format| BinaryFloat::from_bits(format, bits))
@@ -433,8 +447,15 @@ impl Analyzer<'_> {
                 Err(error) => Err(error),
             };
         }
-        if let Some(format) = self.float_format(source) {
-            return match self.evaluate_floating(id, scope) {
+        let soft = matches!(self.graph.types.get(source).kind, TypeKind::Scalar(Scalar::Basic(ty)) if crate::types::interchange::soft(ty));
+        if let Some(format) = self.float_format(source).filter(|_| {
+            !soft
+                || matches!(
+                    self.graph.types.get(source).kind,
+                    TypeKind::Scalar(Scalar::Basic(F::BFloat16))
+                )
+        }) {
+            match self.evaluate_floating(id, scope) {
                 Ok(value) => {
                     let TypeKind::Scalar(Scalar::Basic(ty)) = self.graph.types.get(source).kind
                     else {
@@ -444,11 +465,11 @@ impl Analyzer<'_> {
                         .value
                         .bits(format)
                         .ok_or(Error::Invariant("rounded static floating encoding"))?;
-                    Ok(Some(Value::Floating(ty, bits)))
+                    return Ok(Some(Value::Floating(ty, bits)));
                 }
-                Err(Error::NonConstant { .. } | Error::Missing(_)) => Ok(None),
-                Err(error) => Err(error),
-            };
+                Err(Error::NonConstant { .. } | Error::Missing(_)) => {}
+                Err(error) => return Err(error),
+            }
         }
         if self.integral_kind(source).is_some() {
             let value = if let Some(value) = self.graph.constant_fact(id) {
@@ -526,6 +547,48 @@ impl Analyzer<'_> {
                     _ => value,
                 }))
             }
+            ExprKind::Binary {
+                op,
+                left,
+                right,
+                assignment: false,
+            } if soft || self.float_format(source).is_some() => {
+                use crate::types::float_value::Operation as O;
+                let op = match op.token.as_punctuator() {
+                    Some(P::Add) => O::Add,
+                    Some(P::Subtract) => O::Subtract,
+                    Some(P::Multiply) => O::Multiply,
+                    Some(P::Divide) => O::Divide,
+                    _ => return Ok(None),
+                };
+                let (Some(Value::Floating(ty, a)), Some(Value::Floating(_, b))) = (
+                    self.static_scalar(left, source, scope)?,
+                    self.static_scalar(right, source, scope)?,
+                ) else {
+                    return Ok(None);
+                };
+                if soft {
+                    Ok(crate::types::interchange::arithmetic(op, ty, a, b)
+                        .map_err(|_| Error::Limit("soft static arithmetic"))?
+                        .map(|bits| Value::Floating(ty, bits)))
+                } else {
+                    let format =
+                        Format::of(ty).ok_or(Error::Invariant("static arithmetic format"))?;
+                    let a = BinaryFloat::from_bits(format, a)
+                        .ok_or(Error::Invariant("static left floating value"))?;
+                    let b = BinaryFloat::from_bits(format, b)
+                        .ok_or(Error::Invariant("static right floating value"))?;
+                    let operation_format = if format == Format::Single {
+                        format
+                    } else {
+                        Format::Extended
+                    };
+                    Ok(a.operation(op, b, operation_format)
+                        .and_then(|value| value.converted(format))
+                        .and_then(|value| value.bits(format))
+                        .map(|bits| Value::Floating(ty, bits)))
+                }
+            }
             ExprKind::Cast { operand, .. } => self.static_scalar(operand, source, scope),
             ExprKind::FunctionalCast {
                 arguments, braced, ..
@@ -591,6 +654,12 @@ impl Analyzer<'_> {
     ) -> Result<Option<Value>, Error> {
         if !self.static_storage_value(value) {
             return Ok(None);
+        }
+        let soft_target = matches!(self.graph.types.get(target).kind, TypeKind::Scalar(Scalar::Basic(ty)) if crate::types::interchange::soft(ty));
+        let soft_source =
+            matches!(value, Value::Floating(ty, _) if crate::types::interchange::soft(ty));
+        if soft_target || soft_source {
+            return self.static_soft_conversion(value, source, target);
         }
         if self
             .integral_kind(target)

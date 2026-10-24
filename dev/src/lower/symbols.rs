@@ -18,6 +18,8 @@ mod lifetime_symbols;
 mod placeholder_mangling;
 #[path = "runtime_types.rs"]
 mod runtime_types;
+#[path = "soft_float.rs"]
+pub(super) mod soft_float;
 #[path = "source_positions.rs"]
 mod source_positions;
 #[path = "specialization_labels.rs"]
@@ -200,6 +202,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub instance_variables: std::collections::VecDeque<EntityId>,
     objects: HashMap<EntityId, Option<NameId>>,
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
+    pub(super) soft_float_helpers: HashMap<super::soft_float::Helper, SymbolId>,
     numeric_scanner: crate::types::floating::FloatingScanner,
     pub data: super::data::Objects,
     vtables: vtables::Tables,
@@ -316,6 +319,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             persistent_finalizers: Vec::new(),
             generated_definitions: Vec::new(),
             signatures: HashMap::new(),
+            soft_float_helpers: HashMap::new(),
             numeric_scanner: crate::types::floating::FloatingScanner::default(),
         }
     }

@@ -479,7 +479,7 @@ fn jam(value: u128, shift: u64) -> u128 {
         (value >> shift) | u128::from(value & ((1 << shift) - 1) != 0)
     }
 }
-fn round_shift(value: u128, shift: u64) -> u128 {
+pub(super) fn round_shift(value: u128, shift: u64) -> u128 {
     if shift > 128 {
         return 0;
     }

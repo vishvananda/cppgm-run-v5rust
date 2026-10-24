@@ -32,7 +32,7 @@ impl Selection<'_> {
         address: bool,
     ) {
         if ty == Type::F80
-            || ty.float_rank() != 0
+            || (ty.float_rank() != 0 || ty == Type::I128)
                 && (source.register().is_some_and(|r| r.code() >= 16)
                     || matches!(source, Operand::Immediate(_)))
         {

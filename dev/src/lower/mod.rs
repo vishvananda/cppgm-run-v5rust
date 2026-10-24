@@ -80,6 +80,7 @@ mod runtime_intrinsics;
 mod runtime_roles;
 mod shutdown;
 mod source_locations;
+use symbols::soft_float;
 mod stack_intrinsics;
 mod startup;
 mod statement_expressions;

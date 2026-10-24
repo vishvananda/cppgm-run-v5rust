@@ -57,3 +57,5 @@ dev/obj-clang-libcxx/
 /artifacts/pa29-floating/
 
 /artifacts/pa29-independent-review/
+
+/artifacts/pa29-soft-float/

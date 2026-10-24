@@ -1,0 +1,50 @@
+#include <cstdarg>
+#include <cstring>
+
+_Float16 half = (_Float16)1.00048828125;
+__float128 quad = 0x1.0000000000000000000000000001p0Q;
+__float128 product = 0x1.0000000000000000000000000001p0Q * 2.0Q;
+__float128 quotient = 1.0Q / 3.0Q;
+__float128 cancelled = 1.0Q - 1.0Q;
+__float128 infinite = 1.0Q / 0.0Q;
+__bf16 rounded = (__bf16)1.00390625;
+struct Quad { __float128 value; };
+Quad pass(Quad q) { return q; }
+__float128 ninth(__float128 a, __float128 b, __float128 c, __float128 d,
+                 __float128 e, __float128 f, __float128 g, __float128 h,
+                 __float128 i) { return a + i; }
+__float128 variadic(int count, ...) {
+  va_list list; va_start(list, count);
+  __float128 result = 0;
+  for (int i = 0; i != count; ++i) result += va_arg(list, __float128);
+  va_end(list); return result;
+}
+unsigned short bits(__bf16 value) {
+  unsigned short out; std::memcpy(&out, &value, 2); return out;
+}
+int main() {
+  volatile __float128 a = 3.0Q, b = 2.0Q;
+  __float128 c = -a; c += b; ++c; c--; c *= b; c /= b; c -= b;
+  if (c != -3.0Q || !(a > b) || !a || !__builtin_isfinite(a)) return 1;
+  if (!__builtin_isinf(infinite) || __builtin_isnormal(cancelled)) return 2;
+  if (!__builtin_signbit(-a) || __builtin_signbit(a)) return 3;
+  if ((float)half != 1.0f || bits(rounded) != 0x3f80) return 4;
+  unsigned __int128 encoding;
+  std::memcpy(&encoding, &quad, 16);
+  if (encoding != (((unsigned __int128)0x3fff000000000000ULL << 64) | 1)) return 5;
+  if (product != quad * 2.0Q || quotient * 3.0Q != 1.0Q) return 6;
+  Quad q = {a};
+  if (pass(q).value != a || ninth(a,b,b,b,b,b,b,b,b) != 5.0Q) return 7;
+  if (variadic(9,a,b,b,b,b,b,b,b,b) != 19.0Q) return 8;
+  volatile __bf16 x = (__bf16)1.00390625, y = (__bf16)2;
+  __bf16 z = x; z += x * y + x; ++z; z--;
+  if ((float)z != 4.0f || bits(x * y + x) != bits((__bf16)3)) return 9;
+  volatile _Float16 h = (_Float16)3;
+  _Float16 j = -h; j += (_Float16)2; ++j; j--; j *= (_Float16)2;
+  if ((int)j != -2 || !__builtin_signbit(j) || !__builtin_isnormal(j)) return 10;
+  const __bf16 folded = (__bf16)1.0078125 * (__bf16)1.0078125 - (__bf16)1.015625;
+  volatile __bf16 one_step = (__bf16)1.0078125, two_steps = (__bf16)1.015625;
+  __bf16 expression = one_step * one_step - two_steps;
+  if (bits(folded) != 0 || bits(expression) != 0x3880) return 11;
+  return 0;
+}

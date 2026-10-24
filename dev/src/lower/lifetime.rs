@@ -1262,7 +1262,10 @@ impl Function<'_, '_, '_, '_> {
                 slot
             };
             self.effect(I::Store(
-                Facts::memory(false, !matches!(ty, Type::I8 | Type::U8)),
+                Facts::memory(
+                    false,
+                    !matches!(ty, Type::I8 | Type::U8 | Type::Object { .. }),
+                ),
                 ty,
                 value,
                 slot,

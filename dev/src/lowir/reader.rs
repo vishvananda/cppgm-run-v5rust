@@ -332,7 +332,17 @@ impl<'a> Parser<'a> {
             if self.object_facts && self.at_word("x87") {
                 Some(ObjectClasses::X87)
             } else {
-                ObjectClasses::parse(self.lexer.token.word(), bytes)
+                ObjectClasses::parse(self.lexer.token.word(), bytes).filter(|classes| {
+                    self.object_facts
+                        || !matches!(
+                            classes,
+                            ObjectClasses::Direct(super::vocabulary::EightbyteClass::SseUp, _)
+                                | ObjectClasses::Direct(
+                                    _,
+                                    Some(super::vocabulary::EightbyteClass::SseUp)
+                                )
+                        )
+                })
             }
         } else {
             None

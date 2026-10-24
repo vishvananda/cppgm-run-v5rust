@@ -968,7 +968,7 @@ impl Function<'_, '_, '_, '_> {
                 volatile,
                 !volatile
                     && !self.untyped_places.contains(&address)
-                    && !matches!(storage, Type::I8 | Type::U8),
+                    && !matches!(storage, Type::I8 | Type::U8 | Type::Object { .. }),
             ),
             storage,
             value,

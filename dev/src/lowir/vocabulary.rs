@@ -160,7 +160,7 @@ vocabulary!(Storage { ReadOnly => "readonly", ThreadLocal => "thread_local" });
 vocabulary!(Effects { ReadNone => "readnone", ReadOnly => "readonly" });
 vocabulary!(Pass { IndirectResult => "indirect_result", ByAddress => "by_address" });
 vocabulary!(Projection { ArrayElement => "array_element", Field => "field" });
-vocabulary!(EightbyteClass { None => "none", Integer => "integer", Sse => "sse" });
+vocabulary!(EightbyteClass { None => "none", Integer => "integer", Sse => "sse", SseUp => "sseup" });
 vocabulary!(AtomicUpdate { AddFetch => "atomic_add_fetch", Exchange => "atomic_exchange" });
 vocabulary!(Fence { Thread => "atomic_thread_fence", Signal => "atomic_signal_fence" });
 /// GNU/Clang atomic ordering numbers, retained without strengthening C++'s rules.

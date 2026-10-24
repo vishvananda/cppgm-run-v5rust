@@ -708,14 +708,20 @@ impl Function<'_, '_, '_, '_> {
         {
             let slot = self.generated_slot("call", ty)?;
             self.effect(I::Store(
-                Facts::memory(false, !matches!(ty, Type::I8 | Type::U8)),
+                Facts::memory(
+                    false,
+                    !matches!(ty, Type::I8 | Type::U8 | Type::Object { .. }),
+                ),
                 ty,
                 value,
                 slot,
             ))?;
             self.ensure_insertion()?;
             return Ok(self.builder.generated(I::Load(
-                Facts::memory(false, !matches!(ty, Type::I8 | Type::U8)),
+                Facts::memory(
+                    false,
+                    !matches!(ty, Type::I8 | Type::U8 | Type::Object { .. }),
+                ),
                 ty,
                 slot,
             ))?);

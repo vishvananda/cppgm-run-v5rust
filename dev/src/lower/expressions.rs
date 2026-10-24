@@ -155,6 +155,13 @@ impl Function<'_, '_, '_, '_> {
         };
         let source = self.graph.lower_expression(id)?.ty;
         let ty = types::storage(self.graph, source)?;
+        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+            return if kind == super::soft_float::Kind::BFloat {
+                self.soft_constant(kind, bits, source).map(Some)
+            } else {
+                Ok(None)
+            };
+        }
         let kind = FloatKind::from_type(ty).ok_or(crate::sema::Error::Invariant(
             "floating constant storage type",
         ))?;
@@ -214,6 +221,9 @@ impl Function<'_, '_, '_, '_> {
             .fold(0_u128, |bits, (index, &byte)| {
                 bits | (u128::from(byte) << (index * 8))
             });
+        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+            return self.soft_constant(kind, bits, source);
+        }
         let constant = if let Some(kind) = FloatKind::from_type(ty) {
             Constant::Float(kind, bits)
         } else {
@@ -323,6 +333,9 @@ impl Function<'_, '_, '_, '_> {
         }
         if let Some(bits) = facts.folded {
             return self.folded_value(id, ty, source, bits);
+        }
+        if self.bfloat_operation(id)? {
+            return self.bfloat_arithmetic(id);
         }
         if let Some(value) = self.evaluated_wide(id, ty, source)? {
             return Ok(value);
@@ -546,7 +559,9 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 a.ty
             };
-            let unsigned = !types::signed(self.graph, common)? && a.ty.float_rank() == 0;
+            let soft = super::soft_float::kind(self.graph, common)?;
+            let unsigned =
+                !types::signed(self.graph, common)? && a.ty.float_rank() == 0 && soft.is_none();
             let predicate = match (op, unsigned) {
                 (P::Equal, _) => Compare::Eq,
                 (P::NotEqual, _) => Compare::Ne,
@@ -559,6 +574,9 @@ impl Function<'_, '_, '_, '_> {
                 (P::GreaterEqual, false) => Compare::Ge,
                 _ => Compare::Uge,
             };
+            if let Some(kind) = soft {
+                return self.soft_compare(predicate, kind, a, b, source);
+            }
             return self.emit(I::Compare(predicate, ty, a.value, b.value), source);
         }
         // Arithmetic has the recorded result type even when an intrinsic's
@@ -569,7 +587,13 @@ impl Function<'_, '_, '_, '_> {
             P::Add => Binary::Add,
             P::Subtract => Binary::Sub,
             P::Multiply => Binary::Mul,
-            P::Divide if signed || ty.float_rank() != 0 => Binary::Div,
+            P::Divide
+                if signed
+                    || ty.float_rank() != 0
+                    || super::soft_float::kind(self.graph, source)?.is_some() =>
+            {
+                Binary::Div
+            }
             P::Divide => Binary::UDiv,
             P::Remainder if signed => Binary::Mod,
             P::Remainder => Binary::UMod,
@@ -581,6 +605,9 @@ impl Function<'_, '_, '_, '_> {
             P::ShiftRight => Binary::UShr,
             _ => return Err(Error::Missing("logical expression lowering")),
         };
+        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+            return self.soft_arithmetic(operation, kind, a, b, source);
+        }
         if a.ty == Type::Ptr {
             return Err(Error::Missing("pointer arithmetic lowering"));
         }
@@ -675,11 +702,23 @@ impl Function<'_, '_, '_, '_> {
         };
         match op.token.as_punctuator() {
             Some(P::Add) => Ok(value),
-            Some(P::Subtract) => self.emit(I::Unary(Unary::Neg, value.ty, value.value), source),
+            Some(P::Subtract) => {
+                if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+                    self.soft_negate(kind, value)
+                } else {
+                    self.emit(I::Unary(Unary::Neg, value.ty, value.value), source)
+                }
+            }
             Some(P::Complement) => {
                 self.emit(I::Unary(Unary::BitNot, value.ty, value.value), source)
             }
             Some(P::LogicalNot) => {
+                if let Some(kind) = super::soft_float::kind(self.graph, value.source)? {
+                    let zero = self.soft_constant(kind, 0, value.source)?;
+                    let truth = self.soft_compare(Compare::Ne, kind, value, zero, source)?;
+                    let zero = self.builder.integer(0)?;
+                    return self.emit(I::Compare(Compare::Eq, truth.ty, truth.value, zero), source);
+                }
                 let member = self.graph.lower_member_pointer_type(value.source).is_some();
                 let value = if member {
                     self.member_pointer_truth(value)?

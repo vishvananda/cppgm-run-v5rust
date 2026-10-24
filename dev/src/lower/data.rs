@@ -67,10 +67,26 @@ fn integer(bits: u64) -> Constant {
         i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes(),
     ))
 }
+pub(super) fn soft_item(value: StaticValue) -> Option<DataItem> {
+    let StaticValue::Floating(ty, bits) = value else {
+        return None;
+    };
+    let ty = match ty.floating_representation() {
+        crate::types::FundamentalType::Float16 | crate::types::FundamentalType::BFloat16 => {
+            crate::lowir::vocabulary::Type::U16
+        }
+        crate::types::FundamentalType::Float128 => crate::lowir::vocabulary::Type::I128,
+        _ => return None,
+    };
+    Some(DataItem::Constant(ty, Constant::Integer(bits)))
+}
 pub(super) fn constant(value: StaticValue) -> Result<Constant, Error> {
     Ok(match value {
         StaticValue::Integer(bits) => integer(bits),
         StaticValue::WideInteger(bits) => Constant::Integer(bits),
+        StaticValue::Floating(ty, bits) if crate::types::interchange::soft(ty) => {
+            Constant::Integer(bits)
+        }
         StaticValue::Floating(ty, bits) => Constant::Float(
             match ty.floating_representation() {
                 crate::types::FundamentalType::Float => FloatKind::F32,
@@ -224,7 +240,13 @@ pub(super) fn items<'a>(
                     let (symbol, offset) = address(output, symbols, graph, tree, value)?;
                     DataItem::Address(types::storage(graph, ty)?, symbol, offset)
                 }
-                _ => DataItem::Constant(types::storage(graph, ty)?, constant(value)?),
+                _ => {
+                    if let Some(item) = soft_item(value) {
+                        item
+                    } else {
+                        DataItem::Constant(types::storage(graph, ty)?, constant(value)?)
+                    }
+                }
             },
         });
     }
