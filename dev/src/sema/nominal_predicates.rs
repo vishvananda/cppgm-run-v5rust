@@ -57,7 +57,10 @@ impl Analyzer<'_> {
         let Some(class) = self.graph.class_of(ty) else {
             return Ok(Some(
                 predicate == T::IsAggregate
-                    && matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }),
+                    && matches!(
+                        self.graph.types.get(ty).kind,
+                        TypeKind::Array { .. } | TypeKind::Vector { .. }
+                    ),
             ));
         };
         let entity = self.graph.entity(class);

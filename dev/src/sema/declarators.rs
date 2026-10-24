@@ -214,6 +214,7 @@ impl Analyzer<'_> {
         root_suffix_skip: usize,
     ) -> Result<DeclaratorInfo, Error> {
         let root = id;
+        ty = self.vector_declarator_type(ty, root, environment.declaring)?;
         let mut name = None;
         let mut syntax_name = None;
         let mut parameters = None;
@@ -939,7 +940,9 @@ impl Analyzer<'_> {
             SpecifierKind::Elaborated { key, name } => self.elaborated_type(key, name, scope, lone),
             SpecifierKind::Enum(id) => self.enum_type(id, scope, lone),
             SpecifierKind::Decltype(expr) => self.decltype_type(expr, scope),
-            SpecifierKind::Vector { .. } => Err(Error::Missing("vector types")),
+            SpecifierKind::Vector { .. } => {
+                Err(Error::Invariant("vector reached named-type dispatcher"))
+            }
             SpecifierKind::Keyword(_) | SpecifierKind::ExplicitCondition(_) => {
                 Err(Error::Invariant("keyword reached named-type dispatcher"))
             }

@@ -506,6 +506,7 @@ impl Analyzer<'_> {
                     .map(|ty| self.graph.types.qualify(ty, cv))
                     .transpose()?
             }
+            TypeKind::Vector { .. } => self.substitute_vector_type(ty, environment)?,
             TypeKind::Complex(element) => self
                 .substitute_signature_type(element, environment)?
                 .map(|element| self.graph.types.intern(TypeKind::Complex(element), cv))
@@ -998,6 +999,9 @@ impl Analyzer<'_> {
                     _ => Ok(pattern == actual),
                 }
             }
+            (TypeKind::Vector { .. }, TypeKind::Vector { .. }) => {
+                self.deduce_vector_type(pattern, actual, depth, arguments)
+            }
             (TypeKind::Pointer(p), TypeKind::Pointer(a)) => {
                 self.deduce_signature_type(p, a, depth, arguments, extra_cv)
             }
@@ -1242,6 +1246,9 @@ impl Analyzer<'_> {
                 | TypeKind::Expansion(element)
                 | TypeKind::Reference { element, .. } => work.push(*element),
                 TypeKind::Array {
+                    element, operand, ..
+                }
+                | TypeKind::Vector {
                     element, operand, ..
                 } => {
                     // Deducible includes a bound that directly names a
@@ -2019,6 +2026,9 @@ impl Analyzer<'_> {
                 }
                 TypeKind::Pointer(ty) | TypeKind::Reference { element: ty, .. } => work.push(*ty),
                 TypeKind::Array {
+                    element, operand, ..
+                }
+                | TypeKind::Vector {
                     element, operand, ..
                 } => {
                     if operand.is_some() {

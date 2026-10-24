@@ -443,6 +443,15 @@ impl Printer<'_> {
         let mut out = Self::cv(node.cv);
         match &node.kind {
             TypeKind::Scalar(scalar) => out.extend_from_slice(Self::scalar(*scalar).as_bytes()),
+            TypeKind::Vector { element, bound, .. } => {
+                out.extend_from_slice(
+                    format!("__attribute__((__vector_size__({bound} * sizeof(").as_bytes(),
+                );
+                let lane = self.ty(*element, Vec::new())?;
+                out.extend_from_slice(&lane);
+                out.extend_from_slice(b")))) ");
+                out.extend(lane);
+            }
             TypeKind::Complex(part) => {
                 out.extend_from_slice(b"_Complex ");
                 out.extend(self.ty(*part, Vec::new())?);

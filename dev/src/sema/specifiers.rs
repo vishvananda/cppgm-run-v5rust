@@ -226,7 +226,9 @@ impl Analyzer<'_> {
             let specifier = self.tree.specs.get(list)[syntax_index];
             if matches!(
                 specifier.kind,
-                SpecifierKind::Keyword(_) | SpecifierKind::ExplicitCondition(_)
+                SpecifierKind::Keyword(_)
+                    | SpecifierKind::ExplicitCondition(_)
+                    | SpecifierKind::Vector { .. }
             ) {
                 continue;
             }
@@ -357,6 +359,7 @@ impl Analyzer<'_> {
         } else {
             self.graph.types.qualify(ty, cv)?
         };
+        let ty = self.vector_specifier_types(ty, list, scope)?;
         Ok((
             Specifiers {
                 dependent_uses,

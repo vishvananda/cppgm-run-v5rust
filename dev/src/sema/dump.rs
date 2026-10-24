@@ -434,6 +434,10 @@ impl Graph {
                         write_name(cursor, name, output)?;
                     }
                 }
+                TypeKind::Vector { element, bound, .. } => {
+                    write!(output, "vector of {bound} ")?;
+                    tasks.push(Task::Type(*element));
+                }
                 TypeKind::Complex(element) => {
                     output.write_all(b"complex ")?;
                     tasks.push(Task::Type(*element));

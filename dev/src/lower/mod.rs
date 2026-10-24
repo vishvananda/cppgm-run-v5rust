@@ -603,3 +603,5 @@ pub(crate) use symbols::assert_construction_context;
 
 #[cfg(test)]
 pub(crate) use symbols::assert_label_name_demand;
+
+mod vectors;

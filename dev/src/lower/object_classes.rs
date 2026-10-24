@@ -74,6 +74,9 @@ impl Classes {
         if let Some(kind) = super::soft_float::kind(graph, ty)? {
             return Ok(Some(super::soft_float::classes(kind)));
         }
+        if let TypeView::Vector { element, bound } = graph.lower_type(ty)? {
+            return super::vectors::classes(graph, ty, element, bound).map(Some);
+        }
         if let TypeView::Complex(part) = graph.lower_type(ty)? {
             if types::storage(graph, part)? == Type::F80 {
                 return Ok(Some(ObjectClasses::ComplexX87));
@@ -172,6 +175,24 @@ fn classify_fields(
         return Ok(());
     }
     match view {
+        TypeView::Vector { element, bound } => {
+            match super::vectors::classes(graph, ty, element, bound)? {
+                ObjectClasses::Memory => classes[0] = Class::Memory,
+                ObjectClasses::Direct(a, b) => {
+                    let translate = |class| match class {
+                        EightbyteClass::Sse => Class::Sse,
+                        EightbyteClass::SseUp => Class::SseUp,
+                        EightbyteClass::Integer => Class::Integer,
+                        EightbyteClass::None => Class::None,
+                    };
+                    mark(classes, offset / 8, translate(a));
+                    if let Some(b) = b {
+                        mark(classes, offset / 8 + 1, translate(b));
+                    }
+                }
+                _ => return Err(crate::sema::Error::Invariant("vector ABI class").into()),
+            }
+        }
         TypeView::Complex(part) => {
             classify_fields(graph, part, offset, classes, budget, base)?;
             classify_fields(

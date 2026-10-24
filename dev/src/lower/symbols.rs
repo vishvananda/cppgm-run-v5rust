@@ -1318,6 +1318,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     ty: self.abi_type(ty)?,
                     bits,
                 },
+                TypeView::Vector { element, bound } => Node::Modified {
+                    modifier: Modifier::Vector(bound),
+                    operand: self.abi_type(element)?,
+                },
                 TypeView::Complex(part) => Node::Modified {
                     modifier: Modifier::Complex,
                     operand: self.abi_type(part)?,

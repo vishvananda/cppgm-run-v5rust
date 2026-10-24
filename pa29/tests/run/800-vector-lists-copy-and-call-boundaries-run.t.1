@@ -1,0 +1,36 @@
+// Vector formation's runtime consumers: lists, zero fill, copies and host calls.
+typedef int words __attribute__((vector_size(16)));
+typedef short shorts __attribute__((vector_size(8)));
+typedef unsigned char byte __attribute__((vector_size(1)));
+using flags __attribute__((ext_vector_type(17))) = bool;
+typedef float scalar_float __attribute__((vector_size(4)));
+typedef int wide __attribute__((vector_size(32)));
+struct Wrapped { words data; };
+words identity(words value) { return value; }
+shorts identity(shorts value) { return value; }
+byte identity(byte value) { return value; }
+Wrapped identity(Wrapped value) { return value; }
+scalar_float identity(scalar_float value) { return value; }
+wide identity(wide value) { return value; }
+template<class T, unsigned long N> using vec __attribute__((ext_vector_type(N))) = T;
+template<class T, unsigned long N> vec<T,N> templated(vec<T,N> input) { return input; }
+int main() {
+  words a = {1,2,3};
+  words b = templated(identity(a));
+  words c{};
+  Wrapped d{b};
+  Wrapped e = identity(d);
+  shorts f = identity(shorts{4,5});
+  byte g = identity(byte{6});
+  flags h{true,false,true};
+  scalar_float single = identity(scalar_float{1.5f});
+  wide large = identity(wide{7,8,9});
+  const int* bp = (const int*)&b;
+  const int* cp = (const int*)&c;
+  const int* ep = (const int*)&e;
+  const short* fp = (const short*)&f;
+  return bp[0] == 1 && bp[2] == 3 && bp[3] == 0 && cp[0] == 0 && cp[3] == 0 &&
+         ep[1] == 2 && fp[0] == 4 && fp[1] == 5 && fp[3] == 0 &&
+         *(unsigned char*)&g == 6 && *(unsigned char*)&h == 5 &&
+         *(float*)&single == 1.5f && ((int*)&large)[2] == 9 && ((int*)&large)[7] == 0 ? 0 : 1;
+}

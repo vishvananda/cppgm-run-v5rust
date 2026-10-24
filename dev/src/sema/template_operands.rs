@@ -820,6 +820,9 @@ impl Analyzer<'_> {
             | TypeKind::Expansion(element) => self.operand_names_placeholder(*element, level + 1),
             TypeKind::Array {
                 element, operand, ..
+            }
+            | TypeKind::Vector {
+                element, operand, ..
             } => operand.is_some() || self.operand_names_placeholder(*element, level + 1),
             TypeKind::MemberPointer { owner, element } => {
                 self.operand_names_placeholder(*owner, level + 1)

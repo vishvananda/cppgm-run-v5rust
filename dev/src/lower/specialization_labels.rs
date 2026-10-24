@@ -186,6 +186,11 @@ impl Symbols<'_, '_> {
                     write!(out, "{bits}").map_err(|_| Error::Missing("class label formatting"))?;
                 }
             }
+            TypeView::Vector { element, bound } => {
+                self.append_type_label(element, out, limit)?;
+                write!(out, " vector[{bound}]")
+                    .map_err(|_| Error::Missing("class label formatting"))?;
+            }
             TypeView::Complex(part) => {
                 out.push_str("_Complex ");
                 self.append_type_label(part, out, limit)?;

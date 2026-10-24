@@ -50,6 +50,13 @@ pub(super) enum TypeKind {
     Auto,
     Scalar(Scalar),
     Complex(TypeId),
+    Vector {
+        element: TypeId,
+        bound: u64,
+        operand: Option<TypeId>,
+        // Only dependent sizes retain whether the expression counts bytes.
+        bytes: bool,
+    },
     Class(EntityId),
     Enum(EntityId),
     Template(EntityId),
@@ -453,6 +460,9 @@ impl Types {
                     TypeKind::BoundPack { arguments, .. } => work.push((*arguments, false)),
                     TypeKind::Array {
                         element, operand, ..
+                    }
+                    | TypeKind::Vector {
+                        element, operand, ..
                     } => {
                         work.push((*element, false));
                         work.extend(operand.map(|operand| (operand, false)));
@@ -497,6 +507,19 @@ impl Types {
                     arguments: self.canonical_child(arguments, declaration)?,
                     parameter,
                     depth,
+                },
+                TypeKind::Vector {
+                    element,
+                    bound,
+                    operand,
+                    bytes,
+                } => TypeKind::Vector {
+                    element: self.canonical_child(element, declaration)?,
+                    bound,
+                    operand: operand
+                        .map(|operand| self.canonical_child(operand, declaration))
+                        .transpose()?,
+                    bytes,
                 },
                 TypeKind::Complex(element) => {
                     TypeKind::Complex(self.canonical_child(element, declaration)?)

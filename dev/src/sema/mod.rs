@@ -169,6 +169,7 @@ mod template_exceptions;
 mod triviality;
 mod type_queries;
 mod type_transforms;
+mod vector_types;
 mod wide_integers;
 pub(crate) use analyzer::AnalysisMode;
 pub(crate) use template_bodies::AnalysisOptions;

@@ -620,7 +620,9 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn zero(&mut self, source: TypeId) -> Result<RValue, Error> {
-        if super::complex::part(self.graph, source)?.is_some() {
+        if super::complex::part(self.graph, source)?.is_some()
+            || matches!(self.graph.lower_type(source)?, TypeView::Vector { .. })
+        {
             let ty = types::storage(self.graph, source)?;
             let (bytes, align) = types::layout(self.graph, source)?;
             let slot = self.generated_slot("complex", ty)?;

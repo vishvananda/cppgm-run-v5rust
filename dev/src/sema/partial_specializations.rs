@@ -560,6 +560,9 @@ impl Analyzer<'_> {
                 }
                 TypeKind::Array {
                     element, operand, ..
+                }
+                | TypeKind::Vector {
+                    element, operand, ..
                 } => {
                     work.push(*element);
                     if let Some(index) =

@@ -472,6 +472,9 @@ impl Analyzer<'_> {
                 TypeKind::Enum(_) if self.graph.dependent_type(ty) => return,
                 TypeKind::Array {
                     element, operand, ..
+                }
+                | TypeKind::Vector {
+                    element, operand, ..
                 } => {
                     if operand.is_some() {
                         return;

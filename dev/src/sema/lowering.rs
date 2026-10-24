@@ -135,6 +135,10 @@ pub(crate) enum TypeView<'a> {
     },
     Scalar(Scalar),
     Complex(TypeId),
+    Vector {
+        element: TypeId,
+        bound: u64,
+    },
     Pointer(TypeId),
     BlockPointer(TypeId),
     Array {
@@ -1950,6 +1954,10 @@ impl Graph {
             },
             TypeKind::Scalar(scalar) => TypeView::Scalar(*scalar),
             TypeKind::Complex(element) => TypeView::Complex(*element),
+            TypeKind::Vector { element, bound, .. } => TypeView::Vector {
+                element: *element,
+                bound: *bound,
+            },
             TypeKind::Pointer(element) => TypeView::Pointer(*element),
             TypeKind::BlockPointer(element) => TypeView::BlockPointer(*element),
             TypeKind::Array { element, bound, .. } => TypeView::Array {
@@ -2366,7 +2374,7 @@ impl Graph {
             return Ok(true);
         }
         Ok(match self.lower_type(ty)? {
-            TypeView::Array { bound, .. } => bound != 0,
+            TypeView::Array { bound, .. } | TypeView::Vector { bound, .. } => bound != 0,
             TypeView::Class(entity) => self.entity(entity).complete,
             TypeView::Function { .. } | TypeView::Unsupported | TypeView::Scalar(Scalar::Void) => {
                 false

@@ -463,7 +463,9 @@ impl Analyzer<'_> {
             );
         }
         if let Some(braced) = braced {
-            if self.complex_part_type(target).is_some() {
+            if self.complex_part_type(target).is_some()
+                || matches!(self.graph.types.get(target).kind, TypeKind::Vector { .. })
+            {
                 self.list_initialize(braced, target, scope)?;
                 return self.new_expression_facts(target, V::Prvalue);
             }
@@ -499,7 +501,9 @@ impl Analyzer<'_> {
             ));
         }
         let ty = self.bare_type(target)?;
-        if self.complex_part_type(ty).is_some() {
+        if self.complex_part_type(ty).is_some()
+            || matches!(self.graph.types.get(ty).kind, TypeKind::Vector { .. })
+        {
             return self.new_expression_facts(ty, V::Prvalue);
         }
         if !matches!(

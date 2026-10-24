@@ -50,7 +50,8 @@ impl Parser<'_> {
                 && self.at_type_predicate(ahead)?.is_none()
                 && !self.at_offsetof(ahead)?
                 && !self.at_integer_pack(ahead)?
-                && !self.at_typeof(ahead)?)
+                && !self.at_typeof(ahead)?
+                && !self.at_attribute(ahead)?)
                 || (self.at_ahead(P::Scope, ahead)?
                     && matches!(self.cursor.peek(ahead + 1)?.kind, TokenKind::Identifier(_))),
         )

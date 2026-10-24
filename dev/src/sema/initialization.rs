@@ -315,6 +315,29 @@ impl Analyzer<'_> {
             // publishing a fresh scalar fact here would erase its plan.
             return Ok(facts.ty);
         }
+        if let TypeKind::Vector { element, bound, .. } = self.graph.types.get(target).kind {
+            if u64::try_from(values.len()).map_err(|_| Error::Limit("vector initializer count"))?
+                > bound
+            {
+                return Err(Error::at(
+                    node.location,
+                    "more initializers than the vector has lanes",
+                ));
+            }
+            for &value in values {
+                if matches!(
+                    self.tree.expressions.get(value).kind,
+                    ExprKind::Braced { .. }
+                ) {
+                    return Err(Error::at(
+                        self.tree.expressions.get(value).location,
+                        "a braced vector lane initializer",
+                    ));
+                }
+                self.initialize_element(value, element, scope, false)?;
+            }
+            return self.publish_list(id, target, V::Lvalue);
+        }
         if let TypeKind::Complex(part) = self.graph.types.get(target).kind
             && values.len() == 2
         {

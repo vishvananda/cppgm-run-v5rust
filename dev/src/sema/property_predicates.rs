@@ -120,6 +120,7 @@ impl Analyzer<'_> {
                     | TypeKind::Pointer(_)
                     | TypeKind::MemberPointer { .. }
                     | TypeKind::Complex(_)
+                    | TypeKind::Vector { .. }
             )
     }
 

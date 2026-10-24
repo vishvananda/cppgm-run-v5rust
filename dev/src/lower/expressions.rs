@@ -454,6 +454,9 @@ impl Function<'_, '_, '_, '_> {
                 else_expr,
             } => self.conditional_value(id, condition, then_expr, else_expr),
             ExprKind::Braced { elements, .. } => {
+                if matches!(self.graph.lower_type(source)?, TypeView::Vector { .. }) {
+                    return self.vector_list(source, elements);
+                }
                 if super::complex::part(self.graph, source)?.is_some() {
                     return self.complex_list(source, elements, Context::Initialization);
                 }
@@ -772,6 +775,9 @@ impl Function<'_, '_, '_, '_> {
             let ExprKind::Braced { elements, .. } = self.tree.expressions.get(braced).kind else {
                 return Err(crate::sema::Error::Invariant("functional cast without list").into());
             };
+            if matches!(self.graph.lower_type(source)?, TypeView::Vector { .. }) {
+                return self.vector_list(source, elements);
+            }
             if super::complex::part(self.graph, source)?.is_some() {
                 return self.complex_list(source, elements, Context::Cast);
             }

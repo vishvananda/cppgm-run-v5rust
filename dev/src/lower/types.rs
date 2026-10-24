@@ -62,6 +62,26 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
         );
     }
     Ok(match graph.lower_type(ty)? {
+        TypeView::Vector { element, bound } => {
+            if bound == 0 {
+                return Err(Error::Missing("dependent vector storage layout"));
+            }
+            let bytes = if matches!(graph.lower_type(element)?, TypeView::Scalar(Scalar::Bool)) {
+                bound.div_ceil(8)
+            } else {
+                layout(graph, element)?
+                    .0
+                    .checked_mul(bound)
+                    .ok_or(crate::lowir::Error::Limit)?
+            }
+            .checked_next_power_of_two()
+            .ok_or(crate::lowir::Error::Limit)?;
+            Type::Object {
+                bytes,
+                align: u8::try_from(bytes.trailing_zeros())
+                    .map_err(|_| crate::lowir::Error::Limit)?,
+            }
+        }
         TypeView::Complex(part) => {
             let (bytes, align) = layout(graph, part)?;
             Type::Object {

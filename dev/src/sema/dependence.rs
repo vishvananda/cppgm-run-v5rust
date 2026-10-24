@@ -589,6 +589,9 @@ impl super::graph::Graph {
                 }
                 TypeKind::Array {
                     element, operand, ..
+                }
+                | TypeKind::Vector {
+                    element, operand, ..
                 } => {
                     work.push(*element);
                     work.extend(operand);

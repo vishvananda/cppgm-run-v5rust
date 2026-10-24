@@ -84,6 +84,7 @@ pub enum Modifier {
     Qualified(Qualifiers),
     Vendor(NodeId),
     Array(u64),
+    Vector(u64),
     UnknownArray,
     ExpressionArray(NodeId),
 }

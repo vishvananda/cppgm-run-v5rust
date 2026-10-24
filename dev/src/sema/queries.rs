@@ -346,6 +346,9 @@ impl Analyzer<'_> {
         }
         Ok(match self.graph.types.get(ty).kind {
             TypeKind::Scalar(Scalar::Void) | TypeKind::Function { .. } => false,
+            TypeKind::Vector {
+                element, operand, ..
+            } => operand.is_none() && !self.graph.dependent_type(element),
             TypeKind::Class(entity) => self.complete_class(entity)?,
             TypeKind::Enum(entity) => self
                 .graph
@@ -411,6 +414,36 @@ impl Analyzer<'_> {
         }
         let mut alignment = None;
         let mut size = match self.graph.types.get(ty).kind {
+            TypeKind::Vector {
+                element,
+                bound,
+                operand,
+                ..
+            } => {
+                if operand.is_some() {
+                    return Err(Error::NonConstant {
+                        failure: super::ConstantFailure::Reported,
+                        location,
+                        message: "size of a dependent type",
+                    });
+                }
+                let bytes = if matches!(
+                    self.graph.types.get(element).kind,
+                    TypeKind::Scalar(Scalar::Bool)
+                ) {
+                    bound.div_ceil(8)
+                } else {
+                    self.type_size(element, location)?
+                        .0
+                        .checked_mul(bound)
+                        .ok_or(Error::Limit("target vector size"))?
+                };
+                let size = bytes
+                    .checked_next_power_of_two()
+                    .ok_or(Error::Limit("target vector size"))?;
+                alignment = Some(size);
+                size
+            }
             TypeKind::Complex(element) => {
                 let (size, align) = self.type_size(element, location)?;
                 alignment = Some(align);

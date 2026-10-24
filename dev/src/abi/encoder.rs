@@ -234,6 +234,11 @@ impl<'a> Encoder<'a> {
                             self.put(b"_");
                         }
                         Modifier::UnknownArray => self.put(b"A_"),
+                        Modifier::Vector(bound) => {
+                            self.put(b"Dv");
+                            self.number(bound);
+                            self.put(b"_");
+                        }
                         Modifier::Array(bound) => {
                             self.put(b"A");
                             self.number(bound);

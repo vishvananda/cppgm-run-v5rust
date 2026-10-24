@@ -143,6 +143,12 @@ impl Classes {
             return Ok(());
         }
         match graph.lower_type(ty)? {
+            TypeView::Vector { .. } => {
+                if size > 8 {
+                    *quarters |= UNMODELED;
+                }
+                merge(quarters, offset, offset.wrapping_add(size), 2);
+            }
             TypeView::Complex(element) => {
                 let (size, _) = types::layout(graph, element)?;
                 for at in [offset, offset.wrapping_add(size)] {
