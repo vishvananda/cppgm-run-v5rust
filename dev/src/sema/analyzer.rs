@@ -29,6 +29,7 @@ pub(super) enum SpecializationMode {
 }
 
 pub(crate) struct Analyzer<'tree> {
+    pub(super) predefined_names: [crate::lex::identifiers::NameId; 3],
     pub(super) int128_name: crate::lex::identifiers::NameId,
     pub(super) decltype_name: crate::lex::identifiers::NameId,
     pub(super) override_name: crate::lex::identifiers::NameId,
@@ -194,6 +195,18 @@ impl<'tree> Analyzer<'tree> {
                 )?;
             }
         }
+        let predefined_names = [
+            b"__func__".as_slice(),
+            b"__FUNCTION__",
+            b"__PRETTY_FUNCTION__",
+        ]
+        .map(|name| {
+            cursor
+                .intern_name(name)
+                .map_err(|_| Error::Limit("semantic identifier limit"))
+        });
+        let [func, function, pretty] = predefined_names;
+        let predefined_names = [func?, function?, pretty?];
         let builtin_names = super::builtin_calls::BuiltinNames {
             is_constant_evaluated: cursor
                 .intern_name(b"__builtin_is_constant_evaluated")
@@ -318,6 +331,7 @@ impl<'tree> Analyzer<'tree> {
             copy_scratch: super::copy_initialization::CopyScratch::default(),
             assignment_scratch: super::assignment::Scratch::default(),
             builtin_names,
+            predefined_names,
             int128_name,
             pretyped_callable: None,
             pretyped_object: None,
@@ -886,6 +900,11 @@ impl<'tree> Analyzer<'tree> {
                 body.entity,
             ));
             let placeholder = self.holds_auto(result).then_some(result);
+            if placeholder.is_some() {
+                self.graph
+                    .predefined_variables
+                    .mark_placeholder_result(body.entity);
+            }
             if (placeholder.is_some() || self.graph.closure_deduces_result(body.entity))
                 && self.template_depth == 0
                 && let Some(context) = self.body_context.as_mut()

@@ -134,7 +134,7 @@ impl Analyzer<'_> {
         Ok(Returned::Value(value))
     }
 
-    fn source_text_literal(&mut self, text: &[u8]) -> Result<ast::ExprId, Error> {
+    pub(super) fn source_text_literal(&mut self, text: &[u8]) -> Result<ast::ExprId, Error> {
         let key = self
             .identifiers
             .intern(text)

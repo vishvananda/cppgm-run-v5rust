@@ -374,7 +374,7 @@ mod tests {
             .declarations(declarations, analyzer.graph.global)
             .unwrap();
         analyzer.finish_unit_exceptions().unwrap();
-        let entity = |name: &[u8]| {
+        let mut entity = |name: &[u8]| {
             let name = analyzer.identifiers.find(name).unwrap();
             let binding = analyzer
                 .unqualified(

@@ -3,6 +3,37 @@ use super::{Error, Symbols};
 use crate::{sema::lowering::SourceLocation, support::source::SourceOffset};
 
 impl Symbols<'_, '_> {
+    pub(in crate::lower) fn predefined_variable(
+        &mut self,
+        program: &mut crate::lowir::model::Program,
+        entity: crate::sema::lowering::EntityId,
+    ) -> Result<Option<crate::lowir::model::Value>, Error> {
+        let Some(text) = self.graph.lower_predefined_variable(entity) else {
+            return Ok(None);
+        };
+        if let Some(&symbol) = self.table.predefined_variables.get(&entity) {
+            return Ok(Some(crate::lowir::model::Value::Symbol(symbol)));
+        }
+        let mut units = self.data.take_string_units();
+        units.extend(
+            self.cursor
+                .name(text)
+                .iter()
+                .copied()
+                .take_while(|&byte| byte != 0)
+                .map(u64::from),
+        );
+        units.push(0);
+        let symbol = crate::lower::data::string_object(
+            program,
+            self,
+            crate::lowir::vocabulary::Type::I8,
+            units,
+        )?;
+        self.table.predefined_variables.insert(entity, symbol);
+        Ok(Some(crate::lowir::model::Value::Symbol(symbol)))
+    }
+
     pub(in crate::lower) fn source_line(&self, location: SourceOffset) -> Result<u64, Error> {
         let line = self
             .cursor

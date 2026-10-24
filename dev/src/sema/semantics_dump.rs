@@ -1207,6 +1207,76 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         Ok(())
     }
+    fn predefined_id(
+        &mut self,
+        kind: ExprKind,
+        ty: TypeId,
+        category: V,
+        depth: usize,
+    ) -> io::Result<bool> {
+        if let ExprKind::Id(name) = kind
+            && let Some(binding) = self.graph.resolved_name(name)
+        {
+            let entity = self.graph.entity(self.graph.binding(binding).entity);
+            if self.graph.binding(binding).kind == BindingKind::Variable
+                && entity
+                    .home
+                    .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Function)
+                && entity
+                    .name
+                    .is_some_and(|name| self.cursor.name(name) == b"__func__")
+                && let Some(function) = entity.home.and_then(|home| self.graph.scope(home).owner)
+            {
+                self.indent(depth)?;
+                write!(self.output, "literal {} ", category.spelling())?;
+                self.ty(ty)?;
+                self.output.write_all(b" \"")?;
+                // Printer::id writes the owner's label, including token-joined operators.
+                let binding = self
+                    .graph
+                    .function_origin(function)
+                    .map_err(|_| io::Error::other("predefined owner without binding"))?;
+                let function = self.graph.entity(function);
+                if self
+                    .graph
+                    .lower_call_closure(self.graph.binding(binding).entity)
+                    .is_some()
+                {
+                    self.output.write_all(b"operator()")?;
+                } else if let Some(member) = function
+                    .member_function
+                    .filter(|member| member.kind == super::graph::MemberKind::Constructor)
+                {
+                    self.name(self.graph.entity(member.class).name)?;
+                } else if let Some(super::function_names::SpecialName::Operator { token, array }) =
+                    function
+                        .function
+                        .filter(|properties| properties.allocation.is_some())
+                        .and_then(|properties| properties.special)
+                {
+                    write!(
+                        self.output,
+                        "operator {}{}",
+                        token.spelling(),
+                        if array { "[]" } else { "" }
+                    )?;
+                } else if let Some(name) = function.special_name {
+                    crate::syntax::write_member_label(self.tree, self.cursor, name, self.output)?;
+                } else if function
+                    .member_function
+                    .is_some_and(|member| member.kind == super::graph::MemberKind::Destructor)
+                {
+                    self.output.write_all(b"~")?;
+                    self.name(function.name)?;
+                } else {
+                    self.name(self.graph.binding(binding).name)?;
+                }
+                writeln!(self.output, "\"")?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
     fn id_node(
         &mut self,
         id: ast::ExprId,
@@ -1544,6 +1614,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             // independently of the surrounding initialization's retyped item.
             ty = facts.reference_cast.unwrap_or(facts.ty);
             category = facts.category;
+        }
+        if self.predefined_id(node.kind, ty, category, depth)? {
+            return Ok(());
         }
         let label = expression_label(node.kind, facts, intrinsic)?;
         self.indent(depth)?;

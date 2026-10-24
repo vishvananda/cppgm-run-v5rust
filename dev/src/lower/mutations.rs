@@ -201,40 +201,7 @@ impl Function<'_, '_, '_, '_> {
                     return self.reference_holder(place, self.graph.lower_entity_type(entity)?);
                 }
                 let entity = self.graph.lower_name(name)?;
-                if let Some(place) = self.captured_place(entity)? {
-                    Ok(place)
-                } else if let Some(&place) = self.locals.get(&entity) {
-                    self.reference_holder(place, self.local_object_type(entity)?)
-                } else if !self.graph.lower_is_variable(entity) {
-                    self.symbols.demand(entity);
-                    self.symbols
-                        .function_symbol(self.builder.program(), entity)
-                        .map(Value::Symbol)
-                } else {
-                    if self.graph.lower_block_static(entity) {
-                        let place =
-                            self.symbols.existing_local_storage(entity).ok_or_else(|| {
-                                crate::sema::Error::at(
-                                    self.tree.expressions.get(id).location,
-                                    "a static local variable of a function not lowered first",
-                                )
-                            })?;
-                        return self.reference_holder(place, self.graph.lower_entity_type(entity)?);
-                    }
-                    if !self.graph.lower_program_storage(entity) {
-                        return Err(crate::sema::Error::at(
-                            self.tree.expressions.get(id).location,
-                            "a variable outside the procedural lowering slice",
-                        )
-                        .into());
-                    }
-                    if let Some(value) = self.graph.lower_evaluated_reference(entity)? {
-                        return self
-                            .evaluated_reference_place(value, self.graph.lower_expression(id)?.ty);
-                    }
-                    let place = self.global_place(entity)?;
-                    self.reference_holder(place, self.graph.lower_entity_type(entity)?)
-                }
+                self.named_object_place(id, entity)
             }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
                 Ok(self.operand(operand, Context::Operand)?.value)
@@ -308,6 +275,51 @@ impl Function<'_, '_, '_, '_> {
             }
             ExprKind::Call { callee, arguments } => Ok(self.call(id, callee, arguments)?.value),
             _ => Err(Error::Missing("reference and aggregate place lowering")),
+        }
+    }
+    fn named_object_place(
+        &mut self,
+        id: ast::ExprId,
+        entity: crate::sema::lowering::EntityId,
+    ) -> Result<Value, Error> {
+        let location = self.tree.expressions.get(id).location;
+        if let Some(place) = self
+            .symbols
+            .predefined_variable(self.builder.program(), entity)?
+        {
+            return Ok(place);
+        }
+        if let Some(place) = self.captured_place(entity)? {
+            Ok(place)
+        } else if let Some(&place) = self.locals.get(&entity) {
+            self.reference_holder(place, self.local_object_type(entity)?)
+        } else if !self.graph.lower_is_variable(entity) {
+            self.symbols.demand(entity);
+            self.symbols
+                .function_symbol(self.builder.program(), entity)
+                .map(Value::Symbol)
+        } else {
+            if self.graph.lower_block_static(entity) {
+                let place = self.symbols.existing_local_storage(entity).ok_or_else(|| {
+                    crate::sema::Error::at(
+                        location,
+                        "a static local variable of a function not lowered first",
+                    )
+                })?;
+                return self.reference_holder(place, self.graph.lower_entity_type(entity)?);
+            }
+            if !self.graph.lower_program_storage(entity) {
+                return Err(crate::sema::Error::at(
+                    location,
+                    "a variable outside the procedural lowering slice",
+                )
+                .into());
+            }
+            if let Some(value) = self.graph.lower_evaluated_reference(entity)? {
+                return self.evaluated_reference_place(value, self.graph.lower_expression(id)?.ty);
+            }
+            let place = self.global_place(entity)?;
+            self.reference_holder(place, self.graph.lower_entity_type(entity)?)
         }
     }
     fn injected_member_place(&mut self, id: ast::ExprId) -> Result<Option<Value>, Error> {

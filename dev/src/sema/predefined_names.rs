@@ -42,6 +42,21 @@ pub(super) fn function_name(
             .map_or_else(Vec::new, |name| identifiers.bytes(name).to_vec())),
     }
 }
+pub(super) fn pretty_function_name(
+    graph: &Graph,
+    identifiers: &Identifiers,
+    function: EntityId,
+    budget: StackBudget,
+    stack_base: usize,
+) -> Result<Vec<u8>, Error> {
+    Printer {
+        graph,
+        identifiers,
+        budget,
+        base: stack_base,
+    }
+    .pretty(function)
+}
 struct Printer<'a> {
     graph: &'a Graph,
     identifiers: &'a Identifiers,
@@ -56,6 +71,104 @@ impl Printer<'_> {
             .exceeded(self.base, std::ptr::from_ref(&marker).addr())
         {
             return Err(Error::Limit("constructs nested too deeply"));
+        }
+        Ok(())
+    }
+    fn pretty(&self, id: EntityId) -> Result<Vec<u8>, Error> {
+        self.check_stack()?;
+        let node = self.graph.entity(id);
+        let ty = self.graph.lower_entity_type(id)?;
+        let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("pretty name without function signature"));
+        };
+        let mut out = Vec::new();
+        if node.function.is_some_and(|properties| properties.is_static)
+            && node
+                .home
+                .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class)
+        {
+            out.extend_from_slice(b"static ");
+        }
+        if self.graph.virtuals.function(id).is_virtual {
+            out.extend_from_slice(b"virtual ");
+        }
+        let mut declarator = self.scope(node.home)?;
+        declarator.extend(self.function(id)?);
+        declarator.extend(self.parameters(ty)?);
+        if node.member_function.is_some_and(|member| {
+            matches!(
+                member.kind,
+                MemberKind::Constructor | MemberKind::Destructor
+            )
+        }) {
+            out.extend(declarator);
+        } else if self.graph.predefined_variables.placeholder_result(id)
+            || self.graph.lower_call_closure(id).is_some()
+        {
+            out.extend_from_slice(b"auto ");
+            out.extend(declarator);
+        } else {
+            out.extend(self.ty(result, declarator)?);
+        }
+        let mut classes = Vec::new();
+        let mut scope = node.home;
+        while let Some(id) = scope {
+            let node = self.graph.scope(id);
+            if node.kind == ScopeKind::Class
+                && let Some(class) = node.owner
+            {
+                classes.push(class);
+            }
+            scope = node.parent;
+        }
+        let mut bindings = Vec::new();
+        for class in classes.into_iter().rev() {
+            if !self.graph.class_templates.definitions.explicit(class)
+                && let Some(instance) = self.graph.class_templates.instance(class)
+            {
+                self.bindings(
+                    self.graph.entity(instance.primary).template_head,
+                    &instance.arguments,
+                    &mut bindings,
+                )?;
+            }
+        }
+        if !self.graph.function_templates.specializations.contains(id)
+            && let Some(primary) = self.graph.function_templates.primary(id)
+            && let Some(arguments) = self.graph.function_templates.arguments.get(&id)
+        {
+            self.bindings(
+                self.graph
+                    .entity(self.graph.binding(primary).entity)
+                    .template_head,
+                arguments,
+                &mut bindings,
+            )?;
+        }
+        if !bindings.is_empty() {
+            out.extend_from_slice(b" [");
+            out.extend(bindings);
+            out.push(b']');
+        }
+        Ok(out)
+    }
+    fn bindings(
+        &self,
+        head: Option<super::templates::HeadId>,
+        arguments: &[TypeId],
+        out: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        let Some(head) = head else { return Ok(()) };
+        for (&parameter, &argument) in self.graph.templates.parameters(head).iter().zip(arguments) {
+            let Some(name) = self.graph.entity(parameter).name else {
+                continue;
+            };
+            if !out.is_empty() {
+                out.extend_from_slice(b", ");
+            }
+            out.extend_from_slice(self.identifiers.bytes(name));
+            out.extend_from_slice(b" = ");
+            out.extend(self.argument(argument)?);
         }
         Ok(())
     }

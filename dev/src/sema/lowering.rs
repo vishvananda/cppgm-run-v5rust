@@ -2525,6 +2525,12 @@ impl Graph {
         self.expression_facts.get(id)?;
         Ok(self.expression_facts.source_location(id))
     }
+    pub(crate) fn lower_predefined_variable(
+        &self,
+        entity: EntityId,
+    ) -> Option<crate::lex::identifiers::NameId> {
+        self.predefined_variables.text(entity)
+    }
     pub(crate) fn lower_predefined_function_name(
         &self,
         identifiers: &crate::lex::identifiers::Identifiers,

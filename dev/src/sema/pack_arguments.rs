@@ -335,7 +335,10 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn pack_size(&self, name: NameId, scope: ScopeId) -> Result<Option<u64>, Error> {
-        let Some(binding) = self.unqualified(scope, name, Filter::Ordinary)? else {
+        let Some(binding) = self
+            .unqualified_result(scope, name.into(), Filter::Ordinary)?
+            .binding
+        else {
             return Ok(None);
         };
         let binding = self.graph.binding(binding);
@@ -363,7 +366,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let found = self.unqualified(scope, name, Filter::Ordinary)?;
+        let found = self
+            .unqualified_result(scope, name.into(), Filter::Ordinary)?
+            .binding;
         let declared_pack = found.is_some_and(|id| {
             let binding = self.graph.binding(id);
             self.graph

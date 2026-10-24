@@ -53,6 +53,7 @@ pub(super) struct SymbolTable {
     objects: HashMap<NameId, Option<SymbolId>>,
     suffixes: HashMap<NameId, u32>,
     source: Option<SourceId>,
+    predefined_variables: HashMap<EntityId, SymbolId>,
     string_literals: u32,
     reference_temporaries: u32,
     initializer_list_backings: u32,

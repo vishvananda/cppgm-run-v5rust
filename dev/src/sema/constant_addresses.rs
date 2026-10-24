@@ -709,6 +709,11 @@ impl Analyzer<'_> {
                         "a parameter is not usable in a constant expression",
                     )),
                     BindingKind::Variable => {
+                        if let Some(text) = self.graph.predefined_variables.text(binding.entity) {
+                            let text = self.identifiers.bytes(text).to_vec();
+                            let literal = self.source_text_literal(&text)?;
+                            return Ok(Address::new(Root::Literal(literal), facts.ty));
+                        }
                         let entity = self.graph.entity(binding.entity);
                         if entity.data_member == Some(super::graph::DataMemberKind::Instance)
                             && let Some(object) = self

@@ -568,12 +568,15 @@ impl Analyzer<'_> {
         a
     }
     pub(super) fn unqualified(
-        &self,
+        &mut self,
         scope: ScopeId,
         name: NameId,
         filter: Filter,
     ) -> Result<Option<BindingId>, Error> {
-        Ok(self.unqualified_result(scope, name.into(), filter)?.binding)
+        let found = self.unqualified_result(scope, name.into(), filter)?;
+        Ok(self
+            .predefined_lookup(scope, name.into(), filter, found)?
+            .binding)
     }
     pub(super) fn unqualified_result(
         &self,
@@ -974,7 +977,8 @@ impl Analyzer<'_> {
         let mut found = if let Some(prefix) = prefix {
             self.qualified_name_result(prefix, key, filter, last.arguments.is_some())?
         } else {
-            self.unqualified_declaration_result(scope, key, filter)?
+            let found = self.unqualified_declaration_result(scope, key, filter)?;
+            self.predefined_lookup(scope, key, filter, found)?
                 .checked_template_id(last.arguments.is_some(), self.lookup_location)?
         };
         if filter == Filter::Ordinary
