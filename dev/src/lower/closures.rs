@@ -97,6 +97,13 @@ impl Function<'_, '_, '_, '_> {
         if let Some(place) = self.captured_place(entity)? {
             return Ok(place);
         }
+        if let Some(alias) = self.graph.lower_binding_alias(entity) {
+            return self.binding_alias_place(
+                alias,
+                self.graph.lower_entity_type(entity)?,
+                location,
+            );
+        }
         let ty = self.local_object_type(entity)?;
         let place = self.locals.get(&entity).copied().ok_or_else(|| {
             crate::sema::Error::at(

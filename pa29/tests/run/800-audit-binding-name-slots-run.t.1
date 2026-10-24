@@ -1,0 +1,10 @@
+struct S { int member; };
+struct global_name {};
+auto [global_name] = S{5};
+int main() {
+  struct local_name {};
+  S s = {7};
+  auto& [local_name] = s;
+  local_name += global_name;
+  return s.member == 12 ? 0 : 1;
+}

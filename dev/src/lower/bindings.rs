@@ -27,6 +27,13 @@ impl Function<'_, '_, '_, '_> {
         let object = self.binding_object(alias, location)?;
         match alias.target {
             BindingTarget::Member { member, path } => {
+                if self.graph.lower_bit_field(member)?.is_some() {
+                    return Err(crate::sema::Error::at(
+                        location,
+                        "a bit-field glvalue outside the supported forms",
+                    )
+                    .into());
+                }
                 let object = if let Some(path) = path {
                     self.base_projection(object, source, self.graph.lower_path_projection(path)?)?
                 } else {

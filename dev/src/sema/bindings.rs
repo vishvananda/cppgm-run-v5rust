@@ -34,6 +34,8 @@ pub(crate) struct BindingAlias {
 pub(super) struct Bindings {
     aliases: HashMap<EntityId, BindingAlias>,
     objects: HashMap<EntityId, Vec<EntityId>>,
+    local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
+    local_discriminators: HashMap<EntityId, u16>,
 }
 impl Graph {
     pub(crate) fn lower_binding_alias(&self, entity: EntityId) -> Option<BindingAlias> {
@@ -41,6 +43,13 @@ impl Graph {
     }
     pub(crate) fn lower_decomposition(&self, entity: EntityId) -> Option<&[EntityId]> {
         self.decompositions.objects.get(&entity).map(Vec::as_slice)
+    }
+    pub(crate) fn lower_decomposition_discriminator(&self, entity: EntityId) -> u32 {
+        self.decompositions
+            .local_discriminators
+            .get(&entity)
+            .copied()
+            .map_or(0, u32::from)
     }
 }
 impl Analyzer<'_> {
@@ -127,6 +136,33 @@ impl Analyzer<'_> {
                 "a structured binding copy of an array is not supported (bind by reference)",
             ));
         }
+        // The frozen declaration owner numbers static objects before their
+        // synthetic names are cleared. Even an object never emitted counts.
+        if (specifiers.is_static
+            || specifiers.thread_storage != super::specifiers::ThreadStorage::Ordinary)
+            && self
+                .graph
+                .entity(entity)
+                .home
+                .is_some_and(|home| self.graph.scope(home).kind == super::graph::ScopeKind::Block)
+            && let Some(function) = self.body_context.as_ref().map(|body| body.entity)
+            && let Some(name) = self.graph.entity(entity).name
+        {
+            let count = self
+                .graph
+                .decompositions
+                .local_counts
+                .entry((function, name))
+                .or_default();
+            let earlier = u16::try_from(*count).unwrap_or(u16::MAX);
+            *count = count
+                .checked_add(1)
+                .ok_or(Error::Limit("local binding object count"))?;
+            self.graph
+                .decompositions
+                .local_discriminators
+                .insert(entity, earlier);
+        }
         self.graph.entity_mut(entity).name = None;
         self.graph.decompositions.objects.insert(entity, Vec::new());
         let count = self.tree.init_declarators.get(declarators).len() - 1;
@@ -201,7 +237,14 @@ impl Analyzer<'_> {
                 "redeclaration of a name of the enclosing construct",
             ));
         }
-        if self.graph.own(home, name, Filter::Ordinary).is_some() {
+        if self
+            .graph
+            .scope(home)
+            .index
+            .get(&name)
+            .and_then(|entry| entry.value)
+            .is_some_and(|binding| !self.graph.friendships.hidden(binding))
+        {
             return Err(Error::at(
                 location,
                 "a structured binding redeclares a name of its scope",

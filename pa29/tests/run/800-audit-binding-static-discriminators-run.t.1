@@ -1,0 +1,18 @@
+struct S { int member; };
+int seed() { return 3; }
+int strong() {
+  if (false) { static auto [x] = S{2}; }
+  { static auto [x] = S{4}; ++x; }
+  { static auto [x] = S{6}; return ++x; }
+}
+inline int shared(bool first) {
+  if (first) { static auto [x] = S{seed()}; return ++x; }
+  else { static auto [x] = S{seed()+10}; return ++x; }
+}
+int tls() {
+  { thread_local auto [x] = S{2}; ++x; }
+  { thread_local auto [x] = S{3}; return ++x; }
+}
+int main() {
+  return strong()==7 && strong()==8 && shared(true)==4 && shared(false)==14 && shared(true)==5 && shared(false)==15 && tls()==4 && tls()==5 ? 0 : 1;
+}

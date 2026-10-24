@@ -2086,7 +2086,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
             occurrence
         } else {
-            0
+            self.graph.lower_decomposition_discriminator(entity)
         };
         let name = self.tagged_entity_name(
             Node::Name {

@@ -1,0 +1,10 @@
+struct S { int& ref; int array[2]; };
+int main() {
+  int n = 3;
+  S s = {n, {4,5}};
+  auto& [ref, array] = s;
+  auto copy = [=]() { return ref + array[0]; };
+  auto change = [&]() { return ++ref + array[1]; };
+  auto nested = [=]() { return [=]() { return ref + array[1]; }(); };
+  return copy()==7 && change()==9 && nested()==8 ? 0 : 1;
+}
