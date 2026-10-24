@@ -160,7 +160,8 @@ impl Analyzer<'_> {
                 | TypeKind::Template(_)
                 | TypeKind::Enum(_)
                 | TypeKind::Value { .. }
-                | TypeKind::Address { .. } => (),
+                | TypeKind::Address { .. }
+                | TypeKind::BlockPointer(_) => (),
             }
         }
         Ok(packs)

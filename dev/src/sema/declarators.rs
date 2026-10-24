@@ -318,6 +318,18 @@ impl Analyzer<'_> {
                         let ptr = self.graph.types.pointer(ty)?;
                         ty = self.graph.types.qualify(ptr, cv)?;
                     }
+                    Some(Punctuator::Xor) => {
+                        if !matches!(self.graph.types.get(ty).kind, TypeKind::Function { .. })
+                            || self.template_depth != 0
+                            || self.graph.dependent_type(ty)
+                        {
+                            return Err(Error::at(
+                                node.location,
+                                "a block pointer to no function type or in a template is not supported",
+                            ));
+                        }
+                        ty = self.graph.types.intern(TypeKind::BlockPointer(ty), cv)?;
+                    }
                     Some(Punctuator::BitAnd | Punctuator::LogicalAnd) => {
                         if cv.0 != 0 {
                             return Err(Error::at(node.location, "cv-qualified reference"));

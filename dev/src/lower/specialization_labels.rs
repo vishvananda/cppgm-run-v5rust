@@ -218,6 +218,10 @@ impl Symbols<'_, '_> {
                     out.push_str(" volatile");
                 }
             }
+            TypeView::BlockPointer(element) => {
+                self.append_type_label(element, out, limit)?;
+                out.push_str(" block");
+            }
             TypeView::Reference { element, rvalue } => {
                 self.append_type_label(element, out, limit)?;
                 out.push_str(if rvalue { "&&" } else { "&" });

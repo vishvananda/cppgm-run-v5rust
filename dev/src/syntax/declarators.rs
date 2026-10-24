@@ -7,7 +7,7 @@ use super::{
         Suffix,
     },
     cursor::TokenKind,
-    parser::{DeclaratorContext, Parser},
+    parser::{DeclaratorContext, Environment, Parser},
     scopes::Category,
     storage::List,
 };
@@ -30,7 +30,7 @@ impl Parser<'_> {
         while self.pointer_operator_ahead(0)? {
             let class_name = if matches!(
                 self.punctuator()?,
-                Some(P::Multiply | P::BitAnd | P::LogicalAnd)
+                Some(P::Multiply | P::BitAnd | P::LogicalAnd | P::Xor)
             ) {
                 None
             } else {
@@ -45,7 +45,9 @@ impl Parser<'_> {
                 self.operator()?
             };
             let cv_start = self.tree.cvs.begin();
-            if class_name.is_some() || op.token.as_punctuator() == Some(P::Multiply) {
+            if class_name.is_some()
+                || matches!(op.token.as_punctuator(), Some(P::Multiply | P::Xor))
+            {
                 loop {
                     self.skip_attributes()?;
                     if matches!(self.token()?.kind, TokenKind::Identifier(name) if matches!(self.cursor.name(name), b"_Nonnull" | b"_Nullable" | b"_Null_unspecified" | b"_Nullable_result"))
@@ -231,7 +233,9 @@ impl Parser<'_> {
     }
     fn pointer_operator_ahead(&mut self, ahead: usize) -> Result<bool, ParseError> {
         let kind = self.cursor.peek(ahead)?.kind;
-        if matches!(kind, TokenKind::Simple(op) if matches!(op.token.as_punctuator(), Some(P::Multiply | P::BitAnd | P::LogicalAnd)))
+        let block = self.environment == Environment::Hosted && self.at_ahead(P::Xor, ahead)?;
+        if block
+            || matches!(kind, TokenKind::Simple(op) if matches!(op.token.as_punctuator(), Some(P::Multiply | P::BitAnd | P::LogicalAnd)))
         {
             return Ok(true);
         }
@@ -302,10 +306,9 @@ impl Parser<'_> {
             })
     }
     fn nested_declarator_ahead(&mut self, mode: Mode) -> Result<bool, ParseError> {
-        if mode == Mode::Named || self.member_pointer_ahead(1)? {
-            return Ok(true);
-        }
-        if matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if matches!(op.token.as_punctuator(), Some(P::Multiply | P::BitAnd | P::LogicalAnd | P::LeftParen)))
+        if mode == Mode::Named
+            || self.pointer_operator_ahead(1)?
+            || self.at_ahead(P::LeftParen, 1)?
         {
             return Ok(true);
         }

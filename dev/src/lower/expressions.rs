@@ -915,6 +915,11 @@ impl Function<'_, '_, '_, '_> {
                 self.member_object(expression, arrow)?;
             }
         }
+        let block_literal = match target {
+            CallTarget::Indirect(..) => self.block_literal(callee_expression)?,
+            CallTarget::Direct(_) => None,
+        };
+        values.extend(block_literal);
         let argument_classes = self.push_call_arguments(
             target,
             parameters,
@@ -955,7 +960,9 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
             CallTarget::Indirect(function_type, nothrow) => {
-                if let Some(access) = member_access {
+                if let Some(literal) = block_literal {
+                    self.block_invoke(callee_expression, literal)?
+                } else if let Some(access) = member_access {
                     self.bound_pointer_call(
                         access,
                         &mut values[usize::from(boundary.indirect)],

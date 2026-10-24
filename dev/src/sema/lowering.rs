@@ -134,6 +134,7 @@ pub(crate) enum TypeView<'a> {
     },
     Scalar(Scalar),
     Pointer(TypeId),
+    BlockPointer(TypeId),
     Array {
         element: TypeId,
         bound: u64,
@@ -1943,6 +1944,7 @@ impl Graph {
             },
             TypeKind::Scalar(scalar) => TypeView::Scalar(*scalar),
             TypeKind::Pointer(element) => TypeView::Pointer(*element),
+            TypeKind::BlockPointer(element) => TypeView::BlockPointer(*element),
             TypeKind::Array { element, bound, .. } => TypeView::Array {
                 element: *element,
                 bound: *bound,
@@ -1970,6 +1972,14 @@ impl Graph {
             TypeKind::Class(entity) => TypeView::Class(*entity),
             _ => TypeView::Unsupported,
         })
+    }
+    pub(crate) fn lower_block_invocation(&self, pointer: TypeId) -> Result<TypeId, Error> {
+        let TypeKind::BlockPointer(function) = self.types.get(pointer).kind else {
+            return Err(Error::Invariant("block invocation without block pointer"));
+        };
+        self.types
+            .block_invocation(function)
+            .ok_or(Error::Invariant("undemanded block invocation"))
     }
     pub(crate) fn lower_signed_integral(&self, ty: TypeId) -> bool {
         self.integral_kind(ty).is_some_and(|kind| kind.signed)

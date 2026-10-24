@@ -1,7 +1,10 @@
 // Translated from driver/host_environment.cpp::kBuiltinDeclarations. See NOTICE.
-//! The hosted grammar prefix contributes token provenance to the `LowIR` view.
+//! The hosted grammar prefix preserves declaration order and token provenance in every view.
 //! ABI records and hosted template aliases are parsed into the same tree.
 pub(super) const DECLARATIONS: &[u8] = concat!(
+    "struct __va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void* overflow_arg_area; ",
+    "void* reg_save_area; };\n",
+    "typedef __va_list_tag __builtin_va_list[1];\n",
     "template<template<class _Tp, _Tp...> class _Sp, class _Tp, _Tp _Np> using __make_integer_seq = ",
     "_Sp<_Tp, __integer_pack(_Np)...>;\n",
     "template<unsigned long _Ip, class... _Tp> struct __cppgm_type_pack_element;\n",
@@ -10,9 +13,6 @@ pub(super) const DECLARATIONS: &[u8] = concat!(
     ": __cppgm_type_pack_element<_Ip - 1, _Tp...> {};\n",
     "template<unsigned long _Ip, class... _Tp> using __type_pack_element = ",
     "typename __cppgm_type_pack_element<_Ip, _Tp...>::type;\n",
-    "struct __va_list_tag { unsigned int gp_offset; unsigned int fp_offset; void* overflow_arg_area; ",
-    "void* reg_save_area; };\n",
-    "typedef __va_list_tag __builtin_va_list[1];\n",
 ).as_bytes();
 #[derive(Clone, Copy)]
 pub(super) struct TokenOrigins {

@@ -1,0 +1,23 @@
+typedef int (^Block)(int);
+struct Literal {
+  void *isa;
+  int flags;
+  int reserved;
+  int (*invoke)(void *, int);
+};
+int ticks;
+Literal *expected;
+int implementation(void *object, int value) {
+  return object == expected ? value + 5 : -100;
+}
+Block fetch(Block block) { ++ticks; return block; }
+int argument() { return ticks == 1 ? 7 : -100; }
+int call(Block block) { return fetch(block)(argument()); }
+int main() {
+  Literal literal = {0, 0, 0, implementation};
+  expected = &literal;
+  void *address = &literal;
+  Block block;
+  __builtin_memcpy(&block, &address, sizeof(block));
+  return call(block) == 12 && ticks == 1 ? 0 : 1;
+}

@@ -438,6 +438,10 @@ impl Graph {
                     output.write_all(b"pointer to ")?;
                     tasks.push(Task::Type(*element));
                 }
+                TypeKind::BlockPointer(element) => {
+                    output.write_all(b"block-pointer to ")?;
+                    tasks.push(Task::Type(*element));
+                }
                 TypeKind::MemberPointer { owner, element } => {
                     output.write_all(b"member-pointer of ")?;
                     tasks.push(Task::Type(*element));

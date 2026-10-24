@@ -386,6 +386,7 @@ impl Analyzer<'_> {
             TypeKind::Scalar(Scalar::Short | Scalar::UnsignedShort) => 2,
             TypeKind::Scalar(Scalar::Nullptr)
             | TypeKind::Pointer(_)
+            | TypeKind::BlockPointer(_)
             | TypeKind::Reference { .. } => 8,
             TypeKind::MemberPointer { element, .. } => {
                 alignment = Some(8);

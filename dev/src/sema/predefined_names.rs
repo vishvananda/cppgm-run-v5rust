@@ -387,6 +387,7 @@ impl Printer<'_> {
             let node = self.graph.types.get(ty);
             let (element, mut prefix) = match node.kind {
                 TypeKind::Pointer(element) => (element, vec![b'*']),
+                TypeKind::BlockPointer(element) => (element, vec![b'^']),
                 TypeKind::MemberPointer { owner, element } => {
                     let mut prefix = self.ty(owner, Vec::new())?;
                     prefix.extend_from_slice(b"::*");

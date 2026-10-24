@@ -19,6 +19,7 @@ mod atomic_places;
 mod base_initialization;
 mod base_projections;
 mod bit_fields;
+mod block_calls;
 mod class_conditionals;
 mod class_parameters;
 mod class_results;

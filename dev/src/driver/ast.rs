@@ -222,7 +222,8 @@ fn emit_preprocessed(
     stack_budget: crate::support::stack::StackBudget,
     mode: EmitMode,
 ) -> Result<(), AstToolError> {
-    let origins = if mode == EmitMode::LowIr {
+    let hosted = preprocessor.hosted() || mode == EmitMode::LowIr;
+    let origins = if hosted {
         preprocessor
             .enter_builtin_declarations(super::host_declarations::DECLARATIONS)
             .map_err(AstToolError::Initialization)?;
@@ -235,13 +236,10 @@ fn emit_preprocessed(
     };
     let numbers = crate::lex::number::NumberOptions {
         dialect: crate::lex::number::NumberDialect::Gnu,
-        binary_exponents: mode == EmitMode::LowIr,
+        binary_exponents: hosted,
     };
     let mut unit = SyntaxUnit::with_token_origin(preprocessor, origins.first, numbers);
-    if mode == EmitMode::LowIr {
-        // The LowIR view uses the hosted parser environment of object compilation.
-        unit.set_hosted(true);
-    }
+    unit.set_hosted(hosted);
     unit.set_source_origin(origins.source);
     unit.set_stack_budget(stack_budget);
     if let Err(error) = unit.parse() {
@@ -272,7 +270,7 @@ fn emit_preprocessed(
             declarations,
             stack_budget,
             matches!(mode, EmitMode::Semantics | EmitMode::LowIr),
-            mode == EmitMode::LowIr,
+            hosted,
         );
         Some(analysis.map_err(|error| match error {
             crate::sema::Error::Diagnostic { location, message }

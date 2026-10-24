@@ -8,6 +8,35 @@ use crate::{
     },
     types::FundamentalType as F,
 };
+pub(super) fn abi_scalar(scalar: Scalar) -> crate::abi::vocabulary::Builtin {
+    use crate::abi::vocabulary::Builtin as B;
+    match scalar {
+        Scalar::Void => B::Void,
+        Scalar::Bool => B::Bool,
+        Scalar::SignedChar => B::SignedChar,
+        Scalar::UnsignedChar => B::UnsignedChar,
+        Scalar::Short => B::Short,
+        Scalar::UnsignedShort => B::UnsignedShort,
+        Scalar::Nullptr => B::Nullptr,
+        Scalar::Basic(f) => match f {
+            F::Char => B::Char,
+            F::Char16T => B::Char16,
+            F::Char32T => B::Char32,
+            F::WcharT => B::Wchar,
+            F::Int => B::Int,
+            F::UnsignedInt => B::UnsignedInt,
+            F::LongInt => B::Long,
+            F::UnsignedLongInt => B::UnsignedLong,
+            F::LongLongInt => B::LongLong,
+            F::UnsignedLongLongInt => B::UnsignedLongLong,
+            F::Int128 => B::Int128,
+            F::UnsignedInt128 => B::Uint128,
+            F::Float => B::Float,
+            F::Double => B::Double,
+            F::LongDouble => B::LongDouble,
+        },
+    }
+}
 #[derive(Clone, Copy)]
 pub(super) struct ClassStorage {
     pub changeable: bool,
@@ -42,7 +71,10 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             Scalar::Basic(F::Double) => Type::F64,
             Scalar::Basic(F::LongDouble) => Type::F80,
         },
-        TypeView::Pointer(_) | TypeView::Reference { .. } | TypeView::Function { .. } => Type::Ptr,
+        TypeView::Pointer(_)
+        | TypeView::BlockPointer(_)
+        | TypeView::Reference { .. }
+        | TypeView::Function { .. } => Type::Ptr,
         TypeView::Array { element, bound } => {
             if bound == 0 {
                 return Err(Error::Missing("unknown-bound array storage layout"));

@@ -555,7 +555,7 @@ impl Analyzer<'_> {
         };
         let function = match self.graph.types.get(target).kind {
             TypeKind::Function { .. } => target,
-            TypeKind::Pointer(element)
+            TypeKind::Pointer(element) | TypeKind::BlockPointer(element)
                 if matches!(
                     self.graph.types.get(element).kind,
                     TypeKind::Function { .. }
@@ -617,6 +617,9 @@ impl Analyzer<'_> {
             }
         }
         if self.lowering() && self.unevaluated == 0 {
+            if matches!(self.graph.types.get(target).kind, TypeKind::BlockPointer(_)) {
+                self.graph.types.prepare_block_invocation(function)?;
+            }
             self.graph.storage_layouts.push((
                 self.body_context.as_ref().map(|body| body.entity),
                 super::layout::StorageDemand::CallBoundary(function),

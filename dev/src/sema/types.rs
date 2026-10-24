@@ -74,6 +74,8 @@ pub(super) enum TypeKind {
         depth: u32,
     },
     Pointer(TypeId),
+    // Clang blocks retain their function identity separately from ordinary pointers.
+    BlockPointer(TypeId),
     MemberPointer {
         owner: TypeId,
         element: TypeId,
@@ -125,6 +127,7 @@ pub(super) struct Types {
     declarations: Vec<Option<TypeId>>,
     declaration_facts: Box<DeclarationFacts>,
     signatures: Vec<Option<TypeId>>,
+    block_invocations: HashMap<TypeId, TypeId>,
     parameter_entities: HashMap<EntityId, EntityId>,
 }
 #[derive(Default)]
@@ -286,6 +289,47 @@ impl Types {
     pub(super) fn pointer(&mut self, element: TypeId) -> Result<TypeId, Error> {
         self.intern(TypeKind::Pointer(element), Cv::default())
     }
+    /// Prepare the ABI callable only when an evaluated block call demands it.
+    /// Ordinary and block calls then share canonical invoke signatures.
+    pub(super) fn prepare_block_invocation(&mut self, function: TypeId) -> Result<(), Error> {
+        let function = self.canonical_function(function)?;
+        if self.block_invocations.contains_key(&function) {
+            return Ok(());
+        }
+        let TypeKind::Function {
+            result,
+            parameters,
+            variadic,
+            ..
+        } = &self.get(function).kind
+        else {
+            return Err(Error::Invariant("block invocation without function type"));
+        };
+        let result = *result;
+        let variadic = *variadic;
+        let mut parameters = parameters.clone();
+        let void = self.scalar(Scalar::Void)?;
+        let literal = self.pointer(void)?;
+        parameters.insert(0, literal);
+        let invoke = self.intern(
+            TypeKind::Function {
+                result,
+                parameters,
+                variadic,
+                cv: Cv::default(),
+                reference: None,
+            },
+            Cv::default(),
+        )?;
+        let invoke = self.canonical_function(invoke)?;
+        self.block_invocations.insert(function, invoke);
+        Ok(())
+    }
+    pub(super) fn block_invocation(&self, function: TypeId) -> Option<TypeId> {
+        self.block_invocations
+            .get(&self.canonical_view(function))
+            .copied()
+    }
     pub(super) fn member_pointer(
         &mut self,
         owner: TypeId,
@@ -396,6 +440,7 @@ impl Types {
                 work.push((id, true));
                 match &self.get(id).kind {
                     TypeKind::Pointer(element)
+                    | TypeKind::BlockPointer(element)
                     | TypeKind::Reference { element, .. }
                     | TypeKind::Expansion(element) => {
                         work.push((*element, false));
@@ -453,6 +498,9 @@ impl Types {
                 },
                 TypeKind::Pointer(element) => {
                     TypeKind::Pointer(self.canonical_child(element, declaration)?)
+                }
+                TypeKind::BlockPointer(element) => {
+                    TypeKind::BlockPointer(self.canonical_child(element, declaration)?)
                 }
                 TypeKind::MemberPointer { owner, element } => TypeKind::MemberPointer {
                     owner: self.canonical_child(owner, declaration)?,

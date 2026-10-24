@@ -79,7 +79,7 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
             || arg == "--emit-lowir"
             || lowir && arg == "-g0"
             || lowir && arg == "-O0"
-            || lowir && arg == "--hosted"
+            || arg == "--hosted"
         {
             continue;
         }
@@ -91,7 +91,7 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
             index += 1;
             continue;
         }
-        if matches!(arg.as_bytes(), b"--stats" | b"--hosted")
+        if arg == "--stats"
             || arg.as_bytes().starts_with(b"-I")
             || arg.as_bytes().starts_with(b"-D")
             || arg.as_bytes().starts_with(b"-U")
@@ -164,7 +164,7 @@ fn run() -> Result<(), CliError> {
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
         .map_err(CliError::Internal)?;
     let mut preprocessor_options = cppgm_rust::preprocess::options::DriverOptions::default();
-    if lowir {
+    if lowir || args.iter().any(|arg| arg == "--hosted") {
         let host =
             host_configuration::query().map_err(|error| CliError::Message(error.to_string()))?;
         cppgm_rust::driver::host_environment::HostEnvironment {
