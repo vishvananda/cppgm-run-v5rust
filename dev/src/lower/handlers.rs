@@ -334,7 +334,13 @@ impl Function<'_, '_, '_, '_> {
             };
             self.symbols.caught_type(self.builder.program(), object)?;
             if let Some(entity) = entity {
-                self.catch_variable(entity, ty, caught, record)?;
+                self.catch_variable(
+                    entity,
+                    ty,
+                    caught,
+                    record,
+                    self.tree.statements.get(written.body).location,
+                )?;
             }
         }
         self.statement(written.body)?;
@@ -364,6 +370,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         caught: Value,
         record: Option<Value>,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let reference = matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. });
         let storage = types::storage(self.graph, ty)?;
@@ -395,7 +402,7 @@ impl Function<'_, '_, '_, '_> {
             }
             TypeView::Reference { .. } | TypeView::Pointer(_) => caught,
             TypeView::Class(_) => {
-                self.initialize_catch_object(entity, ty, slot, caught)?;
+                self.initialize_catch_object(entity, ty, slot, caught, location)?;
                 return Ok(());
             }
             _ => {
@@ -429,6 +436,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         slot: Value,
         caught: Value,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let first = self.lifetime.cleanups.len();
         if let Some(constructor) = self.graph.lower_construction(entity) {
@@ -448,7 +456,7 @@ impl Function<'_, '_, '_, '_> {
             };
             let address = self.emit(I::Addr(slot), ty)?.value;
             self.handlers.explicit += 1;
-            self.construct_from(constructor, address, caught)?;
+            self.construct_from(constructor, address, caught, location)?;
             self.handlers.explicit -= 1;
             if let Some((guard, next)) = region {
                 self.lifetime.region = false;

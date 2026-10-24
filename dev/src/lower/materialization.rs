@@ -879,7 +879,9 @@ impl Function<'_, '_, '_, '_> {
                     self.statement_expression(id, body, Some(object))?;
                     Ok(())
                 }
-                ExprKind::Lambda(_) => self.closure_object(ty, object),
+                ExprKind::Lambda(_) => {
+                    self.closure_object(ty, object, self.tree.expressions.get(id).location)
+                }
                 _ if self.graph.lower_operator_call(id)? => {
                     self.operator_call_into(id, Some(object))?;
                     Ok(())

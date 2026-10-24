@@ -7,6 +7,7 @@ use crate::{
         vocabulary::{Binary, Compare, Projection, Type},
     },
     sema::lowering::{ConstructorId, EntityId, SubobjectCopy, TypeId, TypeView},
+    support::source::SourceOffset,
 };
 #[derive(Clone, Copy)]
 struct Elements {
@@ -16,6 +17,7 @@ struct Elements {
     source: Value,
     constructor: ConstructorId,
     guarded: bool,
+    location: SourceOffset,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn copy_elements(
@@ -51,6 +53,7 @@ impl Function<'_, '_, '_, '_> {
                 source,
                 constructor,
                 guarded,
+                location: SourceOffset(0),
             });
         }
         let mark = self.copy_mark();
@@ -66,7 +69,7 @@ impl Function<'_, '_, '_, '_> {
                 base
             };
             let from = self.element_address(base, index, size, element)?;
-            self.call_copy_constructor(constructor, Variant::Complete, to, from)?;
+            self.call_copy_constructor(constructor, Variant::Complete, to, from, SourceOffset(0))?;
             if guarded && index + 1 < count {
                 self.copied_subobject(element, to, None);
             }
@@ -82,6 +85,7 @@ impl Function<'_, '_, '_, '_> {
         constructor: ConstructorId,
         destination: Value,
         source: Value,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         let mut element = ty;
         let mut count = 1u64;
@@ -102,6 +106,7 @@ impl Function<'_, '_, '_, '_> {
             source,
             constructor,
             guarded,
+            location,
         };
         let temporaries = self.copy_defaults_temporaries(constructor)?;
         if count > 8 {
@@ -127,7 +132,7 @@ impl Function<'_, '_, '_, '_> {
                 let scope = this.begin_element_temporaries(temporaries, guard.is_none());
                 let from = this.element_address(source, index, size, element)?;
                 let to = this.element_address(destination, index, size, element)?;
-                this.construct_from(constructor, to, from)?;
+                this.construct_from(constructor, to, from, location)?;
                 this.end_copy_temporaries(scope)
             })?;
             if let Some((dispatch, next)) = guard {
@@ -154,6 +159,7 @@ impl Function<'_, '_, '_, '_> {
             source,
             constructor,
             guarded,
+            location,
         } = elements;
         let slot = self.generated_slot("copy_array_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
@@ -194,7 +200,7 @@ impl Function<'_, '_, '_, '_> {
                 let scope = this.begin_copy_temporaries(temporaries);
                 let from = this.capture_element_address(element, source, offset)?;
                 let to = this.capture_element_address(element, destination, offset)?;
-                this.construct_from(constructor, to, from)?;
+                this.construct_from(constructor, to, from, location)?;
                 this.end_copy_temporaries(scope)
             })?;
             if guarded {
@@ -280,6 +286,7 @@ impl Function<'_, '_, '_, '_> {
             source,
             constructor,
             guarded,
+            location,
         } = elements;
         let slot = self.generated_slot("copy_array_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
@@ -322,7 +329,7 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Runtime(R::EhTry(cleanup)))?;
         }
         self.copying.active = false;
-        self.call_copy_constructor(constructor, Variant::Complete, to, from)?;
+        self.call_copy_constructor(constructor, Variant::Complete, to, from, location)?;
         self.copying.active = true;
         if guarded {
             self.effect(I::Runtime(R::EhEnd))?;

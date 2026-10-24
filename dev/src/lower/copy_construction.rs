@@ -12,6 +12,7 @@ use crate::{
         vocabulary::{Projection, Type},
     },
     sema::lowering::{ConstructorId, CopyTarget, SubobjectCopy, TypeId, TypeView},
+    support::source::SourceOffset,
 };
 impl Function<'_, '_, '_, '_> {
     fn copy_offset(
@@ -407,6 +408,7 @@ impl Function<'_, '_, '_, '_> {
             },
             destination,
             source,
+            SourceOffset(0),
         );
         self.virtual_context.hidden = saved;
         result?;
@@ -473,6 +475,7 @@ impl Function<'_, '_, '_, '_> {
         id: ConstructorId,
         destination: Value,
         source: Value,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         let class = self.graph.lower_constructor(id).class;
         let ty = self.graph.lower_entity_type(class)?;
@@ -505,7 +508,7 @@ impl Function<'_, '_, '_, '_> {
                     .ok_or(crate::sema::Error::Invariant(
                         "capture copy default argument",
                     ))?;
-            values.push(self.constructor_default_value(expression, parameter)?);
+            values.push(self.constructor_default_value(expression, parameter, location)?);
         }
         let result = self.emit_address_constructor_call(entry, facts.nothrow, &values);
         if !facts.nothrow && self.lifetime.full_expression {
@@ -517,18 +520,21 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         expression: crate::syntax::ast::ExprId,
         parameter: TypeId,
+        location: SourceOffset,
     ) -> Result<Value, Error> {
         use super::conversions::Context;
-        match self.graph.lower_type(parameter)? {
-            TypeView::Reference { .. } => {
-                self.bind_reference(expression, parameter, Context::Argument)
+        self.with_source_site(Some(location), |lowering| {
+            match lowering.graph.lower_type(parameter)? {
+                TypeView::Reference { .. } => {
+                    lowering.bind_reference(expression, parameter, Context::Argument)
+                }
+                TypeView::Class(_) => lowering.class_argument(expression, parameter),
+                _ => {
+                    let value = lowering.operand(expression, Context::Argument)?;
+                    Ok(lowering.fit(value, parameter)?.value)
+                }
             }
-            TypeView::Class(_) => self.class_argument(expression, parameter),
-            _ => {
-                let value = self.operand(expression, Context::Argument)?;
-                Ok(self.fit(value, parameter)?.value)
-            }
-        }
+        })
     }
     pub(super) fn call_copy_constructor(
         &mut self,
@@ -536,6 +542,7 @@ impl Function<'_, '_, '_, '_> {
         variant: Variant,
         destination: Value,
         source: Value,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         let entry = Entry::Constructor(id, variant);
         let facts = entry.facts(self.graph)?;
@@ -576,17 +583,7 @@ impl Function<'_, '_, '_, '_> {
                 .graph
                 .lower_default(function, index)
                 .ok_or(crate::sema::Error::Invariant("copy default argument"))?;
-            let value = if matches!(
-                self.graph.lower_type(parameter)?,
-                TypeView::Reference { .. }
-            ) {
-                self.bind_reference(expression, parameter, super::conversions::Context::Argument)?
-            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
-                self.class_argument(expression, parameter)?
-            } else {
-                let value = self.operand(expression, super::conversions::Context::Argument)?;
-                self.fit(value, parameter)?.value
-            };
+            let value = self.constructor_default_value(expression, parameter, location)?;
             values.push(value);
         }
         // call_copy forms the hidden context before demanding the entry and

@@ -465,6 +465,7 @@ impl Function<'_, '_, '_, '_> {
                     super::construction::Variant::Complete,
                     object,
                     source,
+                    crate::support::source::SourceOffset(0),
                 )?;
             } else if !empty {
                 let (size, alignment) = types::layout(self.graph, parameters[0])?;

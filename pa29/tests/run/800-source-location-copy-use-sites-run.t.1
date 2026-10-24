@@ -1,0 +1,36 @@
+struct Copy {
+  int line;
+  const char* file;
+  const char* function;
+  int column;
+  Copy() : line(0), file(""), function(""), column(-1) {}
+  Copy(const Copy&, int n = __builtin_LINE(), const char* f = __builtin_FILE(),
+       const char* g = __builtin_FUNCTION(), int c = __builtin_COLUMN())
+      : line(n), file(f), function(g), column(c) {}
+};
+struct Box { Copy* value; operator Copy&() { return *value; } };
+struct Derived : Copy {};
+bool check(Copy& c, int line, char function) {
+  return c.line == line && c.file[0] == 'c' && c.function[0] == function && c.column == 0;
+}
+int take(Copy c, int expected) { return check(c, expected, 'v') ? 0 : 1; }
+#line 100 "copy-sites"
+int via_conversion(Box& b) { return take(b, __LINE__); }
+int capture_one(Copy& c) { int n = __LINE__; auto f = [c, n]() mutable { return check(c, n, 'c') ? 0 : 2; }; return f(); }
+int capture_small() { Copy a[2]; int n = __LINE__; auto f = [a, n]() mutable { return check(a[1], n, 'c') ? 0 : 3; }; return f(); }
+int capture_loop() { Copy a[9]; int n = __LINE__; auto f = [a, n]() mutable { return check(a[8], n, 'c') ? 0 : 4; }; return f(); }
+int caught() { int n = __LINE__; try { throw Copy(); } catch (Copy c) { return check(c, n, 'c') ? 0 : 5; } }
+#line 200 "copy-sites"
+Copy project(Derived& d) { return d; }
+int main() {
+  Copy c;
+  Box b = {&c};
+  if (via_conversion(b)) return 1;
+  if (capture_one(c)) return 2;
+  if (capture_small()) return 3;
+  if (capture_loop()) return 4;
+  if (caught()) return 5;
+  Derived d;
+  Copy p = project(d);
+  return check(p, 200, 'p') ? 0 : 6;
+}

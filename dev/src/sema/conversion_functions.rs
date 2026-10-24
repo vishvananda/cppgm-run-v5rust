@@ -311,7 +311,7 @@ impl Analyzer<'_> {
         let location = self.tree.expressions.get(id).location;
         // unique_conversion counts declarations, not viable object sequences.
         // convert_class_operand also omits the ordinary deletion check.
-        let path = self.conversion_function_receiver(source, binding, scope, location)?;
+        let path = self.conversion_function_receiver(source, binding, scope, location, false)?;
         let signature = self
             .graph
             .binding(binding)
@@ -549,7 +549,13 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, "use of a deleted function"));
         }
-        let path = self.conversion_function_receiver(source, binding, scope, location)?;
+        let defer_demand = usage == ConversionUse::Scalar
+            && matches!(
+                self.graph.types.get(sequence.conversion.target).kind,
+                TypeKind::Class(_)
+            );
+        let path =
+            self.conversion_function_receiver(source, binding, scope, location, defer_demand)?;
         let ty = self
             .graph
             .entity(entity)
@@ -585,6 +591,7 @@ impl Analyzer<'_> {
         binding: BindingId,
         scope: ScopeId,
         location: SourceOffset,
+        defer_demand: bool,
     ) -> Result<Option<BasePathId>, Error> {
         let class = self
             .graph
@@ -613,8 +620,10 @@ impl Analyzer<'_> {
         // C++ apply_user_conversion records this use even when a soft access
         // failure rejects the surrounding specialization. The retained body
         // demand remains observable in the semantic tool's output.
-        self.demand_specialization_body(binding);
-        self.demand_function(binding, true);
+        if !defer_demand || path.is_err() {
+            self.demand_specialization_body(binding);
+            self.demand_function(binding, true);
+        }
         path
     }
 
@@ -701,6 +710,16 @@ impl Analyzer<'_> {
             let produced = self.new_expression_facts(selected.result, selected.category)?;
             self.check_temporary_destruction(produced, scope, location)?;
         }
+        if matches!(
+            self.graph.types.get(sequence.conversion.target).kind,
+            TypeKind::Class(_)
+        ) {
+            // apply_user_conversion selects and demands the result's copy
+            // before odr_use of the conversion function. Keep that order on
+            // the owning demand list, independently of emission queues.
+            self.demand_specialization_body(selected.binding);
+            self.demand_function(selected.binding, true);
+        }
         self.graph
             .expression_facts
             .set_function_conversion(id, selected);
@@ -719,6 +738,37 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn result_copy_is_demanded_before_its_conversion_function() {
+        let source = SourceBuffer::new(
+            b"struct A{int n;A(const A&,int n=3):n(n){}};\
+              struct B{operator A&();};void q(A);void f(B&b){q(b);}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"conversion-demand-order").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        graph
+            .print_semantics(tree, cursor, declarations, &mut output)
+            .unwrap();
+        let output = String::from_utf8(output).unwrap();
+        let copy = output.find("function-definition A::A ").unwrap();
+        let conversion = output.find("function-declaration B::operatorA& ").unwrap();
+        assert!(copy < conversion);
+    }
 
     #[test]
     fn class_results_retain_selected_transfers_without_replacing_or_reparsing_receivers() {

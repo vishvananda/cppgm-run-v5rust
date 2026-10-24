@@ -1,0 +1,66 @@
+function @consume(%value : ptr [pass=by_address, object_bytes=4]) -> i32 [binding=strong, object=_Z7consume5Value] {
+  slot $value : obj<4x4>
+
+  block ^entry:
+    %t1 = index i8 [projection=field] %value, 0
+    %t2 = load typed i32 %t1
+    return i32 %t2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $source : obj<8x8>
+  slot $arg__1 : obj<4x4>
+
+  block ^entry:
+    %t1 = addr $value
+    call void @Value__Value(%t1)
+    %t2 = addr $source
+    %t3 = addr $value
+    %t4 = addr $source
+    %t5 = index i8 [projection=field] %t4, 0
+    store typed ptr %t3, %t5
+    %t6 = addr $arg__1
+    %t7 = addr $source
+    %t8 = call ptr @Source__operatorValue_(%t7)
+    call void @Value__Value__ov2(%t6, %t8, 7)
+    %t9 = call i32 @consume(%t6)
+    %t10 = binary sub nowrap i32 %t9, 7
+    return i32 %t10
+}
+function @Value__Value(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN5ValueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 1, %t2
+    return void
+}
+function @Source__operatorValue_(%this : ptr [object_bytes=8]) -> ptr [binding=weak, object=_ZN6SourcecvR5ValueEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed ptr %t2
+    return ptr %t3
+}
+function @Value__Value__ov2(%this : ptr [alias=noalias, object_bytes=4], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=4], %n : i32) -> void [binding=weak, object=_ZN5ValueC1ERKS_i, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    store typed i32 %n, $n
+    %t1 = load typed i32 $n
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed i32 %t1, %t3
+    return void
+}
+alias object _ZN5ValueC2Ev = @Value__Value
+alias object _ZN5ValueC2ERKS_i = @Value__Value__ov2

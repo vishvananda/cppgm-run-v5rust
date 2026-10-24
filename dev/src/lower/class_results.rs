@@ -432,6 +432,7 @@ impl Function<'_, '_, '_, '_> {
                 super::construction::Variant::Complete,
                 object,
                 source,
+                self.tree.expressions.get(id).location,
             ),
             CopyAction::Storage { .. } => {
                 let TypeView::Class(class) = self.graph.lower_type(ty)? else {
