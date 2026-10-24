@@ -6,5 +6,6 @@
   "state_dir": "/home/vishvananda/work/.ralph/v5rust-gpt-6.1-sol-high",
   "assignment_revision": "a2807f14edf0297173eb52c960b86f20d113d566",
   "assignment_tag": "main",
-  "course_workers": 8
+  "course_workers": 8,
+  "validation_path": "/opt/homebrew/opt/openjdk/bin:/home/vishvananda/.rbenv/shims:/usr/local/share/python:/usr/local/bin:/usr/local/sbin:/opt/homebrew/opt/openjdk/bin:/home/vishvananda/.cargo/bin:/home/vishvananda/.rbenv/shims:/usr/local/share/python:/usr/local/bin:/usr/local/sbin:/home/vishvananda/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
 }
