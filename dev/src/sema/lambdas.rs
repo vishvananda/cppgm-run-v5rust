@@ -345,6 +345,12 @@ impl Analyzer<'_> {
             ellipsis_without_comma: false,
         });
         let (signature_scope, head) = if let Some(parameters) = lambda.template_parameters {
+            if parameters.parameters.is_empty() {
+                return Err(Error::at(
+                    location,
+                    "an explicit specialization outside namespace scope",
+                ));
+            }
             let parent =
                 self.graph
                     .add_scope(ScopeKind::TemplateParameters, scope, Some(scope), None)?;
