@@ -61,46 +61,6 @@ pub(super) fn key(keyword: Keyword, array: bool) -> ValueKey {
 }
 
 impl Analyzer<'_> {
-    pub(super) fn allocation_template_callee(
-        &mut self,
-        id: ast::ExprId,
-        component: ast::NameComponent,
-        found: &mut LookupResult,
-        scope: ScopeId,
-    ) -> Result<(), Error> {
-        let ast::ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
-            return Err(Error::Invariant("allocation template callee without call"));
-        };
-        let mut named = callee;
-        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
-            named = inner;
-        }
-        let component = ast::NameComponent {
-            location: self.tree.expressions.get(named).location,
-            ..component
-        };
-        if !found.functions.iter().any(|&binding| {
-            self.graph
-                .entity(self.graph.binding(binding).entity)
-                .template_head
-                .is_some()
-        }) {
-            self.explicit_function_arguments(
-                component
-                    .arguments
-                    .ok_or(Error::Invariant("missing explicit allocation arguments"))?,
-                scope,
-                component.location,
-                None,
-            )?;
-            return Err(Error::at(
-                component.location,
-                "template-id does not name a function template",
-            ));
-        }
-        self.explicit_function_specializations(component, found, scope, true)
-    }
-
     // analyzer_builtins.cpp::allocation_builtin selects the ordinary global
     // operator family, without class lookup or argument-dependent lookup.
     pub(super) fn allocation_builtin(

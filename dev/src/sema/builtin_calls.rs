@@ -46,6 +46,49 @@ mod tests {
     };
 
     #[test]
+    fn builtin_template_rejection_leaves_call_operands_undemanded() {
+        for name in [
+            "__builtin_object_size",
+            "__builtin_dynamic_object_size",
+            "__builtin_prefetch",
+            "__builtin_assume_aligned",
+            "__builtin_flt_rounds",
+            "__builtin_add_overflow",
+            "__builtin_sub_overflow",
+            "__builtin_mul_overflow",
+            "__builtin_trap",
+            "__builtin_operator_new",
+            "__builtin_operator_delete",
+        ] {
+            let source = SourceBuffer::new(
+                format!("namespace N{{using ::{name};}}void f(){{((N::{name}<int>))(missing());}}")
+                    .into_bytes(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"builtin-template").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let global = analyzer.graph.global;
+            assert!(matches!(
+                analyzer.declarations(declarations, global),
+                Err(Error::Diagnostic {
+                    message: "template-id does not name a function template",
+                    ..
+                })
+            ));
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            assert!(!analyzer.call_scratch.has_candidates());
+            assert!(analyzer.pretyped_callable.is_none());
+            assert_eq!(analyzer.unevaluated, 0);
+        }
+    }
+
+    #[test]
     fn deferred_queries_reuse_builtin_identity_outside_source_visibility() {
         for (name, source) in [
             (b"__builtin_memcpy".as_slice(), b"int f()noexcept(noexcept(&__builtin_memcpy));void*(*p)(void*,const void*,unsigned long)=&__builtin_memcpy;int h(){return noexcept(f());}".as_slice()),
@@ -192,6 +235,48 @@ pub(super) struct BuiltinNames {
     pub floating: Vec<(NameId, super::floating_intrinsics::FloatingOperation)>,
 }
 impl Analyzer<'_> {
+    // analyzer_calls.cpp::template_callee checks the template-id before
+    // dispatching any builtin or typing the call's operands.
+    pub(super) fn builtin_template_callee(
+        &mut self,
+        id: ast::ExprId,
+        component: ast::NameComponent,
+        found: &mut LookupResult,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let ast::ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("builtin template callee without call"));
+        };
+        let mut named = callee;
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
+            named = inner;
+        }
+        let component = ast::NameComponent {
+            location: self.tree.expressions.get(named).location,
+            ..component
+        };
+        if !found.functions.iter().any(|&binding| {
+            self.graph
+                .entity(self.graph.binding(binding).entity)
+                .template_head
+                .is_some()
+        }) {
+            self.explicit_function_arguments(
+                component
+                    .arguments
+                    .ok_or(Error::Invariant("missing explicit builtin arguments"))?,
+                scope,
+                component.location,
+                None,
+            )?;
+            return Err(Error::at(
+                component.location,
+                "template-id does not name a function template",
+            ));
+        }
+        self.explicit_function_specializations(component, found, scope, true)
+    }
+
     // A call-expanded builtin has a canonical lookup identity but no
     // addressable function definition, including through a using declaration.
     pub(super) fn check_intrinsic_designation(
@@ -456,17 +541,17 @@ impl Analyzer<'_> {
             *found = builtin;
         }
         if let Some(binding) = found.binding {
-            if matches!(
-                self.graph
-                    .entity(self.graph.binding(binding).entity)
-                    .builtin,
-                Some(BuiltinFunction::Allocation(_))
-            ) && let Some(component) = last.filter(|last| last.arguments.is_some())
+            if self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .builtin
+                .is_some()
+                && let Some(component) = last.filter(|last| last.arguments.is_some())
             {
                 // template_callee precedes intrinsic dispatch in the C++ owner.
                 // A registry placeholder is no template; diagnose its explicit
                 // arguments before visiting the call's operands.
-                self.allocation_template_callee(id, component, found, scope)?;
+                self.builtin_template_callee(id, component, found, scope)?;
                 return Ok(None);
             }
             return match self
