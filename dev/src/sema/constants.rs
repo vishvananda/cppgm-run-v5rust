@@ -568,6 +568,17 @@ impl Analyzer<'_> {
                 ty: facts.ty,
             });
         }
+        if let Some(kind) = self.graph.expression_facts.source_location(id) {
+            return match self.constant_source_location(id, kind)? {
+                super::constexpr_calls::Returned::Value(
+                    super::constant_addresses::TemporaryValue::Integer(value),
+                ) => Ok(value),
+                _ => Err(not_constant(
+                    self.tree.expressions.get(id).location,
+                    "not an integral constant expression",
+                )),
+            };
+        }
         if self.graph.expression_facts.constant_evaluation_query(id) {
             return self.boolean(true);
         }

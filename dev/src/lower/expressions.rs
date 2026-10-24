@@ -741,7 +741,9 @@ impl Function<'_, '_, '_, '_> {
         id: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
     ) -> Result<RValue, Error> {
-        if self.graph.lower_constant_evaluation_query(id) {
+        if let Some(kind) = self.graph.lower_source_location(id)? {
+            self.source_location(id, kind)
+        } else if self.graph.lower_constant_evaluation_query(id) {
             let ty = self.graph.lower_expression(id)?.ty;
             self.zero(ty)
         } else if let Some(kind) = self.graph.lower_stack_intrinsic(id)? {
@@ -913,8 +915,14 @@ impl Function<'_, '_, '_, '_> {
                 self.member_object(expression, arrow)?;
             }
         }
-        let argument_classes =
-            self.push_call_arguments(target, parameters, supplied, variadic, &mut values)?;
+        let argument_classes = self.push_call_arguments(
+            target,
+            parameters,
+            supplied,
+            variadic,
+            &mut values,
+            self.tree.expressions.get(id).location,
+        )?;
         let (callee, signature) = match target {
             CallTarget::Direct(entity) => {
                 let dispatch = self.graph.lower_virtual_dispatch(id)?;

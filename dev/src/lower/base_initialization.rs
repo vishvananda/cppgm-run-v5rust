@@ -1,6 +1,7 @@
 // Translated from lower/object_lowering.cpp::construct_base/call_special. See NOTICE.
 //! Base entries consume selected transfers and own each initializer's temporaries.
 use super::{Error, construction::Variant, conversions::Context, function::Function, types};
+use crate::support::source::SourceOffset;
 use crate::{
     lowir::model::{InstructionKind as I, Value},
     sema::lowering::{ConstructorArguments, ConstructorId, CopyAction, TypeId, TypeView},
@@ -14,7 +15,11 @@ enum SharedPlan {
 }
 
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn initialize_virtual_bases(&mut self, owner: ConstructorId) -> Result<(), Error> {
+    pub(super) fn initialize_virtual_bases(
+        &mut self,
+        owner: ConstructorId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         let plan = self.graph.lower_constructor(owner);
         // Plan order governs tail occupancy; construction order is a separate
         // projection. Index each shared occurrence once for this ABI entry.
@@ -34,9 +39,11 @@ impl Function<'_, '_, '_, '_> {
         for base in self.symbols.virtual_construction_order(plan.class) {
             match selected.get(&base).copied() {
                 Some(SharedPlan::Direct(index)) => {
-                    self.initialize_base(owner, Variant::Complete, index)?;
+                    self.initialize_base(owner, Variant::Complete, index, location)?;
                 }
-                Some(SharedPlan::Indirect(index)) => self.initialize_indirect_base(owner, index)?,
+                Some(SharedPlan::Indirect(index)) => {
+                    self.initialize_indirect_base(owner, index, location)?;
+                }
                 None => {}
             }
         }
@@ -67,9 +74,10 @@ impl Function<'_, '_, '_, '_> {
         owner: ConstructorId,
         variant: Variant,
         index: usize,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         let saved = self.virtual_context.hidden;
-        let result = self.initialize_base_plan(owner, variant, index, false);
+        let result = self.initialize_base_plan(owner, variant, index, false, location);
         self.virtual_context.hidden = saved;
         result
     }
@@ -77,9 +85,10 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         owner: ConstructorId,
         index: usize,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         let saved = self.virtual_context.hidden;
-        let result = self.initialize_base_plan(owner, Variant::Complete, index, true);
+        let result = self.initialize_base_plan(owner, Variant::Complete, index, true, location);
         self.virtual_context.hidden = saved;
         result
     }
@@ -89,6 +98,7 @@ impl Function<'_, '_, '_, '_> {
         variant: Variant,
         index: usize,
         indirect: bool,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         let plan = self.graph.lower_constructor(owner);
         let base = if indirect {
@@ -156,6 +166,7 @@ impl Function<'_, '_, '_, '_> {
                     "forwarded base without constructor",
                 ))?,
                 object,
+                location,
             )?;
             return self.subobject_constructed(ty, offset, identity);
         }
@@ -209,10 +220,18 @@ impl Function<'_, '_, '_, '_> {
                 self.zero_class_object(ty, object, Some(span))?;
             }
             if !value || !trivial {
-                self.call_constructor(constructor, Variant::Base, object, base.arguments)?;
+                self.call_constructor(
+                    constructor,
+                    Variant::Base,
+                    object,
+                    super::construction::ConstructorInput {
+                        arguments: base.arguments,
+                        location,
+                    },
+                )?;
             }
         } else if let Some(source) = source.filter(|_| copy.is_some()) {
-            self.initialize_base_copy(source, ty, object, copy, span)?;
+            self.initialize_base_copy(source, ty, object, copy, span, location)?;
         } else if let Some(source) = source.filter(|_| prvalue) {
             let (size, alignment) = types::layout(self.graph, ty)?;
             if span < size && !empty && self.symbols.storage_destructor(ty)?.is_none() {
@@ -309,6 +328,7 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         copy: Option<CopyAction>,
         span: u64,
+        location: SourceOffset,
     ) -> Result<(), Error> {
         let reference = match copy {
             Some(CopyAction::Constructor { constructor, .. }) => {
@@ -321,7 +341,10 @@ impl Function<'_, '_, '_, '_> {
                         constructor,
                         Variant::Base,
                         object,
-                        Some(ConstructorArguments::Single(source)),
+                        super::construction::ConstructorInput {
+                            arguments: Some(ConstructorArguments::Single(source)),
+                            location,
+                        },
                     );
                 }
                 let signature = self.graph.lower_constructor_function(constructor)?.ty;

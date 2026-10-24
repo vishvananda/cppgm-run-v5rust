@@ -28,6 +28,7 @@ pub(crate) enum BuiltinFunction {
     Invoke,
     Allocation(super::allocation::AllocationBuiltin),
     Runtime(super::runtime_intrinsics::RuntimeIntrinsic),
+    SourceLocation(super::source_locations::SourceLocation),
     Stack(super::stack_intrinsics::StackIntrinsic),
     Atomic(super::atomic_operations::AtomicBuiltinId),
     Floating(super::floating_intrinsics::FloatingOperation),
@@ -228,6 +229,7 @@ pub(super) struct BuiltinNames {
     pub strlen: NameId,
     pub unreachable: NameId,
     pub trap: NameId,
+    pub source_locations: Vec<(NameId, super::source_locations::SourceLocation)>,
     pub runtime: Vec<(NameId, super::runtime_intrinsics::RuntimeIntrinsic)>,
     pub stack: super::stack_intrinsics::StackNames,
     pub atomic: super::atomic_operations::AtomicBuiltins,
@@ -290,6 +292,7 @@ impl Analyzer<'_> {
                 .builtin,
             Some(
                 BuiltinFunction::Integer(_)
+                    | BuiltinFunction::SourceLocation(_)
                     | BuiltinFunction::Runtime(_)
                     | BuiltinFunction::Floating(_)
                     | BuiltinFunction::Atomic(_)
@@ -338,6 +341,12 @@ impl Analyzer<'_> {
             BuiltinFunction::Allocation(super::allocation::AllocationBuiltin::New)
         } else if key == names.operator_delete {
             BuiltinFunction::Allocation(super::allocation::AllocationBuiltin::Delete)
+        } else if let Some((_, operation)) = names
+            .source_locations
+            .iter()
+            .find(|&&(name, _)| name == key)
+        {
+            BuiltinFunction::SourceLocation(*operation)
         } else if let Some(operation) = names.stack.find(key) {
             BuiltinFunction::Stack(operation)
         } else if let Some((_, operation)) = names.runtime.iter().find(|&&(name, _)| name == key) {
@@ -388,6 +397,7 @@ impl Analyzer<'_> {
         } else if matches!(
             builtin,
             BuiltinFunction::Integer(_)
+                | BuiltinFunction::SourceLocation(_)
                 | BuiltinFunction::Runtime(_)
                 | BuiltinFunction::Floating(_)
                 | BuiltinFunction::Atomic(_)
@@ -433,6 +443,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Strlen
                     | BuiltinFunction::Unreachable
                     | BuiltinFunction::Trap
+                    | BuiltinFunction::SourceLocation(_)
                     | BuiltinFunction::Runtime(_)
                     | BuiltinFunction::Invoke
                     | BuiltinFunction::Allocation(_)
@@ -454,6 +465,7 @@ impl Analyzer<'_> {
                 variadic: matches!(
                     builtin,
                     BuiltinFunction::Integer(_)
+                        | BuiltinFunction::SourceLocation(_)
                         | BuiltinFunction::Runtime(_)
                         | BuiltinFunction::Floating(_)
                         | BuiltinFunction::Stack(_)
@@ -573,6 +585,9 @@ impl Analyzer<'_> {
                         .note_constant_evaluation_query(id);
                     Ok(Some(facts))
                 }
+                Some(BuiltinFunction::SourceLocation(operation)) => self
+                    .source_location_builtin(id, arguments, operation)
+                    .map(Some),
                 Some(BuiltinFunction::Invoke) => {
                     self.builtin_invoke(id, arguments, scope).map(Some)
                 }

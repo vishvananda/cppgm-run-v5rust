@@ -57,94 +57,114 @@ impl Function<'_, '_, '_, '_> {
         let nested = plan.class != within;
         let mut wrote = false;
         let mut children = plan.subobjects.iter().peekable();
-        for &(member, initializer) in plan.members {
-            let union = union || self.graph.lower_member_union(member);
-            let ty = self.graph.lower_entity_type(member)?;
-            if !matches!(
-                self.graph.lower_type(ty)?,
-                TypeView::Class(_) | TypeView::Array { .. }
-            ) {
-                if let Some(initializer) = initializer {
-                    self.initialize_scalar_member(member, pointer, initializer, union)?;
+        for (index, &(member, initializer)) in plan.members.iter().enumerate() {
+            let site = (!plan.written_members[index]).then_some(location);
+            self.with_source_site(site, |lowering| {
+                let union = union || lowering.graph.lower_member_union(member);
+                let ty = lowering.graph.lower_entity_type(member)?;
+                if !matches!(
+                    lowering.graph.lower_type(ty)?,
+                    TypeView::Class(_) | TypeView::Array { .. }
+                ) {
+                    if let Some(initializer) = initializer {
+                        lowering.initialize_scalar_member(member, pointer, initializer, union)?;
+                    }
+                    wrote |= initializer.is_some();
+                    return Ok(());
                 }
-                wrote |= initializer.is_some();
-                continue;
-            }
-            let local_offset = self.graph.lower_member_offset(member)?;
-            let offset = self.member_initialization_offset(member, pointer)?;
-            let child = if children.peek().is_some_and(|child| child.member == member) {
-                children.next()
-            } else {
-                None
-            };
-            if let Some(child) = child {
-                if self.graph.lower_anonymous_constructor(child.constructor) {
-                    let high = self.bit_initialization.high;
-                    self.bit_initialization.unit = 0;
-                    self.bit_initialization.high = 0;
+                let local_offset = lowering.graph.lower_member_offset(member)?;
+                let offset = lowering.member_initialization_offset(member, pointer)?;
+                let child = if children.peek().is_some_and(|child| child.member == member) {
+                    children.next()
+                } else {
+                    None
+                };
+                if let Some(child) = child.filter(|child| {
+                    lowering
+                        .graph
+                        .lower_anonymous_constructor(child.constructor)
+                }) {
+                    let high = lowering.bit_initialization.high;
+                    lowering.bit_initialization.unit = 0;
+                    lowering.bit_initialization.high = 0;
                     let initialized =
-                        self.initialize_member_plan(child.constructor, pointer, location)?;
-                    self.bit_initialization.unit = 0;
-                    self.bit_initialization.high = high;
+                        lowering.initialize_member_plan(child.constructor, pointer, location)?;
+                    lowering.bit_initialization.unit = 0;
+                    lowering.bit_initialization.high = high;
                     if initialized {
                         wrote = true;
                         let end = local_offset
-                            .wrapping_add(super::types::layout(self.graph, ty)?.0)
+                            .wrapping_add(super::types::layout(lowering.graph, ty)?.0)
                             .wrapping_mul(8);
-                        self.bit_initialization.high = self.bit_initialization.high.max(end);
+                        lowering.bit_initialization.high =
+                            lowering.bit_initialization.high.max(end);
                     }
-                    continue;
+                    return Ok(());
                 }
-                wrote |= initializer.is_some()
-                    || !self.graph.lower_constructor_trivial(child.constructor);
-                let first = self.lifetime.cleanups.len();
-                let region = if let Some(initializer) = initializer {
-                    self.begin_subobject_initializer(initializer, Some(child.constructor))?
-                } else {
-                    false
+                if let Some(child) = child {
+                    wrote |= initializer.is_some()
+                        || !lowering.graph.lower_constructor_trivial(child.constructor);
+                    let first = lowering.lifetime.cleanups.len();
+                    let region = if let Some(initializer) = initializer {
+                        lowering
+                            .begin_subobject_initializer(initializer, Some(child.constructor))?
+                    } else {
+                        false
+                    };
+                    lowering.initialize_class_member(
+                        pointer,
+                        ty,
+                        offset,
+                        child.constructor,
+                        super::construction::ConstructorInput {
+                            arguments: child.arguments,
+                            location,
+                        },
+                    )?;
+                    lowering.destroy_temporaries(first)?;
+                    lowering.end_lifetime_expression(region)?;
+                    if !plan.union && !nested {
+                        lowering.subobject_constructed(ty, offset, None)?;
+                    }
+                    lowering.bit_initialization.unit = 0;
+                    lowering.bit_initialization.high = lowering.bit_initialization.high.max(
+                        local_offset
+                            .wrapping_add(super::types::layout(lowering.graph, ty)?.0)
+                            .wrapping_mul(8),
+                    );
+                    return Ok(());
+                }
+                let Some(initializer) = initializer else {
+                    if !plan.union && !nested {
+                        lowering.subobject_constructed(ty, offset, None)?;
+                    }
+                    return Ok(());
                 };
-                self.initialize_class_member(
+                wrote = true;
+                let first = lowering.lifetime.cleanups.len();
+                let region = lowering.begin_subobject_initializer(initializer, None)?;
+                lowering.constructor_aggregate_member(
+                    member,
                     pointer,
-                    ty,
-                    offset,
-                    child.constructor,
-                    child.arguments,
+                    initializer,
+                    union,
+                    location,
                 )?;
-                self.destroy_temporaries(first)?;
-                self.end_lifetime_expression(region)?;
+                lowering.destroy_temporaries(first)?;
+                lowering.end_lifetime_expression(region)?;
                 if !plan.union && !nested {
-                    self.subobject_constructed(ty, offset, None)?;
+                    lowering.subobject_constructed(ty, offset, None)?;
                 }
-                self.bit_initialization.unit = 0;
-                self.bit_initialization.high = self.bit_initialization.high.max(
-                    local_offset
-                        .wrapping_add(super::types::layout(self.graph, ty)?.0)
+                lowering.bit_initialization.unit = 0;
+                lowering.bit_initialization.high = lowering.bit_initialization.high.max(
+                    lowering
+                        .graph
+                        .lower_member_offset(member)?
+                        .wrapping_add(super::types::layout(lowering.graph, ty)?.0)
                         .wrapping_mul(8),
                 );
-                continue;
-            }
-            let Some(initializer) = initializer else {
-                if !plan.union && !nested {
-                    self.subobject_constructed(ty, offset, None)?;
-                }
-                continue;
-            };
-            wrote = true;
-            let first = self.lifetime.cleanups.len();
-            let region = self.begin_subobject_initializer(initializer, None)?;
-            self.constructor_aggregate_member(member, pointer, initializer, union, location)?;
-            self.destroy_temporaries(first)?;
-            self.end_lifetime_expression(region)?;
-            if !plan.union && !nested {
-                self.subobject_constructed(ty, offset, None)?;
-            }
-            self.bit_initialization.unit = 0;
-            self.bit_initialization.high = self.bit_initialization.high.max(
-                self.graph
-                    .lower_member_offset(member)?
-                    .wrapping_add(super::types::layout(self.graph, ty)?.0)
-                    .wrapping_mul(8),
-            );
+                Ok(())
+            })?;
         }
         Ok(wrote)
     }

@@ -1539,6 +1539,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts)
             || self.graph.expression_facts.cast_call_view(id);
+        if intrinsic && matches!(node.kind, ExprKind::Call { .. }) {
+            // Printer::call reads an expanded builtin's own result facts,
+            // independently of the surrounding initialization's retyped item.
+            ty = facts.reference_cast.unwrap_or(facts.ty);
+            category = facts.category;
+        }
         let label = expression_label(node.kind, facts, intrinsic)?;
         self.indent(depth)?;
         write!(self.output, "{label} {} ", category.spelling())?;

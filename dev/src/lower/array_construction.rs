@@ -18,6 +18,7 @@ pub(super) struct Construction {
     pub raw: Value,
     pub size: Value,
     pub constructor: ConstructorId,
+    pub location: crate::support::source::SourceOffset,
     pub deallocator: Option<EntityId>,
 }
 impl Function<'_, '_, '_, '_> {
@@ -66,6 +67,7 @@ impl Function<'_, '_, '_, '_> {
             raw,
             size,
             constructor,
+            location,
             deallocator,
         } = construction;
         let slot = self.generated_slot("array_new_index", Type::I64)?;
@@ -109,7 +111,15 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Runtime(R::EhTry(cleanup)))?;
         }
         let scope = self.begin_copy_temporaries(temporaries);
-        self.call_constructor(constructor, Variant::Complete, object, None)?;
+        self.call_constructor(
+            constructor,
+            Variant::Complete,
+            object,
+            super::construction::ConstructorInput {
+                arguments: None,
+                location,
+            },
+        )?;
         self.end_copy_temporaries(scope)?;
         if guarded {
             self.effect(I::Runtime(R::EhEnd))?;

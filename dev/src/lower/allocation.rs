@@ -292,7 +292,12 @@ impl Function<'_, '_, '_, '_> {
             None
         };
         let saved = self.reference_lifetimes.aggregate.take();
-        let initialized = self.initialize_allocation(&use_, object.value, initializer);
+        let initialized = self.initialize_allocation(
+            &use_,
+            object.value,
+            initializer,
+            self.tree.expressions.get(id).location,
+        );
         self.reference_lifetimes.aggregate = saved;
         self.aggregation.floor = saved_floor;
         self.aggregation.regions = saved_regions;
@@ -335,12 +340,21 @@ impl Function<'_, '_, '_, '_> {
         use_: &AllocationView,
         object: Value,
         initializer: Option<ast::Initializer>,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         if let Some((constructor, arguments)) = use_.constructor {
             if initializer.is_none() && self.graph.lower_constructor_trivial(constructor) {
                 return Ok(());
             }
-            return self.construct_at(constructor, use_.target, object, Some(arguments));
+            return self.construct_at(
+                constructor,
+                use_.target,
+                object,
+                super::construction::ConstructorInput {
+                    arguments: Some(arguments),
+                    location,
+                },
+            );
         }
         if let TypeView::Class(class) = self.graph.lower_type(use_.target)? {
             let initializer =
@@ -379,6 +393,7 @@ impl Function<'_, '_, '_, '_> {
                     source,
                     elision,
                     super::construction::CopyCall::Expression,
+                    location,
                 );
             }
             return self.materialize_class(source, use_.target, object);

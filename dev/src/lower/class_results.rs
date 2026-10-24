@@ -408,6 +408,7 @@ impl Function<'_, '_, '_, '_> {
             object,
             action,
             super::construction::CopyCall::Expression,
+            self.tree.expressions.get(id).location,
         )? {
             Ok(())
         } else {

@@ -760,6 +760,8 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("constant class without scope"))?,
             );
             frame.object = Some(target);
+            frame.source_function =
+                Some(super::predefined_names::SourceFunction::ImplicitConstructor(class));
             frame
         };
         let parameters = frame.parameters.clone();
@@ -918,7 +920,20 @@ impl Analyzer<'_> {
             {
                 self.constexpr_frames.activate(place, location)?;
             }
-            self.construct_constant_object(place, initializer, constructor, scope, location)?;
+            let written = self.graph.constructors.get(id).written_members[index];
+            let function = self.graph.lower_constructor_entity(id);
+            let body_site = function
+                .and_then(|function| self.graph.lower_function_body(function))
+                .and_then(|body| {
+                    if let ast::Body::Parsed(body) = self.tree.bodies.get(body) {
+                        Some(self.tree.statements.get(body.compound).location)
+                    } else {
+                        None
+                    }
+                });
+            self.with_source_site((!written).then_some(body_site).flatten(), |analyzer| {
+                analyzer.construct_constant_object(place, initializer, constructor, scope, location)
+            })?;
         }
         Ok(())
     }

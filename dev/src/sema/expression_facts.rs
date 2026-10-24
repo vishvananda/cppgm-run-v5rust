@@ -301,6 +301,8 @@ pub(super) struct ExpressionFacts {
     constant_evaluation_queries: std::collections::HashSet<ast::ExprId>,
     stack_intrinsics:
         std::collections::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
+    source_locations:
+        std::collections::HashMap<ast::ExprId, super::source_locations::SourceLocation>,
     runtime_intrinsics:
         std::collections::HashMap<ast::ExprId, super::runtime_intrinsics::RuntimeIntrinsic>,
     integer_intrinsics:
@@ -342,7 +344,8 @@ pub(super) struct ExpressionFacts {
 }
 impl ExpressionFacts {
     pub(super) fn is_intrinsic(&self, id: ast::ExprId, facts: ExprFacts) -> bool {
-        self.stack_intrinsic(id).is_some()
+        self.source_location(id).is_some()
+            || self.stack_intrinsic(id).is_some()
             || self.runtime_intrinsic(id).is_some()
             || self.constant_evaluation_query(id)
             || facts.intrinsic.is_some()
@@ -350,6 +353,19 @@ impl ExpressionFacts {
             || self.atomic_intrinsic(id).is_some()
     }
 
+    pub(super) fn source_location(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::source_locations::SourceLocation> {
+        self.source_locations.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_source_location(
+        &mut self,
+        id: ast::ExprId,
+        kind: super::source_locations::SourceLocation,
+    ) {
+        self.source_locations.insert(self.root(id), kind);
+    }
     pub(super) fn constant_evaluation_query(&self, id: ast::ExprId) -> bool {
         self.constant_evaluation_queries.contains(&self.root(id))
     }

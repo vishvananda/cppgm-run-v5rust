@@ -319,6 +319,9 @@ impl Analyzer<'_> {
         destination: Option<Address>,
     ) -> Result<Returned, Error> {
         let id = self.graph.expression_facts.root(id);
+        if let Some(kind) = self.graph.expression_facts.source_location(id) {
+            return self.constant_source_location(id, kind);
+        }
         if let Some(super::runtime_intrinsics::RuntimeIntrinsic::Overflow(operation)) =
             self.graph.expression_facts.runtime_intrinsic(id)
         {
@@ -741,17 +744,23 @@ impl Analyzer<'_> {
                 self.constant_default_argument(function, index)?
             }
             .ok_or_else(|| nonconstant(location, "a call without an argument for a parameter"))?;
-            let value = match self.graph.types.get(parameter).kind {
-                TypeKind::Reference { element, .. } => {
-                    Returned::Place(self.bind_constant_reference(argument, element, scope)?)
-                }
-                TypeKind::Class(_) => {
-                    let place = self.allocate_constant_object(parameter, None, location)?;
-                    self.initialize_constant_class_from(argument, place, scope)?;
-                    Returned::Place(place)
-                }
-                _ => Returned::Value(self.constant_operand_value(argument, parameter, scope)?),
-            };
+            let value =
+                self.with_source_site((index >= written.len()).then_some(location), |analyzer| {
+                    match analyzer.graph.types.get(parameter).kind {
+                        TypeKind::Reference { element, .. } => Ok(Returned::Place(
+                            analyzer.bind_constant_reference(argument, element, scope)?,
+                        )),
+                        TypeKind::Class(_) => {
+                            let place =
+                                analyzer.allocate_constant_object(parameter, None, location)?;
+                            analyzer.initialize_constant_class_from(argument, place, scope)?;
+                            Ok(Returned::Place(place))
+                        }
+                        _ => Ok(Returned::Value(
+                            analyzer.constant_operand_value(argument, parameter, scope)?,
+                        )),
+                    }
+                })?;
             bound.push(value);
         }
         Ok(bound)
@@ -812,6 +821,7 @@ impl Analyzer<'_> {
             .scope
             .ok_or(Error::Invariant("constant function without scope"))?;
         let mut frame = Frame::new(returns, scope);
+        frame.source_function = Some(super::predefined_names::SourceFunction::Function(function));
         frame.object = object;
         for (index, value) in bound.into_iter().enumerate() {
             let entity = self

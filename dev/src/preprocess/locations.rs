@@ -4,6 +4,11 @@ use super::error::PreprocessError;
 use crate::support::source::{SourceBuffer, SourceError, SourceImage, SourceOffset};
 use std::rc::Rc;
 
+pub(crate) trait SourcePositions {
+    fn source_file(&self, location: SourceOffset) -> Rc<[u8]>;
+    fn source_line(&self, location: SourceOffset) -> Result<i64, PreprocessError>;
+}
+
 struct LineState {
     delta: i64,
     name: Rc<[u8]>,
@@ -34,21 +39,25 @@ impl<'a> Locations<'a> {
             file_literal: None,
         }
     }
-    pub(crate) fn line_and_name(
-        &self,
-        location: SourceOffset,
-    ) -> Result<(Rc<[u8]>, i64), PreprocessError> {
-        let state = self
-            .earlier
+    fn state_at(&self, location: SourceOffset) -> &LineState {
+        self.earlier
             .get(
                 self.earlier
                     .partition_point(|state| state.until <= location),
             )
-            .map_or(&self.current, |earlier| &earlier.state);
-        Ok((
-            state.name.clone(),
-            (self.physical_line(location)? + state.delta).max(1),
-        ))
+            .map_or(&self.current, |earlier| &earlier.state)
+    }
+    pub(crate) fn name_at(&self, location: SourceOffset) -> Rc<[u8]> {
+        self.state_at(location).name.clone()
+    }
+    pub(crate) fn line_at(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
+        Ok((self.physical_line(location)? + self.state_at(location).delta).max(1))
+    }
+    pub(crate) fn line_and_name(
+        &self,
+        location: SourceOffset,
+    ) -> Result<(Rc<[u8]>, i64), PreprocessError> {
+        Ok((self.name_at(location), self.line_at(location)?))
     }
     fn starts(&self) -> &[u32] {
         self.source.line_starts()
@@ -149,6 +158,17 @@ impl<'a> Locations<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filename_queries_do_not_demand_the_physical_line_index() {
+        let source = SourceBuffer::new(b"first\nsecond\n".to_vec()).unwrap();
+        let locations = Locations::new(&source, b"file.cpp");
+        assert!(!source.has_line_index());
+        assert_eq!(&*locations.name_at(SourceOffset(7)), b"file.cpp");
+        assert!(!source.has_line_index());
+        assert_eq!(locations.line_at(SourceOffset(7)).unwrap(), 2);
+        assert!(source.has_line_index());
+    }
 
     #[test]
     fn line_index_is_lazy_and_history_preserves_original_diagnostic_state() {

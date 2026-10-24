@@ -15,6 +15,11 @@ pub(super) enum ArrayBase {
     Address(Value),
     Member { pointer: TypeId, offset: u64 },
 }
+#[derive(Clone, Copy)]
+struct ConstructorSite {
+    constructor: ConstructorId,
+    location: crate::support::source::SourceOffset,
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn default_class_array(
         &mut self,
@@ -33,13 +38,22 @@ impl Function<'_, '_, '_, '_> {
         } else {
             ArrayBase::Address(storage)
         };
-        self.construct_class_elements(ty, base, constructor)
+        let location = self
+            .graph
+            .lower_variable(entity)?
+            .definition
+            .map(|declarator| self.tree.declarators.get(declarator).location)
+            .ok_or(crate::sema::Error::Invariant(
+                "constructed array without source",
+            ))?;
+        self.construct_class_elements(ty, base, constructor, location)
     }
     pub(super) fn construct_class_elements(
         &mut self,
         ty: TypeId,
         base: ArrayBase,
         constructor: ConstructorId,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let mut element = ty;
         let mut count = 1_u64;
@@ -62,12 +76,25 @@ impl Function<'_, '_, '_, '_> {
                 element,
                 base,
                 count,
-                constructor,
+                ConstructorSite {
+                    constructor,
+                    location,
+                },
                 temporaries,
                 throws && destroyed,
             )
         } else {
-            self.construct_array_loop(element, base, count, constructor, throws, temporaries)
+            self.construct_array_loop(
+                element,
+                base,
+                count,
+                ConstructorSite {
+                    constructor,
+                    location,
+                },
+                throws,
+                temporaries,
+            )
         }
     }
     fn construction_array_base(
@@ -95,10 +122,14 @@ impl Function<'_, '_, '_, '_> {
         element: TypeId,
         storage: ArrayBase,
         count: u64,
-        constructor: ConstructorId,
+        constructor_site: ConstructorSite,
         temporaries: bool,
         guarded: bool,
     ) -> Result<(), Error> {
+        let ConstructorSite {
+            constructor,
+            location,
+        } = constructor_site;
         let size = types::layout(self.graph, element)?.0;
         for index in 0..count {
             let guard = if index != 0 && guarded {
@@ -112,7 +143,15 @@ impl Function<'_, '_, '_, '_> {
             let scope = self.begin_element_temporaries(temporaries, guard.is_none());
             let base = self.construction_array_base(storage, element)?;
             let object = self.element_address(base, index, size, element)?;
-            self.call_constructor(constructor, Variant::Complete, object, None)?;
+            self.call_constructor(
+                constructor,
+                Variant::Complete,
+                object,
+                super::construction::ConstructorInput {
+                    arguments: None,
+                    location,
+                },
+            )?;
             self.end_copy_temporaries(scope)?;
             if let Some((dispatch, next)) = guard {
                 self.effect(I::Runtime(R::EhEnd))?;
@@ -141,10 +180,14 @@ impl Function<'_, '_, '_, '_> {
         element: TypeId,
         storage: ArrayBase,
         count: u64,
-        constructor: ConstructorId,
+        constructor_site: ConstructorSite,
         throws: bool,
         temporaries: bool,
     ) -> Result<(), Error> {
+        let ConstructorSite {
+            constructor,
+            location,
+        } = constructor_site;
         let destroyed = self.symbols.class_destructor(element)?.is_some();
         let size = types::layout(self.graph, element)?.0;
         let slot = self.generated_slot("constructor_array_index", Type::I64)?;
@@ -179,7 +222,15 @@ impl Function<'_, '_, '_, '_> {
         };
         let object = self.dynamic_element(storage, element, current, size, false)?;
         let scope = self.begin_copy_temporaries(temporaries);
-        self.call_constructor(constructor, Variant::Complete, object, None)?;
+        self.call_constructor(
+            constructor,
+            Variant::Complete,
+            object,
+            super::construction::ConstructorInput {
+                arguments: None,
+                location,
+            },
+        )?;
         self.end_copy_temporaries(scope)?;
         if cleanup.is_some() {
             self.effect(I::Runtime(R::EhEnd))?;

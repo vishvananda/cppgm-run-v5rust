@@ -32,6 +32,7 @@ impl Function<'_, '_, '_, '_> {
         supplied: &[ast::ExprId],
         variadic: bool,
         values: &mut Vec<Value>,
+        location: crate::support::source::SourceOffset,
     ) -> Result<Vec<(u32, crate::lowir::vocabulary::ObjectClasses)>, Error> {
         for (index, &parameter) in parameters.iter().enumerate() {
             let argument = supplied
@@ -44,26 +45,33 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "call argument missing",
                 )))?;
-            if matches!(
-                self.graph.lower_type(parameter)?,
-                TypeView::Reference { .. }
-            ) {
-                values.push(self.bind_reference(argument, parameter, Context::Argument)?);
-            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
-                values.push(self.class_argument(argument, parameter)?);
-            } else {
-                // argument() applies its recorded standard sequence to the
-                // raw rvalue; operand()'s member-address folding belongs to
-                // expression operands, not this call boundary.
-                let value = if self.graph.lower_function_conversion(argument)?.is_some() {
-                    self.operand(argument, Context::Argument)?
+            self.with_source_site((index >= supplied.len()).then_some(location), |lowering| {
+                if matches!(
+                    lowering.graph.lower_type(parameter)?,
+                    TypeView::Reference { .. }
+                ) {
+                    values.push(lowering.bind_reference(argument, parameter, Context::Argument)?);
+                } else if matches!(lowering.graph.lower_type(parameter)?, TypeView::Class(_)) {
+                    values.push(lowering.class_argument(argument, parameter)?);
                 } else {
-                    let value = self.expression(argument, Context::Argument)?;
-                    self.apply_conversion(argument, value, Context::Argument)?
-                };
-                let value = self.fit(value, parameter)?;
-                values.push(value.value);
-            }
+                    // argument() applies its recorded standard sequence to the
+                    // raw rvalue; operand()'s member-address folding belongs to
+                    // expression operands, not this call boundary.
+                    let value = if lowering
+                        .graph
+                        .lower_function_conversion(argument)?
+                        .is_some()
+                    {
+                        lowering.operand(argument, Context::Argument)?
+                    } else {
+                        let value = lowering.expression(argument, Context::Argument)?;
+                        lowering.apply_conversion(argument, value, Context::Argument)?
+                    };
+                    let value = lowering.fit(value, parameter)?;
+                    values.push(value.value);
+                }
+                Ok(())
+            })?;
         }
         let mut argument_classes = Vec::new();
         if variadic {
@@ -204,6 +212,7 @@ impl Function<'_, '_, '_, '_> {
         pointer: TypeId,
         initializer: ast::Initializer,
         union: bool,
+        location: crate::support::source::SourceOffset,
     ) -> Result<bool, Error> {
         let ty = self.graph.lower_entity_type(member)?;
         if !matches!(self.graph.lower_type(ty)?, TypeView::Class(_)) {
@@ -252,7 +261,7 @@ impl Function<'_, '_, '_, '_> {
         if union {
             self.untyped_places.insert(address);
         }
-        self.materialize_class(expr, ty, address)?;
+        self.materialize_class_at(expr, ty, address, false, location)?;
         Ok(true)
     }
     pub(super) fn class_conversion(
@@ -276,6 +285,22 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         arguments: crate::sema::lowering::ConstructorArguments,
     ) -> Result<(), Error> {
+        self.call_converting_constructor_at(
+            source,
+            constructor,
+            object,
+            arguments,
+            self.tree.expressions.get(source).location,
+        )
+    }
+    fn call_converting_constructor_at(
+        &mut self,
+        source: ast::ExprId,
+        constructor: crate::sema::lowering::ConstructorId,
+        object: Value,
+        arguments: crate::sema::lowering::ConstructorArguments,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
         let saved = self
             .converting_source
             .replace(self.without_parentheses(source));
@@ -283,7 +308,10 @@ impl Function<'_, '_, '_, '_> {
             constructor,
             super::construction::Variant::Complete,
             object,
-            Some(arguments),
+            super::construction::ConstructorInput {
+                arguments: Some(arguments),
+                location,
+            },
         );
         self.converting_source = saved;
         result
@@ -413,7 +441,10 @@ impl Function<'_, '_, '_, '_> {
                     constructor,
                     ty,
                     object,
-                    Some(crate::sema::lowering::ConstructorArguments::Value),
+                    super::construction::ConstructorInput {
+                        arguments: Some(crate::sema::lowering::ConstructorArguments::Value),
+                        location: self.tree.expressions.get(source).location,
+                    },
                 )
             }
             Some(ClassInitialization::Aggregate(values)) if values.is_empty() => Ok(()),
@@ -621,7 +652,13 @@ impl Function<'_, '_, '_, '_> {
         if let Some(list) = owned_list {
             self.initialize_list_object(list, ty, object, persistent, owner)?;
         } else {
-            self.materialize_prvalue(id, ty, object, false)?;
+            self.materialize_prvalue(
+                id,
+                ty,
+                object,
+                false,
+                self.tree.expressions.get(id).location,
+            )?;
         }
         if persistent && !self.terminated {
             self.persistent_alive(ty, slot)?;
@@ -662,18 +699,47 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         volatile: bool,
     ) -> Result<(), Error> {
+        self.materialize_class_at(
+            id,
+            ty,
+            object,
+            volatile,
+            self.tree.expressions.get(id).location,
+        )
+    }
+    pub(super) fn materialize_class_at(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        object: Value,
+        volatile: bool,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
         self.check_stack()?;
         self.symbols.storage_destructor(ty)?;
         let id = self.without_parentheses(id);
         if let Some(action @ CopyAction::Constructor { constructor, .. }) =
             self.graph.lower_class_copy(id)?
             && matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if class == self.graph.lower_constructor(constructor).class)
-            && self.materialize_copy(id, ty, object, Some(action), CopyCall::Expression)?
+            && self.materialize_copy(
+                id,
+                ty,
+                object,
+                Some(action),
+                CopyCall::Expression,
+                location,
+            )?
         {
             return Ok(());
         }
         if let Some((constructor, arguments)) = self.class_conversion(id) {
-            return self.call_converting_constructor(id, constructor, object, arguments);
+            return self.call_converting_constructor_at(
+                id,
+                constructor,
+                object,
+                arguments,
+                location,
+            );
         }
         if self.initialize_function_conversion(id, ty, object)? {
             return Ok(());
@@ -684,10 +750,11 @@ impl Function<'_, '_, '_, '_> {
             object,
             self.graph.lower_class_copy(id)?,
             CopyCall::Expression,
+            location,
         )? {
             return Ok(());
         }
-        self.materialize_prvalue(id, ty, object, volatile)
+        self.materialize_prvalue(id, ty, object, volatile, location)
     }
     pub(super) fn materialize_copy(
         &mut self,
@@ -696,6 +763,7 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         action: Option<CopyAction>,
         call: CopyCall,
+        location: crate::support::source::SourceOffset,
     ) -> Result<bool, Error> {
         match action {
             Some(CopyAction::Storage {
@@ -728,11 +796,19 @@ impl Function<'_, '_, '_, '_> {
                         constructor,
                         object,
                         crate::sema::lowering::ConstructorArguments::Single(id),
+                        location,
                     )?
                 {
                     return Ok(true);
                 }
-                self.call_constructor_from_expression(constructor, object, id, elision, call)?;
+                self.call_constructor_from_expression(
+                    constructor,
+                    object,
+                    id,
+                    elision,
+                    call,
+                    location,
+                )?;
                 return Ok(true);
             }
             None => (),
@@ -747,6 +823,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
         volatile: bool,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
@@ -768,17 +845,25 @@ impl Function<'_, '_, '_, '_> {
                         "class prvalue without selected constructor",
                     )))?;
                 if self.graph.lower_function_conversion(id)?.is_none()
-                    && self.delegate_copy_storage(constructor, object, arguments)?
+                    && self.delegate_copy_storage(constructor, object, arguments, location)?
                 {
                     return Ok(());
                 }
-                self.construct_at(constructor, ty, object, Some(arguments))
+                self.construct_at(
+                    constructor,
+                    ty,
+                    object,
+                    super::construction::ConstructorInput {
+                        arguments: Some(arguments),
+                        location,
+                    },
+                )
             }
             Some(ClassInitialization::Aggregate(arguments)) => {
                 self.aggregate_prvalue(ty, object, self.tree.expr_lists.get(arguments))
             }
             Some(ClassInitialization::FromExpression(source)) => {
-                self.materialize_class_qualified(source, ty, object, volatile)
+                self.materialize_class_at(source, ty, object, volatile, location)
             }
             None => match self.tree.expressions.get(id).kind {
                 ExprKind::VaArg { operand, .. } => {
@@ -811,7 +896,7 @@ impl Function<'_, '_, '_, '_> {
                     op, left, right, ..
                 } if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma) => {
                     self.discard(left)?;
-                    self.materialize_class_qualified(right, ty, object, volatile)
+                    self.materialize_class_at(right, ty, object, volatile, location)
                 }
                 ExprKind::Conditional {
                     condition,
@@ -823,6 +908,7 @@ impl Function<'_, '_, '_, '_> {
                     ty,
                     object,
                     volatile,
+                    location,
                 ),
                 _ => Err(Error::Missing("class prvalue materialization")),
             },

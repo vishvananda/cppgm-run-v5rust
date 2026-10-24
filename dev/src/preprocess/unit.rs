@@ -261,8 +261,25 @@ impl<'a> Preprocessor<'a> {
     pub(crate) fn name_spelling(&self, name: NameId) -> &[u8] {
         self.names.bytes(name)
     }
-    pub(crate) fn identifiers_mut(&mut self) -> &mut Identifiers {
-        &mut self.names
+    pub(crate) fn semantic_context(
+        &mut self,
+    ) -> (&mut Identifiers, &dyn super::locations::SourcePositions) {
+        (&mut self.names, &self.source)
+    }
+    pub(crate) fn source_file(
+        &self,
+        location: crate::support::source::SourceOffset,
+    ) -> std::rc::Rc<[u8]> {
+        super::locations::SourcePositions::source_file(&self.source, location)
+    }
+    pub(crate) fn source_line(
+        &self,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<i64, PreprocessError> {
+        super::locations::SourcePositions::source_line(&self.source, location)
+    }
+    pub(crate) fn identifiers(&self) -> &Identifiers {
+        &self.names
     }
     pub(crate) fn intern_name(&mut self, spelling: &[u8]) -> Result<NameId, PreprocessError> {
         self.names.intern(spelling).map_err(PreprocessError::Limit)

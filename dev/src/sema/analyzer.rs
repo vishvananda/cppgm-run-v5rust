@@ -35,7 +35,11 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
     pub(super) deferred_exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
     pub(super) declaration_access: super::declaration_access::DeclarationAccess,
-    pub(super) literal_bytes: &'tree crate::syntax::storage::TextStore,
+    pub(super) literal_bytes: &'tree mut crate::syntax::storage::TextStore,
+    pub(super) positions: &'tree dyn crate::preprocess::SourcePositions,
+    pub(super) source_site: Option<SourceOffset>,
+    pub(super) text_literals:
+        std::collections::HashMap<crate::lex::identifiers::NameId, ast::ExprId>,
     pub(super) literal_scanner: Box<crate::types::floating::FloatingScanner>,
     pub(super) identifiers: &'tree mut crate::lex::identifiers::Identifiers,
     pub(super) tree: &'tree mut Tree,
@@ -234,26 +238,33 @@ impl<'tree> Analyzer<'tree> {
                 .intern_name(b"__builtin_trap")
                 .map_err(|_| Error::Limit("semantic identifier limit"))?,
             runtime: super::runtime_intrinsics::names(cursor)?,
+            source_locations: super::source_locations::names(cursor)?,
             stack: super::stack_intrinsics::StackNames::new(cursor)?,
             floating: super::floating_intrinsics::names(cursor)?,
             integer: super::integer_intrinsics::names(cursor)?,
             atomic: super::atomic_operations::names(cursor)?,
         };
+        let decltype_name = cursor
+            .intern_name(b"decltype(...)")
+            .map_err(|_| Error::Limit("semantic identifier limit"))?;
+        let override_name = cursor
+            .intern_name(b"override")
+            .map_err(|_| Error::Limit("semantic identifier limit"))?;
+        let (identifiers, positions) = cursor.post.input_mut().semantic_context();
         let mut analyzer = Self {
             library_nans: [None; 3],
             deduced_pack_element: None,
-            decltype_name: cursor
-                .intern_name(b"decltype(...)")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
-            override_name: cursor
-                .intern_name(b"override")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+            decltype_name,
+            override_name,
             exception_overrides: Vec::new(),
             deferred_exception_overrides: Vec::new(),
             declaration_access: super::declaration_access::DeclarationAccess::default(),
-            literal_bytes: &cursor.spellings,
+            literal_bytes: &mut cursor.spellings,
+            positions,
+            source_site: None,
+            text_literals: std::collections::HashMap::new(),
             literal_scanner: Box::default(),
-            identifiers: cursor.post.input_mut().identifiers_mut(),
+            identifiers,
             deduced_initializer: None,
             placeholder_scratch: super::placeholders::PlaceholderScratch::default(),
             tree,

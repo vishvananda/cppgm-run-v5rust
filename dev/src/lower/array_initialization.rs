@@ -185,6 +185,7 @@ impl Function<'_, '_, '_, '_> {
             };
             self.construct_allocated_elements(
                 super::array_construction::Construction {
+                    location: self.tree.expressions.get(id).location,
                     element: shape.element,
                     elements: rest,
                     count,

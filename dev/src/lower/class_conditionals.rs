@@ -16,6 +16,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
         volatile: bool,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let then_block = self.new_block("condobj_then")?;
         let else_block = self.new_block("condobj_else")?;
@@ -80,7 +81,7 @@ impl Function<'_, '_, '_, '_> {
             } else if self.materialize_list_choice(operand, ty, object)? {
                 Ok(())
             } else {
-                self.materialize_class_qualified(operand, ty, object, volatile)
+                self.materialize_class_at(operand, ty, object, volatile, location)
             };
             self.lifetime.guarded_operands -= 1;
             self.aggregation.reopened = false;

@@ -243,6 +243,14 @@ impl Function<'_, '_, '_, '_> {
                 }
                 let saved = self.lifetime.declared_object.replace(object);
                 let result = (|| {
+                    let location = self
+                        .graph
+                        .lower_variable(entity)?
+                        .definition
+                        .map(|declarator| self.tree.declarators.get(declarator).location)
+                        .ok_or(crate::sema::Error::Invariant(
+                            "class initialization without source",
+                        ))?;
                     if matches!(initializer.kind, ast::InitializerKind::Parenthesized(_))
                         && let Some(action @ crate::sema::lowering::CopyAction::Constructor { .. }) =
                             self.graph.lower_class_copy(source)?
@@ -252,11 +260,12 @@ impl Function<'_, '_, '_, '_> {
                             object,
                             Some(action),
                             super::construction::CopyCall::Direct,
+                            location,
                         )?
                     {
                         return Ok(());
                     }
-                    self.materialize_class(expr, ty, object)
+                    self.materialize_class_at(expr, ty, object, false, location)
                 })();
                 self.lifetime.declared_object = saved;
                 return result;
@@ -322,7 +331,7 @@ impl Function<'_, '_, '_, '_> {
         union: bool,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
-        if self.materialize_member_expression(member, pointer, initializer, union)? {
+        if self.materialize_member_expression(member, pointer, initializer, union, location)? {
             return Ok(());
         }
         let ty = self.graph.lower_entity_type(member)?;
@@ -845,7 +854,10 @@ impl Function<'_, '_, '_, '_> {
                     self.graph.lower_default_constructor(class)?,
                     ty,
                     object,
-                    Some(crate::sema::lowering::ConstructorArguments::Value),
+                    super::construction::ConstructorInput {
+                        arguments: Some(crate::sema::lowering::ConstructorArguments::Value),
+                        location: crate::support::source::SourceOffset(0),
+                    },
                 )?;
             }
             Some(object)

@@ -712,3 +712,18 @@ impl<'a> SourceInput<'a> {
         Ok(())
     }
 }
+
+impl super::locations::SourcePositions for SourceInput<'_> {
+    fn source_file(&self, location: SourceOffset) -> std::rc::Rc<[u8]> {
+        let inclusion = self.inclusion_at(location);
+        inclusion
+            .locations
+            .name_at(SourceOffset(location.0 - inclusion.base))
+    }
+    fn source_line(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
+        let inclusion = self.inclusion_at(location);
+        inclusion
+            .locations
+            .line_at(SourceOffset(location.0 - inclusion.base))
+    }
+}

@@ -133,6 +133,7 @@ struct Object {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Key(ObjectId, i64, TypeId, Option<EntityId>);
 pub(super) struct Frame {
+    pub source_function: Option<super::predefined_names::SourceFunction>,
     pub result: TypeId,
     pub scope: ScopeId,
     pub object: Option<Address>,
@@ -147,6 +148,7 @@ impl Frame {
         Self {
             result,
             scope,
+            source_function: None,
             seeking: None,
             object: None,
             destination: None,

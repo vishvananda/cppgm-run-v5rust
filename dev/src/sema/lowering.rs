@@ -20,7 +20,9 @@ pub(crate) use super::integer_intrinsics::BitOperation;
 pub(crate) use super::lambdas::ClosureNamingContext;
 pub(crate) use super::literal_calls::LiteralCall;
 pub(crate) use super::overflow_intrinsics::OverflowOperation;
+pub(crate) use super::predefined_names::SourceFunction;
 pub(crate) use super::runtime_intrinsics::RuntimeIntrinsic;
+pub(crate) use super::source_locations::SourceLocation;
 pub(crate) use super::stack_intrinsics::StackIntrinsic;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
@@ -64,6 +66,7 @@ pub(crate) struct ConstructorView<'a> {
     pub union: bool,
     pub zero_before_value: bool,
     pub members: &'a [(EntityId, Option<ast::Initializer>)],
+    pub written_members: &'a [bool],
     pub bases: &'a [super::construction::BaseInitialization],
     pub indirect_bases: &'a [super::construction::BaseInitialization],
     pub class: EntityId,
@@ -488,6 +491,7 @@ impl Graph {
             }),
             union: self.entity(plan.class).key == crate::lex::vocabulary::Keyword::Union,
             members: &plan.members,
+            written_members: &plan.written_members,
             bases: &plan.bases,
             indirect_bases: &plan.indirect_bases,
             subobjects: &plan.subobjects,
@@ -2510,5 +2514,24 @@ impl Graph {
     }
     pub(crate) fn lower_union_class(&self, class: EntityId) -> bool {
         self.entity(class).key == crate::lex::vocabulary::Keyword::Union
+    }
+}
+
+impl Graph {
+    pub(crate) fn lower_source_location(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<SourceLocation>, Error> {
+        self.expression_facts.get(id)?;
+        Ok(self.expression_facts.source_location(id))
+    }
+    pub(crate) fn lower_predefined_function_name(
+        &self,
+        identifiers: &crate::lex::identifiers::Identifiers,
+        function: SourceFunction,
+        budget: crate::support::stack::StackBudget,
+        stack_base: usize,
+    ) -> Result<Vec<u8>, Error> {
+        super::predefined_names::function_name(self, identifiers, function, budget, stack_base)
     }
 }

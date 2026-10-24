@@ -18,6 +18,8 @@ mod lifetime_symbols;
 mod placeholder_mangling;
 #[path = "runtime_types.rs"]
 mod runtime_types;
+#[path = "source_positions.rs"]
+mod source_positions;
 #[path = "specialization_labels.rs"]
 mod specialization_labels;
 #[path = "thread_local_symbols.rs"]
@@ -2295,8 +2297,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         metadata.object = Some(program.names.intern(object)?);
                     }
                 }
-                B::Trap | B::Runtime(_) | B::Invoke | B::Allocation(_) | B::IsConstantEvaluated => {
-                }
+                B::Trap
+                | B::SourceLocation(_)
+                | B::Runtime(_)
+                | B::Invoke
+                | B::Allocation(_)
+                | B::IsConstantEvaluated => {}
             }
             return Ok(metadata);
         }

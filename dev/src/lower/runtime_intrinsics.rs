@@ -99,7 +99,12 @@ impl Function<'_, '_, '_, '_> {
             self.emit(call, source)
         }
     }
-    fn runtime_integer(&mut self, ty: Type, bits: u64, source: TypeId) -> Result<RValue, Error> {
+    pub(super) fn runtime_integer(
+        &mut self,
+        ty: Type,
+        bits: u64,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
         // FunctionLowering::integer builds an IntLiteral from int64_t even
         // for an unsigned source result. Untyped call operands expose its sign.
         let literal =

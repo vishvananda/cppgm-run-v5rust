@@ -75,6 +75,11 @@ impl Entry {
         }
     }
 }
+#[derive(Clone, Copy)]
+pub(super) struct ConstructorInput {
+    pub arguments: Option<ConstructorArguments>,
+    pub location: crate::support::source::SourceOffset,
+}
 impl Function<'_, '_, '_, '_> {
     pub(super) fn construct_local(
         &mut self,
@@ -120,14 +125,30 @@ impl Function<'_, '_, '_, '_> {
             matches!(initializer.kind, ast::InitializerKind::Parenthesized(_))
         }) && function
             .is_some_and(|function| !self.graph.lower_implicit_copy(function) && moving);
+        let location = self
+            .graph
+            .lower_variable(entity)?
+            .definition
+            .map(|declarator| self.tree.declarators.get(declarator).location)
+            .ok_or(crate::sema::Error::Invariant(
+                "constructed variable without source",
+            ))?;
         if let Some(arguments) = arguments
             && !written_move
-            && self.delegate_copy_storage(id, object, arguments)?
+            && self.delegate_copy_storage(id, object, arguments, location)?
         {
             return Ok(());
         }
         let saved = self.lifetime.declared_object.replace(object);
-        let result = self.construct_at(id, ty, object, arguments);
+        let result = self.construct_at(
+            id,
+            ty,
+            object,
+            ConstructorInput {
+                arguments,
+                location,
+            },
+        );
         self.lifetime.declared_object = saved;
         result
     }
@@ -136,9 +157,9 @@ impl Function<'_, '_, '_, '_> {
         id: ConstructorId,
         ty: TypeId,
         object: Value,
-        arguments: Option<ConstructorArguments>,
+        input: ConstructorInput,
     ) -> Result<(), Error> {
-        if matches!(arguments, Some(ConstructorArguments::Value)) {
+        if matches!(input.arguments, Some(ConstructorArguments::Value)) {
             if self.graph.lower_constructor(id).zero_before_value {
                 // Value-initialization zeroes storage before any nontrivial call.
                 self.zero_class_object(ty, object, None)?;
@@ -147,16 +168,16 @@ impl Function<'_, '_, '_, '_> {
                 return Ok(());
             }
         }
-        self.call_constructor(id, Variant::Complete, object, arguments)
+        self.call_constructor(id, Variant::Complete, object, input)
     }
     pub(super) fn call_constructor(
         &mut self,
         id: ConstructorId,
         variant: Variant,
         object: Value,
-        arguments: Option<ConstructorArguments>,
+        input: ConstructorInput,
     ) -> Result<(), Error> {
-        self.call_constructor_with_elision(id, variant, object, arguments, false, true)
+        self.call_constructor_with_elision(id, variant, object, input, false, true)
     }
     pub(super) fn call_constructor_from_expression(
         &mut self,
@@ -165,6 +186,7 @@ impl Function<'_, '_, '_, '_> {
         source: ast::ExprId,
         elision: bool,
         call: CopyCall,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         // object_lowering.cpp::call_constructor demands the selected body.
         // Only call_special publishes the class table at the call site;
@@ -173,7 +195,10 @@ impl Function<'_, '_, '_, '_> {
             id,
             Variant::Complete,
             object,
-            Some(ConstructorArguments::Single(source)),
+            ConstructorInput {
+                arguments: Some(ConstructorArguments::Single(source)),
+                location,
+            },
             elision,
             call == CopyCall::Direct,
         )
@@ -183,10 +208,14 @@ impl Function<'_, '_, '_, '_> {
         id: ConstructorId,
         variant: Variant,
         object: Value,
-        arguments: Option<ConstructorArguments>,
+        input: ConstructorInput,
         copy_elision: bool,
         publish_table: bool,
     ) -> Result<(), Error> {
+        let ConstructorInput {
+            arguments,
+            location,
+        } = input;
         let single;
         let written = match arguments {
             Some(ConstructorArguments::Values(values)) => self.tree.expr_lists.get(values),
@@ -265,40 +294,48 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "default constructor without argument",
                 )))?;
-            let value = if index == 0 && list_call {
-                let reference = if let TypeView::Reference { element, .. } =
-                    self.graph.lower_type(parameter)?
-                {
-                    Some(element)
-                } else {
-                    None
-                };
-                let ty = reference.unwrap_or(parameter);
-                let TypeView::Class(class) = self.graph.lower_type(ty)? else {
-                    return Err(crate::sema::Error::Invariant("list constructor parameter").into());
-                };
-                let slot = self.generated_slot(
-                    if reference.is_some() { "arg" } else { "argobj" },
-                    super::types::storage(self.graph, ty)?,
-                )?;
-                let address = self.emit(I::Addr(slot), ty)?.value;
-                self.initialize_list_object(default, ty, address, false, None)?;
-                if reference.is_some() || !self.graph.lower_direct_class_parameter(class)? {
-                    address
-                } else {
-                    slot
-                }
-            } else if matches!(
-                self.graph.lower_type(parameter)?,
-                TypeView::Reference { .. }
-            ) {
-                self.bind_reference(default, parameter, Context::Argument)?
-            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
-                self.class_argument(default, parameter)?
-            } else {
-                let value = self.operand(default, Context::Argument)?;
-                self.fit(value, parameter)?.value
-            };
+            let value =
+                self.with_source_site((index >= written.len()).then_some(location), |lowering| {
+                    Ok(if index == 0 && list_call {
+                        let reference = if let TypeView::Reference { element, .. } =
+                            lowering.graph.lower_type(parameter)?
+                        {
+                            Some(element)
+                        } else {
+                            None
+                        };
+                        let ty = reference.unwrap_or(parameter);
+                        let TypeView::Class(class) = lowering.graph.lower_type(ty)? else {
+                            return Err(crate::sema::Error::Invariant(
+                                "list constructor parameter",
+                            )
+                            .into());
+                        };
+                        let slot = lowering.generated_slot(
+                            if reference.is_some() { "arg" } else { "argobj" },
+                            super::types::storage(lowering.graph, ty)?,
+                        )?;
+                        let address = lowering.emit(I::Addr(slot), ty)?.value;
+                        lowering.initialize_list_object(default, ty, address, false, None)?;
+                        if reference.is_some()
+                            || !lowering.graph.lower_direct_class_parameter(class)?
+                        {
+                            address
+                        } else {
+                            slot
+                        }
+                    } else if matches!(
+                        lowering.graph.lower_type(parameter)?,
+                        TypeView::Reference { .. }
+                    ) {
+                        lowering.bind_reference(default, parameter, Context::Argument)?
+                    } else if matches!(lowering.graph.lower_type(parameter)?, TypeView::Class(_)) {
+                        lowering.class_argument(default, parameter)?
+                    } else {
+                        let value = lowering.operand(default, Context::Argument)?;
+                        lowering.fit(value, parameter)?.value
+                    })
+                })?;
             values.push(value);
         }
         // call_special evaluates omitted arguments before obtaining the hidden
@@ -410,6 +447,7 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         id: ConstructorId,
         object: Value,
+        location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let entry = Entry::Constructor(id, Variant::Base);
         let facts = entry.facts(self.graph)?;
@@ -450,17 +488,21 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "forwarded default missing",
                 )))?;
-            let value = if matches!(
-                self.graph.lower_type(parameter)?,
-                TypeView::Reference { .. }
-            ) {
-                self.bind_reference(expression, parameter, Context::Argument)?
-            } else if matches!(self.graph.lower_type(parameter)?, TypeView::Class(_)) {
-                self.class_argument(expression, parameter)?
-            } else {
-                let value = self.operand(expression, Context::Argument)?;
-                self.fit(value, parameter)?.value
-            };
+            let value = self.with_source_site(Some(location), |lowering| {
+                Ok(
+                    if matches!(
+                        lowering.graph.lower_type(parameter)?,
+                        TypeView::Reference { .. }
+                    ) {
+                        lowering.bind_reference(expression, parameter, Context::Argument)?
+                    } else if matches!(lowering.graph.lower_type(parameter)?, TypeView::Class(_)) {
+                        lowering.class_argument(expression, parameter)?
+                    } else {
+                        let value = lowering.operand(expression, Context::Argument)?;
+                        lowering.fit(value, parameter)?.value
+                    },
+                )
+            })?;
             values.push(value);
         }
         self.emit_constructor_call(entry, facts.nothrow, &values)
@@ -483,8 +525,12 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         offset: u64,
         constructor: ConstructorId,
-        arguments: Option<ConstructorArguments>,
+        input: ConstructorInput,
     ) -> Result<(), Error> {
+        let ConstructorInput {
+            arguments,
+            location,
+        } = input;
         let trivial = self.graph.lower_constructor_trivial(constructor);
         if arguments.is_none() && trivial {
             return Ok(());
@@ -510,6 +556,7 @@ impl Function<'_, '_, '_, '_> {
                 ty,
                 super::object_arrays::ArrayBase::Member { pointer, offset },
                 constructor,
+                location,
             );
         }
         let object = self.object_pointer(pointer)?.value;
@@ -520,7 +567,7 @@ impl Function<'_, '_, '_, '_> {
                 ty,
             )?
             .value;
-        self.construct_at(constructor, ty, object, arguments)
+        self.construct_at(constructor, ty, object, input)
     }
     pub(super) fn initialize_constructor(
         &mut self,
@@ -569,12 +616,20 @@ impl Function<'_, '_, '_, '_> {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
             }
             let object = self.object_pointer(plan.object_pointer)?.value;
-            if !self.delegate_copy_storage(delegation.constructor, object, delegation.arguments)? {
+            if !self.delegate_copy_storage(
+                delegation.constructor,
+                object,
+                delegation.arguments,
+                location,
+            )? {
                 self.call_constructor(
                     delegation.constructor,
                     variant,
                     object,
-                    Some(delegation.arguments),
+                    ConstructorInput {
+                        arguments: Some(delegation.arguments),
+                        location,
+                    },
                 )?;
             }
             if !began || self.lifetime.temporary_segment.is_nothrow() {
@@ -602,7 +657,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.virtual_context.pending = !self.graph.lower_virtual_bases(plan.class).is_empty();
         if variant != Variant::Base {
-            self.initialize_virtual_bases(id)?;
+            self.initialize_virtual_bases(id, location)?;
         }
         for index in 0..plan.bases.len() {
             if self
@@ -610,7 +665,7 @@ impl Function<'_, '_, '_, '_> {
                 .lower_inheritance_edge(plan.class, index)
                 .is_some_and(|(_, shared, _)| !shared)
             {
-                self.initialize_base(id, variant, index)?;
+                self.initialize_base(id, variant, index, location)?;
             }
         }
         self.virtual_context.pending = false;

@@ -35,6 +35,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub named_path: Vec<super::aggregates::Step>,
     pub aggregation: super::aggregate_cleanup::State,
     pub entity: Option<EntityId>,
+    pub name_context: Option<crate::sema::lowering::SourceFunction>,
     pub this_slot: Option<Value>,
     pub virtual_context: super::construction_context::FunctionContext,
     pub call_object_class: Option<EntityId>,
@@ -46,6 +47,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub initialization_output: Option<super::startup::InitializationOutput<'symbols>>,
     // While a converting constructor consumes its source, its first standard
     // conversion is active; the outer construction use must not recur.
+    pub source_site: Option<crate::support::source::SourceOffset>,
     pub converting_source: Option<ast::ExprId>,
     pub initialization_context: super::class_results::InitializationContext,
     pub reference_lifetimes: super::reference_lifetimes::Extensions,
@@ -232,6 +234,7 @@ pub(super) fn lower<'a>(
     builder.boundary(boundary);
     builder.block("entry")?;
     let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
+    function.name_context = entry.source_function(graph);
     function.initialization_output = output.initialization;
     function.virtual_context.class = facts.object;
     if result_boundary.indirect {
@@ -359,6 +362,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             named_path: Vec::new(),
             aggregation: super::aggregate_cleanup::State::default(),
             entity,
+            name_context: entity.map(crate::sema::lowering::SourceFunction::Function),
             this_slot: None,
             virtual_context: super::construction_context::FunctionContext::default(),
             call_object_class: None,
@@ -381,6 +385,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             static_initializer: false,
             initialization_output: None,
             converting_source: None,
+            source_site: None,
             initialization_context: super::class_results::InitializationContext::Ordinary,
             reference_lifetimes: super::reference_lifetimes::Extensions::default(),
             next_static: 0,

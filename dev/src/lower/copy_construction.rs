@@ -417,6 +417,7 @@ impl Function<'_, '_, '_, '_> {
         id: ConstructorId,
         object: Value,
         written: crate::sema::lowering::ConstructorArguments,
+        location: crate::support::source::SourceOffset,
     ) -> Result<bool, Error> {
         let plan = self.graph.lower_constructor(id);
         if !self.graph.lower_constructor_copies_storage(id) {
@@ -451,7 +452,7 @@ impl Function<'_, '_, '_, '_> {
         if !facts.is_place
             && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(class) if class == plan.class)
         {
-            self.materialize_prvalue(source, ty, object, false)?;
+            self.materialize_prvalue(source, ty, object, false, location)?;
         } else {
             let signature = self.graph.lower_constructor_function(id)?.ty;
             let TypeView::Function { parameters, .. } = self.graph.lower_type(signature)? else {
