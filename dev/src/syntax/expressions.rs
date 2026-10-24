@@ -12,6 +12,7 @@ use crate::support::source::SourceOffset;
 enum Operand {
     Type(TypeId),
     Expression(ExprId),
+    Compound(TypeId),
 }
 impl Parser<'_> {
     pub(super) fn continue_assignment_expression(
@@ -215,15 +216,22 @@ impl Parser<'_> {
             self.attempt(|parser| {
                 parser.cursor.advance()?;
                 let ty = parser.without_angle(|parser| parser.type_id(false))?;
+                if parser.at_compound_literal(ty)? {
+                    return Ok(Operand::Compound(ty));
+                }
                 if !parser.accept(P::RightParen)? || !parser.operand_start()? {
                     return parser.decline_operand();
                 }
-                Ok(ty)
+                Ok(Operand::Type(ty))
             })?
         } else {
             None
         };
-        if let Some(ty) = cast {
+        if let Some(Operand::Compound(ty)) = cast {
+            let literal = self.compound_literal(location, ty)?;
+            return self.postfix(literal);
+        }
+        if let Some(Operand::Type(ty)) = cast {
             let operand = self.unary()?;
             return self.tree.expressions.add(Expression {
                 location,
@@ -242,6 +250,28 @@ impl Parser<'_> {
             parser.parenthesized_end(location, inner)
         })?;
         self.postfix(expression)
+    }
+    fn at_compound_literal(&mut self, ty: TypeId) -> Result<bool, ParseError> {
+        if self.environment != super::parser::Environment::Hosted
+            || !self.at(P::RightParen)?
+            || !self.at_ahead(P::LeftBrace, 1)?
+        {
+            return Ok(false);
+        }
+        Ok(self.tree.types.get(ty).declarator.is_none_or(|id| {
+            let declarator = self.tree.declarators.get(id);
+            declarator.pointers.is_empty()
+                && declarator.nested.is_none()
+                && declarator.suffixes.is_empty()
+        }))
+    }
+    fn compound_literal(
+        &mut self,
+        location: SourceOffset,
+        ty: TypeId,
+    ) -> Result<ExprId, ParseError> {
+        self.expect(P::RightParen)?;
+        self.functional_cast(location, self.tree.types.get(ty).specifiers)
     }
     fn parenthesized_end(
         &mut self,
@@ -594,13 +624,16 @@ impl Parser<'_> {
             if parser.is_type_name(name, binding, false, false)
                 && let Some(ty) = parser.attempt(|parser| {
                     let ty = parser.type_from_name(name, start)?;
+                    if parser.at_compound_literal(ty)? {
+                        return Ok(Operand::Compound(ty));
+                    }
                     if !parser.accept(P::RightParen)? || !parser.operand_start()? {
                         return parser.decline_operand();
                     }
-                    Ok(ty)
+                    Ok(Operand::Type(ty))
                 })?
             {
-                return Ok(Operand::Type(ty));
+                return Ok(ty);
             }
             let primary = parser.primary_from_name(name, binding, start)?;
             let inner = parser.continue_expression(primary)?;
@@ -621,6 +654,10 @@ impl Parser<'_> {
                 })
             }
             Operand::Expression(inner) => self.postfix(inner),
+            Operand::Compound(ty) => {
+                let literal = self.compound_literal(location, ty)?;
+                self.postfix(literal)
+            }
         }
     }
     fn type_trait(&mut self, location: SourceOffset, keyword: K) -> Result<ExprId, ParseError> {
@@ -652,6 +689,7 @@ impl Parser<'_> {
         })?;
         let (ty, operand) = match reading {
             Operand::Type(ty) => (Some(ty), None),
+            Operand::Compound(_) => return Err(ParseError::Invariant("compound type operand")),
             Operand::Expression(expression) => (None, Some(expression)),
         };
         let expr = self.tree.expressions.add(Expression {
@@ -689,6 +727,9 @@ impl Parser<'_> {
             })?;
             let (ty, operand, parenthesized) = match reading {
                 Operand::Type(ty) => (Some(ty), None, false),
+                Operand::Compound(_) => {
+                    return Err(ParseError::Invariant("compound sizeof operand"));
+                }
                 Operand::Expression(inner) => {
                     let paren = self.tree.expressions.add(Expression {
                         location: start,
@@ -930,28 +971,62 @@ impl Parser<'_> {
         self.nested(|parser| {
             let location = parser.location()?;
             parser.expect(P::LeftBrace)?;
-            let (elements, trailing_comma) = parser.without_angle(|parser| {
-                let start = parser.tree.expr_lists.begin();
-                let mut trailing_comma = false;
-                while !parser.at(P::RightBrace)? {
-                    let element = parser.expanded_initializer()?;
-                    parser.tree.expr_lists.push(element);
-                    if !parser.accept(P::Comma)? {
-                        break;
-                    }
-                    trailing_comma = parser.at(P::RightBrace)?;
-                }
-                parser.expect(P::RightBrace)?;
-                Ok((parser.tree.expr_lists.finish(start)?, trailing_comma))
-            })?;
-            parser.tree.expressions.add(Expression {
-                location,
-                kind: ExprKind::Braced {
-                    elements,
-                    trailing_comma,
-                },
-            })
+            let kind = parser.without_angle(Self::braced_elements)?;
+            parser.tree.expressions.add(Expression { location, kind })
         })
+    }
+    fn braced_elements(&mut self) -> Result<ExprKind, ParseError> {
+        let start = self.tree.expr_lists.begin();
+        let mut trailing_comma = false;
+        let designator_start = self.tree.designators.begin();
+        let mut any_designator = false;
+        let mut count = 0;
+        while !self.at(P::RightBrace)? {
+            let designator = self.initializer_designator()?;
+            if designator.is_some() && !any_designator {
+                for _ in 0..count {
+                    self.tree.designators.push(None);
+                }
+                any_designator = true;
+            }
+            if any_designator {
+                self.tree.designators.push(designator);
+            }
+            count += 1;
+            let element = self.expanded_initializer()?;
+            self.tree.expr_lists.push(element);
+            if !self.accept(P::Comma)? {
+                break;
+            }
+            trailing_comma = self.at(P::RightBrace)?;
+        }
+        self.expect(P::RightBrace)?;
+        let designators = self.tree.designators.finish(designator_start)?;
+        Ok(ExprKind::Braced {
+            elements: self.tree.expr_lists.finish(start)?,
+            designators: if any_designator {
+                designators
+            } else {
+                List::default()
+            },
+            trailing_comma,
+        })
+    }
+
+    fn initializer_designator(
+        &mut self,
+    ) -> Result<Option<crate::lex::identifiers::NameId>, ParseError> {
+        if self.environment != super::parser::Environment::Hosted
+            || !self.at(P::Dot)?
+            || !matches!(self.cursor.peek(1)?.kind, TokenKind::Identifier(_))
+            || !(self.at_ahead(P::Assign, 2)? || self.at_ahead(P::LeftBrace, 2)?)
+        {
+            return Ok(None);
+        }
+        self.cursor.advance()?;
+        let name = self.identifier()?;
+        self.accept(P::Assign)?;
+        Ok(Some(name))
     }
     fn expanded_initializer(&mut self) -> Result<ExprId, ParseError> {
         let mentions = self.pack_mentions;

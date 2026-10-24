@@ -1,0 +1,58 @@
+struct Pair { int first, second, third; };
+union Variant { int small; long wide; };
+struct Outer {
+  int head;
+  union { int narrow; long wide; };
+  struct { int left, right; };
+  int values[3];
+  Pair nested;
+  char text[4];
+  int tail;
+};
+constexpr Outer constant = {.wide = 19, .right = 7, .values = 3,
+                           .nested = 5, .text = "ok", .tail = 11};
+static_assert(constant.head == 0 && constant.wide == 19 && constant.left == 0,
+              "anonymous union selection and omitted fields");
+static_assert(constant.values[0] == 3 && constant.values[1] == 0 &&
+              constant.nested.first == 5 && constant.nested.second == 0,
+              "one designated element belongs to one subaggregate");
+Variant stored = {.wide = 0x100000002L};
+long runtime(long value) { return value; }
+Variant dynamic = {.wide = runtime(0x100000005L)};
+struct Holder {
+  Variant value;
+  Holder(long n) : value{.wide = n} {}
+};
+constexpr Variant variants[2] = {{.wide = 0x100000008L}, {.small = 9}};
+static_assert(variants[0].wide == 0x100000008L && variants[1].small == 9, "array variants");
+struct Flags { unsigned first : 3; unsigned : 2; unsigned last : 5; };
+int from_reference(const Variant& value) { return value.wide == 0x100000007L; }
+struct Other { int different; };
+int select(Pair p) { return p.second; }
+int select(Other) { return 99; }
+template<class T> T make(int n) { return (T){.second = n, .third {8}}; }
+void* operator new(unsigned long);
+void operator delete(void*) noexcept;
+int main() {
+  Outer local = {.wide = 21, .left = 1, .right = 9, .values = 4,
+                 .nested = 6, .text = "hi", .tail = 12};
+  Variant returned = (Variant){.wide = 0x100000003L};
+  Variant* allocated = new Variant{.wide = 0x100000004L};
+  Pair pair = make<Pair>(13);
+  const Variant& reference = {.wide = 0x100000006L};
+  Flags flags = {.last = 17};
+  Holder holder(0x100000009L);
+  Variant array[2] = {{.wide = 0x10000000aL}, {.small = 11}};
+  int result = local.head == 0 && local.wide == 21 && local.left == 1 &&
+      local.right == 9 && local.values[0] == 4 && local.values[2] == 0 &&
+      local.nested.first == 6 && local.nested.third == 0 && local.text[1] == 'i' &&
+      local.tail == 12 && stored.wide == 0x100000002L && returned.wide == 0x100000003L &&
+      allocated->wide == 0x100000004L && pair.first == 0 && pair.second == 13 &&
+      pair.third == 8 && select({.second = 14}) == 14 &&
+      dynamic.wide == 0x100000005L && reference.wide == 0x100000006L &&
+      from_reference({.wide = 0x100000007L}) && flags.first == 0 && flags.last == 17 &&
+      holder.value.wide == 0x100000009L && array[0].wide == 0x10000000aL && array[1].small == 11 &&
+      (int){4} == 4 && (Pair){.second = 16}.second == 16 ? 0 : 1;
+  delete allocated;
+  return result;
+}

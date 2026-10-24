@@ -38,6 +38,7 @@ enum Item {
 struct Input<'a> {
     values: &'a [ast::ExprId],
     next: usize,
+    selected: Option<EntityId>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NamedStorage {
@@ -50,6 +51,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
         values: &[ast::ExprId],
+        selected: Option<EntityId>,
     ) -> Result<(), Error> {
         if self.prvalue_helper(ty, object, values)? {
             return Ok(());
@@ -65,7 +67,7 @@ impl Function<'_, '_, '_, '_> {
         if values.is_empty() && self.symbols.zeroed_by_value(ty)? {
             return self.zero_class_object(ty, object, None);
         }
-        self.aggregate_array(ty, object, values)
+        self.aggregate_array(ty, object, values, selected)
     }
     /// Allocated nonempty lists use structured actions directly: the new-expression
     /// already owns the storage/member cleanup chain and its initial region.
@@ -74,6 +76,7 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         object: Value,
         values: &[ast::ExprId],
+        selected: Option<EntityId>,
     ) -> Result<(), Error> {
         if self.prvalue_helper(ty, object, values)? {
             return Ok(());
@@ -83,7 +86,16 @@ impl Function<'_, '_, '_, '_> {
             steps: Vec::new(),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
-        self.named_contents(ty, &mut Input { values, next: 0 }, &mut path, false)
+        self.named_contents(
+            ty,
+            &mut Input {
+                values,
+                next: 0,
+                selected,
+            },
+            &mut path,
+            false,
+        )
     }
     pub(super) fn constructor_aggregate_base(
         &mut self,
@@ -103,6 +115,7 @@ impl Function<'_, '_, '_, '_> {
         let mut input = Input {
             values: self.tree.expr_lists.get(elements),
             next: 0,
+            selected: self.graph.lower_list_union_member(id),
         };
         let mut path = Path {
             root: Root::Address(object),
@@ -308,6 +321,7 @@ impl Function<'_, '_, '_, '_> {
         let mut input = Input {
             values: self.tree.expr_lists.get(elements),
             next: 0,
+            selected: self.graph.lower_list_union_member(id),
         };
         let mut path = Path {
             root: Root::Slot(slot),
@@ -370,7 +384,17 @@ impl Function<'_, '_, '_, '_> {
             }
         };
         self.symbols.storage_destructor(ty)?;
-        let mut input = Input { values, next: 0 };
+        let selected = match initializer.kind {
+            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                self.graph.lower_list_union_member(id)
+            }
+            _ => None,
+        };
+        let mut input = Input {
+            values,
+            next: 0,
+            selected,
+        };
         let mut path = Path {
             root: Root::This(pointer),
             steps: std::mem::take(&mut self.named_path),
@@ -430,7 +454,11 @@ impl Function<'_, '_, '_, '_> {
         storage: Value,
         values: &[ast::ExprId],
     ) -> Result<(), Error> {
-        let mut input = Input { values, next: 0 };
+        let mut input = Input {
+            values,
+            next: 0,
+            selected: None,
+        };
         let mut path = Path {
             root: Root::Slot(storage),
             steps: std::mem::take(&mut self.named_path),
@@ -446,9 +474,14 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         address: Value,
         values: &[ast::ExprId],
+        selected: Option<EntityId>,
     ) -> Result<(), Error> {
         self.symbols.storage_destructor(ty)?;
-        let mut input = Input { values, next: 0 };
+        let mut input = Input {
+            values,
+            next: 0,
+            selected,
+        };
         let mut path = Path {
             root: Root::Address(address),
             steps: Vec::new(),
@@ -471,7 +504,16 @@ impl Function<'_, '_, '_, '_> {
             steps: Vec::new(),
             volatile: self.graph.lower_cv(ty) & 2 != 0,
         };
-        self.named_contents(ty, &mut Input { values, next: 0 }, &mut path, false)
+        self.named_contents(
+            ty,
+            &mut Input {
+                values,
+                next: 0,
+                selected: None,
+            },
+            &mut path,
+            false,
+        )
     }
     pub(super) fn automatic_array_contents(
         &mut self,
@@ -489,6 +531,7 @@ impl Function<'_, '_, '_, '_> {
             &mut Input {
                 values: &[expr],
                 next: 0,
+                selected: None,
             },
             &mut path,
             Item::ArrayElement,
@@ -602,8 +645,13 @@ impl Function<'_, '_, '_, '_> {
             return self.structured_members(class, input, path);
         }
         let (members, union) = self.graph.lower_class_members(class)?;
+        let selected = self
+            .graph
+            .lower_selected_union_member(class, input.selected);
         for &member in members {
-            if self.graph.lower_unnamed_bit_field(member) {
+            if self.graph.lower_unnamed_bit_field(member)
+                || selected.is_some_and(|selected| selected != member)
+            {
                 continue;
             }
             if self.graph.lower_bit_field(member)?.is_some() {
@@ -721,6 +769,7 @@ impl Function<'_, '_, '_, '_> {
                 let mut nested = Input {
                     values: self.tree.expr_lists.get(elements),
                     next: 0,
+                    selected: self.graph.lower_list_union_member(id),
                 };
                 return self.named_contents(
                     ty,
@@ -873,6 +922,7 @@ impl Function<'_, '_, '_, '_> {
                     &mut Input {
                         values: self.tree.expr_lists.get(elements),
                         next: 0,
+                        selected: self.graph.lower_list_union_member(id),
                     },
                     path,
                     matches!(item, Item::StructuredMember),
@@ -1079,8 +1129,13 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let (members, union) = self.graph.lower_class_members(class)?;
+        let selected = self
+            .graph
+            .lower_selected_union_member(class, input.selected);
         for &member in members {
-            if self.graph.lower_unnamed_bit_field(member) {
+            if self.graph.lower_unnamed_bit_field(member)
+                || selected.is_some_and(|selected| selected != member)
+            {
                 continue;
             }
             if self.graph.lower_bit_field(member)?.is_some() {

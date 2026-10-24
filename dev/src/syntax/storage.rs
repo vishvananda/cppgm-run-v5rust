@@ -32,6 +32,17 @@ pub(crate) struct List<T> {
     end: u32,
     marker: PhantomData<fn() -> T>,
 }
+impl<T> PartialEq for List<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.begin == other.begin && self.end == other.end
+    }
+}
+impl<T> Eq for List<T> {}
+impl<T> std::hash::Hash for List<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&(self.begin, self.end), state);
+    }
+}
 impl<T> Copy for List<T> {}
 impl<T> Clone for List<T> {
     fn clone(&self) -> Self {
@@ -48,6 +59,31 @@ impl<T> Default for List<T> {
     }
 }
 impl<T> List<T> {
+    /// Borrow a checked range of an existing immutable slab list.
+    pub(crate) fn range(self, range: std::ops::Range<usize>) -> Result<Self, ParseError> {
+        let count = usize::try_from(self.end - self.begin)
+            .map_err(|_| ParseError::Limit("syntax list range"))?;
+        if range.start > range.end || range.end > count {
+            return Err(ParseError::Invariant("syntax list range"));
+        }
+        let begin = self
+            .begin
+            .checked_add(
+                u32::try_from(range.start).map_err(|_| ParseError::Limit("syntax list range"))?,
+            )
+            .ok_or(ParseError::Limit("syntax list range"))?;
+        let end = self
+            .begin
+            .checked_add(
+                u32::try_from(range.end).map_err(|_| ParseError::Limit("syntax list range"))?,
+            )
+            .ok_or(ParseError::Limit("syntax list range"))?;
+        Ok(Self {
+            begin,
+            end,
+            marker: PhantomData,
+        })
+    }
     pub(crate) fn is_empty(self) -> bool {
         self.begin == self.end
     }

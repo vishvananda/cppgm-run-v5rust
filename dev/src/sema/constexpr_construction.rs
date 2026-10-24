@@ -56,6 +56,7 @@ impl Analyzer<'_> {
                     &mut 0,
                     scope,
                     location,
+                    self.graph.lower_aggregate_union_member(elements),
                 );
             }
             Some(ClassInitialization::FromExpression(expr)) => {
@@ -267,6 +268,7 @@ impl Analyzer<'_> {
                             &mut 0,
                             scope,
                             location,
+                            self.graph.lower_list_union_member(expr),
                         );
                     }
                     values
@@ -444,7 +446,7 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("constant list syntax"));
         };
         let values = Arguments::new(self.tree.expr_lists.get(values));
-        self.constant_aggregate(elements, values.as_slice(), &mut 0, scope, location)?;
+        self.constant_aggregate(elements, values.as_slice(), &mut 0, scope, location, None)?;
         elements.designated = element;
         let first = self.constant_member_slot(target, members[0], location)?;
         let second = self.constant_member_slot(target, members[1], location)?;
@@ -471,6 +473,7 @@ impl Analyzer<'_> {
         next: &mut usize,
         scope: ScopeId,
         location: SourceOffset,
+        selection: Option<super::graph::EntityId>,
     ) -> Result<(), Error> {
         self.check_stack()?;
         match self.graph.types.get(target.designated).kind {
@@ -491,7 +494,11 @@ impl Analyzer<'_> {
             TypeKind::Class(class) => {
                 let selected = (self.graph.entity(class).key
                     == crate::lex::vocabulary::Keyword::Union)
-                    .then(|| self.graph.union_list_member(class, *next >= values.len()))
+                    .then(|| {
+                        self.graph
+                            .lower_selected_union_member(class, selection)
+                            .or_else(|| self.graph.union_list_member(class, *next >= values.len()))
+                    })
                     .flatten();
                 for index in 0..self.graph.entity(class).members.len() {
                     let member = self.graph.entity(class).members[index];
@@ -544,7 +551,7 @@ impl Analyzer<'_> {
                     // The frozen interpreter zeroes an omitted array of
                     // aggregates, but visits an omitted class's members.
                     if element == target.designated {
-                        return self.constant_aggregate(target, &[], &mut 0, scope, location);
+                        return self.constant_aggregate(target, &[], &mut 0, scope, location, None);
                     }
                 } else {
                     let constructor = self.default_constructor(class, location)?;
@@ -564,15 +571,8 @@ impl Analyzer<'_> {
             .graph
             .class_of(target.designated)
             .is_some_and(|class| self.graph.aggregate_class(class));
-        if aggregate
-            && !braced
-            && self
-                .graph
-                .expression_facts
-                .get(expr)
-                .is_ok_and(|facts| self.graph.class_of(facts.ty).is_none())
-        {
-            return self.constant_aggregate(target, values, next, scope, location);
+        if aggregate && !braced && !self.initializes_subaggregate(target.designated, expr)? {
+            return self.constant_aggregate(target, values, next, scope, location, None);
         }
         *next += 1;
         let constructor = self.graph.expression_facts.get(expr)?.constructor;

@@ -39,8 +39,14 @@ impl Analyzer<'_> {
             self.parenthesized_elements
                 .extend(self.tree.expr_lists.get(arguments));
             let mut next = 0;
-            let result =
-                self.aggregate_members(arguments, &mut next, class, scope, initializer.location);
+            let result = self.aggregate_members(
+                arguments,
+                &mut next,
+                class,
+                scope,
+                initializer.location,
+                None,
+            );
             self.parenthesized_elements = saved;
             result?;
             if let Some(&extra) = self.tree.expr_lists.get(arguments).get(next) {

@@ -58,6 +58,7 @@ mod default_arguments;
 mod dependence;
 mod dependent_members;
 mod dependent_templates;
+mod designated_initialization;
 mod destruction;
 mod destructor_expressions;
 mod dump;

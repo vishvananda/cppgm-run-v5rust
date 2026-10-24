@@ -229,6 +229,19 @@ impl Analyzer<'_> {
         let ExprKind::Braced { elements, .. } = node.kind else {
             return Err(Error::Invariant("list initialization without list"));
         };
+        let object = match self.graph.types.get(target).kind {
+            TypeKind::Reference { element, .. } => element,
+            _ => target,
+        };
+        if let ExprKind::Braced { designators, .. } = node.kind
+            && !designators.is_empty()
+            && self.graph.class_of(object).is_none()
+        {
+            return Err(Error::at(
+                node.location,
+                "designated initializers of no class",
+            ));
+        }
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(elements));
         let values = argument_buffer.as_slice();
@@ -431,7 +444,7 @@ impl Analyzer<'_> {
                     self.tree.expressions.get(id).location,
                 )?;
             } else if self.graph.aggregate_class(class) {
-                self.aggregate_members(elements, next, class, scope, location)?;
+                self.aggregate_members(elements, next, class, scope, location, None)?;
             } else {
                 *next += 1;
                 let selected = self.initialize_class_arguments(

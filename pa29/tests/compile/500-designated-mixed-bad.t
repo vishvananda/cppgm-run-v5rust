@@ -1,0 +1,2 @@
+// PA29 designated initialization rejection.
+struct S { int a,b; }; S value = {.a=1, 2};

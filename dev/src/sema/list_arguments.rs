@@ -40,7 +40,12 @@ impl Analyzer<'_> {
         parameter: TypeId,
     ) -> Result<Option<ArgumentSequence>, Error> {
         self.check_stack()?;
-        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+        let ExprKind::Braced {
+            elements,
+            designators,
+            ..
+        } = self.tree.expressions.get(id).kind
+        else {
             return Err(Error::Invariant("list sequence without list"));
         };
         let reference = match self.graph.types.get(parameter).kind {
@@ -51,6 +56,9 @@ impl Analyzer<'_> {
         if reference.is_some_and(|(_, kind)| kind == RefKind::Lvalue)
             && self.type_cv(target) != Cv::CONST
         {
+            return Ok(None);
+        }
+        if !designators.is_empty() && self.graph.class_of(target).is_none() {
             return Ok(None);
         }
         let mut sequence = Conversion {
@@ -140,9 +148,16 @@ impl Analyzer<'_> {
                 }
                 sequence.rank = ConversionRank::UserDefined;
                 if self.graph.aggregate_class(class) {
+                    let Some(plan) = self.designated_list(id, class, None)? else {
+                        return Ok(None);
+                    };
                     let mut next = 0;
-                    if !self.list_members_accept(elements, &mut next, class)?
-                        || next != values.len()
+                    if !self.list_members_accept(
+                        plan.elements,
+                        &mut next,
+                        class,
+                        plan.union_member,
+                    )? || next != self.tree.expr_lists.get(plan.elements).len()
                     {
                         return Ok(None);
                     }
@@ -200,6 +215,7 @@ impl Analyzer<'_> {
         elements: List<ast::ExprId>,
         next: &mut usize,
         class: EntityId,
+        selection: Option<EntityId>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
         for index in 0..self.graph.entity(class).members.len() {
@@ -207,7 +223,12 @@ impl Analyzer<'_> {
                 break;
             }
             let member = self.graph.entity(class).members[index];
-            if self.graph.unnamed_bit_field(member) {
+            if self.graph.unnamed_bit_field(member)
+                || self
+                    .graph
+                    .lower_selected_union_member(class, selection)
+                    .is_some_and(|selected| selected != member)
+            {
                 continue;
             }
             let ty = self.graph.lower_entity_type(member)?;
@@ -286,7 +307,7 @@ impl Analyzer<'_> {
             && self.graph.aggregate_class(class)
             && self.graph.class_of(self.graph.expression_facts.get(id)?.ty) != Some(class)
         {
-            return self.list_members_accept(elements, next, class);
+            return self.list_members_accept(elements, next, class, None);
         }
         *next += 1;
         Ok(array.is_some() || self.argument_sequence(id, target)?.is_some())

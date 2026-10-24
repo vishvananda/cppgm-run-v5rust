@@ -365,7 +365,7 @@ impl Function<'_, '_, '_, '_> {
                 };
                 if elements.is_empty() {
                     return if self.symbols.empty_list_constructs(class)? {
-                        self.aggregate_array(use_.target, object, &[])
+                        self.aggregate_array(use_.target, object, &[], None)
                     } else {
                         self.zero_class_object(use_.target, object, None)
                     };
@@ -374,6 +374,7 @@ impl Function<'_, '_, '_, '_> {
                     use_.target,
                     object,
                     self.tree.expr_lists.get(elements),
+                    self.graph.lower_list_union_member(list),
                 );
             }
             let source = self.initializer_expression(initializer)?;

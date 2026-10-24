@@ -362,9 +362,11 @@ impl<'a> Cloner<'a> {
             },
             ExprKind::Braced {
                 elements,
+                designators,
                 trailing_comma,
             } => ExprKind::Braced {
                 elements: self.expressions(elements)?,
+                designators,
                 trailing_comma,
             },
             ExprKind::FunctionalCast {

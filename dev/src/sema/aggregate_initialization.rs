@@ -18,7 +18,42 @@ pub(super) enum Aggregation {
     Ineligible,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AggregateInitialization {
+    pub elements: List<ast::ExprId>,
+    pub union_member: Option<EntityId>,
+}
+impl From<List<ast::ExprId>> for AggregateInitialization {
+    fn from(elements: List<ast::ExprId>) -> Self {
+        Self {
+            elements,
+            union_member: None,
+        }
+    }
+}
 impl Graph {
+    pub(crate) fn lower_list_union_member(&self, id: ast::ExprId) -> Option<EntityId> {
+        match self.expression_facts.get(id).ok()?.class_initialization? {
+            super::expression_facts::ClassInitialization::Aggregate(elements) => {
+                self.lower_aggregate_union_member(elements)
+            }
+            _ => None,
+        }
+    }
+    pub(crate) fn lower_aggregate_union_member(
+        &self,
+        elements: List<ast::ExprId>,
+    ) -> Option<EntityId> {
+        self.expression_facts.union_list_member(elements)
+    }
+    pub(crate) fn lower_selected_union_member(
+        &self,
+        class: EntityId,
+        selected: Option<EntityId>,
+    ) -> Option<EntityId> {
+        selected.filter(|&member| self.entity(member).home == self.entity(class).scope)
+    }
+
     // aggregates.h::UnionListMember: an empty list prefers the variant
     // initialized by a brace-or-equal-initializer, including anonymous storage.
     pub(super) fn union_list_member(&self, class: EntityId, empty: bool) -> Option<EntityId> {
@@ -52,6 +87,26 @@ impl Graph {
     }
 }
 impl Analyzer<'_> {
+    // aggregates.h::InitializesSubaggregate: a class expression initializes
+    // that class, and a string literal initializes an array as one element.
+    pub(super) fn initializes_subaggregate(
+        &self,
+        target: TypeId,
+        expr: ast::ExprId,
+    ) -> Result<bool, Error> {
+        let facts = self.graph.expression_facts.get(expr)?;
+        Ok(match self.graph.types.get(target).kind {
+            TypeKind::Array { .. } => {
+                self.string_literal(expr)
+                    && matches!(self.graph.types.get(facts.ty).kind, TypeKind::Array { .. })
+            }
+            _ => {
+                self.graph.class_of(facts.ty).is_some()
+                    && self.graph.class_of(facts.ty) == self.graph.class_of(target)
+            }
+        })
+    }
+
     pub(super) fn class_list_initialize(
         &mut self,
         id: ast::ExprId,
@@ -68,7 +123,7 @@ impl Analyzer<'_> {
                 "initialization of an incomplete class object",
             ));
         }
-        let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+        let ast::ExprKind::Braced { .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("aggregate without list"));
         };
         if !self.graph.aggregate_class(class) {
@@ -84,8 +139,38 @@ impl Analyzer<'_> {
             return Ok(target);
         }
         let location = self.tree.expressions.get(id).location;
+        let plan = self
+            .designated_list(id, class, Some(scope))?
+            .ok_or(Error::Invariant("checked designated list"))?;
+        let elements = plan.elements;
+        if let ast::ExprKind::Braced {
+            designators,
+            trailing_comma,
+            ..
+        } = self.tree.expressions.get(id).kind
+            && !designators.is_empty()
+        {
+            self.tree.expressions.replace(
+                id,
+                ast::Expression {
+                    location,
+                    kind: ast::ExprKind::Braced {
+                        elements,
+                        designators: List::default(),
+                        trailing_comma,
+                    },
+                },
+            );
+        }
         let mut next = 0;
-        self.aggregate_members(elements, &mut next, class, scope, location)?;
+        self.aggregate_members(
+            elements,
+            &mut next,
+            class,
+            scope,
+            location,
+            plan.union_member,
+        )?;
         if let Some(&extra) = self.tree.expr_lists.get(elements).get(next) {
             return Err(Error::at(
                 self.tree.expressions.get(extra).location,
@@ -95,6 +180,11 @@ impl Analyzer<'_> {
         let bare = self.bare_type(target)?;
         self.publish_list(id, bare, ValueCategory::Prvalue)?;
         let mut facts = self.graph.expression_facts.get(id)?;
+        if let Some(member) = plan.union_member {
+            self.graph
+                .expression_facts
+                .set_union_list_member(elements, member);
+        }
         facts.class_initialization = Some(super::expression_facts::ClassInitialization::Aggregate(
             elements,
         ));
@@ -108,6 +198,7 @@ impl Analyzer<'_> {
         class: EntityId,
         scope: ScopeId,
         location: SourceOffset,
+        selection: Option<EntityId>,
     ) -> Result<(), Error> {
         self.check_stack()?;
         if !self.graph.aggregate_class(class) {
@@ -117,7 +208,13 @@ impl Analyzer<'_> {
         let selected = union
             .then(|| {
                 self.graph
-                    .union_list_member(class, *next >= self.tree.expr_lists.get(elements).len())
+                    .lower_selected_union_member(class, selection)
+                    .or_else(|| {
+                        self.graph.union_list_member(
+                            class,
+                            *next >= self.tree.expr_lists.get(elements).len(),
+                        )
+                    })
             })
             .flatten();
         for index in 0..self.graph.entity(class).members.len() {
@@ -167,7 +264,7 @@ impl Analyzer<'_> {
             TypeKind::Class(class) => {
                 // Reuse one borrowed empty child slice; no synthetic syntax is published.
                 let empty = List::default();
-                self.aggregate_members(empty, &mut 0, class, scope, SourceOffset(0))
+                self.aggregate_members(empty, &mut 0, class, scope, SourceOffset(0), None)
             }
             _ => Ok(()),
         }

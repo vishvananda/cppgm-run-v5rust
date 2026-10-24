@@ -293,6 +293,18 @@ enum CallView {
 
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    // Successful, class-specific designated-list shapes; source operands have
+    // stable types before ranking. No candidate publishes conversions here.
+    designated_lists: std::collections::HashMap<
+        (ast::ExprId, super::graph::EntityId),
+        super::aggregate_initialization::AggregateInitialization,
+    >,
+    // Only explicit union designations need this sparse fact. Normalized list
+    // identities are unique per source list and completed candidate class.
+    union_lists: std::collections::HashMap<
+        crate::syntax::storage::List<ast::ExprId>,
+        super::graph::EntityId,
+    >,
     // C++ builtin rewrites leave selected callee shells untyped. Keep full
     // Rust designation facts and retain their sparse presentation provenance
     // independently of the typed facts consumed by lowering.
@@ -343,6 +355,36 @@ pub(super) struct ExpressionFacts {
     callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
+    pub(super) fn union_list_member(
+        &self,
+        elements: crate::syntax::storage::List<ast::ExprId>,
+    ) -> Option<super::graph::EntityId> {
+        self.union_lists.get(&elements).copied()
+    }
+    pub(super) fn set_union_list_member(
+        &mut self,
+        elements: crate::syntax::storage::List<ast::ExprId>,
+        member: super::graph::EntityId,
+    ) {
+        self.union_lists.insert(elements, member);
+    }
+
+    pub(super) fn designated_list(
+        &self,
+        id: ast::ExprId,
+        class: super::graph::EntityId,
+    ) -> Option<super::aggregate_initialization::AggregateInitialization> {
+        self.designated_lists.get(&(id, class)).copied()
+    }
+    pub(super) fn set_designated_list(
+        &mut self,
+        id: ast::ExprId,
+        class: super::graph::EntityId,
+        plan: super::aggregate_initialization::AggregateInitialization,
+    ) {
+        self.designated_lists.insert((id, class), plan);
+    }
+
     pub(super) fn is_intrinsic(&self, id: ast::ExprId, facts: ExprFacts) -> bool {
         self.source_location(id).is_some()
             || self.stack_intrinsic(id).is_some()

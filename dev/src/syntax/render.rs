@@ -683,6 +683,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
             ExprKind::Braced {
                 elements,
                 trailing_comma,
+                ..
             } => {
                 self.text("{");
                 self.tasks.push(Render::Text("}"));

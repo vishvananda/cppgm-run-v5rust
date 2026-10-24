@@ -27,6 +27,11 @@ pub(crate) enum Item {
 pub(super) struct Images {
     values: HashMap<EntityId, Image>,
 }
+#[derive(Clone, Copy, Default)]
+struct ClassImage {
+    constructor: Option<super::construction::ConstructorId>,
+    member: Option<EntityId>,
+}
 enum Image {
     Constant(Vec<Item>),
     Dynamic(Vec<Item>),
@@ -205,7 +210,10 @@ impl Analyzer<'_> {
                 &mut 0,
                 scope,
                 out,
-                constructor,
+                ClassImage {
+                    constructor,
+                    member: expr.and_then(|id| self.graph.lower_list_union_member(id)),
+                },
             );
         }
         if matches!(
@@ -402,7 +410,7 @@ impl Analyzer<'_> {
                     TypeKind::Array { element, .. } if self.character_element(element)))
             {
                 let evaluated = if let TypeKind::Class(class) = self.graph.types.get(element).kind {
-                    self.static_class_list(class, list, next, scope, out, None)?
+                    self.static_class_list(class, list, next, scope, out, ClassImage::default())?
                 } else {
                     self.static_array_list(element, list, next, scope, out)?
                 };
@@ -427,11 +435,12 @@ impl Analyzer<'_> {
         next: &mut usize,
         scope: ScopeId,
         out: &mut Vec<Item>,
-        constructor: Option<super::construction::ConstructorId>,
+        initialization: ClassImage,
     ) -> Result<bool, Error> {
         self.check_stack()?;
         if !self.graph.aggregate_class(class)
-            && !self.static_memberwise_constructor(constructor, list.len() - *next)?
+            && !self
+                .static_memberwise_constructor(initialization.constructor, list.len() - *next)?
         {
             return Ok(false);
         }
@@ -439,7 +448,11 @@ impl Analyzer<'_> {
         let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
         let union = self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union;
         let selected = union
-            .then(|| self.graph.union_list_member(class, *next >= list.len()))
+            .then(|| {
+                self.graph
+                    .lower_selected_union_member(class, initialization.member)
+                    .or_else(|| self.graph.union_list_member(class, *next >= list.len()))
+            })
             .flatten();
         let mut position = 0;
         let mut bits = [0u8; 8];
@@ -525,7 +538,7 @@ impl Analyzer<'_> {
                     && matches!(self.graph.types.get(ty).kind, TypeKind::Array { element, .. } if self.character_element(element)))
             {
                 if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
-                    self.static_class_list(class, list, next, scope, out, None)?
+                    self.static_class_list(class, list, next, scope, out, ClassImage::default())?
                 } else {
                     self.static_array_list(ty, list, next, scope, out)?
                 }

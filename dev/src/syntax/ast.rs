@@ -514,6 +514,7 @@ pub(crate) enum ExprKind {
     },
     Braced {
         elements: List<ExprId>,
+        designators: List<Option<NameId>>,
         trailing_comma: bool,
     },
     FunctionalCast {
@@ -695,6 +696,7 @@ pub(crate) struct Tree {
     pub statement_readings: Lists<StatementReading>,
     pub decl_lists: Lists<DeclId>,
     pub expr_lists: Lists<ExprId>,
+    pub designators: Lists<Option<NameId>>,
     pub stmt_lists: Lists<StmtId>,
     pub name_lists: Lists<NameComponent>,
     pub specs: Lists<Specifier>,
@@ -733,6 +735,7 @@ pub(crate) struct TreeMark {
     statement_readings: ListMark,
     decl_lists: ListMark,
     expr_lists: ListMark,
+    designators: ListMark,
     stmt_lists: ListMark,
     name_lists: ListMark,
     specs: ListMark,
@@ -830,6 +833,7 @@ impl Tree {
             statement_readings: self.statement_readings.mark(),
             decl_lists: self.decl_lists.mark(),
             expr_lists: self.expr_lists.mark(),
+            designators: self.designators.mark(),
             stmt_lists: self.stmt_lists.mark(),
             name_lists: self.name_lists.mark(),
             specs: self.specs.mark(),
@@ -869,6 +873,7 @@ impl Tree {
         self.statement_readings.rewind(mark.statement_readings);
         self.decl_lists.rewind(mark.decl_lists);
         self.expr_lists.rewind(mark.expr_lists);
+        self.designators.rewind(mark.designators);
         self.stmt_lists.rewind(mark.stmt_lists);
         self.name_lists.rewind(mark.name_lists);
         self.specs.rewind(mark.specs);

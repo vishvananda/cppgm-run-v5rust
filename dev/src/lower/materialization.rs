@@ -873,9 +873,12 @@ impl Function<'_, '_, '_, '_> {
                     },
                 )
             }
-            Some(ClassInitialization::Aggregate(arguments)) => {
-                self.aggregate_prvalue(ty, object, self.tree.expr_lists.get(arguments))
-            }
+            Some(ClassInitialization::Aggregate(arguments)) => self.aggregate_prvalue(
+                ty,
+                object,
+                self.tree.expr_lists.get(arguments),
+                self.graph.lower_aggregate_union_member(arguments),
+            ),
             Some(ClassInitialization::FromExpression(source)) => {
                 self.materialize_class_at(source, ty, object, volatile, location)
             }
