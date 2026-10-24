@@ -157,9 +157,8 @@ impl Analyzer<'_> {
                 .is_some_and(|scope| self.graph.encloses(scope, owner))
         {
             let copy = matches!(frame.default, Some(ast::CaptureDefault::Copy));
-            // Capture through any enclosing ordinary lambda before retaining the
-            // current definition's fixed member list.
-            self.capture_variable(binding.entity, location)?;
+            // The definition walk fixes only this closure's potential captures.
+            // Enclosing bodies acquire captures through their own evaluated uses.
             self.capture_frames
                 .get_mut(call)
                 .ok_or(Error::Invariant("capture scan frame"))?

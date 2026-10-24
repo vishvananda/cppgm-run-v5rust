@@ -741,6 +741,7 @@ mod tests {
         let mut unit = SyntaxUnit::new(
             Preprocessor::with_name(&source, b"templated-closure-ownership").unwrap(),
         );
+        unit.set_hosted(true);
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
         let pattern_count = tree.expressions.mark();

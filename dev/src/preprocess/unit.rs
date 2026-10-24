@@ -27,6 +27,9 @@ pub struct Preprocessor<'a> {
     directives: u64,
 }
 impl<'a> Preprocessor<'a> {
+    pub(crate) fn hosted(&self) -> bool {
+        self.source.hosted
+    }
     pub(crate) fn enter_builtin_declarations(
         &mut self,
         text: &[u8],

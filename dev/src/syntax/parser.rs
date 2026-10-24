@@ -19,8 +19,14 @@ pub(super) enum DeclaratorContext {
     Ordinary,
     Friend,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Environment {
+    Course,
+    Hosted,
+}
 pub(super) struct Parser<'a> {
     pub cursor: Cursor<'a>,
+    pub environment: Environment,
     pub tree: Tree,
     pub scopes: Scopes,
     pub conflicts: super::conflicts::NameConflicts,
@@ -89,6 +95,7 @@ impl<'a> Parser<'a> {
     pub(super) fn new(cursor: Cursor<'a>) -> Self {
         Self {
             cursor,
+            environment: Environment::Course,
             tree: Tree::default(),
             scopes: Scopes::default(),
             conflicts: super::conflicts::NameConflicts::default(),

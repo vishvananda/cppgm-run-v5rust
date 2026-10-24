@@ -7,7 +7,7 @@ use super::{
         CaptureDefault, CaptureKind, ExprId, ExprKind, Expression, Lambda, LambdaBody,
         LambdaCapture, LambdaId, Qualifier, StmtId,
     },
-    parser::Parser,
+    parser::{Environment, Parser},
     scopes::{ScopeId, ScopeKind},
     storage::List,
 };
@@ -74,7 +74,7 @@ impl Parser<'_> {
         capture_default: Option<CaptureDefault>,
         captures: List<LambdaCapture>,
     ) -> Result<LambdaId, ParseError> {
-        let template_parameters = if self.at(P::Less)? {
+        let template_parameters = if self.environment == Environment::Hosted && self.at(P::Less)? {
             self.scopes.push_kind(ScopeKind::Template)?;
             Some(self.template_parameter_clause()?)
         } else {

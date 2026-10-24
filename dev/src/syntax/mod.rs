@@ -103,14 +103,24 @@ impl<'a> SyntaxUnit<'a> {
         origin: u64,
         numbers: crate::lex::number::NumberOptions,
     ) -> Self {
+        let hosted = preprocessor.hosted();
         preprocessor.set_number_options(numbers);
         let mut cursor =
             cursor::Cursor::new(PostTokenizer::from_input(preprocessor, numbers.dialect));
         cursor.set_origin(origin);
-        Self {
+        let mut unit = Self {
             parser: parser::Parser::new(cursor),
             declarations: None,
-        }
+        };
+        unit.set_hosted(hosted);
+        unit
+    }
+    pub(crate) fn set_hosted(&mut self, hosted: bool) {
+        self.parser.environment = if hosted {
+            parser::Environment::Hosted
+        } else {
+            parser::Environment::Course
+        };
     }
     pub(crate) fn set_source_origin(&mut self, origin: u64) {
         self.parser.cursor.set_source_origin(origin);

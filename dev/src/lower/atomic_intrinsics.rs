@@ -164,9 +164,14 @@ impl Function<'_, '_, '_, '_> {
             }
             Op::Update(operation, fetch_old) => {
                 let mut value = self.atomic_value(object, arguments[1], false)?;
-                if intrinsic.c11
+                if self.graph.lower_cv(object.element) & 4 != 0
                     && matches!(operation, Arithmetic::Add | Arithmetic::Sub)
                     && let TypeView::Pointer(pointee) = self.graph.lower_type(object.element)?
+                    && !matches!(
+                        self.graph.lower_type(pointee)?,
+                        TypeView::Scalar(crate::sema::lowering::Scalar::Void)
+                            | TypeView::Function { .. }
+                    )
                 {
                     let bytes = types::size_of(
                         self.graph,

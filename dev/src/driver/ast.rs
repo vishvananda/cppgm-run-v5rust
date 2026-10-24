@@ -238,6 +238,10 @@ fn emit_preprocessed(
         binary_exponents: mode == EmitMode::LowIr,
     };
     let mut unit = SyntaxUnit::with_token_origin(preprocessor, origins.first, numbers);
+    if mode == EmitMode::LowIr {
+        // The LowIR view uses the hosted parser environment of object compilation.
+        unit.set_hosted(true);
+    }
     unit.set_source_origin(origins.source);
     unit.set_stack_budget(stack_budget);
     if let Err(error) = unit.parse() {

@@ -89,22 +89,33 @@ impl Function<'_, '_, '_, '_> {
         let place = self.closure_field(object, member, ty)?;
         self.reference_holder(place, ty).map(Some)
     }
-    fn capture_place(&mut self, entity: EntityId) -> Result<Value, Error> {
+    fn capture_place(
+        &mut self,
+        entity: EntityId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Value, Error> {
         if let Some(place) = self.captured_place(entity)? {
             return Ok(place);
         }
         let ty = self.local_object_type(entity)?;
-        let place = self
-            .locals
-            .get(&entity)
-            .copied()
-            .ok_or(crate::sema::Error::Invariant(
-                "automatic capture without local or enclosing member",
-            ))?;
+        let place = self.locals.get(&entity).copied().ok_or_else(|| {
+            crate::sema::Error::at(
+                location,
+                if self.graph.lower_is_variable(entity) {
+                    "a variable outside the procedural lowering slice"
+                } else {
+                    "a name outside the procedural lowering slice"
+                },
+            )
+        })?;
         self.reference_holder(place, ty)
     }
-    fn capture_address(&mut self, entity: EntityId) -> Result<Value, Error> {
-        let place = self.capture_place(entity)?;
+    fn capture_address(
+        &mut self,
+        entity: EntityId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Value, Error> {
+        let place = self.capture_place(entity, location)?;
         self.storage_address(place, self.local_object_type(entity)?)
     }
     pub(super) fn closure_object(
@@ -181,7 +192,7 @@ impl Function<'_, '_, '_, '_> {
                 self.graph.lower_type(member_type)?,
                 TypeView::Reference { .. }
             ) {
-                let value = self.capture_address(capture.entity)?;
+                let value = self.capture_address(capture.entity, location)?;
                 self.effect(I::Store(
                     Facts::memory(false, true),
                     Type::Ptr,
@@ -189,7 +200,7 @@ impl Function<'_, '_, '_, '_> {
                     place,
                 ))?;
             } else if let Some(constructor) = capture.constructor {
-                let source = self.capture_address(capture.entity)?;
+                let source = self.capture_address(capture.entity, location)?;
                 if matches!(self.graph.lower_type(member_type)?, TypeView::Array { .. }) {
                     if self.graph.lower_constructor_copies_storage(constructor) {
                         let (size, align) = types::layout(self.graph, member_type)?;
@@ -207,11 +218,11 @@ impl Function<'_, '_, '_, '_> {
                     self.construct_from(constructor, place, source, location)?;
                 }
             } else if matches!(self.graph.lower_type(member_type)?, TypeView::Array { .. }) {
-                let source = self.capture_address(capture.entity)?;
+                let source = self.capture_address(capture.entity, location)?;
                 let (size, align) = types::layout(self.graph, member_type)?;
                 self.effect(I::CopyObject(size, align, source, place))?;
             } else {
-                let source = self.capture_place(capture.entity)?;
+                let source = self.capture_place(capture.entity, location)?;
                 let storage = types::storage(self.graph, member_type)?;
                 let value = self
                     .emit(

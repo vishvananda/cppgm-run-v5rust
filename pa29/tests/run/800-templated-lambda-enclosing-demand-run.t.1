@@ -1,0 +1,12 @@
+int main() {
+  int x = 1;
+  auto outer = [&]() {
+    auto inner = [&]<class T>(T t) { return x + t; };
+    return 0;
+  };
+  auto stateless = []() {
+    auto inner = [=]<class T>(T t) { return x + t; };
+    return 0;
+  };
+  return sizeof(outer) == 1 && sizeof(stateless) == 1 ? 0 : 1;
+}
