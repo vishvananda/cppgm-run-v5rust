@@ -624,7 +624,9 @@ impl Function<'_, '_, '_, '_> {
             });
             let saved_volatile = path.volatile;
             path.volatile |= self.graph.lower_cv(ty) & 2 != 0;
-            self.named_item(ty, input, path, Item::NamedMember)?;
+            self.with_overlapping_member(member, |lowering| {
+                lowering.named_item(ty, input, path, Item::NamedMember)
+            })?;
             path.volatile = saved_volatile;
             path.steps.pop();
             self.bit_initialization.unit = 0;
@@ -1110,7 +1112,9 @@ impl Function<'_, '_, '_, '_> {
                 steps: Vec::new(),
                 volatile: path.volatile || self.graph.lower_cv(ty) & 2 != 0,
             };
-            self.named_item(ty, input, &mut child, Item::StructuredMember)?;
+            self.with_overlapping_member(member, |lowering| {
+                lowering.named_item(ty, input, &mut child, Item::StructuredMember)
+            })?;
             self.bit_initialization.unit = 0;
             self.bit_initialization.high = self
                 .graph

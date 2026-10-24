@@ -448,21 +448,6 @@ impl<'tree> Analyzer<'tree> {
         self.check_stack()?;
         let declaration = *self.tree.declarations.get(id);
         let location = declaration.location;
-        if self.graph.scope(scope).kind == ScopeKind::Class
-            && self
-                .tree
-                .attributes
-                .get(declaration.attributes)
-                .iter()
-                .any(|attribute| attribute.kind == ast::AttributeKind::NoUniqueAddress)
-        {
-            let owner = self
-                .graph
-                .scope(scope)
-                .owner
-                .ok_or(Error::Invariant("class scope without owner"))?;
-            self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
-        }
         let specifiers = match declaration.kind {
             ast::DeclKind::Simple { specifiers, .. }
             | ast::DeclKind::Function { specifiers, .. }

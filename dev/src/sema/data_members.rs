@@ -179,20 +179,6 @@ impl Analyzer<'_> {
                 self.graph.entity_mut(owner).aggregation =
                     super::aggregate_initialization::Aggregation::Ineligible;
             }
-            let mut declarator = Some(init.declarator);
-            while let Some(id) = declarator {
-                let node = self.tree.declarators.get(id);
-                if self
-                    .tree
-                    .attributes
-                    .get(node.attributes)
-                    .iter()
-                    .any(|attribute| attribute.kind == ast::AttributeKind::NoUniqueAddress)
-                {
-                    self.graph.entity_mut(owner).layout = super::layout::LayoutState::Unsupported;
-                }
-                declarator = node.nested;
-            }
         }
         Ok(())
     }

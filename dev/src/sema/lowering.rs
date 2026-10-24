@@ -2306,6 +2306,20 @@ impl Graph {
         }
         false
     }
+    pub(crate) fn lower_overlapping_empty_member(&self, member: EntityId) -> Result<bool, Error> {
+        let node = self.entity(member);
+        if !node.storage_attributes.overlapping {
+            return Ok(false);
+        }
+        let ty = node
+            .ty
+            .ok_or(Error::Invariant("overlapping member without type"))?;
+        if let super::types::TypeKind::Class(class) = self.types.get(ty).kind {
+            self.lower_class_empty(class)
+        } else {
+            Ok(false)
+        }
+    }
     pub(crate) fn lower_class_empty(&self, class: EntityId) -> Result<bool, Error> {
         if let super::layout::LayoutState::Value { empty, .. } = self.entity(class).layout {
             Ok(empty)

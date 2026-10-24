@@ -49,6 +49,16 @@ impl Analyzer<'_> {
                         && member
                             .bit_field
                             .is_some_and(|id| self.graph.bit_fields.width(id) == 0)
+                        || member.storage_attributes.overlapping
+                            && member.bit_field.is_none()
+                            && member.ty.is_some_and(|ty| {
+                                self.graph.class_of(ty).is_some_and(|child| {
+                                    matches!(
+                                        self.graph.entity(child).layout,
+                                        LayoutState::Value { empty: true, .. }
+                                    )
+                                })
+                            })
                 }),
             contains_empty: false,
             contains_volatile_or_union: false,

@@ -17,7 +17,6 @@ pub(super) enum LayoutState {
         contains_volatile_or_union: bool,
         contains_data_member_pointer: bool,
     },
-    Unsupported,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum LayoutCategory {
@@ -50,6 +49,15 @@ pub(super) struct Boundaries {
 }
 pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
+}
+fn check_class_size(size: u64, location: SourceOffset) -> Result<(), Error> {
+    if size >> 60 != 0 {
+        return Err(Error::at(
+            location,
+            "a class too large (its size reaches 2^60 bytes)",
+        ));
+    }
+    Ok(())
 }
 impl Analyzer<'_> {
     pub(super) fn demand_storage_layout(
@@ -584,9 +592,6 @@ impl Analyzer<'_> {
         match self.graph.entity(entity).layout {
             LayoutState::Value { .. } => Ok(false),
             LayoutState::InProgress => Err(Error::at(location, "class contains itself")),
-            LayoutState::Unsupported => Err(Error::Missing(
-                "class layout attributes and virtual members",
-            )),
             LayoutState::NotStarted => {
                 self.graph.entity_mut(entity).layout = LayoutState::InProgress;
                 self.layout_work.push((entity, 0));
@@ -751,6 +756,31 @@ impl Analyzer<'_> {
                 self.graph.entity_mut(member).member_offset = None;
                 continue;
             }
+            if !union
+                && member_attributes.overlapping
+                && let TypeKind::Class(child) = self.graph.types.get(ty).kind
+            {
+                let empty = self.graph.lower_class_empty(child)?;
+                if empty && requested == 0 {
+                    member_alignment = natural;
+                }
+                let (offset, tail) = bases.placement.place_overlapping_member(
+                    &self.graph,
+                    child,
+                    data_bits,
+                    member_alignment,
+                    natural,
+                    location,
+                )?;
+                self.graph.entity_mut(member).member_offset = Some(offset);
+                if !empty {
+                    data_bits = tail * 8;
+                    bits.end_run(offset);
+                }
+                size = size.max(offset.wrapping_add(bytes));
+                alignment = alignment.max(member_alignment);
+                continue;
+            }
             data_size = round_up(data_bits, 8) / 8;
             let mut offset = if union {
                 0
@@ -778,13 +808,8 @@ impl Analyzer<'_> {
                 size.max(data_size)
             };
             alignment = alignment.max(member_alignment);
-            if (bytes | size) >> 60 != 0 {
-                return Err(Error::at(
-                    location,
-                    "a class too large (its size reaches 2^60 bytes)",
-                ));
-            }
         }
+        check_class_size(size, location)?;
         let non_virtual_size = size;
         let non_virtual_alignment = alignment;
         let member_data = round_up(data_bits, 8) / 8;
@@ -793,6 +818,7 @@ impl Analyzer<'_> {
         bases.alignment = alignment;
         self.finish_virtual_layout(entity, &mut bases, location)?;
         size = bases.size;
+        check_class_size(size, location)?;
         alignment = bases.alignment;
         let requested = u64::from(attributes.alignment);
         if requested != 0 {

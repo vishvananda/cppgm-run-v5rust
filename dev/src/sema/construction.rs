@@ -715,12 +715,6 @@ impl Analyzer<'_> {
         });
         for index in 0..self.graph.entity(class).bases.len() {
             let edge = self.graph.entity(class).bases[index];
-            if matches!(
-                self.graph.entity(edge.class).layout,
-                super::layout::LayoutState::Unsupported
-            ) {
-                return Err(Error::Missing("extended base subobject constructor plans"));
-            }
             let forwarded = inherited.filter(|&source| {
                 self.graph
                     .entity(self.graph.binding(source).entity)

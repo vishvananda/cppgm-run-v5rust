@@ -69,6 +69,20 @@ impl EmptyPlacement {
                 record_limit = record_limit.max(size);
             }
         }
+        if graph.entity(class).key != crate::lex::vocabulary::Keyword::Union {
+            for &member in &graph.entity(class).members {
+                let node = graph.entity(member);
+                if node.storage_attributes.overlapping
+                    && node.bit_field.is_none()
+                    && let Some(child) = node.ty.and_then(|ty| graph.class_of(ty))
+                    && let LayoutState::Value {
+                        empty: true, size, ..
+                    } = graph.entity(child).layout
+                {
+                    record_limit = record_limit.max(size);
+                }
+            }
+        }
         Ok(Self {
             placed: HashSet::new(),
             work: Vec::new(),
@@ -77,6 +91,66 @@ impl EmptyPlacement {
             budget: 1 << 20,
             hint: None,
         })
+    }
+    // layout.cpp::place_overlapping_member: complete empty objects share the
+    // placement set with bases; nonempty members expose only their data tail.
+    pub(super) fn place_overlapping_member(
+        &mut self,
+        graph: &Graph,
+        class: EntityId,
+        data_bits: u64,
+        alignment: u64,
+        natural: u64,
+        location: SourceOffset,
+    ) -> Result<(u64, u64), Error> {
+        use super::layout::round_up;
+        let LayoutState::Value {
+            empty,
+            non_virtual_size,
+            ..
+        } = graph.entity(class).layout
+        else {
+            return Err(Error::Invariant("overlapping member before layout"));
+        };
+        let data_size = round_up(data_bits, 8) / 8;
+        let mut offset = if empty {
+            0
+        } else {
+            round_up(data_size, alignment)
+        };
+        if empty {
+            if self.conflict_object(graph, class, 0, true, location)? {
+                offset = round_up(data_size, natural);
+                while self.conflict_object(graph, class, offset, true, location)? {
+                    offset = offset.wrapping_add(alignment);
+                }
+            }
+            self.walk(graph, class, offset, true, Walk::Record, location)?;
+            return Ok((offset, data_size));
+        }
+        let ty = graph.lower_entity_type(class)?;
+        while self.member_conflict(graph, ty, offset, location)? {
+            offset = round_up(offset.wrapping_add(natural), alignment);
+        }
+        let mut span = non_virtual_size;
+        for &(base, at) in graph.lower_virtual_bases(class) {
+            let LayoutState::Value {
+                empty,
+                non_virtual_size,
+                ..
+            } = graph.entity(base).layout
+            else {
+                return Err(Error::Invariant(
+                    "overlapping member virtual base before layout",
+                ));
+            };
+            if !empty {
+                span = span.max(at.wrapping_add(non_virtual_size));
+            }
+        }
+        let tail = offset.wrapping_add(span);
+        self.record_member(graph, ty, offset, tail, location)?;
+        Ok((offset, tail))
     }
     pub(super) fn spend(&mut self, location: SourceOffset) -> Result<(), Error> {
         if self.budget == 0 {

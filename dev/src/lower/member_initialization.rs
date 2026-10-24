@@ -9,7 +9,35 @@ use crate::{
     sema::lowering::{ConstructorId, EntityId, TypeId, TypeView},
     syntax::ast,
 };
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum EmptyStorage {
+    Owned,
+    Overlapping,
+}
 impl Function<'_, '_, '_, '_> {
+    // object_lowering.cpp::OverlapScope: preserve the surrounding initialization
+    // context, including through conditional prvalues and anonymous members.
+    pub(super) fn with_overlapping_member<T>(
+        &mut self,
+        member: EntityId,
+        work: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let saved = self.empty_storage;
+        if self.graph.lower_overlapping_empty_member(member)? {
+            self.empty_storage = EmptyStorage::Overlapping;
+        }
+        let result = work(self);
+        self.empty_storage = saved;
+        result
+    }
+    fn with_member_initialization_site<T>(
+        &mut self,
+        member: EntityId,
+        site: Option<crate::support::source::SourceOffset>,
+        work: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.with_overlapping_member(member, |lowering| lowering.with_source_site(site, work))
+    }
     fn member_initialization_class(&self, pointer: TypeId) -> Result<EntityId, Error> {
         let TypeView::Pointer(object) = self.graph.lower_type(pointer)? else {
             return Err(crate::sema::Error::Invariant(
@@ -59,7 +87,7 @@ impl Function<'_, '_, '_, '_> {
         let mut children = plan.subobjects.iter().peekable();
         for (index, &(member, initializer)) in plan.members.iter().enumerate() {
             let site = (!plan.written_members[index]).then_some(location);
-            self.with_source_site(site, |lowering| {
+            self.with_member_initialization_site(member, site, |lowering| {
                 let union = union || lowering.graph.lower_member_union(member);
                 let ty = lowering.graph.lower_entity_type(member)?;
                 if !matches!(

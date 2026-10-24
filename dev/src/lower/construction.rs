@@ -516,6 +516,12 @@ impl Function<'_, '_, '_, '_> {
         // Preliminary value-initialization covers the complete storage span,
         // including padding. Volatile scalar member writes remain distinct.
         let (size, alignment) = super::types::layout(self.graph, ty)?;
+        if self.empty_storage == super::member_initialization::EmptyStorage::Overlapping
+            && let TypeView::Class(class) = self.graph.lower_type(ty)?
+            && self.graph.lower_class_empty(class)?
+        {
+            return Ok(());
+        }
         self.effect(I::ZeroInit(span.unwrap_or(size), alignment, object))?;
         self.null_data_members(ty, object, 0)
     }
