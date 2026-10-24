@@ -296,13 +296,13 @@ impl Function<'_, '_, '_, '_> {
                 if braced.is_none()
                     && let [operand] = arguments
                 {
-                    return self.designated_place(self.without_parentheses(*operand));
+                    return self.scalar_place(self.without_parentheses(*operand));
                 }
                 Err(self.field_diagnostic(id, "a glvalue outside the procedural lowering slice"))
             }
             ExprKind::Call { arguments, .. } if self.graph.lower_functional_call(id)? => {
                 if let [operand] = self.tree.expr_lists.get(arguments) {
-                    return self.designated_place(self.without_parentheses(*operand));
+                    return self.scalar_place(self.without_parentheses(*operand));
                 }
                 Err(self.field_diagnostic(id, "a glvalue outside the procedural lowering slice"))
             }

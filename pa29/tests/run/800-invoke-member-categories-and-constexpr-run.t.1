@@ -1,0 +1,41 @@
+struct base {
+  int value;
+  constexpr int sum(int x) const { return value + x; }
+  int add(int x) & { return value += x; }
+  int take() && { return value; }
+};
+struct prefix { long padding; };
+struct derived : prefix, base {};
+struct pointer {
+  base *value;
+  base &operator*() const { return *value; }
+};
+
+constexpr base constant = {9};
+static_assert(__builtin_invoke(&base::value, constant) == 9, "member constant");
+static_assert(__builtin_invoke(&base::sum, constant, 3) == 12, "function constant");
+static_assert(__is_same(decltype(__builtin_invoke(&base::value, constant)), const int &), "cv");
+static_assert(__is_same(decltype(__builtin_invoke(&base::value, static_cast<base &&>(base{1}))), int &&), "category");
+
+int calls;
+base &observe(base &object) { ++calls; return object; }
+
+int read_member(base &object) noexcept {
+  int &member = __builtin_invoke(&base::value, object);
+  return member;
+}
+
+int main() {
+  derived object;
+  object.value = 4;
+  __builtin_invoke(&base::value, observe(object)) = 5;
+  int first = __builtin_invoke(&base::add, &object, 2);
+  pointer wrapped = {&object};
+  int second = __builtin_invoke(&base::sum, wrapped,
+                               __builtin_invoke(&base::value, object));
+  int third = __builtin_invoke(&base::take, static_cast<base &&>(object));
+  int &member = __builtin_invoke(&base::value, (object, object));
+  ++member;
+  return calls == 1 && first == 7 && second == 14 && third == 7 &&
+         object.value == 8 && read_member(object) == 8 ? 0 : 1;
+}

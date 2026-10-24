@@ -89,6 +89,7 @@ mod initializer_lists;
 mod instance_definitions;
 mod integer_intrinsics;
 mod integral;
+mod invoke;
 mod jumps;
 mod lambdas;
 mod layout;

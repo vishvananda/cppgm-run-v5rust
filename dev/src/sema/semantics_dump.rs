@@ -1526,6 +1526,17 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             // including when a reference cast retypes its presentation item.
             category = facts.category;
         }
+        if self.graph.expression_facts.member_data_call_view(id) {
+            let ExprKind::Call { callee, arguments } = node.kind else {
+                return Err(io::Error::other("member data call view without call"));
+            };
+            let callable = self.member_data_call_header(callee, facts.category, depth)?;
+            for &argument in self.tree.expr_lists.get(arguments).iter().rev() {
+                self.expr(argument, depth + 1);
+            }
+            self.expr(callable, depth + 1);
+            return Ok(());
+        }
         let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts)
             || self.graph.expression_facts.cast_call_view(id);
         let label = expression_label(node.kind, facts, intrinsic)?;
@@ -1627,6 +1638,42 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         }
         writeln!(self.output)
     }
+    fn member_data_call_header(
+        &mut self,
+        mut callee: ast::ExprId,
+        category: V,
+        depth: usize,
+    ) -> io::Result<ast::ExprId> {
+        // Printer::call strips the untyped outer parentheses, then reads the
+        // data member pointer's element as a function signature. Preserve its
+        // element (if any) as the displayed return type, independent of the
+        // actual access type that lowering consumes.
+        while let ExprKind::Paren(inner) = self.tree.expressions.get(callee).kind {
+            callee = inner;
+        }
+        let facts = self
+            .graph
+            .expression_facts
+            .get(callee)
+            .map_err(|_| io::Error::other("member data callee without facts"))?;
+        let TypeKind::MemberPointer { element, .. } = self.graph.types.get(facts.ty).kind else {
+            return Err(io::Error::other("member data callee without pointer type"));
+        };
+        let displayed = match self.graph.types.get(element).kind {
+            TypeKind::Pointer(element)
+            | TypeKind::Array { element, .. }
+            | TypeKind::MemberPointer { element, .. } => Some(element),
+            _ => None,
+        };
+        self.indent(depth)?;
+        write!(self.output, "call-expression {} ", category.spelling())?;
+        if let Some(ty) = displayed {
+            self.ty(ty)?;
+        }
+        writeln!(self.output)?;
+        Ok(callee)
+    }
+
     fn call_node(
         &mut self,
         id: ast::ExprId,

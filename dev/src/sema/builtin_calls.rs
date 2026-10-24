@@ -686,11 +686,8 @@ impl Analyzer<'_> {
             ));
         };
         let function = self.typed_expression(callable, scope)?;
-        if matches!(
-            self.graph.types.get(function.ty).kind,
-            TypeKind::MemberPointer { .. }
-        ) {
-            return Err(Error::Missing("invoke of a pointer to member"));
+        if let TypeKind::MemberPointer { owner, element } = self.graph.types.get(function.ty).kind {
+            return self.invoke_member(id, callable, rest, owner, element, scope);
         }
         // Rewrite only this fact-bearing instance. The retained template syntax
         // stays untouched, and lowering consumes the ordinary call's facts.
@@ -719,9 +716,24 @@ impl Analyzer<'_> {
                 kind: ast::ExprKind::Call { callee, arguments },
             },
         );
-        let saved = self.pretyped_callable.replace(callable);
+        self.invoke_call(id, callable, None, scope)
+    }
+
+    pub(super) fn invoke_call(
+        &mut self,
+        id: ast::ExprId,
+        callable: ast::ExprId,
+        object: Option<ast::ExprId>,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        let ast::ExprKind::Call { callee, arguments } = self.tree.expressions.get(id).kind else {
+            return Err(Error::Invariant("invoke rewrite without call syntax"));
+        };
+        let saved_callable = self.pretyped_callable.replace(callable);
+        let saved_object = std::mem::replace(&mut self.pretyped_object, object);
         let result = self.procedural_call(id, callee, arguments, scope);
-        self.pretyped_callable = saved;
+        self.pretyped_callable = saved_callable;
+        self.pretyped_object = saved_object;
         result
     }
 }

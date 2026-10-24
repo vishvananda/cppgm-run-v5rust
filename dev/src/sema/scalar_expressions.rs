@@ -59,7 +59,7 @@ impl Analyzer<'_> {
             }
             return Ok(true);
         }
-        if self.pretyped_callable == Some(id) {
+        if self.pretyped_callable == Some(id) || self.pretyped_object == Some(id) {
             return self.graph.expression_facts.get(id).map(|_| true);
         }
         if self.deduced_initializer == Some(id) {
@@ -559,6 +559,10 @@ impl Analyzer<'_> {
                 ..
             } = self.tree.expressions.get(current).kind
             {
+                if self.pretyped_callable == Some(current) || self.pretyped_object == Some(current)
+                {
+                    break;
+                }
                 self.binary_spine.push(current);
                 current = left;
             }

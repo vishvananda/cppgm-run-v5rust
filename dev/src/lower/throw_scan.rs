@@ -109,6 +109,12 @@ impl Function<'_, '_, '_, '_> {
                 return Ok(true);
             }
             match self.tree.expressions.get(id).kind {
+                ExprKind::Call { .. } if self.graph.lower_functional_call(id)? => {
+                    // cleanup_lowering::may_throw conservatively classifies
+                    // every non-direct call, including this functional view.
+                    // The semantic noexcept query has its separate rules.
+                    return Ok(true);
+                }
                 ExprKind::Call { callee, arguments } => {
                     if !self.graph.expression_is_intrinsic(id)?
                         && !self.graph.lower_destructor_evaluation_only(id)?

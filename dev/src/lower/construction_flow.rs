@@ -59,6 +59,15 @@ impl Function<'_, '_, '_, '_> {
                 ExprKind::Unary { operand, .. }
                 | ExprKind::Postfix { operand, .. }
                 | ExprKind::Cast { operand, .. } => work.push((operand, conditional)),
+                ExprKind::Call { arguments, .. } if self.graph.lower_functional_call(id)? => {
+                    work.extend(
+                        self.tree
+                            .expr_lists
+                            .get(arguments)
+                            .iter()
+                            .map(|&id| (id, conditional)),
+                    );
+                }
                 ExprKind::Call { callee, arguments } => {
                     let callee = self.without_parentheses(callee);
                     let callee = if let ExprKind::Member { base, .. } =
