@@ -18,11 +18,13 @@ use crate::{
     syntax::{ast, storage::List},
 };
 #[derive(Clone, Copy)]
-struct AtomicObject {
-    source: TypeId,
-    stored: Type,
-    ty: Type,
-    target: Value,
+pub(super) struct AtomicObject {
+    pub source: TypeId,
+    pub stored: Type,
+    pub ty: Type,
+    pub target: Value,
+    pub element: TypeId,
+    pub object_type: Type,
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn atomic_intrinsic(
@@ -60,7 +62,10 @@ impl Function<'_, '_, '_, '_> {
                     None
                 };
                 let order = self.atomic_order(intrinsic, arguments, arguments.len() - 1)?;
-                let value = self.emit(I::Runtime(R::AtomicLoad(ty, target, order)), source)?;
+                let value = self.emit(
+                    I::Runtime(R::AtomicLoad(ty, target, order, Facts::default())),
+                    source,
+                )?;
                 if let Some(destination) = destination {
                     self.atomic_store_bits(object, value, destination)?;
                     self.zero(source)
@@ -113,9 +118,14 @@ impl Function<'_, '_, '_, '_> {
             Op::CompareExchange(generic) => {
                 let expected = self.operand(arguments[1], Context::Argument)?.value;
                 let desired = self.atomic_value(object, arguments[2], generic)?;
-                self.operand(arguments[3], Context::Argument)?;
-                let success = self.memory_order(arguments[4])?;
-                let failure = self.memory_order(arguments[5])?;
+                let order = if intrinsic.weak.is_some() {
+                    3
+                } else {
+                    self.operand(arguments[3], Context::Argument)?;
+                    4
+                };
+                let success = self.memory_order(arguments[order])?;
+                let failure = self.memory_order(arguments[order + 1])?;
                 self.emit(
                     I::Runtime(R::AtomicCompareExchange {
                         ty,
@@ -153,7 +163,22 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
             Op::Update(operation, fetch_old) => {
-                let value = self.atomic_value(object, arguments[1], false)?;
+                let mut value = self.atomic_value(object, arguments[1], false)?;
+                if intrinsic.c11
+                    && matches!(operation, Arithmetic::Add | Arithmetic::Sub)
+                    && let TypeView::Pointer(pointee) = self.graph.lower_type(object.element)?
+                {
+                    let bytes = types::size_of(
+                        self.graph,
+                        pointee,
+                        self.tree.expressions.get(id).location,
+                    )?;
+                    let scale = self.builder.integer(u128::from(bytes))?;
+                    value = self.emit(
+                        I::Binary(Binary::Mul, Facts::default(), Type::I64, value.value, scale),
+                        source,
+                    )?;
+                }
                 let order = self.atomic_order(intrinsic, arguments, 2)?;
                 let value = self.atomic_update(object, operation, fetch_old, value, order)?;
                 self.atomic_result(object, value)
@@ -174,11 +199,12 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(crate::sema::Error::Invariant("atomic target without pointer").into());
         };
-        let mut stored = if byte {
+        let object_type = if byte {
             Type::U8
         } else {
             types::storage(self.graph, element)?
         };
+        let mut stored = object_type;
         if stored.bits() == 0 && stored != Type::Ptr {
             let size = types::size_of(
                 self.graph,
@@ -203,6 +229,8 @@ impl Function<'_, '_, '_, '_> {
             stored,
             ty,
             target,
+            element,
+            object_type,
         })
     }
     fn atomic_value(
@@ -238,7 +266,14 @@ impl Function<'_, '_, '_, '_> {
                 object.source,
             )?
         } else {
-            self.operand(argument, Context::Argument)?
+            let value = self.operand(argument, Context::Argument)?;
+            if object.object_type != object.stored
+                && !matches!(self.graph.lower_type(object.element)?, TypeView::Class(_))
+            {
+                self.atomic_reinterpret(value, object.ty)?
+            } else {
+                value
+            }
         };
         if value.ty == Type::Ptr {
             self.emit(I::Copy(object.ty, value.value), object.source)
@@ -247,11 +282,21 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     fn atomic_result(&mut self, object: AtomicObject, value: RValue) -> Result<RValue, Error> {
+        if object.object_type != object.stored
+            && !matches!(self.graph.lower_type(object.element)?, TypeView::Class(_))
+        {
+            return self.atomic_reinterpret(value, object.object_type);
+        }
         if object.stored == Type::Ptr {
             self.emit(I::Copy(object.stored, value.value), object.source)
         } else {
             Ok(value)
         }
+    }
+    fn atomic_reinterpret(&mut self, value: RValue, to: Type) -> Result<RValue, Error> {
+        let slot = self.generated_slot("bits", value.ty)?;
+        self.effect(I::Store(Facts::default(), value.ty, value.value, slot))?;
+        self.emit(I::Load(Facts::default(), to, slot), value.source)
     }
     fn atomic_store_bits(
         &mut self,
@@ -259,7 +304,13 @@ impl Function<'_, '_, '_, '_> {
         value: RValue,
         destination: Value,
     ) -> Result<(), Error> {
-        let value = self.atomic_result(object, value)?;
+        // A generic result writes the integer representation through the
+        // destination pointer; only an object-valued result reinterprets it.
+        let value = if object.stored == Type::Ptr {
+            self.emit(I::Copy(object.stored, value.value), object.source)?
+        } else {
+            value
+        };
         self.effect(I::Store(
             atomic_memory(object.stored),
             object.stored,
@@ -283,6 +334,7 @@ impl Function<'_, '_, '_, '_> {
         index: usize,
     ) -> Result<Order, Error> {
         match intrinsic.implied {
+            Some(AtomicOrder::Relaxed) => Ok(Order::Relaxed),
             Some(AtomicOrder::Acquire) => Ok(Order::Acquire),
             Some(AtomicOrder::Release) => Ok(Order::Release),
             Some(AtomicOrder::SequentiallyConsistent) => Ok(Order::SequentiallyConsistent),
@@ -300,7 +352,7 @@ impl Function<'_, '_, '_, '_> {
             Order::SequentiallyConsistent
         })
     }
-    fn atomic_update(
+    pub(super) fn atomic_update(
         &mut self,
         object: AtomicObject,
         operation: Arithmetic,
@@ -344,7 +396,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let expected = self.generated_slot("atomic_expected", ty)?;
         let seen = self.emit(
-            I::Runtime(R::AtomicLoad(ty, target, Order::Relaxed)),
+            I::Runtime(R::AtomicLoad(ty, target, Order::Relaxed, Facts::default())),
             source,
         )?;
         self.effect(I::Store(atomic_memory(ty), ty, seen.value, expected))?;

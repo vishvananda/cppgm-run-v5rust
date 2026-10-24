@@ -19,10 +19,11 @@ pub(crate) enum TypeTransform {
     RemoveReferenceGnu,
     RemoveRestrict,
     RemoveVolatile,
+    AddAtomic,
 }
 
 impl TypeTransform {
-    const SPELLINGS: [(Self, &'static str); 17] = [
+    const SPELLINGS: [(Self, &'static str); 18] = [
         (Self::UnderlyingType, "__underlying_type"),
         (Self::AddLvalueReference, "__add_lvalue_reference"),
         (Self::AddPointer, "__add_pointer"),
@@ -40,6 +41,7 @@ impl TypeTransform {
         (Self::RemoveReferenceGnu, "__remove_reference"),
         (Self::RemoveRestrict, "__remove_restrict"),
         (Self::RemoveVolatile, "__remove_volatile"),
+        (Self::AddAtomic, "_Atomic"),
     ];
 
     pub(crate) fn find(spelling: &[u8]) -> Option<Self> {

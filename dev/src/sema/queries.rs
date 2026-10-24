@@ -364,6 +364,7 @@ impl Analyzer<'_> {
             count = count.and_then(|count| count.checked_mul(bound));
             ty = element;
         }
+        let atomic = self.graph.types.get(ty).cv.0 & super::types::Cv::ATOMIC.0 != 0;
         while let TypeKind::Enum(entity) = self.graph.types.get(ty).kind {
             ty = self
                 .graph
@@ -373,7 +374,7 @@ impl Analyzer<'_> {
                 .ok_or_else(|| Error::at(location, "size of an incomplete enumeration"))?;
         }
         let mut alignment = None;
-        let size = match self.graph.types.get(ty).kind {
+        let mut size = match self.graph.types.get(ty).kind {
             TypeKind::Auto => {
                 return Err(Error::Invariant("layout requested before auto deduction"));
             }
@@ -424,6 +425,10 @@ impl Analyzer<'_> {
                 });
             }
         };
+        if atomic && size <= 16 {
+            size = size.max(1).next_power_of_two();
+            alignment = Some(size);
+        }
         Ok((
             count
                 .and_then(|count| size.checked_mul(count))

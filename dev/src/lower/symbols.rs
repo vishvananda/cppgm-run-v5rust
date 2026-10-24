@@ -1605,6 +1605,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     fn finish_abi_type(&mut self, ty: TypeId, mut id: NodeId) -> Result<NodeId, Error> {
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
+            if self.graph.lower_cv(ty) & 4 != 0 {
+                let name = self.abi.string(b"_Atomic")?;
+                id = self.abi.intern(
+                    Node::Modified {
+                        modifier: Modifier::Vendor(name),
+                        operand: id,
+                    },
+                    &[],
+                )?;
+            }
             let mut cv = Qualifiers::default();
             if self.graph.lower_cv(ty) & 1 != 0 {
                 cv = cv.union(Qualifiers::CONST);

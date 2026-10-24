@@ -70,7 +70,7 @@ pub(super) fn rewrite(kind: &mut InstructionKind, map: &mut impl Remap) -> Resul
 fn rewrite_runtime(runtime: &mut RuntimeInstruction, map: &mut impl Remap) -> Result<(), Error> {
     use RuntimeInstruction as R;
     match runtime {
-        R::AtomicLoad(_, value, _)
+        R::AtomicLoad(_, value, _, _)
         | R::VaStart(value)
         | R::VaArg(_, value, _)
         | R::StackAlloc(value)

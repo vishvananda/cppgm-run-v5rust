@@ -276,17 +276,21 @@ impl Function<'_, '_, '_, '_> {
                 ty,
             )?
             .value;
-        self.effect(I::Store(
-            Facts::memory(
-                self.graph.lower_cv(ty) & 2 != 0,
-                self.graph.lower_cv(ty) & 2 == 0
-                    && !union
-                    && !matches!(super::types::storage(self.graph, ty)?, Type::I8 | Type::U8),
-            ),
-            super::types::storage(self.graph, ty)?,
-            value,
-            address,
-        ))?;
+        if self.graph.lower_cv(ty) & 4 != 0 {
+            self.write_place(address, ty, value)?;
+        } else {
+            self.effect(I::Store(
+                Facts::memory(
+                    self.graph.lower_cv(ty) & 2 != 0,
+                    self.graph.lower_cv(ty) & 2 == 0
+                        && !union
+                        && !matches!(super::types::storage(self.graph, ty)?, Type::I8 | Type::U8),
+                ),
+                super::types::storage(self.graph, ty)?,
+                value,
+                address,
+            ))?;
+        }
         self.bit_initialization.high = self.bit_initialization.high.max(
             self.graph
                 .lower_member_offset(member)?

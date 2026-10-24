@@ -166,6 +166,9 @@ impl Analyzer<'_> {
             {
                 return Err(Error::at(node.location, "bit-field of non-integral type"));
             }
+            if self.graph.types.get(ty).cv.0 & super::types::Cv::ATOMIC.0 != 0 {
+                return Err(Error::at(node.location, "bit-field of an atomic type"));
+            }
             let width = if self.template_depth == 0 {
                 if self.semantic() {
                     self.integral_constant_operand(field.width, scope, None)?;

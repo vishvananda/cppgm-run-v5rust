@@ -2,7 +2,7 @@
 use super::{
     Error,
     lexer::Kind,
-    model::{Body, RuntimeInstruction as R, Value},
+    model::{Body, Facts, RuntimeInstruction as R, Value},
     reader::Parser,
     vocabulary::{AtomicUpdate, Fence, MemoryOrder, Type},
 };
@@ -36,7 +36,7 @@ impl Parser<'_> {
                 let ty = self.parse_type()?;
                 let address = self.value(body, Type::Ptr)?;
                 self.expect(Kind::Comma, ",")?;
-                R::AtomicLoad(ty, address, self.memory_order()?)
+                R::AtomicLoad(ty, address, self.memory_order()?, Facts::default())
             }
             "atomic_compare_exchange" => {
                 let ty = self.parse_type()?;

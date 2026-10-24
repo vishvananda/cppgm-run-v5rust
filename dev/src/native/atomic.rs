@@ -199,7 +199,7 @@ impl Selection<'_> {
                 self.emit_atomic(Atomic::Fence);
             }
             Runtime::Fence(..) => {}
-            Runtime::AtomicLoad(Type::I128, address, _) => {
+            Runtime::AtomicLoad(Type::I128, address, _, _) => {
                 self.mir.scratch_bytes = 48;
                 let source = self.address(address, R::R10)?;
                 let destination = Operand::Frame(self.placement.home(
@@ -212,7 +212,7 @@ impl Selection<'_> {
                     source,
                 });
             }
-            Runtime::AtomicLoad(ty, address, _) => {
+            Runtime::AtomicLoad(ty, address, _, _) => {
                 self.read_memory(result.ok_or(Error::Limit)?, ty, address)?;
             }
             Runtime::AtomicStore(Type::I128, ..) => {

@@ -364,6 +364,9 @@ impl Printer<'_> {
         if cv.0 & 2 != 0 {
             out.extend_from_slice(b"volatile ");
         }
+        if cv.0 & Cv::ATOMIC.0 != 0 {
+            out.extend_from_slice(b"_Atomic ");
+        }
         out
     }
     fn scalar(scalar: Scalar) -> &'static str {

@@ -907,6 +907,9 @@ impl Function<'_, '_, '_, '_> {
         value: Value,
     ) -> Result<(), Error> {
         let storage = types::storage(self.graph, ty)?;
+        if self.graph.lower_cv(ty) & 4 != 0 {
+            return self.write_atomic_place(address, ty, value);
+        }
         let volatile = path.volatile
             && !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. })
             || self.graph.lower_cv(ty) & 2 != 0;

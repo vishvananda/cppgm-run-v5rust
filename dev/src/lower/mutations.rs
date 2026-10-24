@@ -368,6 +368,9 @@ impl Function<'_, '_, '_, '_> {
         place: Value,
         source: crate::sema::lowering::TypeId,
     ) -> Result<RValue, Error> {
+        if self.graph.lower_cv(source) & 4 != 0 {
+            return self.read_atomic_place(place, source);
+        }
         self.emit(
             I::Load(
                 self.place_memory(place, source)?,
@@ -377,6 +380,24 @@ impl Function<'_, '_, '_, '_> {
             source,
         )
     }
+    pub(super) fn write_place(
+        &mut self,
+        place: Value,
+        source: crate::sema::lowering::TypeId,
+        value: Value,
+    ) -> Result<(), Error> {
+        let ty = types::storage(self.graph, source)?;
+        if self.graph.lower_cv(source) & 4 != 0 {
+            self.write_atomic_place(place, source, value)
+        } else {
+            self.effect(I::Store(
+                self.place_memory(place, source)?,
+                ty,
+                value,
+                place,
+            ))
+        }
+    }
     pub(super) fn increment(
         &mut self,
         operand: ast::ExprId,
@@ -385,7 +406,32 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(Value, RValue), Error> {
         let source = self.graph.lower_builtin_operand_type(operand)?;
         let place = self.scalar_place(operand)?;
-        let old = self.read_place(place, source)?;
+        let storage = types::storage(self.graph, source)?;
+        if self.graph.lower_cv(source) & 4 != 0
+            && storage.bits() != 0
+            && !types::boolean(self.graph, source)?
+        {
+            let one = RValue {
+                value: self.builder.integer(1)?,
+                ty: storage,
+                source,
+                literal: false,
+                bits: None,
+            };
+            let operation = if decrement {
+                crate::sema::lowering::AtomicArithmetic::Sub
+            } else {
+                crate::sema::lowering::AtomicArithmetic::Add
+            };
+            let value = self.update_atomic_integer(place, source, operation, !prefix, one)?;
+            return Ok((place, value));
+        }
+        let (state, old) =
+            if let Some((state, old)) = self.begin_atomic_place_loop(place, source)? {
+                (Some(state), old)
+            } else {
+                (None, self.read_place(place, source)?)
+            };
         let result = if old.ty == Type::Ptr {
             self.pointer_step(old, decrement)?
         } else if types::boolean(self.graph, source)? {
@@ -421,12 +467,11 @@ impl Function<'_, '_, '_, '_> {
                 source,
             )?
         };
-        self.effect(I::Store(
-            self.place_memory(place, source)?,
-            old.ty,
-            result.value,
-            place,
-        ))?;
+        if let Some(state) = state {
+            self.end_atomic_place_loop(place, source, state, result)?;
+        } else {
+            self.write_place(place, source, result.value)?;
+        }
         let value = if prefix { result } else { old };
         Ok((place, value))
     }
@@ -483,7 +528,32 @@ impl Function<'_, '_, '_, '_> {
                 rhs = self.convert(rhs, operation, Context::CompoundAssignment)?;
             }
             let place = self.scalar_place(left)?;
-            let old = self.read_place(place, source)?;
+            if self.graph.lower_cv(source) & 4 != 0
+                && ty.bits() != 0
+                && !types::boolean(self.graph, source)?
+                && matches!((self.graph.lower_type(source)?, self.graph.lower_type(operation)?),
+                    (crate::sema::lowering::TypeView::Scalar(a), crate::sema::lowering::TypeView::Scalar(b)) if a == b)
+            {
+                use crate::sema::lowering::AtomicArithmetic as A;
+                let update = match op {
+                    P::AddAssign => Some(A::Add),
+                    P::SubtractAssign => Some(A::Sub),
+                    P::AndAssign => Some(A::And),
+                    P::OrAssign => Some(A::Or),
+                    P::XorAssign => Some(A::Xor),
+                    _ => None,
+                };
+                if let Some(update) = update {
+                    let value = self.update_atomic_integer(place, source, update, false, rhs)?;
+                    return Ok((place, value));
+                }
+            }
+            let (state, old) =
+                if let Some((state, old)) = self.begin_atomic_place_loop(place, source)? {
+                    (Some(state), old)
+                } else {
+                    (None, self.read_place(place, source)?)
+                };
             let lhs = self.convert(old, operation, Context::CompoundAssignment)?;
             let signed = types::signed(self.graph, operation)?;
             let code = match op {
@@ -516,18 +586,19 @@ impl Function<'_, '_, '_, '_> {
                 operation,
             )?;
             let value = self.convert(value, source, Context::CompoundAssignment)?;
-            (place, self.fit(value, source)?)
+            let value = self.fit(value, source)?;
+            if let Some(state) = state {
+                self.end_atomic_place_loop(place, source, state, value)?;
+                return Ok((place, value));
+            }
+            (place, value)
         };
-        self.effect(I::Store(
-            self.place_memory(place, source)?,
-            ty,
-            value.value,
-            place,
-        ))?;
+        self.write_place(place, source, value.value)?;
         Ok((place, RValue { source, ..value }))
     }
     pub(super) fn updated_value(&mut self, place: Value, value: RValue) -> Result<RValue, Error> {
-        if self.graph.lower_cv(value.source) & 2 == 0 {
+        if self.graph.lower_cv(value.source) & 2 == 0 || self.graph.lower_cv(value.source) & 4 != 0
+        {
             Ok(value)
         } else {
             self.read_place(place, value.source)

@@ -185,8 +185,17 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(Value, RValue), Error> {
         let rhs = self.expression(right, Context::Operand)?;
         let place = self.scalar_place(left)?;
-        let old = self.read_place(place, source)?;
+        let (state, old) =
+            if let Some((state, old)) = self.begin_atomic_place_loop(place, source)? {
+                (Some(state), old)
+            } else {
+                (None, self.read_place(place, source)?)
+            };
         let value = self.pointer_offset(old, rhs, subtract, source)?;
+        if let Some(state) = state {
+            self.end_atomic_place_loop(place, source, state, value)?;
+            return Ok((place, value));
+        }
         self.effect(I::Store(
             types::memory(self.graph, source)?,
             Type::Ptr,
@@ -206,9 +215,18 @@ impl Function<'_, '_, '_, '_> {
         // evaluate E2, then E1 once, read its count, scale and convert the sum.
         let pointer = self.operand(right, Context::CompoundAssignment)?;
         let place = self.scalar_place(left)?;
-        let old = self.read_place(place, source)?;
+        let (state, old) =
+            if let Some((state, old)) = self.begin_atomic_place_loop(place, source)? {
+                (Some(state), old)
+            } else {
+                (None, self.read_place(place, source)?)
+            };
         let sum = self.pointer_offset(pointer, old, false, operation)?;
         let value = self.convert(sum, source, Context::CompoundAssignment)?;
+        if let Some(state) = state {
+            self.end_atomic_place_loop(place, source, state, value)?;
+            return Ok((place, value));
+        }
         // The frozen bool-pointer path stores the comparison directly,
         // without the arithmetic path's fit/truncation instruction.
         self.effect(I::Store(

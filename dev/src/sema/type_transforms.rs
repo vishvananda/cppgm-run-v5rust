@@ -95,6 +95,20 @@ impl Analyzer<'_> {
             _ => ty,
         };
         match transform {
+            T::AddAtomic => {
+                if matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Array { .. } | TypeKind::Function { .. } | TypeKind::Reference { .. }
+                ) || self.type_cv(ty).0 != 0
+                    || void
+                {
+                    return Err(Error::at(
+                        location,
+                        "_Atomic of an array, function, reference, void or qualified type",
+                    ));
+                }
+                self.graph.types.qualify(ty, Cv::ATOMIC)
+            }
             T::AddLvalueReference | T::AddRvalueReference if referenceable => {
                 self.graph.types.reference(
                     ty,

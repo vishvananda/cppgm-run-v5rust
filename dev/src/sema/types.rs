@@ -38,6 +38,7 @@ impl Scalar {
 pub(super) struct Cv(pub u8);
 impl Cv {
     pub(super) const CONST: Self = Self(1);
+    pub(super) const ATOMIC: Self = Self(4);
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum RefKind {

@@ -1332,7 +1332,7 @@ pub(crate) enum InstructionKind {
 /// Runtime facts only: later consumers implement their machine/runtime effects.
 #[derive(Clone)]
 pub(crate) enum RuntimeInstruction {
-    AtomicLoad(Type, Value, MemoryOrder),
+    AtomicLoad(Type, Value, MemoryOrder, Facts),
     AtomicStore(Type, Value, Value, MemoryOrder),
     AtomicUpdate(AtomicUpdate, Type, Value, Value, MemoryOrder),
     AtomicCompareExchange {
@@ -1379,7 +1379,7 @@ impl RuntimeInstruction {
     }
     fn visit_values(&self, operands: &[Value], mut visit: impl FnMut(Value)) {
         match self {
-            Self::AtomicLoad(_, v, _)
+            Self::AtomicLoad(_, v, _, _)
             | Self::VaStart(v)
             | Self::VaArg(_, v, _)
             | Self::StackAlloc(v)

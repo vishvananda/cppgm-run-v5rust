@@ -224,7 +224,7 @@ impl Function<'_, '_, '_, '_> {
                 self.graph.lower_type(element)?,
                 TypeView::Array { .. } | TypeView::Class(_)
             ))
-            && self.graph.lower_cv(element) & 2 == 0
+            && self.graph.lower_cv(element) & 6 == 0
             && let Some(image) = self.graph.lower_array_image(entity)
         {
             let expr = match initializer.kind {
@@ -349,6 +349,10 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 self.zero(element)?
             };
+            if self.graph.lower_cv(element) & 4 != 0 {
+                self.write_atomic_place(place, element, value.value)?;
+                continue;
+            }
             self.effect(I::Store(
                 types::memory(self.graph, element)?,
                 value.ty,
@@ -401,6 +405,9 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.zero(ty)?
         };
+        if self.graph.lower_cv(ty) & 4 != 0 {
+            return self.write_atomic_place(address, ty, value.value);
+        }
         self.effect(I::Store(
             types::memory(self.graph, ty)?,
             types::storage(self.graph, ty)?,
@@ -461,6 +468,10 @@ impl Function<'_, '_, '_, '_> {
             if let Some((literal, width)) = units {
                 let unit = self.literal_array_unit(literal, index, width)?;
                 let value = self.builder.integer(u128::from(unit))?;
+                if self.graph.lower_cv(element) & 4 != 0 {
+                    self.write_atomic_place(place, element, value)?;
+                    continue;
+                }
                 self.effect(I::Store(
                     types::memory(self.graph, element)?,
                     types::storage(self.graph, element)?,

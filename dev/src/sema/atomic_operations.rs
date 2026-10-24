@@ -46,6 +46,7 @@ impl AtomicOperation {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum AtomicOrder {
+    Relaxed,
     Acquire,
     Release,
     SequentiallyConsistent,
@@ -54,6 +55,8 @@ pub(crate) enum AtomicOrder {
 pub(crate) struct AtomicIntrinsic {
     pub operation: AtomicOperation,
     pub implied: Option<AtomicOrder>,
+    pub c11: bool,
+    pub weak: Option<bool>,
 }
 #[derive(Clone, Copy)]
 pub(super) enum AtomicOperand {
@@ -95,15 +98,25 @@ impl AtomicBuiltins {
 impl AtomicBuiltinId {
     pub(super) fn form(self) -> Result<AtomicForm, Error> {
         let mut index = usize::from(self.0);
-        for &(_, entries, implied, trailing) in ATOMIC_FAMILIES {
+        for &(prefix, entries, implied, trailing) in ATOMIC_FAMILIES {
             if let Some(&(suffix, operation, roles, result)) = entries.get(index) {
                 let implied = match suffix {
+                    "init" => Some(AtomicOrder::Relaxed),
                     "lock_test_and_set" => Some(AtomicOrder::Acquire),
                     "lock_release" => Some(AtomicOrder::Release),
                     _ => implied,
                 };
                 return Ok(AtomicForm {
-                    intrinsic: AtomicIntrinsic { operation, implied },
+                    intrinsic: AtomicIntrinsic {
+                        operation,
+                        implied,
+                        c11: prefix == "__c11_atomic_",
+                        weak: match suffix {
+                            "compare_exchange_strong" => Some(false),
+                            "compare_exchange_weak" => Some(true),
+                            _ => None,
+                        },
+                    },
                     roles,
                     result,
                     trailing,
@@ -132,6 +145,38 @@ type AtomicFamily = (
     bool,
 );
 const ATOMIC_FAMILIES: &[AtomicFamily] = &[
+    (
+        "__c11_atomic_",
+        &[
+            ("init", K::Store(false), &[P, V], N),
+            ("load", K::Load(false), &[P, O], T),
+            ("store", K::Store(false), &[P, V, O], N),
+            ("exchange", K::Exchange(false), &[P, V, O], T),
+            (
+                "compare_exchange_strong",
+                K::CompareExchange(false),
+                &[P, R, V, O, O],
+                Z,
+            ),
+            (
+                "compare_exchange_weak",
+                K::CompareExchange(false),
+                &[P, R, V, O, O],
+                Z,
+            ),
+            ("fetch_add", K::Update(A::Add, true), &[P, V, O], T),
+            ("fetch_sub", K::Update(A::Sub, true), &[P, V, O], T),
+            ("fetch_and", K::Update(A::And, true), &[P, V, O], T),
+            ("fetch_or", K::Update(A::Or, true), &[P, V, O], T),
+            ("fetch_xor", K::Update(A::Xor, true), &[P, V, O], T),
+            ("fetch_nand", K::Update(A::Nand, true), &[P, V, O], T),
+            ("thread_fence", K::ThreadFence, &[O], N),
+            ("signal_fence", K::SignalFence, &[O], N),
+            ("is_lock_free", K::LockFree, &[S], C),
+        ],
+        None,
+        false,
+    ),
     (
         "__atomic_",
         &[

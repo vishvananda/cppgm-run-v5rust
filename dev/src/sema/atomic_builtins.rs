@@ -36,6 +36,7 @@ impl Analyzer<'_> {
             ));
         }
         let kind = form.intrinsic.operation;
+        let generic = kind.generic() || (form.intrinsic.c11 && !matches!(kind, Op::Update(..)));
         let mut object = None;
         let mut size = 0;
         for (index, &argument) in arguments.iter().enumerate() {
@@ -77,12 +78,38 @@ impl Analyzer<'_> {
                     ));
                 }
                 if matches!(role, Role::Pointer) && !kind.byte() {
-                    let ty =
-                        self.bare_type(element.ok_or(Error::Invariant("atomic object pointer"))?)?;
-                    size = self.atomic_object_size(ty, kind.generic(), location)?;
+                    let element = element.ok_or(Error::Invariant("atomic object pointer"))?;
+                    if form.intrinsic.c11 && self.type_cv(element).0 & Cv::ATOMIC.0 == 0 {
+                        return Err(Error::at(
+                            self.tree.expressions.get(argument).location,
+                            "a __c11_atomic builtin on an object of no atomic type",
+                        ));
+                    }
+                    let ty = self.bare_type(element)?;
+                    if form.intrinsic.c11
+                        && matches!(kind, Op::Update(..))
+                        && let TypeKind::Pointer(pointee) = self.graph.types.get(ty).kind
+                        && (matches!(
+                            self.graph.types.get(pointee).kind,
+                            TypeKind::Scalar(Scalar::Void) | TypeKind::Function { .. }
+                        ) || !matches!(
+                            kind,
+                            Op::Update(
+                                super::atomic_operations::AtomicArithmetic::Add
+                                    | super::atomic_operations::AtomicArithmetic::Sub,
+                                _
+                            )
+                        ))
+                    {
+                        return Err(Error::at(
+                            self.tree.expressions.get(argument).location,
+                            "__c11_atomic arithmetic on a pointer other than an object pointer's addition or subtraction",
+                        ));
+                    }
+                    size = self.atomic_object_size(ty, generic, location)?;
                     object = Some(ty);
                 }
-                if matches!(role, Role::Reference) && kind.generic() && object.is_some() {
+                if matches!(role, Role::Reference) && generic && object.is_some() {
                     let ty = element.ok_or(Error::Invariant("generic atomic value pointer"))?;
                     if self
                         .type_size(ty, self.tree.expressions.get(argument).location)?
@@ -126,7 +153,11 @@ impl Analyzer<'_> {
                 })?;
             let boolean = self.graph.types.scalar(Scalar::Bool)?;
             let mut facts = self.new_expression_facts(boolean, ValueCategory::Prvalue)?;
-            facts.folded = Some(u64::from(matches!(constant.bits, 1 | 2 | 4 | 8)));
+            facts.folded = Some(u64::from(if form.intrinsic.c11 {
+                (1..=8).contains(&constant.bits)
+            } else {
+                matches!(constant.bits, 1 | 2 | 4 | 8)
+            }));
             return Ok(facts);
         }
         let result = match form.result {
@@ -179,6 +210,50 @@ mod tests {
             ast::{Body, DeclKind, ExprKind, StmtKind},
         },
     };
+    #[test]
+    fn c11_weakness_is_a_typed_fact_without_rewriting_source_arguments() {
+        let source = SourceBuffer::new(
+            b"void f(_Atomic(int)*p,int*e){__c11_atomic_init(p,1);__c11_atomic_compare_exchange_strong(p,e,2,5,2);__c11_atomic_compare_exchange_weak(p,e,3,5,0);}".to_vec(),
+        ).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"c11-ownership").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax_mark = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(tree.expressions.mark(), syntax_mark);
+        let DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[0])
+            .kind
+        else {
+            panic!("expected function");
+        };
+        let Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("expected parsed body");
+        };
+        let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("expected body");
+        };
+        for (&statement, (arity, weak)) in tree.stmt_lists.get(statements).iter().zip([
+            (2, None),
+            (5, Some(false)),
+            (5, Some(true)),
+        ]) {
+            let StmtKind::Expression(Some(id)) = tree.statements.get(statement).kind else {
+                panic!("expected expression");
+            };
+            let ExprKind::Call { arguments, .. } = tree.expressions.get(id).kind else {
+                panic!("expected call");
+            };
+            assert_eq!(tree.expr_lists.get(arguments).len(), arity);
+            let intrinsic = graph.expression_facts.atomic_intrinsic(id).unwrap();
+            assert!(intrinsic.c11);
+            assert_eq!(intrinsic.weak, weak);
+        }
+        assert_eq!(tree.stmt_lists.get(statements).len(), 3);
+    }
     #[test]
     fn runtime_atomics_in_required_constants_report_language_rejection() {
         for input in [

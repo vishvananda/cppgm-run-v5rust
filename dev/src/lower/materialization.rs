@@ -780,7 +780,7 @@ impl Function<'_, '_, '_, '_> {
                 let source =
                     self.bind_reference(id, reference, super::conversions::Context::Argument)?;
                 if !empty {
-                    let (size, alignment) = types::layout(self.graph, ty)?;
+                    let (size, alignment) = self.graph.lower_class_layout(class)?;
                     let size = size.min(self.graph.lower_nonvirtual_bytes(class)?);
                     self.effect(I::CopyObject(size, alignment, source, object))?;
                 }
@@ -827,6 +827,20 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
+        if let ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind
+            && let Some(intrinsic) = self.graph.lower_atomic_intrinsic(id)?
+        {
+            let value = self.atomic_intrinsic(id, arguments, intrinsic)?;
+            return self.effect(I::Store(
+                crate::lowir::model::Facts::memory(
+                    false,
+                    value.ty.bits() > 8 || value.ty == crate::lowir::vocabulary::Type::Ptr,
+                ),
+                value.ty,
+                value.value,
+                object,
+            ));
+        }
         if let Some(list) = self.list_object(id)?
             && !matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if self.graph.lower_aggregate_class(class))
         {

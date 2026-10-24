@@ -900,6 +900,9 @@ impl Function<'_, '_, '_, '_> {
             };
             let value = self.convert(value, ty, super::conversions::Context::Initialization)?;
             let value = self.fit(value, ty)?;
+            if self.graph.lower_cv(ty) & 4 != 0 {
+                return self.write_atomic_place(slot, ty, value.value);
+            }
             self.effect(I::Store(
                 memory,
                 types::storage(self.graph, ty)?,

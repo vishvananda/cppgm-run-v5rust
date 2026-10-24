@@ -87,7 +87,12 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
                 )
                 .into());
             }
-            let (bytes, align) = graph.lower_class_layout(entity)?;
+            let (mut bytes, mut align) = graph.lower_class_layout(entity)?;
+            if graph.lower_cv(ty) & 4 != 0 && bytes <= 16 {
+                bytes = bytes.max(1).next_power_of_two();
+                align =
+                    u8::try_from(bytes.trailing_zeros()).map_err(|_| crate::lowir::Error::Limit)?;
+            }
             Type::Object { bytes, align }
         }
         TypeView::Value { .. } | TypeView::Address { .. } => {

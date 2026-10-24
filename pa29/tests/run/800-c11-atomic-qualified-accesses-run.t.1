@@ -1,0 +1,48 @@
+template<class T> struct box {
+  _Atomic(T) value;
+  explicit box(T x) : value(x) {}
+};
+
+struct triple { char a, b, c; };
+struct wide { unsigned long a, b; };
+struct larger { unsigned long a, b, c; };
+static_assert(sizeof(_Atomic(triple)) == 4, "rounded atomic storage");
+static_assert(alignof(_Atomic(wide)) == 16, "sixteen byte alignment");
+static_assert(alignof(_Atomic(larger)) == 8, "larger objects retain alignment");
+static_assert(!__is_same(_Atomic(int), int), "distinct canonical type");
+static_assert(__is_same(__remove_cv(const _Atomic(int)), _Atomic(int)), "cv removal retains atomic");
+static_assert(__c11_atomic_is_lock_free(3), "rounded lock free query");
+static_assert(!__atomic_always_lock_free(3, 0), "GCC query remains exact size");
+
+int read_array(const _Atomic(int) (&values)[2]) {
+  return values[0] + values[1];
+}
+
+int main() {
+  box<int> b(3);
+  volatile _Atomic(int) v = 4;
+  if ((v = 5) != 5 || ++v != 6 || v++ != 6 || v != 7) return 1;
+  if ((b.value += 4) != 7 || (b.value *= 3) != 21) return 2;
+  if ((b.value &= 15) != 5 || --b.value != 4) return 3;
+  _Atomic(bool) flag = false;
+  if (++flag != true) return 4;
+  _Atomic(double) d = 1.5;
+  if ((d += 2.0) != 3.5 || d++ != 3.5 || d != 4.5) return 5;
+  if (__c11_atomic_exchange(&d, 7.5, 5) != 4.5 || d != 7.5) return 6;
+  int values[5] = {};
+  _Atomic(int*) p = values;
+  if (__c11_atomic_fetch_add(&p, 2, 5) != values || p != values + 2) return 7;
+  if (p++ != values + 2 || (p -= 2) != values + 1) return 8;
+  int expected = 4;
+  if (!__c11_atomic_compare_exchange_weak(&b.value, &expected, 9, 5, 2)) return 9;
+  __c11_atomic_init(&b.value, 11);
+  _Atomic(int) array[2] = {1, 2};
+  if (array[0] + array[1] != 3) return 11;
+  if (read_array(array) != 3) return 14;
+  float raw = 1.25f, read = 0.0f, desired = 2.5f;
+  __atomic_load(&raw, &read, 0);
+  if (read != 1.25f) return 12;
+  __atomic_exchange(&raw, &desired, &read, 5);
+  if (read != 1.25f || raw != 2.5f) return 13;
+  return __c11_atomic_load(&b.value, 2) == 11 ? 0 : 10;
+}

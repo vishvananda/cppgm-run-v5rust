@@ -687,7 +687,7 @@ impl<W: Write> InstructionWriter<'_, W> {
     fn runtime_instruction(&mut self, inst: &super::model::RuntimeInstruction) -> io::Result<()> {
         use super::model::RuntimeInstruction as R;
         match inst {
-            R::AtomicLoad(ty, address, order) => {
+            R::AtomicLoad(ty, address, order, _) => {
                 write!(self.out, "atomic_load {ty} ")?;
                 self.value(*address, Type::Ptr)?;
                 write!(self.out, ", {}", order.number())

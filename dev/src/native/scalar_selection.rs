@@ -33,7 +33,8 @@ impl Selection<'_> {
         let source = self
             .body
             .instruction(self.facts.flow.instructions[self.pos]);
-        if matches!(source.kind, I::Load(flags, ..) | I::Store(flags, ..) if flags.volatile())
+        if matches!(source.kind, I::Load(flags, ..) | I::Store(flags, ..)
+            | I::Runtime(crate::lowir::model::RuntimeInstruction::AtomicLoad(_, _, _, flags)) if flags.volatile())
             && let Some(last) = self.mir.instructions.last_mut()
         {
             last.volatile = true;
