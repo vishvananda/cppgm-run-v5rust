@@ -110,6 +110,13 @@ impl Parser<'_> {
                 self.explicit_instantiation(location)
             }
             _ => {
+                if !matches!(
+                    self.scopes.kind(self.scopes.declaration_scope()),
+                    super::scopes::ScopeKind::Block
+                ) && self.at_deduction_guide()?
+                {
+                    return self.deduction_guide(location);
+                }
                 if matches!(
                     self.scopes.kind(self.scopes.declaration_scope()),
                     super::scopes::ScopeKind::Namespace

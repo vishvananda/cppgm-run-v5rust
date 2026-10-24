@@ -413,13 +413,6 @@ fn compile(
         )
     })?;
     let source = SourceBuffer::new(bytes).map_err(message)?;
-    if invocation.preprocessor.standard != crate::preprocess::options::LanguageStandard::Cxx11
-        || !invocation.preprocessor.modes.exceptions
-    {
-        return Err(AstToolError::Missing(
-            "hosted compile language and exception modes",
-        ));
-    }
     let mut output =
         LowIrOutput::for_object_level(model, invocation.level).map_err(ast::native_error)?;
     ast::emit_compilation_unit(

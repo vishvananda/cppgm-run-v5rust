@@ -85,6 +85,11 @@ impl Analyzer<'_> {
         if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind
             && !constructor
             && !self.constant_literal_type(result)?
+            && !(self.graph.cxx14
+                && matches!(
+                    self.graph.types.get(result).kind,
+                    TypeKind::Scalar(super::types::Scalar::Void)
+                ))
         {
             return Err(Error::at(
                 location,

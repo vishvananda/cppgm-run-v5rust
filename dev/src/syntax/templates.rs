@@ -17,6 +17,56 @@ use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 use crate::support::source::SourceOffset;
 
 impl Parser<'_> {
+    pub(super) fn at_deduction_guide(&mut self) -> Result<bool, ParseError> {
+        let ahead = usize::from(self.keyword()? == Some(K::Explicit));
+        let TokenKind::Identifier(name) = self.cursor.peek(ahead)?.kind else {
+            return Ok(false);
+        };
+        if !self.at_ahead(P::LeftParen, ahead + 1)?
+            || !self
+                .scopes
+                .lookup(name)
+                .is_some_and(|binding| binding.category == Category::TypeTemplate)
+        {
+            return Ok(false);
+        }
+        let mut depth = 0_usize;
+        let mut index = ahead + 1;
+        loop {
+            match self.cursor.peek(index)?.kind {
+                TokenKind::End => return Ok(false),
+                TokenKind::Simple(op) => match op.token.as_punctuator() {
+                    Some(P::LeftParen) => depth += 1,
+                    Some(P::RightParen) => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return self.at_ahead(P::Arrow, index + 1);
+                        }
+                    }
+                    _ => (),
+                },
+                _ => (),
+            }
+            index += 1;
+        }
+    }
+
+    pub(super) fn deduction_guide(&mut self, location: SourceOffset) -> Result<DeclId, ParseError> {
+        // The frozen parser consumes the parameter region without parsing its
+        // declarations, checks the target type-id, and retains an empty decl.
+        self.accept_keyword(K::Explicit)?;
+        self.cursor.advance()?;
+        self.skip_balanced()?;
+        self.expect(P::Arrow)?;
+        self.type_id(true)?;
+        self.expect(P::Semicolon)?;
+        self.tree.declarations.add(Declaration {
+            attributes: List::default(),
+            location,
+            kind: DeclKind::Empty,
+        })
+    }
+
     pub(super) fn template_declaration(
         &mut self,
         location: SourceOffset,

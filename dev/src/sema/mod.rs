@@ -166,6 +166,7 @@ mod type_queries;
 mod type_transforms;
 mod wide_integers;
 pub(crate) use analyzer::AnalysisMode;
+pub(crate) use template_bodies::AnalysisOptions;
 #[cfg(test)]
 pub(crate) use template_bodies::analyze_unit;
 pub(crate) use template_bodies::analyze_unit_with_mode;

@@ -255,6 +255,8 @@ struct FunctionSignature {
 
 pub(crate) struct Graph {
     pub(super) hosted: bool,
+    pub(super) cxx14: bool,
+    pub(super) exceptions_enabled: bool,
     pub(super) predefined_variables: super::predefined_variables::Variables,
     pub(super) constructor_queries: super::constructor_queries::Queries,
     pub(super) property_predicates: super::property_predicates::Properties,
@@ -495,6 +497,8 @@ impl Graph {
     pub(super) fn new() -> Self {
         Self {
             hosted: false,
+            cxx14: false,
+            exceptions_enabled: true,
             predefined_variables: super::predefined_variables::Variables::default(),
             constructor_queries: super::constructor_queries::Queries::default(),
             property_predicates: super::property_predicates::Properties::default(),

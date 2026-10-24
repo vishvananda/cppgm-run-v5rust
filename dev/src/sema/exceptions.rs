@@ -263,6 +263,14 @@ impl Analyzer<'_> {
             });
         }
         if !first
+            && !self.graph.exceptions_enabled
+            && special.is_some_and(super::function_names::SpecialName::allocation)
+        {
+            // Under -fno-exceptions the first allocation/deallocation
+            // declaration retains its specification across redeclarations.
+            return Ok(());
+        }
+        if !first
             && self.template_depth != 0
             && self.graph.entity(entity).template_head.is_none()
             && matches!(

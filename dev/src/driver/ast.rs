@@ -186,6 +186,7 @@ pub fn emit_configured_unit(
         ordinal,
         options.stack_budget,
         mode,
+        options.preprocessor,
     )
 }
 pub(crate) fn emit_compilation_unit(
@@ -213,6 +214,7 @@ pub(crate) fn emit_compilation_unit(
         1,
         budget,
         EmitMode::LowIr,
+        options,
     )
 }
 fn emit_preprocessed(
@@ -221,6 +223,7 @@ fn emit_preprocessed(
     ordinal: usize,
     stack_budget: crate::support::stack::StackBudget,
     mode: EmitMode,
+    options: &crate::preprocess::options::DriverOptions,
 ) -> Result<(), AstToolError> {
     let hosted = preprocessor.hosted() || mode == EmitMode::LowIr;
     let origins = if hosted {
@@ -269,12 +272,16 @@ fn emit_preprocessed(
             cursor,
             declarations,
             stack_budget,
-            match mode {
-                EmitMode::Ast | EmitMode::Types => crate::sema::AnalysisMode::Types,
-                EmitMode::LowIr if hosted => crate::sema::AnalysisMode::Lowering,
-                EmitMode::Semantics | EmitMode::LowIr => crate::sema::AnalysisMode::Semantics,
+            crate::sema::AnalysisOptions {
+                mode: match mode {
+                    EmitMode::Ast | EmitMode::Types => crate::sema::AnalysisMode::Types,
+                    EmitMode::LowIr if hosted => crate::sema::AnalysisMode::Lowering,
+                    EmitMode::Semantics | EmitMode::LowIr => crate::sema::AnalysisMode::Semantics,
+                },
+                hosted,
+                cxx14: options.standard != crate::preprocess::options::LanguageStandard::Cxx11,
+                exceptions: options.modes.exceptions,
             },
-            hosted,
         );
         Some(analysis.map_err(|error| match error {
             crate::sema::Error::Diagnostic { location, message }

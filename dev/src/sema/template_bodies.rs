@@ -213,7 +213,27 @@ pub(crate) fn analyze_unit(
     } else {
         super::analyzer::AnalysisMode::Types
     };
-    analyze_unit_with_mode(tree, cursor, declarations, budget, mode, lowering)
+    analyze_unit_with_mode(
+        tree,
+        cursor,
+        declarations,
+        budget,
+        AnalysisOptions {
+            mode,
+            hosted: lowering,
+            cxx14: false,
+            exceptions: true,
+        },
+    )
+}
+
+/// Invocation facts survive unit-tail demands through the semantic graph.
+#[derive(Clone, Copy)]
+pub(crate) struct AnalysisOptions {
+    pub mode: super::analyzer::AnalysisMode,
+    pub hosted: bool,
+    pub cxx14: bool,
+    pub exceptions: bool,
 }
 
 pub(crate) fn analyze_unit_with_mode(
@@ -221,11 +241,13 @@ pub(crate) fn analyze_unit_with_mode(
     cursor: &mut Cursor<'_>,
     declarations: List<ast::DeclId>,
     budget: StackBudget,
-    mode: super::analyzer::AnalysisMode,
-    hosted: bool,
+    options: AnalysisOptions,
 ) -> Result<Graph, Error> {
     let mut analyzer = Analyzer::new(tree, cursor, budget)?;
-    analyzer.set_hosted(hosted);
+    analyzer.set_hosted(options.hosted);
+    analyzer.graph.cxx14 = options.cxx14;
+    analyzer.graph.exceptions_enabled = options.exceptions;
+    let mode = options.mode;
     let semantics = mode != super::analyzer::AnalysisMode::Types;
     let lowering = mode == super::analyzer::AnalysisMode::Lowering;
     analyzer.set_semantics(semantics);

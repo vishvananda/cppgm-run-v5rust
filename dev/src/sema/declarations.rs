@@ -1498,7 +1498,8 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<(), Error> {
         let home = info.home.unwrap_or(self.declaration_scope(scope));
-        if !specs.constexpr
+        if self.graph.cxx14
+            || !specs.constexpr
             || specs.is_static
             || specs.friendship == super::specifiers::Friendship::Friend
             || self.graph.scope(home).kind != ScopeKind::Class
