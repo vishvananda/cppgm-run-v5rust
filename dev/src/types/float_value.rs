@@ -1,25 +1,39 @@
 // Translated from sema/constant_expressions.cpp's target floating rules. See NOTICE.
-//! Scalar arithmetic in explicit binary32, binary64 and x87 precision.
+//! Scalar arithmetic in explicit target precision, held exactly in x87 bits.
 use super::FundamentalType;
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
+    Half,
+    BFloat,
     Single,
     Double,
     Extended,
 }
 impl Format {
     pub(crate) fn of(ty: FundamentalType) -> Option<Self> {
-        match ty {
+        match ty.floating_representation() {
+            FundamentalType::Float16 => Some(Self::Half),
+            FundamentalType::BFloat16 => Some(Self::BFloat),
             FundamentalType::Float => Some(Self::Single),
             FundamentalType::Double => Some(Self::Double),
             FundamentalType::LongDouble => Some(Self::Extended),
             _ => None,
         }
     }
+    fn sign_bit(self) -> u32 {
+        match self {
+            Self::Half | Self::BFloat => 15,
+            Self::Single => 31,
+            Self::Double => 63,
+            Self::Extended => 79,
+        }
+    }
     fn specification(self) -> (i64, i64) {
         match self {
+            Self::Half => (11, 15),
+            Self::BFloat => (8, 127),
             Self::Single => (24, 127),
             Self::Double => (53, 1023),
             Self::Extended => (64, 16383),
@@ -93,7 +107,7 @@ impl BinaryFloat {
         }
         let (precision, maximum) = format.specification();
         let fraction = precision - 1;
-        let sign_bit = if format == Format::Single { 31 } else { 63 };
+        let sign_bit = format.sign_bit();
         let negative = bits & (1 << sign_bit) != 0;
         let exponent =
             i64::try_from((bits >> fraction) & u128::from((maximum * 2 + 1).unsigned_abs()))
@@ -180,7 +194,7 @@ impl BinaryFloat {
     /// payload bits, while an x87 destination retains its representation.
     pub(crate) fn converted(self, format: Format) -> Option<Self> {
         if self.is_nan() && format != Format::Extended {
-            let quiet = if format == Format::Single { 22 } else { 51 };
+            let quiet = format.specification().0 - 2;
             return Self::from_bits(format, self.bits(format)? | (1 << quiet));
         }
         self.rounded(format)
@@ -274,7 +288,7 @@ impl BinaryFloat {
         if format == Format::Extended {
             return Some(value.0);
         }
-        let sign = u128::from(value.negative()) << if format == Format::Single { 31 } else { 63 };
+        let sign = u128::from(value.negative()) << format.sign_bit();
         let (precision, maximum) = format.specification();
         if value.is_nan() || value.is_infinite() {
             let payload = (value.0 & ((1 << 63) - 1)) >> (64 - precision);
@@ -481,6 +495,16 @@ fn round_shift(value: u128, shift: u64) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sixteen_bit_formats_round_trip_all_encodings() {
+        for format in [Format::Half, Format::BFloat] {
+            for bits in 0..=u16::MAX {
+                let value = BinaryFloat::from_bits(format, u128::from(bits)).unwrap();
+                assert_eq!(value.bits(format), Some(u128::from(bits)));
+            }
+        }
+    }
 
     #[test]
     fn precision_changes_quiet_signaling_nans_without_losing_the_sign() {

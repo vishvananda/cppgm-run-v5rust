@@ -20,9 +20,21 @@ impl Analyzer<'_> {
             )
     }
     pub(super) fn arithmetic_type(&mut self, a: TypeId, b: TypeId) -> Result<TypeId, Error> {
-        use F::{Double, Float, LongDouble};
-        for scalar in [LongDouble, Double, Float] {
-            if [a, b].iter().any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(Scalar::Basic(f)) if f == scalar)) { return self.graph.types.scalar(Scalar::Basic(scalar)); }
+        let rank = |ty| match self.graph.types.get(ty).kind {
+            TypeKind::Scalar(Scalar::Basic(f)) => f.floating_rank(),
+            _ => 0,
+        };
+        let (ar, br) = (rank(a), rank(b));
+        if ar != 0 || br != 0 {
+            let standard = matches!(
+                self.graph.types.get(a).kind,
+                TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+            );
+            return self.bare_type(if ar > br || ar == br && !standard {
+                a
+            } else {
+                b
+            });
         }
         self.common_integral_type(a, b)
     }

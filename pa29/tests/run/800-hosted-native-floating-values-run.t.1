@@ -1,0 +1,36 @@
+int pick(float) { return 1; }
+int pick(_Float32) { return 2; }
+int pick(double) { return 3; }
+int pick(_Float64) { return 4; }
+int pick(_Float32x) { return 5; }
+int pick(long double) { return 6; }
+int pick(_Float64x) { return 7; }
+struct Pair { _Float32 a; _Float64 b; };
+Pair transform(Pair x) { x.a += 1.0f32; x.b *= 2.0f64; return x; }
+_Float64 widen(_Float32 x) { return x; }
+_Float32 narrow(_Float64 x) { return x; }
+_Float64x extended(_Float32x x) { return x; }
+constexpr _Float32 small = 1.5f32;
+constexpr _Float64 larger = small + 2.0F64;
+static_assert(larger == 3.5F64, "constant conversion");
+static_assert(__is_same(decltype(1.0f + 2.0f32), _Float32), "subrank");
+static_assert(__is_same(decltype(1.0f64 + 2.0), _Float64), "subrank");
+static_assert(__is_same(decltype(1.0f32x + 2.0f64), _Float32x), "left equal extended rank");
+static_assert(__is_same(decltype(1.0f64 + 2.0f32x), _Float64), "left equal extended rank");
+_Float32 values[] = { 1.5F32, 2.0f32, -0.0F32 };
+_Float64 omitted[3] = { 1.5F64 };
+_Float32x zeroes[3] = {};
+int main() {
+  volatile _Float32 f = 1.5f32;
+  volatile _Float64 d = 2.5F64;
+  volatile _Float32x dx = 3.5f32x;
+  volatile _Float64x ld = 4.5F64x;
+  Pair p = transform(Pair{ f, d });
+  if (pick(f) != 2 || pick(d) != 4 || pick(dx) != 5 || pick(ld) != 7) return 1;
+  if (pick(1.0f) != 1 || pick(1.0) != 3 || pick(1.0L) != 6) return 2;
+  if (widen(f) != 1.5f64 || narrow(d) != 2.5f32 || extended(dx) != 3.5f64x) return 3;
+  if (p.a != 2.5f32 || p.b != 5.0f64 || values[1] != 2.0f32) return 4;
+  if (__builtin_isnan(f) || !__builtin_isfinite(d) || !__builtin_isgreater(ld, dx)) return 5;
+  if (omitted[0] != 1.5F64 || omitted[2] != 0.0F64 || zeroes[2] != 0.0F32x) return 6;
+  return 0;
+}

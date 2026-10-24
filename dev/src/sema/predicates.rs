@@ -165,7 +165,7 @@ impl Analyzer<'_> {
         };
         let floating = matches!(
             kind,
-            TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+            TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
         );
         let arithmetic = integral.is_some() || floating;
         let fundamental = arithmetic || void || nullptr;

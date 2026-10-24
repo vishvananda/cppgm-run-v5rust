@@ -600,9 +600,7 @@ impl Analyzer<'_> {
             target
         };
         let floating = |ty| match self.graph.types.get(ty).kind {
-            TypeKind::Scalar(Scalar::Basic(F::Float)) => Some(24u32),
-            TypeKind::Scalar(Scalar::Basic(F::Double)) => Some(53),
-            TypeKind::Scalar(Scalar::Basic(F::LongDouble)) => Some(64),
+            TypeKind::Scalar(Scalar::Basic(f)) => f.floating_precision(),
             _ => None,
         };
         let sf = floating(source);

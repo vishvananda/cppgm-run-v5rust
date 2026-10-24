@@ -31,6 +31,14 @@ pub(super) fn abi_scalar(scalar: Scalar) -> crate::abi::vocabulary::Builtin {
             F::UnsignedLongLongInt => B::UnsignedLongLong,
             F::Int128 => B::Int128,
             F::UnsignedInt128 => B::Uint128,
+            F::Float16 => B::Float16,
+            F::BFloat16 => B::Bfloat16,
+            F::Float32 => B::Float32,
+            F::Float64 => B::Float64,
+            F::Float32x => B::Float32X,
+            F::Float64x => B::Float64X,
+            F::Float128 => B::StdFloat128,
+            F::GnuFloat128 => B::Float128,
             F::Float => B::Float,
             F::Double => B::Double,
             F::LongDouble => B::LongDouble,
@@ -67,9 +75,16 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             )
             | Scalar::Nullptr => Type::I64,
             Scalar::Basic(F::Int128 | F::UnsignedInt128) => Type::I128,
-            Scalar::Basic(F::Float) => Type::F32,
-            Scalar::Basic(F::Double) => Type::F64,
-            Scalar::Basic(F::LongDouble) => Type::F80,
+            Scalar::Basic(F::Float | F::Float32) => Type::F32,
+            Scalar::Basic(F::Double | F::Float64 | F::Float32x) => Type::F64,
+            Scalar::Basic(F::LongDouble | F::Float64x) => Type::F80,
+            // These identities and their semantic layouts are available to
+            // hosted declarations. Their object values require the separate
+            // soft_float_lowering.cpp owner, including its call classes and
+            // runtime operations; ordinary integer/f80 emission cannot carry them.
+            Scalar::Basic(F::Float16 | F::BFloat16 | F::Float128 | F::GnuFloat128) => {
+                return Err(Error::Missing("soft-float value lowering"));
+            }
         },
         TypeView::Pointer(_)
         | TypeView::BlockPointer(_)

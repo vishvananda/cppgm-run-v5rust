@@ -166,6 +166,20 @@ fn classify_floating(text: &[u8], value_end: usize, dialect: NumberDialect) -> N
         b"" => FundamentalType::Double,
         b"f" | b"F" => FundamentalType::Float,
         b"l" | b"L" => FundamentalType::LongDouble,
+        b"q" | b"Q" if dialect == NumberDialect::Gnu => FundamentalType::GnuFloat128,
+        [b'f' | b'F', rest @ ..]
+            if dialect == NumberDialect::Gnu
+                && matches!(rest, b"16" | b"32" | b"64" | b"128" | b"32x" | b"64x") =>
+        {
+            match rest {
+                b"16" => FundamentalType::Float16,
+                b"32" => FundamentalType::Float32,
+                b"64" => FundamentalType::Float64,
+                b"128" => FundamentalType::Float128,
+                b"32x" => FundamentalType::Float32x,
+                _ => FundamentalType::Float64x,
+            }
+        }
         suffix if numeric_suffix(suffix, dialect) => {
             return NumberLiteral::UserDefined {
                 floating: true,

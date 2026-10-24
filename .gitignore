@@ -53,3 +53,5 @@ dev/obj-clang-libcxx/
 /.test_summary*
 
 /artifacts/pa29-typeof/
+
+/artifacts/pa29-floating/

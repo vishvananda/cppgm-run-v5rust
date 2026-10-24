@@ -12,7 +12,7 @@ use super::{
     static_initialization::Value,
     types::{Scalar, TypeId, TypeKind},
 };
-use crate::{support::source::SourceOffset, syntax::ast, types::FundamentalType as F};
+use crate::{support::source::SourceOffset, syntax::ast};
 const VALUE_BUDGET: u64 = 1 << 22;
 
 struct EvaluatedCall {
@@ -581,7 +581,7 @@ impl Analyzer<'_> {
     }
     fn evaluated_zero(&self, ty: TypeId) -> Option<Value> {
         match self.graph.types.get(ty).kind {
-            TypeKind::Scalar(Scalar::Basic(f @ (F::Float | F::Double | F::LongDouble))) => {
+            TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0 => {
                 Some(Value::Floating(f, 0))
             }
             TypeKind::MemberPointer { .. } => Some(Value::MemberPointer(
@@ -762,7 +762,7 @@ impl Analyzer<'_> {
                 ),
             )),
             TypeKind::Pointer(_) | TypeKind::Scalar(Scalar::Nullptr) => {}
-            TypeKind::Scalar(Scalar::Basic(ty @ (F::Float | F::Double | F::LongDouble))) => {
+            TypeKind::Scalar(Scalar::Basic(ty)) if ty.floating_rank() != 0 => {
                 out.push((
                     origin,
                     self.type_size(target, SourceOffset(0))?.0,

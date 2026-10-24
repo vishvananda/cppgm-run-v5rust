@@ -72,7 +72,7 @@ pub(super) fn constant(value: StaticValue) -> Result<Constant, Error> {
         StaticValue::Integer(bits) => integer(bits),
         StaticValue::WideInteger(bits) => Constant::Integer(bits),
         StaticValue::Floating(ty, bits) => Constant::Float(
-            match ty {
+            match ty.floating_representation() {
                 crate::types::FundamentalType::Float => FloatKind::F32,
                 crate::types::FundamentalType::Double => FloatKind::F64,
                 _ => FloatKind::F80,

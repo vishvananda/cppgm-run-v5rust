@@ -58,11 +58,7 @@ impl Analyzer<'_> {
         self.is_integral_operand(ty)
             || matches!(
                 self.graph.types.get(ty).kind,
-                TypeKind::Scalar(Scalar::Basic(
-                    crate::types::FundamentalType::Float
-                        | crate::types::FundamentalType::Double
-                        | crate::types::FundamentalType::LongDouble
-                ))
+                TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
             )
     }
     pub(super) fn is_arithmetic_type(&self, ty: TypeId) -> bool {

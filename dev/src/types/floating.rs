@@ -185,7 +185,10 @@ struct Format {
 
 impl Format {
     fn for_type(ty: FundamentalType) -> Result<Self, FloatError> {
-        let (precision, max_exponent, explicit_integer_bit) = match ty {
+        let (precision, max_exponent, explicit_integer_bit) = match ty.floating_representation() {
+            FundamentalType::Float16 => (11, 15, false),
+            FundamentalType::BFloat16 => (8, 127, false),
+            FundamentalType::Float128 => (113, 16_383, false),
             FundamentalType::Float => (24, 127, false),
             FundamentalType::Double => (53, 1023, false),
             FundamentalType::LongDouble => (64, 16_383, true),
@@ -574,6 +577,39 @@ fn encode(format: Format, significand: u128, biased: u16) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extended_formats_keep_target_precision_and_range() {
+        use FundamentalType as F;
+        let mut scanner = FloatingScanner::default();
+        for (text, ty, expected) in [
+            (
+                "0x1.0000000000000000000000000001p0",
+                F::Float128,
+                (16383_u128 << 112) | 1,
+            ),
+            ("0x1p12000", F::GnuFloat128, 28383_u128 << 112),
+            ("0x1p-24", F::Float16, 1),
+            ("0x1.ffcp15", F::Float16, 0x7bff),
+            ("1.00390625", F::BFloat16, 0x3f80),
+            ("1.01171875", F::BFloat16, 0x3f82),
+        ] {
+            let value = scanner.scan(text.as_bytes(), ty).unwrap().unwrap();
+            assert_eq!(value.as_slice(), &expected.to_le_bytes()[..ty.size()]);
+        }
+        assert!(scanner.scan(b"65520", F::Float16).unwrap().is_none());
+        for (ty, base) in [
+            (F::Float32, F::Float),
+            (F::Float64, F::Double),
+            (F::Float32x, F::Double),
+            (F::Float64x, F::LongDouble),
+        ] {
+            assert_eq!(
+                scanner.scan(b"0.1", ty).unwrap(),
+                scanner.scan(b"0.1", base).unwrap()
+            );
+        }
+    }
 
     #[test]
     fn direct_rounding_keeps_halfway_and_subnormal_boundaries() {

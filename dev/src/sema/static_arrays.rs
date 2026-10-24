@@ -12,7 +12,6 @@ use super::{
 use crate::{
     lex::PostTokenKind,
     syntax::ast::{self, ExprKind},
-    types::FundamentalType as F,
 };
 use std::collections::HashMap;
 
@@ -327,7 +326,7 @@ impl Analyzer<'_> {
                     append_zero(out, 8)?;
                     return Ok(true);
                 }
-                TypeKind::Scalar(Scalar::Basic(ty @ (F::Float | F::Double | F::LongDouble))) => {
+                TypeKind::Scalar(Scalar::Basic(ty)) if ty.floating_rank() != 0 => {
                     Value::Floating(ty, 0)
                 }
                 TypeKind::MemberPointer { .. } => {
@@ -546,14 +545,11 @@ impl Analyzer<'_> {
                 if expr.is_some() {
                     *next += 1;
                 }
-                if expr.is_none()
-                    && !matches!(
-                        self.graph.types.get(ty).kind,
-                        TypeKind::Array { .. }
-                            | TypeKind::Class(_)
-                            | TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
-                    )
-                {
+                let kind = &self.graph.types.get(ty).kind;
+                let aggregate = matches!(kind, TypeKind::Array { .. } | TypeKind::Class(_));
+                let floating =
+                    matches!(kind, TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0);
+                if expr.is_none() && !aggregate && !floating {
                     let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
                     append_zero(out, size)?;
                     true

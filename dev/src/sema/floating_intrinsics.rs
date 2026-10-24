@@ -267,7 +267,7 @@ impl Analyzer<'_> {
             let common = self.arithmetic_type(left.ty, right.ty)?;
             if !matches!(
                 self.graph.types.get(common).kind,
-                TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+                TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
             ) {
                 return Err(Error::at(
                     location,
@@ -285,7 +285,7 @@ impl Analyzer<'_> {
                 } else {
                     if !matches!(
                         self.graph.types.get(facts.ty).kind,
-                        TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+                        TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
                     ) {
                         return Err(Error::at(
                             self.tree.expressions.get(value).location,
@@ -318,21 +318,28 @@ struct FloatingBits {
 }
 impl FloatingBits {
     fn fraction(&self) -> u32 {
-        match self.kind {
+        match self.kind.floating_representation() {
+            F::Float16 => 10,
+            F::BFloat16 => 7,
+            F::Float128 => 112,
             F::Float => 23,
             F::Double => 52,
             _ => 63,
         }
     }
     fn exponent_width(&self) -> u32 {
-        match self.kind {
+        match self.kind.floating_representation() {
+            F::Float16 => 5,
+            F::BFloat16 => 8,
             F::Float => 8,
             F::Double => 11,
             _ => 15,
         }
     }
     fn sign_shift(&self) -> u32 {
-        self.fraction() + self.exponent_width() + u32::from(self.kind == F::LongDouble)
+        self.fraction()
+            + self.exponent_width()
+            + u32::from(self.kind.floating_representation() == F::LongDouble)
     }
     fn negative(&self) -> bool {
         self.bits & (1 << self.sign_shift()) != 0

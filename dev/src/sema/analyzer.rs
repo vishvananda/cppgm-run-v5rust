@@ -167,6 +167,38 @@ impl<'tree> Analyzer<'tree> {
             for (spelling, scalar) in [
                 (b"nullptr_t".as_slice(), Scalar::Nullptr),
                 (
+                    b"_Float16".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Float16),
+                ),
+                (
+                    b"_Float32".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Float32),
+                ),
+                (
+                    b"_Float64".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Float64),
+                ),
+                (
+                    b"_Float128".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Float128),
+                ),
+                (
+                    b"_Float32x".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Float32x),
+                ),
+                (
+                    b"_Float64x".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::Float64x),
+                ),
+                (
+                    b"__float128".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::GnuFloat128),
+                ),
+                (
+                    b"__bf16".as_slice(),
+                    Scalar::Basic(crate::types::FundamentalType::BFloat16),
+                ),
+                (
                     b"__int128".as_slice(),
                     Scalar::Basic(crate::types::FundamentalType::Int128),
                 ),

@@ -503,7 +503,7 @@ impl Analyzer<'_> {
                 let PostTokenKind::Literal { ty, data, .. } = literal.kind else {
                     return Ok(None);
                 };
-                if !matches!(ty, F::Float | F::Double | F::LongDouble) {
+                if ty.floating_rank() == 0 {
                     return Ok(None);
                 }
                 let bits = data
@@ -696,14 +696,14 @@ impl Analyzer<'_> {
             return Ok(Some(Value::Integer(kind.convert(bits))));
         }
         if let TypeKind::Scalar(Scalar::Basic(target)) = self.graph.types.get(target).kind
-            && matches!(target, F::Float | F::Double | F::LongDouble)
+            && target.floating_rank() != 0
         {
             if let Value::Floating(from, bits) = value
                 && from != target
             {
-                let from = Format::of(from).ok_or(Error::Invariant("static floating source"))?;
-                let format =
-                    Format::of(target).ok_or(Error::Invariant("static floating target"))?;
+                let (Some(from), Some(format)) = (Format::of(from), Format::of(target)) else {
+                    return Ok(None);
+                };
                 let floating = BinaryFloat::from_bits(from, bits)
                     .ok_or(Error::Invariant("static floating encoding"))?;
                 if floating.is_nan() || floating.is_infinite() {
@@ -760,14 +760,19 @@ impl Analyzer<'_> {
     }
 }
 fn float_layout(ty: F) -> (u32, u32, i64) {
-    match ty {
+    match ty.floating_representation() {
+        F::Float16 => (10, 5, 15),
+        F::BFloat16 => (7, 8, 127),
+        F::Float128 => (112, 15, 16383),
         F::Float => (23, 8, 127),
         F::Double => (52, 11, 1023),
         _ => (63, 15, 16383),
     }
 }
 fn float_sign(ty: F) -> u128 {
-    1 << match ty {
+    1 << match ty.floating_representation() {
+        F::Float16 | F::BFloat16 => 15,
+        F::Float128 => 127,
         F::Float => 31,
         F::Double => 63,
         _ => 79,
@@ -775,7 +780,7 @@ fn float_sign(ty: F) -> u128 {
 }
 fn float_infinity(ty: F) -> u128 {
     let (fraction, width, _) = float_layout(ty);
-    if ty == F::LongDouble {
+    if ty.floating_representation() == F::LongDouble {
         ((1 << width) - 1) << 64 | 1 << 63
     } else {
         ((1 << width) - 1) << fraction
@@ -783,12 +788,16 @@ fn float_infinity(ty: F) -> u128 {
 }
 fn float_parts(ty: F, bits: u128) -> Option<(u128, i64, bool)> {
     let (fraction, width, exponent_bias) = float_layout(ty);
-    let shift = if ty == F::LongDouble { 64 } else { fraction };
+    let shift = if ty.floating_representation() == F::LongDouble {
+        64
+    } else {
+        fraction
+    };
     let exponent = i64::try_from(bits >> shift & ((1 << width) - 1)).ok()?;
     if exponent == (1 << width) - 1 {
         return None;
     }
-    let significand = if ty == F::LongDouble {
+    let significand = if ty.floating_representation() == F::LongDouble {
         bits & u128::from(u64::MAX)
     } else {
         (bits & ((1 << fraction) - 1)) | if exponent == 0 { 0 } else { 1 << fraction }

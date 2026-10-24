@@ -361,17 +361,14 @@ impl Graph {
         mut id: ast::ExprId,
     ) -> Result<Option<bool>, Error> {
         use super::lowering::{LiteralCall, StaticValue, TypeView};
-        use crate::{
-            lex::{PostTokenKind, vocabulary::Keyword},
-            types::FundamentalType as F,
-        };
+        use crate::lex::{PostTokenKind, vocabulary::Keyword};
         loop {
             id = without_parentheses(tree, id);
             let facts = self.lower_expression(id)?;
             let ty = self.lower_type(facts.ty)?;
             let floating = matches!(
                 ty,
-                TypeView::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+                TypeView::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
             );
             if let Some(shape) = self.lower_literal_call(id)? {
                 return Ok((!floating && !matches!(ty, TypeView::Array { .. }))

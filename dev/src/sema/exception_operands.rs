@@ -12,7 +12,6 @@ use crate::{
     lex::{PostTokenKind, pp_lexer::Punctuator as P, vocabulary::Keyword},
     support::source::SourceOffset,
     syntax::ast::{self, ExprKind},
-    types::FundamentalType as F,
 };
 
 #[derive(Clone, Copy)]
@@ -227,7 +226,7 @@ impl Analyzer<'_> {
                     self.promoted_type(ty)
                 } else if matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::Scalar(Scalar::Basic(F::Float | F::Double | F::LongDouble))
+                    TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
                 ) && matches!(op.token.as_punctuator(), Some(P::Add | P::Subtract))
                 {
                     Ok(ty)
@@ -374,11 +373,11 @@ impl Analyzer<'_> {
         if self.integral_kind(a).is_some() && self.integral_kind(b).is_some() {
             return self.common_integral_type(a, b);
         }
-        for scalar in [F::LongDouble, F::Double, F::Float] {
-            if [a,b].iter().any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(Scalar::Basic(s)) if s == scalar)) {
-                if integral_only { return Err(Error::at(location, "invalid operands to a binary operator")); }
-                return self.graph.types.scalar(Scalar::Basic(scalar));
+        if self.is_arithmetic_operand(a) && self.is_arithmetic_operand(b) {
+            if integral_only {
+                return Err(Error::at(location, "invalid operands to a binary operator"));
             }
+            return self.arithmetic_type(a, b);
         }
         Err(Error::Missing("extended binary exception operand typing"))
     }

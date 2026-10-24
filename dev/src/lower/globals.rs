@@ -381,7 +381,7 @@ fn define_storage<'a>(
                 i128::from(bits.cast_signed()).cast_unsigned(),
             )),
             Some(StaticValue::Floating(ty, bits)) => GlobalInit::Constant(Constant::Float(
-                match ty {
+                match ty.floating_representation() {
                     F::Float => FloatKind::F32,
                     F::Double => FloatKind::F64,
                     _ => FloatKind::F80,
