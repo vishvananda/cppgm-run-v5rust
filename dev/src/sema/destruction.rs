@@ -324,10 +324,17 @@ impl Analyzer<'_> {
             }
             ty = element;
         }
-        // Reaching this recorded destructor prepares its containment.
+        // object_lowering.cpp::needs_destruction is an optional query: a
+        // nested-class signature need not have a published destructor yet.
         // Recording storage alone must not instantiate subobject bodies.
         if let Some(class) = self.graph.class_of(ty)
-            && !self.graph.destructor_trivial(class)?
+            && self
+                .graph
+                .entity(class)
+                .destruction
+                .is_some_and(|facts| !facts.trivial)
+            && (self.graph.entity(class).key != Keyword::Union
+                || self.graph.entity(class).declared_destructor.is_some())
             && let Some(binding) = self.destructor_callable(class)?
         {
             self.graph.storage_destructions.push((
@@ -350,6 +357,7 @@ impl Analyzer<'_> {
             self.class_parameter_destruction(facts.ty, scope, location)?;
             if self.lowering() && self.unevaluated == 0 {
                 self.request_object_layout(facts.ty, location);
+                self.request_temporary_destruction(facts.ty)?;
             }
         }
         Ok(())
@@ -369,6 +377,7 @@ impl Analyzer<'_> {
                 self.class_parameter_destruction(conversion.result, scope, location)?;
                 if self.lowering() && self.unevaluated == 0 {
                     self.request_object_layout(conversion.result, location);
+                    self.request_temporary_destruction(conversion.result)?;
                 }
             } else {
                 self.check_temporary_destruction(facts, scope, location)?;
@@ -417,6 +426,26 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    /// A reached constructor may destroy completed subobjects on failure even
+    /// when no use reaches the complete object's destructor.
+    pub(super) fn constructor_cleanup_boundaries(
+        &mut self,
+        class: EntityId,
+        work: &mut Vec<EntityId>,
+    ) -> Result<(), Error> {
+        self.prepare_destruction(class)?;
+        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
+        for index in 0..count {
+            if let Some((child, _)) = self.graph.destruction_child(class, index, &[])?
+                && !self.graph.destructor_trivial(child)?
+                && let Some(binding) = self.destructor_callable(child)?
+            {
+                work.push(self.graph.binding(binding).entity);
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn prepare_destruction(&mut self, class: EntityId) -> Result<(), Error> {
         // Follow only this object's containment graph, recording output-boundary
         // edges on each destructor instead of demanding unrelated definitions.

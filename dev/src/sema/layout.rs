@@ -182,6 +182,7 @@ impl Analyzer<'_> {
         self.request_subobject_constructor_defaults(constructor)?;
         *root_count = self.constructor_default_boundaries(None, *root_count, work, constructors)?;
         let class = self.graph.constructors.get(constructor).class;
+        self.constructor_cleanup_boundaries(class, work)?;
         self.virtual_table_boundaries(class, seen_tables, work)?;
         let plan = self.graph.constructors.get(constructor);
         if let Some(binding) = plan.binding {
