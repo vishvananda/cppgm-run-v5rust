@@ -67,6 +67,13 @@ impl Function<'_, '_, '_, '_> {
         base: ast::ExprId,
         index: ast::ExprId,
     ) -> Result<Value, Error> {
+        if matches!(
+            self.graph
+                .lower_type(self.graph.lower_builtin_operand_type(base)?)?,
+            TypeView::Vector { .. }
+        ) {
+            return self.vector_lane_place(id, base, index);
+        }
         let facts = self.graph.lower_expression(id)?;
         let (base, index) = if facts.commuted {
             (index, base)

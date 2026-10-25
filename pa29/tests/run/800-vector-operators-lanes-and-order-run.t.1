@@ -1,0 +1,51 @@
+typedef int words __attribute__((vector_size(16)));
+typedef unsigned short halves __attribute__((vector_size(8)));
+typedef float floats __attribute__((vector_size(16)));
+using flags __attribute__((ext_vector_type(17))) = bool;
+int sequence;
+words left() { sequence = sequence * 10 + 1; return words{1,-2,3,4}; }
+int right() { sequence = sequence * 10 + 2; return 3; }
+int selected() { sequence = sequence * 10 + 3; return 2; }
+words& place(words& value) { sequence = sequence * 10 + 4; return value; }
+static_assert(__is_same(decltype(((const words*)0)[0][1]), const int&), "const lane");
+static_assert(__is_same(decltype(words{}[1]), int), "value lane");
+static_assert(__is_same(decltype(((flags*)0)[0][1]), bool), "bit lane");
+int main() {
+  words a = left() + right();
+  if (sequence != 12 || a[0] != 4 || a[1] != 1) return 1;
+  sequence = 0;
+  place(a) += right();
+  if (sequence != 24 || a[2] != 9) return 2;
+  sequence = 0;
+  a[selected()] = right();
+  if (sequence != 23 || a[2] != 3) return 3;
+  sequence = 0;
+  int n = (left() + right())[selected()];
+  if (sequence != 123 || n != 6) return 4;
+  words equal = a == words{7,4,3,10};
+  words less = a < 8;
+  words greater = 5 > a;
+  words unequal = a != words{7,5,3,10};
+  if (equal[0] != -1 || equal[3] != -1 || less[0] != -1 || less[3] != 0 || greater[1] != -1 || unequal[1] != -1 || unequal[0] != 0) return 5;
+  halves h{65535,1,32768,7};
+  auto ge = h >= halves{1,1,65535,8};
+  auto le = h <= halves{1,1,65535,8};
+  if (ge[0] != -1 || ge[2] != 0 || le[0] != 0 || le[2] != -1) return 6;
+  floats f{1.5f,-2.25f,3,0};
+  auto fg = f > 0.0f;
+  auto fe = f == f;
+  if (fg[0] != -1 || fg[1] != 0 || fe[3] != -1) return 7;
+  flags bits{true,false,true,false,false,false,false,false,true};
+  flags zeros{};
+  auto be = bits == zeros;
+  volatile int i = 8;
+  if (!bits[i] || bits[7] || be[8] || !be[16] || !bits[2]) return 8;
+  typedef signed char tiny __attribute__((vector_size(8)));
+  tiny t{120,-120};
+  tiny shifted = t + 7;
+  tiny truncated = t + 128;
+  floats splat = f + 2.0;
+  if (shifted[0] != 127 || shifted[1] != -113 || splat[0] != 3.5f) return 11;
+  if (truncated[0] != -8 || truncated[1] != 8) return 12;
+  return 0;
+}

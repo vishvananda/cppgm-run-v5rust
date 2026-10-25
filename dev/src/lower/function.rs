@@ -952,7 +952,12 @@ impl Function<'_, '_, '_, '_> {
         if let Some(initializer) = initializer {
             let value = match initializer.kind {
                 ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
-                    self.operand(id, super::conversions::Context::Initialization)?
+                    if matches!(self.tree.expressions.get(id).kind, ast::ExprKind::Braced { elements, .. } if self.tree.expr_lists.get(elements).is_empty())
+                    {
+                        self.zero(ty)?
+                    } else {
+                        self.operand(id, super::conversions::Context::Initialization)?
+                    }
                 }
                 ast::InitializerKind::Parenthesized(args) => {
                     if let Some(&id) = self.tree.expr_lists.get(args).first() {

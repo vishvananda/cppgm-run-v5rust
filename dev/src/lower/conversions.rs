@@ -61,6 +61,14 @@ impl Function<'_, '_, '_, '_> {
                 ..value
             });
         }
+        if matches!((self.graph.lower_type(value.source)?, self.graph.lower_type(target)?),
+            (crate::sema::lowering::TypeView::Vector { element: a, bound: n }, crate::sema::lowering::TypeView::Vector { element: b, bound: m }) if a == b && n == m)
+        {
+            return Ok(RValue {
+                source: target,
+                ..value
+            });
+        }
         let to = types::storage(self.graph, target)?;
         if to == Type::Void {
             return Ok(value);

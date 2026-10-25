@@ -203,6 +203,9 @@ impl Analyzer<'_> {
             let ty = self.graph.types.scalar(Scalar::Bool)?;
             return self.new_expression_facts(ty, V::Prvalue);
         }
+        if self.vector_shape(ty).is_some() {
+            return self.vector_unary(id, op, operand, ty);
+        }
         let pointer_plus =
             op == P::Add && matches!(self.graph.types.get(ty).kind, TypeKind::Pointer(_));
         if !pointer_plus
@@ -266,6 +269,22 @@ impl Analyzer<'_> {
             op,
             P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual
         );
+        if self.vector_shape(a).is_some() || self.vector_shape(b).is_some() {
+            if !compare
+                && (matches!(self.graph.types.get(a).kind, TypeKind::Scalar(Scalar::Void))
+                    || matches!(self.graph.types.get(b).kind, TypeKind::Scalar(Scalar::Void)))
+            {
+                return Err(self.operator_error(id, "operand of type void"));
+            }
+            // The frozen arithmetic owner diagnoses pointer +/- before vectors;
+            // vector checks precede complex arithmetic and comparison checks.
+            if matches!(op, P::Add | P::Subtract)
+                && (self.object_pointer(a).is_some() || self.object_pointer(b).is_some())
+            {
+                return Err(self.operator_error(id, "invalid operands to pointer arithmetic"));
+            }
+            return self.vector_binary(id, op, [left, right], [a, b], scope);
+        }
         if self.complex_part_type(a).is_some() || self.complex_part_type(b).is_some() {
             return self.complex_binary(id, op, [left, right], [a, b]);
         }
@@ -621,6 +640,18 @@ impl Analyzer<'_> {
             self.check_resolved_function(right)?;
             let rf = self.builtin_operand_facts(right)?;
             let rt = self.decayed_type(rf.ty)?;
+            if self.vector_shape(target).is_some() {
+                self.vector_compound(id, op, right, target, rt)?;
+                let right_type = self
+                    .graph
+                    .expression_facts
+                    .get(right)?
+                    .conversion
+                    .ok_or(Error::Invariant("vector compound conversion"))?
+                    .result;
+                self.graph.record_arithmetic_types(id, target, right_type);
+                return self.new_expression_facts(lf.ty, V::Lvalue);
+            }
             if matches!(op, P::AddAssign | P::SubtractAssign)
                 && self.object_pointer(target).is_some()
             {
@@ -834,6 +865,9 @@ impl Analyzer<'_> {
         let b = self.builtin_operand_facts(index)?;
         let at = self.decayed_type(a.ty)?;
         let bt = self.decayed_type(b.ty)?;
+        if self.vector_shape(a.ty).is_some() && self.is_integral_operand(bt) {
+            return self.vector_subscript(a, index, bt);
+        }
         let (pointer, integer, it, commuted) = if self.object_pointer(at).is_some() {
             (at, index, bt, false)
         } else {

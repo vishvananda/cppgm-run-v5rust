@@ -1,5 +1,5 @@
 // Translated from lower/vector_lowering.cpp. See NOTICE.
-//! Vector lists use addressed object storage; lanes retain semantic conversions.
+//! Vector operations use per-function addressed storage and recorded lane conversions.
 use super::{
     Error,
     conversions::Context,
@@ -7,9 +7,12 @@ use super::{
     types,
 };
 use crate::{
+    lex::pp_lexer::Punctuator as P,
     lowir::{
-        model::{InstructionKind as I, Value},
-        vocabulary::{Binary, Convert, EightbyteClass as E, ObjectClasses, Projection, Type},
+        model::{Facts, InstructionKind as I, Value},
+        vocabulary::{
+            Binary, Compare, Convert, EightbyteClass as E, ObjectClasses, Projection, Type, Unary,
+        },
     },
     sema::{
         Graph,
@@ -66,66 +69,424 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("vector list type").into());
         };
         let (slot, address) = self.zeroed_vector(ty)?;
-        let boolean = matches!(self.graph.lower_type(lane)?, TypeView::Scalar(Scalar::Bool));
-        let lane_bytes = types::layout(self.graph, lane)?.0;
         for (index, &expression) in self.tree.expr_lists.get(elements).iter().enumerate() {
             let index = u64::try_from(index).map_err(|_| crate::lowir::Error::Limit)?;
             let value = self.operand(expression, Context::Initialization)?;
             let value = self.fit(value, lane)?;
-            let offset = self.builder.integer(u128::from(if boolean {
-                index / 8
+            self.set_vector_lane(address, ty, index, value)?;
+        }
+        self.load_vector_storage(slot, ty)
+    }
+    fn load_vector_storage(&mut self, slot: Value, vector: TypeId) -> Result<RValue, Error> {
+        self.emit(
+            I::Load(Facts::default(), types::storage(self.graph, vector)?, slot),
+            vector,
+        )
+    }
+    pub(super) fn vector_compound_assignment(
+        &mut self,
+        op: P,
+        operands: [ast::ExprId; 2],
+        types: [TypeId; 2],
+    ) -> Result<(Value, RValue), Error> {
+        let [left, right] = operands;
+        let [source, operation] = types;
+        let rhs = self.operand(right, Context::CompoundAssignment)?;
+        let place = self.scalar_place(left)?;
+        let (state, old) =
+            if let Some((state, old)) = self.begin_atomic_place_loop(place, source)? {
+                (Some(state), old)
             } else {
-                index * lane_bytes
-            }))?;
-            let place = self
-                .emit(
-                    I::Index(Type::I8, Some(Projection::Field), address, offset),
-                    lane,
-                )?
-                .value;
-            let value = if boolean {
-                let bit = if value.ty == Type::U8 {
-                    value.value
-                } else {
-                    self.emit(
-                        I::Convert(Convert::Truncate, Type::U8, value.ty, value.value),
-                        lane,
-                    )?
-                    .value
-                };
-                let bit = if index % 8 == 0 {
-                    bit
-                } else {
-                    let shift = self.builder.integer(u128::from(index % 8))?;
-                    self.emit(
-                        I::Binary(
-                            Binary::Shl,
-                            crate::lowir::model::Facts::default(),
-                            Type::U8,
-                            bit,
-                            shift,
-                        ),
-                        lane,
-                    )?
-                    .value
-                };
-                let old = self.read_place(place, lane)?;
+                (None, self.read_place(place, source)?)
+            };
+        let lhs = self.convert(old, operation, Context::CompoundAssignment)?;
+        let right_vector = matches!(
+            self.graph
+                .lower_type(self.graph.lower_builtin_operand_type(right)?)?,
+            TypeView::Vector { .. }
+        );
+        let value = self.vector_operation(op, operation, [(lhs, true), (rhs, right_vector)])?;
+        let value = self.convert(value, source, Context::CompoundAssignment)?;
+        let value = self.fit(value, source)?;
+        if let Some(state) = state {
+            self.end_atomic_place_loop(place, source, state, value)?;
+        } else {
+            self.write_place(place, source, value.value)?;
+        }
+        Ok((place, value))
+    }
+    fn vector_shape(&self, ty: TypeId) -> Result<(TypeId, u64), Error> {
+        match self.graph.lower_type(ty)? {
+            TypeView::Vector { element, bound } => Ok((element, bound)),
+            _ => Err(crate::sema::Error::Invariant("vector operation type").into()),
+        }
+    }
+    fn vector_storage(&mut self, value: RValue) -> Result<Value, Error> {
+        let slot = self.generated_slot("vector", value.ty)?;
+        self.effect(I::Store(Facts::default(), value.ty, value.value, slot))?;
+        Ok(self.emit(I::Addr(slot), value.source)?.value)
+    }
+    fn set_vector_lane(
+        &mut self,
+        address: Value,
+        vector: TypeId,
+        index: u64,
+        value: RValue,
+    ) -> Result<(), Error> {
+        let (lane, _) = self.vector_shape(vector)?;
+        let boolean = types::boolean(self.graph, lane)?;
+        let offset = self.builder.integer(u128::from(if boolean {
+            index / 8
+        } else {
+            index * types::layout(self.graph, lane)?.0
+        }))?;
+        let place = self
+            .emit(
+                I::Index(Type::I8, Some(Projection::Field), address, offset),
+                lane,
+            )?
+            .value;
+        let value = if boolean {
+            let bit = if value.ty == Type::U8 {
+                value.value
+            } else {
                 self.emit(
-                    I::Binary(
-                        Binary::Or,
-                        crate::lowir::model::Facts::default(),
-                        Type::U8,
-                        old.value,
-                        bit,
-                    ),
+                    I::Convert(Convert::Truncate, Type::U8, value.ty, value.value),
                     lane,
                 )?
                 .value
-            } else {
-                value.value
             };
-            self.write_place(place, lane, value)?;
+            let bit = if index.is_multiple_of(8) {
+                bit
+            } else {
+                let shift = self.builder.integer(u128::from(index % 8))?;
+                self.emit(
+                    I::Binary(Binary::Shl, Facts::default(), Type::U8, bit, shift),
+                    lane,
+                )?
+                .value
+            };
+            let old = self.read_place(place, lane)?;
+            self.emit(
+                I::Binary(Binary::Or, Facts::default(), Type::U8, old.value, bit),
+                lane,
+            )?
+            .value
+        } else {
+            value.value
+        };
+        self.write_place(place, lane, value)
+    }
+    fn vector_lane(&mut self, address: Value, vector: TypeId, index: u64) -> Result<RValue, Error> {
+        let (lane, _) = self.vector_shape(vector)?;
+        let boolean = types::boolean(self.graph, lane)?;
+        let offset = self.builder.integer(u128::from(if boolean {
+            index / 8
+        } else {
+            index * types::layout(self.graph, lane)?.0
+        }))?;
+        let place = self
+            .emit(
+                I::Index(Type::I8, Some(Projection::Field), address, offset),
+                lane,
+            )?
+            .value;
+        let value = self.read_place(place, lane)?;
+        if !boolean {
+            return Ok(value);
         }
-        self.read_place(slot, ty)
+        let value = if index.is_multiple_of(8) {
+            value
+        } else {
+            let shift = self.builder.integer(u128::from(index % 8))?;
+            self.emit(
+                I::Binary(Binary::UShr, Facts::default(), Type::U8, value.value, shift),
+                lane,
+            )?
+        };
+        let one = self.builder.integer(1)?;
+        self.emit(
+            I::Binary(Binary::And, Facts::default(), Type::U8, value.value, one),
+            lane,
+        )
+    }
+    pub(super) fn vector_operation(
+        &mut self,
+        op: P,
+        vector: TypeId,
+        operands: [(RValue, bool); 2],
+    ) -> Result<RValue, Error> {
+        let op = match op {
+            P::AddAssign => P::Add,
+            P::SubtractAssign => P::Subtract,
+            P::MultiplyAssign => P::Multiply,
+            P::DivideAssign => P::Divide,
+            P::RemainderAssign => P::Remainder,
+            P::AndAssign => P::BitAnd,
+            P::OrAssign => P::BitOr,
+            P::XorAssign => P::Xor,
+            P::ShiftLeftAssign => P::ShiftLeft,
+            P::ShiftRightAssign => P::ShiftRight,
+            other => other,
+        };
+        let [(left, left_vector), (right, right_vector)] = operands;
+        let (lane, bound) = self.vector_shape(vector)?;
+        let a = if left_vector {
+            Some(self.vector_storage(left)?)
+        } else {
+            None
+        };
+        let b = if right_vector {
+            Some(self.vector_storage(right)?)
+        } else {
+            None
+        };
+        let (slot, out) = self.zeroed_vector(vector)?;
+        for index in 0..bound {
+            let x = if let Some(a) = a {
+                self.vector_lane(a, vector, index)?
+            } else {
+                left
+            };
+            let y = if let Some(b) = b {
+                self.vector_lane(b, vector, index)?
+            } else {
+                right
+            };
+            let value = self.scalar_arithmetic(op, lane, x, y)?;
+            self.set_vector_lane(out, vector, index, value)?;
+        }
+        self.load_vector_storage(slot, vector)
+    }
+    pub(super) fn vector_compare(
+        &mut self,
+        op: P,
+        result: TypeId,
+        operands: [(RValue, bool); 2],
+    ) -> Result<RValue, Error> {
+        let [(left, left_vector), (right, right_vector)] = operands;
+        let vector = if left_vector {
+            left.source
+        } else {
+            right.source
+        };
+        let (lane, bound) = self.vector_shape(vector)?;
+        let (truth_lane, _) = self.vector_shape(result)?;
+        let boolean = types::boolean(self.graph, truth_lane)?;
+        let truth_type = types::storage(self.graph, truth_lane)?;
+        let soft = super::soft_float::kind(self.graph, lane)?;
+        let signed = types::signed(self.graph, lane)?
+            || types::storage(self.graph, lane)?.float_rank() != 0
+            || soft.is_some();
+        let predicate = match (op, signed) {
+            (P::Equal, _) => Compare::Eq,
+            (P::NotEqual, _) => Compare::Ne,
+            (P::Less, true) => Compare::Lt,
+            (P::Less, false) => Compare::Ult,
+            (P::LessEqual, true) => Compare::Le,
+            (P::LessEqual, false) => Compare::Ule,
+            (P::Greater, true) => Compare::Gt,
+            (P::Greater, false) => Compare::Ugt,
+            (_, true) => Compare::Ge,
+            (_, false) => Compare::Uge,
+        };
+        let a = if left_vector {
+            Some(self.vector_storage(left)?)
+        } else {
+            None
+        };
+        let b = if right_vector {
+            Some(self.vector_storage(right)?)
+        } else {
+            None
+        };
+        let (slot, out) = self.zeroed_vector(result)?;
+        for index in 0..bound {
+            let x = if let Some(a) = a {
+                self.vector_lane(a, vector, index)?
+            } else {
+                left
+            };
+            let y = if let Some(b) = b {
+                self.vector_lane(b, vector, index)?
+            } else {
+                right
+            };
+            let truth = if let Some(kind) = soft {
+                self.soft_compare(predicate, kind, x, y, truth_lane)?
+            } else {
+                self.emit(I::Compare(predicate, x.ty, x.value, y.value), truth_lane)?
+            };
+            let value = if boolean {
+                truth
+            } else {
+                let zero = self.builder.integer(0)?;
+                let mask = self.emit(
+                    I::Binary(Binary::Sub, Facts::default(), Type::I64, zero, truth.value),
+                    truth_lane,
+                )?;
+                if truth_type == Type::I64 {
+                    mask
+                } else {
+                    self.emit(
+                        I::Convert(Convert::Truncate, truth_type, Type::I64, mask.value),
+                        truth_lane,
+                    )?
+                }
+            };
+            self.set_vector_lane(out, result, index, value)?;
+        }
+        self.load_vector_storage(slot, result)
+    }
+    pub(super) fn vector_unary(
+        &mut self,
+        op: P,
+        vector: TypeId,
+        value: RValue,
+    ) -> Result<RValue, Error> {
+        let (lane, bound) = self.vector_shape(vector)?;
+        let address = self.vector_storage(value)?;
+        let (slot, out) = self.zeroed_vector(vector)?;
+        for index in 0..bound {
+            let x = self.vector_lane(address, vector, index)?;
+            let value = if op == P::Complement {
+                self.emit(I::Unary(Unary::BitNot, x.ty, x.value), lane)?
+            } else if let Some(kind) = super::soft_float::kind(self.graph, lane)? {
+                self.soft_negate(kind, x)?
+            } else {
+                self.emit(I::Unary(Unary::Neg, x.ty, x.value), lane)?
+            };
+            self.set_vector_lane(out, vector, index, value)?;
+        }
+        self.load_vector_storage(slot, vector)
+    }
+    fn vector_index(&mut self, index: ast::ExprId) -> Result<RValue, Error> {
+        let value = self.expression(index, Context::Operand)?;
+        self.convert_integer(
+            RValue {
+                literal: false,
+                ..value
+            },
+            value.source,
+            Type::I64,
+            true,
+            Context::Additive,
+        )
+    }
+    fn vector_index_place(
+        &mut self,
+        address: Value,
+        index: ast::ExprId,
+        lane: TypeId,
+    ) -> Result<Value, Error> {
+        let offset = self.vector_index(index)?;
+        let size = self
+            .builder
+            .integer(u128::from(types::layout(self.graph, lane)?.0))?;
+        let offset = self.emit(
+            I::Binary(Binary::Mul, Facts::default(), Type::I64, offset.value, size),
+            offset.source,
+        )?;
+        Ok(self
+            .emit(
+                I::Index(
+                    Type::I8,
+                    Some(Projection::ArrayElement),
+                    address,
+                    offset.value,
+                ),
+                lane,
+            )?
+            .value)
+    }
+    pub(super) fn vector_lane_place(
+        &mut self,
+        id: ast::ExprId,
+        base: ast::ExprId,
+        index: ast::ExprId,
+    ) -> Result<Value, Error> {
+        let lane = self.graph.lower_expression(id)?.ty;
+        let base = self.without_parentheses(base);
+        let address = self.address(base)?;
+        self.vector_index_place(address, index, lane)
+    }
+    pub(super) fn vector_lane_value(
+        &mut self,
+        id: ast::ExprId,
+        base: ast::ExprId,
+        index: ast::ExprId,
+    ) -> Result<RValue, Error> {
+        let lane = self.graph.lower_expression(id)?.ty;
+        let base = self.without_parentheses(base);
+        let facts = self.graph.lower_expression(base)?;
+        let boolean = types::boolean(self.graph, lane)?;
+        if !boolean && facts.is_place {
+            let place = self.vector_lane_place(id, base, index)?;
+            return self.read_place(place, lane);
+        }
+        let address = if facts.is_place {
+            self.address(base)?
+        } else {
+            let value = self.expression(base, Context::Operand)?;
+            self.vector_storage(value)?
+        };
+        if !boolean {
+            let place = self.vector_index_place(address, index, lane)?;
+            return self.read_place(place, lane);
+        }
+        let position = self.vector_index(index)?;
+        let three = self.builder.integer(3)?;
+        let offset = self.emit(
+            I::Binary(
+                Binary::Shr,
+                Facts::default(),
+                Type::I64,
+                position.value,
+                three,
+            ),
+            lane,
+        )?;
+        let place = self
+            .emit(
+                I::Index(
+                    Type::I8,
+                    Some(Projection::ArrayElement),
+                    address,
+                    offset.value,
+                ),
+                lane,
+            )?
+            .value;
+        let seven = self.builder.integer(7)?;
+        let shift = self.emit(
+            I::Binary(
+                Binary::And,
+                Facts::default(),
+                Type::I64,
+                position.value,
+                seven,
+            ),
+            lane,
+        )?;
+        let shift = self.emit(
+            I::Convert(Convert::Truncate, Type::U8, Type::I64, shift.value),
+            lane,
+        )?;
+        let byte = self.read_place(place, lane)?;
+        let bit = self.emit(
+            I::Binary(
+                Binary::UShr,
+                Facts::default(),
+                Type::U8,
+                byte.value,
+                shift.value,
+            ),
+            lane,
+        )?;
+        let one = self.builder.integer(1)?;
+        self.emit(
+            I::Binary(Binary::And, Facts::default(), Type::U8, bit.value, one),
+            lane,
+        )
     }
 }

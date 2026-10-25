@@ -560,6 +560,12 @@ impl Function<'_, '_, '_, '_> {
             (place, value)
         } else {
             let (operation, _) = self.graph.lower_arithmetic_types(id)?;
+            if matches!(
+                self.graph.lower_type(operation)?,
+                crate::sema::lowering::TypeView::Vector { .. }
+            ) {
+                return self.vector_compound_assignment(op, [left, right], [source, operation]);
+            }
             let bfloat = super::soft_float::kind(self.graph, operation)?
                 == Some(super::soft_float::Kind::BFloat);
             let mut rhs = if bfloat {

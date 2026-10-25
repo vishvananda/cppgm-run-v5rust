@@ -1,0 +1,20 @@
+typedef int words __attribute__((vector_size(16)));
+typedef short halves __attribute__((vector_size(8)));
+int effects;
+words step() { ++effects; return words{1,2,3,4}; }
+int main() {
+  _Atomic(words) a = {1,2,3,4};
+  words b = (a += step());
+  words c = (a *= 3);
+  if (effects != 1 || b[0] != 2 || b[3] != 8 || c[0] != 6 || c[3] != 24) return 1;
+  words d = a;
+  if (d[2] != 18) return 2;
+  _Atomic(halves) h = {4,8,12,16};
+  halves i = (h >>= 1);
+  halves j = (h ^= 3);
+  if (i[1] != 4 || i[3] != 8 || j[1] != 7 || j[3] != 11) return 3;
+  volatile words v = {10,20,30,40};
+  words k = (v += 5);
+  if (k[0] != 15 || k[3] != 45) return 4;
+  return 0;
+}

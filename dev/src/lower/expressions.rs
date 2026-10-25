@@ -379,6 +379,15 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Keyword(Keyword::This) => self.object_pointer(source),
             ExprKind::New { .. } => self.allocation(id),
             ExprKind::Delete { .. } => self.deletion(id),
+            ExprKind::Subscript { base, index }
+                if matches!(
+                    self.graph
+                        .lower_type(self.graph.lower_builtin_operand_type(base)?)?,
+                    TypeView::Vector { .. }
+                ) =>
+            {
+                self.vector_lane_value(id, base, index)
+            }
             ExprKind::Id(_) | ExprKind::Subscript { .. } | ExprKind::Member { .. } => {
                 let place = self.scalar_place(id)?;
                 self.read_place(place, source)
@@ -551,6 +560,31 @@ impl Function<'_, '_, '_, '_> {
                 context
             },
         )?;
+        if matches!(self.graph.lower_type(source)?, TypeView::Vector { .. }) {
+            let operands = [
+                (
+                    a,
+                    matches!(
+                        self.graph
+                            .lower_type(self.graph.lower_builtin_operand_type(left)?)?,
+                        TypeView::Vector { .. }
+                    ),
+                ),
+                (
+                    b,
+                    matches!(
+                        self.graph
+                            .lower_type(self.graph.lower_builtin_operand_type(right)?)?,
+                        TypeView::Vector { .. }
+                    ),
+                ),
+            ];
+            return if comparison {
+                self.vector_compare(op, source, operands)
+            } else {
+                self.vector_operation(op, source, operands)
+            };
+        }
         let b = if matches!(op, P::ShiftLeft | P::ShiftRight) {
             self.convert(b, source, Context::Operand)?
         } else {
@@ -594,6 +628,15 @@ impl Function<'_, '_, '_, '_> {
             }
             return self.emit(I::Compare(predicate, ty, a.value, b.value), source);
         }
+        self.scalar_arithmetic(op, source, a, b)
+    }
+    pub(super) fn scalar_arithmetic(
+        &mut self,
+        op: P,
+        source: crate::sema::lowering::TypeId,
+        a: RValue,
+        b: RValue,
+    ) -> Result<RValue, Error> {
         // Arithmetic has the recorded result type even when an intrinsic's
         // backend value uses another same-width representation (u32 counts).
         let ty = types::storage(self.graph, source)?;
@@ -715,6 +758,17 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.operand(operand, Context::Unary)?
         };
+        if matches!(self.graph.lower_type(source)?, TypeView::Vector { .. })
+            && matches!(op.token.as_punctuator(), Some(P::Subtract | P::Complement))
+        {
+            return self.vector_unary(
+                op.token
+                    .as_punctuator()
+                    .ok_or(crate::sema::Error::Invariant("vector unary token"))?,
+                source,
+                value,
+            );
+        }
         if super::complex::part(self.graph, value.source)?.is_some()
             && matches!(op.token.as_punctuator(), Some(P::Subtract | P::Complement))
         {
