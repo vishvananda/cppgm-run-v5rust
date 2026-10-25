@@ -653,6 +653,23 @@ impl Analyzer<'_> {
         };
         Ok((size, alignment))
     }
+    pub(super) fn member_size(
+        &mut self,
+        ty: super::types::TypeId,
+        location: SourceOffset,
+    ) -> Result<(u64, u64), Error> {
+        if self.hosted()
+            && self.template_depth == 0
+            && let TypeKind::Array {
+                element,
+                bound: 0,
+                operand: None,
+            } = self.graph.types.get(ty).kind
+        {
+            return Ok((0, self.type_size(element, location)?.1));
+        }
+        self.type_size(ty, location)
+    }
     fn place_members(&mut self, entity: EntityId, location: SourceOffset) -> Result<(), Error> {
         let mut bits = std::mem::take(&mut self.bit_layout);
         let result = self.place_class_members(entity, location, &mut bits);
@@ -688,7 +705,7 @@ impl Analyzer<'_> {
                 .entity(member)
                 .ty
                 .ok_or(Error::Invariant("member without type"))?;
-            let (bytes, natural) = self.type_size(ty, location)?;
+            let (bytes, natural) = self.member_size(ty, location)?;
             let mut scalar = ty;
             while let TypeKind::Array { element, .. } = self.graph.types.get(scalar).kind {
                 scalar = element;

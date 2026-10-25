@@ -140,6 +140,37 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    fn record_zero_length_member(
+        &mut self,
+        entity: super::graph::EntityId,
+        ty: super::types::TypeId,
+        declarator: ast::DeclaratorId,
+    ) {
+        if self.hosted()
+            && self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance)
+            && matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Array { bound: 0, .. }
+            )
+        {
+            // The suffix closest to the declarator-id owns this member array.
+            let mut declarator = Some(declarator);
+            let mut own = None;
+            while let Some(id) = declarator {
+                let node = self.tree.declarators.get(id);
+                if let Some(suffix) = self.tree.suffixes.get(node.suffixes).first() {
+                    own = Some(*suffix);
+                }
+                declarator = node.nested;
+            }
+            self.graph.entity_mut(entity).array_member =
+                if matches!(own, Some(ast::Suffix::Array(Some(_)))) {
+                    super::aggregate_initialization::ArrayMemberKind::ZeroLength
+                } else {
+                    super::aggregate_initialization::ArrayMemberKind::Ordinary
+                };
+        }
+    }
     pub(super) fn record_data_member(
         &mut self,
         binding: BindingId,
@@ -168,6 +199,7 @@ impl Analyzer<'_> {
                 .scope(home)
                 .owner
                 .ok_or(Error::Invariant("class scope without owner"))?;
+            self.record_zero_length_member(entity, info.ty, init.declarator);
             self.graph.entity_mut(owner).members.push(entity);
             if init.initializer.is_some()
                 || self.graph.binding_access(binding) != super::graph::Access::Public

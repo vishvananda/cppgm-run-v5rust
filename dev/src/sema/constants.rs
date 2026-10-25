@@ -1572,6 +1572,14 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn array_bound(&mut self, expr: ast::ExprId, scope: ScopeId) -> Result<u64, Error> {
+        self.checked_array_bound(expr, scope, true)
+    }
+    pub(super) fn checked_array_bound(
+        &mut self,
+        expr: ast::ExprId,
+        scope: ScopeId,
+        hosted_zero: bool,
+    ) -> Result<u64, Error> {
         if self.semantic() && self.template_depth == 0 {
             let target = self.graph.types.scalar(Scalar::Basic(
                 crate::types::FundamentalType::UnsignedLongInt,
@@ -1591,6 +1599,16 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("nonintegral array bound"))?;
         if self.template_depth != 0
             && (!value.truth() || kind.signed && integral::signed(value.bits) < 0)
+        {
+            return Ok(0);
+        }
+        // Hosted zero bounds share unknown-bound array identity. A signature
+        // substitution still requires positive size, and enum zeros keep their
+        // ordinary rejection (an integral conversion does not erase that fact).
+        if self.hosted()
+            && hosted_zero
+            && !value.truth()
+            && !matches!(self.graph.types.get(value.ty).kind, TypeKind::Enum(_))
         {
             return Ok(0);
         }

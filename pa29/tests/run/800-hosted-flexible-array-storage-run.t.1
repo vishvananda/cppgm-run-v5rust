@@ -1,0 +1,34 @@
+struct Zero { char head; int empty[0]; char last; };
+struct Empty { int empty[0]; };
+struct Packet { long head; char marker; int values[]; };
+struct Text { int length; char text[]; };
+struct Links { int count; int *values[]; };
+template<int N> struct Sized { char head; int values[N]; };
+static_assert(sizeof(Zero) == 8 && alignof(Zero) == 4, "zero member alignment");
+static_assert(sizeof(Empty) == 4 && alignof(Empty) == 4, "empty zero member class");
+static_assert(sizeof(Packet) == 16 && alignof(Packet) == 8, "nominal size includes padding");
+static_assert(sizeof(Sized<0>) == 4, "instantiated hosted zero bound");
+Zero zero = {3, {}, 7};
+Packet packet = {17, 2, {31, 43, 59}};
+Packet designated = {.head = 23, .marker = 6, .values = {73, 79}};
+Text text = {3, "abc"};
+int target = 61;
+Links links = {2, {&target, &packet.values[1]}};
+thread_local Text tls = {2, "xy"};
+struct Owner { static Packet data; };
+Packet Owner::data = {29, 8, {83, 89}};
+template<int N> int positive(char (*)[N]) { return 1; }
+template<int N> int positive(...) { return 2; }
+int main() {
+  Packet empty = {9, 4, {}};
+  static Packet local = {19, 5, {67, 71}};
+  Sized<0> sized = {11, {}};
+  return zero.head == 3 && zero.last == 7 && packet.head == 17 &&
+      designated.head == 23 && designated.values[1] == 79 &&
+      packet.marker == 2 && packet.values[0] == 31 && packet.values[2] == 59 &&
+      text.length == 3 && text.text[2] == 'c' && text.text[3] == 0 &&
+      tls.text[1] == 'y' && Owner::data.values[0] == 83 &&
+      *links.values[0] == 61 && *links.values[1] == 43 && empty.head == 9 &&
+      local.head == 19 && local.values[1] == 71 && sized.head == 11 &&
+      positive<0>(0) == 2 && positive<2>(0) == 1 ? 0 : 1;
+}

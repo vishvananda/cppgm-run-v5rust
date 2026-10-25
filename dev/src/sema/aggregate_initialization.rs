@@ -3,7 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    expression_facts::ValueCategory,
+    expression_facts::{ClassInitialization, ValueCategory},
     graph::{EntityId, Graph, ScopeId},
     types::{TypeId, TypeKind},
 };
@@ -12,6 +12,20 @@ use crate::{
     support::source::SourceOffset,
     syntax::{ast, storage::List},
 };
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum ArrayMemberKind {
+    #[default]
+    Ordinary,
+    ZeroLength,
+}
+// One variable initializer owns permission to extend static storage. Nested
+// aggregate lists and temporaries cannot inherit that permission.
+pub(super) struct FlexibleInitialization {
+    pub list: ast::ExprId,
+    pub elements: List<ast::ExprId>,
+    pub class: EntityId,
+    pub given: bool,
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Aggregation {
     Eligible,
@@ -34,7 +48,8 @@ impl From<List<ast::ExprId>> for AggregateInitialization {
 impl Graph {
     pub(crate) fn lower_list_union_member(&self, id: ast::ExprId) -> Option<EntityId> {
         match self.expression_facts.get(id).ok()?.class_initialization? {
-            super::expression_facts::ClassInitialization::Aggregate(elements) => {
+            super::expression_facts::ClassInitialization::Aggregate(elements)
+            | super::expression_facts::ClassInitialization::FlexibleAggregate(elements) => {
                 self.lower_aggregate_union_member(elements)
             }
             _ => None,
@@ -143,6 +158,11 @@ impl Analyzer<'_> {
             .designated_list(id, class, Some(scope))?
             .ok_or(Error::Invariant("checked designated list"))?;
         let elements = plan.elements;
+        if let Some(context) = &mut self.flexible_initialization
+            && context.list == id
+        {
+            context.elements = elements;
+        }
         if let ast::ExprKind::Braced {
             designators,
             trailing_comma,
@@ -185,9 +205,17 @@ impl Analyzer<'_> {
                 .expression_facts
                 .set_union_list_member(elements, member);
         }
-        facts.class_initialization = Some(super::expression_facts::ClassInitialization::Aggregate(
-            elements,
-        ));
+        facts.class_initialization = Some(
+            if let Some(context) = &mut self.flexible_initialization
+                && context.list == id
+                && context.given
+            {
+                context.given = false;
+                ClassInitialization::FlexibleAggregate(elements)
+            } else {
+                ClassInitialization::Aggregate(elements)
+            },
+        );
         self.graph.expression_facts.set(id, facts);
         Ok(bare)
     }
@@ -225,6 +253,35 @@ impl Analyzer<'_> {
                 continue;
             }
             let ty = self.graph.lower_entity_type(member)?;
+            if !union
+                && self.hosted()
+                && self.template_depth == 0
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Array {
+                        bound: 0,
+                        operand: None,
+                        ..
+                    }
+                )
+                && let Some(&element) = self.tree.expr_lists.get(elements).get(*next)
+                && !matches!(self.tree.expressions.get(element).kind,
+                    ast::ExprKind::Braced { elements, .. } if elements.is_empty())
+            {
+                let at = self.tree.expressions.get(element).location;
+                if self.graph.entity(member).array_member == ArrayMemberKind::ZeroLength {
+                    return Err(Error::at(
+                        at,
+                        "a zero-length array member initialized with elements",
+                    ));
+                }
+                let context = self.flexible_initialization.as_mut().filter(|context| {
+                    context.class == class && context.elements == elements
+                        && index + 1 == self.graph.entity(class).members.len()
+                }).ok_or_else(|| Error::at(at,
+                    "a flexible array member initialized outside the initializer of an object of static storage duration"))?;
+                context.given = true;
+            }
             self.aggregate_array_element(elements, next, ty, scope, location)?;
             if union {
                 break;

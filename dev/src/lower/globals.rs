@@ -326,6 +326,19 @@ fn define_storage<'a>(
     }
     let mut metadata = symbols.variable_metadata(output.program, entity, symbol)?;
     let mut dynamic = constructed;
+    if initializer.is_some_and(|initializer| match initializer.kind {
+        ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) => {
+            graph.lower_flexible_elements(expr)
+        }
+        _ => false,
+    }) && graph.lower_array_image(entity).is_none()
+    {
+        return Err(crate::sema::Error::at(
+            location,
+            "a flexible array member's elements in a dynamic initialization",
+        )
+        .into());
+    }
     // A failed attempt can already have referred to tables or addresses.
     // Replay only its recorded symbolic demand, before publishing storage.
     let table_image = graph.lower_static_construction(entity);

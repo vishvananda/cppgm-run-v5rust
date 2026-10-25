@@ -51,6 +51,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) deferred: Vec<DeferredMember>,
     pub(super) deferred_constexpr: std::collections::HashMap<super::graph::EntityId, DeferredBody>,
     pub(super) class_depth: usize,
+    pub(super) flexible_initialization:
+        Option<super::aggregate_initialization::FlexibleInitialization>,
     pub(super) member_initializer_class: Option<super::graph::EntityId>,
     pub(super) base_object: Option<super::graph::EntityId>,
     pub(super) template_depth: usize,
@@ -275,6 +277,7 @@ impl<'tree> Analyzer<'tree> {
             deferred_constexpr: std::collections::HashMap::new(),
             class_depth: 0,
             member_initializer_class: None,
+            flexible_initialization: None,
             base_object: None,
             template_depth: 0,
             specialization_levels: 0,

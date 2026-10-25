@@ -1159,7 +1159,7 @@ impl Analyzer<'_> {
                 .decltype_type(copy, scope)
                 .map(|ty| Some(Evaluation::Type(ty))),
             Query::Bound => self
-                .array_bound(copy, scope)
+                .checked_array_bound(copy, scope, false)
                 .map(|bound| Some(Evaluation::Bound(bound))),
             Query::Value if open => self.constant_value(copy, scope, false).and_then(|value| {
                 value

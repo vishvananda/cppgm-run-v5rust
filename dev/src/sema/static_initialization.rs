@@ -51,6 +51,16 @@ impl Analyzer<'_> {
                 }
                 continue;
             }
+            if let Some(initializer) = initializer
+                && let ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) =
+                    initializer.kind
+                && self.graph.lower_flexible_elements(expr)
+            {
+                // The evaluated constant image has the class's nominal size;
+                // only this initializer's physical image includes the tail.
+                self.record_static_initializer(entity, initializer, scope)?;
+                continue;
+            }
             let constructed = self
                 .graph
                 .lower_construction(entity)

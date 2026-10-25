@@ -52,7 +52,10 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let initializer = match facts.class_initialization {
-            Some(ClassInitialization::Aggregate(elements)) => {
+            Some(
+                ClassInitialization::Aggregate(elements)
+                | ClassInitialization::FlexibleAggregate(elements),
+            ) => {
                 let arguments = Arguments::new(self.tree.expr_lists.get(elements));
                 return self.constant_aggregate(
                     target,

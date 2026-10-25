@@ -30,6 +30,7 @@ pub(super) struct Images {
 struct ClassImage {
     constructor: Option<super::construction::ConstructorId>,
     member: Option<EntityId>,
+    flexible: bool,
 }
 enum Image {
     Constant(Vec<Item>),
@@ -212,6 +213,7 @@ impl Analyzer<'_> {
                 ClassImage {
                     constructor,
                     member: expr.and_then(|id| self.graph.lower_list_union_member(id)),
+                    flexible: expr.is_some_and(|id| self.graph.lower_flexible_elements(id)),
                 },
             );
         }
@@ -454,6 +456,7 @@ impl Analyzer<'_> {
             })
             .flatten();
         let mut position = 0;
+        let mut trailing = 0u64;
         let mut bits = [0u8; 8];
         let mut bit_bytes = 0;
         let mut unit_at = 0;
@@ -524,6 +527,34 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("overlapping static members"))?,
             )?;
             let expr = list.get(*next).copied();
+            if initialization.flexible
+                && index + 1 == self.graph.entity(class).members.len()
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Array { bound: 0, .. }
+                )
+                && let Some(expr) = expr
+            {
+                let given = self
+                    .graph
+                    .expression_facts
+                    .get(self.graph.expression_facts.root(expr))?
+                    .ty;
+                if !matches!(self.graph.types.get(given).kind, TypeKind::Array { .. }) {
+                    return Ok(false);
+                }
+                *next += 1;
+                if !self.static_array_element(given, Some(expr), scope, out)? {
+                    return Ok(false);
+                }
+                trailing = self
+                    .type_size(given, crate::support::source::SourceOffset(0))?
+                    .0;
+                position = offset
+                    .checked_add(trailing)
+                    .ok_or(Error::Limit("flexible array image"))?;
+                continue;
+            }
             let evaluated = if let Some(expr) = expr
                 && !matches!(
                     self.tree.expressions.get(expr).kind,
@@ -560,7 +591,7 @@ impl Analyzer<'_> {
             if !evaluated {
                 return Ok(false);
             }
-            let (size, _) = self.type_size(ty, crate::support::source::SourceOffset(0))?;
+            let (size, _) = self.member_size(ty, crate::support::source::SourceOffset(0))?;
             position = offset
                 .checked_add(size)
                 .ok_or(Error::Limit("static aggregate size"))?;
@@ -571,7 +602,9 @@ impl Analyzer<'_> {
         flush_bits(&mut bits, &mut bit_bytes, &mut position, out)?;
         append_zero(
             out,
-            size.checked_sub(position)
+            size.checked_add(trailing)
+                .ok_or(Error::Limit("flexible object size"))?
+                .checked_sub(position)
                 .ok_or(Error::Invariant("aggregate size without member bytes"))?,
         )?;
         Ok(true)

@@ -148,6 +148,7 @@ pub(crate) enum GlvalueKind {
 pub(crate) enum ClassInitialization {
     Constructed(super::constructor_initialization::ConstructorArguments),
     Aggregate(crate::syntax::storage::List<ast::ExprId>),
+    FlexibleAggregate(crate::syntax::storage::List<ast::ExprId>),
     FromExpression(ast::ExprId),
 }
 #[derive(Clone, Copy, Debug)]

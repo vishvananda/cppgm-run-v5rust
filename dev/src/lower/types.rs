@@ -201,6 +201,9 @@ pub(super) fn size_of(
     ty: TypeId,
     location: crate::support::source::SourceOffset,
 ) -> Result<u64, Error> {
+    if graph.lower_hosted_unknown_array(ty) {
+        return Ok(0);
+    }
     if !graph.lower_complete_object(ty)? {
         return Err(crate::sema::Error::at(location, "the size of an incomplete type").into());
     }

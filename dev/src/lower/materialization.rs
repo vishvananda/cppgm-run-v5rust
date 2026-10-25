@@ -199,7 +199,7 @@ impl Function<'_, '_, '_, '_> {
         if !self.tree.expr_lists.get(elements).is_empty()
             && matches!(
                 self.graph.lower_prvalue_initialization(expr)?,
-                Some(ClassInitialization::Aggregate(_))
+                Some(ClassInitialization::Aggregate(_) | ClassInitialization::FlexibleAggregate(_))
             )
         {
             return Ok(Some(list));
@@ -447,7 +447,10 @@ impl Function<'_, '_, '_, '_> {
                     },
                 )
             }
-            Some(ClassInitialization::Aggregate(values)) if values.is_empty() => Ok(()),
+            Some(
+                ClassInitialization::Aggregate(values)
+                | ClassInitialization::FlexibleAggregate(values),
+            ) if values.is_empty() => Ok(()),
             Some(ClassInitialization::FromExpression(inner)) => {
                 self.materialize_empty_argument(inner, ty, object)
             }
@@ -873,7 +876,10 @@ impl Function<'_, '_, '_, '_> {
                     },
                 )
             }
-            Some(ClassInitialization::Aggregate(arguments)) => self.aggregate_prvalue(
+            Some(
+                ClassInitialization::Aggregate(arguments)
+                | ClassInitialization::FlexibleAggregate(arguments),
+            ) => self.aggregate_prvalue(
                 ty,
                 object,
                 self.tree.expr_lists.get(arguments),

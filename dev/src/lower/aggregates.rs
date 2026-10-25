@@ -681,7 +681,11 @@ impl Function<'_, '_, '_, '_> {
             self.bit_initialization.high = self
                 .graph
                 .lower_member_offset(member)?
-                .wrapping_add(types::layout(self.graph, ty)?.0)
+                .wrapping_add(types::size_of(
+                    self.graph,
+                    ty,
+                    crate::support::source::SourceOffset(0),
+                )?)
                 .wrapping_mul(8);
             if union {
                 break;
@@ -1177,7 +1181,11 @@ impl Function<'_, '_, '_, '_> {
             self.bit_initialization.high = self
                 .graph
                 .lower_member_offset(member)?
-                .wrapping_add(types::layout(self.graph, ty)?.0)
+                .wrapping_add(types::size_of(
+                    self.graph,
+                    ty,
+                    crate::support::source::SourceOffset(0),
+                )?)
                 .wrapping_mul(8);
             if union {
                 break;

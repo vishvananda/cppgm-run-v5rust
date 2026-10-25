@@ -41,6 +41,24 @@ impl Analyzer<'_> {
         if !self.graph.lower_automatic(entity) {
             self.initializing = Some(entity);
         }
+        let flexible = self.flexible_initialization.take();
+        if self.hosted()
+            && (self.graph.entity(entity).home.is_some_and(|home| {
+                self.graph.scope(home).kind == super::graph::ScopeKind::Namespace
+            }) || self.graph.lower_explicit_static(entity)
+                || self.graph.lower_variable(entity)?.thread_local)
+            && let TypeKind::Class(class) = self.graph.types.get(target).kind
+            && let InitializerKind::Assign(list) | InitializerKind::Braced(list) = initializer.kind
+            && let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind
+        {
+            self.flexible_initialization =
+                Some(super::aggregate_initialization::FlexibleInitialization {
+                    list,
+                    elements,
+                    class,
+                    given: false,
+                });
+        }
         let unevaluated = self.unevaluated;
         let completed = if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
             self.initialize_class_object(target, initializer, scope, location)
@@ -54,6 +72,7 @@ impl Analyzer<'_> {
         } else {
             self.object_initializer(initializer, scope, target, location)
         };
+        self.flexible_initialization = flexible;
         self.initializing = saved_initializing;
         self.member_initializer_class = saved;
         if matches!(completed, Err(Error::DeferredBuiltin)) && self.reserved_context.deferring {

@@ -2389,6 +2389,25 @@ impl Graph {
                 .map_err(|_| Error::Limit("class alignment"))?,
         ))
     }
+    pub(crate) fn lower_hosted_unknown_array(&self, ty: TypeId) -> bool {
+        self.hosted
+            && matches!(
+                self.types.get(ty).kind,
+                TypeKind::Array {
+                    bound: 0,
+                    operand: None,
+                    ..
+                }
+            )
+    }
+    pub(crate) fn lower_flexible_elements(&self, expr: ast::ExprId) -> bool {
+        self.expression_facts.get(expr).is_ok_and(|facts| {
+            matches!(
+                facts.class_initialization,
+                Some(super::expression_facts::ClassInitialization::FlexibleAggregate(_))
+            )
+        })
+    }
     pub(crate) fn lower_complete_object(&self, ty: TypeId) -> Result<bool, Error> {
         if self.lower_member_pointer_type(ty).is_some() {
             return Ok(true);
