@@ -627,6 +627,7 @@ impl Analyzer<'_> {
                         | ExprKind::Typeof { .. }
                         | ExprKind::TypeTransform { .. }
                         | ExprKind::TypePredicate { .. }
+                        | ExprKind::BuiltinValue { .. }
                         | ExprKind::OffsetOf { .. }
                         | ExprKind::OffsetOfBase(_)
                 )
@@ -654,6 +655,7 @@ impl Analyzer<'_> {
                         | ExprKind::Typeof { .. }
                         | ExprKind::TypeTransform { .. }
                         | ExprKind::TypePredicate { .. }
+                        | ExprKind::BuiltinValue { .. }
                         | ExprKind::OffsetOf { .. }
                         | ExprKind::OffsetOfBase(_)
                 ) {

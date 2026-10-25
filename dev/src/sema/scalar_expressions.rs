@@ -271,6 +271,11 @@ impl Analyzer<'_> {
             ExprKind::ComplexPart { imaginary, operand } => {
                 self.complex_component(id, operand, imaginary, scope)?
             }
+            ExprKind::BuiltinValue {
+                builtin,
+                operand,
+                ty,
+            } => self.builtin_value_expression(id, builtin, operand, ty, scope)?,
             ExprKind::VaArg { operand, ty } => self.va_arg_expression(id, operand, ty, scope)?,
             ExprKind::SizeofPack(name) => self.sizeof_pack_expression(id, name, scope)?,
             ExprKind::Sizeof {

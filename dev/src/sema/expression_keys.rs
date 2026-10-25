@@ -57,6 +57,7 @@ pub(crate) enum KeyNode {
     OffsetOfBase,
     Typeof,
     VaArg,
+    BuiltinValue(ast::ValueBuiltin),
     ComplexPart,
     Keyword,
     This,
@@ -335,6 +336,17 @@ impl Analyzer<'_> {
                 let ty = self.type_syntax(ty, scope)?;
                 self.key_type(ty, key)?;
                 return self.key_expression(designator, scope, key);
+            }
+            ExprKind::BuiltinValue {
+                builtin,
+                operand,
+                ty,
+            } => {
+                key.words
+                    .push(KeyWord::Node(KeyNode::BuiltinValue(builtin)));
+                let ty = self.type_syntax(ty, scope)?;
+                self.key_type(ty, key)?;
+                return self.key_expression(operand, scope, key);
             }
             ExprKind::VaArg { operand, ty } => {
                 key.words.push(KeyWord::Node(KeyNode::VaArg));

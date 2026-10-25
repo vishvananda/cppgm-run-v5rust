@@ -16,7 +16,7 @@ use crate::{
     },
     sema::{
         Graph,
-        lowering::{Scalar, TypeId, TypeView},
+        lowering::{Reduction, Scalar, TypeId, TypeView},
     },
     syntax::{ast, storage::List},
 };
@@ -42,6 +42,138 @@ pub(super) fn classes(
     })
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn builtin_value(
+        &mut self,
+        id: ast::ExprId,
+        builtin: ast::ValueBuiltin,
+        operand: ast::ExprId,
+    ) -> Result<RValue, Error> {
+        let to = self.graph.lower_expression(id)?.ty;
+        if builtin == ast::ValueBuiltin::BitCast
+            && matches!(self.graph.lower_type(to)?, TypeView::Class(_))
+        {
+            return Err(crate::sema::Error::at(
+                self.tree.expressions.get(id).location,
+                "a __builtin_bit_cast to a class type",
+            )
+            .into());
+        }
+        let from = self.graph.lower_builtin_operand_type(operand)?;
+        let value = self.operand(operand, Context::Operand)?;
+        if builtin == ast::ValueBuiltin::BitCast {
+            let value = self.fit(value, from)?;
+            return self.reinterpret_bytes(value, to);
+        }
+        let (from_lane, _) = self.vector_shape(from)?;
+        let (to_lane, bound) = self.vector_shape(to)?;
+        let source = self.vector_storage(value)?;
+        let (slot, out) = self.zeroed_vector(to)?;
+        for index in 0..bound {
+            let value = self.vector_lane(source, from, index)?;
+            let value = self.convert(
+                RValue {
+                    source: from_lane,
+                    ..value
+                },
+                to_lane,
+                Context::Cast,
+            )?;
+            self.set_vector_lane(out, to, index, value)?;
+        }
+        self.load_vector_storage(slot, to)
+    }
+
+    pub(super) fn reinterpret_bytes(&mut self, value: RValue, to: TypeId) -> Result<RValue, Error> {
+        let slot = self.generated_slot("vector", value.ty)?;
+        self.effect(I::Store(Facts::default(), value.ty, value.value, slot))?;
+        let address = self.emit(I::Addr(slot), value.source)?.value;
+        self.emit(
+            I::Load(Facts::default(), types::storage(self.graph, to)?, address),
+            to,
+        )
+    }
+
+    pub(super) fn reduce_vector(
+        &mut self,
+        id: ast::ExprId,
+        operand: ast::ExprId,
+        kind: Reduction,
+    ) -> Result<RValue, Error> {
+        let vector = self.graph.lower_builtin_operand_type(operand)?;
+        let (lane, bound) = self.vector_shape(vector)?;
+        if bound > 64 {
+            return Err(crate::sema::Error::at(
+                self.tree.expressions.get(id).location,
+                "a vector operation on more than 64 lanes",
+            )
+            .into());
+        }
+        let value = self.operand(operand, Context::Argument)?;
+        let source = self.vector_storage(value)?;
+        let mut result = self.vector_lane(source, vector, 0)?;
+        let soft = super::soft_float::kind(self.graph, lane)?;
+        let floating = types::storage(self.graph, lane)?.float_rank() != 0 || soft.is_some();
+        let signed = types::signed(self.graph, lane)? || floating;
+        for index in 1..bound {
+            let x = self.vector_lane(source, vector, index)?;
+            let op = match kind {
+                Reduction::And => Some(Binary::And),
+                Reduction::Or => Some(Binary::Or),
+                Reduction::Xor => Some(Binary::Xor),
+                Reduction::Add => Some(Binary::Add),
+                Reduction::Multiply => Some(Binary::Mul),
+                Reduction::Max | Reduction::Min => None,
+            };
+            if let Some(op) = op {
+                result = self.emit(
+                    I::Binary(op, Facts::default(), result.ty, result.value, x.value),
+                    lane,
+                )?;
+            } else {
+                let best = self.generated_slot("vector", result.ty)?;
+                let memory = types::memory(self.graph, lane)?;
+                self.effect(I::Store(memory, result.ty, result.value, best))?;
+                let predicate = match (kind == Reduction::Max, signed) {
+                    (true, true) => Compare::Gt,
+                    (true, false) => Compare::Ugt,
+                    (false, true) => Compare::Lt,
+                    (false, false) => Compare::Ult,
+                };
+                let take = self.new_block("vector_take")?;
+                let join = self.new_block("vector_join")?;
+                let unordered = if floating {
+                    self.new_block("vector_unordered")?
+                } else {
+                    join
+                };
+                let better = if let Some(soft) = soft {
+                    self.soft_compare(predicate, soft, x, result, lane)?
+                } else {
+                    self.emit(I::Compare(predicate, x.ty, x.value, result.value), lane)?
+                };
+                self.effect(I::Branch(better.value, take, unordered))?;
+                if floating {
+                    self.place(unordered)?;
+                    let nan = if let Some(soft) = soft {
+                        self.soft_compare(Compare::Ne, soft, result, result, lane)?
+                    } else {
+                        self.emit(
+                            I::Compare(Compare::Ne, result.ty, result.value, result.value),
+                            lane,
+                        )?
+                    };
+                    self.effect(I::Branch(nan.value, take, join))?;
+                }
+                self.place(take)?;
+                self.effect(I::Store(memory, result.ty, x.value, best))?;
+                self.jump(join)?;
+                self.place(join)?;
+                result = self.emit(I::Load(memory, result.ty, best), lane)?;
+            }
+        }
+        Ok(result)
+    }
+
     fn zeroed_vector(&mut self, ty: TypeId) -> Result<(Value, Value), Error> {
         let TypeView::Vector { bound, .. } = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("vector storage type").into());

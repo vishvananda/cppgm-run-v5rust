@@ -416,6 +416,7 @@ impl Analyzer<'_> {
             | ExprKind::TypePredicate { .. }
             | ExprKind::OffsetOf { .. }
             | ExprKind::OffsetOfBase(_)
+            | ExprKind::BuiltinValue { .. }
             | ExprKind::VaArg { .. } => false,
             ExprKind::Keyword(keyword) => keyword == Keyword::This,
             ExprKind::Paren(inner) => uses(inner),

@@ -883,6 +883,11 @@ impl Function<'_, '_, '_, '_> {
                 self.materialize_class_at(source, ty, object, volatile, location)
             }
             None => match self.tree.expressions.get(id).kind {
+                ExprKind::BuiltinValue { .. } => Err(crate::sema::Error::at(
+                    self.tree.expressions.get(id).location,
+                    "a class prvalue outside the supported construction forms",
+                )
+                .into()),
                 ExprKind::VaArg { operand, .. } => {
                     let value = self.va_arg(id, operand)?;
                     self.effect(I::Store(

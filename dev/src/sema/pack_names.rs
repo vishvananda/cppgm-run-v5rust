@@ -281,6 +281,7 @@ impl Analyzer<'_> {
                 ty,
                 designator: operand,
             }
+            | ExprKind::BuiltinValue { ty, operand, .. }
             | ExprKind::VaArg { ty, operand }
             | ExprKind::Cast { ty, operand, .. } => {
                 work.extend([Probe::Type(ty), Probe::Expression(operand)]);

@@ -340,6 +340,7 @@ impl Analyzer<'_> {
                     ty,
                     designator: operand,
                 }
+                | ExprKind::BuiltinValue { ty, operand, .. }
                 | ExprKind::VaArg { ty, operand }
                 | ExprKind::Cast { ty, operand, .. } => {
                     let ty = self.type_syntax(ty, scope)?;
@@ -540,6 +541,7 @@ impl Analyzer<'_> {
                                 .map(|&ty| (OwnProbe::Type(ty), depth)),
                         ),
                         ExprKind::VaArg { ty, .. }
+                        | ExprKind::BuiltinValue { ty, .. }
                         | ExprKind::OffsetOfBase(ty)
                         | ExprKind::OffsetOf { ty, .. } => {
                             work.push((OwnProbe::Type(ty), depth));

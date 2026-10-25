@@ -554,6 +554,11 @@ pub(crate) enum ExprKind {
         imaginary: bool,
         operand: ExprId,
     },
+    BuiltinValue {
+        builtin: ValueBuiltin,
+        ty: TypeId,
+        operand: ExprId,
+    },
     VaArg {
         operand: ExprId,
         ty: TypeId,
@@ -577,6 +582,20 @@ pub(crate) enum ExprKind {
     },
     Throw(Option<ExprId>),
     Statement(StmtId),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ValueBuiltin {
+    ConvertVector,
+    BitCast,
+}
+impl ValueBuiltin {
+    pub(crate) fn spelling(self) -> &'static str {
+        match self {
+            Self::ConvertVector => "__builtin_convertvector",
+            Self::BitCast => "__builtin_bit_cast",
+        }
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Statement {

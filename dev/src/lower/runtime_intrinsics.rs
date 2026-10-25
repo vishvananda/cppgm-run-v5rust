@@ -120,6 +120,7 @@ impl Function<'_, '_, '_, '_> {
         let arguments = self.tree.expr_lists.get(arguments);
         match operation {
             RuntimeIntrinsic::Overflow(kind) => self.overflow_intrinsic(id, argument_list, kind),
+            RuntimeIntrinsic::VectorReduction(kind) => self.reduce_vector(id, arguments[0], kind),
             RuntimeIntrinsic::ObjectSize { minimum } => {
                 self.runtime_integer(Type::I64, if minimum { 0 } else { u64::MAX }, source)
             }

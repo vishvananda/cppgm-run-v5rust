@@ -1,0 +1,28 @@
+using F = float __attribute__((ext_vector_type(4)));
+using H = _Float16 __attribute__((ext_vector_type(4)));
+using Q = __float128 __attribute__((ext_vector_type(2)));
+using U = unsigned __attribute__((ext_vector_type(4)));
+struct Word { unsigned value; };
+
+int main() {
+  float nan = __builtin_nanf("");
+  F f{nan, -2.0f, nan, 3.0f};
+  if (__builtin_reduce_max(f) != 3.0f || __builtin_reduce_min(f) != -2.0f) return 1;
+  F all_nan{nan, nan, nan, nan};
+  if (!__builtin_isnan(__builtin_reduce_max(all_nan))) return 2;
+  F zeros{-0.0f, 0.0f, -0.0f, 0.0f};
+  if (!__builtin_signbit(__builtin_reduce_max(zeros)) ||
+      !__builtin_signbit(__builtin_reduce_min(zeros))) return 3;
+  H h{(_Float16)-2.0f, (_Float16)1.0f, (_Float16)4.0f, (_Float16)0.0f};
+  F expanded = __builtin_convertvector(h, F);
+  if (expanded[2] != 4.0f || __builtin_reduce_min(h) != (_Float16)-2.0f) return 4;
+  Q q{(__float128)-1.0, (__float128)2.0};
+  if (__builtin_reduce_max(q) != (__float128)2.0) return 5;
+  U u{1, 0xffffffffU, 2, 3};
+  if (__builtin_reduce_max(u) != 0xffffffffU || __builtin_reduce_min(u) != 1U) return 6;
+  Word word{0x3f800000U};
+  if (__builtin_bit_cast(float, word) != 1.0f) return 7;
+  unsigned *pointer = &word.value;
+  if (__builtin_bit_cast(unsigned long, pointer) != (unsigned long)pointer) return 8;
+  return 0;
+}

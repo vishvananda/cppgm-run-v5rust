@@ -77,6 +77,7 @@ impl Analyzer<'_> {
         use OperandStep::{Boolean, Visit};
         match kind {
             ExprKind::Paren(inner)
+            | ExprKind::BuiltinValue { operand: inner, .. }
             | ExprKind::ComplexPart { operand: inner, .. }
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Cast { operand: inner, .. } => {
@@ -331,7 +332,9 @@ impl Analyzer<'_> {
                     self.exception_arithmetic_type(a, b, false, location)
                 }
             }
-            ExprKind::Cast { ty, .. } | ExprKind::OffsetOfBase(ty) => self.type_syntax(ty, scope),
+            ExprKind::BuiltinValue { ty, .. }
+            | ExprKind::Cast { ty, .. }
+            | ExprKind::OffsetOfBase(ty) => self.type_syntax(ty, scope),
             ExprKind::FunctionalCast { specifiers, .. } => {
                 Ok(self.specifiers(specifiers, scope, false)?.ty)
             }

@@ -368,6 +368,7 @@ impl Analyzer<'_> {
                     );
                 }
                 ExprKind::Paren(inner)
+                | ExprKind::BuiltinValue { operand: inner, .. }
                 | ExprKind::ComplexPart { operand: inner, .. }
                 | ExprKind::Unary { operand: inner, .. }
                 | ExprKind::Postfix { operand: inner, .. }

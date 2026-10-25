@@ -1204,6 +1204,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::OffsetOfBase(ty) => {
                 self.builtin_query("__builtin_offsetof", Some(ty), None)?;
             }
+            ExprKind::BuiltinValue {
+                builtin,
+                operand,
+                ty,
+            } => {
+                self.builtin_query(builtin.spelling(), Some(ty), Some(operand))?;
+            }
             ExprKind::VaArg { operand, ty } => {
                 self.builtin_query("__builtin_va_arg", Some(ty), Some(operand))?;
             }

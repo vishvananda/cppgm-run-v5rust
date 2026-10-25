@@ -281,7 +281,7 @@ impl Analyzer<'_> {
                 }
                 Ok(false)
             }
-            ExprKind::VaArg { ty, .. } => {
+            ExprKind::VaArg { ty, .. } | ExprKind::BuiltinValue { ty, .. } => {
                 let ty = self.type_syntax(ty, scope)?;
                 Ok(self.exception_dependent_type(ty))
             }
@@ -377,6 +377,7 @@ impl Analyzer<'_> {
             | ExprKind::ComplexPart { operand, .. }
             | ExprKind::Unary { operand, .. }
             | ExprKind::Postfix { operand, .. }
+            | ExprKind::BuiltinValue { operand, .. }
             | ExprKind::Cast { operand, .. } => {
                 self.check_fixed_decltype_operands(operand, scope, next)
             }

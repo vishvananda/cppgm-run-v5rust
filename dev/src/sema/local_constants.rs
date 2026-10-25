@@ -92,6 +92,7 @@ impl Analyzer<'_> {
             | ExprKind::SizeofPack(_)
             | ExprKind::TypeTrait { .. }
             | ExprKind::TypePredicate { .. }
+            | ExprKind::BuiltinValue { .. }
             | ExprKind::TypeTransform { .. } => false,
             ExprKind::Keyword(keyword) => keyword == Keyword::This,
             ExprKind::Binary { left, right, .. } => {

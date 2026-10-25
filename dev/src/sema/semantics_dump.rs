@@ -1899,6 +1899,7 @@ fn expression_label(
         | ExprKind::Sizeof { .. }
         | ExprKind::TypeTrait { .. }
         | ExprKind::ComplexPart { .. }
+        | ExprKind::BuiltinValue { .. }
         | ExprKind::VaArg { .. } => "sizeof-expression",
         ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } => "cast-expression",
         ExprKind::Braced { .. } => "braced-init-list",

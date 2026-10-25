@@ -1,0 +1,38 @@
+using I = int __attribute__((vector_size(16)));
+using F = float __attribute__((vector_size(16)));
+using B = bool __attribute__((ext_vector_type(4)));
+using B16 = bool __attribute__((ext_vector_type(16)));
+using C16 = unsigned char __attribute__((ext_vector_type(16)));
+
+int calls;
+I source() { ++calls; return I{1, -2, 0, 4}; }
+
+template<class T, class V>
+T convert(V value) noexcept { return __builtin_convertvector(value, T); }
+
+template<class T, class V>
+T bits(V value) noexcept { return __builtin_bit_cast(T, value); }
+
+int main() {
+  F floating = convert<F>(source());
+  I integral = convert<I>(floating);
+  B truth = convert<B>(integral);
+  if (calls != 1 || floating[1] != -2.0f || integral[3] != 4 ||
+      !truth[0] || !truth[1] || truth[2] || !truth[3]) return 1;
+  if (__builtin_reduce_or(truth) != true || __builtin_reduce_and(truth) ||
+      __builtin_reduce_xor(truth) != true) return 2;
+  if (__builtin_reduce_add(integral) != 3 || __builtin_reduce_mul(integral) != 0 ||
+      __builtin_reduce_max(integral) != 4 || __builtin_reduce_min(integral) != -2 ||
+      __builtin_reduce_and(integral) != 0 || __builtin_reduce_or(integral) != -1 ||
+      __builtin_reduce_xor(integral) != -5) return 3;
+  C16 values{0,1,0,1,0,0,0,1,1,0,0,0,0,0,0,1};
+  B16 packed = convert<B16>(values);
+  unsigned short mask = bits<unsigned short>(packed);
+  if (mask != 0x818a || !packed[8] || packed[9] || !packed[15]) return 4;
+  C16 unpacked = convert<C16>(packed);
+  if (unpacked[8] != 1 || unpacked[9] != 0 || unpacked[15] != 1) return 5;
+  if (bits<unsigned>(1.0f) != 0x3f800000U || bits<float>(0x40000000U) != 2.0f) return 6;
+  __builtin_convertvector(source(), F);
+  __builtin_bit_cast(unsigned, calls++);
+  return calls != 3;
+}

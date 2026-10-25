@@ -568,6 +568,13 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn discard(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
+        if let ExprKind::BuiltinValue {
+            builtin, operand, ..
+        } = self.tree.expressions.get(id).kind
+        {
+            self.builtin_value(id, builtin, operand)?;
+            return Ok(());
+        }
         // The builtin advances the list and produces bytes directly, even
         // when its class result is discarded (discard_lowering.cpp).
         if let ExprKind::VaArg { operand, .. } = self.tree.expressions.get(id).kind {

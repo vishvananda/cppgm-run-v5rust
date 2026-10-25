@@ -418,6 +418,15 @@ impl<'a> Cloner<'a> {
                 designator: self.expression(designator)?,
             },
             ExprKind::OffsetOfBase(ty) => ExprKind::OffsetOfBase(self.ty(ty)?),
+            ExprKind::BuiltinValue {
+                builtin,
+                operand,
+                ty,
+            } => ExprKind::BuiltinValue {
+                builtin,
+                ty: self.ty(ty)?,
+                operand: self.expression(operand)?,
+            },
             ExprKind::VaArg { operand, ty } => ExprKind::VaArg {
                 ty: self.ty(ty)?,
                 operand: self.expression(operand)?,

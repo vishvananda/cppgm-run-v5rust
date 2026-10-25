@@ -355,6 +355,9 @@ impl Function<'_, '_, '_, '_> {
             return Ok(value);
         }
         match self.tree.expressions.get(id).kind {
+            ExprKind::BuiltinValue {
+                builtin, operand, ..
+            } => self.builtin_value(id, builtin, operand),
             ExprKind::VaArg { operand, .. } => self.va_arg(id, operand),
             ExprKind::Statement(body) => self.statement_expression(id, body, None),
             ExprKind::Throw(operand) => self.throw_value(id, operand),

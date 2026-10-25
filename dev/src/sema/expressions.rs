@@ -176,7 +176,12 @@ impl Analyzer<'_> {
             ExprKind::OffsetOfBase(ty) => {
                 self.type_syntax(ty, scope)?;
             }
-            ExprKind::OffsetOf { ty, designator } => {
+            ExprKind::OffsetOf { ty, designator }
+            | ExprKind::BuiltinValue {
+                ty,
+                operand: designator,
+                ..
+            } => {
                 self.type_syntax(ty, scope)?;
                 self.expression_work.push((designator, false));
             }

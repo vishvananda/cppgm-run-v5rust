@@ -20,10 +20,12 @@ pub(crate) enum RuntimeIntrinsic {
     AssumeAligned,
     FltRounds,
     Overflow(super::overflow_intrinsics::OverflowOperation),
+    VectorReduction(super::vector_builtins::Reduction),
 }
 
 pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntrinsic)>, Error> {
     use super::overflow_intrinsics::OverflowOperation as O;
+    use super::vector_builtins::Reduction as V;
     use RuntimeIntrinsic as R;
     [
         ("__builtin_object_size", R::ObjectSize { minimum: false }),
@@ -37,6 +39,13 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntri
         ("__builtin_add_overflow", R::Overflow(O::Add)),
         ("__builtin_sub_overflow", R::Overflow(O::Subtract)),
         ("__builtin_mul_overflow", R::Overflow(O::Multiply)),
+        ("__builtin_reduce_and", R::VectorReduction(V::And)),
+        ("__builtin_reduce_or", R::VectorReduction(V::Or)),
+        ("__builtin_reduce_xor", R::VectorReduction(V::Xor)),
+        ("__builtin_reduce_add", R::VectorReduction(V::Add)),
+        ("__builtin_reduce_mul", R::VectorReduction(V::Multiply)),
+        ("__builtin_reduce_max", R::VectorReduction(V::Max)),
+        ("__builtin_reduce_min", R::VectorReduction(V::Min)),
     ]
     .into_iter()
     .map(|(name, kind)| {
@@ -66,6 +75,7 @@ impl Analyzer<'_> {
         let integer = self.graph.types.scalar(Scalar::Basic(F::Int))?;
         let result = match operation {
             R::Overflow(kind) => return self.overflow_builtin(id, arguments, kind, scope),
+            R::VectorReduction(kind) => return self.vector_reduction(id, arguments, kind, scope),
             R::ObjectSize { .. } => {
                 if count != 2 {
                     return Err(Error::at(

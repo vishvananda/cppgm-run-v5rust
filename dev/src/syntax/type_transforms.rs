@@ -9,6 +9,55 @@ use super::{
 use crate::lex::{pp_lexer::Punctuator as P, type_transforms::TypeTransform};
 
 impl Parser<'_> {
+    pub(super) fn at_value_builtin(
+        &mut self,
+    ) -> Result<Option<super::ast::ValueBuiltin>, ParseError> {
+        use super::ast::ValueBuiltin as B;
+        Ok(
+            if let TokenKind::Identifier(name) = self.token()?.kind
+                && self.at_ahead(P::LeftParen, 1)?
+            {
+                match self.cursor.name(name) {
+                    b"__builtin_convertvector" => Some(B::ConvertVector),
+                    b"__builtin_bit_cast" => Some(B::BitCast),
+                    _ => None,
+                }
+            } else {
+                None
+            },
+        )
+    }
+
+    pub(super) fn value_builtin(
+        &mut self,
+        builtin: super::ast::ValueBuiltin,
+    ) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        self.cursor.advance()?;
+        self.expect(P::LeftParen)?;
+        let (ty, operand) = self.without_angle(|parser| {
+            let pair = if builtin == super::ast::ValueBuiltin::BitCast {
+                let ty = parser.type_id(false)?;
+                parser.expect(P::Comma)?;
+                (ty, parser.assignment_expression()?)
+            } else {
+                let operand = parser.assignment_expression()?;
+                parser.expect(P::Comma)?;
+                (parser.type_id(false)?, operand)
+            };
+            parser.expect(P::RightParen)?;
+            Ok(pair)
+        })?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::BuiltinValue {
+                builtin,
+                ty,
+                operand,
+            },
+        })
+    }
+
     pub(super) fn at_typeof(&mut self, ahead: usize) -> Result<bool, ParseError> {
         Ok(
             matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(name)

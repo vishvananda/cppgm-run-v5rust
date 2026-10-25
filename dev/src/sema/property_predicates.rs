@@ -124,7 +124,7 @@ impl Analyzer<'_> {
             )
     }
 
-    fn property_copyable(&mut self, ty: TypeId) -> Result<bool, Error> {
+    pub(super) fn property_copyable(&mut self, ty: TypeId) -> Result<bool, Error> {
         let ty = self.property_element(ty);
         if self.property_scalar(ty) {
             return Ok(true);

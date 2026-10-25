@@ -131,6 +131,7 @@ impl Graph {
             | ExprKind::ComplexPart { operand: inner, .. }
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Postfix { operand: inner, .. }
+            | ExprKind::BuiltinValue { operand: inner, .. }
             | ExprKind::VaArg { operand: inner, .. }
             | ExprKind::Cast { operand: inner, .. }
             | ExprKind::Delete { operand: inner, .. }

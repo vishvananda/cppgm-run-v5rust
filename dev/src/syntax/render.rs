@@ -565,6 +565,18 @@ impl<'a, 'source> Renderer<'a, 'source> {
         self.tasks.push(Render::Text(")"));
         self.tasks.push(Render::Expression(operand));
     }
+
+    fn builtin_types(&mut self, spelling: &str, types: List<TypeId>) {
+        self.text(spelling);
+        self.text("(");
+        self.tasks.push(Render::Text(")"));
+        for (index, &ty) in self.tree.type_lists.get(types).iter().enumerate().rev() {
+            self.tasks.push(Render::Type(ty));
+            if index != 0 {
+                self.tasks.push(Render::Text(", "));
+            }
+        }
+    }
     fn fold(&mut self, op: Operator, pattern: ExprId, init: Option<ExprId>, right: bool) {
         self.text("(");
         self.tasks.push(Render::Text(")"));
@@ -748,32 +760,23 @@ impl<'a, 'source> Renderer<'a, 'source> {
             }
             ExprKind::IntegerPack(operand) => self.builtin_operand("__integer_pack", operand),
             ExprKind::TypeTransform { transform, types } => {
-                self.text(transform.spelling());
-                self.text("(");
-                self.tasks.push(Render::Text(")"));
-                for (index, &ty) in self.tree.type_lists.get(types).iter().enumerate().rev() {
-                    self.tasks.push(Render::Type(ty));
-                    if index != 0 {
-                        self.tasks.push(Render::Text(", "));
-                    }
-                }
+                self.builtin_types(transform.spelling(), types);
             }
             ExprKind::TypePredicate { predicate, types } => {
-                self.text(predicate.spelling());
-                self.text("(");
-                self.tasks.push(Render::Text(")"));
-                for (index, &ty) in self.tree.type_lists.get(types).iter().enumerate().rev() {
-                    self.tasks.push(Render::Type(ty));
-                    if index != 0 {
-                        self.tasks.push(Render::Text(", "));
-                    }
-                }
+                self.builtin_types(predicate.spelling(), types);
             }
             ExprKind::OffsetOf { ty, designator } => {
                 self.builtin_expression("__builtin_offsetof", ty, Some(designator));
             }
             ExprKind::OffsetOfBase(ty) => {
                 self.builtin_expression("__builtin_offsetof", ty, None);
+            }
+            ExprKind::BuiltinValue {
+                builtin,
+                operand,
+                ty,
+            } => {
+                self.builtin_expression(builtin.spelling(), ty, Some(operand));
             }
             ExprKind::VaArg { operand, ty } => {
                 self.builtin_expression("__builtin_va_arg", ty, Some(operand));

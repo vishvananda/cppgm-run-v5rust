@@ -838,6 +838,9 @@ impl Parser<'_> {
                 ExprKind::Literal(literal)
             }
             TokenKind::Identifier(_) => {
+                if let Some(builtin) = self.at_value_builtin()? {
+                    return self.value_builtin(builtin);
+                }
                 if self.at_integer_pack(0)? {
                     self.cursor.advance()?;
                     self.expect(P::LeftParen)?;
