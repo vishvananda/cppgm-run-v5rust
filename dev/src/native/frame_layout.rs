@@ -77,7 +77,7 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
             | ScalarOp::Lea(_, source)
             | ScalarOp::Lea32(_, source)
             | ScalarOp::Divide { source, .. } => visit(source, 1),
-            ScalarOp::Shift(_, _, count) => visit(count, 8),
+            ScalarOp::Shift(_, ty, _, count) => visit(count, access_bytes(*ty)),
             ScalarOp::SignDividend
             | ScalarOp::MultiplyWide { .. }
             | ScalarOp::Unary(..)

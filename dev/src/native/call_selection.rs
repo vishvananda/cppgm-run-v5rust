@@ -1,6 +1,7 @@
 //! Scalar ABI argument staging, call targets and result placement. See NOTICE.
 use super::{
     abi::CALLER_SAVED,
+    address_facts::{AddressBase, Expression},
     call_facts::{CallKind, CallPlan},
     memory::{Base, Memory},
     mir::{Binding, BindingKind, CallSite, Instruction, Op},
@@ -20,6 +21,8 @@ use crate::lowir::{
 pub(super) struct Staging {
     moves: Vec<Transfer>,
     constants: Vec<(Operand, Type, Operand)>,
+    late: Vec<(R, Expression)>,
+    late_mask: u32,
     mask: u32,
 }
 impl Selection<'_> {
@@ -159,6 +162,10 @@ impl Selection<'_> {
             return Ok((Operand::Frame(home), None, true));
         }
         if let Alias::Temporary(t) = resolved {
+            if self.addresses.lazy[t.index()] {
+                let expr = self.addresses.expressions[t.index()].ok_or(Error::Limit)?;
+                return Ok((self.lazy_memory(expr, R::R10, None)?, None, true));
+            }
             let source = self.temp_operand(t)?;
             return Ok((
                 source,
@@ -187,11 +194,25 @@ impl Selection<'_> {
     ) -> Result<(), Error> {
         out.moves.clear();
         out.constants.clear();
+        out.late.clear();
+        out.late_mask = 0;
         out.mask = 0;
         for (index, &value) in self.body.arguments(call.arguments).iter().enumerate() {
             let ty = plan.types[index];
-            let (source, read, address) = self.call_source(value, ty, plan.passes[index])?;
             let parts = plan.layout.parts(&plan.layout.arguments[index]);
+            if let Alias::Temporary(temp) = self.facts.resolve(self.body, value)
+                && self.addresses.lazy[temp.index()]
+                && let Some(expr) = self.addresses.expressions[temp.index()]
+                && let AddressBase::Temporary(base) = expr.base
+                && let Some(register) = parts.first().and_then(|part| part.register)
+                && self.temp_operand(base)?.register().is_none()
+            {
+                out.late.push((register, expr));
+                out.late_mask |= 1 << register.code();
+                out.mask |= 1 << register.code();
+                continue;
+            }
+            let (source, read, address) = self.call_source(value, ty, plan.passes[index])?;
             if parts.is_empty() {
                 continue;
             }
@@ -279,6 +300,7 @@ impl Selection<'_> {
         program: &Program,
         call: &Call,
         moves: &mut Vec<Transfer>,
+        late_mask: u32,
     ) -> Result<Operand, Error> {
         let callee = self.facts.resolve(self.body, call.callee);
         let storage = match callee {
@@ -317,6 +339,7 @@ impl Selection<'_> {
         }
         let target = self.operand(call.callee, Type::Ptr, R::R10)?;
         if (matches!(target, Operand::Immediate(_)) || target.is_symbol())
+            || target.mask() & late_mask != 0
             || moves
                 .iter()
                 .any(|m| target.mask() & m.destination.mask() != 0)
@@ -379,7 +402,7 @@ impl Selection<'_> {
         }
         let mut staged = std::mem::take(&mut self.outgoing);
         self.stage_arguments(call, result, plan, &mut staged)?;
-        let target = self.call_target(program, call, &mut staged.moves)?;
+        let target = self.call_target(program, call, &mut staged.moves, staged.late_mask)?;
         let scratch = target.mask() & (1 << R::R11.code()) != 0;
         if scratch {
             for &(dst, ty, src) in &staged.constants {
@@ -387,6 +410,20 @@ impl Selection<'_> {
             }
         }
         parallel_transfer::emit(self, &mut staged.moves)?;
+        for &(register, expr) in &staged.late {
+            let AddressBase::Temporary(base) = expr.base else {
+                return Err(Error::Limit);
+            };
+            let source = self.temp_operand(base)?;
+            self.load(register, source, Type::Ptr);
+            self.emit(ScalarOp::Lea(
+                register,
+                Operand::Memory(Memory::new(
+                    Base::Register(register),
+                    i32::try_from(expr.displacement).map_err(|_| Error::Limit)?,
+                )),
+            ));
+        }
         if !scratch {
             for &(dst, ty, src) in &staged.constants {
                 self.load(R::R11, src, Type::I64);
@@ -453,7 +490,7 @@ impl Selection<'_> {
                 let own = self.facts.level >= 1
                     && matches!(self.facts.resolve(self.body, call.callee), Alias::Symbol(symbol)
                         if program.function(program.symbol(symbol)).is_some_and(|function|
-                            function.body.is_some() && function.metadata.binding != Some(crate::lowir::vocabulary::Binding::Weak)
+                            program.function_defined(symbol) && function.metadata.binding != Some(crate::lowir::vocabulary::Binding::Weak)
                                 && function.metadata.flags & 64 == 0));
                 self.call_result(result, call.result, staged.mask, own)?;
             }
@@ -509,6 +546,27 @@ mod tests {
         builder::FunctionBuilder,
         model::{Facts, Program},
     };
+    #[test]
+    fn encoded_callee_keeps_its_canonical_return_contract() -> Result<(), Error> {
+        let mut program = crate::lowir::test_program(
+            b"function @callee() -> i32 [binding=strong, no_inline=yes] {block ^entry: return i32 7}
+              function @caller() -> i32 {block ^entry: %r = call i32 @callee() return i32 %r}",
+        )?;
+        let definition = program.publications()[0];
+        let user = program.publications()[1];
+        let select = |program: &Program| -> Result<Vec<u8>, Error> {
+            let function = program.function(program.symbol(user)).ok_or(Error::Limit)?;
+            let mir = super::super::value_selection::select(program, user, function, 1)?;
+            let mut output = Vec::new();
+            mir.write(program, &mut output)?;
+            Ok(output)
+        };
+        let retained = select(&program)?;
+        program.release_body(definition)?;
+        assert!(program.function_defined(definition));
+        assert_eq!(retained, select(&program)?);
+        Ok(())
+    }
     fn target(program: &mut Program) -> Result<Value, Error> {
         let mut b = FunctionBuilder::new(
             program,

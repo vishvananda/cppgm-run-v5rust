@@ -186,7 +186,7 @@ pub(super) fn select_for_object(
     } else {
         Vec::new()
     };
-    let addresses = super::address_facts::Addresses::analyze(body, &mut facts)?;
+    let addresses = super::address_facts::Addresses::analyze(program, body, &mut facts, model)?;
     let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
     facts.apply_calls(body, &calls)?;
     let mut mir = MirFunction::new(
@@ -440,6 +440,7 @@ pub(super) fn select_for_object(
     selection.mir.frame_policy.omit_pointer = super::frame_encoding::can_omit(&selection.mir);
     if level >= 1 {
         super::return_slots::forward(&mut selection.mir);
+        super::home_forwarding::forward(&mut selection.mir);
         super::mir_cleanup::extensions(&mut selection.mir);
         selection.placement.optimize_frame(&mut selection.mir)?;
     }

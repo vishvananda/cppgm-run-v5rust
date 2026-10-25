@@ -64,7 +64,7 @@ pub(super) fn simple_write(op: Op) -> Option<SimpleWrite> {
             | ScalarOp::Lea(r, source)
             | ScalarOp::Lea32(r, source)
             | ScalarOp::Binary(_, _, r, source)
-            | ScalarOp::Shift(_, r, source) => {
+            | ScalarOp::Shift(_, _, r, source) => {
                 (Some(r), [Some(Operand::Register(r)), Some(source)])
             }
             ScalarOp::Store(destination, _, source) => (None, [Some(destination), Some(source)]),
@@ -148,7 +148,9 @@ fn flags_dead_after(function: &Function, at: usize, end: usize) -> bool {
     use crate::lowir::vocabulary::Unary;
     for inst in &function.instructions[at + 1..end] {
         match inst.op {
-            Op::Scalar(ScalarOp::Shift(_, _, Operand::Immediate(bits))) => return bits & 63 != 0,
+            Op::Scalar(ScalarOp::Shift(_, ty, _, Operand::Immediate(bits))) => {
+                return bits & (u128::from(super::scalar_mir::bytes(ty)) * 8 - 1) != 0;
+            }
             Op::Nop
             | Op::Move(..)
             | Op::SymbolMove(..)
@@ -239,8 +241,8 @@ fn copies_into_lea(function: &mut Function) {
             let next = function.instructions[i + 1].op;
             let (op, ty, writer, source) = match next {
                 Op::Scalar(ScalarOp::Binary(op, ty, r, source)) => (op, ty, r, source),
-                Op::Scalar(ScalarOp::Shift(Binary::Shl, r, source)) => {
-                    (Binary::Shl, Type::I64, r, source)
+                Op::Scalar(ScalarOp::Shift(Binary::Shl, ty, r, source)) => {
+                    (Binary::Shl, ty, r, source)
                 }
                 Op::Scalar(
                     ScalarOp::Lea(r, Operand::Memory(mut mem))
@@ -345,6 +347,7 @@ fn copies_into_lea(function: &mut Function) {
                         } else {
                             function.instructions[i + 1].op = Op::Scalar(ScalarOp::Shift(
                                 Binary::Shl,
+                                Type::I64,
                                 b,
                                 Operand::Immediate(u128::from(shift)),
                             ));
@@ -404,7 +407,7 @@ fn touches(op: Op, r: R) -> bool {
             ScalarOp::ExtendMove(_, to, source) => {
                 [Some(Operand::Register(to)), Some(Operand::Register(source))]
             }
-            ScalarOp::Shift(_, to, count) => {
+            ScalarOp::Shift(_, _, to, count) => {
                 if !matches!(count, Operand::Immediate(_)) && r == R::RCX {
                     return true;
                 }
@@ -478,6 +481,7 @@ mod tests {
             copy(R::RCX, R::R9),
             Op::Scalar(ScalarOp::Shift(
                 Binary::Shl,
+                Type::I64,
                 R::RAX,
                 Operand::Register(R::RDX),
             )),

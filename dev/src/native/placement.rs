@@ -850,7 +850,12 @@ mod tests {
         let flow = super::super::control_flow::Flow::analyze(body)?;
         let slots = super::super::slot_analysis::analyze(body, &flow)?;
         let mut facts = Facts::analyze(body, &slots, flow, 0)?;
-        let addresses = super::super::address_facts::Addresses::analyze(body, &mut facts)?;
+        let addresses = super::super::address_facts::Addresses::analyze(
+            &program,
+            body,
+            &mut facts,
+            super::super::object_compile::ObjectModel::Course,
+        )?;
         let globals =
             super::super::global_placement::Globals::analyze(body, &facts, &addresses, &layout, 0)?;
         let mut mir = Function::new(

@@ -263,7 +263,12 @@ impl Selection<'_> {
         let exclude = (b.mask() & !dying_b.map_or(0, |r| 1 << r.code()))
             | self.placement.parameter_mask(self.body, [a, b]);
         let r = self.result(temp, [dying_a, dying_b], exclude);
-        let width = if b.is_memory() { ty } else { Type::I64 };
+        let bitwise = matches!(op, Binary::And | Binary::Or | Binary::Xor);
+        let width = if b.is_memory() || self.facts.level >= 1 && ty == Type::U32 && !bitwise {
+            ty
+        } else {
+            Type::I64
+        };
         if a.register() == Some(r) {
             self.emit(ScalarOp::Binary(op, width, r, b));
         } else if commutative && b.register() == Some(r) {
@@ -274,8 +279,9 @@ impl Selection<'_> {
         }
         if ty.bits() > 0
             && ty.bits() < 64
-            && (width == Type::I64 && !matches!(op, Binary::And | Binary::Or | Binary::Xor)
-                || width != Type::I64 && ty == Type::I32)
+            && !super::integer_facts::unnormalized_fits(self.facts.fits[temp.index()], ty)
+            && !(self.facts.level >= 1 && flags.nowrap() && width == Type::I64)
+            && (width == Type::I64 && !bitwise || width != Type::I64 && ty == Type::I32)
         {
             self.normalize(r, ty);
         }
@@ -283,6 +289,17 @@ impl Selection<'_> {
     }
     fn right_register(&mut self, op: Binary, ty: Type, a: Operand, b: &mut Operand) {
         let wide_mem = matches!(ty, Type::I64 | Type::Ptr | Type::I32 | Type::U32);
+        if self.facts.level >= 1
+            && op == Binary::Mul
+            && matches!(ty, Type::I32 | Type::U32)
+            && let Operand::Immediate(bits) = *b
+            && super::mir::low_word(bits).is_ok_and(|v| i32::try_from(v).is_err())
+        {
+            let bytes = bits.to_le_bytes();
+            let low = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            // make_imm's signed low word has a zero high word in MIR.
+            *b = Operand::Immediate(u128::from(i64::from(low).cast_unsigned()));
+        }
         let large = matches!(*b,Operand::Immediate(v) if super::mir::low_word(v).is_ok_and(|v|i32::try_from(v).is_err()));
         if b.is_memory() && !wide_mem || op == Binary::Mul && large {
             let scratch = if a.register() == Some(R::R11) {
@@ -395,16 +412,28 @@ impl Selection<'_> {
             Type::U32 => Type::I32,
             other => other,
         };
+        // The frozen u32 immediate forms compute at 32 bits and zero-extend;
+        // logical right shifts retain their explicit normalization sequence.
+        if self.facts.level >= 1
+            && ty == Type::U32
+            && op != Binary::UShr
+            && matches!(count, Operand::Immediate(bits) if bits < 32)
+        {
+            self.emit(ScalarOp::Shift(op, Type::U32, r, count));
+            return self.finish(temp, r);
+        }
         match op {
             Binary::Shl => {
-                self.emit(ScalarOp::Shift(op, r, count));
-                self.normalize(r, ty);
+                self.emit(ScalarOp::Shift(op, Type::I64, r, count));
+                if !super::integer_facts::unnormalized_fits(self.facts.fits[temp.index()], ty) {
+                    self.normalize(r, ty);
+                }
             }
             Binary::UShr => {
                 if signed(ty) && ty != Type::I64 {
                     self.normalize(r, unsigned);
                 }
-                self.emit(ScalarOp::Shift(op, r, count));
+                self.emit(ScalarOp::Shift(op, Type::I64, r, count));
                 if signed(ty) && ty != Type::I64 {
                     self.normalize(r, ty);
                 }
@@ -414,7 +443,7 @@ impl Selection<'_> {
                 if narrow_unsigned {
                     self.normalize(r, signed_type);
                 }
-                self.emit(ScalarOp::Shift(op, r, count));
+                self.emit(ScalarOp::Shift(op, Type::I64, r, count));
                 if narrow_unsigned {
                     self.normalize(r, ty);
                 }

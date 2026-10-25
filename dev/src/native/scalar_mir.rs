@@ -144,7 +144,7 @@ pub(super) enum ScalarOp {
     CompareZero(Type, Operand),
     SetEqual(R),
     Movzx(R),
-    Shift(Binary, R, Operand),
+    Shift(Binary, Type, R, Operand),
 }
 pub(super) fn signed(ty: Type) -> bool {
     matches!(
@@ -278,15 +278,16 @@ impl ScalarOp {
             }
             Self::SetEqual(r) => write!(out, "sete {}", r.spelling())?,
             Self::Movzx(r) => write!(out, "movzx {}, {}", r.spelling(), r.spelling())?,
-            Self::Shift(op, r, count) => {
+            Self::Shift(op, ty, r, count) => {
                 write!(
                     out,
-                    "{} {}, ",
+                    "{}{} {}, ",
                     match op {
                         Binary::Shl => "shl",
                         Binary::Shr => "sar",
                         _ => "shr",
                     },
+                    if ty == Type::U32 { ".u32" } else { "" },
                     r.spelling()
                 )?;
                 operand = Some(count);
@@ -418,16 +419,16 @@ impl ScalarOp {
             }
             Self::SetEqual(r) => a.op(0, false, 0x0f94, 2, 0, Rm::Reg(r), true, 0),
             Self::Movzx(r) => a.op(0, false, 0x0fb6, 2, r.code(), Rm::Reg(r), true, 0),
-            Self::Shift(op, r, count) => {
+            Self::Shift(op, ty, r, count) => {
                 let digit = match op {
                     Binary::Shl => 4,
                     Binary::Shr => 7,
                     _ => 5,
                 };
                 if let Operand::Immediate(v) = count {
-                    shift_immediate(a, digit, r, low_word(v)?, 8)
+                    shift_immediate(a, digit, r, low_word(v)?, bytes(ty))
                 } else {
-                    a.shift_cl(digit, Rm::Reg(r), 8)
+                    a.shift_cl(digit, Rm::Reg(r), bytes(ty))
                 }
             }
         }

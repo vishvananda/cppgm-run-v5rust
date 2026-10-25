@@ -107,7 +107,12 @@ impl Selection<'_> {
         self.emit(ScalarOp::Binary(op, Type::I64, r, source));
     }
     fn division_shift(&mut self, op: Binary, r: R, count: u32) {
-        self.emit(ScalarOp::Shift(op, r, immediate(i64::from(count))));
+        self.emit(ScalarOp::Shift(
+            op,
+            Type::I64,
+            r,
+            immediate(i64::from(count)),
+        ));
     }
     fn division_negate(&mut self, r: R) {
         self.emit(ScalarOp::Unary(Unary::Neg, Type::I64, r));

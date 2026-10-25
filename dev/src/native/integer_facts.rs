@@ -19,6 +19,11 @@ pub(super) fn capacity(ty: Type) -> u32 {
 fn unsigned_narrow(ty: Type) -> bool {
     matches!(ty, Type::U8 | Type::U16 | Type::U32)
 }
+// Unsigned results may report their width after wrapping; only a result below
+// that width is already canonical when computed by a 64-bit operation.
+pub(super) fn unnormalized_fits(bits: u32, ty: Type) -> bool {
+    bits <= capacity(ty).saturating_sub(u32::from(unsigned_narrow(ty)))
+}
 fn value_bits(body: &Body, fits: &[u32], value: Value) -> u32 {
     match value {
         Value::Integer(id) => {

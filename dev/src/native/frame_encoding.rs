@@ -146,7 +146,7 @@ pub(super) fn extra_rsp(op: Op) -> bool {
             | ScalarOp::Load(r, _, _)
             | ScalarOp::Scan(_, _, r, _)
             | ScalarOp::Binary(_, _, r, _)
-            | ScalarOp::Shift(_, r, _) => reg(r),
+            | ScalarOp::Shift(_, _, r, _) => reg(r),
             ScalarOp::ExtendMove(_, a, b) => reg(a) || reg(b),
             ScalarOp::Condition(FlagOp::Set(_, r) | FlagOp::Test(_, r) | FlagOp::Move(_, r, _)) => {
                 reg(r)

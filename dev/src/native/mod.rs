@@ -32,6 +32,7 @@ mod frame_lifetimes;
 mod global_data;
 mod global_placement;
 mod handler_regions;
+mod home_forwarding;
 mod host_parameters;
 mod host_unwind;
 mod image;

@@ -8,7 +8,7 @@ use super::{
 use crate::lowir::{
     Error,
     literals::Constant,
-    model::{Body, InstructionKind as I, SlotId, SymbolId, TempId, Value},
+    model::{Body, InstructionKind as I, Program, SlotId, SymbolId, TempId, Value},
     vocabulary::{Binary, Type},
 };
 #[derive(Clone, Copy)]
@@ -43,9 +43,20 @@ pub(super) struct Addresses {
     pub(super) lazy_count: usize,
     pub(super) folded_count: usize,
 }
-fn record_value_uses(body: &Body, facts: &Facts, kind: &I, value_use: &mut [bool]) {
+fn record_value_uses(
+    body: &Body,
+    facts: &Facts,
+    kind: &I,
+    value_use: &mut [bool],
+    call_arguments: bool,
+) {
     use crate::lowir::model::RuntimeInstruction as Runtime;
     match *kind {
+        I::Call(ref call) if !call_arguments => {
+            if let Alias::Temporary(t) = facts.resolve(body, call.callee) {
+                value_use[t.index()] = true;
+            }
+        }
         I::Load(..)
         | I::CopyObject(..)
         | I::ZeroInit(..)
@@ -139,7 +150,91 @@ impl Addresses {
         }
         Ok(Some(expr))
     }
-    pub(super) fn analyze(body: &Body, facts: &mut Facts) -> Result<Self, Error> {
+    fn compose(
+        &mut self,
+        program: &Program,
+        body: &Body,
+        facts: &Facts,
+        model: super::object_compile::ObjectModel,
+        value_use: &[bool],
+        other_use: &[bool],
+    ) -> Result<(), Error> {
+        // Each repeat permanently makes at least one base eager. Later
+        // expressions then refer to that base, never to abandoned lazy parts.
+        let mut eager = vec![false; body.temps().len()];
+        loop {
+            self.expressions.fill(None);
+            self.lazy.fill(false);
+            self.lazy_count = 0;
+            let mut again = false;
+            for (pos, &id) in facts.flow.instructions.iter().enumerate() {
+                let inst = body.instruction(id);
+                if !facts.active[pos] || !matches!(inst.kind, I::Addr(..) | I::Index(..)) {
+                    continue;
+                }
+                let temp = inst.result.ok_or(Error::Limit)?;
+                let mut expr = self.expression(body, facts, &inst.kind)?;
+                if expr.is_none()
+                    && let I::Index(_, _, base, _) = inst.kind
+                    && let Alias::Temporary(base) = facts.resolve(body, base)
+                    && self.lazy[base.index()]
+                {
+                    self.lazy[base.index()] = false;
+                    self.lazy_count -= 1;
+                    eager[base.index()] = true;
+                    again = facts.level >= 1;
+                    expr = self.expression(body, facts, &inst.kind)?;
+                }
+                let Some(expr) = expr else { continue };
+                self.expressions[temp.index()] = Some(expr);
+                let direct = match expr.base {
+                    AddressBase::Slot(_) | AddressBase::Temporary(_) => true,
+                    AddressBase::Symbol(symbol) => {
+                        model == super::object_compile::ObjectModel::Course
+                            || super::symbol_access::host_symbol_access(program, symbol)
+                                == super::symbol_access::SymbolAccess::Direct
+                    }
+                    _ => false,
+                };
+                let remat =
+                    facts.level >= 1 && direct && expr.index.is_none() && !other_use[temp.index()];
+                let global_part = |part: TempId| {
+                    facts.global[part.index()]
+                        && body.temp(part).ty.is_some_and(|ty| {
+                            ty.float_rank() == 0 && !matches!(ty, Type::Object { .. } | Type::I128)
+                        })
+                };
+                let base = if let AddressBase::Temporary(base) = expr.base {
+                    Some(base)
+                } else {
+                    None
+                };
+                let registers = base.is_some() || expr.index.is_some();
+                if (value_use[temp.index()] && !remat)
+                    || facts.intervals[temp.index()].uses == 0
+                    || eager[temp.index()]
+                    || registers
+                        && facts.global[temp.index()]
+                        && !(facts.level >= 1
+                            && base.is_none_or(global_part)
+                            && expr.index.is_none_or(global_part))
+                {
+                    continue;
+                }
+                self.lazy[temp.index()] = true;
+                self.lazy_count += 1;
+            }
+            if !again {
+                return Ok(());
+            }
+        }
+    }
+    pub(super) fn analyze(
+        program: &Program,
+        body: &Body,
+        facts: &mut Facts,
+        model: super::object_compile::ObjectModel,
+    ) -> Result<Self, Error> {
         let count = body.temps().len();
         let ids = facts.flow.instructions.clone();
         let mut out = Self {
@@ -152,6 +247,7 @@ impl Addresses {
         let mut uses = vec![0_u32; count];
         let mut consumers = vec![None; count];
         let mut value_use = vec![false; count];
+        let mut other_use = vec![false; count];
         for (pos, &id) in ids.iter().enumerate() {
             if !facts.active[pos] {
                 continue;
@@ -163,39 +259,12 @@ impl Addresses {
                     consumers[t.index()] = Some(pos);
                 }
             });
-            record_value_uses(body, facts, &inst.kind, &mut value_use);
-        }
-        for (pos, &id) in ids.iter().enumerate() {
-            if !facts.active[pos] {
-                continue;
-            }
-            let inst = body.instruction(id);
-            if !matches!(inst.kind, I::Addr(..) | I::Index(..)) {
-                continue;
-            }
-            let temp = inst.result.ok_or(Error::Limit)?;
-            let mut expr = out.expression(body, facts, &inst.kind)?;
-            if expr.is_none()
-                && let I::Index(_, _, base, _) = inst.kind
-                && let Alias::Temporary(base) = facts.resolve(body, base)
-                && out.lazy[base.index()]
-            {
-                out.lazy[base.index()] = false;
-                out.lazy_count -= 1;
-                expr = out.expression(body, facts, &inst.kind)?;
-            }
-            if let Some(expr) = expr {
-                out.expressions[temp.index()] = Some(expr);
-                if uses[temp.index()] != 0
-                    && !value_use[temp.index()]
-                    && !(facts.global[temp.index()]
-                        && (matches!(expr.base, AddressBase::Temporary(_)) || expr.index.is_some()))
-                {
-                    out.lazy[temp.index()] = true;
-                    out.lazy_count += 1;
-                }
+            record_value_uses(body, facts, &inst.kind, &mut value_use, true);
+            if facts.level >= 1 {
+                record_value_uses(body, facts, &inst.kind, &mut other_use, false);
             }
         }
+        out.compose(program, body, facts, model, &value_use, &other_use)?;
         for (pos, &id) in ids.iter().enumerate() {
             if !facts.active[pos] {
                 continue;

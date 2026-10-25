@@ -276,7 +276,7 @@ impl<'a> Bytes<'a> {
         false
     }
 }
-fn successors(function: &Function, block: usize, mut visit: impl FnMut(usize)) {
+pub(super) fn successors(function: &Function, block: usize, mut visit: impl FnMut(usize)) {
     for instruction in &function.instructions[function.blocks[block].range.clone()] {
         match instruction.op {
             Op::Jump(to) | Op::Branch(_, to) => visit(to.index()),

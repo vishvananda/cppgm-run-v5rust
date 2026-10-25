@@ -63,7 +63,7 @@ impl Selection<'_> {
         };
         Ok(Operand::Memory(mem))
     }
-    fn lazy_memory(
+    pub(super) fn lazy_memory(
         &mut self,
         expr: Expression,
         scratch: R,
@@ -105,6 +105,7 @@ impl Selection<'_> {
                     if expr.scale > 1 {
                         self.emit(ScalarOp::Shift(
                             Binary::Shl,
+                            Type::I64,
                             scratch,
                             Operand::Immediate(u128::from(expr.scale.trailing_zeros())),
                         ));

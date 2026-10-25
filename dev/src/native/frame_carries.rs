@@ -28,7 +28,7 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
             }
             ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, r) => [Some(Operand::Register(r)), None],
             ScalarOp::CompareZero(_, s) => [Some(s), None],
-            ScalarOp::Shift(_, r, s) => [Some(Operand::Register(r)), Some(s)],
+            ScalarOp::Shift(_, _, r, s) => [Some(Operand::Register(r)), Some(s)],
             _ => return None,
         },
         _ => return None,

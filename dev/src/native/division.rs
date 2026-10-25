@@ -125,6 +125,7 @@ impl Selection<'_> {
             } else if divisor != 1 {
                 self.emit(ScalarOp::Shift(
                     Binary::UShr,
+                    Type::I64,
                     r,
                     Operand::Immediate(u128::from(divisor.trailing_zeros())),
                 ));
