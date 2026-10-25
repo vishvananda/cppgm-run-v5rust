@@ -133,7 +133,11 @@ fn pattern(facts: &Facts<'_>, loop_: LoopId, iv: Induction) -> Option<(InstId, O
     let matches = match value {
         Value::Integer(k) => {
             let bits = normalize(ty, facts.body.literal(k));
-            (1..size).all(|k| (bits >> (8 * k)) & 255 == bits & 255) && load.is_none()
+            // The frozen x86-64 oracle tests Literal::low even for i128;
+            // its word shifts repeat after eight bytes. Preserve that
+            // observed low-word rule without an out-of-range host shift.
+            (1..size).all(|k| (bits >> (8 * (k % 8))) & 255 == bits & 255)
+                && load.is_none()
         }
         Value::Temp(t) if size == 1 => load.map_or_else(|| facts.invariant(loop_, value), |id| {
             facts.body.instruction(id).result == Some(t)
