@@ -368,8 +368,8 @@ impl Analyzer<'_> {
                 arguments,
                 braced,
             } => {
-                let ty = if self.evaluating_noexcept
-                    || self.semantic() && self.graph.expression_type(id).is_some()
+                let ty = if (self.evaluating_noexcept || self.semantic())
+                    && self.graph.expression_type(id).is_some()
                 {
                     self.graph
                         .expression_type(id)
@@ -443,7 +443,11 @@ impl Analyzer<'_> {
                 ty,
                 operand,
             } => self.constant_query(ty, operand, scope, true, location)?,
-            ExprKind::Call { .. } if self.evaluating_noexcept && !self.semantic() => {
+            ExprKind::Call { .. }
+                if self.evaluating_noexcept
+                    && !self.semantic()
+                    && self.graph.expression_type(id).is_some() =>
+            {
                 return self.constant_exception_call(id, scope, skipping);
             }
             // A template pattern has no typed call facts. Like the frozen
@@ -621,7 +625,7 @@ impl Analyzer<'_> {
         } else {
             self.check_integral(chosen, self.tree.expressions.get(selected).location)?;
             self.check_integral(unchosen, self.tree.expressions.get(other).location)?;
-            let ty = if self.evaluating_noexcept {
+            let ty = if self.evaluating_noexcept && self.graph.expression_type(id).is_some() {
                 self.graph
                     .expression_type(id)
                     .ok_or(Error::Invariant("untyped exception conditional"))?
@@ -837,8 +841,11 @@ impl Analyzer<'_> {
         skipping: bool,
         location: SourceOffset,
     ) -> Result<Constant, Error> {
-        let found = if self.evaluating_noexcept
-            || self.semantic() && self.graph.expression_facts.get(id).is_ok()
+        // A specification can demand a class whose nested template operands
+        // have not been typed. Only this occurrence's facts authorize a read
+        // of the recorded binding; the enclosing noexcept query does not.
+        let found = if self.semantic() && self.graph.expression_facts.get(id).is_ok()
+            || self.evaluating_noexcept && self.graph.expression_type(id).is_some()
         {
             self.graph
                 .resolved_name(name)
@@ -1184,7 +1191,10 @@ impl Analyzer<'_> {
                 ))?
                 .result;
             (left, right)
-        } else if self.evaluating_noexcept && !self.semantic() {
+        } else if self.evaluating_noexcept
+            && !self.semantic()
+            && self.graph.expression_type(id).is_some()
+        {
             self.graph.arithmetic_types(id)?
         } else if matches!(op, P::ShiftLeft | P::ShiftRight) {
             (self.promoted_type(left.ty)?, self.promoted_type(right.ty)?)
@@ -1300,8 +1310,8 @@ impl Analyzer<'_> {
             ));
         }
         self.check_integral(value, location)?;
-        let ty = if self.evaluating_noexcept
-            || self.semantic() && self.graph.expression_facts.get(id).is_ok()
+        let ty = if (self.evaluating_noexcept || self.semantic())
+            && self.graph.expression_type(id).is_some()
         {
             self.graph
                 .expression_type(id)
@@ -1761,6 +1771,51 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn enclosing_noexcept_does_not_publish_untyped_constant_operands() {
+        for semantic in [false, true] {
+            let source =
+                SourceBuffer::new(b"constexpr long value = (true ? +1 : long(2)) + 3;".to_vec())
+                    .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"constant-occurrence").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let declaration = tree.decl_lists.get(declarations)[0];
+            let ast::DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind
+            else {
+                panic!("simple declaration");
+            };
+            let initializer = tree.init_declarators.get(declarators)[0]
+                .initializer
+                .unwrap();
+            let mark = tree.expressions.mark();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            if semantic {
+                analyzer.set_lowering();
+            }
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let scope = analyzer.graph.global;
+            let expression = analyzer.single_initializer(initializer).unwrap();
+            analyzer.evaluating_noexcept = true;
+            let value = analyzer
+                .constant_value(expression, scope, true)
+                .unwrap()
+                .unwrap();
+            assert_eq!(value.bits, 4);
+            assert!(matches!(
+                analyzer.graph.types.get(value.ty).kind,
+                TypeKind::Scalar(Scalar::Basic(crate::types::FundamentalType::LongInt))
+            ));
+            assert!(analyzer.graph.expression_type(expression).is_none());
+            assert!(analyzer.graph.expression_facts.get(expression).is_err());
+            assert_eq!(analyzer.tree.expressions.mark(), mark);
+            assert!(analyzer.evaluating_noexcept);
+            assert!(analyzer.constant_evaluation.is_none());
+        }
+    }
 
     #[test]
     fn comma_pattern_acquires_discard_semantics_only_after_typing() {
