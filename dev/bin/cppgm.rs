@@ -15,6 +15,9 @@ use std::{
 };
 #[path = "source_tool/build_time.rs"]
 mod build_time;
+pub mod builtin_host_configuration;
+#[path = "source_tool/driver_queries.rs"]
+mod driver_queries;
 #[path = "source_tool/host_configuration.rs"]
 mod host_configuration;
 #[path = "source_tool/stack_limit.rs"]
@@ -123,11 +126,13 @@ fn run() -> Result<(), CliError> {
         )
     }) {
         use std::os::unix::fs::PermissionsExt;
+        if driver_queries::run(&args).map_err(CliError::Message)? {
+            return Ok(());
+        }
         let values = build_time::query().map_err(CliError::Message)?;
         let budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
             .map_err(CliError::Internal)?;
-        let host =
-            host_configuration::query().map_err(|error| CliError::Message(error.to_string()))?;
+        let host = host_configuration::query();
         return cppgm_rust::driver::toolchain::run(
             &args,
             &values,
@@ -137,7 +142,7 @@ fn run() -> Result<(), CliError> {
                 strict_predefined_macros: &host.strict_macros,
                 predefined_macros: &host.macros,
                 include_paths: &host.includes,
-                stdlib_flags: option_env!("CPPGM_STDLIB_FLAGS").unwrap_or("").as_bytes(),
+                stdlib_flags: builtin_host_configuration::FLAGS,
             },
         )
         .map_err(tool_error);
@@ -166,13 +171,12 @@ fn run() -> Result<(), CliError> {
         .map_err(CliError::Internal)?;
     let mut preprocessor_options = cppgm_rust::preprocess::options::DriverOptions::default();
     if lowir || args.iter().any(|arg| arg == "--hosted") {
-        let host =
-            host_configuration::query().map_err(|error| CliError::Message(error.to_string()))?;
+        let host = host_configuration::query();
         cppgm_rust::driver::host_environment::HostEnvironment {
             strict_predefined_macros: &host.strict_macros,
             predefined_macros: &host.macros,
             include_paths: &host.includes,
-            stdlib_flags: option_env!("CPPGM_STDLIB_FLAGS").unwrap_or("").as_bytes(),
+            stdlib_flags: builtin_host_configuration::FLAGS,
         }
         .apply(&mut preprocessor_options, false);
     }

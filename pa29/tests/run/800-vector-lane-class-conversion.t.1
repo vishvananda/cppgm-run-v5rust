@@ -1,0 +1,23 @@
+typedef int Vector __attribute__((vector_size(8)));
+int conversions;
+struct Source {
+    operator Vector() const { ++conversions; return Vector{17, -9}; }
+};
+typedef short ShortVector __attribute__((vector_size(8)));
+struct ShortSource {
+    operator ShortVector() const { ++conversions; return ShortVector{17, -9, 4, 6}; }
+};
+int main() {
+    if (__builtin_ia32_vec_ext_v2si(Source(), 0) != 17 || conversions != 1)
+        return 1;
+    const Source source = {};
+    if (__builtin_ia32_vec_ext_v2si(((source)), 1) != -9 || conversions != 2)
+        return 2;
+    ShortVector replaced = __builtin_ia32_vec_set_v4hi(ShortSource(), 42, 1);
+    if (replaced[0] != 17 || replaced[1] != 42 || conversions != 3)
+        return 3;
+    Vector ordinary = {3, 5};
+    if (__builtin_ia32_vec_ext_v2si(ordinary, 1) != 5)
+        return 4;
+    return 0;
+}

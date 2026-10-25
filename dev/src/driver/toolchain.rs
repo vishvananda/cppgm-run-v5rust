@@ -105,6 +105,15 @@ fn target(arg: &OsStr) -> Result<(), AstToolError> {
     }
     Err(argument("unsupported target: ", arg))
 }
+fn reject_query(bytes: &[u8]) -> Result<(), AstToolError> {
+    if matches!(
+        bytes,
+        b"--version" | b"-v" | b"-dumpmachine" | b"-dumpversion" | b"-print-search-dirs"
+    ) {
+        return Err(message("query flag must be used as a direct invocation"));
+    }
+    Ok(())
+}
 fn parse(
     args: &[OsString],
     host: &super::host_environment::HostEnvironment<'_>,
@@ -119,6 +128,7 @@ fn parse(
     while index < args.len() {
         let arg = &args[index];
         let bytes = arg.as_bytes();
+        reject_query(bytes)?;
         match bytes {
             b"-nostdinc" => invocation.nostdinc = true,
             b"-c" => compile_only = true,

@@ -76,6 +76,38 @@ class GateTableTests(unittest.TestCase):
             self.assertLessEqual(gate["step"], 0.05, gate["name"])
 
 
+class SpeedModeTests(unittest.TestCase):
+    def test_both_compilers_receive_matching_optimization_levels(self):
+        # Exercise speed.pl's actual invocation path, timing helper and table
+        # writer with cheap compiler stand-ins. No real workload compile.
+        import json
+        with tempfile.TemporaryDirectory(prefix="pa35-speed-modes.") as directory:
+            root = Path(directory)
+            calls = root / "calls.jsonl"
+            for name in ("host", "candidate"):
+                compiler = root / name
+                compiler.write_text("#!/usr/bin/env python3\n" +
+                    "import json, os, pathlib, sys\n" +
+                    "with open(os.environ['PA35_TEST_CALLS'], 'a') as stream:\n" +
+                    "    stream.write(json.dumps([pathlib.Path(sys.argv[0]).name, sys.argv[1:]]) + '\\n')\n" +
+                    "pathlib.Path(sys.argv[sys.argv.index('-o') + 1]).write_bytes(b'output')\n")
+                compiler.chmod(0o755)
+            result = subprocess.run(["perl", str(SCRIPTS / "speed.pl"),
+                "--compiler", str(root / "candidate"), "--host", str(root / "host"),
+                "--rounds", "2", "--out", str(root / "speed.tsv")],
+                env=dict(os.environ, PA35_TEST_CALLS=str(calls)),
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            rows = [json.loads(line) for line in calls.read_text().splitlines()]
+            self.assertEqual(len(rows), 12)
+            for who in ("host", "candidate"):
+                levels = [next(arg for arg in args if arg in ("-E", "-O0", "-O2", "-O3"))
+                          for name, args in rows if name == who]
+                self.assertEqual(levels, ["-E", "-O0", "-O3"] * 2)
+            self.assertIn("host -O3", result.stdout)
+            self.assertIn("time-O3\t", (root / "speed.tsv").read_text())
+
+
 class ProgressTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix="pa35-progress.")

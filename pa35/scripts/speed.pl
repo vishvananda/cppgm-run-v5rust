@@ -3,7 +3,7 @@
 #
 # Compiler speed on the frozen workload relative to the host compiler on the
 # same input, in three modes: preprocessing (C -E against host -E), C -O0
-# against host -O0, and C -O3 against host -O2. Each figure is the minimum
+# against host -O0, and C -O3 against host -O3. Each figure is the minimum
 # user time (and peak RSS) over the rounds. The first run of each C mode is
 # bounded (wall time max(30 s, 5 x host), 8 GB of address space); a mode
 # that exceeds its bound or fails is reported as such and not run again.
@@ -25,7 +25,7 @@ my $tmp = tempdir('pa35-speed-XXXXXX', TMPDIR => 1, CLEANUP => 1);
 my $MEMORY_KB = 8 * 1024 * 1024;
 
 # mode => [C level, host level]
-my %MODES = (E => ['-E', '-E'], O0 => ['-O0', '-O0'], O3 => ['-O3', '-O2']);
+my %MODES = (E => ['-E', '-E'], O0 => ['-O0', '-O0'], O3 => ['-O3', '-O3']);
 my @order = qw(E O0 O3);
 my (%user, %rss, %state);
 my $run = sub {

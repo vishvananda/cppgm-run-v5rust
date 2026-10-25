@@ -1,2 +1,6 @@
 [build]
 target-dir = "obj/rust"
+
+[env]
+CPPGM_BUILD_HOST_CXX = "g++"
+CPPGM_STDLIB_FLAGS = ""

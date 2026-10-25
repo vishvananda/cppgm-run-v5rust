@@ -62,9 +62,9 @@ impl Function<'_, '_, '_, '_> {
             }
             return self.load_vector_storage(slot, result);
         }
-        let vector = self.graph.lower_builtin_operand_type(arguments[0])?;
-        let (lane, bound) = self.vector_shape(vector)?;
         let value = self.operand(arguments[0], Context::Argument)?;
+        let vector = value.source;
+        let (lane, bound) = self.vector_shape(vector)?;
         let address = self.vector_storage(value)?;
         let value = if kind == Kind::Insert {
             let value = self.operand(arguments[1], Context::Argument)?;

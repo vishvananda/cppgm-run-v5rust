@@ -1,7 +1,7 @@
 # Exact clone contract
 
 Implement all nine C++ compiler tools in idiomatic safe Rust. The oracle is
-cppgm-extended commit `c2b0d41791ad702b70f01f346b36a390b35b3077`, available at
+cppgm-extended commit `b43173ec8d98b27eecf02bccabf973a4083a389f`, available at
 `/home/vishvananda/work/references/v5rust-cpp`. Read its implementation freely;
 translate its behavior, including ordering and diagnostic details. Preserve
 NOTICE and inherited attribution. The candidate is not a student exercise
@@ -171,3 +171,5 @@ this clone's objective. Reuse correctness workloads and record Rust throughput
 and RSS separately. PA32/PA33 transformations and tie-breaks must still match.
 
 Reviewed test identity relocations are frozen in case_identity_relocations. Renamed cases must still pass; moved cases are required at their new assignment. PA26 requires O0 exception handling; IR optimization belongs to PA32 and optimized native code to PA33.
+
+Owner-reviewed PA29 host configuration (2026-10-25): protected dev/build.rs and dev/build_support/host_configuration.rs capture empty-input host configuration at build time. dev/bin/builtin_host_configuration.rs imports only those captured bytes. Runtime preprocessing/compilation and direct driver queries require no host configuration probe. Alternate build hooks or generated implementation code remain prohibited. The build-selected host command is g++, matching the frozen oracle; .cargo/config.toml and protected clean_env settings keep owner, worker and checker builds consistent.
