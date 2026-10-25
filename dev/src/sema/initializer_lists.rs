@@ -270,20 +270,8 @@ impl Analyzer<'_> {
         if self.lowering() && self.unevaluated == 0 && self.template_depth == 0 {
             if !elements.is_empty() {
                 self.request_object_layout(array, self.tree.expressions.get(id).location);
-                // The backing array owns destruction independently of its
-                // trivially destructible wrapper. Prepare only its element's
-                // containment graph and attach the demand to this body.
-                if let Some(class) = self.graph.class_of(element) {
-                    self.prepare_destruction(class)?;
-                    if !self.graph.destructor_trivial(class)?
-                        && let Some(binding) = self.graph.destructor_binding(class)
-                    {
-                        self.graph.storage_destructions.push((
-                            self.body_context.as_ref().map(|body| body.entity),
-                            self.graph.binding(binding).entity,
-                        ));
-                    }
-                }
+                // Its backing array owns destruction independently of the wrapper.
+                self.request_temporary_destruction(array)?;
             }
             self.request_object_layout(ty, self.tree.expressions.get(id).location);
         }

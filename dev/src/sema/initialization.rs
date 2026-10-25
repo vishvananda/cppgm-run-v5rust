@@ -247,6 +247,7 @@ impl Analyzer<'_> {
         }
         facts.category = V::Prvalue;
         self.graph.expression_facts.set(id, facts);
+        self.request_temporary_destruction(facts.ty)?;
         Ok(())
     }
 

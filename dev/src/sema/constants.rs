@@ -191,11 +191,15 @@ impl Analyzer<'_> {
         }
         let expr = *self.tree.expressions.get(id);
         let location = expr.location;
+        // Instantiating a constexpr callee can complete a class while an outer
+        // call frame is live. Its untyped template operands still use the
+        // integral evaluator; only recorded glvalues designate frame storage.
         if self.semantic()
             && (self.constexpr_frames.active() || matches!(expr.kind, ExprKind::Member { .. }))
             && !skipping
-            && self.graph.expression_facts.get(id)?.category
-                != super::expression_facts::ValueCategory::Prvalue
+            && self.graph.expression_facts.known(id).is_some_and(|facts| {
+                facts.category != super::expression_facts::ValueCategory::Prvalue
+            })
             && !matches!(expr.kind, ExprKind::Conditional { .. })
         {
             let place = self.constant_place(id, scope)?;
@@ -1815,6 +1819,52 @@ mod tests {
             assert!(analyzer.evaluating_noexcept);
             assert!(analyzer.constant_evaluation.is_none());
         }
+    }
+
+    #[test]
+    fn active_call_frame_does_not_require_facts_for_untyped_template_constants() {
+        let source =
+            SourceBuffer::new(b"constexpr int value = (true ? +1 : int(2)) + 3;".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"frame-constant-occurrence").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declaration = tree.decl_lists.get(declarations)[0];
+        let ast::DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind
+        else {
+            panic!("simple declaration");
+        };
+        let initializer = tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let mark = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        let expression = analyzer.single_initializer(initializer).unwrap();
+        let ty = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        analyzer
+            .in_constant_evaluation(|analyzer| {
+                let frame = super::super::constexpr_frames::Frame::new(ty, scope);
+                analyzer.with_constant_frame(frame, |analyzer| {
+                    let value = analyzer.constant_value(expression, scope, true)?.unwrap();
+                    assert_eq!(value.bits, 4);
+                    assert!(analyzer.constexpr_frames.active());
+                    assert!(analyzer.graph.expression_facts.known(expression).is_none());
+                    assert_eq!(analyzer.tree.expressions.mark(), mark);
+                    Ok(())
+                })
+            })
+            .unwrap();
+        assert!(analyzer.constant_evaluation.is_none());
+        assert!(!analyzer.constexpr_frames.active());
     }
 
     #[test]

@@ -308,6 +308,36 @@ impl Analyzer<'_> {
         Ok(())
     }
 
+    /// Lowering destroys a materialized list object even where the frozen
+    /// `list_argument` path performs no destructor access check. Keep that output
+    /// demand separate from validation, and attach it to the containing body.
+    pub(super) fn request_temporary_destruction(
+        &mut self,
+        mut ty: super::types::TypeId,
+    ) -> Result<(), Error> {
+        if !self.lowering() || self.unevaluated != 0 || self.template_depth != 0 {
+            return Ok(());
+        }
+        while let TypeKind::Array { element, bound, .. } = self.graph.types.get(ty).kind {
+            if bound == 0 {
+                return Ok(());
+            }
+            ty = element;
+        }
+        // Reaching this recorded destructor prepares its containment.
+        // Recording storage alone must not instantiate subobject bodies.
+        if let Some(class) = self.graph.class_of(ty)
+            && !self.graph.destructor_trivial(class)?
+            && let Some(binding) = self.destructor_callable(class)?
+        {
+            self.graph.storage_destructions.push((
+                self.body_context.as_ref().map(|body| body.entity),
+                self.graph.binding(binding).entity,
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn check_temporary_destruction(
         &mut self,
         facts: super::expression_facts::ExprFacts,
@@ -408,7 +438,8 @@ impl Analyzer<'_> {
                         && !self.graph.destructor_trivial(child)?
                         && self.lowering()
                     {
-                        self.demand_instance_member(self.graph.binding(binding).entity);
+                        // The parent's reached output boundary owns this body
+                        // demand; preparing containment alone is not a use.
                         self.graph
                             .storage_destructions
                             .push((Some(parent), self.graph.binding(binding).entity));

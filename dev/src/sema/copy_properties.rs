@@ -290,7 +290,12 @@ impl Analyzer<'_> {
             copy = Some((parameter, facts.deleted));
             copy_properties = Some(self.graph.copy_properties.add(facts)?);
         }
-        let moving = !(has_copy || has_move || copy_assignment || move_assignment || destructor);
+        // analyzer_copy.cpp treats a closure's deleted copy assignment as
+        // declared: its rvalue sources use the copy constructor, with no
+        // implicit move member to select or demand.
+        let closure = self.graph.closure_call(class).is_some();
+        let moving =
+            !(has_copy || has_move || copy_assignment || move_assignment || destructor || closure);
         let mut move_properties = None;
         let mut move_parameter = None;
         if moving {
@@ -309,8 +314,8 @@ impl Analyzer<'_> {
         });
         self.declare_assignments(
             class,
-            has_copy || has_move || destructor || self.graph.closure_call(class).is_some(),
-            has_move || move_assignment || self.graph.closure_call(class).is_some(),
+            has_copy || has_move || destructor || closure,
+            has_move || move_assignment || closure,
         )?;
         Ok(())
     }
@@ -560,6 +565,28 @@ mod tests {
             .unwrap();
         analyzer.graph.copy_properties.get(id)
     }
+    #[test]
+    fn closures_copy_rvalues_without_implicit_move_members() {
+        with_analyzer(
+            br"struct Item{Item();Item(const Item&)noexcept;Item(Item&&)=delete;};
+            int main(){int n=1;Item item;auto empty=[]{};auto ref=[&]{return n;};
+            auto value=[item]{};auto a=static_cast<decltype(empty)&&>(empty);
+            auto b=static_cast<decltype(ref)&&>(ref);auto c=static_cast<decltype(value)&&>(value);}",
+            |a| {
+                let classes: Vec<_> = a.graph.closures.records.keys().copied().collect();
+                assert_eq!(classes.len(), 3);
+                for class in classes {
+                    let facts = copy(a, class);
+                    assert!(!facts.deleted && facts.nothrow);
+                    let copies = a.graph.entity(class).implicit_copies.unwrap();
+                    assert!(copies.copy.is_some());
+                    assert!(copies.moving.is_none());
+                    assert!(copies.move_properties.is_none());
+                }
+            },
+        );
+    }
+
     #[test]
     fn recursive_facts_keep_selected_edges_and_const_deletion_access_and_throw_properties() {
         with_analyzer(
