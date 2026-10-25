@@ -95,7 +95,14 @@ impl Function<'_, '_, '_, '_> {
             {
                 return Ok(true);
             }
-            if (self.graph.lower_operator_call(id)? || self.graph.lower_literal_call(id)?.is_some())
+            // The frozen may_throw switch counts operator calls on binary,
+            // assignment, unary and postfix nodes. Its subscript branch only
+            // visits operands; the emitted call still owns its unwind region.
+            if ((!matches!(
+                self.tree.expressions.get(id).kind,
+                ExprKind::Subscript { .. }
+            ) && self.graph.lower_operator_call(id)?)
+                || self.graph.lower_literal_call(id)?.is_some())
                 && self.call_throws_in_context(self.graph.lower_call(id)?, hidden)?
             {
                 return Ok(true);

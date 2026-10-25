@@ -164,6 +164,10 @@ impl Analyzer<'_> {
         // that plan here, before lowering borrows the immutable semantic graph.
         let constructor = self.copy_constructor_plan(class, selected, location)?;
         self.demand_constructor_use(constructor)?;
+        // initialize_object returns this constructor as the allocated object's
+        // action. It is no longer a conversion constructing a temporary from
+        // the source operand; its reference binding and copy selection remain.
+        self.graph.expression_facts.set_copy_action(source, None);
         Ok(Some((constructor, ConstructorArguments::Single(source))))
     }
 

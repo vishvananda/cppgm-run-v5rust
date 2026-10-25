@@ -172,7 +172,6 @@ impl Function<'_, '_, '_, '_> {
             return self.array_allocation(id, &use_, array);
         }
         let source = self.graph.lower_expression(id)?.ty;
-        self.begin_storage_expression(placement.is_some_and(|values| !values.is_empty()))?;
         let bytes = types::layout(self.graph, use_.target)?.0;
         let size = self.builder.integer(u128::from(bytes))?;
         let size = if bytes <= 0x7fff_ffff {
@@ -320,19 +319,6 @@ impl Function<'_, '_, '_, '_> {
             self.open_storage_completion_region(first)?;
         }
         Ok(object)
-    }
-
-    fn begin_storage_expression(&mut self, allow_empty_chain: bool) -> Result<(), Error> {
-        if self.lifetime.full_expression
-            && self.lifetime.temporary_segment.is_present()
-            && self.lifetime.region_start.is_pending()
-            && !self.lifetime.region
-            && !self.lifetime.tracking.active
-            && (allow_empty_chain || !self.lifetime.cleanups.is_empty())
-        {
-            self.open_temporary_region_at(self.lifetime.expression_start)?;
-        }
-        Ok(())
     }
 
     fn initialize_allocation(
