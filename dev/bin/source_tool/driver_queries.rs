@@ -1,8 +1,9 @@
 //! Direct PA29 queries use immutable build-selected configuration bytes.
+use crate::CliError;
 use crate::builtin_host_configuration as captured;
 use std::{ffi::OsString, io::Write, os::unix::ffi::OsStrExt};
 
-pub(super) fn run(args: &[OsString]) -> Result<bool, String> {
+pub(super) fn run(args: &[OsString]) -> Result<bool, CliError> {
     let Some(first) = args.first() else {
         return Ok(false);
     };
@@ -19,11 +20,14 @@ pub(super) fn run(args: &[OsString]) -> Result<bool, String> {
         _ => return Ok(false),
     };
     if args.len() != 1 {
-        return Err("query flag must be used as a direct invocation".into());
+        return Err(CliError::Message(
+            "query flag must be used as a direct invocation".into(),
+        ));
     }
-    std::io::stdout()
-        .lock()
+    let mut output = std::io::stdout().lock();
+    output
         .write_all(&bytes)
-        .map_err(|e| e.to_string())?;
+        .and_then(|()| output.flush())
+        .map_err(|_| CliError::Output)?;
     Ok(true)
 }

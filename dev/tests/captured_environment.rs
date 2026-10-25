@@ -41,6 +41,26 @@ fn direct_queries_use_captured_bytes_without_a_host() -> Result<(), Box<dyn std:
 }
 
 #[test]
+fn query_output_failure_has_no_diagnostic() -> Result<(), Box<dyn std::error::Error>> {
+    for flag in [
+        "--version",
+        "-v",
+        "-dumpmachine",
+        "-dumpversion",
+        "-print-search-dirs",
+    ] {
+        let output = compiler()
+            .arg(flag)
+            .stdout(std::fs::OpenOptions::new().write(true).open("/dev/full")?)
+            .output()?;
+        assert_eq!(output.status.code(), Some(1), "{flag}");
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty(), "{flag}: {:?}", output.stderr);
+    }
+    Ok(())
+}
+
+#[test]
 fn source_frontend_uses_captured_macros_without_a_host() -> Result<(), Box<dyn std::error::Error>> {
     let directory = std::env::temp_dir().join(format!("cppgm-host-capture-{}", std::process::id()));
     std::fs::create_dir_all(&directory)?;

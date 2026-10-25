@@ -126,7 +126,7 @@ fn run() -> Result<(), CliError> {
         )
     }) {
         use std::os::unix::fs::PermissionsExt;
-        if driver_queries::run(&args).map_err(CliError::Message)? {
+        if driver_queries::run(&args)? {
             return Ok(());
         }
         let values = build_time::query().map_err(CliError::Message)?;
