@@ -82,6 +82,7 @@ pub(crate) enum KeyNode {
     Fold,
     SizeofPack,
     IntegerPack,
+    BitInt,
     Function,
 }
 #[derive(Default)]
@@ -235,6 +236,10 @@ impl Analyzer<'_> {
                 return Ok(self.key_expression(condition, scope, key)?
                     && self.key_expression(then_expr, scope, key)?
                     && self.key_expression(else_expr, scope, key)?);
+            }
+            ExprKind::BitInt(operand) => {
+                key.words.push(KeyWord::Node(KeyNode::BitInt));
+                return self.key_expression(operand, scope, key);
             }
             ExprKind::IntegerPack(operand) => {
                 key.words.push(KeyWord::Node(KeyNode::IntegerPack));

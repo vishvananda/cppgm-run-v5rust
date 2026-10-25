@@ -405,6 +405,7 @@ impl<'a> Cloner<'a> {
                 operand: self.optional(operand, Self::expression)?,
             },
             ExprKind::IntegerPack(operand) => ExprKind::IntegerPack(self.expression(operand)?),
+            ExprKind::BitInt(operand) => ExprKind::BitInt(self.expression(operand)?),
             ExprKind::TypeTransform { transform, types } => ExprKind::TypeTransform {
                 transform,
                 types: self.expanded_types(types)?,

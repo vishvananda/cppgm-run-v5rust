@@ -322,6 +322,7 @@ impl Graph {
             ExprKind::Statement(_)
             | ExprKind::Lambda(_)
             | ExprKind::IntegerPack(_)
+            | ExprKind::BitInt(_)
             | ExprKind::SizeofPack(_)
             | ExprKind::Id(_)
             | ExprKind::Literal(_)

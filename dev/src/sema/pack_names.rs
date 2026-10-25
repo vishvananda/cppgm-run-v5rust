@@ -210,6 +210,7 @@ impl Analyzer<'_> {
         match self.tree.expressions.get(id).kind {
             ExprKind::Id(name) => work.push(Probe::Name(name, true)),
             ExprKind::IntegerPack(expr)
+            | ExprKind::BitInt(expr)
             | ExprKind::Paren(expr)
             | ExprKind::ComplexPart { operand: expr, .. }
             | ExprKind::Unary { operand: expr, .. }

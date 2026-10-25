@@ -50,6 +50,7 @@ impl Parser<'_> {
                 && self.at_type_predicate(ahead)?.is_none()
                 && !self.at_offsetof(ahead)?
                 && !self.at_integer_pack(ahead)?
+                && !self.at_bit_int(ahead)?
                 && !self.at_typeof(ahead)?
                 && !self.at_attribute(ahead)?)
                 || (self.at_ahead(P::Scope, ahead)?
@@ -100,10 +101,14 @@ impl Parser<'_> {
             if !qualified
                 && (self.keyword()? == Some(K::Decltype)
                     || (matches!(mode, NameMode::Expression | NameMode::Type)
-                        && (self.at_type_transform()?.is_some() || self.at_typeof(0)?)))
+                        && (self.at_type_transform()?.is_some()
+                            || self.at_typeof(0)?
+                            || self.at_bit_int(0)?)))
             {
                 let operand = if self.at_typeof(0)? {
                     self.typeof_operand()?
+                } else if self.at_bit_int(0)? {
+                    self.bit_int_operand()?
                 } else if let Some(transform) = self.at_type_transform()? {
                     self.transform_operand(transform)?
                 } else {

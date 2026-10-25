@@ -759,6 +759,7 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 }
             }
             ExprKind::IntegerPack(operand) => self.builtin_operand("__integer_pack", operand),
+            ExprKind::BitInt(operand) => self.builtin_operand("_BitInt", operand),
             ExprKind::TypeTransform { transform, types } => {
                 self.builtin_types(transform.spelling(), types);
             }

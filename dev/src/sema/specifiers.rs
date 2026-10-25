@@ -122,6 +122,35 @@ impl Analyzer<'_> {
         Ok(())
     }
 
+    // Extended type specifiers consume a sign keyword in the shared sequence.
+    fn consume_extended_specifier(
+        &self,
+        specifier: Specifier,
+        named: TypeId,
+        fundamental: &mut Vec<Keyword>,
+        int128: &mut bool,
+    ) -> bool {
+        if !fundamental.is_empty()
+            && !*int128
+            && self.graph.types.get(named).kind
+                == super::types::TypeKind::Scalar(Scalar::Basic(F::Int128))
+            && matches!(specifier.kind, SpecifierKind::Named(name) if {
+                let name = self.tree.names.get(name);
+                let parts = self.tree.name_lists.get(name.components);
+                !name.global && matches!(parts, [part] if matches!(part.kind, crate::syntax::ast::NameKind::Identifier(identifier) if identifier == self.int128_name) && part.arguments.is_none())
+            })
+        {
+            *int128 = true;
+            return true;
+        }
+        if matches!(specifier.kind, SpecifierKind::Decltype(expr)
+                if matches!(self.tree.expressions.get(expr).kind, crate::syntax::ast::ExprKind::BitInt(_)))
+        {
+            fundamental.clear();
+        }
+        false
+    }
+
     pub(super) fn specifiers(
         &mut self,
         list: List<Specifier>,
@@ -267,17 +296,7 @@ impl Analyzer<'_> {
             {
                 alias_alignment = self.graph.alias_alignments.alias(binding);
             }
-            if !fundamental.is_empty()
-                && !int128
-                && self.graph.types.get(named).kind
-                    == super::types::TypeKind::Scalar(Scalar::Basic(F::Int128))
-                && matches!(specifier.kind, SpecifierKind::Named(name) if {
-                    let name = self.tree.names.get(name);
-                    let parts = self.tree.name_lists.get(name.components);
-                    !name.global && matches!(parts, [part] if matches!(part.kind, crate::syntax::ast::NameKind::Identifier(identifier) if identifier == self.int128_name) && part.arguments.is_none())
-                })
-            {
-                int128 = true;
+            if self.consume_extended_specifier(specifier, named, &mut fundamental, &mut int128) {
                 continue;
             }
             if ty.is_some() || !fundamental.is_empty() {

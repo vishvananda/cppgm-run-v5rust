@@ -188,6 +188,7 @@ impl Analyzer<'_> {
                 }
                 self.binding_expression_type(found)
             }
+            ExprKind::BitInt(_) => Err(Error::at(location, "a _BitInt type is not supported")),
             ExprKind::IntegerPack(_) => Err(Error::at(
                 location,
                 "__integer_pack outside a template argument pack expansion",

@@ -204,6 +204,7 @@ impl Analyzer<'_> {
         match self.tree.expressions.get(id).kind {
             ExprKind::Literal(_)
             | ExprKind::IntegerPack(_)
+            | ExprKind::BitInt(_)
             | ExprKind::SizeofPack(_)
             | ExprKind::Sizeof { .. }
             | ExprKind::TypePredicate { .. }

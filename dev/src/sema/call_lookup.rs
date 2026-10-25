@@ -52,6 +52,25 @@ impl AssociationScratch {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn check_coroutine_callee(
+        &self,
+        name: ast::Name,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<(), Error> {
+        let node = self.tree.names.get(name);
+        if !node.global
+            && let [component] = self.tree.name_lists.get(node.components)
+            && let ast::NameKind::Identifier(name) = component.kind
+            && self.identifiers.bytes(name).first() == Some(&b' ')
+        {
+            return Err(Error::at(
+                location,
+                "a coroutine operation (C++20 coroutines are not supported)",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn missing_callee_message(&self, name: ast::Name) -> &'static str {
         let node = self.tree.names.get(name);
         let components = self.tree.name_lists.get(node.components);

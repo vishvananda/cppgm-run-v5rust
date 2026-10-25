@@ -15,7 +15,7 @@ enum StatementHead {
 }
 impl Parser<'_> {
     fn statement_head(&mut self) -> Result<StatementHead, ParseError> {
-        if self.complex_component_keyword()?.is_some() {
+        if self.complex_component_keyword()?.is_some() || self.coroutine_keyword()?.is_some() {
             return Ok(StatementHead::Expression);
         }
         match self.keyword()? {
@@ -151,6 +151,24 @@ impl Parser<'_> {
                 selection_init: false,
                 location,
                 kind: StmtKind::Label { name, body },
+            });
+        }
+        if self.coroutine_keyword()? == Some(super::expressions::Coroutine::Return) {
+            self.cursor.advance()?;
+            let operand = if self.at(P::Semicolon)? {
+                None
+            } else if self.at(P::LeftBrace)? {
+                Some(self.braced_list()?)
+            } else {
+                Some(self.expression()?)
+            };
+            self.expect(P::Semicolon)?;
+            let expression =
+                self.coroutine_operation(super::expressions::Coroutine::Return, operand, location)?;
+            return self.tree.statements.add(Statement {
+                selection_init: false,
+                location,
+                kind: StmtKind::Expression(Some(expression)),
             });
         }
         let kind = match self.keyword()? {

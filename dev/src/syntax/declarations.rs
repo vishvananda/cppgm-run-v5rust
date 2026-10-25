@@ -449,6 +449,17 @@ impl Parser<'_> {
                 complex_only = false;
                 continue;
             }
+            if (!has_type || sign_only) && self.at_bit_int(0)? {
+                let operand = self.bit_int_operand()?;
+                self.tree.specs.push(Specifier {
+                    location,
+                    kind: SpecifierKind::Decltype(operand),
+                });
+                has_type = true;
+                sign_only = false;
+                complex_only = false;
+                continue;
+            }
             if !has_type && let Some(transform) = self.at_type_transform()? {
                 let operand = self.transform_operand(transform)?;
                 self.tree.specs.push(Specifier {

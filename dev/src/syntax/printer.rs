@@ -1013,6 +1013,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         Ok(())
     }
 
+    fn builtin_operand(&mut self, spelling: &'static str, operand: ExprId) -> io::Result<()> {
+        self.open("builtin-trait-expression", Payload::Text(spelling))?;
+        self.tasks.push(Task::Expression(operand));
+        Ok(())
+    }
+
     fn builtin_types(&mut self, spelling: &'static str, types: List<TypeId>) -> io::Result<()> {
         self.open("builtin-trait-expression", Payload::Text(spelling))?;
         self.tasks.extend(
@@ -1041,16 +1047,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         match self.renderer.tree.expressions.get(id).kind {
             ExprKind::Lambda(id) => self.lambda(id)?,
             ExprKind::ComplexPart { imaginary, operand } => {
-                self.open(
-                    "builtin-trait-expression",
-                    Payload::Text(if imaginary { "__imag__" } else { "__real__" }),
-                )?;
-                self.tasks.push(Task::Expression(operand));
+                self.builtin_operand(if imaginary { "__imag__" } else { "__real__" }, operand)?;
             }
-            ExprKind::IntegerPack(operand) => {
-                self.open("builtin-trait-expression", Payload::Text("__integer_pack"))?;
-                self.tasks.push(Task::Expression(operand));
-            }
+            ExprKind::BitInt(operand) => self.builtin_operand("_BitInt", operand)?,
+            ExprKind::IntegerPack(operand) => self.builtin_operand("__integer_pack", operand)?,
             ExprKind::SizeofPack(name) => {
                 self.line("sizeof-pack-expression", Payload::Identifier(name), false)?;
             }

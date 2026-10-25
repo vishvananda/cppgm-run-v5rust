@@ -9,12 +9,94 @@ use super::{
 };
 use crate::lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K};
 use crate::support::source::SourceOffset;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Coroutine {
+    Await,
+    Yield,
+    Return,
+}
+
 enum Operand {
     Type(TypeId),
     Expression(ExprId),
     Compound(TypeId),
 }
 impl Parser<'_> {
+    // Hosted contextual operators remain ordinary identifiers when declared.
+    // The frozen parser represents an operator as a call of an unspellable
+    // name, retained by template bodies until semantic demand.
+    pub(super) fn coroutine_keyword(&mut self) -> Result<Option<Coroutine>, ParseError> {
+        if self.environment != super::parser::Environment::Hosted {
+            return Ok(None);
+        }
+        let TokenKind::Identifier(name) = self.token()?.kind else {
+            return Ok(None);
+        };
+        let operation = match self.cursor.name(name) {
+            b"co_await" => Coroutine::Await,
+            b"co_yield" => Coroutine::Yield,
+            b"co_return" => Coroutine::Return,
+            _ => return Ok(None),
+        };
+        if self.scopes.lookup_name(name, false).is_some()
+            || matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op)
+                if matches!(op.token.as_punctuator(), Some(P::RightParen | P::Comma | P::Assign | P::RightBracket)))
+            || (operation != Coroutine::Return && self.at_ahead(P::Semicolon, 1)?)
+        {
+            return Ok(None);
+        }
+        Ok(Some(operation))
+    }
+
+    pub(super) fn coroutine_operation(
+        &mut self,
+        operation: Coroutine,
+        operand: Option<ExprId>,
+        location: SourceOffset,
+    ) -> Result<ExprId, ParseError> {
+        use super::ast::{NameComponent, NameKind, PrefixState, QualifiedName, TemplatePrefix};
+        let spelling: &[u8] = match operation {
+            Coroutine::Await => b" co_await",
+            Coroutine::Yield => b" co_yield",
+            Coroutine::Return => b" co_return",
+        };
+        let name = self.cursor.intern_name(spelling)?;
+        let start = self.tree.name_lists.begin();
+        self.tree.name_lists.push(NameComponent {
+            location,
+            kind: NameKind::Identifier(name),
+            template_keyword: false,
+            expanded: false,
+            arguments: None,
+        });
+        let components = self.tree.name_lists.finish(start)?;
+        let name = self.tree.names.add(QualifiedName {
+            location,
+            global: false,
+            typename_keyword: false,
+            components,
+            prefix_scope: None,
+            prefix_state: PrefixState::Unqualified,
+            prefix_template: TemplatePrefix::Ordinary,
+            prefix_guesses: super::scopes::Guesses::default(),
+            mentions_parameters: false,
+            binding: None,
+        })?;
+        let callee = self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Id(name),
+        })?;
+        let start = self.tree.expr_lists.begin();
+        if let Some(operand) = operand {
+            self.tree.expr_lists.push(operand);
+        }
+        let arguments = self.tree.expr_lists.finish(start)?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Call { callee, arguments },
+        })
+    }
+
     pub(super) fn continue_assignment_expression(
         &mut self,
         primary: ExprId,
@@ -71,6 +153,12 @@ impl Parser<'_> {
                 location,
                 kind: ExprKind::Throw(operand),
             });
+        }
+        if self.coroutine_keyword()? == Some(Coroutine::Yield) {
+            let location = self.location()?;
+            self.cursor.advance()?;
+            let operand = self.initializer_clause()?;
+            return self.coroutine_operation(Coroutine::Yield, Some(operand), location);
         }
         let left = self.binary(3)?;
         self.assignment_rest(left)
@@ -389,6 +477,11 @@ impl Parser<'_> {
     }
     fn unary_inner(&mut self) -> Result<ExprId, ParseError> {
         let location = self.location()?;
+        if self.coroutine_keyword()? == Some(Coroutine::Await) {
+            self.cursor.advance()?;
+            let operand = self.unary()?;
+            return self.coroutine_operation(Coroutine::Await, Some(operand), location);
+        }
         if self.at(P::Scope)?
             && matches!(self.cursor.peek(1)?.kind, TokenKind::Simple(op) if matches!(op.token.as_keyword(), Some(K::New | K::Delete)))
         {

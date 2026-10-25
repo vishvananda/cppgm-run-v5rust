@@ -65,6 +65,26 @@ impl Parser<'_> {
         )
     }
 
+    pub(super) fn at_bit_int(&mut self, ahead: usize) -> Result<bool, ParseError> {
+        Ok(
+            matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(name)
+            if self.cursor.name(name) == b"_BitInt")
+                && self.at_ahead(P::LeftParen, ahead + 1)?,
+        )
+    }
+
+    pub(super) fn bit_int_operand(&mut self) -> Result<ExprId, ParseError> {
+        let location = self.location()?;
+        self.cursor.advance()?;
+        self.expect(P::LeftParen)?;
+        let operand = self.without_angle(Self::assignment_expression)?;
+        self.expect(P::RightParen)?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::BitInt(operand),
+        })
+    }
+
     pub(super) fn at_integer_pack(&mut self, ahead: usize) -> Result<bool, ParseError> {
         Ok(
             matches!(self.cursor.peek(ahead)?.kind, TokenKind::Identifier(name)

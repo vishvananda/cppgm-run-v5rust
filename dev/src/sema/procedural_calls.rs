@@ -112,6 +112,7 @@ impl Analyzer<'_> {
             .is_some_and(|callable| self.graph.expression_facts.root(callable) == named);
         let facts =
             if !pretyped && let ast::ExprKind::Id(name) = self.tree.expressions.get(named).kind {
+                self.check_coroutine_callee(name, self.tree.expressions.get(id).location)?;
                 let callee_uses = self.dependent_uses.get();
                 let mut found = self.lookup_call_result(name, scope)?;
                 if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {

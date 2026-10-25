@@ -285,6 +285,7 @@ impl Analyzer<'_> {
                     }
                 }
                 ExprKind::IntegerPack(inner)
+                | ExprKind::BitInt(inner)
                 | ExprKind::Paren(inner)
                 | ExprKind::ComplexPart { operand: inner, .. }
                 | ExprKind::Unary { operand: inner, .. }

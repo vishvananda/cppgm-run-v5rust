@@ -477,6 +477,7 @@ pub(crate) enum ExprKind {
     },
     SizeofPack(NameId),
     IntegerPack(ExprId),
+    BitInt(ExprId),
     Id(Name),
     Literal(Literal),
     Keyword(Keyword),
