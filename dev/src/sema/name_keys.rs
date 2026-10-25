@@ -159,6 +159,13 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("template parameter without type"))?;
             self.key_type(ty, key)?;
         } else {
+            // A frame can bind a non-type parameter to a retained expression,
+            // whose entity has no positional template-parameter record.
+            key.dependent |= self
+                .graph
+                .template_operands
+                .pattern(binding.entity)
+                .is_some();
             if matches!(
                 binding.kind,
                 BindingKind::Type | BindingKind::Alias | BindingKind::Variable

@@ -768,6 +768,12 @@ impl Symbols<'_, '_> {
             .map_err(Error::from)
     }
     fn operand_entity(&mut self, entity: EntityId) -> Result<(NodeId, Option<NodeId>), Error> {
+        if let Some(ty) = self.graph.lower_operand_expression_type(entity) {
+            return self
+                .placeholder_node(ty)?
+                .map(|node| (node, None))
+                .ok_or_else(missing);
+        }
         if let Some(ty) = self.graph.lower_operand_type_name(entity) {
             let ty = self.abi_type(ty)?;
             return Ok((ty, Some(ty)));

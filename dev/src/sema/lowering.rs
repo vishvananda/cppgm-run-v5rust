@@ -774,6 +774,10 @@ impl Graph {
         .or_else(|| node.enumeration.is_some().then_some(node.ty))
         .flatten()
     }
+    pub(crate) fn lower_operand_expression_type(&self, entity: EntityId) -> Option<TypeId> {
+        self.template_operands.pattern(entity)?;
+        self.entity(entity).ty
+    }
     pub(crate) fn lower_operand_constant(&self, entity: EntityId) -> Option<(TypeId, u64)> {
         let node = self.entity(entity);
         let super::constants::ConstantState::Value(value) = node.constant else {

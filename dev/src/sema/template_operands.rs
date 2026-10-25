@@ -1256,7 +1256,7 @@ impl Analyzer<'_> {
                     .transpose()?
                     .flatten();
                 let entity = self.graph.add_entity(ty, binding.name, binding.key)?;
-                self.graph.add_binding(
+                let declared = self.graph.add_binding(
                     frame,
                     None,
                     Binding {
@@ -1265,6 +1265,12 @@ impl Analyzer<'_> {
                         ..binding
                     },
                 )?;
+                // Definition-time dependence survives concrete substitution:
+                // ADL in the copied operand may see later associated operators.
+                self.graph.set_binding_dependence(
+                    declared,
+                    binding.ty.is_none_or(|ty| self.graph.dependent_type(ty)),
+                );
             }
         }
         Ok(packs.unwrap_or(frame))
