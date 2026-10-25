@@ -137,6 +137,7 @@ fn run() -> Result<(), CliError> {
                 strict_predefined_macros: &host.strict_macros,
                 predefined_macros: &host.macros,
                 include_paths: &host.includes,
+                stdlib_flags: option_env!("CPPGM_STDLIB_FLAGS").unwrap_or("").as_bytes(),
             },
         )
         .map_err(tool_error);
@@ -171,6 +172,7 @@ fn run() -> Result<(), CliError> {
             strict_predefined_macros: &host.strict_macros,
             predefined_macros: &host.macros,
             include_paths: &host.includes,
+            stdlib_flags: option_env!("CPPGM_STDLIB_FLAGS").unwrap_or("").as_bytes(),
         }
         .apply(&mut preprocessor_options, false);
     }

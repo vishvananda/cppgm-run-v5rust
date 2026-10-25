@@ -7,9 +7,36 @@ pub struct HostEnvironment<'a> {
     pub strict_predefined_macros: &'a [u8],
     pub predefined_macros: &'a [u8],
     pub include_paths: &'a [u8],
+    pub stdlib_flags: &'a [u8],
 }
 
 impl HostEnvironment<'_> {
+    /// Whether a library request agrees with the build-selected header chain.
+    #[must_use]
+    pub fn stdlib_selected(&self, name: &[u8]) -> bool {
+        if let Some(selected) = self
+            .stdlib_flags
+            .split(|&byte| byte == b' ')
+            .filter_map(|word| word.strip_prefix(b"-stdlib="))
+            .next_back()
+            .filter(|selected| !selected.is_empty())
+        {
+            return name == selected;
+        }
+        let mut libcxx = false;
+        let mut libstdcxx = false;
+        for path in self.include_paths.split(|&byte| byte == b'\n') {
+            if let Some(at) = path.windows(5).position(|part| part == b"/c++/") {
+                if &path[at..] == b"/c++/v1" {
+                    libcxx = true;
+                } else {
+                    libstdcxx = true;
+                }
+            }
+        }
+        name == b"libc++" && libcxx || name == b"libstdc++" && libstdcxx && !libcxx
+    }
+
     /// Add hosted predefined macros and the configured standard search chain.
     pub fn apply(&self, options: &mut DriverOptions, nostdinc: bool) {
         options.hosted = true;
@@ -94,6 +121,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn library_selection_uses_last_flag_then_the_first_cxx_directory_component() {
+        let mut host = HostEnvironment {
+            strict_predefined_macros: b"",
+            predefined_macros: b"",
+            include_paths: b"/usr/include/c++/15\n/usr/include/c++/v1",
+            stdlib_flags: b"",
+        };
+        assert!(host.stdlib_selected(b"libc++"));
+        assert!(!host.stdlib_selected(b"libstdc++"));
+        host.stdlib_flags = b"-stdlib=libc++ -stdlib=libstdc++";
+        assert!(host.stdlib_selected(b"libstdc++"));
+        host.stdlib_flags = b"-stdlib=libstdc++ -stdlib=";
+        assert!(host.stdlib_selected(b"libc++"));
+        host.stdlib_flags = b"";
+        host.include_paths = b"/unusual/c++/15/c++/v1";
+        assert!(host.stdlib_selected(b"libstdc++"));
+    }
+
+    #[test]
     fn host_inputs_keep_search_order_and_only_supported_reserved_macros() {
         let mut options = DriverOptions::default();
         options.system_include_paths.push(b"explicit".to_vec());
@@ -101,6 +147,7 @@ mod tests {
             strict_predefined_macros: b"",
             predefined_macros: b"#define unix 1\n#define _lower 1\n#define __cplusplus 7\n#define __DATE__ bad\n#define __FLT128_MAX__ unsupported\n#define __SIZEOF_FLOAT80__ 16\n#define __GNUC__ 15\n#define __INTMAX_C(c) c ## L\n#define _TARGET 9\n",
             include_paths: b"first\nsecond\n",
+            stdlib_flags: b"",
         };
         host.apply(&mut options, false);
         assert_eq!(options.host_predefines, b"#define __STDC__ 1\n#define __GNUC__ 15\n#define __INTMAX_C(c) c ## L\n#define _TARGET 9\n");
@@ -125,6 +172,7 @@ mod tests {
             strict_predefined_macros: b"",
             predefined_macros: b"#define __GNUC__ 15\n",
             include_paths: b"",
+            stdlib_flags: b"",
         };
         let mut options = DriverOptions::default();
         host.apply(&mut options, false);

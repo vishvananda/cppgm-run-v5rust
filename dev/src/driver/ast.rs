@@ -124,6 +124,7 @@ impl LowIrOutput {
 pub enum Destination<'a> {
     Text(&'a mut dyn std::io::Write),
     LowIr(&'a mut LowIrOutput),
+    Check,
 }
 /// Parse and print one translation unit using the shared typed front end.
 ///
@@ -306,6 +307,7 @@ fn emit_preprocessed(
         })?)
     };
     let output = match destination {
+        Destination::Check => return Ok(()),
         Destination::LowIr(output) => {
             let graph = graph.ok_or(AstToolError::Internal("lowering without semantic graph"))?;
             let (tree, cursor, declarations) = unit
@@ -423,6 +425,37 @@ pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn check_destination_checks_bodies_without_emitting_or_demanding_native_code() {
+        let options = crate::preprocess::options::DriverOptions {
+            hosted: true,
+            ..Default::default()
+        };
+        for (text, accepted) in [
+            ("int f(){return 7;}", true),
+            (
+                "extern __inline void deferred(){__builtin_ia32_emms();} int main(){deferred();}",
+                true,
+            ),
+            ("int f(){return absent;}", false),
+        ] {
+            let source = SourceBuffer::new(text.as_bytes().to_vec()).unwrap();
+            let result = emit_configured_unit(
+                &source,
+                b"check-source",
+                UnitOptions {
+                    values: &PredefinedValues::default(),
+                    preprocessor: &options,
+                    stack_budget: StackBudget::default(),
+                },
+                Destination::Check,
+                1,
+                EmitMode::Semantics,
+            );
+            assert_eq!(result.is_ok(), accepted, "{text}: {result:?}");
+        }
+    }
+
     #[test]
     fn hosted_environment_keeps_type_and_semantic_analysis_distinct() {
         let source =

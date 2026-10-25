@@ -32,6 +32,7 @@ enum OptionCheck<'a> {
     Optimization(&'a OsStr),
     Standard(&'a OsStr),
     Language(&'a OsStr),
+    Compatibility(&'a OsStr),
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum DriverMode {
@@ -43,6 +44,7 @@ enum DriverMode {
 #[derive(Default)]
 struct Invocation {
     nostdinc: bool,
+    syntax_only: bool,
     mode: DriverMode,
     explicit_output: bool,
     output: PathBuf,
@@ -73,6 +75,8 @@ fn value<'a>(
                     "-D" => "macro definition",
                     "-U" => "macro name",
                     "-l" => "library name",
+                    "-MF" => "depfile path",
+                    "-MT" | "-MQ" => "target",
                     _ => "path",
                 };
                 message(&format!("missing {role} after {option}"))
@@ -101,7 +105,10 @@ fn target(arg: &OsStr) -> Result<(), AstToolError> {
     }
     Err(argument("unsupported target: ", arg))
 }
-fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
+fn parse(
+    args: &[OsString],
+    host: &super::host_environment::HostEnvironment<'_>,
+) -> Result<Invocation, AstToolError> {
     let mut invocation = Invocation::default();
     let mut checks = Vec::new();
     let mut compile_only = false;
@@ -115,6 +122,7 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
         match bytes {
             b"-nostdinc" => invocation.nostdinc = true,
             b"-c" => compile_only = true,
+            b"-fsyntax-only" => invocation.syntax_only = true,
             b"-pthread" => pthread = true,
             b"-fno-exceptions" | b"-fexceptions" => {
                 invocation.preprocessor.modes.exceptions = bytes == b"-fexceptions";
@@ -148,6 +156,21 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             | b"-fvisibility=hidden"
             | b"-fvisibility-inlines-hidden" => {}
             b"-E" => preprocess_only = true,
+            b"-std" | b"-stdlib" => {
+                let role = if bytes == b"-std" {
+                    "language standard"
+                } else {
+                    "standard library name"
+                };
+                index += 1;
+                if args.get(index).is_none() {
+                    return Err(message(&format!(
+                        "missing {role} after {}",
+                        arg.to_string_lossy()
+                    )));
+                }
+                checks.push(OptionCheck::Compatibility(arg));
+            }
             b"-include" => {
                 index += 1;
                 let path = args
@@ -160,6 +183,17 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
             b"--target=" => return Err(message("missing target after --target")),
             _ if bytes.starts_with(b"-std=") => {
                 checks.push(OptionCheck::Standard(OsStr::from_bytes(&bytes[5..])));
+            }
+            _ if bytes.starts_with(b"-stdlib=") => {
+                checks.push(OptionCheck::Compatibility(arg));
+            }
+            _ if bytes.starts_with(b"-MF")
+                || bytes.starts_with(b"-MT")
+                || bytes.starts_with(b"-MQ") =>
+            {
+                let option = std::str::from_utf8(&bytes[..3])
+                    .map_err(|_| AstToolError::Internal("dependency option"))?;
+                let _ = value(args, &mut index, option)?;
             }
             _ if bytes.starts_with(b"--target=") => {
                 checks.push(OptionCheck::Target(OsStr::from_bytes(&bytes[9..])));
@@ -230,6 +264,11 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
                 });
             }
             _ if bytes.starts_with(b"-") => {
+                if super::compatibility::outer_flag(bytes) {
+                    checks.push(OptionCheck::Compatibility(arg));
+                    index += 1;
+                    continue;
+                }
                 return Err(argument("unsupported driver option: ", arg));
             }
             _ => invocation.inputs.push(Input {
@@ -293,6 +332,7 @@ fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
                 invocation.preprocessor.strict = strict;
             }
             OptionCheck::Optimization(arg) => invocation.level = optimization_level(arg)?,
+            OptionCheck::Compatibility(arg) => super::compatibility::validate(arg, host)?,
         }
     }
     if pthread {
@@ -394,6 +434,31 @@ fn compile(
         )
         .map_err(ast::native_error);
     }
+    let source = read_source(input)?;
+    let mut output =
+        LowIrOutput::for_object_level(model, invocation.level).map_err(ast::native_error)?;
+    ast::emit_compilation_unit(
+        &source,
+        input.path.as_os_str().as_bytes(),
+        values,
+        &invocation.preprocessor,
+        &mut output,
+        budget,
+    )
+    .map_err(|error| source_error(input, &source, error))?;
+    // Optimization owns typed LowIR alone; source storage ends with the front
+    // end, before the retained unit reaches its optimizer/backend consumers.
+    drop(source);
+    output
+        .finish_object(input.path.as_os_str().as_bytes().to_vec())
+        .map_err(|error| match error {
+            AstToolError::NativeDiagnostic(bytes) => AstToolError::Diagnostic(
+                [input.path.as_os_str().as_bytes(), b": ", &bytes].concat(),
+            ),
+            error => error,
+        })
+}
+fn read_source(input: &Input) -> Result<SourceBuffer, AstToolError> {
     if !std::fs::metadata(&input.path).is_ok_and(|m| m.is_file()) {
         return Err(AstToolError::Diagnostic(
             [
@@ -412,18 +477,10 @@ fn compile(
             .concat(),
         )
     })?;
-    let source = SourceBuffer::new(bytes).map_err(message)?;
-    let mut output =
-        LowIrOutput::for_object_level(model, invocation.level).map_err(ast::native_error)?;
-    ast::emit_compilation_unit(
-        &source,
-        input.path.as_os_str().as_bytes(),
-        values,
-        &invocation.preprocessor,
-        &mut output,
-        budget,
-    )
-    .map_err(|error| match error {
+    SourceBuffer::new(bytes).map_err(message)
+}
+fn source_error(input: &Input, source: &SourceBuffer, error: AstToolError) -> AstToolError {
+    match error {
         AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {
             AstToolError::Missing(group)
         }
@@ -431,7 +488,7 @@ fn compile(
             [
                 input.path.as_os_str().as_bytes(),
                 b":",
-                super::preproc::describe(&source, &error).as_bytes(),
+                super::preproc::describe(source, &error).as_bytes(),
             ]
             .concat(),
         ),
@@ -439,18 +496,28 @@ fn compile(
             AstToolError::Diagnostic([input.path.as_os_str().as_bytes(), b": ", &bytes].concat())
         }
         error => error,
-    })?;
-    // Optimization owns typed LowIR alone; source storage ends with the front
-    // end, before the retained unit reaches its optimizer/backend consumers.
-    drop(source);
-    output
-        .finish_object(input.path.as_os_str().as_bytes().to_vec())
-        .map_err(|error| match error {
-            AstToolError::NativeDiagnostic(bytes) => AstToolError::Diagnostic(
-                [input.path.as_os_str().as_bytes(), b": ", &bytes].concat(),
-            ),
-            error => error,
-        })
+    }
+}
+fn check_source(
+    input: &Input,
+    invocation: &Invocation,
+    values: &PredefinedValues,
+    budget: StackBudget,
+) -> Result<(), AstToolError> {
+    let source = read_source(input)?;
+    ast::emit_configured_unit(
+        &source,
+        input.path.as_os_str().as_bytes(),
+        ast::UnitOptions {
+            values,
+            preprocessor: &invocation.preprocessor,
+            stack_budget: budget,
+        },
+        ast::Destination::Check,
+        1,
+        ast::EmitMode::Semantics,
+    )
+    .map_err(|error| source_error(input, &source, error))
 }
 fn library(invocation: &Invocation, name: &Path) -> Result<PathBuf, AstToolError> {
     for dir in &invocation.libraries {
@@ -485,11 +552,19 @@ pub fn run(
     permissions: &std::fs::Permissions,
     host: &super::host_environment::HostEnvironment<'_>,
 ) -> Result<(), AstToolError> {
-    let mut invocation = parse(args)?;
+    let mut invocation = parse(args, host)?;
     host.apply(&mut invocation.preprocessor, invocation.nostdinc);
     prune_include_paths(&mut invocation.preprocessor);
     if invocation.mode == DriverMode::Preprocess {
         return preprocess(&invocation, values);
+    }
+    if invocation.syntax_only {
+        for input in &invocation.inputs {
+            if input.kind == Kind::Source {
+                check_source(input, &invocation, values, budget)?;
+            }
+        }
+        return Ok(());
     }
     if invocation.mode == DriverMode::Compile {
         for input in &invocation.inputs {
@@ -634,6 +709,18 @@ fn argument_source(path: &Path, diagnostic: &[u8]) -> AstToolError {
 mod tests {
     use super::*;
 
+    fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
+        super::parse(
+            args,
+            &super::super::host_environment::HostEnvironment {
+                strict_predefined_macros: b"",
+                predefined_macros: b"",
+                include_paths: b"/usr/include/c++/15",
+                stdlib_flags: b"",
+            },
+        )
+    }
+
     #[test]
     fn preprocessing_keeps_command_order_and_defers_forced_includes() {
         let args = [
@@ -681,6 +768,23 @@ mod tests {
                 b"unsupported target: invalid",
             ),
             (&["-Oinvalid", "a.cpp"], b"unsupported option: -Oinvalid"),
+            (&["-fshort-enums"], b"invalid usage"),
+            (
+                &["-stdlib=libc++", "-MF"],
+                b"missing depfile path after -MF",
+            ),
+            (&["-funsigned-char", "-MQ"], b"missing target after -MQ"),
+            (&["-std"], b"missing language standard after -std"),
+            (&["-std", "c++14", "a.cpp"], b"unsupported option: -std"),
+            (&["-pg", "a.cpp"], b"unsupported option: -pg"),
+            (
+                &["-m32", "a.cpp"],
+                b"unsupported option (it changes the program's meaning): -m32",
+            ),
+            (
+                &["-stdlib=libc++", "a.cpp"],
+                b"this compiler was not built for -stdlib=libc++ (CPPGM_STDLIB_FLAGS)",
+            ),
         ];
         for &(args, expected) in cases {
             let args: Vec<_> = args.iter().map(OsString::from).collect();
@@ -690,5 +794,36 @@ mod tests {
                 "{args:?}"
             );
         }
+    }
+
+    #[test]
+    fn hosted_flags_keep_dependency_operands_out_of_the_source_list() {
+        let args: Vec<_> = [
+            "-c",
+            "-Wall",
+            "-Wextra",
+            "-pipe",
+            "-w",
+            "-fPIC",
+            "-m64",
+            "-MMD",
+            "-MP",
+            "-MF",
+            "deps.d",
+            "-MTtarget",
+            "-MQ",
+            "quoted target",
+            "-stdlib=libstdc++",
+            "-fsyntax-only",
+            "source.cpp",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let invocation = parse(&args).unwrap();
+        assert!(invocation.syntax_only);
+        assert_eq!(invocation.inputs.len(), 1);
+        assert_eq!(invocation.inputs[0].path, Path::new("source.cpp"));
+        assert!(invocation.preprocessor.command_line.is_empty());
     }
 }
