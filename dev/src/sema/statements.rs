@@ -531,15 +531,15 @@ impl Analyzer<'_> {
                 }
                 result => result?,
             }
-            return self.control_substatement(
-                body,
-                block,
-                Control::Loop,
-                self.tree.statements.get(id).location,
-            );
+        } else {
+            self.range_for_names(id, specifiers, declarator, range, block)?;
         }
-        self.range_for_names(id, specifiers, declarator, range, block)?;
-        self.substatement(body, block)
+        self.control_substatement(
+            body,
+            block,
+            Control::Loop,
+            self.tree.statements.get(id).location,
+        )
     }
 
     fn range_for_names(

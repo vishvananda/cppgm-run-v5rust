@@ -281,6 +281,7 @@ impl Analyzer<'_> {
         let pattern = self.replace_auto(declared, placeholder, cv)?;
         let mut arguments = [None];
         let mut reuse = false;
+        let mut initializer_type = None;
         if self.semantic() && self.template_depth == 0 {
             let facts = self.typed_expression(expression, scope)?;
             if let Some(set) = facts.functions {
@@ -330,9 +331,20 @@ impl Analyzer<'_> {
                     },
                 ),
             };
+            initializer_type = Some(ty);
             if !self.deduce_call_argument(pattern, ty, category, 0, &mut arguments)? {
                 arguments[0] = None;
             }
+        }
+        // A dependent initializer can hide the pointer/reference structure
+        // needed for deduction. The pattern keeps that dependent type; its
+        // independently analyzed instantiation performs concrete deduction.
+        if arguments[0].is_none()
+            && self.template_depth != 0
+            && let Some(ty) = initializer_type
+            && self.graph.dependent_type(ty)
+        {
+            return Ok(ty);
         }
         let replacing = arguments[0].ok_or_else(|| {
             Error::at(
@@ -341,7 +353,11 @@ impl Analyzer<'_> {
             )
         })?;
         let canonical = self.graph.types.canonical_function(replacing)?;
-        if known.is_some_and(|known| known != canonical) {
+        if known.is_some_and(|known| {
+            known != canonical
+                && (self.template_depth == 0
+                    || (!self.graph.dependent_type(replacing) && !self.graph.dependent_type(known)))
+        }) {
             return Err(Error::at(
                 location,
                 "auto deduced as different types by one declaration's declarators (7.1.6.4p7)",
