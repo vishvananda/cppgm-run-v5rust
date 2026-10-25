@@ -659,7 +659,9 @@ impl Function<'_, '_, '_, '_> {
         };
         // local_object first stages a single temporary-making expression;
         // caller-destroyed parameter forcing applies to the other initializer path.
-        Ok(caller && !(single && made) || made && !function.nothrow)
+        // A multi-argument parenthesized initializer queries its arguments
+        // together; its constructor does not force that query to throw.
+        Ok(caller && !(single && made) || single && made && !function.nothrow)
     }
     pub(super) fn initializer_temporaries(
         &mut self,

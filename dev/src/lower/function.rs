@@ -728,6 +728,19 @@ impl Function<'_, '_, '_, '_> {
                 super::temporary_scan::ExpressionUse::Initialization,
             )?
         } else if temporaries
+            && let Some(ast::Initializer {
+                kind: ast::InitializerKind::Parenthesized(arguments),
+                ..
+            }) = initializer
+            && let [argument] = self.tree.expr_lists.get(arguments)
+        {
+            // local_object queries a single temporary-making expression
+            // before considering caller-destroyed constructor parameters.
+            self.begin_full_expression(
+                Some(*argument),
+                super::temporary_scan::ExpressionUse::Initialization,
+            )?
+        } else if temporaries
             && self.initializer_throws(initializer)?
             && !self.lifetime.full_expression
         {
