@@ -885,6 +885,8 @@ enum BlockName {
 }
 #[derive(Clone, Copy)]
 pub(crate) enum OptimizerBlock {
+    Unrolled,
+    Dead,
     Thread,
     Split,
     LoopExit,
@@ -902,6 +904,8 @@ pub(crate) enum OptimizerBlock {
 impl OptimizerBlock {
     pub(crate) fn spelling(self) -> &'static str {
         match self {
+            Self::Unrolled => "unrolled",
+            Self::Dead => "dead",
             Self::Thread => "thread",
             Self::Split => "split",
             Self::LoopExit => "loop_exit",
@@ -1117,6 +1121,19 @@ impl Body {
             first_use: 0,
             instructions: Vec::new(),
         });
+        Ok(id)
+    }
+    /// Unrolled copies retain recorded generated kinds; plain blocks get the
+    /// optimizer's unrolled kind, independent of their source spelling.
+    pub(crate) fn unrolled_block(&mut self, source: BlockId) -> Result<BlockId, Error> {
+        let origin = match self.block(source).origin {
+            BlockName::Source(_) | BlockName::CopiedSource(_) | BlockName::Anonymous => {
+                BlockName::Optimizer(OptimizerBlock::Unrolled)
+            }
+            origin => origin,
+        };
+        let id = self.generated_block()?;
+        self.blocks[id.index()].origin = origin;
         Ok(id)
     }
     pub(crate) fn optimizer_block(&mut self, kind: OptimizerBlock) -> Result<BlockId, Error> {

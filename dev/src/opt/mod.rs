@@ -18,6 +18,7 @@ mod field_expansion;
 mod field_layout;
 mod fill_versioning;
 mod flow_cleanup;
+mod full_unrolling;
 mod global_contents;
 mod handler_liveness;
 mod indexed_stores;
@@ -45,6 +46,7 @@ mod partial_inline;
 mod pass_context;
 mod phi_threading;
 mod range_threading;
+mod reload_rotation;
 mod return_values;
 mod returned_storage;
 mod select_formation;
@@ -56,6 +58,7 @@ mod store_liveness;
 mod switch_formation;
 mod trip_counts;
 mod unit_graph;
+mod unroll_admission;
 mod value_reuse;
 mod wide_fills;
 mod wide_integers;
@@ -146,7 +149,7 @@ pub(crate) fn optimize_with_limits(
                 .function(program.symbol(symbol))
                 .is_some_and(|f| f.body.is_some())
             {
-                finish_function(program, symbol, &nounwind, &unwritten)?;
+                finish_function(program, symbol, level, &nounwind, &unwritten)?;
             }
             index += 1;
         }
@@ -157,6 +160,7 @@ pub(crate) fn optimize_with_limits(
 fn finish_function(
     program: &mut Program,
     symbol: crate::lowir::model::SymbolId,
+    level: u8,
     nounwind: &[bool],
     unwritten: &[bool],
 ) -> Result<(), Error> {
@@ -164,7 +168,7 @@ fn finish_function(
     let result = {
         let mut context =
             pass_context::Context::new(program, symbol, &mut body, 2, nounwind, unwritten);
-        local_pipeline::finish(&mut context)
+        local_pipeline::finish(&mut context, level)
     }
     .and_then(|changed| {
         if changed {

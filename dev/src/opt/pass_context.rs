@@ -24,6 +24,7 @@ pub(super) enum Pass {
     CoalesceCopies,
     RemoveLoops,
     UnrollLoops,
+    RotateLoops,
     FormSwitches,
     FormSelects,
     ExpandWide,
@@ -35,35 +36,6 @@ pub(super) enum Pass {
     SpecializePhiCompares,
     SplitBranchCompares,
     DefinitionOrder,
-}
-impl Pass {
-    fn missing(self) -> &'static str {
-        match self {
-            Self::SimplifyValues => "LowIR scalar simplification",
-            Self::ForwardMemory => "LowIR memory forwarding",
-            Self::Constants => "LowIR constant propagation",
-            Self::CleanupCfg => "LowIR CFG cleanup",
-            Self::CoalesceCopies => "LowIR copy coalescing",
-            Self::RemoveLoops => "LowIR loop removal",
-            Self::UnrollLoops => "LowIR loop unrolling",
-            Self::FormSwitches => "LowIR switch formation",
-            Self::NameReturnedSlot => "LowIR returned-slot naming",
-            Self::DefinitionOrder => "LowIR definition order restoration",
-            Self::SplitSlots
-            | Self::DeadCode
-            | Self::StripRegions
-            | Self::PromoteSlots
-            | Self::ThreadJumps
-            | Self::FormSelects
-            | Self::HoistLoads
-            | Self::VersionFills
-            | Self::MarkCounters
-            | Self::ExpandWide
-            | Self::SplitOrBranches
-            | Self::SpecializePhiCompares
-            | Self::SplitBranchCompares => "implemented function pass",
-        }
-    }
 }
 enum CachedCfg {
     Empty,
@@ -272,7 +244,8 @@ impl<'a> Context<'a> {
             Pass::VersionFills => super::fill_versioning::run(self),
             Pass::MarkCounters => super::loop_counters::mark(self),
             Pass::ExpandWide => wide_integers::expand(self),
-            Pass::UnrollLoops => Err(Error::NotImplemented(pass.missing())),
+            Pass::RotateLoops => super::reload_rotation::run(self),
+            Pass::UnrollLoops => super::full_unrolling::run(self),
         }
     }
     pub(super) fn run(&mut self, pass: Pass) -> Result<bool, Error> {

@@ -169,6 +169,28 @@ impl Body {
         self.temps[temp.index()].ty = Some(ty);
         Ok(())
     }
+    /// Copy within one function, retaining locations/facts and owning fresh call operands.
+    pub(crate) fn copy_instruction(
+        &mut self,
+        target: BlockId,
+        source: super::InstId,
+        values: impl FnMut(Value) -> Value,
+        blocks: impl FnMut(BlockId) -> BlockId,
+    ) -> Result<super::InstId, Error> {
+        let mut instruction = self.instruction(source).clone();
+        rewrite(
+            &mut instruction.kind,
+            &mut LocalCopy {
+                body: self,
+                values,
+                blocks,
+            },
+        )?;
+        if let Some(old) = instruction.result {
+            instruction.result = Some(self.generated_temp(self.temp(old).ty.ok_or(Error::Limit)?)?);
+        }
+        self.append(target, instruction)
+    }
     pub(crate) fn rewrite_values(
         &mut self,
         id: super::InstId,
@@ -1127,5 +1149,29 @@ mod optimizer_name_tests {
             program.names.get(body.block(body.layout[2]).name),
             "thread_1"
         );
+    }
+}
+
+struct LocalCopy<'a, V, B> {
+    body: &'a mut Body,
+    values: V,
+    blocks: B,
+}
+impl<V: FnMut(Value) -> Value, B: FnMut(BlockId) -> BlockId> Remap for LocalCopy<'_, V, B> {
+    fn value(&mut self, value: Value) -> Result<Value, Error> {
+        Ok((self.values)(value))
+    }
+    fn block(&mut self, block: BlockId) -> Result<BlockId, Error> {
+        Ok((self.blocks)(block))
+    }
+    fn arguments(&mut self, arguments: Arguments) -> Result<Arguments, Error> {
+        let values = self
+            .body
+            .arguments(arguments)
+            .iter()
+            .copied()
+            .map(&mut self.values)
+            .collect::<Vec<_>>();
+        self.body.add_arguments(&values)
     }
 }

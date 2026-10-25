@@ -5,7 +5,7 @@ use super::{
 };
 use crate::lowir::{Error, vocabulary::Type};
 
-pub(super) fn finish(context: &mut Context<'_>) -> Result<bool, Error> {
+pub(super) fn finish(context: &mut Context<'_>, level: u8) -> Result<bool, Error> {
     let mut changed = false;
     if context.run(P::ExpandWide)? {
         context.run(P::PromoteSlots)?;
@@ -22,6 +22,13 @@ pub(super) fn finish(context: &mut Context<'_>) -> Result<bool, Error> {
     changed = context.run(P::HoistLoads)? || changed;
     changed = context.run(P::VersionFills)? || changed;
     changed = context.run(P::MarkCounters)? || changed;
+    if level >= 3 && context.run(P::RotateLoops)? {
+        context.run(P::PromoteSlots)?;
+        context.run(P::ForwardMemory)?;
+        context.run(P::DeadCode)?;
+        context.run(P::HoistLoads)?;
+        changed = true;
+    }
     if changed {
         context.run(P::SplitBranchCompares)?;
     }
