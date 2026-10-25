@@ -11,13 +11,46 @@ pub(super) enum Wave {
     Once,
     Late,
 }
+/// Frozen inliner budget overrides; zero fields select the default policy.
 #[derive(Default, Clone, Copy)]
-pub(super) struct Limits {
-    pub(super) caller_budget: u32,
-    pub(super) once_cap: u32,
-    pub(super) once_caller_budget: u32,
-    pub(super) hint_late_cap: u32,
+#[non_exhaustive]
+pub struct Limits {
+    pub(crate) caller_budget: u32,
+    pub(crate) once_cap: u32,
+    pub(crate) once_caller_budget: u32,
+    pub(crate) hint_late_cap: u32,
 }
+impl Limits {
+    /// Apply one decimal `name=value` override, rejecting invalid or zero limits.
+    pub fn parse_override(&mut self, bytes: &[u8]) -> bool {
+        let Some(equals) = bytes.iter().position(|&byte| byte == b'=') else {
+            return false;
+        };
+        let value = &bytes[equals + 1..];
+        if value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
+            return false;
+        }
+        let Some(value) = value
+            .iter()
+            .try_fold(0_u32, |n, byte| {
+                n.checked_mul(10)?.checked_add(u32::from(byte - b'0'))
+            })
+            .filter(|&n| n != 0)
+        else {
+            return false;
+        };
+        let destination = match &bytes[..equals] {
+            b"caller-budget" => &mut self.caller_budget,
+            b"once-cap" => &mut self.once_cap,
+            b"once-caller-budget" => &mut self.once_caller_budget,
+            b"hint-late-cap" => &mut self.hint_late_cap,
+            _ => return false,
+        };
+        *destination = value;
+        true
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct Options {
     pub(super) level: u8,

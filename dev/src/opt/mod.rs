@@ -48,6 +48,7 @@ mod trip_counts;
 mod unit_graph;
 mod value_reuse;
 use crate::lowir::{Error, model::Program};
+pub use inline_policy::Limits;
 
 pub(super) fn pure(kind: &crate::lowir::model::InstructionKind) -> bool {
     use crate::lowir::model::InstructionKind as I;
@@ -66,7 +67,17 @@ pub(super) fn pure(kind: &crate::lowir::model::InstructionKind) -> bool {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn optimize(program: &mut Program, level: u8) -> Result<(), Error> {
+    optimize_with_limits(program, level, Limits::default(), false)
+}
+
+pub(crate) fn optimize_with_limits(
+    program: &mut Program,
+    level: u8,
+    limits: Limits,
+    inline_thunk_targets: bool,
+) -> Result<(), Error> {
     if level == 0 {
         return Ok(());
     }
@@ -82,7 +93,9 @@ pub(crate) fn optimize(program: &mut Program, level: u8) -> Result<(), Error> {
     let unwritten = global_contents::find_unwritten(program);
     let mut nounwind = vec![false; program.symbols().len()];
     let mut budgets = inline_policy::Budgets::new(input);
-    let options = inline_policy::Options::new(level);
+    let mut options = inline_policy::Options::new(level);
+    options.limits = limits;
+    options.inline_thunk_targets = inline_thunk_targets;
     let mut stats = inline_wave::Stats::default();
     storage_arguments::materialize(program)?;
     for wave in [

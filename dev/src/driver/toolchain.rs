@@ -30,6 +30,7 @@ struct Input {
 enum OptionCheck<'a> {
     Target(&'a OsStr),
     Optimization(&'a OsStr),
+    InlineLimit(&'a OsStr),
     Standard(&'a OsStr),
     Language(&'a OsStr),
     Compatibility(&'a OsStr),
@@ -52,6 +53,7 @@ struct Invocation {
     libraries: Vec<PathBuf>,
     preprocessor: DriverOptions,
     level: u8,
+    inline_limits: crate::opt::Limits,
 }
 fn message(s: &str) -> AstToolError {
     AstToolError::Diagnostic(s.as_bytes().to_vec())
@@ -144,6 +146,13 @@ fn parse(
                     .get(index)
                     .ok_or_else(|| message("missing language after -x"))?;
                 checks.push(OptionCheck::Language(language));
+            }
+            b"--inline-limit" => {
+                index += 1;
+                checks
+                    .push(OptionCheck::InlineLimit(args.get(index).ok_or_else(
+                        || message("missing limit after --inline-limit"),
+                    )?));
             }
             b"-o" => {
                 invocation.explicit_output = true;
@@ -326,25 +335,7 @@ fn parse(
     };
     // cppgm++.cpp checks the invocation's shape before toolchain.cpp checks
     // option meanings. Preserve that failure precedence without rereading argv.
-    for check in checks {
-        match check {
-            OptionCheck::Target(arg) => target(arg)?,
-            OptionCheck::Language(language) => {
-                if language != "c++" {
-                    return Err(argument("unsupported language: ", language));
-                }
-            }
-            OptionCheck::Standard(name) => {
-                let (standard, strict) =
-                    crate::preprocess::options::LanguageStandard::parse(name.as_bytes())
-                        .ok_or_else(|| argument("unsupported language standard: ", name))?;
-                invocation.preprocessor.standard = standard;
-                invocation.preprocessor.strict = strict;
-            }
-            OptionCheck::Optimization(arg) => invocation.level = optimization_level(arg)?,
-            OptionCheck::Compatibility(arg) => super::compatibility::validate(arg, host)?,
-        }
-    }
+    apply_option_checks(&mut invocation, checks, host)?;
     if pthread {
         invocation
             .preprocessor
@@ -361,6 +352,38 @@ fn parse(
     prune_include_paths(&mut invocation.preprocessor);
     Ok(invocation)
 }
+fn apply_option_checks(
+    invocation: &mut Invocation,
+    checks: Vec<OptionCheck<'_>>,
+    host: &super::host_environment::HostEnvironment<'_>,
+) -> Result<(), AstToolError> {
+    for check in checks {
+        match check {
+            OptionCheck::Target(arg) => target(arg)?,
+            OptionCheck::Language(language) => {
+                if language != "c++" {
+                    return Err(argument("unsupported language: ", language));
+                }
+            }
+            OptionCheck::Standard(name) => {
+                let (standard, strict) =
+                    crate::preprocess::options::LanguageStandard::parse(name.as_bytes())
+                        .ok_or_else(|| argument("unsupported language standard: ", name))?;
+                invocation.preprocessor.standard = standard;
+                invocation.preprocessor.strict = strict;
+            }
+            OptionCheck::Optimization(arg) => invocation.level = optimization_level(arg)?,
+            OptionCheck::InlineLimit(arg) => {
+                if !invocation.inline_limits.parse_override(arg.as_bytes()) {
+                    return Err(message("invalid --inline-limit"));
+                }
+            }
+            OptionCheck::Compatibility(arg) => super::compatibility::validate(arg, host)?,
+        }
+    }
+    Ok(())
+}
+
 // A directory shared with the system chain is ignored in the user chain.
 // Follow stat identity, including aliases, while retaining first spellings and
 // nonexistent/non-directory entries just as the frozen driver does.
@@ -427,7 +450,13 @@ fn compile(
         let mut program = crate::lowir::read_object_file(&input.path).map_err(ast::native_error)?;
         native::recover_jump_thunks(&mut program, model);
         if invocation.level != 0 {
-            crate::opt::optimize(&mut program, invocation.level).map_err(ast::native_error)?;
+            crate::opt::optimize_with_limits(
+                &mut program,
+                invocation.level,
+                invocation.inline_limits,
+                model == native::ObjectModel::Course,
+            )
+            .map_err(ast::native_error)?;
             program.clear_jump_thunks();
             native::recover_jump_thunks(&mut program, model);
         }
@@ -446,7 +475,8 @@ fn compile(
     }
     let source = read_source(input)?;
     let mut output =
-        LowIrOutput::for_object_level(model, invocation.level).map_err(ast::native_error)?;
+        LowIrOutput::for_object_options(model, invocation.level, invocation.inline_limits)
+            .map_err(ast::native_error)?;
     ast::emit_compilation_unit(
         &source,
         input.path.as_os_str().as_bytes(),

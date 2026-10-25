@@ -147,7 +147,7 @@ impl PhiEdges {
         let mut slot_of = vec![None; body.blocks().len()];
         for (index, block) in body.blocks().iter().enumerate() {
             out.first[index] = out.phis.len();
-            if !block.placed {
+            if !cfg.placed(body.block_id(index).ok_or(Error::Limit)?) {
                 continue;
             }
             for &id in &block.instructions {

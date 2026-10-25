@@ -754,6 +754,18 @@ fn settle(
 mod tests {
     use super::*;
 
+    #[test]
+    fn moved_phi_preserves_the_calling_edge() {
+        let source = b"function @g(%c:i64)->i64 {block ^e:branch %c,^a,^b block ^a:return i64 11 block ^b:return i64 22}\nfunction @f(%p:i64,%c:i64)->i64 {block ^e:branch %p,^call,^other block ^call:%v=call i64 @g(%c) jump ^join block ^other:jump ^join block ^join:%r=phi i64 [^call:%v,^other:33] return i64 %r}";
+        let mut program = crate::lowir::test_program(source).unwrap();
+        crate::opt::optimize(&mut program, 1).unwrap();
+        crate::lowir::validate_test_program(&program).unwrap();
+        let output = view(&program);
+        assert!(output.contains("%v = phi i64"));
+        assert!(output.contains("%r = phi i64"));
+        assert!(!output.contains("return i64 33"));
+    }
+
     fn wave(source: &str, kind: Wave, level: u8) -> (Program, Stats) {
         let mut program = crate::lowir::test_program(source.as_bytes()).unwrap();
         let mut original = vec![0; program.symbols().len()];

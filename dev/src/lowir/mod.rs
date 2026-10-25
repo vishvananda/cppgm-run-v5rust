@@ -15,7 +15,7 @@ mod reader;
 mod runtime;
 mod statistics;
 pub use statistics::Statistics;
-mod validator;
+pub(crate) mod validator;
 #[cfg(test)]
 pub(crate) fn test_program(source: &[u8]) -> Result<model::Program, Error> {
     test_program_dialect(source, false)
@@ -147,7 +147,7 @@ pub fn exercise(name: &str, output: &Path, statistics: bool) -> Result<Statistic
     stats.write_ms = start.elapsed().as_secs_f64() * 1000.0;
     Ok(stats)
 }
-fn write_file(program: &model::Program, output: &Path) -> Result<(), Error> {
+pub(crate) fn write_file(program: &model::Program, output: &Path) -> Result<(), Error> {
     let file = std::fs::File::create(output)
         .map_err(|_| Error::argument("cannot write ", output.as_os_str()))?;
     writer::write(program, std::io::BufWriter::new(file))

@@ -133,10 +133,14 @@ pub(crate) struct Output {
     finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
-    pub(crate) fn retain_object_definitions(&mut self, host_objects: bool) -> Result<(), Error> {
+    pub(crate) fn retain_definitions(&mut self) -> Result<(), Error> {
         self.program.retain_definitions()?;
-        self.set_object_mode(host_objects);
         self.definitions.retain();
+        Ok(())
+    }
+    pub(crate) fn retain_object_definitions(&mut self, host_objects: bool) -> Result<(), Error> {
+        self.retain_definitions()?;
+        self.set_object_mode(host_objects);
         Ok(())
     }
     pub(crate) fn set_object_mode(&mut self, host_objects: bool) {

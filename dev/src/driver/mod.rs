@@ -34,3 +34,5 @@ pub mod lowir;
 pub mod lowir2native;
 
 pub mod toolchain;
+
+pub mod lowiropt;

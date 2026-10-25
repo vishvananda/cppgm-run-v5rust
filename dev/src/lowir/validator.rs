@@ -71,7 +71,7 @@ pub(super) fn validate(program: &Program) -> Result<(), Error> {
     Ok(())
 }
 /// Audit the stored links/results that textual construction establishes while parsing.
-pub(super) fn validate_constructed(program: &Program) -> Result<(), Error> {
+pub(crate) fn validate_constructed(program: &Program) -> Result<(), Error> {
     program.finish_symbols()?;
     for function in program.functions_in_symbol_order() {
         if let Some(body) = &function.body {

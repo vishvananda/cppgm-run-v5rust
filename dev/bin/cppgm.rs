@@ -60,7 +60,12 @@ fn path_error(path: &std::ffi::OsStr, message: &[u8]) -> CliError {
     bytes.extend_from_slice(message);
     CliError::Diagnostic(bytes)
 }
-fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsStr>), CliError> {
+struct Invocation<'a> {
+    output: &'a std::ffi::OsStr,
+    inputs: Vec<&'a std::ffi::OsStr>,
+    limits: cppgm_rust::opt::Limits,
+}
+fn invocation(args: &[OsString]) -> Result<Invocation<'_>, CliError> {
     if !args.iter().any(|arg| {
         arg == "--emit-ast"
             || arg == "--emit-types"
@@ -72,6 +77,7 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
     let lowir = args.iter().any(|arg| arg == "--emit-lowir");
     let mut output = None;
     let mut inputs = Vec::new();
+    let mut limits = cppgm_rust::opt::Limits::default();
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
@@ -81,9 +87,21 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
             || arg == "--emit-semantics"
             || arg == "--emit-lowir"
             || lowir && arg == "-g0"
-            || lowir && arg == "-O0"
+            || lowir && matches!(arg.as_bytes(), [b'-', b'O', b'0'..=b'3'])
             || arg == "--hosted"
         {
+            continue;
+        }
+        if lowir && arg == "--inline-limit" {
+            let value = args
+                .get(index)
+                .ok_or_else(|| CliError::Message("missing limit after --inline-limit".into()))?;
+            index += 1;
+            if !limits.parse_override(value.as_bytes()) {
+                return Err(CliError::Diagnostic(
+                    [b"invalid --inline-limit: ".as_slice(), value.as_bytes()].concat(),
+                ));
+            }
             continue;
         }
         if arg == "-o" {
@@ -115,7 +133,11 @@ fn invocation(args: &[OsString]) -> Result<(&std::ffi::OsStr, Vec<&std::ffi::OsS
     if inputs.is_empty() {
         return Err(CliError::Message("invalid usage".to_owned()));
     }
-    Ok((output, inputs))
+    Ok(Invocation {
+        output,
+        inputs,
+        limits,
+    })
 }
 fn run() -> Result<(), CliError> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
@@ -165,11 +187,26 @@ fn run() -> Result<(), CliError> {
     } else {
         EmitMode::Ast
     };
-    let (destination, inputs) = invocation(&args)?;
+    let Invocation {
+        output: destination,
+        inputs,
+        limits,
+    } = invocation(&args)?;
     let values = build_time::query().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
         .map_err(CliError::Internal)?;
     let mut preprocessor_options = cppgm_rust::preprocess::options::DriverOptions::default();
+    let level = if lowir {
+        args.iter()
+            .rev()
+            .find_map(|arg| match arg.as_bytes() {
+                [b'-', b'O', level @ b'0'..=b'3'] => Some(level - b'0'),
+                _ => None,
+            })
+            .unwrap_or(0)
+    } else {
+        0
+    };
     if lowir || args.iter().any(|arg| arg == "--hosted") {
         let host = host_configuration::query();
         cppgm_rust::driver::host_environment::HostEnvironment {
@@ -180,6 +217,11 @@ fn run() -> Result<(), CliError> {
         }
         .apply(&mut preprocessor_options, false);
     }
+    if level > 0 {
+        preprocessor_options
+            .command_line
+            .splice(..0, b"#define __OPTIMIZE__ 1\n".iter().copied());
+    }
     let file = if lowir {
         None
     } else {
@@ -187,10 +229,11 @@ fn run() -> Result<(), CliError> {
     };
     let failed = !lowir && file.is_none();
     let mut output = Output { file, failed };
-    let mut lowir_output = if lowir
-        && args.iter().any(|arg| arg == "-g0")
-        && destination.as_bytes().ends_with(b".lowir")
-    {
+    let host_object =
+        lowir && args.iter().any(|arg| arg == "-g0") && destination.as_bytes().ends_with(b".lowir");
+    let mut lowir_output = if level > 0 {
+        LowIrOutput::for_optimization(host_object).map_err(tool_error)?
+    } else if host_object {
         LowIrOutput::host_object_view()
     } else {
         LowIrOutput::default()
@@ -250,9 +293,15 @@ fn run() -> Result<(), CliError> {
     if lowir {
         output.file = File::create(destination).ok().map(io::BufWriter::new);
         output.failed = output.file.is_none();
-        lowir_output
-            .write(&mut output)
-            .map_err(|_| CliError::Output)?;
+        if level > 0 {
+            lowir_output
+                .write_optimized(&mut output, level, limits)
+                .map_err(tool_error)?;
+        } else {
+            lowir_output
+                .write(&mut output)
+                .map_err(|_| CliError::Output)?;
+        }
     }
     output.flush().map_err(|_| CliError::Output)?;
     if output.failed {

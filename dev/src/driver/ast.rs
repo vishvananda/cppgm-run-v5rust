@@ -22,9 +22,39 @@ pub enum EmitMode {
 #[derive(Default)]
 pub struct LowIrOutput {
     output: crate::lower::Output,
-    object: Option<(crate::native::ObjectModel, u8)>,
+    object: Option<(crate::native::ObjectModel, u8, crate::opt::Limits)>,
 }
 impl LowIrOutput {
+    /// Retain typed definitions until the optimizer consumes the completed unit.
+    ///
+    /// # Errors
+    /// Returns a storage or lowering invariant failure.
+    pub fn for_optimization(host_object: bool) -> Result<Self, AstToolError> {
+        let mut result = if host_object {
+            Self::host_object_view()
+        } else {
+            Self::default()
+        };
+        result.output.retain_definitions().map_err(lower_error)?;
+        Ok(result)
+    }
+
+    /// Optimize the retained unit and render its canonical `LowIR` view.
+    ///
+    /// # Errors
+    /// Returns a lowering, optimization or output failure.
+    pub fn write_optimized(
+        self,
+        output: &mut impl std::io::Write,
+        level: u8,
+        limits: crate::opt::Limits,
+    ) -> Result<(), AstToolError> {
+        let mut program = self.output.finish_program().map_err(lower_error)?;
+        crate::opt::optimize_with_limits(&mut program, level, limits, false)
+            .map_err(native_error)?;
+        crate::lowir::writer::write(&program, output).map_err(AstToolError::Output)
+    }
+
     /// Create the textual `LowIR` half of a host object compilation.
     #[must_use]
     pub fn host_object_view() -> Self {
@@ -43,9 +73,17 @@ impl LowIrOutput {
     ) -> Result<Self, crate::lowir::Error> {
         Self::for_object_level(model, 0)
     }
+    #[cfg(test)]
     pub(crate) fn for_object_level(
         model: crate::native::ObjectModel,
         level: u8,
+    ) -> Result<Self, crate::lowir::Error> {
+        Self::for_object_options(model, level, crate::opt::Limits::default())
+    }
+    pub(crate) fn for_object_options(
+        model: crate::native::ObjectModel,
+        level: u8,
+        limits: crate::opt::Limits,
     ) -> Result<Self, crate::lowir::Error> {
         let mut output = crate::lower::Output::default();
         if level == 0 {
@@ -63,7 +101,7 @@ impl LowIrOutput {
         }
         Ok(Self {
             output,
-            object: Some((model, level)),
+            object: Some((model, level, limits)),
         })
     }
     pub(crate) fn finish_object(
@@ -71,11 +109,17 @@ impl LowIrOutput {
         path: Vec<u8>,
     ) -> Result<crate::native::Object, AstToolError> {
         let mut program = self.output.finish_program().map_err(lower_error)?;
-        let (model, level) = self
+        let (model, level, limits) = self
             .object
             .ok_or(AstToolError::Internal("object output without model"))?;
         if level != 0 {
-            crate::opt::optimize(&mut program, level).map_err(native_error)?;
+            crate::opt::optimize_with_limits(
+                &mut program,
+                level,
+                limits,
+                model == crate::native::ObjectModel::Course,
+            )
+            .map_err(native_error)?;
             program.clear_jump_thunks();
             crate::native::recover_jump_thunks(&mut program, model);
             program
