@@ -561,6 +561,9 @@ impl Analyzer<'_> {
                 }
                 TypeKind::Array {
                     element, operand, ..
+                }
+                | TypeKind::Vector {
+                    element, operand, ..
                 } => {
                     if operand.is_some_and(|ty| self.bound_operand_names(ty, depth, index)) {
                         return true;

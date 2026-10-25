@@ -292,9 +292,12 @@ impl Analyzer<'_> {
             };
             precision >= 64
                 || value.is_nan()
-                || value
-                    .rounded(format)
-                    .is_some_and(|rounded| rounded.compare(value) == Some(Ordering::Equal))
+                // Frozen ExactIn uses a finite binary16 range check for
+                // both narrow formats, including infinite scalar operands.
+                || !(precision < 24 && value.is_infinite())
+                    && value
+                        .rounded(format)
+                        .is_some_and(|rounded| rounded.compare(value) == Some(Ordering::Equal))
         };
         if let Some(sk) = sk {
             return Ok(
