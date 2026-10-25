@@ -159,6 +159,7 @@ pub(super) struct Addresses {
     values: HashMap<EntityId, State>,
     temporaries: HashMap<EntityId, TemporaryValue>,
     stored_references: std::collections::HashSet<EntityId>,
+    evaluated_references: std::collections::HashSet<EntityId>,
 }
 impl Addresses {
     pub(super) fn argument(&self, binding: EntityId) -> Option<TypeId> {
@@ -183,6 +184,16 @@ impl Addresses {
 
     pub(super) fn read_through_storage(&self, entity: EntityId) -> bool {
         self.stored_references.contains(&entity)
+    }
+    pub(super) fn set_reference_evaluated(&mut self, entity: EntityId, evaluated: bool) {
+        if evaluated {
+            self.evaluated_references.insert(entity);
+        } else {
+            self.evaluated_references.remove(&entity);
+        }
+    }
+    pub(super) fn reference_evaluated(&self, entity: EntityId) -> bool {
+        self.evaluated_references.contains(&entity)
     }
     pub(super) fn temporary_scalar(&self, entity: EntityId) -> Option<TemporaryValue> {
         self.temporaries.get(&entity).copied()

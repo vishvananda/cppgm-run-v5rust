@@ -27,6 +27,11 @@ pub(crate) enum Value {
     Literal(ast::ExprId, i64),
     Temporary(super::constexpr_values::TemporaryId, i64),
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StaticScalarDemand {
+    Initialization,
+    Syntax,
+}
 #[derive(Clone, Copy)]
 pub(crate) struct ReferenceTemporary {
     pub binding: TypeId,
@@ -169,6 +174,9 @@ impl Analyzer<'_> {
                 return Ok(());
             };
             let facts = self.graph.expression_facts.get(expr)?;
+            self.graph
+                .constant_addresses
+                .set_reference_evaluated(entity, false);
             if facts.conversion.is_some_and(|c| c.temporary) {
                 if let Some(address) = self.graph.constant_addresses.value(entity)
                     && let Root::Published(id) = address.root
@@ -184,7 +192,24 @@ impl Analyzer<'_> {
                 ) {
                     None
                 } else {
-                    self.static_scalar(expr, object, scope)?
+                    self.static_scalar_query(expr, object, scope, StaticScalarDemand::Syntax)?
+                };
+                let value = if value.is_none()
+                    && self.graph.constant_addresses.value(entity).is_some_and(
+                        |place| matches!(place.root, Root::Temporary(root) if root == entity),
+                    )
+                    && let Some(held) = self.graph.constant_addresses.temporary_scalar(entity)
+                    && !matches!(
+                        held,
+                        super::constant_addresses::TemporaryValue::MemberPointer(_)
+                    ) {
+                    let value = self.static_held_scalar(held)?;
+                    self.graph
+                        .constant_addresses
+                        .set_reference_evaluated(entity, value.is_some());
+                    value
+                } else {
+                    value
                 };
                 let value_type = self.bare_type(object)?;
                 let entity = self.graph.entity_mut(entity);
@@ -262,6 +287,15 @@ impl Analyzer<'_> {
         target: TypeId,
         scope: ScopeId,
     ) -> Result<Option<Value>, Error> {
+        self.static_scalar_query(id, target, scope, StaticScalarDemand::Initialization)
+    }
+    fn static_scalar_query(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        scope: ScopeId,
+        demand: StaticScalarDemand,
+    ) -> Result<Option<Value>, Error> {
         self.check_stack()?;
         let source = self.graph.expression_facts.get(id)?.ty;
         if matches!(
@@ -294,7 +328,8 @@ impl Analyzer<'_> {
         }
         // constant_lowering.cpp::initialization_value: initialization includes
         // the selected conversion even though the operand retains its class type.
-        if self.graph.class_of(source).is_some()
+        if demand == StaticScalarDemand::Initialization
+            && self.graph.class_of(source).is_some()
             && self
                 .graph
                 .expression_facts
@@ -304,7 +339,7 @@ impl Analyzer<'_> {
             let value = self.static_converted_class(id, target, scope)?;
             return Ok(value.filter(|value| self.static_storage_value(*value)));
         }
-        let value = self.static_scalar_value(id, scope)?;
+        let value = self.static_scalar_value(id, scope, demand)?;
         if let Some(Value::Floating(ty, bits)) = value
             && let Some(kind) = self.integral_kind(target)
             && kind.bits != 1
@@ -410,10 +445,16 @@ impl Analyzer<'_> {
             Err(Error::NonConstant { .. } | Error::Missing(_)) => return Ok(None),
             Err(error) => return Err(error),
         };
+        self.static_held_scalar(value)
+    }
+    fn static_held_scalar(
+        &self,
+        value: super::constant_addresses::TemporaryValue,
+    ) -> Result<Option<Value>, Error> {
         if value.indeterminate() {
             return Ok(None);
         }
-        Ok(match value {
+        let value = match value {
             super::constant_addresses::TemporaryValue::MemberPointer(value) => {
                 Some(Value::MemberPointer(value))
             }
@@ -442,7 +483,8 @@ impl Analyzer<'_> {
                 Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, value.offset)),
                 _ => None,
             },
-        })
+        };
+        Ok(value.filter(|value| self.static_storage_value(*value)))
     }
     pub(super) fn static_floating_constant(
         &self,
@@ -473,6 +515,7 @@ impl Analyzer<'_> {
         &mut self,
         id: ast::ExprId,
         scope: ScopeId,
+        demand: StaticScalarDemand,
     ) -> Result<Option<Value>, Error> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
@@ -491,7 +534,10 @@ impl Analyzer<'_> {
                     self.graph.types.get(source).kind,
                     TypeKind::Scalar(Scalar::Basic(F::BFloat16))
                 )
-        }) {
+        }) && (demand == StaticScalarDemand::Initialization
+            || self.graph.expression_facts.get(id)?.intrinsic
+                == Some(super::floating_intrinsics::FloatingIntrinsic::Constant))
+        {
             match self.evaluate_floating(id, scope) {
                 Ok(value) => {
                     if value.state == super::constant_addresses::ScalarState::Indeterminate {
@@ -558,7 +604,7 @@ impl Analyzer<'_> {
         }
         let node = *self.tree.expressions.get(id);
         match node.kind {
-            ExprKind::Paren(inner) => self.static_scalar_value(inner, scope),
+            ExprKind::Paren(inner) => self.static_scalar_value(inner, scope, demand),
             ExprKind::Keyword(Keyword::Nullptr) => Ok(Some(Value::Integer(0))),
             ExprKind::Literal(literal) => {
                 let PostTokenKind::Literal { ty, data, .. } = literal.kind else {
@@ -579,7 +625,7 @@ impl Analyzer<'_> {
             ExprKind::Unary { op, operand }
                 if matches!(op.token.as_punctuator(), Some(P::Add | P::Subtract)) =>
             {
-                let value = self.static_scalar(operand, source, scope)?;
+                let value = self.static_scalar_query(operand, source, scope, demand)?;
                 Ok(value.map(|value| match value {
                     Value::Floating(ty, bits) if op.token.as_punctuator() == Some(P::Subtract) => {
                         Value::Floating(ty, bits ^ float_sign(ty))
@@ -602,8 +648,8 @@ impl Analyzer<'_> {
                     _ => return Ok(None),
                 };
                 let (Some(Value::Floating(ty, a)), Some(Value::Floating(_, b))) = (
-                    self.static_scalar(left, source, scope)?,
-                    self.static_scalar(right, source, scope)?,
+                    self.static_scalar_query(left, source, scope, demand)?,
+                    self.static_scalar_query(right, source, scope, demand)?,
                 ) else {
                     return Ok(None);
                 };
@@ -629,16 +675,17 @@ impl Analyzer<'_> {
                         .map(|bits| Value::Floating(ty, bits)))
                 }
             }
-            ExprKind::Cast { operand, .. } => self.static_scalar(operand, source, scope),
+            ExprKind::Cast { operand, .. } => {
+                self.static_scalar_query(operand, source, scope, demand)
+            }
             ExprKind::FunctionalCast {
                 arguments, braced, ..
             } => {
-                if let Some(id) = braced {
-                    return self.static_scalar(id, source, scope);
+                if braced.is_some() {
+                    return Ok(None);
                 }
                 match self.tree.expr_lists.get(arguments) {
-                    [] => self.static_conversion(Value::Integer(0), source, source),
-                    [operand] => self.static_scalar(*operand, source, scope),
+                    [operand] => self.static_scalar_query(*operand, source, scope, demand),
                     _ => Ok(None),
                 }
             }
@@ -646,8 +693,7 @@ impl Analyzer<'_> {
                 if self.graph.expression_facts.get(id)?.functional_call =>
             {
                 match self.tree.expr_lists.get(arguments) {
-                    [] => self.static_conversion(Value::Integer(0), source, source),
-                    [operand] => self.static_scalar(*operand, source, scope),
+                    [operand] => self.static_scalar_query(*operand, source, scope, demand),
                     _ => Ok(None),
                 }
             }
@@ -656,7 +702,7 @@ impl Analyzer<'_> {
                 then_expr,
                 else_expr,
             } => match self.constant_value(condition, scope, false) {
-                Ok(Some(value)) => self.static_scalar(
+                Ok(Some(value)) => self.static_scalar_query(
                     if value.bits == 0 {
                         else_expr
                     } else {
@@ -664,13 +710,14 @@ impl Analyzer<'_> {
                     },
                     source,
                     scope,
+                    demand,
                 ),
                 Ok(None) | Err(Error::Missing(_)) => Ok(None),
                 Err(error) => Err(error),
             },
             ExprKind::Braced { elements, .. } => match self.tree.expr_lists.get(elements) {
                 [] => Ok(Some(Value::Integer(0))),
-                [operand] => self.static_scalar(*operand, source, scope),
+                [operand] => self.static_scalar_query(*operand, source, scope, demand),
                 _ => Ok(None),
             },
             _ => Ok(None),

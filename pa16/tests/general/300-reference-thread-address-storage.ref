@@ -1,0 +1,17 @@
+global @thread_object : i32 [storage=thread_local, binding=strong] = zero
+global @thread_reference : ptr [binding=strong] = zero
+global @__cppgm_ref_temporary__thread_reference_0 : ptr [binding=internal, object=_ZGR16thread_reference_] = zero
+
+function @thread_address() -> ptr [binding=weak, object=_Z14thread_addressv, inline_hint=yes] {
+  block ^entry:
+    %t1 = addr @thread_object
+    return ptr %t1
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = call ptr @thread_address()
+    store typed ptr %t1, @__cppgm_ref_temporary__thread_reference_0
+    %t2 = addr @__cppgm_ref_temporary__thread_reference_0
+    store typed ptr %t2, @thread_reference
+    return void
+}

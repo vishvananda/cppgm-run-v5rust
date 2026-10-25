@@ -20,6 +20,12 @@ fn without_parentheses(tree: &ast::Tree, mut id: ast::ExprId) -> ast::ExprId {
 }
 
 impl Graph {
+    pub(crate) fn lower_evaluated_reference_temporary(
+        &self,
+        entity: super::graph::EntityId,
+    ) -> bool {
+        self.constant_addresses.reference_evaluated(entity)
+    }
     pub(crate) fn lower_builtin_floating(&self, id: ast::ExprId) -> Result<u128, Error> {
         let value = self.expression_facts.floating_value(id)?;
         let value = self.floating_constants.get(value);

@@ -503,6 +503,7 @@ pub(super) fn reference_temporary<'a>(
     // fallback even when this is its own definition. Consume its typed root;
     // no initializer parsing or semantic search belongs here.
     let evaluated = evaluated
+        || graph.lower_evaluated_reference_temporary(entity)
         || matches!(value, StaticValue::Address(root, _)
         if graph.lower_is_variable(root) && graph.lower_variable(root)?.reference_temporary.is_some()
             && !symbols.data.reference_defined(root));
