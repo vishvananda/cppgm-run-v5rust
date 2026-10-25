@@ -362,8 +362,10 @@ fn define_storage<'a>(
             dynamic = true;
             GlobalInit::Zero
         }
-    } else if matches!(graph.lower_type(facts.ty)?, TypeView::Vector { .. })
-        && graph.lower_array_image(entity).is_none()
+    } else if matches!(
+        graph.lower_type(facts.ty)?,
+        TypeView::Vector { .. } | TypeView::Complex(_)
+    ) && graph.lower_array_image(entity).is_none()
     {
         ty = Some(types::storage(graph, facts.ty)?);
         dynamic |= initializer.is_some();

@@ -45,21 +45,7 @@ impl Analyzer<'_> {
         let completed = match node.constant {
             ConstantState::Value(value) => Some(self.static_integer_value(value)),
             ConstantState::Floating(value) => {
-                let value = self.graph.floating_constants.get(value);
-                let TypeKind::Scalar(Scalar::Basic(kind)) = self.graph.types.get(value.ty).kind
-                else {
-                    return Err(Error::Invariant("local floating constant type"));
-                };
-                let format = self
-                    .float_format(value.ty)
-                    .ok_or(Error::Invariant("local floating format"))?;
-                Some(super::static_initialization::Value::Floating(
-                    kind,
-                    value
-                        .value
-                        .bits(format)
-                        .ok_or(Error::Invariant("local floating encoding"))?,
-                ))
+                self.static_floating_constant(self.graph.floating_constants.get(value))?
             }
             ConstantState::MemberPointer(value) => {
                 Some(super::static_initialization::Value::MemberPointer(value))

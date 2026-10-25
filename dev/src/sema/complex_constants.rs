@@ -447,7 +447,7 @@ impl Analyzer<'_> {
                 _ => return Err(Error::Invariant("constant complex arithmetic token")),
             };
             let format = self
-                .float_format(ty)
+                .constant_operation_format(ty)
                 .ok_or(Error::Invariant("complex floating part format"))?;
             let value = a
                 .value
@@ -590,7 +590,7 @@ impl Analyzer<'_> {
                 self.constant_part_operation(op, part, a, c, location)?,
                 self.constant_part_operation(op, part, b, c, location)?,
             ]),
-            _ if self.float_format(part).is_some() => Err(nonconstant(
+            _ if self.constant_floating_type(part) => Err(nonconstant(
                 location,
                 "a quotient of complex values outside constant evaluation",
             )),

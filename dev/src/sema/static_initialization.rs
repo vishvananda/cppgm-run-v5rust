@@ -410,6 +410,9 @@ impl Analyzer<'_> {
             Err(Error::NonConstant { .. } | Error::Missing(_)) => return Ok(None),
             Err(error) => return Err(error),
         };
+        if value.indeterminate() {
+            return Ok(None);
+        }
         Ok(match value {
             super::constant_addresses::TemporaryValue::MemberPointer(value) => {
                 Some(Value::MemberPointer(value))
@@ -418,20 +421,7 @@ impl Analyzer<'_> {
                 Some(self.static_integer_value(value))
             }
             super::constant_addresses::TemporaryValue::Floating(value) => {
-                let TypeKind::Scalar(Scalar::Basic(kind)) = self.graph.types.get(value.ty).kind
-                else {
-                    return Err(Error::Invariant("static converted floating type"));
-                };
-                let format = self
-                    .float_format(value.ty)
-                    .ok_or(Error::Invariant("static converted floating format"))?;
-                Some(Value::Floating(
-                    kind,
-                    value
-                        .value
-                        .bits(format)
-                        .ok_or(Error::Invariant("static converted floating encoding"))?,
-                ))
+                self.static_floating_constant(value)?
             }
             super::constant_addresses::TemporaryValue::Pointer(value) => match value.root {
                 Root::Null => Some(Value::Integer(0)),
@@ -453,6 +443,31 @@ impl Analyzer<'_> {
                 _ => None,
             },
         })
+    }
+    pub(super) fn static_floating_constant(
+        &self,
+        value: super::constant_floats::Floating,
+    ) -> Result<Option<Value>, Error> {
+        let TypeKind::Scalar(Scalar::Basic(kind)) = self.graph.types.get(value.ty).kind else {
+            return Err(Error::Invariant("stored floating constant type"));
+        };
+        // constant_item/constant_rvalue can store a held bfloat value, but
+        // binary16 and binary128 objects retain their runtime initialization.
+        if value.state == super::constant_addresses::ScalarState::Indeterminate
+            || matches!(kind.floating_representation(), F::Float16 | F::Float128)
+        {
+            return Ok(None);
+        }
+        let format = self
+            .float_format(value.ty)
+            .ok_or(Error::Invariant("stored floating constant format"))?;
+        Ok(Some(Value::Floating(
+            kind,
+            value
+                .value
+                .bits(format)
+                .ok_or(Error::Invariant("stored floating constant encoding"))?,
+        )))
     }
     fn static_scalar_value(
         &mut self,
