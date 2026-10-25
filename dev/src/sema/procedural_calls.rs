@@ -1497,18 +1497,7 @@ impl Analyzer<'_> {
         } else {
             self.decayed_type(facts.ty)?
         };
-        if self.lowering()
-            && self.unevaluated == 0
-            && matches!(self.graph.types.get(target).kind, TypeKind::Class(class) if self.graph.entity(class).complete)
-        {
-            // The ellipsis has no declared parameter whose call boundary
-            // would request this storage. Defer layout with the owning body.
-            self.graph.storage_layouts.push((
-                self.body_context.as_ref().map(|body| body.entity),
-                super::layout::StorageDemand::VariadicClass(target),
-                crate::support::source::SourceOffset(0),
-            ));
-        }
+        self.demand_variadic_class_storage(target);
         if matches!(
             self.graph.types.get(target).kind,
             TypeKind::Scalar(Scalar::Basic(F::Float))
@@ -1543,6 +1532,21 @@ impl Analyzer<'_> {
         facts.conversion = Some(conversion);
         self.graph.expression_facts.set(id, facts);
         Ok(())
+    }
+
+    pub(super) fn demand_variadic_class_storage(&mut self, ty: TypeId) {
+        if self.lowering()
+            && self.unevaluated == 0
+            && matches!(self.graph.types.get(ty).kind, TypeKind::Class(class) if self.graph.entity(class).complete)
+        {
+            // The ellipsis has no declared parameter whose call boundary
+            // would request this storage. Defer layout with the owning body.
+            self.graph.storage_layouts.push((
+                self.body_context.as_ref().map(|body| body.entity),
+                super::layout::StorageDemand::VariadicClass(ty),
+                crate::support::source::SourceOffset(0),
+            ));
+        }
     }
     pub(super) fn call_result(&mut self, function: TypeId) -> Result<ExprFacts, Error> {
         let TypeKind::Function { result, .. } = self.graph.types.get(function).kind else {

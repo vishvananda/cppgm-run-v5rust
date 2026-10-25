@@ -382,10 +382,10 @@ impl Analyzer<'_> {
         self.odr_use_constants(id, Some(first))?;
         self.graph.expression_facts.set(id, facts);
         if first.rank == R::Ellipsis {
-            // No declared parameter owns this operand's ABI boundary. Keep
-            // the ellipsis conversion and defer its storage to the caller,
-            // just as for a written variadic call; no copy is selected.
-            self.ellipsis_argument(id)?;
+            // The frozen implicit constructor conversion retains its first
+            // sequence without ordinary variadic promotions. Only class
+            // storage demand is shared with a written ellipsis argument.
+            self.demand_variadic_class_storage(first.target);
         } else {
             self.class_parameter_destruction(first.target, scope, location)?;
             self.record_class_copy(
