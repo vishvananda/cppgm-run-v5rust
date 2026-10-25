@@ -171,6 +171,9 @@ impl Analyzer<'_> {
                     .specializations
                     .contains(entity)
             {
+                // Signature facts are needed by the caller before the selected
+                // member body is instantiated or emitted.
+                self.prepare_function_boundary(entity, work)?;
                 self.demand_instance_member(entity);
                 self.graph.boundary_roots.push(entity);
                 return Ok(());
@@ -356,6 +359,9 @@ impl Analyzer<'_> {
                     .specializations
                     .contains(entity)
             {
+                // Signature facts are needed by the caller before the selected
+                // member body is instantiated or emitted.
+                self.prepare_function_boundary(entity, &mut work)?;
                 self.demand_instance_member(entity);
                 self.graph.boundary_roots.push(entity);
                 continue;
@@ -445,31 +451,7 @@ impl Analyzer<'_> {
                     }
                 }
             }
-            let ty = self.graph.lower_entity_type(entity)?;
-            if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind
-                && let TypeKind::Class(class) = self.graph.types.get(result).kind
-                && self.graph.entity(class).complete
-            {
-                self.class_layout(class, SourceOffset(0))?;
-                self.prepare_class_parameter(class)?;
-            }
-            let count = self.graph.types.function_parameter_count(ty)?;
-            for index in 0..count {
-                let parameter = self.graph.types.function_parameter(ty, index)?;
-                if let TypeKind::Class(class) = self.graph.types.get(parameter).kind
-                    && self.graph.entity(class).complete
-                {
-                    self.class_layout(class, SourceOffset(0))?;
-                    self.prepare_class_parameter(class)?;
-                    // The caller owns a by-value parameter, including one made
-                    // by a selected copy constructor's default argument.
-                    self.prepare_destruction(class)?;
-                    if let Some(binding) = self.graph.destructor_binding(class) {
-                        work.push(self.graph.binding(binding).entity);
-                    }
-                }
-                self.prepare_reference_boundary(parameter, SourceOffset(0))?;
-            }
+            self.prepare_function_boundary(entity, &mut work)?;
             // Destruction preparation can publish containment edges while this
             // demand closure is running. Activate only edges of reached owners.
             for (owner, destructor) in std::mem::take(&mut self.graph.storage_destructions) {
@@ -517,6 +499,38 @@ impl Analyzer<'_> {
             } else if let Some(owner) = owner {
                 layouts.entry(owner).or_default().push((demand, location));
             }
+        }
+        Ok(())
+    }
+    fn prepare_function_boundary(
+        &mut self,
+        entity: EntityId,
+        work: &mut Vec<EntityId>,
+    ) -> Result<(), Error> {
+        let ty = self.graph.lower_entity_type(entity)?;
+        if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind
+            && let TypeKind::Class(class) = self.graph.types.get(result).kind
+            && self.graph.entity(class).complete
+        {
+            self.class_layout(class, SourceOffset(0))?;
+            self.prepare_class_parameter(class)?;
+        }
+        let count = self.graph.types.function_parameter_count(ty)?;
+        for index in 0..count {
+            let parameter = self.graph.types.function_parameter(ty, index)?;
+            if let TypeKind::Class(class) = self.graph.types.get(parameter).kind
+                && self.graph.entity(class).complete
+            {
+                self.class_layout(class, SourceOffset(0))?;
+                self.prepare_class_parameter(class)?;
+                // The caller owns a by-value parameter, including one made
+                // by a selected copy constructor's default argument.
+                self.prepare_destruction(class)?;
+                if let Some(binding) = self.graph.destructor_binding(class) {
+                    work.push(self.graph.binding(binding).entity);
+                }
+            }
+            self.prepare_reference_boundary(parameter, SourceOffset(0))?;
         }
         Ok(())
     }

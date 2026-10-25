@@ -327,6 +327,7 @@ impl Function<'_, '_, '_, '_> {
             let fail = self.new_block("array_new_length_invalid")?;
             let valid = self.new_block("array_new_length_valid")?;
             self.effect(I::Branch(invalid, fail, valid))?;
+            self.terminated = true;
             self.place(fail)?;
             Some(valid)
         } else {

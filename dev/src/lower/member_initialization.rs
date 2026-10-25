@@ -209,6 +209,11 @@ impl Function<'_, '_, '_, '_> {
                 if let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
                     if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
                         Some(self.initializer_expression(initializer)?)
+                    } else if matches!(self.graph.lower_type(ty)?, TypeView::Vector { .. })
+                        || matches!(self.graph.lower_type(ty)?, TypeView::Complex(_))
+                            && self.tree.expr_lists.get(elements).len() == 2
+                    {
+                        Some(id)
                     } else {
                         self.tree.expr_lists.get(elements).first().copied()
                     }

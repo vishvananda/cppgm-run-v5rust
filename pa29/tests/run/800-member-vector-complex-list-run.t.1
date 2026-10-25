@@ -1,0 +1,23 @@
+// Member lane lists preserve every component and its evaluation order.
+typedef int Vector __attribute__((vector_size(16)));
+int order;
+int lane(int n) { order = order * 10 + n; return n; }
+struct Parts {
+  _Complex double complex;
+  Vector vector;
+  Parts() : complex{lane(1), lane(2)}, vector{lane(3), lane(4)} {}
+};
+struct Empty {
+  _Complex double complex;
+  Vector vector;
+  Empty() : complex{}, vector{} {}
+};
+int main() {
+  Parts parts;
+  Empty empty;
+  return order != 1234 || __real__ parts.complex != 1
+      || __imag__ parts.complex != 2 || parts.vector[0] != 3
+      || parts.vector[1] != 4 || parts.vector[2] != 0
+      || parts.vector[3] != 0 || __real__ empty.complex != 0
+      || __imag__ empty.complex != 0 || empty.vector[0] != 0;
+}

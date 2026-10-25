@@ -73,8 +73,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             None
         };
-        self.destroy_temporaries(first)?;
-        self.cleanup_return(ty, value, began)
+        self.cleanup_return(ty, value, began, first)
     }
     pub(super) fn statement(&mut self, id: ast::StmtId) -> Result<(), Error> {
         self.check_stack()?;

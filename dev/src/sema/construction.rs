@@ -397,7 +397,18 @@ impl Analyzer<'_> {
             ConstructorState::NotStarted => (),
         }
         if let Some(binding) = selected {
-            let id = self.selected_constructor_plan(binding, location)?;
+            // implicit_constructor defines a selected defaulted constructor.
+            // A declaration-only plan may already exist from an inherited
+            // constructor's signature/exception query; replace it in place.
+            let function = self.graph.binding(binding).entity;
+            let id = if matches!(
+                self.graph.entity(function).special_definition,
+                Some(SpecialDefinition::Defaulted { .. })
+            ) {
+                self.scalar_constructor_facts(class, Some(binding))?
+            } else {
+                self.selected_constructor_plan(binding, location)?
+            };
             self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
             return Ok(id);
         }
@@ -981,7 +992,10 @@ impl Analyzer<'_> {
             {
                 return self.declared_copy_plan(class, binding);
             }
-            return self.scalar_constructor_facts(class, Some(binding));
+            // Naming the declaration, including as an inherited source, does
+            // not define its defaulted body. The default-constructor query and
+            // an out-of-class defaulted definition own subobject planning.
+            return self.constructor_declaration_plan(binding, class);
         }
         // A user-provided declaration alone has no subobject plan to demand.
         self.constructor_declaration_plan(binding, class)

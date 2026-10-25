@@ -317,7 +317,7 @@ impl Function<'_, '_, '_, '_> {
             }
             self.lexical.returned = Some(cleanup);
         }
-        let finished = self.cleanup_return(boundary.ty, value, false);
+        let finished = self.cleanup_return(boundary.ty, value, false, self.lifetime.cleanups.len());
         self.lexical.returned = returned;
         finished?;
         // The result's pending landings precede lexical landings unless

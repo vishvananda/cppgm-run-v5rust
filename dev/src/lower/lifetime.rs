@@ -1196,8 +1196,10 @@ impl Function<'_, '_, '_, '_> {
         ty: Type,
         value: Option<Value>,
         expression: bool,
+        first_temporary: usize,
     ) -> Result<(), Error> {
         if self.destruction.cleanup.is_some() {
+            self.destroy_temporaries(first_temporary)?;
             self.end_lifetime_expression(expression)?;
             if self.handlers.contexts.is_empty() {
                 self.destroy_cleanups(0)?;
@@ -1216,23 +1218,26 @@ impl Function<'_, '_, '_, '_> {
         }
         self.scan_lifetimes()?;
         let shared = self.result_destination.is_none()
-            && self.lifetime.cleanups.last().is_some_and(|cleanup| {
-                cleanup
-                    .variable
-                    .and_then(|variable| {
-                        if let Some(context) = self.handlers.contexts.last() {
-                            if matches!(ty, Type::Object { .. }) {
-                                None
+            && self.lifetime.cleanups[..first_temporary]
+                .last()
+                .is_some_and(|cleanup| {
+                    cleanup
+                        .variable
+                        .and_then(|variable| {
+                            if let Some(context) = self.handlers.contexts.last() {
+                                if matches!(ty, Type::Object { .. }) {
+                                    None
+                                } else {
+                                    self.handlers.returns.get(&(variable, context.key))
+                                }
                             } else {
-                                self.handlers.returns.get(&(variable, context.key))
+                                self.lifetime.returns.get(&variable)
                             }
-                        } else {
-                            self.lifetime.returns.get(&variable)
-                        }
-                    })
-                    .is_some_and(|&count| count > 1)
-            });
+                        })
+                        .is_some_and(|&count| count > 1)
+                });
         if !shared {
+            self.destroy_temporaries(first_temporary)?;
             self.end_lifetime_expression(expression)?;
             if self.handlers.contexts.is_empty() {
                 for index in (0..self.lifetime.cleanups.len()).rev() {
@@ -1275,6 +1280,7 @@ impl Function<'_, '_, '_, '_> {
             // A class return already preserved its bytes in the shared retobj.
             self.lifetime.return_slot = value;
         }
+        self.destroy_temporaries(first_temporary)?;
         self.end_lifetime_expression(expression)?;
         let entry = if self.handlers.contexts.is_empty() {
             self.cleanup_entry(false)?
