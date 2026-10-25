@@ -223,20 +223,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("structured binding without name"))?;
         let home = self.declaration_scope(scope);
         self.check_template_parameter_name(scope, name, location)?;
-        if self.graph.scope(home).guarded
-            && let Some(parent) = self.graph.scope(home).parent
-            && self
-                .graph
-                .scope(parent)
-                .index
-                .get(&name)
-                .is_some_and(|entry| entry.value.is_some())
-        {
-            return Err(Error::at(
-                location,
-                "redeclaration of a name of the enclosing construct",
-            ));
-        }
+        self.check_construct_redeclaration(home, name, location)?;
         if self
             .graph
             .scope(home)

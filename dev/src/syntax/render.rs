@@ -1191,6 +1191,7 @@ impl Renderer<'_, '_> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 if let Some(branch) = else_branch {
                     self.tasks.push(Render::Statement(branch));

@@ -114,6 +114,7 @@ impl Parser<'_> {
             self.expect(P::RightBrace)?;
             let statements = self.tree.stmt_lists.finish(start)?;
             self.tree.statements.add(Statement {
+                selection_init: false,
                 location,
                 kind: StmtKind::Compound(statements),
             })
@@ -147,6 +148,7 @@ impl Parser<'_> {
             self.cursor.advance()?;
             let body = self.statement()?;
             return self.tree.statements.add(Statement {
+                selection_init: false,
                 location,
                 kind: StmtKind::Label { name, body },
             });
@@ -221,7 +223,11 @@ impl Parser<'_> {
                 }
             }
         };
-        self.tree.statements.add(Statement { location, kind })
+        self.tree.statements.add(Statement {
+            selection_init: false,
+            location,
+            kind,
+        })
     }
     pub(super) fn statement_reading(
         &mut self,
@@ -229,12 +235,19 @@ impl Parser<'_> {
         attributes: super::storage::List<super::ast::Attribute>,
     ) -> Result<StmtId, ParseError> {
         let location = self.location()?;
+        let selection = matches!(reader, StatementReader::Control)
+            && matches!(self.keyword()?, Some(K::If | K::Switch));
         let kind = match reader {
             StatementReader::Ordinary => self.declaration_or_expression(attributes)?,
             StatementReader::Value => self.value_statement()?,
             StatementReader::Control => self.control_statement()?,
         };
-        self.tree.statements.add(Statement { location, kind })
+        let selection_init = selection && matches!(kind, StmtKind::Compound(_));
+        self.tree.statements.add(Statement {
+            selection_init,
+            location,
+            kind,
+        })
     }
     fn value_statement(&mut self) -> Result<StmtKind, ParseError> {
         let word = self
@@ -265,32 +278,77 @@ impl Parser<'_> {
         if self.keyword()? == Some(K::For) {
             return self.for_statement();
         }
+        let location = self.location()?;
         let word = self
             .keyword()?
             .ok_or(ParseError::Invariant("missing control statement keyword"))?;
-        Ok({
-            self.cursor.advance()?;
-            self.expect(P::LeftParen)?;
-            self.with_block_scope(|parser| parser.control_body(word))?
+        self.cursor.advance()?;
+        let is_constexpr = word == K::If && self.accept_keyword(K::Constexpr)?;
+        self.with_block_scope(|parser| {
+            parser.expect(P::LeftParen)?;
+            let (init, condition) = if matches!(word, K::If | K::Switch) {
+                parser.selection_head()?
+            } else {
+                (None, parser.condition()?)
+            };
+            parser.expect(P::RightParen)?;
+            let body = parser.statement()?;
+            let kind = if word == K::If {
+                let else_branch = if parser.accept_keyword(K::Else)? {
+                    Some(parser.statement()?)
+                } else {
+                    None
+                };
+                StmtKind::If {
+                    is_constexpr,
+                    condition,
+                    then_branch: body,
+                    else_branch,
+                }
+            } else {
+                StmtKind::ConditionalLoop {
+                    keyword: word,
+                    condition,
+                    body,
+                }
+            };
+            if let Some(init) = init {
+                let selection = parser.tree.statements.add(Statement {
+                    selection_init: false,
+                    location,
+                    kind,
+                })?;
+                let start = parser.tree.stmt_lists.begin();
+                parser.tree.stmt_lists.push(init);
+                parser.tree.stmt_lists.push(selection);
+                // The caller adds this compound with the selection-init marker.
+                Ok(StmtKind::Compound(parser.tree.stmt_lists.finish(start)?))
+            } else {
+                Ok(kind)
+            }
         })
     }
-    fn observe_selection_head(&mut self) -> Result<(), ParseError> {
-        // The frozen selection reader scans even ordinary C++11 conditions.
-        // This demand determines whether a later tokenization error is seen
-        // before an earlier grammar error. Selection init syntax is later.
+    fn selection_head(&mut self) -> Result<(Option<StmtId>, Condition), ParseError> {
         let mut depth = 0i32;
+        let mut found = false;
+        let mut stopped = false;
         for ahead in 0..=1024 {
             let token = self.cursor.peek(ahead)?;
             let punct = match token.kind {
-                TokenKind::End => return Ok(()),
+                TokenKind::End => break,
                 TokenKind::Simple(op) => op.token.as_punctuator(),
                 _ => None,
             };
-            if depth == 0 && matches!(punct, Some(P::RightParen | P::RightBrace | P::Semicolon)) {
-                return Ok(());
+            if depth == 0 && matches!(punct, Some(P::RightParen | P::RightBrace)) {
+                break;
+            }
+            if depth == 0 && punct == Some(P::Semicolon) {
+                found = true;
+                break;
             }
             if ahead == 1024 {
-                return Ok(());
+                stopped = true;
+                break;
             }
             match punct {
                 Some(P::LeftParen | P::LeftBracket | P::LeftBrace) => depth += 1,
@@ -298,34 +356,102 @@ impl Parser<'_> {
                 _ => (),
             }
         }
-        Ok(())
-    }
-    fn control_body(&mut self, word: K) -> Result<StmtKind, ParseError> {
-        if matches!(word, K::If | K::Switch) {
-            self.observe_selection_head()?;
-        }
-        let condition = self.condition()?;
-        self.expect(P::RightParen)?;
-        let body = self.statement()?;
-        let kind = if word == K::If {
-            let else_branch = if self.accept_keyword(K::Else)? {
-                Some(self.statement()?)
-            } else {
-                None
-            };
-            StmtKind::If {
-                condition,
-                then_branch: body,
-                else_branch,
+        let position = self.cursor.absolute_position()?;
+        if !found
+            && stopped
+            && self
+                .failed_selection_inits
+                .binary_search(&position)
+                .is_err()
+            && (self.at_attribute(0)?
+                || self.keyword()? == Some(K::Using)
+                || !matches!(self.statement_head()?, StatementHead::Expression))
+        {
+            if let Some(init) = self.attempt(|parser| {
+                let location = parser.location()?;
+                let attributes = parser.collect_attributes(false)?;
+                let declaration = parser.declaration_with_attributes(attributes)?;
+                parser.tree.statements.add(Statement {
+                    selection_init: false,
+                    location,
+                    kind: StmtKind::Declaration(declaration),
+                })
+            })? {
+                return Ok((Some(init), self.condition()?));
             }
-        } else {
-            StmtKind::ConditionalLoop {
-                keyword: word,
-                condition,
-                body,
+            if let Err(index) = self.failed_selection_inits.binary_search(&position) {
+                self.failed_selection_inits.insert(index, position);
+            }
+        }
+        if found {
+            let location = self.location()?;
+            if self.keyword()? == Some(K::Using) {
+                let declaration = self.declaration()?;
+                if !matches!(
+                    self.tree.declarations.get(declaration).kind,
+                    super::ast::DeclKind::Alias { .. }
+                ) {
+                    return Err(ParseError::Syntax {
+                        location: self.error_mark().1,
+                        message: "syntax error",
+                    });
+                }
+                let init = self.tree.statements.add(Statement {
+                    selection_init: false,
+                    location,
+                    kind: StmtKind::Declaration(declaration),
+                })?;
+                return Ok((Some(init), self.condition()?));
+            }
+            let attributes = self.collect_attributes(false)?;
+            let init = if self.accept(P::Semicolon)? {
+                self.tree.statements.add(Statement {
+                    selection_init: false,
+                    location,
+                    kind: StmtKind::Expression(None),
+                })?
+            } else {
+                self.read_statement(StatementReader::Ordinary, attributes)?
+            };
+            return Ok((Some(init), self.condition()?));
+        }
+        let location = self.location()?;
+        let condition = self.condition()?;
+        if !stopped || !self.accept(P::Semicolon)? {
+            return Ok((None, condition));
+        }
+        let kind = match condition {
+            Condition::Expression(expr) => StmtKind::Expression(Some(expr)),
+            Condition::Declaration {
+                specifiers,
+                declarator,
+                initializer,
+            } => {
+                let start = self.tree.init_declarators.begin();
+                self.tree.init_declarators.push(super::ast::InitDeclarator {
+                    declarator,
+                    initializer: Some(initializer),
+                    tokens: super::ast::TokenSpan { begin: 0, end: 0 },
+                });
+                let declarators = self.tree.init_declarators.finish(start)?;
+                let declaration = self.tree.declarations.add(super::ast::Declaration {
+                    attributes: super::storage::List::default(),
+                    location,
+                    kind: super::ast::DeclKind::Simple {
+                        decomposition: false,
+                        specifiers,
+                        declarators,
+                    },
+                })?;
+                StmtKind::Declaration(declaration)
             }
         };
-        Ok(kind)
+        let init = self.tree.statements.add(Statement {
+            selection_init: false,
+            location,
+            kind,
+        })?;
+        Ok((Some(init), self.condition()?))
     }
     pub(super) fn function_body(&mut self, constructor: bool) -> Result<FunctionBody, ParseError> {
         let saved = self.reserved_call.take();
@@ -485,6 +611,7 @@ impl Parser<'_> {
             let body = self.statement()?;
             let body = if let Some(declaration) = bindings {
                 let declaration = self.tree.statements.add(super::ast::Statement {
+                    selection_init: false,
                     location,
                     kind: StmtKind::Declaration(declaration),
                 })?;
@@ -493,6 +620,7 @@ impl Parser<'_> {
                 self.tree.stmt_lists.push(body);
                 let items = self.tree.stmt_lists.finish(start)?;
                 self.tree.statements.add(super::ast::Statement {
+                    selection_init: false,
                     location,
                     kind: StmtKind::Compound(items),
                 })?
@@ -539,7 +667,11 @@ impl Parser<'_> {
             body,
         };
         if let Some(readings) = readings {
-            let loop_statement = self.tree.statements.add(Statement { location, kind })?;
+            let loop_statement = self.tree.statements.add(Statement {
+                selection_init: false,
+                location,
+                kind,
+            })?;
             let start = self.tree.stmt_lists.begin();
             self.tree.stmt_lists.push(readings);
             self.tree.stmt_lists.push(loop_statement);

@@ -1,0 +1,13 @@
+template<class T> auto choose(T t) {
+  if constexpr (sizeof(T) == 4) { return t + 1; }
+  else { return t.missing(); }
+}
+template<class T> int alias_choice() {
+  if constexpr (using U = T; sizeof(U) == 4) return U(2);
+  else { typename T::absent value; return sizeof(value); }
+}
+constexpr int eval(int n) { if constexpr (true) return n + 3; else return n - 4; }
+static_assert(eval(2) == 5, "selected");
+struct Truth { constexpr explicit operator bool() const { return true; } };
+int converted_condition() { if constexpr (Truth{}) return 3; else return 4; }
+int main() { return converted_condition() == 3 && choose(3) == 4 && alias_choice<int>() == 2 ? 0 : 1; }

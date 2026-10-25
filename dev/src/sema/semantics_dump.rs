@@ -1182,6 +1182,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.line("if-statement", depth)?;
                 if let Some(id) = else_branch {

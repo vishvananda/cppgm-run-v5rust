@@ -1298,6 +1298,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.open("if-statement", Payload::None)?;
                 if let Some(else_branch) = else_branch {

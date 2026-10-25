@@ -178,8 +178,12 @@ impl Function<'_, '_, '_, '_> {
                 else_branch,
                 ..
             } => {
-                self.scan_returned_local(then_branch, result, candidate, single)?;
-                if let Some(branch) = else_branch {
+                for branch in self
+                    .graph
+                    .lower_live_branches(id, then_branch, else_branch)
+                    .into_iter()
+                    .flatten()
+                {
                     self.scan_returned_local(branch, result, candidate, single)?;
                 }
             }

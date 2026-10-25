@@ -139,8 +139,27 @@ impl Function<'_, '_, '_, '_> {
                 condition,
                 then_branch,
                 else_branch,
+                is_constexpr,
             } => {
-                self.if_statement(condition, then_branch, else_branch)?;
+                if is_constexpr {
+                    let selected =
+                        self.graph
+                            .lower_constexpr_selection(id)
+                            .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                                "constexpr if without selection",
+                            )))?;
+                    let depth = self.lifetime.cleanups.len();
+                    if let Some(branch) = if selected {
+                        Some(then_branch)
+                    } else {
+                        else_branch
+                    } {
+                        self.scoped_statement(branch)?;
+                    }
+                    self.leave_scope(depth)?;
+                } else {
+                    self.if_statement(condition, then_branch, else_branch)?;
+                }
             }
             StmtKind::ConditionalLoop {
                 keyword: Keyword::While,
@@ -465,9 +484,13 @@ impl Function<'_, '_, '_, '_> {
                 else_branch,
                 ..
             } => {
-                self.scan_switch(then_branch, labels)?;
-                if let Some(id) = else_branch {
-                    self.scan_switch(id, labels)?;
+                for branch in self
+                    .graph
+                    .lower_live_branches(id, then_branch, else_branch)
+                    .into_iter()
+                    .flatten()
+                {
+                    self.scan_switch(branch, labels)?;
                 }
             }
             StmtKind::ConditionalLoop {
@@ -508,12 +531,19 @@ impl Function<'_, '_, '_, '_> {
                 else_branch,
                 ..
             } => {
-                self.reachable_label(then_branch)?
-                    || if let Some(id) = else_branch {
-                        self.reachable_label(id)?
-                    } else {
-                        false
+                let mut found = false;
+                for branch in self
+                    .graph
+                    .lower_live_branches(id, then_branch, else_branch)
+                    .into_iter()
+                    .flatten()
+                {
+                    if self.reachable_label(branch)? {
+                        found = true;
+                        break;
                     }
+                }
+                found
             }
             StmtKind::ConditionalLoop { body, .. }
             | StmtKind::Do { body, .. }

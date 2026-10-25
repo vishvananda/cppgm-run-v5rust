@@ -358,6 +358,7 @@ mod tests {
                 .tree
                 .statements
                 .add(ast::Statement {
+                    selection_init: false,
                     location,
                     kind: ast::StmtKind::Expression(Some(value)),
                 })
@@ -369,6 +370,7 @@ mod tests {
                 .tree
                 .statements
                 .add(ast::Statement {
+                    selection_init: false,
                     location,
                     kind: ast::StmtKind::Compound(list),
                 })

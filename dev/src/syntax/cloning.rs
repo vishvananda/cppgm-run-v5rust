@@ -571,10 +571,12 @@ impl<'a> Cloner<'a> {
                 StmtKind::Declaration(copy)
             }
             StmtKind::If {
+                is_constexpr,
                 condition,
                 then_branch,
                 else_branch,
             } => StmtKind::If {
+                is_constexpr,
                 condition: self.condition(condition)?,
                 then_branch: self.statement(then_branch)?,
                 else_branch: self.optional(else_branch, Self::statement)?,

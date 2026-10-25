@@ -363,13 +363,23 @@ impl Function<'_, '_, '_, '_> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
-                self.condition_throws(condition)?
-                    || self.statement_throws(then_branch)?
-                    || else_branch
-                        .map(|id| self.statement_throws(id))
-                        .transpose()?
-                        .unwrap_or(false)
+                let mut throws = self.condition_throws(condition)?;
+                if !throws {
+                    for branch in self
+                        .graph
+                        .lower_live_branches(id, then_branch, else_branch)
+                        .into_iter()
+                        .flatten()
+                    {
+                        if self.statement_throws(branch)? {
+                            throws = true;
+                            break;
+                        }
+                    }
+                }
+                throws
             }
             StmtKind::ConditionalLoop {
                 condition, body, ..

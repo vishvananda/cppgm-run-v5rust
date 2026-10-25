@@ -105,6 +105,7 @@ impl Analyzer<'_> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 let region = self.constexpr_frames.region();
                 let result = (|| {

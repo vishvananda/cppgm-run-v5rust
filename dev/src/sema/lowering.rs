@@ -2316,6 +2316,25 @@ impl Graph {
     pub(crate) fn lower_default(&self, entity: EntityId, index: usize) -> Option<ast::ExprId> {
         self.function_default(entity, index)
     }
+    pub(crate) fn lower_constexpr_selection(&self, id: ast::StmtId) -> Option<bool> {
+        self.constexpr_selections.get(id.index()).copied().flatten()
+    }
+    pub(crate) fn lower_live_branches(
+        &self,
+        id: ast::StmtId,
+        then_branch: ast::StmtId,
+        else_branch: Option<ast::StmtId>,
+    ) -> [Option<ast::StmtId>; 2] {
+        let selected = self.lower_constexpr_selection(id);
+        [
+            (selected != Some(false)).then_some(then_branch),
+            if selected == Some(true) {
+                None
+            } else {
+                else_branch
+            },
+        ]
+    }
     pub(crate) fn lower_statement(&self, id: ast::StmtId) -> Result<ast::StmtId, Error> {
         self.statement_readings
             .get(id.index())

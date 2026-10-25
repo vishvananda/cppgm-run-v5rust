@@ -1,0 +1,14 @@
+int destroyed;
+struct Guard { int value; Guard(int x): value(x) {} ~Guard() { destroyed = destroyed*10 + value; } };
+int main() {
+  int sum = 0;
+  if (Guard a(1); a.value) { sum += a.value; } else { sum = 99; }
+  switch (Guard b(2); b.value) { case 2: sum += b.value; break; default: return 2; }
+  if (using Number = int; sizeof(Number) == 4) sum += Number(3);
+  if (; false) sum = 99;
+  if (sum += 4; sum == 10) { int local = 1; sum += local; }
+  int x = 7;
+  if (int y = 1) if (int y = 2; y) sum += y;
+  if (int z = 1; z) { { int z = 3; sum += z; } }
+  return destroyed == 12 && sum == 16 && x == 7 ? 0 : 1;
+}

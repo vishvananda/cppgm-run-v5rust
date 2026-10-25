@@ -30,6 +30,37 @@ pub(super) struct ValueScope<'info> {
     pub declarator_location: SourceOffset,
 }
 impl Analyzer<'_> {
+    pub(super) fn check_construct_redeclaration(
+        &self,
+        scope: ScopeId,
+        name: NameId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let block = self.graph.scope(scope);
+        if !block.guarded {
+            return Ok(());
+        }
+        let Some(parent) = block.parent else {
+            return Ok(());
+        };
+        let construct = self.graph.scope(parent);
+        let mut entry = construct.index.get(&name);
+        if entry.is_none_or(|entry| entry.value.is_none())
+            && construct.guarded
+            && let Some(outer) = construct.parent
+            && self.graph.scope(outer).entry == super::graph::ScopeEntry::SelectionInit
+        {
+            entry = self.graph.scope(outer).index.get(&name);
+        }
+        if entry.is_some_and(|entry| entry.value.is_some()) {
+            return Err(Error::at(
+                location,
+                "redeclaration of a name of the enclosing construct",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn simple_declaration(
         &mut self,
         id: ast::DeclId,
@@ -1141,20 +1172,9 @@ impl Analyzer<'_> {
             self.ensure_builtin(key)?;
         }
         if kind == BindingKind::Variable
-            && self.graph.scope(home).guarded
-            && let Some(parent) = self.graph.scope(home).parent
             && let Some(name) = name.identifier()
-            && self
-                .graph
-                .scope(parent)
-                .index
-                .get(&name)
-                .is_some_and(|entry| entry.value.is_some())
         {
-            return Err(Error::at(
-                declarator_location,
-                "redeclaration of a name of the enclosing construct",
-            ));
+            self.check_construct_redeclaration(home, name, declarator_location)?;
         }
         let mut entity = None;
         let mut existing = if pattern_friend {

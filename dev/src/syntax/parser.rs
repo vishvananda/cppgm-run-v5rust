@@ -67,6 +67,8 @@ pub(super) struct Parser<'a> {
     pub complex_types: [Option<NameId>; 3],
     pub va_arg: Option<NameId>,
     pub reserved_call: Option<NameId>,
+    /// Failed long-head declaration readings, keyed by absolute token ordinal.
+    pub failed_selection_inits: Vec<u64>,
 }
 struct Checkpoint {
     conflict: Option<super::conflicts::StatementConflict>,
@@ -138,6 +140,7 @@ impl<'a> Parser<'a> {
             complex_types: [None; 3],
             va_arg: None,
             reserved_call: None,
+            failed_selection_inits: Vec::new(),
         }
     }
     pub(super) fn token(&mut self) -> Result<Token, ParseError> {

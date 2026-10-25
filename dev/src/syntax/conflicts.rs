@@ -249,6 +249,7 @@ impl Parser<'_> {
         }
         let readings = self.tree.statement_readings.finish(start)?;
         self.tree.statements.add(Statement {
+            selection_init: false,
             location,
             kind: StmtKind::Ambiguous {
                 name: conflict.name,

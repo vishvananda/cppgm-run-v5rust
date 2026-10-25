@@ -580,6 +580,8 @@ pub(crate) enum ExprKind {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Statement {
+    /// Synthetic compound scope enclosing a selection initializer and its statement.
+    pub selection_init: bool,
     pub location: SourceOffset,
     pub kind: StmtKind,
 }
@@ -620,6 +622,7 @@ pub(crate) enum StmtKind {
     Return(Option<ExprId>),
     Throw(Option<ExprId>),
     If {
+        is_constexpr: bool,
         condition: Condition,
         then_branch: StmtId,
         else_branch: Option<StmtId>,

@@ -48,6 +48,7 @@ pub(super) struct Entry {
 pub(super) enum ScopeEntry {
     Ordinary,
     Exception,
+    SelectionInit,
 }
 
 pub(super) struct Scope {
@@ -339,6 +340,7 @@ pub(crate) struct Graph {
     pub(super) declaration_storage: Vec<Option<BindingId>>,
     pub(super) overloads: super::function_resolution::FunctionSets,
     pub(super) assembly: super::assembly::Programs,
+    pub(super) constexpr_selections: Vec<Option<bool>>,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
     condition_functions: std::collections::HashMap<
@@ -593,6 +595,7 @@ impl Graph {
             overloads: super::function_resolution::FunctionSets::default(),
             assembly: super::assembly::Programs::default(),
             statement_readings: Vec::new(),
+            constexpr_selections: Vec::new(),
             arithmetic_types: Vec::new(),
             condition_functions: std::collections::HashMap::new(),
             condition_conversions: Vec::new(),

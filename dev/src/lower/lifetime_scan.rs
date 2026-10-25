@@ -115,11 +115,16 @@ impl Function<'_, '_, '_, '_> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 let inner = self.condition_live(condition, live)?;
-                self.count_live(then_branch, inner, contexts, context)?;
-                if let Some(body) = else_branch {
-                    self.count_live(body, inner, contexts, context)?;
+                for branch in self
+                    .graph
+                    .lower_live_branches(id, then_branch, else_branch)
+                    .into_iter()
+                    .flatten()
+                {
+                    self.count_live(branch, inner, contexts, context)?;
                 }
             }
             StmtKind::ConditionalLoop {
@@ -302,11 +307,14 @@ impl Function<'_, '_, '_, '_> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 if *alive && self.condition_throws(condition)? {
                     return Ok(true);
                 }
-                let known = if let Condition::Expression(expr) = condition {
+                let known = if let Some(selected) = self.graph.lower_constexpr_selection(id) {
+                    Some(selected)
+                } else if let Condition::Expression(expr) = condition {
                     self.literal_truth(expr)?
                 } else {
                     None

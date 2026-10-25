@@ -4,7 +4,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{Binding, BindingKind, ScopeId, ScopeKind},
+    graph::{Binding, BindingKind, ScopeEntry, ScopeId, ScopeKind},
     lookup::Filter,
     procedural_statements::Control,
 };
@@ -109,7 +109,13 @@ impl Analyzer<'_> {
             StmtKind::Asm(assembly) => {
                 self.asm_statement(id, *self.tree.assembly.get(assembly), scope)
             }
-            StmtKind::Compound(list) => self.compound(list, scope, false),
+            StmtKind::Compound(list) => self.compound_selection(
+                list,
+                scope,
+                false,
+                false,
+                self.tree.statements.get(id).selection_init,
+            ),
             StmtKind::Declaration(decl) => self.declaration(decl, scope),
             StmtKind::Return(operand)
                 if self.semantic()
@@ -147,15 +153,46 @@ impl Analyzer<'_> {
                 self.statement(body, scope)
             }
             StmtKind::If {
+                is_constexpr,
                 condition,
                 then_branch,
                 else_branch,
             } => {
                 let block = self.block_scope(scope)?;
+                self.graph.scope_mut(block).guarded =
+                    self.graph.scope(scope).entry == ScopeEntry::SelectionInit;
                 self.condition(condition, block)?;
                 self.condition_conversion(condition, false)?;
-                self.substatement(then_branch, block)?;
-                if let Some(branch) = else_branch {
+                let mut selected = None;
+                if is_constexpr
+                    && self.semantic()
+                    && self.template_depth == 0
+                    && !self.reserved_context.pattern
+                    && self.body_context.is_some()
+                    && !matches!(condition, Condition::Expression(expr) if self.graph.reserved_deferrals.expression(expr))
+                {
+                    let Condition::Expression(expr) = condition else {
+                        return Err(Error::at(
+                            self.tree.statements.get(id).location,
+                            "`if constexpr` with a condition declaration",
+                        ));
+                    };
+                    let value = self
+                        .in_constant_evaluation(|analyzer| {
+                            analyzer.constant_truth(expr, block, false)
+                        })
+                        .map_err(|error| {
+                            error.required_expression(self.tree.expressions.get(expr).location)
+                        })?;
+                    super::record(&mut self.graph.constexpr_selections, id.index(), value);
+                    selected = Some(value);
+                }
+                if selected != Some(false) {
+                    self.substatement(then_branch, block)?;
+                }
+                if selected != Some(true)
+                    && let Some(branch) = else_branch
+                {
                     self.substatement(branch, block)?;
                 }
                 Ok(())
@@ -166,6 +203,8 @@ impl Analyzer<'_> {
                 body,
             } => {
                 let block = self.block_scope(scope)?;
+                self.graph.scope_mut(block).guarded =
+                    self.graph.scope(scope).entry == ScopeEntry::SelectionInit;
                 self.condition(condition, block)?;
                 let switch = self.condition_conversion(condition, Self::is_switch(keyword))?;
                 self.control_substatement(
@@ -300,20 +339,12 @@ impl Analyzer<'_> {
 
     pub(super) fn substatement(&mut self, id: ast::StmtId, scope: ScopeId) -> Result<(), Error> {
         if let StmtKind::Compound(list) = self.tree.statements.get(id).kind {
-            return self.compound(list, scope, true);
+            let selection_init = self.tree.statements.get(id).selection_init;
+            return self.compound_selection(list, scope, !selection_init, false, selection_init);
         }
         let block = self.block_scope(scope)?;
         self.graph.scope_mut(block).guarded = true;
         self.statement(id, block)
-    }
-
-    pub(super) fn compound(
-        &mut self,
-        list: List<ast::StmtId>,
-        scope: ScopeId,
-        guarded: bool,
-    ) -> Result<(), Error> {
-        self.compound_region(list, scope, guarded, false)
     }
 
     pub(super) fn compound_region(
@@ -323,13 +354,25 @@ impl Analyzer<'_> {
         guarded: bool,
         handles: bool,
     ) -> Result<(), Error> {
+        self.compound_selection(list, scope, guarded, handles, false)
+    }
+    fn compound_selection(
+        &mut self,
+        list: List<ast::StmtId>,
+        scope: ScopeId,
+        guarded: bool,
+        handles: bool,
+        selection_init: bool,
+    ) -> Result<(), Error> {
         self.check_stack()?;
         let block = self.block_scope(scope)?;
         self.graph.scope_mut(block).guarded = guarded;
         self.graph.scope_mut(block).entry = if handles {
-            super::graph::ScopeEntry::Exception
+            ScopeEntry::Exception
+        } else if selection_init {
+            ScopeEntry::SelectionInit
         } else {
-            super::graph::ScopeEntry::Ordinary
+            ScopeEntry::Ordinary
         };
         let initialized = self.switch_initialized();
         let result = (|| {

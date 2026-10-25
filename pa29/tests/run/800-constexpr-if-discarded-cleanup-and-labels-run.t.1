@@ -1,0 +1,17 @@
+int count;
+struct Object { int value; Object(int n):value(n){} Object(const Object& o):value(o.value){++count;} ~Object(){count+=10;} };
+void may_throw();
+template<class T> Object make() {
+  Object result(4);
+  if constexpr (sizeof(T) == 4) return result;
+  else { Object other(2); may_throw(); return other; }
+}
+template<class T> int labels(int n) {
+  switch (n) {
+    if constexpr (sizeof(T) == 4) { case 1: return 3; }
+    else { case 2: may_throw(); return 8; }
+    default: return 5;
+  }
+}
+int main() { int value; { Object result = make<int>(); value = result.value; }
+  return value == 4 && count == 10 && labels<int>(1) == 3 && labels<int>(2) == 5 ? 0 : 1; }
