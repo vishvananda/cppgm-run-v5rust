@@ -468,6 +468,13 @@ impl Analyzer<'_> {
                         self.demand_storage_layout(class, location)?;
                     }
                 }
+            } else if self.lowering()
+                && facts.call_form == super::expression_facts::CallForm::CallableObject
+                && object.category == V::Prvalue
+            {
+                // A static operator has no object parameter boundary. Its
+                // discarded prvalue receiver still materializes in the caller.
+                self.demand_storage_layout(class, location)?;
             }
         } else {
             if let Some(declaration) = declaration {

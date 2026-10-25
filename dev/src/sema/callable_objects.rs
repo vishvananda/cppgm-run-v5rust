@@ -237,6 +237,37 @@ mod tests {
     };
 
     #[test]
+    fn static_callable_receiver_storage_follows_the_emitted_caller() {
+        let source = SourceBuffer::new(
+            b"struct F{static int operator()(int);};int use(){return F()(7);}\
+              struct U{static int operator()();};inline int unused(){return U()();}\
+              typedef decltype(U()()) Q;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"static-receiver").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::template_bodies::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        for (name, needed) in [(b"F".as_slice(), true), (b"U".as_slice(), false)] {
+            let name = cursor.intern_name(name).unwrap();
+            let class = graph
+                .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+                .entity;
+            assert_eq!(graph.lower_class_layout(class).is_ok(), needed);
+        }
+    }
+
+    #[test]
     fn callable_member_keeps_its_designation_and_owns_a_separate_call_receiver() {
         use super::super::{expression_facts::CallForm, template_bodies::analyze_unit};
         use crate::syntax::ast::{Body, ExprKind, StmtKind};

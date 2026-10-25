@@ -935,6 +935,50 @@ mod tests {
         syntax::SyntaxUnit,
     };
     #[test]
+    fn conditional_constructor_fallback_prepares_ellipsis_storage() {
+        for condition in [
+            "struct P{};",
+            "class P{constexpr explicit operator bool()const{return true;}};",
+        ] {
+            let source = SourceBuffer::new(format!(
+                "{condition}struct S{{int n;template<class T>explicit(T{{}})constexpr S(T):n(1){{}}constexpr S(...):n(2){{}}}};\
+                 int main(){{S s(P{{}});return s.n;}}\
+                 struct U{{}};inline S unused(U value){{return value;}}typedef decltype(S(U{{}})) Q;"
+            ).into_bytes()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-fallback").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let graph = crate::sema::template_bodies::analyze_unit(
+                tree,
+                cursor,
+                declarations,
+                StackBudget::default(),
+                true,
+                true,
+            )
+            .unwrap();
+            let p = cursor.intern_name(b"P").unwrap();
+            let p = graph
+                .binding(graph.own(graph.global, p, Filter::Prefix).unwrap())
+                .entity;
+            assert!(graph.lower_class_layout(p).is_ok(), "{condition}");
+            assert!(
+                graph.lower_direct_class_parameter(p).unwrap(),
+                "{condition}"
+            );
+            let u = cursor.intern_name(b"U").unwrap();
+            let u = graph
+                .binding(graph.own(graph.global, u, Filter::Prefix).unwrap())
+                .entity;
+            assert!(graph.lower_direct_class_parameter(u).is_err());
+            assert!(matches!(
+                graph.entity(u).layout,
+                crate::sema::layout::LayoutState::NotStarted
+            ));
+        }
+    }
+    #[test]
     fn direct_constructor_queries_keep_sequences_in_scratch_until_application() {
         use super::{ConstructorContext, CopyResolution};
         use crate::sema::{

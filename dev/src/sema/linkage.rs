@@ -131,6 +131,15 @@ impl Analyzer<'_> {
                     Some(super::function_names::SpecialName::Operator { .. })
                 )
                 && !allocation
+                && !(self.hosted()
+                    && matches!(
+                        special,
+                        Some(SpecialName::Operator {
+                            token,
+                            ..
+                        }) if token.as_punctuator()
+                            == Some(crate::lex::pp_lexer::Punctuator::LeftParen)
+                    ))
             {
                 return Err(Error::at(location, "a static member operator function"));
             }

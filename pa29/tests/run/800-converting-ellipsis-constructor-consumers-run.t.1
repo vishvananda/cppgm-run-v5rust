@@ -1,0 +1,22 @@
+// A converting constructor's ellipsis owns no declared class parameter.
+// Exercise the retained first conversion through call, return and reference
+// consumers, including an operand whose copy constructor is deleted.
+struct source {
+  int value;
+  source(int n) : value(n) {}
+  source(const source&) = delete;
+};
+struct converted {
+  int value;
+  converted(...) : value(7) {}
+};
+converted returned(source& value) { return value; }
+int consume(converted value) { return value.value; }
+int main() {
+  source input(3);
+  converted direct(input);
+  converted copied = input;
+  const converted& bound = input;
+  return direct.value != 7 || copied.value != 7 || bound.value != 7
+      || returned(input).value != 7 || consume(input) != 7;
+}

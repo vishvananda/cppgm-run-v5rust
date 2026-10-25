@@ -1,0 +1,28 @@
+// A hosted static operator() has no implicit parameter, but its receiver's
+// effects and temporary cleanup still surround the ordinary arguments/call.
+int trace;
+int argument(int value) { trace = trace * 10 + value; return value; }
+struct callable {
+  ~callable() { trace = trace * 10 + 5; }
+  template<class T>
+  static int operator()(T value, int extra = argument(3)) {
+    trace = trace * 10 + 4;
+    return value + extra;
+  }
+};
+callable receiver() { trace = trace * 10 + 1; return callable(); }
+struct inherited : callable {};
+int main() {
+  int first = receiver()(argument(2));
+  if (first != 5 || trace != 12345) return 1;
+  callable local;
+  trace = 0;
+  if (local(2, 3) != 5 || trace != 4) return 2;
+  volatile callable qualified;
+  trace = 0;
+  if (qualified(2, 3) != 5 || trace != 4) return 3;
+  inherited derived;
+  trace = 0;
+  if (derived(2, 3) != 5 || trace != 4) return 4;
+  return 0;
+}

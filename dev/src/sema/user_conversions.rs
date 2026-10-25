@@ -381,14 +381,21 @@ impl Analyzer<'_> {
         facts.conversion = Some(first);
         self.odr_use_constants(id, Some(first))?;
         self.graph.expression_facts.set(id, facts);
-        self.class_parameter_destruction(first.target, scope, location)?;
-        self.record_class_copy(
-            id,
-            first.target,
-            scope,
-            super::copy_initialization::CopyUse::Value { in_place: false },
-            location,
-        )?;
+        if first.rank == R::Ellipsis {
+            // No declared parameter owns this operand's ABI boundary. Keep
+            // the ellipsis conversion and defer its storage to the caller,
+            // just as for a written variadic call; no copy is selected.
+            self.ellipsis_argument(id)?;
+        } else {
+            self.class_parameter_destruction(first.target, scope, location)?;
+            self.record_class_copy(
+                id,
+                first.target,
+                scope,
+                super::copy_initialization::CopyUse::Value { in_place: false },
+                location,
+            )?;
+        }
         self.graph
             .expression_facts
             .set_user_conversion(id, constructor, sequence.conversion);
