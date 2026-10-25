@@ -85,6 +85,14 @@ impl Analyzer<'_> {
             self.closure_conversion(class, true)?;
         }
         let found = self.using_lookup(prefix, key, location)?;
+        // The frozen using-declaration lookup rejects an absent shared name
+        // before analyzing the conversion target or introducing any binding.
+        if found.binding.is_none() {
+            return Err(Error::at(
+                location,
+                "undeclared name in a using-declaration",
+            ));
+        }
         let target = self.type_syntax(target, scope)?;
         let mut selected = super::lookup::FunctionCandidates::default();
         for &binding in found.functions.as_slice() {
