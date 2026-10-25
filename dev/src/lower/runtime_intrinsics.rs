@@ -119,6 +119,13 @@ impl Function<'_, '_, '_, '_> {
         let source = self.graph.lower_expression(id)?.ty;
         let arguments = self.tree.expr_lists.get(arguments);
         match operation {
+            RuntimeIntrinsic::AddressOf => Ok(RValue {
+                value: self.address(arguments[0])?,
+                ty: Type::Ptr,
+                source,
+                literal: false,
+                bits: None,
+            }),
             RuntimeIntrinsic::Overflow(kind) => self.overflow_intrinsic(id, argument_list, kind),
             RuntimeIntrinsic::VectorReduction(kind) => self.reduce_vector(id, arguments[0], kind),
             RuntimeIntrinsic::ObjectSize { minimum } => {

@@ -15,6 +15,7 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RuntimeIntrinsic {
+    AddressOf,
     ObjectSize { minimum: bool },
     Prefetch,
     AssumeAligned,
@@ -28,6 +29,7 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntri
     use super::vector_builtins::Reduction as V;
     use RuntimeIntrinsic as R;
     [
+        ("__builtin_addressof", R::AddressOf),
         ("__builtin_object_size", R::ObjectSize { minimum: false }),
         (
             "__builtin_dynamic_object_size",
@@ -74,6 +76,25 @@ impl Analyzer<'_> {
         let void = self.graph.types.scalar(Scalar::Void)?;
         let integer = self.graph.types.scalar(Scalar::Basic(F::Int))?;
         let result = match operation {
+            R::AddressOf => {
+                if count != 1 {
+                    return Err(Error::UnconditionalDiagnostic {
+                        location,
+                        message: "__builtin_addressof takes one argument",
+                    });
+                }
+                let operand = self.typed_expression(arguments[0], scope)?;
+                self.check_resolved_function(arguments[0])?;
+                if operand.category != ValueCategory::Lvalue {
+                    return Err(Error::at(
+                        location,
+                        "__builtin_addressof of something that is no lvalue",
+                    ));
+                }
+                self.graph
+                    .types
+                    .intern(TypeKind::Pointer(operand.ty), Cv::default())?
+            }
             R::Overflow(kind) => return self.overflow_builtin(id, arguments, kind, scope),
             R::VectorReduction(kind) => return self.vector_reduction(id, arguments, kind, scope),
             R::ObjectSize { .. } => {

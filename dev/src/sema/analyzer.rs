@@ -486,7 +486,7 @@ impl<'tree> Analyzer<'tree> {
             }
             ast::DeclKind::Using {
                 directive, target, ..
-            } => self.using_declaration(directive, target, scope, location),
+            } => self.using_declaration(directive, target, declaration.attributes, scope, location),
             ast::DeclKind::Alias { name, ty } => {
                 self.reject_no_return(
                     declaration.attributes,

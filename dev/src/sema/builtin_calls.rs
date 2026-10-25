@@ -50,6 +50,7 @@ mod tests {
     #[test]
     fn builtin_template_rejection_leaves_call_operands_undemanded() {
         for name in [
+            "__builtin_addressof",
             "__builtin_object_size",
             "__builtin_dynamic_object_size",
             "__builtin_prefetch",

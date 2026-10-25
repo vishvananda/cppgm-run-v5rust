@@ -342,6 +342,22 @@ impl Analyzer<'_> {
         if let Some(kind) = self.graph.expression_facts.source_location(id) {
             return self.constant_source_location(id, kind);
         }
+        if self.graph.expression_facts.runtime_intrinsic(id)
+            == Some(super::runtime_intrinsics::RuntimeIntrinsic::AddressOf)
+        {
+            let ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
+                return Err(Error::Invariant("constant address intrinsic without call"));
+            };
+            let operand = self.tree.expr_lists.get(arguments)[0];
+            let place = self.constant_place(operand, scope)?;
+            if place.bit_field().is_some() {
+                return Err(nonconstant(
+                    self.tree.expressions.get(id).location,
+                    "the address of a bit-field",
+                ));
+            }
+            return Ok(Returned::Value(Value::Pointer(place.pointer())));
+        }
         if let Some(super::runtime_intrinsics::RuntimeIntrinsic::Overflow(operation)) =
             self.graph.expression_facts.runtime_intrinsic(id)
         {

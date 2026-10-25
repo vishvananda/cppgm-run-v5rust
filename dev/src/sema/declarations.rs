@@ -335,6 +335,7 @@ impl Analyzer<'_> {
         &mut self,
         directive: bool,
         target: Name,
+        attributes: List<ast::Attribute>,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
@@ -430,9 +431,23 @@ impl Analyzer<'_> {
         {
             found = builtin;
         }
-        let target_id = found
-            .binding
-            .ok_or_else(|| Error::at(location, "undeclared name in a using-declaration"))?;
+        let Some(target_id) = found.binding else {
+            // Only an absent final name is optional. Prefix resolution,
+            // ambiguity, access and introduction retain their normal checks.
+            if self
+                .tree
+                .attributes
+                .get(attributes)
+                .iter()
+                .any(|attribute| attribute.kind == ast::AttributeKind::UsingIfExists)
+            {
+                return Ok(());
+            }
+            return Err(Error::at(
+                location,
+                "undeclared name in a using-declaration",
+            ));
+        };
         // Access is checked for the entire named set before hiding any import.
         // In particular, an inaccessible base overload cannot be excused by a
         // same-signature declaration already present in the derived class.

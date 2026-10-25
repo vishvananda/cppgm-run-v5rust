@@ -1,0 +1,39 @@
+struct object {
+  int value;
+  object *operator&() { return 0; }
+  const object *operator&() const { return 0; }
+};
+constexpr object fixed = {7};
+constexpr const object *fixed_address = __builtin_addressof(fixed);
+static_assert(fixed_address->value == 7, "constant object address");
+static_assert(__builtin_addressof(fixed.value) == &fixed.value, "member address");
+constexpr int array[] = {2, 4, 6};
+static_assert(__builtin_addressof(array[2]) - array == 2, "element address");
+static_assert(__is_same(decltype(__builtin_addressof(array)), const int (*)[3]), "array identity");
+int target(int value) { return value + 3; }
+static_assert(__builtin_addressof(target) == &target, "function address");
+namespace imported {
+using ::__builtin_addressof __attribute__((using_if_exists));
+}
+template<class T> constexpr T *address(T &value) {
+  return imported::__builtin_addressof(value);
+}
+static_assert(address(fixed) == fixed_address, "template constant address");
+template<class T> auto viable(T &&value) -> decltype(__builtin_addressof(static_cast<T &&>(value)), char());
+long viable(...);
+static_assert(sizeof(viable(1)) == sizeof(long), "prvalue substitution failure");
+static_assert(sizeof(viable(fixed)) == sizeof(char), "lvalue substitution");
+int calls;
+object &observe(object &value) { ++calls; return value; }
+int read(object &value) noexcept { return __builtin_addressof(value)->value; }
+int main() {
+  object value = {11};
+  volatile int qualified = 5;
+  object *pointer = ::__builtin_addressof(observe(value));
+  if (calls != 1 || pointer->value != 11 || read(value) != 11) return 1;
+  if (__builtin_addressof(qualified) != &qualified) return 2;
+  int local[2] = {9, 12};
+  if ((*address(local))[1] != 12 || address(local[1]) != local + 1) return 3;
+  if (address(target)(4) != 7) return 4;
+  return 0;
+}
