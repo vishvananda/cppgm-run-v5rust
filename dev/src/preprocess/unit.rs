@@ -742,6 +742,7 @@ mod inclusion_tests {
 
     #[test]
     fn include_probes_retain_search_origin_without_entering_files() {
+        use crate::preprocess::SourcePositions;
         use crate::preprocess::options::{DriverOptions, PredefinedValues};
         let source = SourceBuffer::new(
             br"
@@ -756,7 +757,8 @@ parent
         .unwrap();
         let options = DriverOptions {
             hosted: true,
-            include_paths: vec![b"first".to_vec(), b"second".to_vec()],
+            include_paths: vec![b"first".to_vec()],
+            system_include_paths: vec![b"second".to_vec()],
             ..DriverOptions::default()
         };
         let services = FileServices {
@@ -797,6 +799,7 @@ second
             &options,
         )
         .unwrap();
+        let mut locations = Vec::new();
         for expected in [
             b"probe_found".as_slice(),
             b"first",
@@ -806,6 +809,7 @@ second
         ] {
             let kind = input.next_non_whitespace_kind().unwrap();
             assert_eq!(input.token(kind).spelling, expected);
+            locations.push(input.token(kind).begin);
         }
         assert_eq!(
             input.next_non_whitespace_kind().unwrap(),
@@ -814,6 +818,15 @@ second
         assert_eq!(input.counters().includes, 2);
         assert_eq!(input.source.inclusion_count(), 4); // primary, predefines, two includes
         assert_eq!(input.expander.live_storage(), [0; 5]);
+        // Query retained inclusion provenance after returning to the primary
+        // source. A probe and #line change never reclassify an inclusion.
+        assert_eq!(
+            locations
+                .into_iter()
+                .map(|at| input.source.in_system_header(at))
+                .collect::<Vec<_>>(),
+            [false, false, true, false, false]
+        );
     }
 
     #[test]

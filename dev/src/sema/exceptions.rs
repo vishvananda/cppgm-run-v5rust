@@ -35,6 +35,11 @@ pub(super) enum ExceptionState {
     Value(ExceptionSet),
     Template(super::template_exceptions::TemplateException),
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum OmittedSpecification {
+    Compare,
+    InheritSystemNothrow,
+}
 #[derive(Clone, Copy)]
 enum SpecificationMode {
     Ordinary,
@@ -205,6 +210,13 @@ impl Analyzer<'_> {
         }
         false
     }
+    fn nonthrowing_specification(&self, qualifier: Option<Qualifier>) -> bool {
+        qualifier.is_some_and(|q| {
+            matches!(q.kind, QualifierKind::Noexcept(None))
+                || matches!(q.kind, QualifierKind::Throw(types) if types.is_empty())
+                || matches!(q.kind, QualifierKind::Noexcept(Some(expr)) if self.true_operand(expr))
+        })
+    }
     pub(super) fn record_function_exceptions(
         &mut self,
         entity: EntityId,
@@ -225,6 +237,28 @@ impl Analyzer<'_> {
                 })
             });
         let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
+        if first {
+            // Only a syntactically non-throwing first C declaration in a
+            // system inclusion gives later omitted specifications this rule.
+            let inherit = self.nonthrowing_specification(qualifier)
+                && self
+                    .graph
+                    .entity(entity)
+                    .function
+                    .is_some_and(|props| props.language == super::linkage::Language::C)
+                && self.positions.in_system_header(location);
+            self.graph.entity_mut(entity).exception_omission = if inherit {
+                OmittedSpecification::InheritSystemNothrow
+            } else {
+                OmittedSpecification::Compare
+            };
+        } else if qualifier.is_none()
+            && self.graph.entity(entity).exception_omission
+                == OmittedSpecification::InheritSystemNothrow
+        {
+            // The first specification remains in force for calls and emission.
+            return Ok(());
+        }
         let special = self
             .graph
             .entity(entity)
@@ -283,12 +317,7 @@ impl Analyzer<'_> {
             // instance, but the pattern's first nothrow value stays false.
             // A redeclaration with another operand waits for instantiation;
             // one with no operand compares that retained pattern value.
-            let nothrow = qualifier.is_some_and(|q| {
-                matches!(q.kind, QualifierKind::Noexcept(None))
-                    || matches!(q.kind, QualifierKind::Throw(types) if types.is_empty())
-                    || matches!(q.kind, QualifierKind::Noexcept(Some(expr)) if self.true_operand(expr))
-            });
-            if nothrow {
+            if self.nonthrowing_specification(qualifier) {
                 return Err(Error::at(
                     location,
                     "redeclaration with an incompatible exception-specification",

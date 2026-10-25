@@ -7,6 +7,7 @@ use std::rc::Rc;
 pub(crate) trait SourcePositions {
     fn source_file(&self, location: SourceOffset) -> Rc<[u8]>;
     fn source_line(&self, location: SourceOffset) -> Result<i64, PreprocessError>;
+    fn in_system_header(&self, location: SourceOffset) -> bool;
 }
 
 struct LineState {

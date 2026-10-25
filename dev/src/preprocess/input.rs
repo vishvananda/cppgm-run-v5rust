@@ -25,6 +25,7 @@ enum InputMode {
 struct InclusionId(u32);
 struct Inclusion<'a> {
     base: u32,
+    system: bool,
     parent: Option<InclusionId>,
     included_at: SourceOffset,
     locations: super::locations::Locations<'a>,
@@ -67,6 +68,7 @@ pub(crate) struct SourceInput<'a> {
     binary_exponents: bool,
     pub(crate) hosted: bool,
     include_paths: Vec<Vec<u8>>,
+    system_paths: usize,
     pub(crate) modes: super::options::FeatureModes,
 }
 struct IncludeMatch {
@@ -79,6 +81,7 @@ impl<'a> SourceInput<'a> {
         self.hosted = options.hosted;
         self.modes = options.modes;
         self.include_paths.clone_from(&options.include_paths);
+        self.system_paths = self.include_paths.len();
         self.include_paths
             .extend_from_slice(&options.system_include_paths);
     }
@@ -131,6 +134,7 @@ impl<'a> SourceInput<'a> {
             suspended: Vec::new(),
             inclusions: vec![Inclusion {
                 base: 0,
+                system: false,
                 parent: None,
                 included_at: source.begin(),
                 locations: super::locations::Locations::new(source, name),
@@ -151,6 +155,7 @@ impl<'a> SourceInput<'a> {
             binary_exponents: false,
             hosted: false,
             include_paths: Vec::new(),
+            system_paths: 0,
             modes: super::options::FeatureModes::default(),
         })
     }
@@ -599,8 +604,11 @@ impl<'a> SourceInput<'a> {
             ));
         }
         self.includes = self.includes.wrapping_add(1);
+        let system =
+            search_index.map_or(self.inclusion().system, |index| index >= self.system_paths);
         self.enter(file, &path, depth, Some(directive.begin))?;
         self.frame.search_index = search_index;
+        self.inclusions[self.frame.inclusion.0 as usize].system = system;
         Ok(())
     }
     pub(crate) fn enter_command_line(&mut self, text: &[u8]) -> Result<(), PreprocessError> {
@@ -691,6 +699,7 @@ impl<'a> SourceInput<'a> {
         )?;
         self.inclusions.push(Inclusion {
             base,
+            system: false,
             parent: included_at.map(|_| self.frame.inclusion),
             included_at: included_at.unwrap_or(SourceOffset(0)),
             locations: super::locations::Locations::with_image(image.clone(), path),
@@ -714,6 +723,10 @@ impl<'a> SourceInput<'a> {
 }
 
 impl super::locations::SourcePositions for SourceInput<'_> {
+    fn in_system_header(&self, location: SourceOffset) -> bool {
+        self.inclusion_at(location).system
+    }
+
     fn source_file(&self, location: SourceOffset) -> std::rc::Rc<[u8]> {
         let inclusion = self.inclusion_at(location);
         inclusion
