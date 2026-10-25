@@ -162,9 +162,7 @@ impl Function<'_, '_, '_, '_> {
         if facts.is_place {
             let source = self.address(id)?;
             if !self.graph.lower_class_empty(class)? {
-                let (size, alignment) = types::layout(self.graph, ty)?;
-                let size = size.min(self.graph.lower_nonvirtual_bytes(class)?);
-                self.effect(I::CopyObject(size, alignment, source, object))?;
+                self.copy_object(ty, source, object)?;
             }
         } else {
             self.materialize_class(id, ty, object)?;
@@ -783,9 +781,7 @@ impl Function<'_, '_, '_, '_> {
                 let source =
                     self.bind_reference(id, reference, super::conversions::Context::Argument)?;
                 if !empty {
-                    let (size, alignment) = self.graph.lower_class_layout(class)?;
-                    let size = size.min(self.graph.lower_nonvirtual_bytes(class)?);
-                    self.effect(I::CopyObject(size, alignment, source, object))?;
+                    self.copy_object(ty, source, object)?;
                 }
                 return Ok(true);
             }

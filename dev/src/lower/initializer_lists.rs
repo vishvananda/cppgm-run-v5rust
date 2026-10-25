@@ -155,8 +155,7 @@ impl Function<'_, '_, '_, '_> {
         let slot = self.generated_slot("argobj", types::storage(self.graph, ty)?)?;
         let address = self.emit(I::Addr(slot), ty)?.value;
         self.initialize_list_object(list, ty, address, false, None)?;
-        let (size, alignment) = types::layout(self.graph, ty)?;
-        self.effect(I::CopyObject(size, alignment, slot, object))?;
+        self.copy_object(ty, slot, object)?;
         Ok(true)
     }
 

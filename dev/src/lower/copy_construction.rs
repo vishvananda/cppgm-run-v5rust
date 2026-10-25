@@ -148,8 +148,7 @@ impl Function<'_, '_, '_, '_> {
             if !self.graph.lower_class_empty(class)? {
                 let destination = self.assignment_this(ty)?;
                 let source = self.assignment_source(function)?;
-                let (size, align) = types::layout(self.graph, ty)?;
-                self.effect(I::CopyObject(size.min(limit), align, source, destination))?;
+                self.copy_object(ty, source, destination)?;
             }
             self.copying.active = false;
             return Ok(());
@@ -362,17 +361,17 @@ impl Function<'_, '_, '_, '_> {
         };
         if transfer.trivial {
             let (size, align) = types::layout(self.graph, action.ty)?;
-            let size = if shared.is_none()
+            if shared.is_none()
                 && transfer.member.is_none()
                 && transfer.offset.wrapping_add(size) > limit
             {
-                self.graph.lower_nonvirtual_bytes(
+                let bytes = self.graph.lower_nonvirtual_bytes(
                     cls.ok_or(crate::sema::Error::Invariant("copy base class"))?,
-                )?
+                )?;
+                self.effect(I::CopyObject(bytes, align, source, destination))?;
             } else {
-                size
-            };
-            self.effect(I::CopyObject(size, align, source, destination))?;
+                self.copy_object(action.ty, source, destination)?;
+            }
             return Ok(if element == action.ty {
                 Some(destination)
             } else {
@@ -463,8 +462,7 @@ impl Function<'_, '_, '_, '_> {
             let source =
                 self.bind_reference(source, parameters[0], super::conversions::Context::Argument)?;
             if !empty {
-                let (size, alignment) = types::layout(self.graph, ty)?;
-                self.effect(I::CopyObject(size, alignment, source, object))?;
+                self.copy_object(ty, source, object)?;
             }
         }
         Ok(true)
@@ -484,8 +482,7 @@ impl Function<'_, '_, '_, '_> {
             && self.symbols.class_destructor(ty)?.is_some();
         if self.graph.lower_constructor_copies_storage(id) && !empty_lifetime {
             if !self.graph.lower_class_empty(class)? {
-                let (size, alignment) = types::layout(self.graph, ty)?;
-                self.effect(I::CopyObject(size, alignment, source, destination))?;
+                self.copy_object(ty, source, destination)?;
             }
             return Ok(());
         }

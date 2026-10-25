@@ -337,6 +337,9 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn parameter(&self, index: usize) -> Result<Value, Error> {
         self.body.parameter_value(index)
     }
+    pub(crate) fn is_object_value(&self, value: Value) -> bool {
+        matches!(value, Value::Temp(id) if matches!(self.body.temp(id).ty, Some(Type::Object { .. })))
+    }
     pub(crate) fn integer(&mut self, value: u128) -> Result<Value, Error> {
         self.constant(Constant::Integer(value))
     }

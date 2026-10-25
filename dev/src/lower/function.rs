@@ -489,8 +489,7 @@ impl Function<'_, '_, '_, '_> {
             }
             if !self.graph.lower_class_empty(class)? {
                 let address = self.emit(I::Addr(slot), ty)?.value;
-                let (bytes, align) = types::layout(self.graph, ty)?;
-                self.effect(I::CopyObject(bytes, align, incoming, address))?;
+                self.copy_object(ty, incoming, address)?;
             }
         } else {
             let storage = types::storage(self.graph, ty)?;

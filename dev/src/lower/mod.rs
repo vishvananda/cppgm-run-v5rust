@@ -70,6 +70,7 @@ mod mutations;
 mod null_initialization;
 mod object_arrays;
 mod object_classes;
+mod object_storage;
 mod operator_calls;
 mod overflow_intrinsics;
 mod pointers;

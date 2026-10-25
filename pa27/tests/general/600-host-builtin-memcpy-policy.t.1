@@ -1,0 +1,16 @@
+void copy_unused(char* destination, const char* source, unsigned long size) {
+  __builtin_memcpy(destination, source, size);
+}
+void* copy_used(char* destination, const char* source, unsigned long size) {
+  return __builtin_memcpy(destination, source, size);
+}
+int main() {
+  char source[5] = {'a', 'b', 'c', 'd', 'e'};
+  char first[5] = {};
+  char second[5] = {};
+  copy_unused(first, source, 5);
+  if (copy_used(second, first, 5) != second) return 1;
+  for (int i = 0; i != 5; ++i)
+    if (first[i] != source[i] || second[i] != source[i]) return 2;
+  return 0;
+}

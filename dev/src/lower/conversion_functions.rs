@@ -235,9 +235,7 @@ impl Function<'_, '_, '_, '_> {
                     return Err(crate::sema::Error::Invariant("conversion copy class").into());
                 };
                 if !self.graph.lower_class_empty(class)? {
-                    let (bytes, align) = super::types::layout(self.graph, ty)?;
-                    let bytes = bytes.min(self.graph.lower_nonvirtual_bytes(class)?);
-                    self.effect(I::CopyObject(bytes, align, source, object))?;
+                    self.copy_object(ty, source, object)?;
                 }
             }
             CopyAction::Constructor { constructor, .. } => self.call_copy_constructor(

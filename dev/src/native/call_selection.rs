@@ -394,7 +394,10 @@ impl Selection<'_> {
             }
         }
         let used = result.is_some_and(|t| self.facts.intervals[t.index()].uses != 0);
-        if plan.kind == CallKind::Memcpy && !used {
+        if self.mir.object_model == super::object_compile::ObjectModel::Course
+            && plan.kind == CallKind::Memcpy
+            && !used
+        {
             self.mir.instructions.push(Instruction {
                 volatile: false,
                 op: Op::DynamicCopy,

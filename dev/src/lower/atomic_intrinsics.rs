@@ -260,8 +260,7 @@ impl Function<'_, '_, '_, '_> {
             if source.is_place && self.graph.lower_class_copy(argument)?.is_none() {
                 let from = self.address(argument)?;
                 if !self.graph.lower_class_empty(class)? {
-                    let (size, alignment) = types::layout(self.graph, source.ty)?;
-                    self.effect(I::CopyObject(size, alignment, from, address))?;
+                    self.copy_object(source.ty, from, address)?;
                 }
             } else {
                 self.materialize_class(argument, source.ty, address)?;

@@ -2,7 +2,7 @@
 // expression_lowering.cpp::copy_result, statement_lowering.cpp::class_return.
 // See NOTICE.
 //! Class results use either their bytes or a caller-owned destination.
-use super::{Error, function::Function, types};
+use super::{Error, function::Function};
 use crate::{
     lowir::{
         model::{InstructionKind as I, Value},
@@ -239,8 +239,7 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("class result without class").into());
         };
         if !self.graph.lower_class_empty(class)? {
-            let (bytes, align) = types::layout(self.graph, source)?;
-            self.effect(I::CopyObject(bytes, align, value.value, object))?;
+            self.copy_object(source, value.value, object)?;
         }
         Ok(())
     }
@@ -445,9 +444,7 @@ impl Function<'_, '_, '_, '_> {
                     );
                 };
                 if !self.graph.lower_class_empty(class)? {
-                    let (bytes, align) = types::layout(self.graph, ty)?;
-                    let bytes = bytes.min(self.graph.lower_nonvirtual_bytes(class)?);
-                    self.effect(I::CopyObject(bytes, align, source, object))?;
+                    self.copy_object(ty, source, object)?;
                 }
                 Ok(())
             }

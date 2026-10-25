@@ -302,6 +302,7 @@ impl Function<'_, '_, '_, '_> {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         } else {
+            self.lifetime.region_start = RegionStart::Consumed;
             self.lifetime.storage_split = Some(self.builder.position()?);
         }
         Ok(())

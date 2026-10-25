@@ -468,8 +468,7 @@ impl Function<'_, '_, '_, '_> {
                     crate::support::source::SourceOffset(0),
                 )?;
             } else if !empty {
-                let (size, alignment) = types::layout(self.graph, parameters[0])?;
-                self.effect(I::CopyObject(size, alignment, source, object))?;
+                self.copy_object(parameters[0], source, object)?;
             }
             source = if self.graph.lower_direct_class_parameter(class)? {
                 slot

@@ -476,8 +476,12 @@ impl Function<'_, '_, '_, '_> {
         if self.element_temporaries.depth != 0 {
             return Ok(());
         }
-        let storage = self.storage_region_pending();
-        self.storage_region_event()?;
+        // emit_call invokes region_event only for a nonthrowing call.
+        // A throwing call opens at its operand mark or segment start.
+        let storage = !throws && self.storage_region_pending();
+        if !throws {
+            self.storage_region_event()?;
+        }
         if storage && self.lifetime.region {
             self.lifetime.call_region = super::lifetime::CallRegion::Enclosing;
         }
@@ -587,6 +591,11 @@ impl Function<'_, '_, '_, '_> {
                 .lifetime
                 .temporary_split
                 .is_some_and(|position| self.builder.same_block(position))
+            || !self.lifetime.region_start.is_pending()
+                && self
+                    .lifetime
+                    .storage_split
+                    .is_some_and(|position| self.builder.same_block(position))
         {
             self.effect(I::Runtime(R::EhTry(entry)))?;
         } else if let Some(position) = call_start {
