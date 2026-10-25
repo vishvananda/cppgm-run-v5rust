@@ -268,7 +268,13 @@ impl Analyzer<'_> {
             } else if matches!(fk, TypeKind::Scalar(Scalar::Nullptr)) {
                 self.integral_kind(goal).is_some()
             } else {
-                self.is_integral_operand(from) && matches!(gk, TypeKind::Pointer(_)) || from == goal
+                self.is_integral_operand(from) && matches!(gk, TypeKind::Pointer(_))
+                    || from == goal
+                    || self.vector_reinterpretation(
+                        from,
+                        goal,
+                        self.tree.expressions.get(id).location,
+                    )?
             };
         }
         if !allowed {

@@ -29,6 +29,7 @@ pub(crate) use super::stack_intrinsics::StackIntrinsic;
 pub(crate) use super::static_arrays::Item as StaticItem;
 pub(crate) use super::static_initialization::Value as StaticValue;
 pub(crate) use super::symbolic_members::MemberPointer as MemberPointerValue;
+pub(crate) use super::vector_builtins::LaneSelector;
 pub(crate) use super::vector_builtins::Reduction;
 pub(crate) use super::virtual_members::{SlotId, SlotKind};
 pub(crate) use super::vtable_groups::SegmentId;

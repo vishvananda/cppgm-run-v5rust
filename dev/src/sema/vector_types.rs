@@ -13,6 +13,45 @@ use crate::{
 };
 
 impl Analyzer<'_> {
+    pub(super) fn vector_reinterpretation(
+        &mut self,
+        from: TypeId,
+        to: TypeId,
+        location: SourceOffset,
+    ) -> Result<bool, Error> {
+        let from = self.bare_type(from)?;
+        let to = self.bare_type(to)?;
+        let from_vector = self.vector_shape(from).is_some();
+        let to_vector = self.vector_shape(to).is_some();
+        let integral = |ty| {
+            matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(_))
+                && self.integral_kind(ty).is_some()
+        };
+        if !from_vector && !to_vector
+            || matches!(
+                self.graph.types.get(from).kind,
+                TypeKind::Vector {
+                    operand: Some(_),
+                    ..
+                }
+            )
+            || matches!(
+                self.graph.types.get(to).kind,
+                TypeKind::Vector {
+                    operand: Some(_),
+                    ..
+                }
+            )
+            || !from_vector
+                && (!integral(from)
+                    || self.graph.types.get(from).kind == TypeKind::Scalar(Scalar::Bool))
+            || !to_vector && !integral(to)
+        {
+            return Ok(false);
+        }
+        Ok(self.type_size(from, location)?.0 == self.type_size(to, location)?.0)
+    }
+
     pub(super) fn vector_specifier_types(
         &mut self,
         mut ty: TypeId,

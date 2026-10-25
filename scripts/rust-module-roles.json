@@ -1,5 +1,6 @@
 {
   "dev/src/sema/expression_facts.rs": "model",
   "dev/src/abi/graph.rs": "model",
-  "dev/src/abi/vocabulary.rs": "interface"
+  "dev/src/abi/vocabulary.rs": "interface",
+  "dev/src/lex/vector_lanes.rs": "interface"
 }

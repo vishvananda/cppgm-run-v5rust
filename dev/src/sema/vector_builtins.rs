@@ -6,7 +6,7 @@ use super::{
     expression_facts::{ExprFacts, ValueCategory},
     graph::ScopeId,
     runtime_intrinsics::RuntimeIntrinsic,
-    types::{Scalar, TypeId, TypeKind},
+    types::{Cv, Scalar, TypeId, TypeKind},
 };
 use crate::{support::source::SourceOffset, syntax::ast};
 
@@ -21,7 +21,145 @@ pub(crate) enum Reduction {
     Min,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LaneSelector {
+    Constant(u8),
+    Runtime,
+}
+
+/// Compact published fact; 255 is outside every supported lane bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LaneBuiltin {
+    operation: crate::lex::vector_lanes::OperationId,
+    selector: u8,
+}
+impl LaneBuiltin {
+    pub(super) fn new(
+        operation: crate::lex::vector_lanes::OperationId,
+        selector: LaneSelector,
+    ) -> Self {
+        Self {
+            operation,
+            selector: match selector {
+                LaneSelector::Constant(index) => index,
+                LaneSelector::Runtime => u8::MAX,
+            },
+        }
+    }
+    pub(crate) fn operation(self) -> crate::lex::vector_lanes::Operation {
+        self.operation.operation()
+    }
+    pub(crate) fn selector(self) -> LaneSelector {
+        if self.selector == u8::MAX {
+            LaneSelector::Runtime
+        } else {
+            LaneSelector::Constant(self.selector)
+        }
+    }
+    pub(super) fn operation_id(self) -> crate::lex::vector_lanes::OperationId {
+        self.operation
+    }
+}
+
 impl Analyzer<'_> {
+    pub(super) fn vector_lane_builtin(
+        &mut self,
+        id: ast::ExprId,
+        arguments: &[ast::ExprId],
+        operation_id: crate::lex::vector_lanes::OperationId,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
+        use crate::lex::vector_lanes::{Kind, Lane};
+        let operation = operation_id.operation();
+        let lane = self.graph.types.scalar(match operation.lane {
+            Lane::Basic(kind) => Scalar::Basic(kind),
+            Lane::SignedChar => Scalar::SignedChar,
+            Lane::Short => Scalar::Short,
+        })?;
+        let vector = self.graph.types.intern(
+            TypeKind::Vector {
+                element: lane,
+                bound: u64::from(operation.lanes),
+                operand: None,
+                bytes: false,
+            },
+            Cv::default(),
+        )?;
+        let wanted = match operation.kind {
+            Kind::Initialize => usize::from(operation.lanes),
+            Kind::Extract => 2,
+            Kind::Insert => 3,
+        };
+        let location = self.tree.expressions.get(id).location;
+        if arguments.len() != wanted {
+            return Err(Error::UnconditionalDiagnostic {
+                location,
+                message: "wrong number of arguments to a vector lane builtin",
+            });
+        }
+        let integer = self
+            .graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))?;
+        for (index, &argument) in arguments.iter().enumerate() {
+            self.typed_expression(argument, scope)?;
+            self.check_resolved_function(argument)?;
+            let target = if operation.kind != Kind::Initialize && index + 1 == wanted {
+                integer
+            } else if operation.kind != Kind::Initialize && index == 0 {
+                vector
+            } else {
+                lane
+            };
+            self.convert_scalar(argument, target, false)?;
+        }
+        let mut selector = LaneSelector::Constant(0);
+        if operation.kind != Kind::Initialize {
+            let argument = arguments[wanted - 1];
+            let location = self.tree.expressions.get(argument).location;
+            if let Some(value) = self.constant_value(argument, scope, false)? {
+                if value.bits >= u64::from(operation.lanes) {
+                    return Err(Error::UnconditionalDiagnostic {
+                        location,
+                        message: "a vector lane selector outside the vector",
+                    });
+                }
+                selector = LaneSelector::Constant(
+                    u8::try_from(value.bits)
+                        .map_err(|_| Error::Invariant("vector selector width"))?,
+                );
+            } else if self.template_depth == 0 {
+                if !self.body_context.as_ref().is_some_and(|body| {
+                    // The frozen semantic concession reads the body's own
+                    // declaration flag, not emission's inherited policy.
+                    self.graph
+                        .function_templates
+                        .instantiations
+                        .policy(body.entity)
+                        .always_inline
+                }) {
+                    return Err(Error::UnconditionalDiagnostic {
+                        location,
+                        message: "a vector lane selector that is no integral constant expression",
+                    });
+                }
+                selector = LaneSelector::Runtime;
+            }
+        }
+        self.graph.expression_facts.set_runtime_intrinsic(
+            id,
+            RuntimeIntrinsic::VectorLane(LaneBuiltin::new(operation_id, selector)),
+        );
+        self.new_expression_facts(
+            if operation.kind == Kind::Extract {
+                lane
+            } else {
+                vector
+            },
+            ValueCategory::Prvalue,
+        )
+    }
+
     pub(super) fn builtin_value_expression(
         &mut self,
         id: ast::ExprId,

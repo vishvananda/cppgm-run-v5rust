@@ -73,6 +73,18 @@ impl Function<'_, '_, '_, '_> {
         if to == Type::Void {
             return Ok(value);
         }
+        if context == Context::Cast
+            && (matches!(
+                self.graph.lower_type(value.source)?,
+                crate::sema::lowering::TypeView::Vector { .. }
+            ) || matches!(
+                self.graph.lower_type(target)?,
+                crate::sema::lowering::TypeView::Vector { .. }
+            ))
+        {
+            let value = self.fit(value, value.source)?;
+            return self.reinterpret_bytes(value, target);
+        }
         if types::boolean(self.graph, target)? {
             if super::complex::part(self.graph, value.source)?.is_some() {
                 return self.complex_truth(value, target);

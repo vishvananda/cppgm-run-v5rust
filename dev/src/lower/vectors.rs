@@ -42,6 +42,93 @@ pub(super) fn classes(
     })
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn vector_builtin_lanes(
+        &mut self,
+        id: ast::ExprId,
+        arguments: &[ast::ExprId],
+        kind: crate::lex::vector_lanes::Kind,
+        selector: crate::sema::lowering::LaneSelector,
+    ) -> Result<RValue, Error> {
+        use crate::{lex::vector_lanes::Kind, sema::lowering::LaneSelector};
+        let result = self.graph.lower_expression(id)?.ty;
+        if kind == Kind::Initialize {
+            let (lane, _) = self.vector_shape(result)?;
+            let (slot, address) = self.zeroed_vector(result)?;
+            for (index, &argument) in arguments.iter().enumerate() {
+                let value = self.operand(argument, Context::Argument)?;
+                let value = self.fit(value, lane)?;
+                let index = u64::try_from(index).map_err(|_| crate::lowir::Error::Limit)?;
+                self.set_vector_lane(address, result, index, value)?;
+            }
+            return self.load_vector_storage(slot, result);
+        }
+        let vector = self.graph.lower_builtin_operand_type(arguments[0])?;
+        let (lane, bound) = self.vector_shape(vector)?;
+        let value = self.operand(arguments[0], Context::Argument)?;
+        let address = self.vector_storage(value)?;
+        let value = if kind == Kind::Insert {
+            let value = self.operand(arguments[1], Context::Argument)?;
+            Some(self.fit(value, lane)?)
+        } else {
+            None
+        };
+        match selector {
+            LaneSelector::Constant(selected) => {
+                self.discard(arguments[arguments.len() - 1])?;
+                if let Some(value) = value {
+                    self.set_vector_lane(address, vector, u64::from(selected), value)?;
+                } else {
+                    return self.vector_lane(address, vector, u64::from(selected));
+                }
+            }
+            LaneSelector::Runtime => {
+                let selected = self.operand(arguments[arguments.len() - 1], Context::Argument)?;
+                let integer = selected.source;
+                let selected = self.fit(selected, integer)?;
+                let selected = self.emit(
+                    I::Convert(Convert::SignExtend, Type::I64, selected.ty, selected.value),
+                    integer,
+                )?;
+                let mask = self.builder.integer(u128::from(bound - 1))?;
+                let selected = self.emit(
+                    I::Binary(
+                        Binary::And,
+                        Facts::default(),
+                        Type::I64,
+                        selected.value,
+                        mask,
+                    ),
+                    integer,
+                )?;
+                let storage = types::storage(self.graph, lane)?;
+                let place = self
+                    .emit(
+                        I::Index(
+                            storage,
+                            Some(Projection::ArrayElement),
+                            address,
+                            selected.value,
+                        ),
+                        lane,
+                    )?
+                    .value;
+                if let Some(value) = value {
+                    self.write_place(place, lane, value.value)?;
+                } else {
+                    return self.read_place(place, lane);
+                }
+            }
+        }
+        self.emit(
+            I::Load(
+                types::memory(self.graph, vector)?,
+                types::storage(self.graph, vector)?,
+                address,
+            ),
+            result,
+        )
+    }
+
     pub(super) fn builtin_value(
         &mut self,
         id: ast::ExprId,

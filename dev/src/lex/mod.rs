@@ -7,6 +7,7 @@ pub(crate) mod library_builtins;
 pub mod number;
 pub mod pp_lexer;
 pub(crate) mod strings;
+pub(crate) mod vector_lanes;
 pub use strings::TextError;
 pub(crate) mod predicates;
 pub mod text;

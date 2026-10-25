@@ -157,19 +157,6 @@ const PROVIDED: &[&[u8]] = &[
     b"__builtin_huge_val",
     b"__builtin_huge_valf",
     b"__builtin_huge_vall",
-    b"__builtin_ia32_vec_ext_v16qi",
-    b"__builtin_ia32_vec_ext_v2df",
-    b"__builtin_ia32_vec_ext_v2di",
-    b"__builtin_ia32_vec_ext_v2si",
-    b"__builtin_ia32_vec_ext_v4hi",
-    b"__builtin_ia32_vec_ext_v4sf",
-    b"__builtin_ia32_vec_ext_v4si",
-    b"__builtin_ia32_vec_ext_v8hi",
-    b"__builtin_ia32_vec_init_v2si",
-    b"__builtin_ia32_vec_init_v4hi",
-    b"__builtin_ia32_vec_init_v8qi",
-    b"__builtin_ia32_vec_set_v4hi",
-    b"__builtin_ia32_vec_set_v8hi",
     b"__builtin_index",
     b"__builtin_inf",
     b"__builtin_inff",
@@ -280,7 +267,7 @@ pub(crate) fn is_provided(name: &[u8]) -> bool {
     if is_trait(name) || PROVIDED.binary_search(&name).is_ok() {
         return true;
     }
-    super::library_builtins::lookup(name).is_some()
+    super::library_builtins::lookup(name).is_some() || super::vector_lanes::contains(name)
 }
 
 #[cfg(test)]

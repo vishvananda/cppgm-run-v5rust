@@ -128,6 +128,12 @@ impl Function<'_, '_, '_, '_> {
             }),
             RuntimeIntrinsic::Overflow(kind) => self.overflow_intrinsic(id, argument_list, kind),
             RuntimeIntrinsic::VectorReduction(kind) => self.reduce_vector(id, arguments[0], kind),
+            RuntimeIntrinsic::VectorLane(builtin) => self.vector_builtin_lanes(
+                id,
+                arguments,
+                builtin.operation().kind,
+                builtin.selector(),
+            ),
             RuntimeIntrinsic::ObjectSize { minimum } => {
                 self.runtime_integer(Type::I64, if minimum { 0 } else { u64::MAX }, source)
             }

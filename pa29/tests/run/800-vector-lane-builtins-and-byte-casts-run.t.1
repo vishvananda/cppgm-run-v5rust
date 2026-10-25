@@ -1,0 +1,70 @@
+typedef char C16 __attribute__((vector_size(16)));
+typedef long long L2 __attribute__((vector_size(16)));
+typedef int I2 __attribute__((vector_size(8)));
+typedef int I4 __attribute__((vector_size(16)));
+typedef short S4 __attribute__((vector_size(8)));
+typedef short S8 __attribute__((vector_size(16)));
+typedef signed char A8 __attribute__((vector_size(8)));
+typedef float F4 __attribute__((vector_size(16)));
+typedef double D2 __attribute__((vector_size(16)));
+
+int sequence;
+int argument(int n) { sequence = sequence * 10 + n; return n; }
+S4 input() { sequence = sequence * 10 + 1; return S4{10,20,30,40}; }
+__attribute__((always_inline)) inline short extract(S4 v, int n) {
+  return __builtin_ia32_vec_ext_v4hi(v, n);
+}
+__attribute__((always_inline)) inline S4 insert(S4 v, int x, int n) {
+  return __builtin_ia32_vec_set_v4hi(v, x, n);
+}
+template<int N> int selected(I2 v) { return __builtin_ia32_vec_ext_v2si(v, N); }
+constexpr int constant_selector() { return 1; }
+
+int main() {
+  C16 c{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,-16};
+  L2 l{17,-18};
+  I2 i = __builtin_ia32_vec_init_v2si(argument(1), argument(2));
+  if (sequence != 12 || i[0] != 1 || i[1] != 2) return 1;
+  sequence = 0;
+  S4 s = __builtin_ia32_vec_init_v4hi(argument(1),argument(2),argument(3),argument(4));
+  if (sequence != 1234 || s[0] != 1 || s[3] != 4) return 2;
+  A8 a = __builtin_ia32_vec_init_v8qi(255,2,3,4,5,6,7,-128);
+  F4 f{1.0f,2.0f,3.0f,-4.5f};
+  D2 d{1.0,-2.5};
+  I4 j{1,2,3,-4};
+  S8 t{1,2,3,4,5,6,7,-8};
+  if (__builtin_ia32_vec_ext_v16qi(c,15) != -16 ||
+      __builtin_ia32_vec_ext_v2di(l,1) != -18 ||
+      __builtin_ia32_vec_ext_v2si(i,constant_selector()) != 2 ||
+      __builtin_ia32_vec_ext_v4si(j,3) != -4 ||
+      __builtin_ia32_vec_ext_v4hi(s,3) != 4 ||
+      __builtin_ia32_vec_ext_v8hi(t,7) != -8 ||
+      __builtin_ia32_vec_ext_v4sf(f,3) != -4.5f ||
+      __builtin_ia32_vec_ext_v2df(d,1) != -2.5) return 3;
+  if (a[0] != -1 || a[7] != -128 || selected<1>(i) != 2) return 4;
+  S4 changed = __builtin_ia32_vec_set_v4hi(s, 65535, 2);
+  S8 wide = __builtin_ia32_vec_set_v8hi(t, 32768, 5);
+  if (changed[2] != -1 || s[2] != 3 || wide[5] != -32768 || t[5] != 6) return 5;
+  sequence = 0;
+  short scalar = extract(input(), argument(2));
+  if (sequence != 12 || scalar != 30) return 6;
+  sequence = 0;
+  S4 replaced = insert(input(), argument(2), argument(3));
+  if (sequence != 123 || replaced[0] != 10 || replaced[3] != 2) return 7;
+  volatile int runtime = -1;
+  if (extract(s, runtime) != 4 || insert(s, 23, runtime)[3] != 23) return 8;
+  I2 words{0x00020001,0x00040003};
+  S4 halves = (S4)words;
+  I2 roundtrip = I2(halves);
+  unsigned long bytes = (unsigned long)words;
+  I2 restored = (I2)bytes;
+  if (halves[0] != 1 || halves[1] != 2 || halves[2] != 3 || halves[3] != 4 ||
+      roundtrip[1] != words[1] || restored[0] != words[0] ||
+      bytes != 0x0004000300020001UL) return 9;
+  S4 reinterpreted = reinterpret_cast<S4>(words);
+  if (reinterpreted[3] != 4) return 10;
+  typedef char One __attribute__((vector_size(1)));
+  One one{1};
+  if (!(bool)one) return 11;
+  return 0;
+}

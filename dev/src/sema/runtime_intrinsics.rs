@@ -22,6 +22,7 @@ pub(crate) enum RuntimeIntrinsic {
     FltRounds,
     Overflow(super::overflow_intrinsics::OverflowOperation),
     VectorReduction(super::vector_builtins::Reduction),
+    VectorLane(super::vector_builtins::LaneBuiltin),
 }
 
 pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntrinsic)>, Error> {
@@ -50,9 +51,27 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntri
         ("__builtin_reduce_min", R::VectorReduction(V::Min)),
     ]
     .into_iter()
-    .map(|(name, kind)| {
+    .map(|(name, kind)| Ok((name.as_bytes(), kind)))
+    .chain(
+        crate::lex::vector_lanes::OPERATIONS
+            .iter()
+            .enumerate()
+            .map(|(index, &(name, _))| {
+                let operation = crate::lex::vector_lanes::OperationId::new(index)
+                    .ok_or(Error::Invariant("vector operation vocabulary limit"))?;
+                Ok((
+                    name,
+                    R::VectorLane(super::vector_builtins::LaneBuiltin::new(
+                        operation,
+                        super::vector_builtins::LaneSelector::Constant(0),
+                    )),
+                ))
+            }),
+    )
+    .map(|entry| {
+        let (name, kind) = entry?;
         let name = cursor
-            .intern_name(name.as_bytes())
+            .intern_name(name)
             .map_err(|_| Error::Limit("semantic identifier limit"))?;
         Ok((name, kind))
     })
@@ -97,6 +116,9 @@ impl Analyzer<'_> {
             }
             R::Overflow(kind) => return self.overflow_builtin(id, arguments, kind, scope),
             R::VectorReduction(kind) => return self.vector_reduction(id, arguments, kind, scope),
+            R::VectorLane(builtin) => {
+                return self.vector_lane_builtin(id, arguments, builtin.operation_id(), scope);
+            }
             R::ObjectSize { .. } => {
                 if count != 2 {
                     return Err(Error::at(
