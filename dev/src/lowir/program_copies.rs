@@ -2,6 +2,50 @@
 use super::{Body, Error, Function, FunctionId, NameId, Program, SymbolDetail, SymbolId};
 use crate::lowir::vocabulary::Binding;
 impl Program {
+    /// Specialization changes the definition's signature alone; declarations
+    /// and other definitions may still share the old immutable signature.
+    pub(crate) fn remove_function_parameters(
+        &mut self,
+        symbol: SymbolId,
+        removed: &[bool],
+    ) -> Result<(), Error> {
+        let function = self.function(self.symbol(symbol)).ok_or(Error::Limit)?;
+        let sig = self.signature(function.signature);
+        if sig.parameters.len() != removed.len() {
+            return Err(Error::Limit);
+        }
+        let parameters = sig
+            .parameters
+            .iter()
+            .zip(removed)
+            .filter(|&(_, &removed)| !removed)
+            .map(|(p, _)| super::Parameter {
+                name: p.name,
+                ty: p.ty,
+                pass: p.pass,
+                no_alias: p.no_alias,
+                object_bytes: p.object_bytes,
+                classes: p.classes,
+            })
+            .collect();
+        let signature = super::Signature {
+            parameters,
+            result: sig.result,
+            boundary: super::Boundary {
+                arity: sig.boundary.arity,
+                effects: sig.boundary.effects,
+                unwind: sig.boundary.unwind,
+                returns: sig.boundary.returns,
+                result_classes: sig.boundary.result_classes,
+            },
+        };
+        let signature = self.add_signature(signature)?;
+        let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
+            return Err(Error::Limit);
+        };
+        self.functions[id.0 as usize].signature = signature;
+        Ok(())
+    }
     pub(crate) fn inline_copy(
         &mut self,
         source: SymbolId,

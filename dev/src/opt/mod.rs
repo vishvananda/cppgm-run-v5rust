@@ -2,6 +2,7 @@
 mod aggregate_slots;
 mod algebra;
 mod alias_facts;
+mod argument_specialization;
 mod body_expansion;
 mod branch_ranges;
 mod coalescing;
@@ -40,14 +41,17 @@ mod phi_threading;
 mod range_threading;
 mod return_values;
 mod returned_storage;
+mod select_formation;
 mod slot_copies;
 mod slot_promotion;
 mod sparse_constants;
 mod storage_arguments;
 mod store_liveness;
+mod switch_formation;
 mod trip_counts;
 mod unit_graph;
 mod value_reuse;
+mod wide_integers;
 use crate::lowir::{Error, model::Program};
 pub use inline_policy::Limits;
 
@@ -123,11 +127,47 @@ pub(crate) fn optimize_with_limits(
         unit_graph::prune_unreachable(program)?;
     }
     if level >= 2 {
-        return Err(Error::NotImplemented(
-            "LowIR argument specialization and finishing passes",
-        ));
+        if argument_specialization::specialize(program, |program, symbol| {
+            simplify_function(program, symbol, level, &mut nounwind, &unwritten)
+        })? {
+            unit_graph::prune_unreachable(program)?;
+        }
+        let mut index = 0;
+        while index < program.symbols().len() {
+            let symbol = program.symbol_id(index).ok_or(Error::Limit)?;
+            if program
+                .function(program.symbol(symbol))
+                .is_some_and(|f| f.body.is_some())
+            {
+                finish_function(program, symbol, &nounwind, &unwritten)?;
+            }
+            index += 1;
+        }
     }
     Ok(())
+}
+
+fn finish_function(
+    program: &mut Program,
+    symbol: crate::lowir::model::SymbolId,
+    nounwind: &[bool],
+    unwritten: &[bool],
+) -> Result<(), Error> {
+    let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
+    let result = {
+        let mut context =
+            pass_context::Context::new(program, symbol, &mut body, 2, nounwind, unwritten);
+        local_pipeline::finish(&mut context)
+    }
+    .and_then(|changed| {
+        if changed {
+            body.compact(&mut program.names)
+        } else {
+            Ok(())
+        }
+    });
+    program.restore_body(symbol, body)?;
+    result
 }
 
 fn simplify_function(

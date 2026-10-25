@@ -301,6 +301,11 @@ impl Program {
     pub(crate) fn symbol(&self, id: SymbolId) -> &Symbol {
         &self.symbols[id.0 as usize]
     }
+    pub(crate) fn symbol_id(&self, index: usize) -> Option<SymbolId> {
+        (index < self.symbols.len())
+            .then(|| u32::try_from(index).ok().map(SymbolId))
+            .flatten()
+    }
     pub(crate) fn finish_symbols(&self) -> Result<(), Error> {
         for symbol in &self.symbols {
             if matches!(symbol.detail, SymbolDetail::Unresolved) {
@@ -907,6 +912,7 @@ pub(crate) enum OptimizerSlot {
     Demote,
     ReturnMerge,
     ReturnMergeObject,
+    Wide,
 }
 impl OptimizerSlot {
     fn spelling(self) -> &'static str {
@@ -917,6 +923,7 @@ impl OptimizerSlot {
             Self::Demote => "demote",
             Self::ReturnMerge => "retmerge",
             Self::ReturnMergeObject => "retmergeobj",
+            Self::Wide => "wide",
         }
     }
 }

@@ -111,6 +111,47 @@ fn rewrite_runtime(runtime: &mut RuntimeInstruction, map: &mut impl Remap) -> Re
 }
 
 impl Body {
+    /// Remove unread parameters before ordinary compaction renames temporaries.
+    pub(crate) fn retain_parameters(&mut self, removed: &[bool]) -> Result<(), Error> {
+        if removed.len() != self.parameter_count {
+            return Err(Error::Limit);
+        }
+        let mut map = vec![None; self.temps.len()];
+        let mut temps = Vec::with_capacity(self.temps.len());
+        for (index, temp) in self.temps.iter().enumerate() {
+            if removed.get(index) == Some(&true) {
+                continue;
+            }
+            map[index] = Some(TempId(
+                u32::try_from(temps.len()).map_err(|_| Error::Limit)?,
+            ));
+            temps.push(temp.clone());
+        }
+        for block in self.layout.clone() {
+            for id in self.block(block).instructions.clone() {
+                if let Some(result) = self.instructions[id.index()].result {
+                    self.instructions[id.index()].result =
+                        Some(map[result.index()].ok_or(Error::Limit)?);
+                }
+                self.rewrite_values(id, |v| match v {
+                    Value::Temp(t) => Ok(Value::Temp(map[t.index()].ok_or(Error::Limit)?)),
+                    _ => Ok(v),
+                })?;
+            }
+        }
+        self.temps = temps;
+        self.parameter_count = removed.iter().filter(|&&r| !r).count();
+        self.temp_index.clear();
+        for (index, temp) in self.temps.iter().enumerate() {
+            if !temp.generated && temp.name != NameId(0) {
+                self.temp_index.insert(
+                    temp.name,
+                    TempId(u32::try_from(index).map_err(|_| Error::Limit)?),
+                );
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn update_instruction(
         &mut self,
         id: super::InstId,

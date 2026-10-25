@@ -90,6 +90,9 @@ impl Cfg {
     pub(super) fn reverse_postorder(&self) -> &[BlockId] {
         &self.rpo
     }
+    pub(super) fn rpo_position(&self, block: BlockId) -> Option<usize> {
+        self.rpo_index[block.index()]
+    }
     pub(super) fn predecessors(&self, block: BlockId) -> &[BlockId] {
         self.predecessors.at(block)
     }

@@ -2,7 +2,8 @@
 use super::{
     aggregate_slots, coalescing, condition_placement, control_flow::Cfg, dead_code,
     definition_order, exception_regions, flow_cleanup, jump_threading, loop_removal,
-    memory_forward, returned_storage, slot_promotion, sparse_constants, value_reuse,
+    memory_forward, returned_storage, select_formation, slot_promotion, sparse_constants,
+    switch_formation, value_reuse, wide_integers,
 };
 use crate::lowir::{
     Error,
@@ -24,6 +25,8 @@ pub(super) enum Pass {
     RemoveLoops,
     UnrollLoops,
     FormSwitches,
+    FormSelects,
+    ExpandWide,
     NameReturnedSlot,
     SplitOrBranches,
     SpecializePhiCompares,
@@ -48,6 +51,8 @@ impl Pass {
             | Self::StripRegions
             | Self::PromoteSlots
             | Self::ThreadJumps
+            | Self::FormSelects
+            | Self::ExpandWide
             | Self::SplitOrBranches
             | Self::SpecializePhiCompares
             | Self::SplitBranchCompares => "implemented function pass",
@@ -255,7 +260,10 @@ impl<'a> Context<'a> {
             Pass::SpecializePhiCompares => condition_placement::specialize_phi_compares(self),
             Pass::SplitBranchCompares => condition_placement::split_branch_compares(self),
             Pass::DefinitionOrder => definition_order::restore(self),
-            _ => Err(Error::NotImplemented(pass.missing())),
+            Pass::FormSwitches => switch_formation::form_switches(self),
+            Pass::FormSelects => select_formation::form_selects(self),
+            Pass::ExpandWide => wide_integers::expand(self),
+            Pass::UnrollLoops => Err(Error::NotImplemented(pass.missing())),
         }
     }
     pub(super) fn run(&mut self, pass: Pass) -> Result<bool, Error> {

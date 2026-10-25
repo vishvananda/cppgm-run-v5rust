@@ -5,6 +5,32 @@ use super::{
 };
 use crate::lowir::{Error, vocabulary::Type};
 
+pub(super) fn finish(context: &mut Context<'_>) -> Result<bool, Error> {
+    let mut changed = false;
+    if context.run(P::ExpandWide)? {
+        context.run(P::PromoteSlots)?;
+        scalar_rounds(context)?;
+        changed = true;
+    }
+    for _ in 0..3 {
+        if !context.run(P::FormSelects)? {
+            break;
+        }
+        context.run(P::CleanupCfg)?;
+        changed = true;
+    }
+    context.ensure_cfg()?;
+    let mut forest = super::natural_loops::Forest::default();
+    forest.find(context.body.blocks().len(), context.cfg()?)?;
+    if forest.len() != 0 {
+        return Err(Error::NotImplemented("LowIR loop finishing"));
+    }
+    if changed {
+        context.run(P::SplitBranchCompares)?;
+    }
+    Ok(changed)
+}
+
 pub(super) fn simplify(context: &mut Context<'_>) -> Result<bool, Error> {
     context.body.record_switch_types();
     let object_slots = context

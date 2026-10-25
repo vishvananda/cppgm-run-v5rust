@@ -25,6 +25,18 @@ pub(super) struct CallGraph {
     pub(super) bottom_up: Vec<FunctionIndex>,
 }
 impl CallGraph {
+    pub(super) fn reverse_calls(&self) -> Vec<Vec<FunctionIndex>> {
+        let mut callers = vec![Vec::new(); self.functions.len()];
+        for g in 0..self.functions.len() {
+            let index = self.index_of[self.functions[g].index()];
+            if let Some(index) = index {
+                for &f in &self.callees[self.callee_first[g]..self.callee_first[g + 1]] {
+                    callers[f.index()].push(index);
+                }
+            }
+        }
+        callers
+    }
     pub(super) fn build(program: &Program) -> Result<Self, Error> {
         let mut functions = Vec::new();
         let mut index_of = vec![None; program.symbols().len()];
