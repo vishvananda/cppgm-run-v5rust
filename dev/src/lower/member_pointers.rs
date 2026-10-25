@@ -223,6 +223,46 @@ impl Function<'_, '_, '_, '_> {
             value.source,
         )
     }
+
+    pub(super) fn member_pointer_equal(
+        &mut self,
+        left: RValue,
+        right: RValue,
+        equal: bool,
+        source: TypeId,
+    ) -> Result<RValue, Error> {
+        // Itanium 2.3: null function words compare equal regardless of the
+        // adjustment. Preserve the frozen right-before-left truncation order.
+        let predicate = if equal { Compare::Eq } else { Compare::Ne };
+        let values = self.emit(
+            I::Compare(predicate, left.ty, left.value, right.value),
+            source,
+        )?;
+        let right_word = self.member_pointer_truth(right)?;
+        let left_word = self.member_pointer_truth(left)?;
+        let words = self.emit(
+            I::Binary(
+                Binary::Or,
+                Facts::default(),
+                Type::I64,
+                left_word.value,
+                right_word.value,
+            ),
+            source,
+        )?;
+        let zero = self.builder.integer(0)?;
+        let null = self.emit(I::Compare(predicate, Type::I64, words.value, zero), source)?;
+        self.emit(
+            I::Binary(
+                if equal { Binary::Or } else { Binary::And },
+                Facts::default(),
+                Type::I64,
+                values.value,
+                null.value,
+            ),
+            source,
+        )
+    }
 }
 
 impl Function<'_, '_, '_, '_> {

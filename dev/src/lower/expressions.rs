@@ -626,6 +626,12 @@ impl Function<'_, '_, '_, '_> {
                 (P::GreaterEqual, false) => Compare::Ge,
                 _ => Compare::Uge,
             };
+            if self.symbols.host_objects()
+                && a.ty == Type::I128
+                && self.graph.lower_member_pointer_type(common).is_some()
+            {
+                return self.member_pointer_equal(a, b, predicate == Compare::Eq, source);
+            }
             if let Some(kind) = soft {
                 return self.soft_compare(predicate, kind, a, b, source);
             }

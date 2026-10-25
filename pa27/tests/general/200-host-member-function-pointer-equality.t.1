@@ -1,0 +1,33 @@
+#include "200-host-member-function-pointer-equality.helper.h"
+namespace member_equality {
+bool candidate_equal(Pointer left, Pointer right) { return left == right; }
+bool candidate_unequal(Pointer left, Pointer right) { return left != right; }
+int effects;
+Pointer evaluated(int event, Pointer value) { effects = effects * 10 + event; return value; }
+bool truth(Pointer value) { return value; }
+bool branch(Pointer value) { if (value) return true; return false; }
+bool negated(Pointer value) { return !value; }
+Pointer widen(BasePointer value) { return value; }
+BasePointer narrow(Pointer value) { return static_cast<BasePointer>(value); }
+}
+int main()
+{
+  using namespace member_equality;
+  if (!host_check()) return 1;
+  Pointer a = host_pointer(1), b = host_pointer(2);
+  if (a != nullptr || nullptr != b || !(a == 0) || !(0 == b)) return 2;
+  if (truth(a) || branch(b) || !negated(a)) return 3;
+  if (narrow(a) != nullptr || widen(narrow(b)) != nullptr) return 4;
+  if (!candidate_equal(widen(0), b)) return 5;
+  Pointer present = host_pointer(3);
+  if (!truth(present) || !branch(present) || negated(present)) return 6;
+  if (present == nullptr || nullptr == present || !(present != 0)) return 7;
+  if (present != widen(&Base::f) || present == widen(&Base::g)) return 8;
+  if (!(evaluated(1, a) == evaluated(2, b)) || effects != 12) return 9;
+  effects = 0;
+  if (evaluated(1, a) != evaluated(2, b) || effects != 12) return 10;
+  int Base::* data = 0;
+  int Derived::* field = data;
+  if (field != nullptr || field == &Derived::data || field) return 11;
+  return 0;
+}
