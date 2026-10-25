@@ -122,6 +122,9 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let count = match self.graph.types.get(ty).kind {
             TypeKind::Complex(_) => 3,
+            TypeKind::Vector { bound, .. } if self.constant_lane_vector(ty).is_some() => {
+                bound.saturating_add(1)
+            }
             TypeKind::Array { element, bound, .. } => bound
                 .max(1)
                 .saturating_mul(self.constant_object_leaves(element, depth, location)?),
@@ -180,7 +183,13 @@ impl Analyzer<'_> {
                     self.constant_skeleton(child, child_cell, location)?;
                 }
             }
-            TypeKind::Array { element, bound, .. } => {
+            TypeKind::Array { element, bound, .. } | TypeKind::Vector { element, bound, .. } => {
+                if self.vector_shape(place.designated).is_some()
+                    && self.constant_lane_vector(place.designated).is_none()
+                {
+                    self.constexpr_frames.finish_cell(cell);
+                    return Ok(());
+                }
                 let size = self.type_size(element, location)?.0;
                 for index in 0..bound {
                     let ty = self.bare_type(element)?;
@@ -391,7 +400,8 @@ impl Analyzer<'_> {
             if matches!(
                 self.graph.types.get(child.designated).kind,
                 TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
-            ) {
+            ) || self.constant_lane_vector(child.designated).is_some()
+            {
                 continue;
             }
             if matches!(
@@ -400,7 +410,15 @@ impl Analyzer<'_> {
             ) {
                 continue;
             }
-            let value = self.zero_constant_scalar(child.designated)?;
+            let value = if self.vector_shape(child.designated).is_some() {
+                Value::Integer(super::constants::Constant {
+                    ty: child.designated,
+                    bits: 0,
+                    high: 0,
+                })
+            } else {
+                self.zero_constant_scalar(child.designated)?
+            };
             self.store_constant_value(child, value, location)?;
         }
         Ok(())
@@ -669,7 +687,11 @@ impl Analyzer<'_> {
                         )?;
                     }
                 }
-                TypeKind::Array { element, bound, .. } => {
+                TypeKind::Array { element, bound, .. }
+                | TypeKind::Vector { element, bound, .. } => {
+                    if self.vector_shape(ty).is_some() && self.constant_lane_vector(ty).is_none() {
+                        continue;
+                    }
                     let size = self.type_size(element, location)?.0;
                     let offset = offset.cast_unsigned();
                     if size != 0 && offset / size < bound {

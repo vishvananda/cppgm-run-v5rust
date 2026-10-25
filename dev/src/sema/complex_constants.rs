@@ -58,7 +58,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<[Value; 2], Error> {
         match value {
-            ComplexValue::Parts(parts) => Ok(parts),
+            ComplexValue::Parts(parts) => Ok(parts.map(Value::clear_zeroed)),
             ComplexValue::Storage(place, part) => self.stored_complex_parts(place, part, location),
         }
     }
@@ -110,7 +110,7 @@ impl Analyzer<'_> {
         }
         let value = self.scalar_value(operand, scope)?;
         if imaginary {
-            self.zero_constant_scalar(ty)
+            self.zero_constant_scalar(ty).map(Value::clear_zeroed)
         } else {
             Ok(value)
         }
@@ -440,7 +440,11 @@ impl Analyzer<'_> {
                 .ok_or_else(|| {
                     nonconstant(location, "a floating operation with an undefined result")
                 })?;
-            return Ok(Value::Floating(Floating { ty, value }));
+            return Ok(Value::Floating(Floating {
+                zeroed: false,
+                ty,
+                value,
+            }));
         }
         let (Value::Integer(a), Value::Integer(b)) = (a, b) else {
             return Err(nonconstant(

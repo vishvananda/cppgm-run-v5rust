@@ -158,10 +158,15 @@ impl Analyzer<'_> {
                     );
                 }
             }
-            if matches!(
-                self.graph.types.get(ty).kind,
-                TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
-            ) {
+            if self.vector_shape(ty).is_some() && self.constant_lane_vector(ty).is_none() {
+                return Ok(None);
+            }
+            if self.constant_lane_vector(ty).is_some()
+                || matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
+                )
+            {
                 continue;
             }
             let offset = u64::try_from(offset)
@@ -200,6 +205,25 @@ impl Analyzer<'_> {
                     else {
                         return Err(Error::Invariant("constant floating placement type"));
                     };
+                    let soft = kind.floating_representation();
+                    if value.zeroed
+                        && matches!(
+                            soft,
+                            crate::types::FundamentalType::Float16
+                                | crate::types::FundamentalType::BFloat16
+                                | crate::types::FundamentalType::Float128
+                        )
+                    {
+                        placements.push((offset, size, Item::Zero(size)));
+                        continue;
+                    }
+                    if matches!(
+                        soft,
+                        crate::types::FundamentalType::Float16
+                            | crate::types::FundamentalType::Float128
+                    ) {
+                        return Ok(None);
+                    }
                     let format = self
                         .float_format(ty)
                         .ok_or(Error::Invariant("constant floating format"))?;

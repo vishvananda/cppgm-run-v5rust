@@ -54,6 +54,91 @@ impl Images {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn record_vector_list_image(
+        &mut self,
+        entity: EntityId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let target = self.graph.lower_entity_type(entity)?;
+        let (ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr)) =
+            initializer.kind
+        else {
+            return Ok(false);
+        };
+        let root = self.graph.expression_facts.root(expr);
+        let list = if matches!(
+            self.tree.expressions.get(expr).kind,
+            ExprKind::Braced { .. }
+        ) {
+            expr
+        } else if let ExprKind::FunctionalCast {
+            braced: Some(list), ..
+        } = self.tree.expressions.get(root).kind
+            && self.bare_type(self.graph.expression_facts.get(root)?.ty)?
+                == self.bare_type(target)?
+        {
+            list
+        } else {
+            return Ok(false);
+        };
+        let mut image = Vec::new();
+        if !self.static_vector_element(target, Some(list), scope, &mut image)? {
+            return Ok(false);
+        }
+        self.graph.array_images.set_constant(entity, image);
+        Ok(true)
+    }
+    fn static_vector_element(
+        &mut self,
+        target: TypeId,
+        expr: Option<ast::ExprId>,
+        scope: ScopeId,
+        out: &mut Vec<Item>,
+    ) -> Result<bool, Error> {
+        let Some(expr) = expr else {
+            append_zero(
+                out,
+                self.type_size(target, crate::support::source::SourceOffset(0))?
+                    .0,
+            )?;
+            return Ok(true);
+        };
+        let Some((lane, bound)) = self.constant_lane_vector(target) else {
+            return Ok(false);
+        };
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind else {
+            return Ok(false);
+        };
+        let count = u64::try_from(self.tree.expr_lists.get(elements).len())
+            .map_err(|_| Error::Limit("static vector lanes"))?;
+        if count > bound {
+            return Ok(false);
+        }
+        for index in 0..self.tree.expr_lists.get(elements).len() {
+            let element = self.tree.expr_lists.get(elements)[index];
+            if matches!(
+                self.tree.expressions.get(element).kind,
+                ExprKind::Braced { .. }
+            ) {
+                return Ok(false);
+            }
+            let Some(value) = self.static_scalar(element, lane, scope)? else {
+                return Ok(false);
+            };
+            out.push(Item::Scalar(lane, value));
+        }
+        let size = self
+            .type_size(lane, crate::support::source::SourceOffset(0))?
+            .0;
+        append_zero(
+            out,
+            (bound - count)
+                .checked_mul(size)
+                .ok_or(Error::Limit("static vector fill"))?,
+        )?;
+        Ok(true)
+    }
     pub(super) fn record_union_default_image(
         &mut self,
         entity: EntityId,
@@ -163,6 +248,9 @@ impl Analyzer<'_> {
         out: &mut Vec<Item>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
+        if self.vector_shape(target).is_some() {
+            return self.static_vector_element(target, expr, scope, out);
+        }
         if expr.is_none() && !self.zero_value_initialized(target, 0)? {
             return Ok(false);
         }

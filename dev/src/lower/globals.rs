@@ -362,6 +362,12 @@ fn define_storage<'a>(
             dynamic = true;
             GlobalInit::Zero
         }
+    } else if matches!(graph.lower_type(facts.ty)?, TypeView::Vector { .. })
+        && graph.lower_array_image(entity).is_none()
+    {
+        ty = Some(types::storage(graph, facts.ty)?);
+        dynamic |= initializer.is_some();
+        GlobalInit::Zero
     } else if array {
         GlobalInit::Data(if let Some(image) = table_image {
             dynamic = false;

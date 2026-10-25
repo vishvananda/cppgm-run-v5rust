@@ -30,6 +30,7 @@ impl Analyzer<'_> {
                 | TypeKind::Array { .. }
                 | TypeKind::Class(_)
                 | TypeKind::Complex(_)
+                | TypeKind::Vector { .. }
         ) {
             return Ok(());
         }

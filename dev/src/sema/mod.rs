@@ -170,6 +170,8 @@ mod triviality;
 mod type_queries;
 mod type_transforms;
 mod vector_builtins;
+mod vector_constant_bytes;
+mod vector_constants;
 mod vector_operations;
 mod vector_types;
 mod wide_integers;

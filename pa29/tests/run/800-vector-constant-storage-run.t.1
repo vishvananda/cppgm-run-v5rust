@@ -1,0 +1,27 @@
+typedef int V __attribute__((vector_size(8)));
+typedef float F __attribute__((vector_size(8)));
+using B=bool __attribute__((ext_vector_type(8)));
+constexpr V make(int n) { V v{n,n+1}; v[0]++; return v; }
+constexpr V a=make(5);
+constexpr const V& ref=V{8,9};
+constexpr F floats=(F)(V)0x400000003f800000UL;
+V global=make(11);
+V partial{3};
+V default_value;
+B bits{true};
+constexpr const B& packed_ref=B{true};
+struct A { constexpr operator V() const { return V{4,5}; } };
+constexpr const V& converted=A();
+constexpr int mutate(V v) { v[0]=9; v[1]++; return v[0]+v[1]; }
+static_assert(mutate(a)==16 && a[0]==6,"parameter copy");
+int main() {
+  if (a[0]!=6 || a[1]!=6 || global[0]!=12 || global[1]!=12) return 1;
+  if (ref[0]!=8 || ref[1]!=9 || converted[0]!=4 || converted[1]!=5) return 2;
+  if (floats[0]!=1.0f || floats[1]!=2.0f) return 3;
+  if (partial[0]!=3 || partial[1]!=0 || default_value[1]!=0) return 4;
+  if (!bits[0] || bits[1] || !packed_ref[0] || packed_ref[7]) return 5;
+  V copy=a;
+  copy[0]=1;
+  if (copy[0]!=1 || a[0]!=6 || mutate(copy)!=16) return 6;
+  return 0;
+}

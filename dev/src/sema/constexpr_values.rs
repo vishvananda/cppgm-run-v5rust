@@ -145,14 +145,21 @@ impl Analyzer<'_> {
             matches!(
                 self.graph.types.get(ty).kind,
                 TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
-            )
+            ) || self.constant_lane_vector(ty).is_some()
         }) {
             return Err(nonconstant(
                 location,
                 "a temporary bound to a reference leaves a subobject uninitialized",
             ));
         }
-        let image = self.completed_image(ty, &value)?;
+        // constant_temporary uses constant_global for vectors, whose scalar
+        // item cannot encode their lane array. Keep the semantic value while
+        // reference backing storage retains its runtime initialization.
+        let image = if self.vector_shape(ty).is_some() {
+            None
+        } else {
+            self.completed_image(ty, &value)?
+        };
         let id = TemporaryId(
             u32::try_from(self.graph.aggregate_constants.temporaries.len())
                 .map_err(|_| Error::Limit("constant temporary limit"))?,
@@ -175,7 +182,10 @@ impl Analyzer<'_> {
         let ty = self.graph.lower_entity_type(entity)?;
         if !matches!(
             self.graph.types.get(ty).kind,
-            TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
+            TypeKind::Class(_)
+                | TypeKind::Complex(_)
+                | TypeKind::Vector { .. }
+                | TypeKind::Array { .. }
         ) || self.graph.aggregate_constants.get(entity).is_some()
         {
             return Ok(());
@@ -288,7 +298,7 @@ impl Analyzer<'_> {
             matches!(
                 self.graph.types.get(ty).kind,
                 TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
-            )
+            ) || self.constant_lane_vector(ty).is_some()
         }) {
             return Err(nonconstant(
                 location,

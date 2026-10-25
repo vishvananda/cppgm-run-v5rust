@@ -22,6 +22,8 @@ use std::cmp::Ordering::{Equal, Greater, Less};
 pub(super) struct Floating {
     pub ty: TypeId,
     pub value: BinaryFloat,
+    // kValueZeroed is provenance, distinct from a numerically zero expression.
+    pub zeroed: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct FloatingId(std::num::NonZeroU32);
@@ -50,11 +52,23 @@ impl Analyzer<'_> {
         };
         Format::of(ty)
     }
+    pub(super) fn constant_floating_type(&self, ty: TypeId) -> bool {
+        matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(Scalar::Basic(kind)) if kind.floating_rank() != 0)
+    }
+    pub(super) fn constant_operation_format(&self, ty: TypeId) -> Option<Format> {
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(Scalar::Basic(kind))
+            if matches!(kind.floating_representation(), crate::types::FundamentalType::Float16 | crate::types::FundamentalType::Float128))
+        {
+            Some(Format::Extended)
+        } else {
+            self.float_format(ty)
+        }
+    }
     pub(super) fn floating_expression(&self, id: ast::ExprId) -> bool {
         self.graph
             .expression_facts
             .get(id)
-            .is_ok_and(|facts| self.float_format(facts.ty).is_some())
+            .is_ok_and(|facts| self.constant_floating_type(facts.ty))
     }
     pub(super) fn floating_binary(&self, id: ast::ExprId) -> bool {
         let ExprKind::Binary {
@@ -142,7 +156,7 @@ impl Analyzer<'_> {
                 .read_constant_member_pointer(place, location)
                 .map(Value::MemberPointer);
         }
-        if self.float_format(place.designated).is_some() {
+        if self.constant_floating_type(place.designated) {
             self.read_constant_floating(place, location)
                 .map(Value::Floating)
         } else if matches!(
@@ -163,6 +177,22 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<Value, Error> {
         let target = self.bare_type(target)?;
+        if let Value::Floating(value) = value
+            && self.bare_type(value.ty)? == target
+        {
+            return Ok(Value::Floating(Floating {
+                ty: target,
+                ..value
+            }));
+        }
+        if matches!(self.graph.types.get(target).kind, TypeKind::Scalar(Scalar::Basic(kind))
+            if matches!(kind.floating_representation(), crate::types::FundamentalType::Float16 | crate::types::FundamentalType::Float128))
+        {
+            return Err(nonconstant(
+                location,
+                "a binary16 or binary128 constant is not supported",
+            ));
+        }
         if let Some(format) = self.float_format(target) {
             let changes_precision = matches!(value, Value::Floating(value) if self.float_format(value.ty) != Some(format));
             let value = match value {
@@ -173,6 +203,7 @@ impl Analyzer<'_> {
                         .is_some_and(|kind| kind.bits > 64) =>
                 {
                     return Ok(Value::Floating(Floating {
+                        zeroed: false,
                         ty: target,
                         value: BinaryFloat::wide_integer(
                             value.wide(),
@@ -203,7 +234,11 @@ impl Analyzer<'_> {
                 value.rounded(format)
             }
             .ok_or_else(|| nonconstant(location, "a floating conversion out of range"))?;
-            return Ok(Value::Floating(Floating { ty: target, value }));
+            return Ok(Value::Floating(Floating {
+                zeroed: false,
+                ty: target,
+                value,
+            }));
         }
         if let Some(kind) = self.integral_kind(target) {
             if let Value::Integer(value) = value {
@@ -305,6 +340,14 @@ impl Analyzer<'_> {
             return self.read_constant_floating(place, node.location);
         }
         let value = match node.kind {
+            ExprKind::Subscript { base, index }
+                if self
+                    .vector_shape(self.graph.expression_facts.get(base)?.ty)
+                    .is_some() =>
+            {
+                let place = self.constant_vector_lane_place(id, base, index, scope, true)?;
+                self.read_constant_scalar(place, node.location)?
+            }
             ExprKind::ComplexPart { imaginary, operand } => {
                 self.constant_component(id, operand, imaginary, scope)?
             }
@@ -315,6 +358,16 @@ impl Analyzer<'_> {
                         "not an integral constant expression",
                     ));
                 };
+                if matches!(
+                    ty.floating_representation(),
+                    crate::types::FundamentalType::Float16
+                        | crate::types::FundamentalType::Float128
+                ) {
+                    return Err(nonconstant(
+                        node.location,
+                        "a binary16 or binary128 constant is not supported",
+                    ));
+                }
                 let format = Format::of(ty).ok_or(Error::Invariant("nonfloating literal"))?;
                 let mut bytes = [0u8; 16];
                 let data = data.as_slice();
@@ -322,6 +375,7 @@ impl Analyzer<'_> {
                 let value = BinaryFloat::from_bits(format, u128::from_le_bytes(bytes))
                     .ok_or(Error::Invariant("floating literal encoding"))?;
                 Value::Floating(Floating {
+                    zeroed: false,
                     ty: facts.ty,
                     value,
                 })
@@ -357,6 +411,7 @@ impl Analyzer<'_> {
                     self.scalar_value(argument, scope)?
                 } else {
                     Value::Floating(Floating {
+                        zeroed: true,
                         ty: facts.ty,
                         value: BinaryFloat::zero(),
                     })
@@ -420,6 +475,7 @@ impl Analyzer<'_> {
                         };
                         if op.token.as_punctuator() == Some(P::Subtract) {
                             value.value = value.value.negate();
+                            value.zeroed = false;
                         }
                         Value::Floating(value)
                     }
@@ -436,6 +492,7 @@ impl Analyzer<'_> {
                     self.constant_operand_value(argument, facts.ty, scope)?
                 } else {
                     Value::Floating(Floating {
+                        zeroed: true,
                         ty: facts.ty,
                         value: BinaryFloat::zero(),
                     })
@@ -537,10 +594,34 @@ impl Analyzer<'_> {
             let mut value = self.scalar_value(next, scope)?;
             for index in (base..self.constant_spine.len()).rev() {
                 let id = self.constant_spine[index];
-                let ExprKind::Binary { right, op, .. } = self.tree.expressions.get(id).kind else {
+                let ExprKind::Binary {
+                    left, right, op, ..
+                } = self.tree.expressions.get(id).kind
+                else {
                     return Err(Error::Invariant("floating spine node"));
                 };
-                let right = self.scalar_value(right, scope)?;
+                let left_type = self
+                    .graph
+                    .expression_facts
+                    .get(left)?
+                    .conversion
+                    .map_or(self.graph.expression_facts.get(left)?.ty, |conversion| {
+                        conversion.result
+                    });
+                value = self.convert_constant_scalar(
+                    value,
+                    left_type,
+                    self.tree.expressions.get(left).location,
+                )?;
+                let right_type = self
+                    .graph
+                    .expression_facts
+                    .get(right)?
+                    .conversion
+                    .map_or(self.graph.expression_facts.get(right)?.ty, |conversion| {
+                        conversion.result
+                    });
+                let right = self.constant_operand_value(right, right_type, scope)?;
                 value =
                     self.constant_numeric_operation(id, op.token.as_punctuator(), value, right)?;
             }
@@ -574,7 +655,7 @@ impl Analyzer<'_> {
             }
             _ => self.graph.arithmetic_types(id)?.0,
         };
-        if let Some(format) = self.float_format(ty) {
+        if let Some(format) = self.constant_operation_format(ty) {
             let Value::Floating(left) = self.convert_constant_scalar(left, ty, location)? else {
                 return Err(Error::Invariant("floating left operand"));
             };
@@ -588,7 +669,11 @@ impl Analyzer<'_> {
                     .ok_or_else(|| {
                         nonconstant(location, "a floating operation with an undefined result")
                     })?;
-                return Ok(Value::Floating(Floating { ty, value }));
+                return Ok(Value::Floating(Floating {
+                    zeroed: false,
+                    ty,
+                    value,
+                }));
             }
             let order = left.value.compare(right.value);
             let truth = match op {

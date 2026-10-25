@@ -436,6 +436,7 @@ impl Analyzer<'_> {
                 )
                 .ok_or(Error::Invariant("constant literal floating encoding"))?;
                 values[0] = Value::Floating(super::constant_floats::Floating {
+                    zeroed: false,
                     ty: self.graph.types.function_parameter(ty, 0)?,
                     value,
                 });

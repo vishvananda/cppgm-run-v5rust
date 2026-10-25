@@ -34,6 +34,12 @@ impl Analyzer<'_> {
     ) -> Result<Address, Error> {
         let location = self.tree.expressions.get(id).location;
         if self
+            .vector_shape(self.graph.expression_facts.get(left)?.ty)
+            .is_some()
+        {
+            return self.constant_vector_assignment(left, right, op, scope, location);
+        }
+        if self
             .complex_part_type(self.graph.expression_facts.get(left)?.ty)
             .is_some()
         {
@@ -92,7 +98,7 @@ impl Analyzer<'_> {
             return Ok((place, Value::Pointer(pointer)));
         }
         let (operation, _) = self.graph.arithmetic_types(id)?;
-        if self.float_format(operation).is_some() {
+        if self.constant_operation_format(operation).is_some() {
             let old = self.read_constant_scalar(place, location)?;
             let right = self.scalar_value(right, scope)?;
             let op = match op {
@@ -184,7 +190,7 @@ impl Analyzer<'_> {
             let mut pointer = old;
             self.advance_address(&mut pointer, if decrement { -1 } else { 1 }, location)?;
             (Value::Pointer(old), Value::Pointer(pointer))
-        } else if let Some(format) = self.float_format(place.designated) {
+        } else if let Some(format) = self.constant_operation_format(place.designated) {
             let old = self.read_constant_floating(place, location)?;
             let value = old
                 .value
@@ -202,7 +208,11 @@ impl Analyzer<'_> {
                 })?;
             (
                 Value::Floating(old),
-                Value::Floating(super::constant_floats::Floating { ty: old.ty, value }),
+                Value::Floating(super::constant_floats::Floating {
+                    zeroed: false,
+                    ty: old.ty,
+                    value,
+                }),
             )
         } else {
             let old = self.read_constant_integer(place, location)?;

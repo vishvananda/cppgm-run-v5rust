@@ -43,6 +43,12 @@ impl Analyzer<'_> {
         // order: a preceding dynamic initializer cannot see a later retry.
         for (entity, initializer, scope) in std::mem::take(&mut self.static_initializers) {
             let ty = self.graph.lower_entity_type(entity)?;
+            if self.vector_shape(ty).is_some()
+                && let Some(initializer) = initializer
+                && self.record_vector_list_image(entity, initializer, scope)?
+            {
+                continue;
+            }
             if self.graph.lower_automatic(entity)
                 && !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. })
             {
@@ -68,7 +74,10 @@ impl Analyzer<'_> {
             if !self.graph.lower_variable(entity)?.thread_local
                 && matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
+                    TypeKind::Class(_)
+                        | TypeKind::Complex(_)
+                        | TypeKind::Vector { .. }
+                        | TypeKind::Array { .. }
                 )
                 && !self
                     .graph
@@ -97,7 +106,10 @@ impl Analyzer<'_> {
                 && self.graph.lower_array_image(entity).is_none()
                 && matches!(
                     self.graph.types.get(ty).kind,
-                    TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
+                    TypeKind::Class(_)
+                        | TypeKind::Complex(_)
+                        | TypeKind::Vector { .. }
+                        | TypeKind::Array { .. }
                 )
                 && !self
                     .graph

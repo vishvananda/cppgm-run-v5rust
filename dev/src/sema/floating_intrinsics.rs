@@ -468,7 +468,11 @@ impl Analyzer<'_> {
         let value = self
             .graph
             .floating_constants
-            .insert(super::constant_floats::Floating { ty, value })?;
+            .insert(super::constant_floats::Floating {
+                zeroed: false,
+                ty,
+                value,
+            })?;
         self.graph.expression_facts.set_floating_value(id, value);
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
         facts.intrinsic = Some(if matches!(kind, ConstantKind::SignalingNan) {

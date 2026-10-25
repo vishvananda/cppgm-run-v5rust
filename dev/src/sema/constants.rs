@@ -368,7 +368,23 @@ impl Analyzer<'_> {
                 self.constant_cast(ty, args.first().copied(), scope, skipping, location)?
             }
             ExprKind::Subscript { base, index } => {
-                self.constant_string_element(base, index, scope, skipping, location)?
+                if self.semantic()
+                    && self
+                        .graph
+                        .expression_facts
+                        .known(base)
+                        .is_some_and(|facts| self.vector_shape(facts.ty).is_some())
+                {
+                    if skipping {
+                        self.integral_value(self.graph.expression_facts.get(id)?.ty, 0)
+                    } else {
+                        let place =
+                            self.constant_vector_lane_place(id, base, index, scope, true)?;
+                        self.read_constant_integer(place, location)?
+                    }
+                } else {
+                    self.constant_string_element(base, index, scope, skipping, location)?
+                }
             }
             ExprKind::SizeofPack(name) => {
                 let bits = self
@@ -1272,6 +1288,24 @@ impl Analyzer<'_> {
             .types
             .intern(self.graph.types.get(ty).kind.clone(), Cv::default())?;
         if self.semantic()
+            && let Some(operand) = operand
+            && self
+                .graph
+                .expression_facts
+                .known(operand)
+                .is_some_and(|facts| self.vector_shape(facts.ty).is_some())
+        {
+            if skipping {
+                return Ok(self.integral_value(ty, 0));
+            }
+            let super::constant_addresses::TemporaryValue::Integer(value) =
+                self.constant_vector_scalar_cast(operand, ty, scope, location)?
+            else {
+                return Err(Error::Invariant("integral vector cast"));
+            };
+            return Ok(value);
+        }
+        if self.semantic()
             && matches!(
                 self.graph.types.get(ty).kind,
                 TypeKind::Scalar(Scalar::Bool)
@@ -1402,7 +1436,10 @@ impl Analyzer<'_> {
             && self.graph.entity(entity).constexpr
             && matches!(
                 self.graph.types.get(ty).kind,
-                TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Array { .. }
+                TypeKind::Class(_)
+                    | TypeKind::Complex(_)
+                    | TypeKind::Vector { .. }
+                    | TypeKind::Array { .. }
             )
         {
             return self.record_aggregate_constant(entity, Some(initializer), scope, true);

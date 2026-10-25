@@ -175,7 +175,7 @@ impl Analyzer<'_> {
                 .member_pointer_operand(id, target, scope)
                 .map(Value::MemberPointer);
         }
-        if self.float_format(target).is_some()
+        if self.constant_floating_type(target)
             || self.floating_expression(id)
             || self.member_pointer_expression(id)
         {
@@ -198,8 +198,9 @@ impl Analyzer<'_> {
         ))
     }
     pub(super) fn zero_constant_scalar(&mut self, target: TypeId) -> Result<Value, Error> {
-        if self.float_format(target).is_some() {
+        if self.constant_floating_type(target) {
             return Ok(Value::Floating(super::constant_floats::Floating {
+                zeroed: true,
                 ty: self.bare_type(target)?,
                 value: crate::types::float_value::BinaryFloat::zero(),
             }));
@@ -234,7 +235,12 @@ impl Analyzer<'_> {
             let returned = self.constant_conversion_result(id, scope)?;
             let mut place = match returned {
                 Returned::Place(place) if !step.after.temporary => place,
-                Returned::Place(place) if self.graph.class_of(element).is_some() => place,
+                Returned::Place(place)
+                    if self.graph.class_of(element).is_some()
+                        || self.vector_shape(element).is_some() =>
+                {
+                    place
+                }
                 _ => {
                     let value = self.returned_scalar(returned, location)?;
                     let value = self.convert_constant_scalar(value, element, location)?;
@@ -262,7 +268,10 @@ impl Analyzer<'_> {
             )?;
             return Ok(place);
         }
-        if self.graph.class_of(element).is_some() || self.complex_part_type(element).is_some() {
+        if self.graph.class_of(element).is_some()
+            || self.complex_part_type(element).is_some()
+            || self.vector_shape(element).is_some()
+        {
             let place = self.constant_object_place(id, scope)?;
             let mut place = self.constant_project_path(
                 place,
@@ -606,6 +615,7 @@ impl Analyzer<'_> {
         };
         let destination = if self.graph.class_of(returns).is_some()
             || self.complex_part_type(returns).is_some()
+            || self.vector_shape(returns).is_some()
         {
             Some(if let Some(destination) = destination {
                 destination
@@ -619,10 +629,8 @@ impl Analyzer<'_> {
             self.bind_constant_inputs(function, ty, (arguments, postfix), scope, location)?;
         let mut parameters = Vec::new();
         for (index, &value) in bound.iter().enumerate() {
-            if self
-                .graph
-                .class_of(self.graph.types.function_parameter(ty, index)?)
-                .is_some()
+            let parameter = self.graph.types.function_parameter(ty, index)?;
+            if (self.graph.class_of(parameter).is_some() || self.vector_shape(parameter).is_some())
                 && let Returned::Place(place) = value
             {
                 parameters.push(place);
@@ -747,7 +755,7 @@ impl Analyzer<'_> {
             {
                 let value = match self.graph.types.get(parameter).kind {
                     TypeKind::Reference { .. } => Returned::Place(source),
-                    TypeKind::Class(_) | TypeKind::Complex(_) => {
+                    TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Vector { .. } => {
                         let place = self.allocate_constant_object(parameter, None, location)?;
                         self.copy_constant_object(place, source, location)?;
                         Returned::Place(place)
@@ -788,7 +796,7 @@ impl Analyzer<'_> {
                         TypeKind::Reference { element, .. } => Ok(Returned::Place(
                             analyzer.bind_constant_reference(argument, element, scope)?,
                         )),
-                        TypeKind::Class(_) | TypeKind::Complex(_) => {
+                        TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Vector { .. } => {
                             let place =
                                 analyzer.allocate_constant_object(parameter, None, location)?;
                             analyzer.initialize_constant_class_from(argument, place, scope)?;

@@ -32,6 +32,9 @@ impl Analyzer<'_> {
         let location = self.tree.expressions.get(id).location;
         self.constant_step(location)?;
         target.designated = self.bare_type(target.designated)?;
+        if self.vector_shape(target.designated).is_some() {
+            return self.initialize_constant_vector(id, target, scope);
+        }
         if self.complex_part_type(target.designated).is_some() {
             return self.initialize_constant_complex(id, target, scope);
         }
@@ -223,6 +226,11 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         self.constant_step(location)?;
+        if self.vector_shape(target.designated).is_some()
+            && let Some(initializer) = initializer
+        {
+            return self.construct_constant_vector(target, initializer, scope);
+        }
         if self.complex_part_type(target.designated).is_some()
             && let Some(initializer) = initializer
         {

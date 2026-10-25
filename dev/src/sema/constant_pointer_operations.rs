@@ -51,6 +51,13 @@ impl Analyzer<'_> {
                 "constant subscript without subscript syntax",
             ));
         };
+        if self
+            .vector_shape(self.graph.expression_facts.get(base)?.ty)
+            .is_some()
+        {
+            let value = self.graph.expression_facts.get(base)?.category == ValueCategory::Prvalue;
+            return self.constant_vector_lane_place(id, base, index, scope, value);
+        }
         let facts = self.graph.expression_facts.get(id)?;
         let (base, index) = if facts.commuted {
             (index, base)

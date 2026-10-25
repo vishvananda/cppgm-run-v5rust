@@ -94,6 +94,18 @@ pub(super) enum TemporaryValue {
     Pointer(Address),
     MemberPointer(super::symbolic_members::MemberPointer),
 }
+impl TemporaryValue {
+    pub(super) fn clear_zeroed(self) -> Self {
+        if let Self::Floating(value) = self {
+            Self::Floating(super::constant_floats::Floating {
+                zeroed: false,
+                ..value
+            })
+        } else {
+            self
+        }
+    }
+}
 #[derive(Default)]
 pub(super) struct Evaluation {
     values: HashMap<ast::ExprId, TemporaryValue>,
@@ -1005,7 +1017,7 @@ impl Analyzer<'_> {
             ));
         }
         let source = self.graph.expression_facts.get(operand)?;
-        if self.graph.class_of(facts.ty).is_some() {
+        if self.graph.class_of(facts.ty).is_some() || self.vector_shape(facts.ty).is_some() {
             if let Some(cast) = facts.base_cast {
                 let place = self.constant_object_place(operand, scope)?;
                 return self.constant_cast_subobject(place, facts.ty, cast, location);
@@ -1419,6 +1431,9 @@ impl Analyzer<'_> {
                     _ if facts.category != ValueCategory::Prvalue => {
                         self.constant_place(id, scope)?;
                     }
+                    _ if self.vector_shape(facts.ty).is_some() => {
+                        self.constant_vector_value(id, scope)?;
+                    }
                     _ if self.complex_part_type(facts.ty).is_some() => {
                         self.constant_complex_parts(id, facts.ty, scope)?;
                     }
@@ -1521,7 +1536,10 @@ impl Analyzer<'_> {
                 let TypeKind::Reference { element, .. } = analyzer.graph.types.get(ty).kind else {
                     return Err(Error::Invariant("reference temporary type"));
                 };
-                if analyzer.graph.class_of(element).is_some() || converted {
+                if analyzer.graph.class_of(element).is_some()
+                    || analyzer.vector_shape(element).is_some()
+                    || converted
+                {
                     // A converting constructor creates class storage. Its
                     // scalar source is never the reference's backing value.
                     let place = analyzer.bind_constant_reference(expr, element, scope)?;
