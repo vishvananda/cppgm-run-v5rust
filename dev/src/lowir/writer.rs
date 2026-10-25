@@ -343,12 +343,22 @@ fn parameters(
         if i != 0 {
             write!(out, ", ")?;
         }
-        write!(
-            out,
-            "%{} : {}",
-            locals.map_or_else(|| program.names.get(p.name), |names| names[i].as_str()),
-            p.ty
-        )?;
+        let name = locals.map_or_else(|| program.names.get(p.name), |names| names[i].as_str());
+        write!(out, "%")?;
+        if name.is_empty() {
+            let mut name = format!("arg{i}");
+            while signature
+                .parameters
+                .iter()
+                .any(|other| program.names.get(other.name) == name)
+            {
+                name.push('_');
+            }
+            write!(out, "{name}")?;
+        } else {
+            write!(out, "{name}")?;
+        }
+        write!(out, " : {}", p.ty)?;
         let mut fields = Vec::new();
         if let Some(pass) = p.pass {
             fields.push(format!("pass={}", pass.spelling()));
@@ -823,5 +833,43 @@ fn integer_text(mut bits: u128, ty: Type) -> String {
         format!("-{}", bits.wrapping_neg())
     } else {
         bits.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowir::model::{Boundary, Parameter};
+
+    #[test]
+    fn unnamed_boundary_parameters_skip_explicit_name_collisions() {
+        let mut program = Program::default();
+        let parameters = [
+            ("", Type::Ptr),
+            ("arg0", Type::I32),
+            ("arg0_", Type::I64),
+            ("", Type::I8),
+        ]
+        .into_iter()
+        .map(|(name, ty)| Parameter {
+            name: program.names.intern(name).unwrap(),
+            ty,
+            pass: None,
+            no_alias: false,
+            object_bytes: 0,
+            classes: None,
+        })
+        .collect();
+        let signature = Signature {
+            parameters,
+            result: Type::Void,
+            boundary: Boundary::default(),
+        };
+        let mut output = Vec::new();
+        super::parameters(&program, &signature, None, &mut output).unwrap();
+        assert_eq!(
+            output,
+            b"(%arg0__ : ptr, %arg0 : i32, %arg0_ : i64, %arg3 : i8) -> void"
+        );
     }
 }

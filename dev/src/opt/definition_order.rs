@@ -169,33 +169,39 @@ mod tests {
     }
     #[test]
     fn reordered_layout_places_a_dominating_definition_before_its_use() {
-        let (p, s, mut body) = setup(
+        let (mut p, s, mut body) = setup(
             "function @f() -> i64 {block ^entry: jump ^def block ^def: %v = const i64 5 jump ^use block ^use: return i64 %v}",
         );
         body.layout.swap(1, 2);
-        let mut c = Context::new(&p, s, &mut body, 1, &[], &[]);
+        let mut c = Context::new(&mut p, s, &mut body, 1, &[], &[]);
         assert!(restore(&mut c).unwrap());
         assert!(c.left_ordered);
-        assert_eq!(p.names.get(c.body.block(c.body.layout[1]).name), "def");
+        assert_eq!(
+            c.program.names.get(c.body.block(c.body.layout[1]).name),
+            "def"
+        );
         assert!(!restore(&mut c).unwrap());
     }
     #[test]
     fn stable_topological_ties_preserve_nondominating_definition_constraints() {
-        let (p, s, mut body) = setup(
+        let (mut p, s, mut body) = setup(
             "function @f(%c : i64) -> i64 {block ^entry: branch %c, ^a, ^b block ^a: %v = const i64 5 return i64 0 block ^b: return i64 %v}",
         );
         body.layout.swap(1, 2);
-        let mut c = Context::new(&p, s, &mut body, 1, &[], &[]);
+        let mut c = Context::new(&mut p, s, &mut body, 1, &[], &[]);
         assert!(restore(&mut c).unwrap());
         assert!(!c.left_ordered);
-        assert_eq!(p.names.get(c.body.block(c.body.layout[1]).name), "a");
+        assert_eq!(
+            c.program.names.get(c.body.block(c.body.layout[1]).name),
+            "a"
+        );
     }
     #[test]
     fn stamp_wrap_clears_old_marks_and_phis_do_not_impose_ordinary_order() {
-        let (p, s, mut body) = setup(
+        let (mut p, s, mut body) = setup(
             "function @f(%c : i64) -> i64 {block ^entry: jump ^loop block ^loop: %p = phi i64 [^entry: 0, ^loop: %next] %next = binary add i64 %p, 1 branch %c, ^loop, ^end block ^end: return i64 %p}",
         );
-        let mut c = Context::new(&p, s, &mut body, 1, &[], &[]);
+        let mut c = Context::new(&mut p, s, &mut body, 1, &[], &[]);
         c.passed_stamp = u32::MAX;
         c.passed = vec![1; c.body.instructions().len()];
         assert!(!restore(&mut c).unwrap());

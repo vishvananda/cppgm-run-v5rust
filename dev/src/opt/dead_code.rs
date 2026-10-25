@@ -102,7 +102,7 @@ mod tests {
             .unwrap();
         let mut body = program.take_body(symbol).unwrap().unwrap();
         let dead = {
-            let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+            let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
             let changed = remove(&mut context).unwrap();
             assert_eq!(changed, context.dead != 0);
             context.dead

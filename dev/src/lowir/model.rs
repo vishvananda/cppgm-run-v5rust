@@ -62,6 +62,9 @@ impl Default for Names {
     }
 }
 impl Names {
+    pub(crate) fn find(&self, text: &str) -> Option<NameId> {
+        self.index.get(text.as_bytes()).copied()
+    }
     pub(crate) fn intern(&mut self, text: &str) -> Result<NameId, Error> {
         self.intern_bytes(text.as_bytes())
     }
@@ -283,6 +286,14 @@ impl Program {
         let id = SourceId(u32::try_from(self.sources.len()).map_err(|_| Error::Limit)?);
         self.sources.push(path.into());
         Ok(id)
+    }
+    pub(crate) fn reference_from(
+        &mut self,
+        name: NameId,
+        owner: SymbolId,
+    ) -> Result<SymbolId, Error> {
+        let source = self.symbol(owner).source;
+        self.reference(name, source, 0)
     }
     pub(crate) fn source(&self, id: SourceId) -> &Path {
         &self.sources[id.0 as usize]

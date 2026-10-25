@@ -27,6 +27,7 @@ mod iteration_values;
 mod jump_threading;
 mod load_placement;
 mod local_pipeline;
+mod loop_fills;
 mod loop_removal;
 mod memory_calls;
 mod memory_contents;
@@ -166,7 +167,8 @@ fn pass_view(source: &str, level: u8, pass: pass_context::Pass) -> (String, (boo
         .unwrap();
     let mut body = program.take_body(symbol).unwrap().unwrap();
     let facts = {
-        let mut context = pass_context::Context::new(&program, symbol, &mut body, level, &[], &[]);
+        let mut context =
+            pass_context::Context::new(&mut program, symbol, &mut body, level, &[], &[]);
         let changed = context.run(pass).unwrap();
         (
             changed,

@@ -60,7 +60,7 @@ enum CachedCfg {
     Complete(Cfg),
 }
 pub(super) struct Context<'a> {
-    pub(super) program: &'a Program,
+    pub(super) program: &'a mut Program,
     pub(super) symbol: SymbolId,
     pub(super) body: &'a mut Body,
     pub(super) level: u8,
@@ -94,7 +94,7 @@ pub(super) struct Context<'a> {
 }
 impl<'a> Context<'a> {
     pub(super) fn new(
-        program: &'a Program,
+        program: &'a mut Program,
         symbol: SymbolId,
         body: &'a mut Body,
         level: u8,
@@ -315,7 +315,7 @@ mod tests {
         .unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
         context.ensure_cfg().unwrap();
         context.ordered_version = Some(0);
         assert!(context.run(Pass::DeadCode).unwrap());
@@ -337,7 +337,7 @@ mod tests {
         .unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
         context.ensure_cfg_light().unwrap();
         assert!(matches!(context.cfg, CachedCfg::Light(_)));
         context.ensure_cfg().unwrap();
@@ -366,7 +366,7 @@ mod tests {
         let mut program = crate::lowir::test_program(b"function @f(%v : i64) -> i64 {block ^entry: %c = cmp eq i64 %v, 7 branch %c, ^yes, ^no block ^yes: return i64 %v block ^no: return i64 %v}").unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
         assert!(!context.run(Pass::SimplifyValues).unwrap());
         assert_eq!(context.version, 0);
         assert_eq!(context.uses_key, None);
@@ -384,7 +384,7 @@ mod tests {
         .unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
         context.running = Some(Pass::SimplifyValues);
         context.prepare_uses(Pass::SimplifyValues, true).unwrap();
         assert_eq!(context.uses_key, Some((0, 1)));
@@ -411,7 +411,7 @@ mod promotion_tests {
         .unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
         context.ordered_version = Some(0);
         assert!(context.run(Pass::PromoteSlots).unwrap());
         assert_eq!(context.version, 0);

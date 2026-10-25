@@ -599,7 +599,7 @@ mod tests {
         let mut body = program.take_body(symbol).unwrap().unwrap();
         body.record_switch_types();
         let (changed, propagated) = {
-            let mut context = Context::new(&program, symbol, &mut body, 1, &[], &unwritten);
+            let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &unwritten);
             let changed = context.run(Pass::Constants).unwrap();
             (changed, context.propagated)
         };
@@ -699,7 +699,7 @@ function @f() -> void {
         let symbol: SymbolId = program.publications()[0];
         let before = program.statistics().literals;
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
         assert!(!context.run(Pass::Constants).unwrap());
         assert!(!context.run(Pass::Constants).unwrap());
         assert_eq!(context.propagated, 0);

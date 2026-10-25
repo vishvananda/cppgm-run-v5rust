@@ -770,7 +770,7 @@ mod tests {
         let unwritten = super::super::global_contents::find_unwritten(&program);
         let mut body = program.take_body(symbol).unwrap().unwrap();
         let (changed, folded, reused) = {
-            let mut context = Context::new(&program, symbol, &mut body, level, &[], &unwritten);
+            let mut context = Context::new(&mut program, symbol, &mut body, level, &[], &unwritten);
             let changed = context.run(Pass::SimplifyValues).unwrap();
             (changed, context.folded, context.reused)
         };

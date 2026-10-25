@@ -582,7 +582,7 @@ mod tests {
             .unwrap();
         let mut body = program.take_body(symbol).unwrap().unwrap();
         let (changed, loads, stores) = {
-            let mut context = Context::new(&program, symbol, &mut body, level, &[], &[]);
+            let mut context = Context::new(&mut program, symbol, &mut body, level, &[], &[]);
             let changed = context
                 .run(super::super::pass_context::Pass::ForwardMemory)
                 .unwrap();
@@ -599,7 +599,7 @@ mod tests {
         let mut program=crate::lowir::test_program(b"function @f(%out : ptr)->void {slot $a : obj<1x1> block ^entry:%base = addr $a %at = index i8 %base, 9223372036854775807 store u8 7, %at zeroinit 1x1 %base copyobj 1x1 %base, %out return void}").unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 2, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 2, &[], &[]);
         assert!(
             matches!(forward(&mut context),Err(Error::Construction(message))if message=="constant-copy byte index outside image")
         );
@@ -712,7 +712,7 @@ mod tests {
         let mut program=crate::lowir::test_program(b"function @f(%p : ptr, %v : i64) -> ptr {block ^entry: store typed i64 %v, %p %r = load typed ptr %p return ptr %r}").unwrap();
         let symbol = program.publications()[0];
         let mut body = program.take_body(symbol).unwrap().unwrap();
-        let mut context = Context::new(&program, symbol, &mut body, 1, &[], &[]);
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
         assert!(
             context
                 .run(super::super::pass_context::Pass::ForwardMemory)

@@ -671,7 +671,7 @@ mod tests {
         let mut body = p.take_body(symbol).unwrap().unwrap();
         body.record_switch_types();
         let (changed, stats) = {
-            let mut c = Context::new(&p, symbol, &mut body, 1, &[], &[]);
+            let mut c = Context::new(&mut p, symbol, &mut body, 1, &[], &[]);
             let changed = c.run(super::super::pass_context::Pass::CleanupCfg).unwrap();
             (
                 changed,

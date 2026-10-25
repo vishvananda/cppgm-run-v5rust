@@ -2,7 +2,7 @@
 //! See NOTICE.
 use super::{
     induction::{Exit, Facts},
-    iteration_values,
+    iteration_values, loop_fills,
     natural_loops::{Forest, LoopId},
     numeric_fold::normalize,
     pass_context::{Context, Pass},
@@ -208,10 +208,22 @@ fn try_loop(context: &mut Context<'_>, forest: &Forest, loop_: LoopId) -> Result
     };
     let private = facts.private_values(loop_, test);
     let free = facts.effect_free(loop_);
-    if !free {
-        return Err(Error::NotImplemented("LowIR memory loop rewrites"));
-    }
-    if !private && !iteration_values::compute(context, forest, loop_, test, &analysis.inductions)? {
+    if !private {
+        if !free || !iteration_values::compute(context, forest, loop_, test, &analysis.inductions)?
+        {
+            if context.level >= 2 {
+                return Err(Error::NotImplemented(
+                    "LowIR copy and wide-fill loop rewrites",
+                ));
+            }
+            return Ok(false);
+        }
+    } else if !free && !loop_fills::emit(context, forest, loop_, test, &analysis.inductions)? {
+        if context.level >= 2 {
+            return Err(Error::NotImplemented(
+                "LowIR indexed-store, copy and wide-fill loop rewrites",
+            ));
+        }
         return Ok(false);
     }
     if !bypass(context, forest, loop_, test)? {
