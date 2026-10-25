@@ -217,6 +217,19 @@ fn reads_register(op: Op, register: R) -> bool {
     });
     found
 }
+fn reads_destination(op: Op) -> bool {
+    !matches!(
+        op,
+        Op::Move(..)
+            | Op::Scalar(
+                ScalarOp::Move(..)
+                    | ScalarOp::Load(..)
+                    | ScalarOp::Lea(..)
+                    | ScalarOp::Lea32(..)
+                    | ScalarOp::ExtendMove(..)
+            )
+    )
+}
 fn forward_scratch(function: &mut Function, at: usize, end: usize, held: R) -> bool {
     let Some(scratch) = writer(function.instructions[at].op) else {
         return false;
@@ -236,7 +249,7 @@ fn forward_scratch(function: &mut Function, at: usize, end: usize, held: R) -> b
         }
         let w = writer(op);
         if reads_register(op, scratch) {
-            if dirty || w == Some(scratch) {
+            if dirty || w == Some(scratch) && reads_destination(op) {
                 return false;
             }
             last = i;
@@ -569,6 +582,55 @@ mod tests {
                 Op::Scalar(ScalarOp::Load(..))
             ));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn scratch_overwrite_forwards_its_source_address_only() -> Result<(), Error> {
+        let ops = [
+            Op::Scalar(ScalarOp::Store(
+                Operand::Frame(-8),
+                Type::Ptr,
+                Operand::Register(R::RDI),
+            )),
+            Op::Scalar(ScalarOp::Load(R::R10, Type::Ptr, Operand::Frame(-8))),
+            Op::Scalar(ScalarOp::Load(
+                R::R10,
+                Type::I64,
+                Operand::Memory(super::super::memory::Memory::new(Base::Register(R::R10), 8)),
+            )),
+            Op::Scalar(ScalarOp::Store(
+                Operand::Frame(-16),
+                Type::I64,
+                Operand::Register(R::R10),
+            )),
+            Op::Return(None),
+        ];
+        let mut f = sample(&ops, std::slice::from_ref(&(0..5)))?;
+        forward(&mut f);
+        assert!(matches!(f.instructions[1].op, Op::Nop));
+        assert!(matches!(
+            f.instructions[2].op,
+            Op::Scalar(ScalarOp::Load(R::R10, Type::I64, Operand::Memory(m)))
+                if m.base == Base::Register(R::RDI) && m.displacement == 8
+        ));
+        assert!(matches!(
+            f.instructions[3].op,
+            Op::Scalar(ScalarOp::Store(_, _, Operand::Register(R::R10)))
+        ));
+        // A two-address operation needs the scratch's old destination value.
+        let mut partial = sample(&ops, std::slice::from_ref(&(0..5)))?;
+        partial.instructions[2].op = Op::Scalar(ScalarOp::Binary(
+            crate::lowir::vocabulary::Binary::Add,
+            Type::I64,
+            R::R10,
+            Operand::Immediate(1),
+        ));
+        forward(&mut partial);
+        assert!(matches!(
+            partial.instructions[1].op,
+            Op::Scalar(ScalarOp::Move(R::R10, Operand::Register(R::RDI)))
+        ));
         Ok(())
     }
 }

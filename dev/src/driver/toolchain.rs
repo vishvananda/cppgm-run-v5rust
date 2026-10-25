@@ -471,7 +471,12 @@ fn compile(
             input.path.as_os_str().as_bytes().to_vec(),
             invocation.level,
         )
-        .map_err(ast::native_error);
+        .map_err(|error| match ast::native_error(error) {
+            AstToolError::NativeDiagnostic(bytes) => AstToolError::Diagnostic(
+                [input.path.as_os_str().as_bytes(), b": ", &bytes].concat(),
+            ),
+            error => error,
+        });
     }
     let source = read_source(input)?;
     let mut output =
