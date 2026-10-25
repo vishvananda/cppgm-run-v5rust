@@ -122,7 +122,7 @@ impl Function<'_, '_, '_, '_> {
                     if initialized {
                         wrote = true;
                         let end = local_offset
-                            .wrapping_add(super::types::layout(lowering.graph, ty)?.0)
+                            .wrapping_add(super::types::size_of(lowering.graph, ty, location)?)
                             .wrapping_mul(8);
                         lowering.bit_initialization.high =
                             lowering.bit_initialization.high.max(end);
@@ -157,7 +157,7 @@ impl Function<'_, '_, '_, '_> {
                     lowering.bit_initialization.unit = 0;
                     lowering.bit_initialization.high = lowering.bit_initialization.high.max(
                         local_offset
-                            .wrapping_add(super::types::layout(lowering.graph, ty)?.0)
+                            .wrapping_add(super::types::size_of(lowering.graph, ty, location)?)
                             .wrapping_mul(8),
                     );
                     return Ok(());
@@ -188,7 +188,7 @@ impl Function<'_, '_, '_, '_> {
                     lowering
                         .graph
                         .lower_member_offset(member)?
-                        .wrapping_add(super::types::layout(lowering.graph, ty)?.0)
+                        .wrapping_add(super::types::size_of(lowering.graph, ty, location)?)
                         .wrapping_mul(8),
                 );
                 Ok(())

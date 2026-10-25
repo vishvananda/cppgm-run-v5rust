@@ -63,6 +63,34 @@ impl Graph {
             None
         })
     }
+    /// Output destroys existing subobjects only. Property/access queries above
+    /// still inspect variant members and the element type of an empty array.
+    fn destruction_output_child(
+        &self,
+        class: EntityId,
+        index: usize,
+    ) -> Result<Option<EntityId>, Error> {
+        let entity = self.entity(class);
+        if index >= entity.bases.len() {
+            if entity.key == Keyword::Union {
+                return Ok(None);
+            }
+            let member = entity.members[index - entity.bases.len()];
+            let mut ty = self
+                .entity(member)
+                .ty
+                .ok_or(Error::Invariant("member without type"))?;
+            while let TypeKind::Array { element, bound, .. } = self.types.get(ty).kind {
+                if bound == 0 {
+                    return Ok(None);
+                }
+                ty = element;
+            }
+        }
+        Ok(self
+            .destruction_child(class, index, &[])?
+            .map(|(child, _)| child))
+    }
     pub(crate) fn lower_destructor_subobjects_throw(&self, class: EntityId) -> Result<bool, Error> {
         let count = self.entity(class).bases.len()
             + if self.entity(class).key == Keyword::Union {
@@ -436,7 +464,7 @@ impl Analyzer<'_> {
         self.prepare_destruction(class)?;
         let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
         for index in 0..count {
-            if let Some((child, _)) = self.graph.destruction_child(class, index, &[])?
+            if let Some(child) = self.graph.destruction_output_child(class, index)?
                 && !self.graph.destructor_trivial(child)?
                 && let Some(binding) = self.destructor_callable(child)?
             {
@@ -461,7 +489,7 @@ impl Analyzer<'_> {
             let count =
                 self.graph.entity(current).bases.len() + self.graph.entity(current).members.len();
             for index in 0..count {
-                if let Some((child, _)) = self.graph.destruction_child(current, index, &[])? {
+                if let Some(child) = self.graph.destruction_output_child(current, index)? {
                     if let (Some(parent), Some(binding)) =
                         (parent, self.destructor_callable(child)?)
                         && !self.graph.destructor_trivial(child)?
