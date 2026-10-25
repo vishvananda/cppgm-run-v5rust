@@ -85,7 +85,11 @@ impl Analyzer<'_> {
         let place = self.constant_place(left, scope)?;
         if self.is_address_expression(left) {
             let mut pointer = self.read_constant_address(place, location)?;
-            let count = integral::signed(self.evaluate_constant(right, scope, false)?.bits);
+            let count = self.evaluate_constant(right, scope, false)?;
+            if count.indeterminate() {
+                return Err(super::constant_addresses::unreported_constant(location));
+            }
+            let count = integral::signed(count.bits);
             self.advance_address(
                 &mut pointer,
                 if op == Some(P::SubtractAssign) {
@@ -122,13 +126,21 @@ impl Analyzer<'_> {
             return Ok((
                 place,
                 Value::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: u64::from(pointer.root != Root::Null),
                     ty: self.bare_type(place.designated)?,
                 }),
             ));
         }
-        let right = self.evaluate_constant(right, scope, false)?;
+        let value = self.evaluate_constant(right, scope, false)?;
+        let right = self.constant_integer_operand(value, right)?;
+        if right.indeterminate() {
+            return Err(nonconstant(
+                location,
+                "a compound assignment of values that are not integers",
+            ));
+        }
         let kind = self
             .integral_kind(operation)
             .ok_or(Error::Missing("floating compound constant evaluation"))?;
@@ -209,7 +221,7 @@ impl Analyzer<'_> {
             (
                 Value::Floating(old),
                 Value::Floating(super::constant_floats::Floating {
-                    zeroed: false,
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     ty: old.ty,
                     value,
                 }),
@@ -253,6 +265,7 @@ impl Analyzer<'_> {
             (
                 Value::Integer(old),
                 Value::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits,
                     ty: target,

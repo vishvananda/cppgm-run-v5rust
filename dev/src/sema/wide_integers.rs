@@ -6,6 +6,17 @@ use super::{
 use crate::{lex::pp_lexer::Punctuator as P, support::source::SourceOffset, syntax::ast};
 
 impl Constant {
+    pub(super) fn indeterminate_value(ty: TypeId) -> Self {
+        Self {
+            ty,
+            bits: 0,
+            high: 0,
+            state: super::constant_addresses::ScalarState::Indeterminate,
+        }
+    }
+    pub(super) fn indeterminate(self) -> bool {
+        self.state == super::constant_addresses::ScalarState::Indeterminate
+    }
     pub(super) fn truth(self) -> bool {
         self.bits != 0 || self.high != 0
     }
@@ -19,6 +30,7 @@ impl Constant {
         low.copy_from_slice(&bytes[..8]);
         high.copy_from_slice(&bytes[8..]);
         Self {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             ty,
             bits: u64::from_le_bytes(low),
             high: u64::from_le_bytes(high),
@@ -27,6 +39,41 @@ impl Constant {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn converted_constant_integer(
+        &mut self,
+        value: Constant,
+        target: TypeId,
+        location: SourceOffset,
+    ) -> Result<Constant, Error> {
+        let super::constant_addresses::TemporaryValue::Integer(value) = self
+            .convert_constant_scalar(
+                super::constant_addresses::TemporaryValue::Integer(value),
+                target,
+                location,
+            )?
+        else {
+            return Err(Error::Invariant("integral constant conversion result"));
+        };
+        Ok(value)
+    }
+    pub(super) fn constant_integer_operand(
+        &mut self,
+        value: Constant,
+        expression: ast::ExprId,
+    ) -> Result<Constant, Error> {
+        if !value.indeterminate() {
+            return Ok(value);
+        }
+        let facts = self.graph.expression_facts.get(expression)?;
+        let target = facts
+            .conversion
+            .map_or(value.ty, |conversion| conversion.result);
+        self.converted_constant_integer(
+            value,
+            target,
+            self.tree.expressions.get(expression).location,
+        )
+    }
     pub(super) fn integral_value(&self, ty: TypeId, bits: u64) -> Constant {
         self.graph.integral_value(ty, bits)
     }
@@ -50,6 +97,11 @@ impl Analyzer<'_> {
         value: Constant,
         ty: TypeId,
     ) -> Result<Constant, Error> {
+        if value.indeterminate() {
+            return Err(Error::Invariant(
+                "indeterminate value bypassed scalar conversion",
+            ));
+        }
         let kind = self
             .integral_kind(ty)
             .ok_or(Error::Invariant("nonintegral conversion target"))?;
@@ -146,11 +198,16 @@ impl super::graph::Graph {
         } else {
             0
         };
-        Constant { bits, high, ty }
+        Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
+            bits,
+            high,
+            ty,
+        }
     }
 
     pub(super) fn held_integral_constant(&self, value: Constant) -> bool {
-        value.high == self.integral_value(value.ty, value.bits).high
+        !value.indeterminate() && value.high == self.integral_value(value.ty, value.bits).high
     }
 }
 

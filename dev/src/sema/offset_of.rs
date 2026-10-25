@@ -34,6 +34,7 @@ impl Analyzer<'_> {
             &mut self.graph.constant_facts,
             id.index(),
             Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: offset,
                 ty,
@@ -59,6 +60,7 @@ impl Analyzer<'_> {
         }
         let bits = self.offsetof_value(designator, scope)?;
         Ok(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             high: 0,
             bits,
             ty: self

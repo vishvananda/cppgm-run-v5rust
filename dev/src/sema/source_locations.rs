@@ -89,6 +89,7 @@ impl Analyzer<'_> {
                     0
                 };
                 TemporaryValue::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     bits,
                     high: 0,
                     ty: self.graph.expression_facts.get(id)?.ty,

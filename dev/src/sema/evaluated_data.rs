@@ -206,7 +206,7 @@ impl Analyzer<'_> {
                         return Err(Error::Invariant("constant floating placement type"));
                     };
                     let soft = kind.floating_representation();
-                    if value.zeroed
+                    if value.state == super::constant_addresses::ScalarState::Zeroed
                         && matches!(
                             soft,
                             crate::types::FundamentalType::Float16

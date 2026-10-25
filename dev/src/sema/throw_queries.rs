@@ -101,7 +101,12 @@ impl Analyzer<'_> {
         super::record(
             &mut self.graph.constant_facts,
             id.index(),
-            Constant { high: 0, bits, ty },
+            Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
+                high: 0,
+                bits,
+                ty,
+            },
         );
         Ok(facts)
     }

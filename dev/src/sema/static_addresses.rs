@@ -81,6 +81,12 @@ impl Analyzer<'_> {
                 };
                 let mut place = self.static_pointer(base, scope)?;
                 let count = self.evaluate_constant(index, scope, false)?;
+                if count.indeterminate() {
+                    return Err(super::constant_addresses::nonconstant(
+                        node.location,
+                        "not a constant scalar value",
+                    ));
+                }
                 let (size, _) = self.type_size(facts.ty, node.location)?;
                 place.address.offset = place
                     .address
@@ -254,6 +260,12 @@ impl Analyzer<'_> {
                 };
                 let mut place = self.static_pointer(pointer, scope)?;
                 let count = self.evaluate_constant(index, scope, false)?;
+                if count.indeterminate() {
+                    return Err(super::constant_addresses::nonconstant(
+                        node.location,
+                        "not a constant scalar value",
+                    ));
+                }
                 let (size, _) = self.type_size(place.address.designated, node.location)?;
                 let offset = super::integral::signed(count.bits.wrapping_mul(size));
                 place.address.offset = if op.token.as_punctuator() == Some(P::Subtract) {

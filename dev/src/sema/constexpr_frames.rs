@@ -451,7 +451,7 @@ impl Frames {
             ty: place.designated,
             offset: place.offset,
             field: place.bit_field(),
-            value,
+            value: value.filter(|value| !value.indeterminate()),
             end: self.cells.len() + 1,
             parent: None,
             member: None,
@@ -636,10 +636,16 @@ impl Frames {
         place: Address,
         location: SourceOffset,
     ) -> Result<TemporaryValue, Error> {
-        let id = self.locate(place, location)?;
-        self.cells[id.0 as usize]
-            .value
+        self.read_value(place, location)?
             .ok_or_else(|| nonconstant(location, "a read of an object that is not initialized"))
+    }
+    pub(super) fn read_value(
+        &self,
+        place: Address,
+        location: SourceOffset,
+    ) -> Result<Option<TemporaryValue>, Error> {
+        let id = self.locate(place, location)?;
+        Ok(self.cells[id.0 as usize].value)
     }
     pub(super) fn write(
         &mut self,
@@ -648,7 +654,7 @@ impl Frames {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let id = self.activate(place, location)?;
-        self.cells[id.0 as usize].value = Some(value);
+        self.cells[id.0 as usize].value = (!value.indeterminate()).then_some(value);
         Ok(())
     }
     pub(super) fn copy(
@@ -922,6 +928,7 @@ mod tests {
             .write(
                 a_place,
                 TemporaryValue::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 3,
                     ty,
@@ -940,6 +947,7 @@ mod tests {
             .write(
                 b_place,
                 TemporaryValue::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 7,
                     ty,
@@ -988,6 +996,7 @@ mod tests {
             .write(
                 b_place,
                 TemporaryValue::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 9,
                     ty,
@@ -1024,6 +1033,7 @@ mod tests {
             .allocate(
                 (ty, ty),
                 Some(TemporaryValue::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 1,
                     ty,
@@ -1104,6 +1114,7 @@ mod tests {
                     .add_cell(
                         place,
                         Some(TemporaryValue::Integer(Constant {
+                            state: crate::sema::constant_addresses::ScalarState::Value,
                             high: 0,
                             bits,
                             ty: integer,
@@ -1125,6 +1136,7 @@ mod tests {
             .write(
                 source,
                 TemporaryValue::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 9,
                     ty: integer,

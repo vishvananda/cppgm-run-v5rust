@@ -96,6 +96,9 @@ impl Analyzer<'_> {
                 "overflow intrinsic without integer values",
             ));
         };
+        if a.indeterminate() || b.indeterminate() {
+            return Err(super::constant_addresses::unreported_constant(location));
+        }
         let Value::Pointer(pointer) = pointer else {
             return Err(nonconstant(
                 location,

@@ -550,6 +550,7 @@ impl Analyzer<'_> {
         {
             if skipping {
                 return Ok(Some(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 0,
                     ty: self.graph.expression_facts.get(id)?.ty,
@@ -575,6 +576,7 @@ impl Analyzer<'_> {
                 }
             };
             return Ok(Some(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: u64::from(truth),
                 ty: self.graph.expression_facts.get(id)?.ty,
@@ -612,6 +614,7 @@ impl Analyzer<'_> {
         let ty = self.bare_type(self.graph.expression_facts.get(id)?.ty)?;
         if skipping {
             return Ok(Some(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty,
@@ -663,7 +666,12 @@ impl Analyzer<'_> {
                 value.bits
             }
         };
-        Ok(Some(Constant { high: 0, bits, ty }))
+        Ok(Some(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
+            high: 0,
+            bits,
+            ty,
+        }))
     }
 }
 

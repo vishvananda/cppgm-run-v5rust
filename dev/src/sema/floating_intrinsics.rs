@@ -116,6 +116,11 @@ impl Analyzer<'_> {
         let result = if kind.comparison() {
             let left = self.constant_float_operand(arguments[0], scope)?;
             let right = self.constant_float_operand(arguments[1], scope)?;
+            let (Some(left), Some(right)) = (left, right) else {
+                return Err(super::constant_addresses::unreported_constant(
+                    self.tree.expressions.get(id).location,
+                ));
+            };
             let order = left.compare(right);
             u64::from(match kind {
                 FloatingIntrinsic::IsGreater => order == Some(Greater),
@@ -129,7 +134,11 @@ impl Analyzer<'_> {
             let argument = *arguments
                 .last()
                 .ok_or(Error::Invariant("constant intrinsic without operand"))?;
-            let value = self.constant_float_operand(argument, scope)?;
+            let Some(value) = self.constant_float_operand(argument, scope)? else {
+                return Err(super::constant_addresses::unreported_constant(
+                    self.tree.expressions.get(id).location,
+                ));
+            };
             let category = value.category();
             match kind {
                 FloatingIntrinsic::IsFinite => u64::from(!matches!(
@@ -160,12 +169,19 @@ impl Analyzer<'_> {
                         FloatCategory::Zero => 4,
                     };
                     let code = self.evaluate_constant(arguments[index], scope, false)?;
+                    let code = self.constant_integer_operand(code, arguments[index])?;
+                    if code.indeterminate() {
+                        return Err(super::constant_addresses::unreported_constant(
+                            self.tree.expressions.get(id).location,
+                        ));
+                    }
                     let ty = self.graph.expression_facts.get(id)?.ty;
                     let integer = self
                         .graph
                         .integral_kind(ty)
                         .ok_or(Error::Invariant("classification result is not integral"))?;
                     return Ok(super::constants::Constant {
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         high: 0,
                         bits: integer.convert(code.bits),
                         ty,
@@ -175,6 +191,7 @@ impl Analyzer<'_> {
             }
         };
         Ok(super::constants::Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             high: 0,
             bits: result,
             ty: self.graph.expression_facts.get(id)?.ty,
@@ -185,43 +202,26 @@ impl Analyzer<'_> {
         &mut self,
         id: ast::ExprId,
         scope: ScopeId,
-    ) -> Result<FloatingBits, Error> {
+    ) -> Result<Option<FloatingOperand>, Error> {
         let facts = self.graph.expression_facts.get(id)?;
         let target = facts
             .conversion
             .map_or(facts.ty, |conversion| conversion.target);
-        let Some(super::static_initialization::Value::Floating(kind, bits)) =
-            self.static_scalar(id, target, scope)?
+        let super::constant_addresses::TemporaryValue::Floating(value) =
+            self.constant_operand_value(id, target, scope)?
         else {
-            let id = self.graph.expression_facts.root(id);
-            if let ast::ExprKind::Id(name) = self.tree.expressions.get(id).kind
-                && let Some(binding) = self.graph.resolved_name(name)
-            {
-                let binding = self.graph.binding(binding);
-                let message = match binding.kind {
-                    super::graph::BindingKind::Parameter => {
-                        Some("a parameter is not usable in a constant expression")
-                    }
-                    super::graph::BindingKind::Variable
-                        if !self.graph.entity(binding.entity).constexpr =>
-                    {
-                        Some("a variable is not usable in a constant expression")
-                    }
-                    _ => None,
-                };
-                if let Some(message) = message {
-                    return Err(Error::NonConstant {
-                        failure: super::ConstantFailure::Reported,
-                        location: self.tree.expressions.get(id).location,
-                        message,
-                    });
-                }
-            }
-            return Err(Error::Missing(
-                "floating intrinsic constant operand interpretation",
-            ));
+            return Ok(None);
         };
-        Ok(FloatingBits { kind, bits })
+        if value.state == super::constant_addresses::ScalarState::Indeterminate {
+            return Ok(None);
+        }
+        let TypeKind::Scalar(Scalar::Basic(kind)) = self.graph.types.get(target).kind else {
+            return Err(Error::Invariant("floating intrinsic operand type"));
+        };
+        Ok(Some(FloatingOperand {
+            kind,
+            value: value.value,
+        }))
     }
 
     pub(super) fn floating_intrinsic(
@@ -312,79 +312,45 @@ enum FloatCategory {
     Zero,
 }
 #[derive(Clone, Copy)]
-struct FloatingBits {
+struct FloatingOperand {
     kind: F,
-    bits: u128,
+    value: crate::types::float_value::BinaryFloat,
 }
-impl FloatingBits {
-    fn fraction(&self) -> u32 {
-        match self.kind.floating_representation() {
-            F::Float16 => 10,
-            F::BFloat16 => 7,
-            F::Float128 => 112,
-            F::Float => 23,
-            F::Double => 52,
-            _ => 63,
+impl FloatingOperand {
+    fn negative(self) -> bool {
+        self.value.negative()
+    }
+    fn quiet(self) -> bool {
+        self.value.extended_bits() & (1 << 62) != 0
+    }
+    fn category(self) -> FloatCategory {
+        let value = self.value.canonical();
+        if value.is_nan() {
+            return FloatCategory::Nan;
         }
-    }
-    fn exponent_width(&self) -> u32 {
-        match self.kind.floating_representation() {
-            F::Float16 => 5,
-            F::BFloat16 | F::Float => 8,
-            F::Double => 11,
-            _ => 15,
+        if value.is_infinite() {
+            return FloatCategory::Infinite;
         }
-    }
-    fn sign_shift(&self) -> u32 {
-        self.fraction()
-            + self.exponent_width()
-            + u32::from(self.kind.floating_representation() == F::LongDouble)
-    }
-    fn negative(&self) -> bool {
-        self.bits & (1 << self.sign_shift()) != 0
-    }
-    fn quiet(&self) -> bool {
-        self.bits & (1 << (self.fraction() - 1)) != 0
-    }
-    fn category(&self) -> FloatCategory {
-        let fraction = self.bits & ((1 << self.fraction()) - 1);
-        let exponent = self.bits >> (self.sign_shift() - self.exponent_width())
-            & ((1 << self.exponent_width()) - 1);
-        if exponent == (1 << self.exponent_width()) - 1 {
-            if fraction == 0 {
-                FloatCategory::Infinite
-            } else {
-                FloatCategory::Nan
-            }
-        } else if exponent != 0 {
+        if !value.truth() {
+            return FloatCategory::Zero;
+        }
+        // C++ compares the held x87 value with the declared format's least
+        // normal value; soft types do not round the held operand here.
+        let least = match self.kind.floating_representation() {
+            F::Float | F::BFloat16 => 0x3f81,
+            F::Double => 0x3c01,
+            F::Float16 => 0x3ff1,
+            _ => 1,
+        };
+        let exponent = (value.extended_bits() >> 64) & 0x7fff;
+        if exponent >= least {
             FloatCategory::Normal
-        } else if fraction != 0 {
-            FloatCategory::Subnormal
         } else {
-            FloatCategory::Zero
+            FloatCategory::Subnormal
         }
     }
-    fn compare(&self, other: Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering;
-        if self.category() == FloatCategory::Nan || other.category() == FloatCategory::Nan {
-            return None;
-        }
-        if self.category() == FloatCategory::Zero && other.category() == FloatCategory::Zero {
-            return Some(Ordering::Equal);
-        }
-        if self.negative() != other.negative() {
-            return Some(if self.negative() {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            });
-        }
-        let order = self.bits.cmp(&other.bits);
-        Some(if self.negative() {
-            order.reverse()
-        } else {
-            order
-        })
+    fn compare(self, other: Self) -> Option<std::cmp::Ordering> {
+        self.value.compare(other.value)
     }
 }
 
@@ -469,7 +435,7 @@ impl Analyzer<'_> {
             .graph
             .floating_constants
             .insert(super::constant_floats::Floating {
-                zeroed: false,
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 ty,
                 value,
             })?;

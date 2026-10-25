@@ -15,6 +15,7 @@ use crate::{
 };
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Constant {
+    pub state: super::constant_addresses::ScalarState,
     pub bits: u64,
     pub high: u64,
     pub ty: TypeId,
@@ -81,6 +82,19 @@ impl Analyzer<'_> {
         value: Constant,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        if value.indeterminate() {
+            return Err(not_constant(
+                location,
+                if self
+                    .integral_kind(value.ty)
+                    .is_some_and(|kind| kind.bits == 1)
+                {
+                    "a truth value of an object that is no scalar"
+                } else {
+                    "a conversion of an indeterminate value"
+                },
+            ));
+        }
         if self.evaluating_noexcept {
             self.exception_bool(value.ty, location)
         } else {
@@ -89,6 +103,7 @@ impl Analyzer<'_> {
     }
     fn scalar_constant(&mut self, bits: u64, scalar: Scalar) -> Result<Constant, Error> {
         Ok(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             high: 0,
             bits,
             ty: self.graph.types.scalar(scalar)?,
@@ -116,6 +131,18 @@ impl Analyzer<'_> {
             self.evaluate_constant(id, scope, false)
         };
         match result {
+            Ok(value) if value.indeterminate() && !required => Ok(None),
+            Ok(value) if value.indeterminate() => Err(not_constant(
+                match requirement {
+                    ConstantRequirement::Initializer(location) => location,
+                    _ => self.tree.expressions.get(id).location,
+                },
+                if matches!(requirement, ConstantRequirement::Initializer(_)) {
+                    "a constexpr object leaves a subobject uninitialized"
+                } else {
+                    "not a constant scalar value"
+                },
+            )),
             Ok(value) if self.held_integral_constant(value) => Ok(Some(value)),
             Ok(_) if required => Err(Error::at(
                 self.tree.expressions.get(id).location,
@@ -264,6 +291,7 @@ impl Analyzer<'_> {
             } if self.semantic() => {
                 if skipping {
                     Constant {
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         high: 0,
                         bits: 0,
                         ty: self.graph.expression_facts.get(id)?.ty,
@@ -378,9 +406,15 @@ impl Analyzer<'_> {
                     if skipping {
                         self.integral_value(self.graph.expression_facts.get(id)?.ty, 0)
                     } else {
-                        let place =
-                            self.constant_vector_lane_place(id, base, index, scope, true)?;
-                        self.read_constant_integer(place, location)?
+                        let super::constant_addresses::TemporaryValue::Integer(value) =
+                            self.constant_vector_lane_value(id, base, index, scope)?
+                        else {
+                            return Err(not_constant(
+                                location,
+                                "not an integral constant expression",
+                            ));
+                        };
+                        value
                     }
                 } else {
                     self.constant_string_element(base, index, scope, skipping, location)?
@@ -432,7 +466,7 @@ impl Analyzer<'_> {
                 ));
             }
         };
-        if !skipping && !self.constexpr_frames.active() {
+        if !skipping && !value.indeterminate() && !self.constexpr_frames.active() {
             super::record(&mut self.graph.constant_facts, id.index(), value);
         }
         Ok(value)
@@ -448,6 +482,7 @@ impl Analyzer<'_> {
         let ty = self.query_call_type(id, scope)?;
         if skipping {
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty,
@@ -516,7 +551,7 @@ impl Analyzer<'_> {
             && self.graph.expression_facts.get(id).is_ok()
             && let Some(value) = self.address_integral_value(id, scope, skipping)?
         {
-            if !skipping && !self.constexpr_frames.active() {
+            if !skipping && !value.indeterminate() && !self.constexpr_frames.active() {
                 super::record(&mut self.graph.constant_facts, id.index(), value);
             }
             return Ok(Some(value));
@@ -573,7 +608,12 @@ impl Analyzer<'_> {
             // visits only the selected arm and consumes the recorded
             // result type, including its usual arithmetic conversion.
             let ty = self.bare_type(facts.ty)?;
-            return self.convert_integer_constant(chosen, ty);
+            let chosen = self.constant_integer_operand(chosen, selected)?;
+            return self.converted_constant_integer(
+                chosen,
+                ty,
+                self.tree.expressions.get(id).location,
+            );
         }
         let unchosen = self.evaluate_constant(other, scope, true)?;
         Ok(if chosen.ty == unchosen.ty {
@@ -621,6 +661,7 @@ impl Analyzer<'_> {
         }
         if skipping {
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty: facts.ty,
@@ -847,6 +888,7 @@ impl Analyzer<'_> {
         if skipping && self.integral_kind(ty).is_some() {
             let ty = self.bare_type(ty)?;
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty,
@@ -1015,14 +1057,22 @@ impl Analyzer<'_> {
                         value = self.boolean(right_value.truth())?;
                     }
                 } else {
+                    if op != P::Comma {
+                        value = self.constant_integer_operand(value, left)?;
+                    }
                     let right_value = self.evaluate_constant(right, scope, skipping)?;
+                    let right_value = if op == P::Comma {
+                        right_value
+                    } else {
+                        self.constant_integer_operand(right_value, right)?
+                    };
                     value = if op == P::Comma {
                         right_value
                     } else {
                         self.constant_arithmetic(op, value, right_value, skipping, id)?
                     };
                 }
-                if !skipping && !self.constexpr_frames.active() {
+                if !skipping && !value.indeterminate() && !self.constexpr_frames.active() {
                     super::record(&mut self.graph.constant_facts, id.index(), value);
                 }
             }
@@ -1075,6 +1125,16 @@ impl Analyzer<'_> {
             op,
             P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual
         );
+        if !skipping && (left.indeterminate() || right.indeterminate()) {
+            return Err(not_constant(
+                location,
+                if comparison {
+                    "a comparison of values that are not scalars"
+                } else {
+                    "an arithmetic operand that is not an integer"
+                },
+            ));
+        }
         if comparison && (self.scoped_enum(left.ty) || self.scoped_enum(right.ty)) {
             if left.ty != right.ty {
                 return Err(Error::at(
@@ -1249,6 +1309,21 @@ impl Analyzer<'_> {
         } else {
             self.promoted_type(value.ty)?
         };
+        if value.indeterminate() && !skipping {
+            let value = self.converted_constant_integer(
+                value,
+                ty,
+                self.tree.expressions.get(operand).location,
+            )?;
+            return if op == Some(P::Add) {
+                Ok(value)
+            } else {
+                Err(not_constant(
+                    location,
+                    "a unary operand that is not an integer",
+                ))
+            };
+        }
         let kind = self
             .integral_kind(ty)
             .ok_or(Error::Invariant("nonintegral unary"))?;
@@ -1317,7 +1392,7 @@ impl Analyzer<'_> {
                 .get(operand)
                 .is_ok_and(|facts| self.complex_part_type(facts.ty).is_some())
         {
-            let truth = !skipping && self.constant_complex_truth(operand, scope)?;
+            let truth = !skipping && self.constant_complex_truth_at(operand, scope, location)?;
             return Ok(self.integral_value(ty, u64::from(truth)));
         }
         if self.semantic()
@@ -1327,6 +1402,7 @@ impl Analyzer<'_> {
         {
             if skipping {
                 return Ok(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 0,
                     ty,
@@ -1356,6 +1432,7 @@ impl Analyzer<'_> {
             .map(|id| self.evaluate_constant(id, scope, skipping))
             .transpose()?
             .unwrap_or(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty,
@@ -1369,7 +1446,7 @@ impl Analyzer<'_> {
         if self.semantic()
             && operand.is_none_or(|operand| self.graph.expression_facts.get(operand).is_ok())
         {
-            self.convert_integer_constant(source, ty)
+            self.converted_constant_integer(source, ty, location)
         } else {
             let kind = self
                 .integral_kind(ty)
@@ -1451,7 +1528,7 @@ impl Analyzer<'_> {
         };
         if self.semantic()
             && !reference
-            && self.float_format(object).is_some()
+            && self.constant_floating_type(object)
             && self.graph.entity(entity).constexpr
         {
             return self.record_floating_initializer(entity, initializer, scope);
@@ -1471,6 +1548,7 @@ impl Analyzer<'_> {
             {
                 let target = self.bare_type(object)?;
                 self.graph.entity_mut(entity).constant = ConstantState::Value(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 0,
                     ty: target,
@@ -1544,6 +1622,16 @@ impl Analyzer<'_> {
         };
         self.graph.entity_mut(entity).constant = ConstantState::None;
         if let Some(value) = value {
+            if value.indeterminate() {
+                return if self.graph.entity(entity).constexpr {
+                    Err(not_constant(
+                        initializer.location,
+                        "a constexpr object leaves a subobject uninitialized",
+                    ))
+                } else {
+                    Ok(())
+                };
+            }
             let target = self
                 .graph
                 .types

@@ -324,6 +324,7 @@ impl Analyzer<'_> {
         }
         let (size, align) = self.type_size(ty, location)?;
         Ok(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             high: 0,
             bits: if alignment { align } else { size },
             ty: self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?,

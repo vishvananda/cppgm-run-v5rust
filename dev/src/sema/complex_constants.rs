@@ -136,8 +136,8 @@ impl Analyzer<'_> {
             ..first
         };
         Ok([
-            self.read_constant_scalar(first, location)?,
-            self.read_constant_scalar(second, location)?,
+            self.constant_arithmetic_value(first, location)?,
+            self.constant_arithmetic_value(second, location)?,
         ])
     }
     pub(super) fn store_complex_parts(
@@ -203,6 +203,15 @@ impl Analyzer<'_> {
         target: TypeId,
         scope: ScopeId,
     ) -> Result<ComplexValue, Error> {
+        self.constant_complex_value_at(id, target, scope, self.tree.expressions.get(id).location)
+    }
+    fn constant_complex_value_at(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        scope: ScopeId,
+        conversion_location: SourceOffset,
+    ) -> Result<ComplexValue, Error> {
         self.check_stack()?;
         self.check_deferred_constant(id)?;
         let id = self.graph.expression_facts.root(id);
@@ -213,10 +222,14 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         let source = facts.ty;
         let value = if self.complex_part_type(source).is_none() {
-            ComplexValue::Parts([
-                self.scalar_value(id, scope)?,
-                self.zero_constant_scalar(part)?,
-            ])
+            let value = self.scalar_value(id, scope)?;
+            if value.indeterminate() {
+                return Err(nonconstant(
+                    conversion_location,
+                    "a conversion of an indeterminate value",
+                ));
+            }
+            ComplexValue::Parts([value, self.zero_constant_scalar(part)?])
         } else if facts.category != super::expression_facts::ValueCategory::Prvalue
             && !matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
         {
@@ -235,8 +248,8 @@ impl Analyzer<'_> {
         }
         let parts = self.complex_value_parts(value, location)?;
         Ok(ComplexValue::Parts([
-            self.convert_constant_scalar(parts[0], part, location)?,
-            self.convert_constant_scalar(parts[1], part, location)?,
+            self.convert_constant_scalar(parts[0], part, conversion_location)?,
+            self.convert_constant_scalar(parts[1], part, conversion_location)?,
         ]))
     }
     pub(super) fn initialize_constant_complex(
@@ -280,7 +293,7 @@ impl Analyzer<'_> {
                 }
                 let first = self.tree.expr_lists.get(arguments).first().copied();
                 if let Some(first) = first {
-                    self.constant_complex_value(first, ty, scope)
+                    self.constant_complex_value_at(first, ty, scope, node.location)
                 } else {
                     Ok(ComplexValue::Parts([
                         self.zero_constant_scalar(part)?,
@@ -288,12 +301,14 @@ impl Analyzer<'_> {
                     ]))
                 }
             }
-            ExprKind::Cast { operand, .. } => self.constant_complex_value(operand, ty, scope),
+            ExprKind::Cast { operand, .. } => {
+                self.constant_complex_value_at(operand, ty, scope, node.location)
+            }
             ExprKind::Call { arguments, .. }
                 if self.graph.expression_facts.get(id)?.functional_call =>
             {
                 if let Some(&first) = self.tree.expr_lists.get(arguments).first() {
-                    self.constant_complex_value(first, ty, scope)
+                    self.constant_complex_value_at(first, ty, scope, node.location)
                 } else {
                     Ok(ComplexValue::Parts([
                         self.zero_constant_scalar(part)?,
@@ -441,10 +456,16 @@ impl Analyzer<'_> {
                     nonconstant(location, "a floating operation with an undefined result")
                 })?;
             return Ok(Value::Floating(Floating {
-                zeroed: false,
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 ty,
                 value,
             }));
+        }
+        if a.indeterminate() || b.indeterminate() {
+            return Err(nonconstant(
+                location,
+                "a complex part outside constant evaluation",
+            ));
         }
         let (Value::Integer(a), Value::Integer(b)) = (a, b) else {
             return Err(nonconstant(
@@ -465,7 +486,12 @@ impl Analyzer<'_> {
                 "an arithmetic operation with an undefined result",
             ));
         }
-        Ok(Value::Integer(Constant { ty, bits, high: 0 }))
+        Ok(Value::Integer(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
+            ty,
+            bits,
+            high: 0,
+        }))
     }
     fn constant_part_negate(
         &mut self,
@@ -473,8 +499,11 @@ impl Analyzer<'_> {
         value: Value,
         location: SourceOffset,
     ) -> Result<Value, Error> {
-        if let Value::Floating(mut value) = self.convert_constant_scalar(value, ty, location)? {
+        if let Value::Floating(mut value) = self.convert_constant_scalar(value, ty, location)?
+            && value.state != super::constant_addresses::ScalarState::Indeterminate
+        {
             value.value = value.value.negate();
+            value.state = super::constant_addresses::ScalarState::Value;
             return Ok(Value::Floating(value));
         }
         let zero = self.zero_constant_scalar(ty)?;
@@ -626,8 +655,22 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<bool, Error> {
+        self.constant_complex_truth_at(id, scope, self.tree.expressions.get(id).location)
+    }
+    pub(super) fn constant_complex_truth_at(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<bool, Error> {
         let ty = self.graph.expression_facts.get(id)?.ty;
         let parts = self.constant_complex_parts(id, ty, scope)?;
+        if parts.into_iter().any(Value::indeterminate) {
+            return Err(nonconstant(
+                location,
+                "a truth value of an object that is no scalar",
+            ));
+        }
         Ok(parts.into_iter().any(|value| match value {
             Value::Integer(v) => v.wide() != 0,
             Value::Floating(v) => v.value.truth(),
@@ -654,6 +697,12 @@ impl Analyzer<'_> {
         let location = self.tree.expressions.get(id).location;
         let a = self.complex_value_parts(a, location)?;
         let b = self.complex_value_parts(b, location)?;
+        if a.into_iter().chain(b).any(Value::indeterminate) {
+            return Err(nonconstant(
+                location,
+                "a complex comparison outside constant evaluation",
+            ));
+        }
         let same = a.into_iter().zip(b).all(|(a, b)| match (a, b) {
             (Value::Integer(a), Value::Integer(b)) => a.wide() == b.wide(),
             (Value::Floating(a), Value::Floating(b)) => {
@@ -662,6 +711,7 @@ impl Analyzer<'_> {
             _ => false,
         });
         Ok(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             ty: self.graph.expression_facts.get(id)?.ty,
             bits: u64::from(equal == same),
             high: 0,
@@ -761,6 +811,7 @@ impl Analyzer<'_> {
             part,
             parts[0],
             Value::Integer(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 ty: int,
                 bits: 1,
                 high: 0,

@@ -464,6 +464,7 @@ impl Analyzer<'_> {
                     }
                 } else {
                     Constant {
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         high: 0,
                         bits: 0,
                         ty: info
@@ -506,6 +507,7 @@ impl Analyzer<'_> {
                         ));
                     }
                     value = Constant {
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         high: 0,
                         bits: kind.convert(value.bits),
                         ty: info
@@ -520,6 +522,7 @@ impl Analyzer<'_> {
                 self.next_enumerator(previous, info, enumerator.location)?
             } else {
                 Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: 0,
                     ty: if let Some(ty) = info.underlying {
@@ -633,6 +636,7 @@ impl Analyzer<'_> {
                 return Err(Error::at(location, "enumerator value overflows"));
             }
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: previous.bits.wrapping_add(1),
                 ty: self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?,
@@ -654,6 +658,7 @@ impl Analyzer<'_> {
                 ));
             }
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: to.convert(bits),
                 ty,
@@ -661,6 +666,7 @@ impl Analyzer<'_> {
         }
         if kind.represents(bits, from) {
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits,
                 ty: previous.ty,
@@ -675,6 +681,7 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("next enum candidate"))?;
             if to.represents(bits, from) {
                 return Ok(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits,
                     ty: self.graph.types.scalar(Scalar::Basic(candidate))?,

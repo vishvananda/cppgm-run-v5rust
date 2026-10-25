@@ -168,6 +168,11 @@ impl Analyzer<'_> {
             .integral_kind(target)
             .ok_or(Error::Invariant("bit operand width"))?
             .bits;
+        if value.indeterminate() {
+            return Err(super::constant_addresses::unreported_constant(
+                self.tree.expressions.get(id).location,
+            ));
+        }
         let bits = value.wide() & (u128::MAX >> (128 - width));
         let result = self.graph.expression_facts.get(id)?.ty;
         if bits == 0
@@ -182,6 +187,11 @@ impl Analyzer<'_> {
                 else {
                     return Err(Error::Invariant("bit fallback without integer value"));
                 };
+                if value.indeterminate() {
+                    return Err(super::constant_addresses::unreported_constant(
+                        self.tree.expressions.get(id).location,
+                    ));
+                }
                 return Ok(value);
             }
             return Err(Error::NonConstant {

@@ -422,7 +422,15 @@ impl Analyzer<'_> {
             let scope = self.constexpr_frames.current()?.scope;
             let value = match condition {
                 ast::Condition::Expression(expr) => {
-                    self.evaluate_constant(expr, scope, false)?.bits
+                    let value = self.evaluate_constant(expr, scope, false)?;
+                    let value = self.constant_integer_operand(value, expr)?;
+                    if value.indeterminate() {
+                        return Err(nonconstant(
+                            location,
+                            "a switch condition that is not an integer",
+                        ));
+                    }
+                    value.bits
                 }
                 ast::Condition::Declaration {
                     declarator,

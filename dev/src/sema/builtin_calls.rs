@@ -738,11 +738,10 @@ impl Analyzer<'_> {
                 TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
             )
         {
-            if self.float_format(facts.ty).is_none() {
-                return Err(Error::Missing("extended floating constant interpretation"));
-            }
             constant = match self.scalar_value(operand, scope) {
-                Ok(super::constant_addresses::TemporaryValue::Floating(_)) => true,
+                Ok(value @ super::constant_addresses::TemporaryValue::Floating(_)) => {
+                    !value.indeterminate()
+                }
                 Ok(_) | Err(Error::NonConstant { .. }) => false,
                 Err(error) => return Err(error),
             };

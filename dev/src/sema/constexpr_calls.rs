@@ -193,14 +193,16 @@ impl Analyzer<'_> {
             self.evaluate_constant(id, scope, false)?
         };
         let target = self.bare_type(target)?;
-        Ok(Value::Integer(
-            self.convert_integer_constant(value, target)?,
-        ))
+        self.convert_constant_scalar(
+            Value::Integer(value),
+            target,
+            self.tree.expressions.get(id).location,
+        )
     }
     pub(super) fn zero_constant_scalar(&mut self, target: TypeId) -> Result<Value, Error> {
         if self.constant_floating_type(target) {
             return Ok(Value::Floating(super::constant_floats::Floating {
-                zeroed: true,
+                state: crate::sema::constant_addresses::ScalarState::Zeroed,
                 ty: self.bare_type(target)?,
                 value: crate::types::float_value::BinaryFloat::zero(),
             }));
@@ -214,6 +216,7 @@ impl Analyzer<'_> {
                 Ok(Value::Pointer(Address::new(Root::Null, target)))
             }
             _ if self.integral_kind(target).is_some() => Ok(Value::Integer(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty: self.bare_type(target)?,
@@ -325,6 +328,7 @@ impl Analyzer<'_> {
             Returned::Value(Value::Integer(value)) => Ok(value),
             Returned::Place(place) => self.read_constant_integer(place, location),
             Returned::Void => Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty: self.graph.expression_facts.get(id)?.ty,

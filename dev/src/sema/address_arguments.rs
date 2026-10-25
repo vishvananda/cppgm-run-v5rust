@@ -400,6 +400,12 @@ impl Analyzer<'_> {
             // Even literal integer zero retains its integer type; conversion
             // to a pointer parameter diagnoses it where that parameter is known.
             let value = self.evaluate_constant(expression, scope, false)?;
+            if value.indeterminate() {
+                return Err(super::constant_addresses::nonconstant(
+                    self.tree.expressions.get(expression).location,
+                    "not a constant scalar value",
+                ));
+            }
             let ty = self.bare_type(value.ty)?;
             return self.graph.types.intern(
                 TypeKind::Value {

@@ -78,7 +78,14 @@ impl Analyzer<'_> {
         } else {
             self.address_operand(base, scope)?
         };
-        let index = self.evaluate_constant(index, scope, false)?;
+        let value = self.evaluate_constant(index, scope, false)?;
+        let index = self.constant_integer_operand(value, index)?;
+        if index.indeterminate() {
+            return Err(nonconstant(
+                node.location,
+                "a subscript outside constant evaluation",
+            ));
+        }
         if pointer.root == Root::Null {
             return Err(nonconstant(node.location, "a subscript of a null pointer"));
         }
@@ -117,7 +124,14 @@ impl Analyzer<'_> {
             return if skipping {
                 Ok(false)
             } else {
-                Ok(self.evaluate_floating(id, scope)?.value.truth())
+                let value = self.evaluate_floating(id, scope)?;
+                if value.state == super::constant_addresses::ScalarState::Indeterminate {
+                    return Err(nonconstant(
+                        self.tree.expressions.get(id).location,
+                        "a conversion of an indeterminate value",
+                    ));
+                }
+                Ok(value.value.truth())
             };
         }
         if self.semantic() && self.is_address_expression(id) {
@@ -168,7 +182,11 @@ impl Analyzer<'_> {
                 matches!(op.token.as_punctuator(), Some(P::LogicalNot | P::Multiply))
                     && self.is_address_expression(operand)
             }
-            ExprKind::Subscript { .. } => true,
+            ExprKind::Subscript { base, .. } => self
+                .graph
+                .expression_facts
+                .known(base)
+                .is_none_or(|facts| self.vector_shape(facts.ty).is_none()),
             ExprKind::Cast { operand, .. } => {
                 self.is_address_expression(operand)
                     || self
@@ -213,6 +231,7 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         if skipping {
             return Ok(Some(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits: 0,
                 ty: facts.ty,
@@ -295,6 +314,7 @@ impl Analyzer<'_> {
             }
         };
         Ok(Some(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             high: 0,
             bits,
             ty: self.bare_type(facts.ty)?,
@@ -335,12 +355,20 @@ impl Analyzer<'_> {
         let (mut pointer, count) = if self.is_address_expression(left) {
             let pointer = self.evaluate_address(left, scope)?;
             let count = self.evaluate_constant(right, scope, false)?;
+            let count = self.constant_integer_operand(count, right)?;
             (pointer, count)
         } else {
             let count = self.evaluate_constant(left, scope, false)?;
+            let count = self.constant_integer_operand(count, left)?;
             let pointer = self.evaluate_address(right, scope)?;
             (pointer, count)
         };
+        if count.indeterminate() {
+            return Err(nonconstant(
+                node.location,
+                "pointer arithmetic outside constant evaluation",
+            ));
+        }
         let steps = integral::signed(count.bits);
         let steps = if op.token.as_punctuator() == Some(P::Subtract) {
             steps.wrapping_neg()

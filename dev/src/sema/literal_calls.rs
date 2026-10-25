@@ -389,6 +389,7 @@ impl Analyzer<'_> {
         let ty = self.graph.lower_entity_type(function)?;
         let location = self.tree.expressions.get(id).location;
         let zero = Value::Integer(Constant {
+            state: crate::sema::constant_addresses::ScalarState::Value,
             high: 0,
             bits: 0,
             ty: facts.ty,
@@ -401,6 +402,7 @@ impl Analyzer<'_> {
             LiteralCall::Template => 0,
             LiteralCall::Character { source, bits } => {
                 values[0] = Value::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits,
                     ty: source,
@@ -409,6 +411,7 @@ impl Analyzer<'_> {
             }
             LiteralCall::Integer { bits, .. } => {
                 values[0] = Value::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits,
                     ty: self.graph.types.function_parameter(ty, 0)?,
@@ -436,7 +439,7 @@ impl Analyzer<'_> {
                 )
                 .ok_or(Error::Invariant("constant literal floating encoding"))?;
                 values[0] = Value::Floating(super::constant_floats::Floating {
-                    zeroed: false,
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     ty: self.graph.types.function_parameter(ty, 0)?,
                     value,
                 });
@@ -445,6 +448,7 @@ impl Analyzer<'_> {
             LiteralCall::String { element, units, .. } => {
                 values[0] = Value::Pointer(Address::new(Root::Literal(id), element));
                 values[1] = Value::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: u64::from(units - 1),
                     ty: self.graph.types.function_parameter(ty, 1)?,

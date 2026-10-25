@@ -479,6 +479,9 @@ impl Analyzer<'_> {
         }) {
             match self.evaluate_floating(id, scope) {
                 Ok(value) => {
+                    if value.state == super::constant_addresses::ScalarState::Indeterminate {
+                        return Ok(None);
+                    }
                     let TypeKind::Scalar(Scalar::Basic(ty)) = self.graph.types.get(source).kind
                     else {
                         return Err(Error::Invariant("static floating type"));
@@ -503,7 +506,7 @@ impl Analyzer<'_> {
                     Err(error) => return Err(error),
                 }
             };
-            if let Some(value) = value {
+            if let Some(value) = value.filter(|value| !value.indeterminate()) {
                 return Ok(Some(self.static_integer_value(value)));
             }
         }

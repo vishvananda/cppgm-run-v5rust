@@ -137,6 +137,12 @@ impl Analyzer<'_> {
         } else {
             Some(self.scalar_value(operand, scope)?)
         };
+        if scalar.is_some_and(Value::indeterminate) {
+            return Err(nonconstant(
+                location,
+                "a conversion of an indeterminate value",
+            ));
+        }
         let size = self.type_size(from, location)?.0;
         if size == 0 || size > 256 || size != self.type_size(to, location)?.0 {
             return Err(nonconstant(
@@ -171,7 +177,7 @@ impl Analyzer<'_> {
                         .ok_or(Error::Limit("vector lane offset"))?,
                 )
                 .map_err(|_| Error::Limit("vector lane offset"))?;
-                let value = self.read_constant_scalar(
+                let value = self.constexpr_frames.read_value(
                     Address {
                         designated: lane,
                         offset: place.offset.wrapping_add(super::integral::signed(offset)),
@@ -179,7 +185,7 @@ impl Analyzer<'_> {
                     },
                     location,
                 )?;
-                if !self.vector_scalar_bytes(value, lane, bytes) {
+                if value.is_none_or(|value| !self.vector_scalar_bytes(value, lane, bytes)) {
                     return Err(nonconstant(
                         location,
                         "a vector reinterpretation outside constant evaluation",
@@ -230,6 +236,7 @@ impl Analyzer<'_> {
         let bits = u128::from_le_bytes(buffer);
         if self.integral_kind(ty).is_some() {
             let value = Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 ty,
                 bits: u64::try_from(bits & u128::from(u64::MAX))
                     .map_err(|_| Error::Invariant("vector integer low half"))?,
@@ -251,7 +258,7 @@ impl Analyzer<'_> {
             return Ok(None);
         }
         Ok(Some(Value::Floating(Floating {
-            zeroed: false,
+            state: crate::sema::constant_addresses::ScalarState::Value,
             ty,
             value,
         })))

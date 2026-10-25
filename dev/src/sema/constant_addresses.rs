@@ -94,15 +94,40 @@ pub(super) enum TemporaryValue {
     Pointer(Address),
     MemberPointer(super::symbolic_members::MemberPointer),
 }
-impl TemporaryValue {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ScalarState {
+    Value,
+    Zeroed,
+    Indeterminate,
+}
+impl ScalarState {
     pub(super) fn clear_zeroed(self) -> Self {
-        if let Self::Floating(value) = self {
-            Self::Floating(super::constant_floats::Floating {
-                zeroed: false,
-                ..value
-            })
+        if self == Self::Zeroed {
+            Self::Value
         } else {
             self
+        }
+    }
+}
+impl TemporaryValue {
+    pub(super) fn indeterminate(self) -> bool {
+        match self {
+            Self::Integer(value) => value.state == ScalarState::Indeterminate,
+            Self::Floating(value) => value.state == ScalarState::Indeterminate,
+            Self::Pointer(_) | Self::MemberPointer(_) => false,
+        }
+    }
+    pub(super) fn clear_zeroed(self) -> Self {
+        match self {
+            Self::Integer(value) => Self::Integer(Constant {
+                state: value.state.clear_zeroed(),
+                ..value
+            }),
+            Self::Floating(value) => Self::Floating(super::constant_floats::Floating {
+                state: value.state.clear_zeroed(),
+                ..value
+            }),
+            value => value,
         }
     }
 }
@@ -199,6 +224,13 @@ pub(super) fn nonconstant(location: SourceOffset, message: &'static str) -> Erro
         location,
         message,
         failure: super::ConstantFailure::Reported,
+    }
+}
+pub(super) fn unreported_constant(location: SourceOffset) -> Error {
+    Error::NonConstant {
+        location,
+        message: "not an integral constant expression",
+        failure: super::ConstantFailure::Unreported,
     }
 }
 impl Analyzer<'_> {
@@ -507,6 +539,12 @@ impl Analyzer<'_> {
             return Ok(value);
         }
         let value = self.evaluate_constant(id, scope, false)?;
+        if value.indeterminate() {
+            return Err(nonconstant(
+                self.tree.expressions.get(id).location,
+                "a conversion of an indeterminate value",
+            ));
+        }
         if value.truth() {
             return Err(nonconstant(
                 self.tree.expressions.get(id).location,
@@ -1044,7 +1082,9 @@ impl Analyzer<'_> {
                 } else {
                     let value = self.evaluate_constant(operand, scope, false)?;
                     let target = self.bare_type(facts.ty)?;
-                    TemporaryValue::Integer(self.convert_integer_constant(value, target)?)
+                    TemporaryValue::Integer(
+                        self.converted_constant_integer(value, target, location)?,
+                    )
                 };
                 self.constant_evaluation
                     .as_mut()
@@ -1299,7 +1339,11 @@ impl Analyzer<'_> {
                     .ok_or(Error::Missing("constant temporary scalar storage"))
             }
             Root::Ephemeral(expr) => match self.expression_temporary_value(expr) {
-                Some(TemporaryValue::Integer(value)) => Ok(value),
+                Some(TemporaryValue::Integer(value)) if !value.indeterminate() => Ok(value),
+                Some(value) if value.indeterminate() => Err(nonconstant(
+                    location,
+                    "a read of an object that is not initialized",
+                )),
                 _ => Err(Error::Invariant("cast temporary without value")),
             },
             Root::Literal(id) => {
@@ -1330,6 +1374,7 @@ impl Analyzer<'_> {
                             })?
                     };
                     return Ok(Constant {
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         high: 0,
                         bits: kind.convert(u64::from(byte)),
                         ty,
@@ -1350,6 +1395,7 @@ impl Analyzer<'_> {
                 let mut bytes = [0u8; 8];
                 bytes[..data.len()].copy_from_slice(data);
                 Ok(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: kind.convert(u64::from_le_bytes(bytes)),
                     ty,
@@ -1566,6 +1612,12 @@ impl Analyzer<'_> {
                 } else {
                     TemporaryValue::Integer(analyzer.evaluate_constant(expr, scope, false)?)
                 };
+                if value.indeterminate() {
+                    return Err(nonconstant(
+                        initializer.location,
+                        "a temporary bound to a reference leaves a subobject uninitialized",
+                    ));
+                }
                 analyzer
                     .graph
                     .constant_addresses

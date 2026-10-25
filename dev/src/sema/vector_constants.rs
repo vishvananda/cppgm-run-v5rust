@@ -49,11 +49,18 @@ impl Analyzer<'_> {
         } else {
             self.constant_place(base, scope)?
         };
-        let position = self.evaluate_constant(index, scope, false)?;
-        if self
-            .integral_kind(position.ty)
-            .is_some_and(|kind| kind.signed)
-            && super::integral::signed(position.bits) < 0
+        let facts = self.graph.expression_facts.get(index)?;
+        let target = facts
+            .conversion
+            .map_or(facts.ty, |conversion| conversion.result);
+        let Value::Integer(position) = self.constant_operand_value(index, target, scope)? else {
+            return Err(nonconstant(location, "a vector lane outside the vector"));
+        };
+        if position.indeterminate()
+            || self
+                .integral_kind(position.ty)
+                .is_some_and(|kind| kind.signed)
+                && super::integral::signed(position.bits) < 0
             || position.bits >= bound
         {
             return Err(nonconstant(location, "a vector lane outside the vector"));
@@ -67,6 +74,20 @@ impl Analyzer<'_> {
             designated: self.graph.expression_facts.get(id)?.ty,
             ..place
         })
+    }
+    pub(super) fn constant_vector_lane_value(
+        &mut self,
+        id: ast::ExprId,
+        base: ast::ExprId,
+        index: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Value, Error> {
+        let prvalue = self.graph.expression_facts.get(id)?.category == ValueCategory::Prvalue;
+        let place = self.constant_vector_lane_place(id, base, index, scope, prvalue)?;
+        if !prvalue {
+            return self.read_constant_scalar(place, self.tree.expressions.get(id).location);
+        }
+        self.constant_arithmetic_value(place, self.tree.expressions.get(id).location)
     }
     pub(super) fn initialize_constant_vector(
         &mut self,
@@ -166,6 +187,7 @@ impl Analyzer<'_> {
             self.store_constant_value(
                 place,
                 Value::Integer(Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     ty,
                     bits: 0,
                     high: 0,

@@ -66,6 +66,7 @@ impl Analyzer<'_> {
             self.store_constant_value(
                 place,
                 Value::Integer(super::constants::Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     high: 0,
                     bits: kind.convert(u64::from_le_bytes(bytes)),
                     ty: element,
@@ -412,6 +413,7 @@ impl Analyzer<'_> {
             }
             let value = if self.vector_shape(child.designated).is_some() {
                 Value::Integer(super::constants::Constant {
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     ty: child.designated,
                     bits: 0,
                     high: 0,

@@ -22,8 +22,8 @@ use std::cmp::Ordering::{Equal, Greater, Less};
 pub(super) struct Floating {
     pub ty: TypeId,
     pub value: BinaryFloat,
-    // kValueZeroed is provenance, distinct from a numerically zero expression.
-    pub zeroed: bool,
+    // Value kind and zero-initialization provenance travel independently of bits.
+    pub state: super::constant_addresses::ScalarState,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct FloatingId(std::num::NonZeroU32);
@@ -170,6 +170,35 @@ impl Analyzer<'_> {
                 .map(Value::Integer)
         }
     }
+    pub(super) fn constant_arithmetic_value(
+        &mut self,
+        mut place: Address,
+        location: SourceOffset,
+    ) -> Result<Value, Error> {
+        if self.type_cv(place.designated).0 & 2 != 0 {
+            return Err(nonconstant(location, "a read of a volatile glvalue"));
+        }
+        if !matches!(place.root, Root::Object(_)) {
+            return self.read_constant_scalar(place, location);
+        }
+        place.designated = self.bare_type(place.designated)?;
+        if let Some(value) = self.constexpr_frames.read_value(place, location)? {
+            return Ok(value);
+        }
+        if self.constant_floating_type(place.designated) {
+            Ok(Value::Floating(Floating {
+                ty: place.designated,
+                value: BinaryFloat::zero(),
+                state: super::constant_addresses::ScalarState::Indeterminate,
+            }))
+        } else if self.integral_kind(place.designated).is_some() {
+            Ok(Value::Integer(Constant::indeterminate_value(
+                place.designated,
+            )))
+        } else {
+            Err(Error::Invariant("indeterminate arithmetic subobject type"))
+        }
+    }
     pub(super) fn convert_constant_scalar(
         &mut self,
         value: Value,
@@ -177,6 +206,20 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<Value, Error> {
         let target = self.bare_type(target)?;
+        if value.indeterminate() {
+            let source = match value {
+                Value::Integer(value) => value.ty,
+                Value::Floating(value) => value.ty,
+                _ => return Err(Error::Invariant("non-scalar indeterminate value")),
+            };
+            if self.bare_type(source)? == target {
+                return Ok(value);
+            }
+            return Err(nonconstant(
+                location,
+                "a conversion of an indeterminate value",
+            ));
+        }
         if let Value::Floating(value) = value
             && self.bare_type(value.ty)? == target
         {
@@ -203,7 +246,7 @@ impl Analyzer<'_> {
                         .is_some_and(|kind| kind.bits > 64) =>
                 {
                     return Ok(Value::Floating(Floating {
-                        zeroed: false,
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         ty: target,
                         value: BinaryFloat::wide_integer(
                             value.wide(),
@@ -235,7 +278,7 @@ impl Analyzer<'_> {
             }
             .ok_or_else(|| nonconstant(location, "a floating conversion out of range"))?;
             return Ok(Value::Floating(Floating {
-                zeroed: false,
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 ty: target,
                 value,
             }));
@@ -286,6 +329,7 @@ impl Analyzer<'_> {
                 }
             };
             return Ok(Value::Integer(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 bits,
                 ty: target,
@@ -345,8 +389,7 @@ impl Analyzer<'_> {
                     .vector_shape(self.graph.expression_facts.get(base)?.ty)
                     .is_some() =>
             {
-                let place = self.constant_vector_lane_place(id, base, index, scope, true)?;
-                self.read_constant_scalar(place, node.location)?
+                self.constant_vector_lane_value(id, base, index, scope)?
             }
             ExprKind::ComplexPart { imaginary, operand } => {
                 self.constant_component(id, operand, imaginary, scope)?
@@ -375,7 +418,7 @@ impl Analyzer<'_> {
                 let value = BinaryFloat::from_bits(format, u128::from_le_bytes(bytes))
                     .ok_or(Error::Invariant("floating literal encoding"))?;
                 Value::Floating(Floating {
-                    zeroed: false,
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     ty: facts.ty,
                     value,
                 })
@@ -411,7 +454,7 @@ impl Analyzer<'_> {
                     self.scalar_value(argument, scope)?
                 } else {
                     Value::Floating(Floating {
-                        zeroed: true,
+                        state: crate::sema::constant_addresses::ScalarState::Zeroed,
                         ty: facts.ty,
                         value: BinaryFloat::zero(),
                     })
@@ -474,8 +517,15 @@ impl Analyzer<'_> {
                             return Err(Error::Invariant("floating unary value"));
                         };
                         if op.token.as_punctuator() == Some(P::Subtract) {
+                            if value.state == super::constant_addresses::ScalarState::Indeterminate
+                            {
+                                return Err(nonconstant(
+                                    node.location,
+                                    "a unary operand that is not an integer",
+                                ));
+                            }
                             value.value = value.value.negate();
-                            value.zeroed = false;
+                            value.state = crate::sema::constant_addresses::ScalarState::Value;
                         }
                         Value::Floating(value)
                     }
@@ -492,7 +542,7 @@ impl Analyzer<'_> {
                     self.constant_operand_value(argument, facts.ty, scope)?
                 } else {
                     Value::Floating(Floating {
-                        zeroed: true,
+                        state: crate::sema::constant_addresses::ScalarState::Zeroed,
                         ty: facts.ty,
                         value: BinaryFloat::zero(),
                     })
@@ -527,6 +577,7 @@ impl Analyzer<'_> {
         let ty = self.graph.expression_facts.get(id)?.ty;
         if skipping {
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 ty,
                 bits: 0,
@@ -548,6 +599,7 @@ impl Analyzer<'_> {
                 left || self.constant_truth(right, scope, false)?
             };
             return Ok(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 ty,
                 bits: u64::from(truth),
@@ -662,6 +714,19 @@ impl Analyzer<'_> {
             let Value::Floating(right) = self.convert_constant_scalar(right, ty, location)? else {
                 return Err(Error::Invariant("floating right operand"));
             };
+            if op.is_some_and(|op| {
+                matches!(
+                    op,
+                    P::Equal | P::NotEqual | P::Less | P::LessEqual | P::Greater | P::GreaterEqual
+                )
+            }) && left.state == super::constant_addresses::ScalarState::Indeterminate
+                && right.state == super::constant_addresses::ScalarState::Indeterminate
+            {
+                return Err(nonconstant(
+                    location,
+                    "a comparison of values that are not scalars",
+                ));
+            }
             if let Some(op) = op.and_then(float_operation) {
                 let value = left
                     .value
@@ -670,7 +735,7 @@ impl Analyzer<'_> {
                         nonconstant(location, "a floating operation with an undefined result")
                     })?;
                 return Ok(Value::Floating(Floating {
-                    zeroed: false,
+                    state: crate::sema::constant_addresses::ScalarState::Value,
                     ty,
                     value,
                 }));
@@ -686,6 +751,7 @@ impl Analyzer<'_> {
                 _ => return Err(Error::Invariant("nonfloating numeric operation")),
             };
             return Ok(Value::Integer(Constant {
+                state: crate::sema::constant_addresses::ScalarState::Value,
                 high: 0,
                 ty: self.graph.types.scalar(Scalar::Bool)?,
                 bits: u64::from(truth),
@@ -810,6 +876,12 @@ impl Analyzer<'_> {
         let Value::Floating(value) = value else {
             return Err(Error::Invariant("floating place holds nonfloating value"));
         };
+        if value.state == super::constant_addresses::ScalarState::Indeterminate {
+            return Err(nonconstant(
+                location,
+                "a read of an object that is not initialized",
+            ));
+        }
         Ok(value)
     }
     pub(super) fn record_floating_initializer(
@@ -829,6 +901,12 @@ impl Analyzer<'_> {
             let Value::Floating(value) = value else {
                 return Err(Error::Invariant("floating initializer type"));
             };
+            if value.state == super::constant_addresses::ScalarState::Indeterminate {
+                return Err(nonconstant(
+                    initializer.location,
+                    "a constexpr object leaves a subobject uninitialized",
+                ));
+            }
             self.graph.floating_constants.insert(value)
         })();
         self.graph.entity_mut(entity).constant = ConstantState::None;
