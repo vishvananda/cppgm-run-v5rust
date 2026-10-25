@@ -19,12 +19,9 @@ pub(super) fn finish(context: &mut Context<'_>) -> Result<bool, Error> {
         context.run(P::CleanupCfg)?;
         changed = true;
     }
-    context.ensure_cfg()?;
-    let mut forest = super::natural_loops::Forest::default();
-    forest.find(context.body.blocks().len(), context.cfg()?)?;
-    if forest.len() != 0 {
-        return Err(Error::NotImplemented("LowIR loop finishing"));
-    }
+    changed = context.run(P::HoistLoads)? || changed;
+    changed = context.run(P::VersionFills)? || changed;
+    changed = context.run(P::MarkCounters)? || changed;
     if changed {
         context.run(P::SplitBranchCompares)?;
     }

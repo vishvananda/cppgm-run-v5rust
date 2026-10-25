@@ -19,7 +19,7 @@ use crate::lowir::{
 
 const MEMSET: &str = "__cppgm_builtin_memset";
 
-fn available(program: &Program) -> bool {
+pub(super) fn available(program: &Program) -> bool {
     program
         .names
         .find(MEMSET)
@@ -31,7 +31,7 @@ fn available(program: &Program) -> bool {
             )
         })
 }
-fn fill_symbol(program: &mut Program, owner: SymbolId) -> Result<SymbolId, Error> {
+pub(super) fn fill_symbol(program: &mut Program, owner: SymbolId) -> Result<SymbolId, Error> {
     let name = program.names.intern(MEMSET)?;
     let symbol = program.reference_from(name, owner)?;
     if program.symbol(symbol).declared() {

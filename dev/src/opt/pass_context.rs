@@ -27,6 +27,9 @@ pub(super) enum Pass {
     FormSwitches,
     FormSelects,
     ExpandWide,
+    HoistLoads,
+    MarkCounters,
+    VersionFills,
     NameReturnedSlot,
     SplitOrBranches,
     SpecializePhiCompares,
@@ -52,6 +55,9 @@ impl Pass {
             | Self::PromoteSlots
             | Self::ThreadJumps
             | Self::FormSelects
+            | Self::HoistLoads
+            | Self::VersionFills
+            | Self::MarkCounters
             | Self::ExpandWide
             | Self::SplitOrBranches
             | Self::SpecializePhiCompares
@@ -262,6 +268,9 @@ impl<'a> Context<'a> {
             Pass::DefinitionOrder => definition_order::restore(self),
             Pass::FormSwitches => switch_formation::form_switches(self),
             Pass::FormSelects => select_formation::form_selects(self),
+            Pass::HoistLoads => super::loop_motion::hoist(self),
+            Pass::VersionFills => super::fill_versioning::run(self),
+            Pass::MarkCounters => super::loop_counters::mark(self),
             Pass::ExpandWide => wide_integers::expand(self),
             Pass::UnrollLoops => Err(Error::NotImplemented(pass.missing())),
         }

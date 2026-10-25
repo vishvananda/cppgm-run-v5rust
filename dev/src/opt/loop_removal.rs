@@ -209,22 +209,48 @@ fn try_loop(context: &mut Context<'_>, forest: &Forest, loop_: LoopId) -> Result
     let private = facts.private_values(loop_, test);
     let free = facts.effect_free(loop_);
     if !private {
-        if !free || !iteration_values::compute(context, forest, loop_, test, &analysis.inductions)?
+        if free && iteration_values::compute(context, forest, loop_, test, &analysis.inductions)? {
+            // The exit values are now available to the bypass below.
+        } else if super::loop_copies::emit(
+            context,
+            forest,
+            loop_,
+            test,
+            &analysis.inductions,
+            false,
+        )? {
+            return Ok(true);
+        } else {
+            return super::wide_fills::widen(context, forest, loop_, test, &analysis.inductions);
+        }
+    } else if !free {
+        if context.level >= 2
+            && super::indexed_stores::rewrite(
+                context,
+                forest,
+                loop_,
+                test,
+                &analysis.inductions,
+                false,
+            )?
         {
-            if context.level >= 2 {
-                return Err(Error::NotImplemented(
-                    "LowIR copy and wide-fill loop rewrites",
-                ));
+            if forest.get(loop_).preheader.is_none() {
+                return super::loop_motion::make_preheader(context, forest, loop_);
             }
-            return Ok(false);
+            super::indexed_stores::rewrite(
+                context,
+                forest,
+                loop_,
+                test,
+                &analysis.inductions,
+                true,
+            )?;
+        } else if !loop_fills::emit(context, forest, loop_, test, &analysis.inductions)? {
+            if super::loop_copies::emit(context, forest, loop_, test, &analysis.inductions, true)? {
+                return Ok(true);
+            }
+            return super::wide_fills::widen(context, forest, loop_, test, &analysis.inductions);
         }
-    } else if !free && !loop_fills::emit(context, forest, loop_, test, &analysis.inductions)? {
-        if context.level >= 2 {
-            return Err(Error::NotImplemented(
-                "LowIR indexed-store, copy and wide-fill loop rewrites",
-            ));
-        }
-        return Ok(false);
     }
     if !bypass(context, forest, loop_, test)? {
         return Ok(false);
@@ -234,10 +260,23 @@ fn try_loop(context: &mut Context<'_>, forest: &Forest, loop_: LoopId) -> Result
 }
 fn round(context: &mut Context<'_>, forest: &Forest) -> Result<bool, Error> {
     let effects = effects(context.body, forest)?;
-    // Count-to-pointer and invariant-load motion precede bypasses at O2+.
-    // Their memory-loop cases remain explicit missing work until translated.
-    if context.level >= 2 && effects.iter().any(|e| e.others == 0 && e.stores != 0) {
-        return Err(Error::NotImplemented("LowIR memory loop rewrites"));
+    for loop_ in forest.ids().rev() {
+        if effects[loop_.index()].others == 0
+            && effects[loop_.index()].stores != 0
+            && super::loop_memory::count_to_pointer(context, forest, loop_)?
+        {
+            return Ok(true);
+        }
+    }
+    for loop_ in forest.ids().rev() {
+        let e = effects[loop_.index()];
+        if e.others == 0
+            && e.stores == 1
+            && e.loads == 1
+            && super::loop_memory::hoist_stored(context, forest, loop_)?
+        {
+            return Ok(true);
+        }
     }
     let mut tries = 0;
     for loop_ in forest.ids().rev() {

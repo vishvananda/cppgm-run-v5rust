@@ -39,21 +39,30 @@ pub(super) struct Facts<'a> {
     pub(super) forest: &'a Forest,
     pub(super) block_of: &'a [Option<BlockId>],
 }
+pub(super) fn invariant(
+    body: &Body,
+    forest: &Forest,
+    block_of: &[Option<BlockId>],
+    loop_: LoopId,
+    value: Value,
+) -> bool {
+    let Value::Temp(temp) = value else {
+        return true;
+    };
+    if body.temp_is_parameter(temp) {
+        return true;
+    }
+    let Some(id) = body.temp(temp).definition else {
+        return false;
+    };
+    if id.index() >= block_of.len() {
+        return true;
+    }
+    block_of[id.index()].is_some_and(|b| !forest.contains(loop_, b))
+}
 impl Facts<'_> {
     pub(super) fn invariant(&self, loop_: LoopId, value: Value) -> bool {
-        let Value::Temp(temp) = value else {
-            return true;
-        };
-        if self.body.temp_is_parameter(temp) {
-            return true;
-        }
-        let Some(id) = self.body.temp(temp).definition else {
-            return false;
-        };
-        if id.index() >= self.block_of.len() {
-            return true;
-        }
-        self.block_of[id.index()].is_some_and(|b| !self.forest.contains(loop_, b))
+        invariant(self.body, self.forest, self.block_of, loop_, value)
     }
     pub(super) fn induction(&self, loop_: LoopId, id: InstId) -> Option<Induction> {
         let loop_id = loop_;
