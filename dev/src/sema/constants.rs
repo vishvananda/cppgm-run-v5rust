@@ -216,7 +216,13 @@ impl Analyzer<'_> {
             && !matches!(expr.kind, ExprKind::Conditional { .. })
         {
             let place = self.constant_place(id, scope)?;
-            return self.read_constant_integer(place, location);
+            return match self.read_constant_scalar(place, location)? {
+                super::constant_addresses::TemporaryValue::Integer(value) => Ok(value),
+                _ => Err(not_constant(
+                    location,
+                    "not an integral constant expression",
+                )),
+            };
         }
         if self.semantic()
             && self.graph.expression_facts.get(id).is_ok_and(|facts| {
@@ -1785,6 +1791,33 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn floating_glvalues_remain_available_to_optional_scalar_queries() {
+        let source = SourceBuffer::new(
+            b"constexpr double narrow=1.5;constexpr __float128 wide{};\
+              constexpr bool qn=__builtin_constant_p(narrow);\
+              constexpr bool qw=__builtin_constant_p(wide);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"scalar-query").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let qn = cursor.intern_name(b"qn").unwrap();
+        let qw = cursor.intern_name(b"qw").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_hosted(true);
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        for name in [qn, qw] {
+            let binding = graph.own(graph.global, name, Filter::Ordinary).unwrap();
+            assert!(
+                matches!(graph.entity(graph.binding(binding).entity).constant,
+                ConstantState::Value(value) if value.truth())
+            );
+        }
+    }
 
     #[test]
     fn enclosing_noexcept_does_not_publish_untyped_constant_operands() {
