@@ -197,7 +197,9 @@ impl Declarations {
         use crate::syntax::ast::DeclKind;
         while let Some((id, finish)) = self.work.pop() {
             if finish {
-                symbols.name_scopes(self.deferred.scopes(graph, tree, id)?)?;
+                if graph.lower_has_unnamed_member_definitions() {
+                    symbols.name_scopes(self.deferred.scopes(graph, tree, id)?)?;
+                }
                 continue;
             }
             match tree.declarations.get(id).kind {

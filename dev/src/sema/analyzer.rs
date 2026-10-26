@@ -831,6 +831,7 @@ impl<'tree> Analyzer<'tree> {
         }
     }
     pub(super) fn defer_function_body(&mut self, body: DeferredBody) {
+        self.graph.note_deferred_member_body(body.entity);
         if self.shared_instance_body(body)
             && let Some(head) = self.graph.entity(body.entity).template_head
         {

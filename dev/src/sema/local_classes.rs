@@ -15,6 +15,7 @@ pub(super) struct LocalClasses {
     unnamed_counts: HashMap<EntityId, u32>,
     unnamed: HashMap<EntityId, u16>,
     by_outer_function: HashMap<EntityId, Vec<EntityId>>,
+    unnamed_member_definitions: bool,
 }
 impl Analyzer<'_> {
     pub(super) fn record_local_class(
@@ -82,6 +83,13 @@ impl Analyzer<'_> {
     }
 }
 impl Graph {
+    pub(super) fn note_deferred_member_body(&mut self, function: EntityId) {
+        self.local_classes.unnamed_member_definitions |=
+            self.lower_unnamed_member_owner(function).is_some();
+    }
+    pub(crate) fn lower_has_unnamed_member_definitions(&self) -> bool {
+        self.local_classes.unnamed_member_definitions
+    }
     pub(crate) fn lower_enclosing_static_owner(&self, function: EntityId) -> Option<EntityId> {
         let node = self.entity(function);
         if !node.demands.names_enclosing_statics {
@@ -123,7 +131,8 @@ impl Graph {
             .home
             .and_then(|home| self.lower_scope_function(home))
         {
-            return Ok(self.lower_inline_function(self.outermost_function(function)));
+            let outer = self.outermost_function(function);
+            return Ok(self.lower_inline_function(outer) || self.lower_function_instantiated(outer));
         }
         Ok(!self.lower_entity_unit_local(class)?)
     }
@@ -531,7 +540,7 @@ impl Graph {
     }
     pub(crate) fn lower_function_visible_locals(&self, function: EntityId) -> bool {
         let outer = self.outermost_function(function);
-        self.lower_inline_function(outer)
+        self.lower_inline_function(outer) || self.lower_function_instantiated(outer)
     }
     pub(crate) fn lower_numbered_closure(&self, class: EntityId) -> bool {
         if self
@@ -580,7 +589,70 @@ impl Graph {
                 binding.kind == super::graph::BindingKind::Function
                     && entity.home == Some(scope)
                     && entity.function_definition.is_some()
+                    && matches!(
+                        entity.special_definition,
+                        None | Some(super::special_members::SpecialDefinition::Body(_))
+                    )
             })
             .then_some(scope)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn deferred_local_names_require_a_written_member_body() {
+        let source = SourceBuffer::new(
+            b"void f(){struct Defaulted{Defaulted()=default;};\
+              struct Written{Written(){}};}"
+                .to_vec(),
+        )
+        .unwrap();
+        let input = Preprocessor::with_name(&source, b"written-local-body").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert!(!graph.lower_has_unnamed_member_definitions());
+        let states: Vec<_> = graph
+            .local_classes
+            .by_outer_function
+            .values()
+            .flatten()
+            .map(|&class| {
+                (
+                    cursor.name(graph.entity(class).name.unwrap()),
+                    graph.lower_local_class_definition_scope(class).is_some(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            states,
+            [(b"Defaulted".as_slice(), false), (b"Written", true)]
+        );
+    }
+
+    #[test]
+    fn anonymous_member_body_records_deferred_naming_demand() {
+        let source =
+            SourceBuffer::new(b"struct {struct Nested{void f(){}};} object;".to_vec()).unwrap();
+        let input = Preprocessor::with_name(&source, b"anonymous-member-body").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = Analyzer::new(tree, cursor, StackBudget::default())
+            .unwrap()
+            .analyze(declarations)
+            .unwrap();
+        assert!(graph.lower_has_unnamed_member_definitions());
     }
 }

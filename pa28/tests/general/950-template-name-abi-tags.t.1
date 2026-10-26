@@ -1,0 +1,18 @@
+template<class T>
+struct __attribute__((abi_tag("v"))) Box {};
+
+template<template<class> class C>
+int value()
+{
+  return 1;
+}
+
+int instance(Box<int>)
+{
+  return 2;
+}
+
+int main()
+{
+  return value<Box>() + instance(Box<int>{}) - 3;
+}

@@ -1273,10 +1273,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let node = self.abi_type(aliased)?;
             return self.finish_abi_type(ty, node);
         }
-        let node = if let Some((entity, home, name)) = self.graph.lower_template_name(ty) {
+        let node = if let Some((_, home, name)) = self.graph.lower_template_name(ty) {
             let parent = self.scope(home)?;
             let terminal = self.abi.string(self.cursor.name(name))?;
-            let node = self.tagged_entity_name(
+            // A template used as an argument names the template without its
+            // explicit tags; its class specializations retain their own tags.
+            let node = self.abi.intern(
                 Node::Name {
                     parent,
                     terminal,
@@ -1285,7 +1287,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     data_member: false,
                     occurrence: 0,
                 },
-                Some(entity),
+                &[],
             )?;
             return self.finish_abi_type(ty, node);
         } else if let Some(view) = self.graph.lower_template_id_name(ty) {
