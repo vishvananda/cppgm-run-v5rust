@@ -185,8 +185,12 @@ fn invocation(args: &[OsString], mode: EmitMode) -> Result<Invocation<'_>, CliEr
         if lowir && debug.consume(arg.as_bytes()) {
             continue;
         }
-        if lowir && let [b'-', b'O', value @ b'0'..=b'3'] = arg.as_bytes() {
-            level = value - b'0';
+        if lowir && arg.as_bytes().starts_with(b"-O") {
+            level = cppgm_rust::driver::optimization_options::OptimizationSyntax::Emit
+                .parse(arg.as_bytes())
+                .ok_or_else(|| {
+                    CliError::Diagnostic([b"unsupported option: ", arg.as_bytes()].concat())
+                })?;
             continue;
         }
         if lowir && arg == "--inline-limit" {
@@ -212,16 +216,36 @@ fn invocation(args: &[OsString], mode: EmitMode) -> Result<Invocation<'_>, CliEr
         if preprocessing_option(args, &mut index, &mut preprocessor)? {
             continue;
         }
+        if lowir && matches!(arg.as_bytes(), b"--witness" | b"--witness-debug") {
+            if args.get(index).is_none() {
+                return Err(CliError::Diagnostic(
+                    [b"missing output file after ", arg.as_bytes()].concat(),
+                ));
+            }
+            index += 1;
+            continue;
+        }
+        if matches!(
+            arg.as_bytes(),
+            b"-c"
+                | b"-E"
+                | b"--version"
+                | b"-v"
+                | b"-dumpmachine"
+                | b"-dumpversion"
+                | b"-print-search-dirs"
+        ) {
+            return Err(CliError::Message("invalid usage".to_owned()));
+        }
         if arg == "--stats" && mode == EmitMode::Semantics {
             return Err(CliError::Missing(
                 "AST statistics and hosted/preprocessing invocation options",
             ));
         }
         if arg.as_bytes().starts_with(b"-") {
-            return Err(CliError::Message(format!(
-                "unsupported option in emit mode: {}",
-                arg.to_string_lossy()
-            )));
+            return Err(CliError::Diagnostic(
+                [b"unsupported option in emit mode: ", arg.as_bytes()].concat(),
+            ));
         }
         inputs.push(arg.as_os_str());
     }

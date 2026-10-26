@@ -102,3 +102,64 @@ fn reports_retain_parse_work_and_follow_diagnostics() -> Result<(), Box<dyn std:
     assert!(lines.next().is_none());
     Ok(())
 }
+
+#[test]
+fn emit_invocation_preserves_level_spelling_and_argument_bytes()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    let directory =
+        Scratch(std::env::temp_dir().join(format!("cppgm-emit-invocation-{}", std::process::id())));
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("input.cpp");
+    std::fs::write(
+        &source,
+        b"#ifndef __OPTIMIZE__\n#error optimization macro missing\n#endif\n\
+          int inc(int n){return n+1;}int main(){return inc(0)-1;}\n",
+    )?;
+    let output = directory.0.join("output.lowir");
+    let emit = |mode: &str, flags: &[OsString]| {
+        Command::new(env!("CARGO_BIN_EXE_cppgm"))
+            .args([mode, "-o"])
+            .arg(&output)
+            .arg(&source)
+            .args(flags)
+            .output()
+    };
+    for (alias, level) in [("-O", "-O1"), ("-O00", "-O3")] {
+        let baseline = emit("--emit-lowir", &[level.into()])?;
+        assert!(baseline.status.success(), "{:?}", baseline.stderr);
+        let bytes = std::fs::read(&output)?;
+        let aliased = emit("--emit-lowir", &[alias.into()])?;
+        assert!(aliased.status.success(), "{:?}", aliased.stderr);
+        assert_eq!(bytes, std::fs::read(&output)?);
+    }
+    let ignored = directory.0.join("ignored");
+    let bytes = std::fs::read(&output)?;
+    for flag in ["--witness", "--witness-debug"] {
+        let result = emit(
+            "--emit-lowir",
+            &["-O3".into(), flag.into(), ignored.clone().into_os_string()],
+        )?;
+        assert!(result.status.success(), "{:?}", result.stderr);
+        assert_eq!(bytes, std::fs::read(&output)?);
+        assert!(!ignored.exists());
+    }
+    for mode in [
+        "--emit-ast",
+        "--emit-types",
+        "--emit-semantics",
+        "--emit-lowir",
+    ] {
+        let rejected = emit(mode, &["-E".into()])?;
+        assert_eq!(rejected.status.code(), Some(1));
+        assert_eq!(rejected.stderr, b"ERROR: invalid usage\n");
+        let rejected = emit(mode, &[OsString::from_vec(b"--bad-\xff".to_vec())])?;
+        assert_eq!(rejected.status.code(), Some(1));
+        assert_eq!(
+            rejected.stderr,
+            b"ERROR: unsupported option in emit mode: --bad-\xff\n"
+        );
+        assert_eq!(bytes, std::fs::read(&output)?);
+    }
+    Ok(())
+}

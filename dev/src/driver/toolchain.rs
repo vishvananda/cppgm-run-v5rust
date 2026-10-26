@@ -411,17 +411,9 @@ fn prune_include_paths(options: &mut DriverOptions) {
     }
 }
 fn optimization_level(arg: &OsStr) -> Result<u8, AstToolError> {
-    let text = &arg.as_bytes()[2..];
-    match text {
-        b"" | b"g" => Ok(1),
-        b"s" | b"z" => Ok(2),
-        b"fast" => Ok(3),
-        _ if !text.is_empty() && text.iter().all(u8::is_ascii_digit) => Ok(text
-            .iter()
-            .fold(0_u8, |n, b| n.saturating_mul(10).saturating_add(b - b'0'))
-            .min(3)),
-        _ => Err(argument("unsupported option: ", arg)),
-    }
+    super::optimization_options::OptimizationSyntax::Driver
+        .parse(arg.as_bytes())
+        .ok_or_else(|| argument("unsupported option: ", arg))
 }
 fn check_output(invocation: &Invocation, path: &Path) -> Result<(), AstToolError> {
     if let Ok(out) = std::fs::metadata(path) {
