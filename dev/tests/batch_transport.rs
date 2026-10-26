@@ -78,3 +78,35 @@ fn lowir_tool_stream_failures_retain_help_and_unlinked_batch_success()
     }
     Ok(())
 }
+
+#[test]
+fn failed_invocation_sinks_preserve_frontend_tool_statuses()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::{fs::OpenOptions, process::Command};
+    for (tool, arguments, stdout, status) in [
+        (env!("CARGO_BIN_EXE_abimangle"), &["--help"][..], true, 0),
+        (env!("CARGO_BIN_EXE_abimangle"), &[][..], false, 1),
+        (env!("CARGO_BIN_EXE_preproc"), &[][..], false, 1),
+        (env!("CARGO_BIN_EXE_preproc"), &["--help"][..], false, 1),
+        (
+            env!("CARGO_BIN_EXE_cppgm"),
+            &["--emit-types", "--unsupported"][..],
+            false,
+            1,
+        ),
+    ] {
+        let mut command = Command::new(tool);
+        command.args(arguments);
+        let sink = OpenOptions::new().write(true).open("/dev/full")?;
+        if stdout {
+            command.stdout(sink);
+        } else {
+            command.stderr(sink);
+        }
+        let result = command.output()?;
+        assert_eq!(result.status.code(), Some(status), "{tool}: {arguments:?}");
+        assert!(result.stdout.is_empty());
+        assert!(result.stderr.is_empty());
+    }
+    Ok(())
+}

@@ -469,11 +469,14 @@ fn main() -> ExitCode {
             ExitCode::from(3)
         }
         Err(CliError::Missing(group)) => {
-            eprintln!("cppgm++: Rust port is not implemented yet: {group}");
+            let _ = writeln!(
+                io::stderr().lock(),
+                "cppgm++: Rust port is not implemented yet: {group}"
+            );
             ExitCode::from(86)
         }
         Err(CliError::Internal(message)) => {
-            eprintln!("internal compiler error: {message}");
+            let _ = writeln!(io::stderr().lock(), "internal compiler error: {message}");
             ExitCode::from(70)
         }
         Err(CliError::InvalidLowIr(bytes)) => {
@@ -484,7 +487,7 @@ fn main() -> ExitCode {
             ExitCode::from(70)
         }
         Err(CliError::Message(message)) => {
-            eprintln!("ERROR: {message}");
+            let _ = writeln!(io::stderr().lock(), "ERROR: {message}");
             ExitCode::FAILURE
         }
         Err(CliError::Diagnostic(bytes)) => {

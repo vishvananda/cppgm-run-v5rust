@@ -4,7 +4,10 @@ mod stack_limit;
 fn main() -> std::process::ExitCode {
     let Ok(budget) = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
     else {
-        eprintln!("abimangle: host stack budget exceeds usize");
+        use std::io::Write;
+        let _ = std::io::stderr()
+            .lock()
+            .write_all(b"abimangle: host stack budget exceeds usize\n");
         return std::process::ExitCode::FAILURE;
     };
     cppgm_rust::driver::abimangle::run(

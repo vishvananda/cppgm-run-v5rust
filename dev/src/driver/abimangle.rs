@@ -17,7 +17,10 @@ pub fn run(
     match execute(arguments, budget, peak_rss) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(Error::NotImplemented(feature)) => {
-            eprintln!("abimangle: Rust port is not implemented yet: {feature}");
+            let _ = writeln!(
+                io::stderr().lock(),
+                "abimangle: Rust port is not implemented yet: {feature}"
+            );
             std::process::ExitCode::from(86)
         }
         Err(error) => {
@@ -43,7 +46,9 @@ fn execute(
     peak_rss: fn() -> u64,
 ) -> Result<(), Error> {
     if arguments.iter().any(|arg| arg == "--help" || arg == "-h") {
-        print!("usage: abimangle -o <outfile> <abi-facts-file>...\n\nquery flags:\n  --help, -h\n");
+        let _ = io::stdout().lock().write_all(
+            b"usage: abimangle -o <outfile> <abi-facts-file>...\n\nquery flags:\n  --help, -h\n",
+        );
         return Ok(());
     }
     let mut output = OsStr::new("");
