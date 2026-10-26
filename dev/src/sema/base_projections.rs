@@ -139,7 +139,7 @@ impl Graph {
             self.lower_path_offset(path).map(BaseProjection::Fixed)
         }
     }
-    /// Member access performs ProgramLowering::base_route even for a fixed,
+    /// Member access performs `ProgramLowering::base_route` even for a fixed,
     /// zero-offset base. Keep endpoints until that query is demanded.
     pub(super) fn lower_member_route_projection(
         &self,

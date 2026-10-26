@@ -1,5 +1,5 @@
 // Translated from lower/definition_order.cpp and program_lowering.cpp. See NOTICE.
-//! Query-owned family identities and typed ranks shared by both LowIR views.
+//! Query-owned family identities and typed ranks shared by both `LowIR` views.
 use super::{Error, Symbols};
 use crate::lower::{construction::Entry, definition_order::FamilyId};
 use crate::{
