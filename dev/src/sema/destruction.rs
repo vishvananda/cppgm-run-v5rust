@@ -1,7 +1,7 @@
 // Translated from sema/analyzer_construction.cpp's destructor declaration and checks.
 // See NOTICE.
-//! Completed classes retain destructor properties; implicit callable identities
-//! are created only when a use needs them. References never own their referents.
+//! Completed classes retain destructor declarations and properties; callable
+//! bindings wait for value demand. References never own their referents.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -20,6 +20,7 @@ pub(super) enum Preparation {
 }
 #[derive(Clone, Copy)]
 pub(super) struct Destruction {
+    pub declaration: EntityId,
     pub declared_name: Option<crate::lex::identifiers::NameId>,
     pub trivial: bool,
     pub deleted: bool,
@@ -230,7 +231,26 @@ impl Analyzer<'_> {
             }
         };
         let subobjects = self.subobject_destructor_facts(class)?;
+        let declaration = if let Some(binding) = declared {
+            self.graph.binding(binding).entity
+        } else if let Some(facts) = self.graph.entity(class).destruction {
+            facts.declaration
+        } else {
+            let void = self.graph.types.scalar(Scalar::Void)?;
+            let signature = self.graph.types.intern(
+                TypeKind::Function {
+                    result: void,
+                    parameters: Vec::new(),
+                    variadic: false,
+                    cv: Cv::default(),
+                    reference: None,
+                },
+                Cv::default(),
+            )?;
+            self.graph.add_implicit_destructor(class, signature)?
+        };
         let mut facts = Destruction {
+            declaration,
             declared_name: self.graph.entity(class).name,
             trivial: subobjects.trivial,
             deleted: subobjects.deleted,
@@ -260,6 +280,19 @@ impl Analyzer<'_> {
                 self.graph.entity_mut(id).availability = FunctionAvailability::Deleted;
             }
         }
+        if declared.is_none() {
+            let DestructorUnwind::Implicit { nothrow } = facts.unwind else {
+                return Err(Error::Invariant("implicit destructor with declared unwind"));
+            };
+            self.graph.entity_mut(declaration).exceptions = ExceptionState::Value(if nothrow {
+                ExceptionSet::None
+            } else {
+                ExceptionSet::All
+            });
+            if facts.deleted {
+                self.graph.entity_mut(declaration).availability = FunctionAvailability::Deleted;
+            }
+        }
         self.graph.entity_mut(class).destruction = Some(facts);
         Ok(())
     }
@@ -278,18 +311,9 @@ impl Analyzer<'_> {
         else {
             return Ok(None);
         };
-        let void = self.graph.types.scalar(Scalar::Void)?;
-        let signature = self.graph.types.intern(
-            TypeKind::Function {
-                result: void,
-                parameters: Vec::new(),
-                variadic: false,
-                cv: Cv::default(),
-                reference: None,
-            },
-            Cv::default(),
-        )?;
-        let binding = self.graph.add_implicit_destructor(class, signature)?;
+        let binding = self
+            .graph
+            .bind_implicit_destructor(class, facts.declaration)?;
         let entity = self.graph.binding(binding).entity;
         let DestructorUnwind::Implicit { nothrow } = facts.unwind else {
             return Err(Error::Invariant("implicit destructor with declared unwind"));
@@ -524,6 +548,77 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn implicit_declarations_reuse_identity_without_callable_or_body_demand() {
+        let source = SourceBuffer::new(b"struct X{}; struct Y{X member;};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"destructor-declarations").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [
+            cursor.intern_name(b"X").unwrap(),
+            cursor.intern_name(b"Y").unwrap(),
+        ];
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        for name in names {
+            let binding = analyzer
+                .graph
+                .own(global, name, super::super::lookup::Filter::Prefix)
+                .unwrap();
+            let class = analyzer.graph.binding(binding).entity;
+            let declaration = analyzer
+                .graph
+                .entity(class)
+                .destruction
+                .unwrap()
+                .declaration;
+            let function = analyzer.graph.entity(declaration);
+            assert!(function.function.is_some());
+            assert!(function.scope.is_none());
+            assert!(
+                function
+                    .member_function
+                    .is_some_and(|member| member.class == class
+                        && member.kind == super::super::graph::MemberKind::Destructor)
+            );
+            assert!(analyzer.graph.destructor_binding(class).is_none());
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            let entities = analyzer.graph.statistics().entities;
+            analyzer.complete_destructor(class).unwrap();
+            assert_eq!(
+                analyzer
+                    .graph
+                    .entity(class)
+                    .destruction
+                    .unwrap()
+                    .declaration,
+                declaration
+            );
+            assert_eq!(analyzer.graph.statistics().entities, entities);
+            let limit = analyzer.graph.binding_limit();
+            let handle = analyzer
+                .graph
+                .bind_implicit_destructor(class, declaration)
+                .unwrap();
+            assert_eq!(
+                analyzer
+                    .graph
+                    .bind_implicit_destructor(class, declaration)
+                    .unwrap(),
+                handle
+            );
+            assert_eq!(analyzer.graph.binding_limit(), limit);
+            assert!(analyzer.graph.binding_visible_before(handle, Some(0)));
+            let scope = analyzer.graph.entity(class).scope.unwrap();
+            assert!(!analyzer.graph.scope(scope).bindings.contains(&handle));
+        }
+    }
 
     #[test]
     fn nested_explicit_unwind_stays_lazy_and_reuses_its_declaration() {

@@ -182,18 +182,15 @@ impl Analyzer<'_> {
         {
             return Ok(binding);
         }
-        let void = self.graph.types.scalar(Scalar::Void)?;
-        let signature = self.graph.types.intern(
-            TypeKind::Function {
-                result: void,
-                parameters: Vec::new(),
-                variadic: false,
-                cv: Cv::default(),
-                reference: None,
-            },
-            Cv::default(),
-        )?;
-        self.graph.add_implicit_destructor(class, signature)
+        let declaration = self
+            .graph
+            .entity(class)
+            .destruction
+            .ok_or(Error::Invariant(
+                "explicit destructor without completed declaration",
+            ))?
+            .declaration;
+        self.graph.bind_implicit_destructor(class, declaration)
     }
 
     pub(super) fn destructor_call(

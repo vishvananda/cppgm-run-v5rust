@@ -238,6 +238,27 @@ pub(super) struct Entity {
     pub template_head: Option<super::templates::HeadId>,
 }
 #[derive(Clone, Copy)]
+enum BindingOrigin {
+    Declaration(std::num::NonZeroUsize),
+    Callable,
+}
+impl BindingOrigin {
+    fn declaration(ordinal: usize) -> Result<Self, Error> {
+        ordinal
+            .checked_add(1)
+            .and_then(std::num::NonZeroUsize::new)
+            .map(Self::Declaration)
+            .ok_or(Error::Limit("semantic declaration limit"))
+    }
+    fn before(self, limit: usize) -> bool {
+        match self {
+            Self::Declaration(ordinal) => ordinal.get() <= limit,
+            Self::Callable => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct Binding {
     pub kind: BindingKind,
     pub name: Option<NameId>,
@@ -294,7 +315,7 @@ pub(crate) struct Graph {
     scopes: Vec<Scope>,
     entities: Vec<Entity>,
     bindings: Vec<Binding>,
-    ordinals: Vec<usize>,
+    binding_origins: Vec<BindingOrigin>,
     redeclarations: Vec<bool>,
     declaration_count: usize,
     binding_scopes: Vec<ScopeId>,
@@ -511,7 +532,7 @@ impl Graph {
                     self.scope(scope).kind != ScopeKind::Namespace
                         || self
                             .lookup_limit
-                            .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+                            .is_none_or(|limit| self.binding_origins[id.0 as usize].before(limit))
                 })
             }
         }
@@ -558,7 +579,7 @@ impl Graph {
             && !self.friendships.hidden(old)
             && self.binding(old).entity == self.binding(binding).entity
         {
-            self.ordinals[binding.0 as usize] = self.ordinals[old.0 as usize];
+            self.binding_origins[binding.0 as usize] = self.binding_origins[old.0 as usize];
             self.redeclarations[binding.0 as usize] = true;
         }
         Ok(())
@@ -649,7 +670,7 @@ impl Graph {
             local_classes: super::local_classes::LocalClasses::default(),
             bit_fields: super::bit_fields::BitFields::default(),
             bindings: Vec::new(),
-            ordinals: Vec::new(),
+            binding_origins: Vec::new(),
             redeclarations: Vec::new(),
             declaration_count: 0,
             binding_scopes: Vec::new(),
@@ -947,10 +968,6 @@ impl Graph {
         visible: bool,
         invisible: bool,
     ) -> Result<BindingId, Error> {
-        let id = BindingId(
-            u32::try_from(self.bindings.len())
-                .map_err(|_| Error::Limit("semantic binding limit"))?,
-        );
         let earlier = binding
             .name
             .and_then(|name| self.scope(scope).index.get(&name))
@@ -1002,7 +1019,9 @@ impl Graph {
         // A compatible redeclaration is visible since the entity's first
         // visible binding, just as C++ NameLookup::KeepOrdinal specifies.
         let introduced = self.next_declaration_ordinal()?;
-        let ordinal = earlier.map_or(introduced, |id| self.ordinals[id.0 as usize]);
+        let ordinal = earlier.map_or(BindingOrigin::declaration(introduced)?, |id| {
+            self.binding_origins[id.0 as usize]
+        });
         if self.entity(binding.entity).home.is_none() {
             self.entity_mut(binding.entity).home = Some(scope);
         }
@@ -1018,23 +1037,22 @@ impl Graph {
         let access = earlier.map_or(self.scope(scope).member_access, |id| {
             self.binding_access(id)
         });
-        self.binding_access.push(access);
+        let id = self.store_binding(
+            scope,
+            binding,
+            access,
+            ordinal,
+            visible && self.scope(scope).kind == ScopeKind::Block,
+            earlier.is_some(),
+        )?;
         if invisible {
             self.friendships.hide(id);
         }
-        self.bindings.push(binding);
-        // Analyzer::declare_in conservatively marks block declarations;
-        // variables and typedef declarators refine this after their type forms.
-        self.dependent_bindings
-            .push(visible && self.scope(scope).kind == ScopeKind::Block);
-        self.binding_scopes.push(scope);
-        self.ordinals.push(ordinal);
-        self.redeclarations.push(earlier.is_some());
-        if binding.kind == BindingKind::Function {
-            self.function_origins.entry(binding.entity).or_insert(id);
-            if visible && let Some(name) = binding.name {
-                self.record_function_binding(scope, name.into(), id)?;
-            }
+        if binding.kind == BindingKind::Function
+            && visible
+            && let Some(name) = binding.name
+        {
+            self.record_function_binding(scope, name.into(), id)?;
         }
         if let Some(print) = print {
             self.scope_mut(print).bindings.push(id);
@@ -1043,6 +1061,53 @@ impl Graph {
             self.publish_binding_name(scope, id);
         }
         Ok(id)
+    }
+    fn store_binding(
+        &mut self,
+        scope: ScopeId,
+        binding: Binding,
+        access: Access,
+        origin: BindingOrigin,
+        dependent: bool,
+        redeclared: bool,
+    ) -> Result<BindingId, Error> {
+        let id = BindingId(
+            u32::try_from(self.bindings.len())
+                .map_err(|_| Error::Limit("semantic binding limit"))?,
+        );
+        self.bindings.push(binding);
+        self.binding_access.push(access);
+        self.dependent_bindings.push(dependent);
+        self.binding_scopes.push(scope);
+        self.binding_origins.push(origin);
+        self.redeclarations.push(redeclared);
+        if binding.kind == BindingKind::Function {
+            self.function_origins.entry(binding.entity).or_insert(id);
+        }
+        Ok(id)
+    }
+    // An implicit callable needs a Rust handle, but C++ has no source Binding
+    // for it. It neither advances declaration ordinals nor enters lookup/print.
+    fn callable_binding(
+        &mut self,
+        home: ScopeId,
+        function: EntityId,
+        signature: TypeId,
+    ) -> Result<BindingId, Error> {
+        self.store_binding(
+            home,
+            Binding {
+                kind: BindingKind::Function,
+                name: None,
+                entity: function,
+                ty: Some(signature),
+                key: Keyword::Int,
+            },
+            Access::Public,
+            BindingOrigin::Callable,
+            false,
+            false,
+        )
     }
     // A bridge republishes a declaration; it does not introduce another
     // binding, change its original owner/ordinal or attach another print node.
@@ -1279,7 +1344,7 @@ impl Graph {
                 self.scope(scope).kind != ScopeKind::Namespace
                     || self
                         .lookup_limit
-                        .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+                        .is_none_or(|limit| self.binding_origins[id.0 as usize].before(limit))
             })
     }
     pub(super) fn visible_functions_at(
@@ -1306,7 +1371,7 @@ impl Graph {
             })
     }
     pub(super) fn binding_visible_before(&self, id: BindingId, limit: Option<usize>) -> bool {
-        limit.is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+        limit.is_none_or(|limit| self.binding_origins[id.0 as usize].before(limit))
     }
     // An ordinal cursor lets declaration matching intern canonical types without
     // borrowing the index or allocating a copy of its candidate set.
@@ -1322,7 +1387,7 @@ impl Graph {
             if self.scope(scope).kind != ScopeKind::Namespace
                 || self
                     .lookup_limit
-                    .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
+                    .is_none_or(|limit| self.binding_origins[id.0 as usize].before(limit))
             {
                 return Some(id);
             }
@@ -1395,7 +1460,7 @@ impl Graph {
             && let Some(limit) = self.lookup_limit
         {
             self.work.limited_lookup();
-            let visible = |id: BindingId| self.ordinals[id.0 as usize] < limit;
+            let visible = |id: BindingId| self.binding_origins[id.0 as usize].before(limit);
             entry.ty = entry.ty.filter(|&id| visible(id));
             let function_set = entry
                 .value
@@ -1448,19 +1513,8 @@ impl Graph {
         function: EntityId,
         signature: TypeId,
     ) -> Result<BindingId, Error> {
-        let binding = self.add_binding(
-            home,
-            None,
-            Binding {
-                kind: BindingKind::Function,
-                name: None,
-                entity: function,
-                ty: Some(signature),
-                key: Keyword::Int,
-            },
-        )?;
-        self.binding_access[binding.0 as usize] = Access::Public;
-        Ok(binding)
+        self.entity_mut(function).home = Some(home);
+        self.callable_binding(home, function, signature)
     }
     pub(super) fn add_implicit_assignment(
         &mut self,
@@ -1540,13 +1594,15 @@ impl Graph {
         &mut self,
         class: EntityId,
         signature: TypeId,
-    ) -> Result<BindingId, Error> {
+    ) -> Result<EntityId, Error> {
         let scope = self
             .entity(class)
             .scope
             .ok_or(Error::Invariant("implicit destructor without class scope"))?;
         let function = self.add_entity(Some(signature), None, Keyword::Int)?;
         let entity = self.entity_mut(function);
+        entity.home = Some(scope);
+        entity.destructor_specification = super::exceptions::DestructorSpecification::Implicit;
         entity.defined = true;
         entity.inline = super::specifiers::InlinePreference::Inline;
         entity.special_definition = Some(super::special_members::SpecialDefinition::Defaulted {
@@ -1573,18 +1629,29 @@ impl Graph {
             special: None,
             allocation: None,
         });
-        let binding = self.add_binding(
-            scope,
-            None,
-            Binding {
-                kind: BindingKind::Function,
-                name: None,
-                entity: function,
-                ty: Some(signature),
-                key: Keyword::Int,
-            },
-        )?;
-        self.binding_access[binding.0 as usize] = Access::Public;
+        Ok(function)
+    }
+    pub(super) fn bind_implicit_destructor(
+        &mut self,
+        class: EntityId,
+        function: EntityId,
+    ) -> Result<BindingId, Error> {
+        if let Some(binding) = self.entity(class).implicit_destructor {
+            return if self.binding(binding).entity == function {
+                Ok(binding)
+            } else {
+                Err(Error::Invariant("implicit destructor declaration changed"))
+            };
+        }
+        let scope = self
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("implicit destructor without class scope"))?;
+        let signature = self
+            .entity(function)
+            .ty
+            .ok_or(Error::Invariant("implicit destructor without type"))?;
+        let binding = self.callable_binding(scope, function, signature)?;
         self.entity_mut(class).implicit_destructor = Some(binding);
         Ok(binding)
     }
