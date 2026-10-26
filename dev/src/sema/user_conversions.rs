@@ -378,7 +378,7 @@ impl Analyzer<'_> {
         // The frozen constructor-conversion owner retains this standard route
         // without the access check performed for an outer base conversion.
         facts.base_path = self.conversion_base_path(facts, first, scope, location, false)?;
-        facts.conversion = Some(first);
+        self.record_conversion(&mut facts, first);
         self.odr_use_constants(id, Some(first))?;
         self.graph.expression_facts.set(id, facts);
         if first.rank == R::Ellipsis {

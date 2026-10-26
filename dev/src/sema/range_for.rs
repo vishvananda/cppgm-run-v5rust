@@ -4,7 +4,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    expression_facts::{ExprFacts, ExpressionDependence, ExpressionOrigin, ValueCategory as V},
+    expression_facts::{ExpressionDependence, ExpressionOrigin, ValueCategory as V},
     function_names::ValueKey,
     graph::{BindingKind, EntityId, Graph, ScopeId},
     lookup::{Filter, LookupResult},
@@ -138,7 +138,7 @@ impl Analyzer<'_> {
     ) -> Result<ast::ExprId, Error> {
         let name = self.range_name(b"__idx", location)?;
         let id = self.range_expression(ExprKind::Id(name), location)?;
-        let mut facts = ExprFacts::new(ty, V::Prvalue);
+        let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
         facts.folded = Some(value);
         facts.origin = ExpressionOrigin::Implicit;
         self.graph.expression_facts.set(id, facts);
@@ -202,7 +202,10 @@ impl Analyzer<'_> {
             let ExprKind::Id(name) = self.tree.expressions.get(root).kind else {
                 return Err(Error::Invariant("named range is not an identifier"));
             };
-            (name, self.graph.expression_facts.get(root)?)
+            (
+                name,
+                self.copy_expression_facts(self.graph.expression_facts.get(root)?)?,
+            )
         } else {
             let declaration = range.ok_or(Error::Invariant("range use without declaration"))?;
             let binding = self.graph.declared_bindings[declaration.declarator.index()]
@@ -224,7 +227,7 @@ impl Analyzer<'_> {
                 .implicit_name(label, location)
                 .map_err(|_| Error::Limit("implicit range syntax storage limit"))?;
             super::record(&mut self.graph.resolved_names, name.index(), binding);
-            let mut facts = ExprFacts::new(ty, V::Lvalue);
+            let mut facts = self.new_expression_facts(ty, V::Lvalue)?;
             if dependent {
                 facts.dependence = ExpressionDependence::Dependent;
             }
@@ -476,7 +479,7 @@ impl Analyzer<'_> {
             .map_err(|_| Error::Limit("implicit range syntax storage limit"))?;
         super::record(&mut self.graph.resolved_names, name.index(), binding);
         let use_id = self.range_expression(ExprKind::Id(name), location)?;
-        let mut facts = ExprFacts::new(ty, V::Lvalue);
+        let mut facts = self.new_expression_facts(ty, V::Lvalue)?;
         facts.origin = ExpressionOrigin::Implicit;
         self.graph.expression_facts.set(use_id, facts);
         super::record(&mut self.graph.expression_types, use_id.index(), ty);

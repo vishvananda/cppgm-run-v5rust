@@ -14,6 +14,29 @@ impl Symbols<'_, '_> {
             return Ok(signature);
         }
         let signature = crate::lower::function::signature(program, self, self.graph, ty, nothrow)?;
+        let crate::sema::lowering::TypeView::Function { parameters, .. } =
+            self.graph.lower_type(ty)?
+        else {
+            return Err(crate::sema::Error::Invariant("indirect call signature type").into());
+        };
+        let stored = &program.signature(signature).parameters;
+        let first = usize::from(stored.first().is_some_and(|parameter| {
+            parameter.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)
+        }));
+        // A later demand can complete a reference object's boundary. Preserve
+        // C++'s uncached signature while the parameter states no object size.
+        for (index, &parameter) in parameters.iter().enumerate() {
+            if let crate::sema::lowering::TypeView::Reference { element, .. } =
+                self.graph.lower_type(parameter)?
+                && !matches!(
+                    self.graph.lower_type(element)?,
+                    crate::sema::lowering::TypeView::Function { .. }
+                )
+                && stored[first + index].object_bytes == 0
+            {
+                return Ok(signature);
+            }
+        }
         self.signatures.insert((ty, nothrow), signature);
         Ok(signature)
     }

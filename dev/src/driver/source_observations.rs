@@ -20,13 +20,16 @@ impl SourceObservations {
         let Some(s) = self.syntax else {
             return Ok(());
         };
-        if self.view == Some(super::ast::EmitMode::Types) {
+        if matches!(
+            self.view,
+            Some(super::ast::EmitMode::Types | super::ast::EmitMode::Semantics)
+        ) {
             let Some(g) = self.semantic else {
                 return Ok(());
             };
             out.write_all(b"cppgm++ stats ")?;
             out.write_all(path)?;
-            return writeln!(
+            writeln!(
                 out,
                 ": tokens={} scopes={} bindings={} entities={} types={} names={} lookups={} member_cache={} parser_kept_searches={} constant_evaluations={} constant_steps={} syntax_arena_bytes={} semantic_arena_bytes={} parse_ms={} analyze_ms={} print_ms={} peak_rss_kb={peak_rss}",
                 s.tokens,
@@ -45,7 +48,34 @@ impl SourceObservations {
                 self.parse_ms,
                 self.analyze_ms,
                 self.print_ms
-            );
+            )?;
+            if self.view == Some(super::ast::EmitMode::Semantics) {
+                out.write_all(b"cppgm++ semantics ")?;
+                out.write_all(path)?;
+                let work = g.work;
+                writeln!(
+                    out,
+                    ": expressions={} conversions={} resolutions={} candidates={} specializations={} demands={} override_steps={} virtual_slots={} instantiated_classes={} instantiated_functions={} instantiated_arguments={} instantiated_variables={} value_substitutions={} partial_candidates={} substitution_failures={} limited_lookups={} base_steps={}",
+                    work.expressions,
+                    work.conversions,
+                    work.resolutions,
+                    work.candidates,
+                    work.specializations,
+                    work.demands,
+                    work.override_steps,
+                    work.virtual_slots,
+                    work.instantiated_classes,
+                    work.instantiated_functions,
+                    work.instantiated_arguments,
+                    work.instantiated_variables,
+                    work.value_substitutions,
+                    work.partial_candidates,
+                    work.substitution_failures,
+                    work.limited_lookups,
+                    work.base_steps
+                )?;
+            }
+            return Ok(());
         }
         out.write_all(b"cppgm++ stats ")?;
         out.write_all(path)?;

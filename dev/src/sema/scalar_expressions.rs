@@ -594,7 +594,16 @@ impl Analyzer<'_> {
         category: V,
     ) -> Result<ExprFacts, Error> {
         let ty = self.graph.types.canonical_function(ty)?;
+        self.graph.work.totals.expressions += 1;
         Ok(ExprFacts::new(ty, category))
+    }
+    pub(super) fn copy_expression_facts(&mut self, source: ExprFacts) -> Result<ExprFacts, Error> {
+        let mut copy = self.new_expression_facts(source.ty, source.category)?;
+        copy = ExprFacts {
+            ty: copy.ty,
+            ..source
+        };
+        Ok(copy)
     }
     pub(super) fn scalar_binary_chain(
         &mut self,

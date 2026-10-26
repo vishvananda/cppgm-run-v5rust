@@ -213,3 +213,66 @@ fn opened_source_read_failures_remain_unlocated_and_skip_statistics()
     }
     Ok(())
 }
+
+#[test]
+fn semantic_reports_follow_success_and_do_not_change_the_view()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = Scratch(
+        std::env::temp_dir().join(format!("cppgm-semantic-reports-{}", std::process::id())),
+    );
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("input.cpp");
+    let output = directory.0.join("view");
+    std::fs::write(
+        &source,
+        b"void target(); int main(){target(); return 1+2;}\n",
+    )?;
+    let mut command = Command::new(env!("CARGO_BIN_EXE_cppgm"));
+    command
+        .args(["--emit-semantics", "-o"])
+        .arg(&output)
+        .arg(&source);
+    let plain = command.output()?;
+    assert!(plain.status.success());
+    assert!(plain.stderr.is_empty());
+    let bytes = std::fs::read(&output)?;
+    command.arg("--stats");
+    let reported = command.output()?;
+    assert!(reported.status.success());
+    assert!(reported.stdout.is_empty());
+    assert_eq!(std::fs::read(&output)?, bytes);
+    let stderr = String::from_utf8(reported.stderr)?;
+    let lines: Vec<_> = stderr.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].starts_with("cppgm++ stats "));
+    assert!(lines[1].starts_with("cppgm++ semantics "));
+    let work = counters(lines[1]);
+    for field in ["expressions", "conversions", "demands"] {
+        assert!(
+            work.get(field)
+                .ok_or("missing semantic observation")?
+                .parse::<u64>()?
+                > 0
+        );
+    }
+    for invalid in [
+        b"int main(){return ;\n".as_slice(),
+        b"int main(){return missing;}\n",
+    ] {
+        std::fs::write(&source, invalid)?;
+        let rejected = command.output()?;
+        assert_eq!(rejected.status.code(), Some(1));
+        let stderr = String::from_utf8(rejected.stderr)?;
+        assert!(stderr.starts_with("ERROR: "));
+        assert!(!stderr.contains("cppgm++ stats "));
+        assert!(!stderr.contains("cppgm++ semantics "));
+    }
+    command.arg("--stats");
+    let repeated = command.output()?;
+    assert_eq!(repeated.status.code(), Some(1));
+    assert_eq!(
+        repeated.stderr,
+        b"ERROR: unsupported option in emit mode: --stats\n"
+    );
+    Ok(())
+}

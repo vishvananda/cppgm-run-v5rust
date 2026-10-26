@@ -4,6 +4,9 @@ use std::io::Write;
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Work {
+    pub(crate) expressions: usize,
+    pub(crate) conversions: usize,
+    pub(crate) demands: usize,
     pub(crate) specializations: usize,
     pub(crate) instantiated_classes: usize,
     pub(crate) instantiated_functions: usize,
@@ -45,6 +48,9 @@ impl Observations {
 impl Work {
     pub(crate) fn add(&mut self, other: Self) {
         for (counter, increment) in [
+            (&mut self.expressions, other.expressions),
+            (&mut self.conversions, other.conversions),
+            (&mut self.demands, other.demands),
             (&mut self.specializations, other.specializations),
             (&mut self.instantiated_classes, other.instantiated_classes),
             (

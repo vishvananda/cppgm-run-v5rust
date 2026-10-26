@@ -103,6 +103,11 @@ impl Analyzer<'_> {
         postfix: bool,
         scope: ScopeId,
     ) -> Result<Option<ExprFacts>, Error> {
+        // .* has no overloaded form; the frozen combine dispatch handles it
+        // directly before operator lookup, even with a class left operand.
+        if op == P::DotStar {
+            return Ok(None);
+        }
         let mut overloadable = false;
         let mut class_operand = false;
         for &operand in operands {
@@ -443,7 +448,7 @@ impl Analyzer<'_> {
             } else {
                 self.check_binding_temporary(facts, conversion, scope, operand_location)?;
             }
-            facts.conversion = Some(conversion);
+            self.record_conversion(&mut facts, conversion);
             self.odr_use_constants(operand, Some(conversion))?;
             self.graph.expression_facts.set(operand, facts);
             if !member || index != 0 {

@@ -237,11 +237,6 @@ fn invocation(args: &[OsString], mode: EmitMode) -> Result<Invocation<'_>, CliEr
         ) {
             return Err(CliError::Message("invalid usage".to_owned()));
         }
-        if arg == "--stats" && mode == EmitMode::Semantics {
-            return Err(CliError::Missing(
-                "AST statistics and hosted/preprocessing invocation options",
-            ));
-        }
         if arg.as_bytes().starts_with(b"-") {
             return Err(CliError::Diagnostic(
                 [b"unsupported option in emit mode: ", arg.as_bytes()].concat(),
@@ -328,7 +323,7 @@ fn run() -> Result<(), CliError> {
             b"--emit-ast" | b"--emit-types" | b"--emit-semantics" | b"--emit-lowir"
         )
     });
-    let statistics = (lowir || ast || types) && consume_flag(&mut args, b"--stats");
+    let statistics = (lowir || ast || types || semantics) && consume_flag(&mut args, b"--stats");
     let validate = lowir && consume_flag(&mut args, b"--validate");
     let Invocation {
         output: destination,

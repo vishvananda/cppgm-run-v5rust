@@ -891,10 +891,17 @@ impl<'tree> Analyzer<'tree> {
             else {
                 return Err(Error::Invariant("body without function type"));
             };
-            self.body_context = Some(super::procedural_statements::BodyContext::new(
-                result,
-                body.entity,
-            ));
+            let mut context = super::procedural_statements::BodyContext::new(result, body.entity);
+            if body.template_depth == 0
+                && (self.graph.entity(body.entity).definition_emission
+                    == super::function_demands::DefinitionEmission::Demanded
+                    || self.lowering()
+                        && self.graph.entity(body.entity).inline
+                            == super::specifiers::InlinePreference::Inline)
+            {
+                context.demand_epoch = Some(self.graph.demand_marks.fresh_epoch());
+            }
+            self.body_context = Some(context);
             let placeholder = self.holds_auto(result).then_some(result);
             if placeholder.is_some() {
                 self.graph

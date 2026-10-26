@@ -211,7 +211,7 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(id).location,
                 !c_style,
             )?;
-            facts.conversion = Some(conversion);
+            self.record_conversion(&mut facts, conversion);
             self.graph.expression_facts.set(operand, facts);
             let mut result = self.new_expression_facts(goal, V::Prvalue)?;
             if let Some(path) = facts.base_path {
@@ -284,18 +284,21 @@ impl Analyzer<'_> {
             ));
         }
         let mut facts = source;
-        facts.conversion = Some(Conversion {
-            target: goal,
-            result: goal,
-            first: L::None,
-            second: C::None,
-            rank: R::Conversion,
-            qualification: false,
-            initialization: false,
-            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
-            temporary: false,
-            reference_source: ReferenceSource::Other,
-        });
+        self.record_conversion(
+            &mut facts,
+            Conversion {
+                target: goal,
+                result: goal,
+                first: L::None,
+                second: C::None,
+                rank: R::Conversion,
+                qualification: false,
+                initialization: false,
+                list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
+                temporary: false,
+                reference_source: ReferenceSource::Other,
+            },
+        );
         self.graph.expression_facts.set(operand, facts);
         self.new_expression_facts(goal, V::Prvalue)
     }
@@ -423,18 +426,21 @@ impl Analyzer<'_> {
         )?;
         let mut facts = source;
         facts.base_path = Some(path);
-        facts.conversion = Some(Conversion {
-            target: goal,
-            result: goal,
-            first: L::None,
-            second: C::None,
-            rank: R::Conversion,
-            qualification: false,
-            initialization: false,
-            list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
-            temporary: false,
-            reference_source: ReferenceSource::Other,
-        });
+        self.record_conversion(
+            &mut facts,
+            Conversion {
+                target: goal,
+                result: goal,
+                first: L::None,
+                second: C::None,
+                rank: R::Conversion,
+                qualification: false,
+                initialization: false,
+                list_initialization: crate::sema::expression_facts::ListInitialization::Ordinary,
+                temporary: false,
+                reference_source: ReferenceSource::Other,
+            },
+        );
         self.graph.expression_facts.set(operand, facts);
         let mut facts = self.new_expression_facts(goal, V::Prvalue)?;
         facts.base_path = Some(path);

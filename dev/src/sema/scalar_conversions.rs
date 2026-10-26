@@ -17,6 +17,11 @@ enum SequenceContext {
 }
 
 impl Analyzer<'_> {
+    pub(super) fn record_conversion(&mut self, facts: &mut ExprFacts, conversion: Conversion) {
+        self.graph.work.totals.conversions += 1;
+        facts.conversion = Some(conversion);
+    }
+
     pub(super) fn type_cv(&self, mut ty: TypeId) -> Cv {
         while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
             ty = element;
@@ -492,7 +497,7 @@ impl Analyzer<'_> {
                 .expression_facts
                 .set_function_conversion(id, step);
             let mut original = self.graph.expression_facts.get(id)?;
-            original.conversion = Some(conversion);
+            self.record_conversion(&mut original, conversion);
             self.graph.expression_facts.set(id, original);
             return Ok(());
         }
@@ -524,7 +529,7 @@ impl Analyzer<'_> {
             )?;
         }
         self.odr_use_constants(id, Some(conversion))?;
-        facts.conversion = Some(conversion);
+        self.record_conversion(&mut facts, conversion);
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }

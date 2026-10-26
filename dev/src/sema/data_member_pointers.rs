@@ -153,7 +153,7 @@ impl Analyzer<'_> {
         let mut facts = source;
         facts.base_path =
             self.conversion_base_path(source, conversion, scope, location, !c_style)?;
-        facts.conversion = Some(conversion);
+        self.record_conversion(&mut facts, conversion);
         self.graph.expression_facts.set(operand, facts);
         let mut result = self.new_expression_facts(goal, V::Prvalue)?;
         result.reference_cast = Some(goal);

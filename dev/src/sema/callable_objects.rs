@@ -155,7 +155,7 @@ impl Analyzer<'_> {
             let signature = entity
                 .ty
                 .ok_or(Error::Invariant("surrogate conversion signature"))?;
-            let mut result = self.call_result(signature)?.ty;
+            let mut result = self.call_result_view(signature)?.ty;
             if let TypeKind::Pointer(element) = self.graph.types.get(result).kind {
                 result = element;
             }

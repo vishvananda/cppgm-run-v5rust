@@ -12,6 +12,7 @@ use crate::{
     syntax::ast::{self, Condition},
 };
 pub(super) struct BodyContext {
+    pub demand_epoch: Option<super::function_demands::DemandEpoch>,
     pub object_pointer: Option<TypeId>,
     pub return_deduction: super::return_deduction::ReturnDeduction,
     pub placeholder: Option<TypeId>,
@@ -41,6 +42,7 @@ pub(super) enum Control {
 impl BodyContext {
     pub(super) fn new(result: TypeId, entity: super::graph::EntityId) -> Self {
         Self {
+            demand_epoch: None,
             object_pointer: None,
             return_deduction: super::return_deduction::ReturnDeduction::Fixed,
             placeholder: None,
@@ -498,7 +500,7 @@ impl Analyzer<'_> {
                         .binding(converter)
                         .ty
                         .ok_or(Error::Invariant("conversion signature"))?;
-                    source = self.call_result(signature)?.ty;
+                    source = self.call_result_view(signature)?.ty;
                 }
                 (source, self.graph.binding_scope(binding))
             }

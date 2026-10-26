@@ -50,7 +50,7 @@ impl Analyzer<'_> {
                     .binding(binding)
                     .ty
                     .ok_or(Error::Invariant("conditional converter signature"))?;
-                if self.call_result(signature)?.category == other.category {
+                if self.call_result_view(signature)?.category == other.category {
                     return Ok(Match::Glvalue(Some(sequence)));
                 }
             }

@@ -26,24 +26,55 @@ enum DemandKey {
     Function(EntityId),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct DemandEpoch(u32);
+impl DemandEpoch {
+    const ROOT: Self = Self(1);
+}
+#[derive(Clone, Copy)]
+struct DemandCursor {
+    epoch: DemandEpoch,
+    owner: Option<EntityId>,
+    index: usize,
+}
+pub(super) struct DemandMarks {
+    next_epoch: u32,
+    latest: std::collections::HashMap<DemandKey, DemandCursor>,
+}
+impl Default for DemandMarks {
+    fn default() -> Self {
+        Self {
+            next_epoch: DemandEpoch::ROOT.0,
+            latest: std::collections::HashMap::new(),
+        }
+    }
+}
+impl DemandMarks {
+    pub(super) fn fresh_epoch(&mut self) -> DemandEpoch {
+        // C++'s unsigned epoch counter wraps deliberately at its target width.
+        self.next_epoch = self.next_epoch.wrapping_add(1);
+        DemandEpoch(self.next_epoch)
+    }
+}
+
 #[derive(Default)]
 pub(super) struct DemandList {
     records: Vec<Demand>,
-    index: std::collections::HashMap<DemandKey, usize>,
     pub(super) names_enclosing_statics: bool,
 }
 impl DemandList {
-    fn record(&mut self, key: DemandKey, demand: Demand) {
-        if let Some(&index) = self.index.get(&key) {
-            if let (Demand::Function { call: old_call, .. }, Demand::Function { call, .. }) =
-                (&mut self.records[index], demand)
-            {
-                *old_call |= call;
-            }
-        } else {
-            self.index.insert(key, self.records.len());
-            self.records.push(demand);
+    fn merge_call(&mut self, index: usize, demand: Demand) {
+        if let Demand::Function { call: old_call, .. } = &mut self.records[index] {
+            *old_call |= match demand {
+                Demand::Constructor(_) => true,
+                Demand::Function { call, .. } => call,
+            };
         }
+    }
+    fn append(&mut self, demand: Demand) -> usize {
+        let index = self.records.len();
+        self.records.push(demand);
+        index
     }
     pub(super) fn as_slice(&self) -> &[Demand] {
         &self.records
@@ -94,23 +125,22 @@ impl Analyzer<'_> {
                 self.graph.function_templates.bodies.semantic_demand(entity);
             }
         }
-        // Ordinary definitions contribute roots. Inline/constexpr functions retain
-        // their dependencies until that member itself is demanded for output.
-        let owner = self
+        let active = self
             .body_context
             .as_ref()
-            .map(|body| body.entity)
-            .filter(|&entity| {
-                self.graph.entity(entity).definition_emission == DefinitionEmission::Demanded
-                    // Semantic dumps retain potentially evaluated uses. Output
-                    // boundaries additionally keep ordinary inline uses on the
-                    // function that must be reached before their code is emitted.
-                    || self.lowering()
-                        && self.graph.entity(entity).inline
-                            == super::specifiers::InlinePreference::Inline
-            });
+            .and_then(|body| body.demand_epoch.map(|epoch| (body.entity, epoch)));
+        let (owner, epoch) = active.map_or((None, DemandEpoch::ROOT), |(owner, epoch)| {
+            (Some(owner), epoch)
+        });
         let key = match demand {
-            Demand::Constructor(id) => DemandKey::Constructor(id),
+            Demand::Constructor(id) => self
+                .graph
+                .constructors
+                .get(id)
+                .binding
+                .map_or(DemandKey::Constructor(id), |binding| {
+                    DemandKey::Function(self.graph.binding(binding).entity)
+                }),
             Demand::Function { binding, .. } => {
                 let function = self.graph.binding(binding).entity;
                 let entity = self.graph.entity(function);
@@ -126,11 +156,31 @@ impl Analyzer<'_> {
                 DemandKey::Function(function)
             }
         };
-        if let Some(owner) = owner {
-            self.graph.entity_mut(owner).demands.record(key, demand);
-        } else {
-            self.graph.root_demands.record(key, demand);
+        if let Some(previous) = self.graph.demand_marks.latest.get(&key).copied()
+            && previous.epoch == epoch
+        {
+            let list = if let Some(owner) = previous.owner {
+                &mut self.graph.entity_mut(owner).demands
+            } else {
+                &mut self.graph.root_demands
+            };
+            list.merge_call(previous.index, demand);
+            return;
         }
+        let index = if let Some(owner) = owner {
+            self.graph.entity_mut(owner).demands.append(demand)
+        } else {
+            self.graph.root_demands.append(demand)
+        };
+        self.graph.demand_marks.latest.insert(
+            key,
+            DemandCursor {
+                epoch,
+                owner,
+                index,
+            },
+        );
+        self.graph.work.totals.demands += 1;
     }
 }
 
@@ -222,6 +272,36 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn nested_inline_use_replaces_the_latest_root_demand_mark() {
+        let source = SourceBuffer::new(
+            b"void target(); void root(){ auto a=&target; target(); auto nested=[]{auto b=&target; target();}; auto c=&target; target(); }".to_vec(),
+        ).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"demand-epochs").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"target").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let binding = graph.own(graph.global, name, Filter::Ordinary).unwrap();
+        let target = graph.binding(binding).entity;
+        let uses: Vec<_> = graph
+            .root_demands
+            .as_slice()
+            .iter()
+            .filter_map(|demand| match demand {
+                super::Demand::Function { binding, call }
+                    if graph.binding(*binding).entity == target =>
+                {
+                    Some(*call)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(uses, [true, true]);
+    }
 
     #[test]
     fn implicit_assignment_use_is_class_owned_and_independent_of_emission() {

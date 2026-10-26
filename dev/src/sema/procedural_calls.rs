@@ -459,7 +459,7 @@ impl Analyzer<'_> {
                 } else {
                     self.conversion_base_path(object_facts, conversion, scope, location, false)?
                 };
-                receiver.conversion = Some(conversion);
+                self.record_conversion(&mut receiver, conversion);
                 receiver.base_path = path;
                 if naming != class && naming != home {
                     receiver.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
@@ -564,11 +564,12 @@ impl Analyzer<'_> {
         if bound {
             self.check_member_pointer_call(id, callee, arguments)?;
         }
-        let target = if bound {
-            source
-        } else {
-            self.decayed_type(source)?
-        };
+        let target =
+            if bound || matches!(self.graph.types.get(source).kind, TypeKind::Function { .. }) {
+                source
+            } else {
+                self.decayed_type(source)?
+            };
         let function = match self.graph.types.get(target).kind {
             TypeKind::Function { .. } => target,
             TypeKind::Pointer(element) | TypeKind::BlockPointer(element)
@@ -1405,10 +1406,13 @@ impl Analyzer<'_> {
             self.select_function_designation(arg, binding)?;
             facts = self.graph.expression_facts.get(arg)?;
         }
-        facts.conversion = Some(sequence.application.ok_or(Error::at(
-            self.tree.expressions.get(arg).location,
-            "invalid implicit conversion",
-        ))?);
+        self.record_conversion(
+            &mut facts,
+            sequence.application.ok_or(Error::at(
+                self.tree.expressions.get(arg).location,
+                "invalid implicit conversion",
+            ))?,
+        );
         self.check_binding_temporary(
             facts,
             facts
@@ -1533,7 +1537,7 @@ impl Analyzer<'_> {
                 reference_source: ReferenceSource::Other,
             });
         conversion.rank = R::Ellipsis;
-        facts.conversion = Some(conversion);
+        self.record_conversion(&mut facts, conversion);
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }
@@ -1553,6 +1557,15 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn call_result(&mut self, function: TypeId) -> Result<ExprFacts, Error> {
+        let (ty, category) = self.call_result_shape(function)?;
+        self.new_expression_facts(ty, category)
+    }
+    pub(super) fn call_result_view(&mut self, function: TypeId) -> Result<ExprFacts, Error> {
+        let (ty, category) = self.call_result_shape(function)?;
+        let ty = self.graph.types.canonical_function(ty)?;
+        Ok(ExprFacts::new(ty, category))
+    }
+    fn call_result_shape(&mut self, function: TypeId) -> Result<(TypeId, V), Error> {
         let TypeKind::Function { result, .. } = self.graph.types.get(function).kind else {
             return Err(Error::Invariant("call without function type"));
         };
@@ -1566,14 +1579,14 @@ impl Analyzer<'_> {
             } else {
                 V::Xvalue
             };
-            self.new_expression_facts(element, category)
+            Ok((element, category))
         } else {
             let result = if matches!(self.graph.types.get(result).kind, TypeKind::Class(_)) {
                 result
             } else {
                 self.bare_type(result)?
             };
-            self.new_expression_facts(result, V::Prvalue)
+            Ok((result, V::Prvalue))
         }
     }
 }

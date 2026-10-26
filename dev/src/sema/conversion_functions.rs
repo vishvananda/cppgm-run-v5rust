@@ -291,7 +291,7 @@ impl Analyzer<'_> {
                 continue;
             }
             let signature = entity.ty.ok_or(Error::Invariant("conversion signature"))?;
-            let result = self.call_result(signature)?.ty;
+            let result = self.call_result_view(signature)?.ty;
             let accepts = match target {
                 ConversionTarget::Integral => self.is_integral_operand(result),
                 ConversionTarget::IntegralOrEnumeration => self.integral_kind(result).is_some(),
@@ -343,7 +343,7 @@ impl Analyzer<'_> {
             .binding(binding)
             .ty
             .ok_or(Error::Invariant("conversion signature"))?;
-        let produced = self.call_result(signature)?;
+        let produced = self.call_result_view(signature)?;
         let target = self.decayed_type(produced.ty)?;
         let after = self
             .standard_conversion(produced, target, false)?
@@ -533,7 +533,7 @@ impl Analyzer<'_> {
             let ty = entity
                 .ty
                 .ok_or(Error::Invariant("conversion without signature"))?;
-            let produced = self.call_result(ty)?;
+            let produced = self.call_result_view(ty)?;
             if direct_lvalue && produced.category != ValueCategory::Lvalue {
                 continue;
             }
@@ -595,7 +595,7 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("conversion without signature"))?;
-        let produced = self.call_result(ty)?;
+        let produced = self.call_result_view(ty)?;
         let after = sequence.application.ok_or(Error::Invariant(
             "conversion function without second sequence",
         ))?;
@@ -710,7 +710,7 @@ impl Analyzer<'_> {
             ConversionUse::Scalar,
         )?;
         if let Some(class) = self.graph.class_of(sequence.conversion.target) {
-            let produced = self.new_expression_facts(selected.result, selected.category)?;
+            let produced = ExprFacts::new(selected.result, selected.category);
             // operand_constructor elides only a prvalue of the destination's own
             // unqualified class; it does not select or demand a copy for it.
             if selected.category != ValueCategory::Prvalue
@@ -741,7 +741,7 @@ impl Analyzer<'_> {
             self.graph.types.get(sequence.conversion.target).kind,
             TypeKind::Reference { .. }
         ) {
-            let produced = self.new_expression_facts(selected.result, selected.category)?;
+            let produced = ExprFacts::new(selected.result, selected.category);
             self.check_temporary_destruction(produced, scope, location)?;
         }
         if matches!(
@@ -758,7 +758,7 @@ impl Analyzer<'_> {
             .expression_facts
             .set_function_conversion(id, selected);
         let mut facts = source;
-        facts.conversion = Some(sequence.conversion);
+        self.record_conversion(&mut facts, sequence.conversion);
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }

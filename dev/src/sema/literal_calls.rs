@@ -158,6 +158,10 @@ impl Analyzer<'_> {
         {
             return Err(Error::at(location, missing));
         }
+        let first = self.new_expression_facts(first.ty, first.category)?;
+        let second = second
+            .map(|facts| self.new_expression_facts(facts.ty, facts.category))
+            .transpose()?;
         let operands = [first, second.unwrap_or(first)];
         let binding = self.resolve_value_call(
             location,
