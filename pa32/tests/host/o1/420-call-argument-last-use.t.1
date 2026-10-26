@@ -1,0 +1,14 @@
+extern long consume(void *, long, long, const long *, long);
+
+long load_and_pass(const long *address, long end)
+{
+  const long *begin = reinterpret_cast<const long *>(*address);
+  long distance = end - reinterpret_cast<long>(begin);
+  return consume(0, 0, 0, begin, distance);
+}
+
+int main()
+{
+  long value = 17;
+  return load_and_pass(&value, 25) == 25 ? 0 : 1;
+}

@@ -614,20 +614,21 @@ impl Facts {
             let Alias::Temporary(temp) = self.resolve(body, *arg) else {
                 continue;
             };
-            if temp.index() < body.parameter_count {
+            let [part] = plan.layout.parts(layout) else {
                 continue;
-            }
-            let interval = &mut self.intervals[temp.index()];
+            };
+            let Some(register) = part.register else {
+                continue;
+            };
+            let interval = &self.intervals[temp.index()];
             let address = body
                 .temp(temp)
                 .definition
                 .is_some_and(|def| matches!(body.instruction(def).kind, I::Addr(_)));
-            if (interval.uses == 1 || address)
-                && interval.last == Some(pos)
-                && interval.hint.is_none()
-                && let [part] = plan.layout.parts(layout)
-            {
-                interval.hint = part.register;
+            let direct = temp.index() >= body.parameter_count
+                && (interval.uses == 1 || self.level >= 1 && interval.last == Some(pos) || address);
+            if register.code() >= 16 || direct {
+                self.hint(body, *arg, register, pos);
             }
         }
     }
