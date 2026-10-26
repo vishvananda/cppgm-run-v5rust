@@ -111,6 +111,7 @@ mod library_builtins;
 mod linkage;
 mod list_arguments;
 mod literal_calls;
+mod literal_numbers;
 mod literal_types;
 mod local_classes;
 mod local_constants;

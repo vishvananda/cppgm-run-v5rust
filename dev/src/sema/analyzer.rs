@@ -41,7 +41,6 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) source_site: Option<SourceOffset>,
     pub(super) text_literals:
         std::collections::HashMap<crate::lex::identifiers::NameId, ast::ExprId>,
-    pub(super) literal_scanner: Box<crate::types::floating::FloatingScanner>,
     pub(super) identifiers: &'tree mut crate::lex::identifiers::Identifiers,
     pub(super) tree: &'tree mut Tree,
     pub(super) graph: Graph,
@@ -268,7 +267,6 @@ impl<'tree> Analyzer<'tree> {
             positions,
             source_site: None,
             text_literals: std::collections::HashMap::new(),
-            literal_scanner: Box::default(),
             identifiers,
             deduced_initializer: None,
             placeholder_scratch: super::placeholders::PlaceholderScratch::default(),

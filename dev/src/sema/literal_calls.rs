@@ -7,6 +7,7 @@ use super::{
     function_names::{SpecialName, ValueKey},
     function_resolution::CallTarget,
     graph::{BindingId, BindingKind, FunctionAvailability, ScopeId},
+    literal_numbers::{CookedFloating, NumberId},
     lookup::Filter,
     types::{Cv, Scalar, TypeId, TypeKind},
 };
@@ -35,7 +36,7 @@ pub(crate) enum LiteralCall {
         bits: u64,
     },
     Floating {
-        digits: usize,
+        number: NumberId,
     },
     Raw {
         digits: usize,
@@ -261,7 +262,13 @@ impl Analyzer<'_> {
             )?;
             LiteralCall::Raw { digits, object }
         } else if form == LiteralForm::Floating {
-            LiteralCall::Floating { digits }
+            let digits = self
+                .literal_bytes
+                .get(literal.spelling)
+                .get(..digits)
+                .ok_or(Error::Invariant("numeric literal digits outside spelling"))?;
+            let number = self.graph.literal_numbers.register(id, digits)?;
+            LiteralCall::Floating { number }
         } else {
             let spelling = self.literal_bytes.get(literal.spelling);
             let digits = spelling
@@ -374,7 +381,7 @@ impl Analyzer<'_> {
             constants::Constant,
             constexpr_calls::ConstantArguments,
         };
-        let ast::ExprKind::Literal(literal) = self.tree.expressions.get(id).kind else {
+        let ast::ExprKind::Literal(_) = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant(
                 "literal invocation without literal syntax",
             ));
@@ -418,24 +425,22 @@ impl Analyzer<'_> {
                 });
                 1
             }
-            LiteralCall::Floating { digits } => {
-                let digits = self
-                    .literal_bytes
-                    .get(literal.spelling)
-                    .get(..digits)
-                    .ok_or(Error::Invariant("numeric literal digits outside spelling"))?;
-                let data = self
-                    .literal_scanner
-                    .scan(digits, FundamentalType::LongDouble)
-                    .map_err(|_| Error::Limit("constant literal floating scan"))?
-                    .ok_or_else(|| {
-                        nonconstant(location, "a floating literal outside constant evaluation")
-                    })?;
-                let mut bytes = [0; 16];
-                bytes[..data.as_slice().len()].copy_from_slice(data.as_slice());
+            LiteralCall::Floating { number } => {
+                let bits = match self.graph.literal_numbers.value(number) {
+                    CookedFloating::Value(bits) => bits,
+                    CookedFloating::OutsideRange => {
+                        return Err(nonconstant(
+                            location,
+                            "a floating literal outside constant evaluation",
+                        ));
+                    }
+                    CookedFloating::ScanLimit => {
+                        return Err(Error::Limit("constant literal floating scan"));
+                    }
+                };
                 let value = crate::types::float_value::BinaryFloat::from_bits(
                     crate::types::float_value::Format::Extended,
-                    u128::from_le_bytes(bytes),
+                    bits,
                 )
                 .ok_or(Error::Invariant("constant literal floating encoding"))?;
                 values[0] = Value::Floating(super::constant_floats::Floating {
@@ -573,7 +578,11 @@ mod tests {
                     integers.push((analyzer.graph.types.get(source).kind.clone(), bits));
                     FundamentalType::UnsignedLongLongInt
                 }
-                Some(LiteralCall::Floating { .. }) => {
+                Some(LiteralCall::Floating { number }) => {
+                    assert!(matches!(
+                        analyzer.graph.literal_numbers.value(number),
+                        CookedFloating::Value(0x3fff_c000_0000_0000_0000)
+                    ));
                     floating += 1;
                     FundamentalType::LongDouble
                 }

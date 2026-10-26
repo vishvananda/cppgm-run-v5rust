@@ -214,7 +214,6 @@ pub(super) struct Symbols<'a, 'source> {
     signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
     complex_helpers: HashMap<(bool, char), SymbolId>,
     pub(super) soft_float_helpers: HashMap<super::soft_float::Helper, SymbolId>,
-    numeric_scanner: crate::types::floating::FloatingScanner,
     pub data: super::data::Objects,
     vtables: vtables::Tables,
     base_routes: virtual_bases::Routes,
@@ -344,7 +343,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
             signatures: HashMap::new(),
             soft_float_helpers: HashMap::new(),
             complex_helpers: HashMap::new(),
-            numeric_scanner: crate::types::floating::FloatingScanner::default(),
         }
     }
     pub(super) fn publish_finalizers(&mut self, output: &mut Vec<super::shutdown::Finalizer>) {
@@ -726,23 +724,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn literal_spelling(&self, literal: ast::Literal) -> &[u8] {
         self.cursor.spellings.get(literal.spelling)
-    }
-    pub(super) fn numeric_literal_value(
-        &mut self,
-        literal: ast::Literal,
-        digits: usize,
-    ) -> Result<Option<crate::types::floating::ScalarBytes>, Error> {
-        let digits = self
-            .cursor
-            .spellings
-            .get(literal.spelling)
-            .get(..digits)
-            .ok_or(crate::sema::Error::Invariant(
-                "numeric literal digits outside spelling",
-            ))?;
-        self.numeric_scanner
-            .scan(digits, crate::types::FundamentalType::LongDouble)
-            .map_err(|_| crate::lowir::Error::Limit.into())
     }
     fn presentation_scope_label(
         &mut self,

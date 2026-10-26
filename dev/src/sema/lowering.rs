@@ -21,6 +21,7 @@ pub(crate) use super::floating_intrinsics::FloatingIntrinsic;
 pub(crate) use super::integer_intrinsics::BitOperation;
 pub(crate) use super::lambdas::ClosureNamingContext;
 pub(crate) use super::literal_calls::LiteralCall;
+pub(crate) use super::literal_numbers::{CookedFloating, NumberId};
 pub(crate) use super::overflow_intrinsics::OverflowOperation;
 pub(crate) use super::predefined_names::SourceFunction;
 pub(crate) use super::runtime_intrinsics::RuntimeIntrinsic;
@@ -2209,6 +2210,9 @@ impl Graph {
             Some(LiteralCall::String { object, .. } | LiteralCall::Raw { object, .. }) => object,
             _ => facts.ty,
         })
+    }
+    pub(crate) fn lower_cooked_floating(&self, number: NumberId) -> CookedFloating {
+        self.literal_numbers.value(number)
     }
     pub(crate) fn lower_literal_call(&self, id: ast::ExprId) -> Result<Option<LiteralCall>, Error> {
         Ok(self.expression_facts.get(id)?.literal_call)

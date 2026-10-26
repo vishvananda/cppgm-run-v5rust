@@ -12,7 +12,7 @@ use crate::{
         model::{Call, InstructionKind as I, Value},
         vocabulary::{Convert, Type},
     },
-    sema::lowering::{CallTarget, LiteralCall, TypeView},
+    sema::lowering::{CallTarget, CookedFloating, LiteralCall, TypeView},
     syntax::ast::{self, ExprKind},
 };
 
@@ -26,7 +26,7 @@ impl Function<'_, '_, '_, '_> {
         destination: Option<Value>,
     ) -> Result<RValue, Error> {
         let id = self.without_parentheses(id);
-        let ExprKind::Literal(literal) = self.tree.expressions.get(id).kind else {
+        let ExprKind::Literal(_) = self.tree.expressions.get(id).kind else {
             return Err(Error::Missing("literal call syntax"));
         };
         let CallTarget::Direct(entity) = self.graph.lower_call(id)? else {
@@ -82,18 +82,21 @@ impl Function<'_, '_, '_, '_> {
                 let value = self.convert(value, parameters[0], Context::Initialization)?;
                 (Some([value.value; 2]), 1)
             }
-            LiteralCall::Floating { digits } => {
-                let bytes = self.symbols.numeric_literal_value(literal, digits)?.ok_or(
-                    crate::sema::Error::at(
-                        self.tree.expressions.get(id).location,
-                        "a floating literal outside its type's range",
-                    ),
-                )?;
-                let mut bits = [0; 16];
-                bits[..bytes.as_slice().len()].copy_from_slice(bytes.as_slice());
+            LiteralCall::Floating { number } => {
+                let bits = match self.graph.lower_cooked_floating(number) {
+                    CookedFloating::Value(bits) => bits,
+                    CookedFloating::OutsideRange => {
+                        return Err(crate::sema::Error::at(
+                            self.tree.expressions.get(id).location,
+                            "a floating literal outside its type's range",
+                        )
+                        .into());
+                    }
+                    CookedFloating::ScanLimit => return Err(crate::lowir::Error::Limit.into()),
+                };
                 let value = self
                     .builder
-                    .constant(Constant::Float(FloatKind::F80, u128::from_le_bytes(bits)))?;
+                    .constant(Constant::Float(FloatKind::F80, bits))?;
                 (Some([value; 2]), 1)
             }
             LiteralCall::Raw { .. } => {
