@@ -267,7 +267,11 @@ impl Flow {
         };
         if f.blocks[b].range.len() >= 3 {
             let test = f.instructions[end - 3].op;
-            let zero = matches!(test, Op::Scalar(ScalarOp::Condition(FlagOp::Test(..))))
+            let self_test = match test {
+                Op::Scalar(ScalarOp::Condition(flag)) => flag.self_test(),
+                _ => None,
+            };
+            let zero = self_test.is_some()
                 || matches!(
                     test,
                     Op::Scalar(ScalarOp::Condition(FlagOp::Compare(
@@ -284,13 +288,16 @@ impl Flow {
                 {
                     return if cond == C::Equal { 700 } else { 300 };
                 }
-                let byte = matches!(
-                    test,
-                    Op::Scalar(ScalarOp::Condition(
-                        FlagOp::Test(Type::I1 | Type::I8 | Type::U8, _)
-                            | FlagOp::Compare(Type::I1 | Type::I8 | Type::U8, _, _)
-                    ))
-                );
+                let byte = self_test
+                    .is_some_and(|(ty, _)| matches!(ty, Type::I1 | Type::I8 | Type::U8))
+                    || matches!(
+                        test,
+                        Op::Scalar(ScalarOp::Condition(FlagOp::Compare(
+                            Type::I1 | Type::I8 | Type::U8,
+                            _,
+                            _
+                        )))
+                    );
                 if byte && zero {
                     return if cond == C::Equal { 600 } else { 400 };
                 }

@@ -29,7 +29,11 @@ fn read_only(op: Op) -> bool {
             ScalarOp::Load(..)
                 | ScalarOp::CompareZero(..)
                 | ScalarOp::Condition(
-                    FlagOp::Compare(..) | FlagOp::CompareFloatLiteral(..) | FlagOp::Test(..)
+                    FlagOp::Compare(..)
+                        | FlagOp::CompareFloatLiteral(..)
+                        | FlagOp::Test(..)
+                        | FlagOp::MaskTest(..)
+                        | FlagOp::BitTest(..)
                 )
         )
     )
@@ -46,7 +50,12 @@ fn simple_width(op: Op) -> u32 {
             | ScalarOp::Extend(ty, _)
             | ScalarOp::ExtendMove(ty, _, _)
             | ScalarOp::CompareZero(ty, _)
-            | ScalarOp::Condition(FlagOp::Compare(ty, ..) | FlagOp::Test(ty, _)),
+            | ScalarOp::Condition(
+                FlagOp::Compare(ty, ..)
+                | FlagOp::Test(ty, _)
+                | FlagOp::MaskTest(ty, ..)
+                | FlagOp::BitTest(ty, ..),
+            ),
         ) => ty,
         _ => Type::I64,
     };
@@ -496,6 +505,31 @@ mod tests {
         f.stack_size = 32;
         f.frame_policy.omit_pointer = true;
         f
+    }
+    #[test]
+    fn a_frame_mask_read_preserves_return_padding_provenance() {
+        let mut f = function(&[
+            Op::Scalar(ScalarOp::Store(
+                Operand::Frame(-16),
+                Type::U8,
+                Operand::Immediate(0xab),
+            )),
+            Op::Scalar(ScalarOp::Condition(
+                super::super::condition_mir::FlagOp::MaskTest(
+                    Type::I64,
+                    Operand::Frame(-16),
+                    Operand::Immediate(1),
+                ),
+            )),
+            Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, Operand::Frame(-16))),
+            Op::Return(None),
+        ]);
+        forward(&mut f);
+        assert!(matches!(f.instructions[2].op, Op::Move(R::RAX, 0xab)));
+        assert!(matches!(
+            f.instructions[0].op,
+            Op::Scalar(ScalarOp::Store(..))
+        ));
     }
     #[test]
     fn partial_return_bytes_use_unwritten_padding_and_release_the_frame() {

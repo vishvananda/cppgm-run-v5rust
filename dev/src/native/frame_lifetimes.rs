@@ -26,7 +26,10 @@ fn plain_access(op: Op) -> bool {
                 | ScalarOp::Store(..)
                 | ScalarOp::CompareZero(..)
                 | ScalarOp::Condition(
-                    FlagOp::Compare(..) | FlagOp::CompareFloatLiteral(..) | FlagOp::Test(..)
+                    FlagOp::Compare(..)
+                        | FlagOp::CompareFloatLiteral(..)
+                        | FlagOp::Test(..)
+                        | FlagOp::MaskTest(..)
                 )
         ) | Op::FloatCopy(_)
             | Op::Bulk(_)

@@ -196,7 +196,9 @@ fn reads(op: &mut Op, mut visit: impl FnMut(&mut Operand)) {
             | ScalarOp::Extend(_, r)
             | ScalarOp::Movzx(r)
             | ScalarOp::SetEqual(r)
-            | ScalarOp::Condition(FlagOp::Set(_, r) | FlagOp::Move(_, r, _)),
+            | ScalarOp::Condition(
+                FlagOp::Set(_, r) | FlagOp::Move(_, r, _) | FlagOp::BitTest(_, r, _),
+            ),
         ) => {
             reg(r);
             operands(op, |v, _| visit(v));
@@ -535,6 +537,42 @@ mod tests {
             .collect();
         f.stack_size = 16;
         Ok(f)
+    }
+    #[test]
+    fn scratch_forwarding_rewrites_both_bit_test_readers() -> Result<(), Error> {
+        let ops = [
+            Op::Scalar(ScalarOp::Store(
+                Operand::Frame(-8),
+                Type::I64,
+                Operand::Register(R::RDI),
+            )),
+            Op::Scalar(ScalarOp::Load(R::R10, Type::I64, Operand::Frame(-8))),
+            Op::Scalar(ScalarOp::Condition(FlagOp::BitTest(
+                Type::I64,
+                R::R10,
+                Operand::Register(R::R10),
+            ))),
+            Op::Move(R::R10, 0),
+            Op::Return(None),
+        ];
+        let mut f = sample(&ops, std::slice::from_ref(&(0..5)))?;
+        f.bindings.push(super::super::mir::Binding {
+            name: None,
+            ty: Type::I64,
+            offset: -8,
+            kind: BindingKind::Temp,
+        });
+        forward(&mut f);
+        assert!(matches!(f.instructions[1].op, Op::Nop));
+        assert!(matches!(
+            f.instructions[2].op,
+            Op::Scalar(ScalarOp::Condition(FlagOp::BitTest(
+                Type::I64,
+                R::RDI,
+                Operand::Register(R::RDI)
+            )))
+        ));
+        Ok(())
     }
     #[test]
     fn calls_forget_scratch_holders_but_keep_callee_saved_home_holders() -> Result<(), Error> {

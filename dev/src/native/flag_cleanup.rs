@@ -124,11 +124,13 @@ pub(super) fn drop_tests(f: &mut Function) {
         let mut known = 0;
         let mut known_at = range.start;
         for i in range.clone().skip(1) {
-            let Op::Scalar(ScalarOp::Condition(
-                FlagOp::Test(ty, reg)
-                | FlagOp::Compare(ty, Operand::Register(reg), Operand::Immediate(0)),
-            )) = f.instructions[i].op
-            else {
+            let Op::Scalar(ScalarOp::Condition(flag)) = f.instructions[i].op else {
+                continue;
+            };
+            let Some((ty, reg)) = flag.self_test().or(match flag {
+                FlagOp::Compare(ty, Operand::Register(r), Operand::Immediate(0)) => Some((ty, r)),
+                _ => None,
+            }) else {
                 continue;
             };
             if reg.code() >= 16 {

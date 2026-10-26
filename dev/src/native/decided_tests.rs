@@ -100,7 +100,12 @@ pub(super) fn thread(f: &mut Function, program: &Program) {
                 break;
             };
             let (ty, r, other, test) = match f.instructions[start].op {
-                Op::Scalar(ScalarOp::Condition(FlagOp::Test(ty, r))) => (ty, r, None, true),
+                Op::Scalar(ScalarOp::Condition(flag)) if flag.self_test().is_some() => {
+                    let Some((ty, r)) = flag.self_test() else {
+                        break;
+                    };
+                    (ty, r, None, true)
+                }
                 Op::Scalar(ScalarOp::Condition(FlagOp::Compare(
                     ty,
                     Operand::Register(r),

@@ -18,6 +18,15 @@ pub(super) enum FlagOp {
     Move(Condition, R, Operand),
 }
 impl FlagOp {
+    pub(super) fn self_test(self) -> Option<(Type, R)> {
+        match self {
+            Self::Test(ty, r) => Some((ty, r)),
+            Self::MaskTest(ty, Operand::Register(a), Operand::Register(b)) if a == b => {
+                Some((ty, a))
+            }
+            _ => None,
+        }
+    }
     pub(super) fn write(self, program: &Program, out: &mut impl Write) -> std::io::Result<()> {
         match self {
             Self::CompareFloatLiteral(kind, left, bits) => {
