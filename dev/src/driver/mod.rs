@@ -4,6 +4,7 @@ mod compatibility;
 pub mod debug_options;
 mod file_identity;
 pub mod pptoken;
+mod source_observations;
 
 pub mod posttoken;
 pub mod ppexpr;

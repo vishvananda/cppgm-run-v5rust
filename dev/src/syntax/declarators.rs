@@ -117,6 +117,30 @@ impl Parser<'_> {
             })
         });
         let names_directly = name.is_some() || nested.is_some_and(|id| self.names_directly(id));
+        let suffixes = self.declarator_suffixes(mode, name, names_directly, member, false)?;
+        let attributes = self.tree.attributes.finish(attribute_start)?;
+        self.tree.declarators.add(Declarator {
+            member_scope: member,
+            attributes,
+            location,
+            abstract_form: matches!(mode, Mode::Abstract | Mode::New | Mode::Conversion),
+            pointers,
+            pack,
+            name,
+            nested,
+            suffixes,
+        })
+    }
+    // Both ordinary declarations and special members use the same suffix
+    // grammar; the latter makes every parameter clause definite.
+    pub(super) fn declarator_suffixes(
+        &mut self,
+        mode: Mode,
+        name: Option<super::ast::Name>,
+        names_directly: bool,
+        member: Option<super::scopes::ScopeId>,
+        special: bool,
+    ) -> Result<List<Suffix>, ParseError> {
         let mut bound_scope = None;
         let suffix_start = self.tree.suffixes.begin();
         loop {
@@ -143,10 +167,11 @@ impl Parser<'_> {
                 self.tree.suffixes.push(Suffix::Array(bound));
                 continue;
             }
-            if mode == Mode::New || !self.at(P::LeftParen)? {
+            if matches!(mode, Mode::New | Mode::Conversion) || !self.at(P::LeftParen)? {
                 break;
             }
             let definite = mode != Mode::Named
+                || special
                 || name.is_some_and(|name| {
                     self.tree
                         .name_lists
@@ -185,18 +210,7 @@ impl Parser<'_> {
         if mode == Mode::Named {
             self.declarator_asm_label()?;
         }
-        let attributes = self.tree.attributes.finish(attribute_start)?;
-        self.tree.declarators.add(Declarator {
-            member_scope: member,
-            attributes,
-            location,
-            abstract_form: matches!(mode, Mode::Abstract | Mode::New | Mode::Conversion),
-            pointers,
-            pack,
-            name,
-            nested,
-            suffixes,
-        })
+        Ok(suffixes)
     }
     pub(super) fn declarator_asm_label(&mut self) -> Result<(), ParseError> {
         if self.keyword()? == Some(K::Asm) {

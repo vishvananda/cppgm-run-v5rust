@@ -476,6 +476,7 @@ impl Parser<'_> {
         )
     }
     fn unary_inner(&mut self) -> Result<ExprId, ParseError> {
+        self.stack_check()?;
         let location = self.location()?;
         if self.coroutine_keyword()? == Some(Coroutine::Await) {
             self.cursor.advance()?;
@@ -910,7 +911,7 @@ impl Parser<'_> {
             None
         };
         let operand = if ty.is_none() {
-            let operand = self.unary()?;
+            let operand = self.unary_inner()?;
             if let ExprKind::Paren(inner) = self.tree.expressions.get(operand).kind {
                 parenthesized = true;
                 Some(inner)

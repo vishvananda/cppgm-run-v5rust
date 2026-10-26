@@ -98,6 +98,12 @@ impl<T> Default for Store<T> {
     }
 }
 impl<T> Store<T> {
+    pub(crate) fn reserved_bytes(&self) -> usize {
+        self.data
+            .capacity()
+            .saturating_mul(std::mem::size_of::<T>())
+    }
+
     pub(crate) fn add(&mut self, value: T) -> Result<Id<T>, ParseError> {
         let index =
             u32::try_from(self.data.len()).map_err(|_| ParseError::Limit("syntax store limit"))?;
@@ -132,6 +138,13 @@ impl<T> Default for Lists<T> {
     }
 }
 impl<T: Copy> Lists<T> {
+    pub(crate) fn reserved_bytes(&self) -> usize {
+        self.data
+            .capacity()
+            .saturating_add(self.scratch.capacity())
+            .saturating_mul(std::mem::size_of::<T>())
+    }
+
     pub(crate) fn begin(&self) -> usize {
         self.scratch.len()
     }
@@ -177,12 +190,78 @@ impl<T: Copy> Lists<T> {
 pub(crate) struct Text {
     begin: u32,
     end: u32,
+    block: Option<std::num::NonZeroU32>,
 }
 #[derive(Default)]
 pub(crate) struct TextStore {
     bytes: Vec<u8>,
+    strings: Vec<Box<[u8]>>,
+    used: usize,
+    string_bytes: usize,
 }
 impl TextStore {
+    /// Source string sequences outlive the tokenizer scratch. The observable
+    /// spelling arena retains the frozen 16-KiB/8-MiB block growth policy.
+    /// A boxed-slice handle is the 16-byte block record; scalar/data copies
+    /// live in the separate typed syntax backing store.
+    pub(crate) fn copy_string(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
+        const HEADER: usize = std::mem::size_of::<Box<[u8]>>();
+        let count = bytes
+            .len()
+            .checked_add(1)
+            .ok_or(ParseError::Limit("syntax spelling limit"))?;
+        if self
+            .strings
+            .last()
+            .is_none_or(|block| count > block.len() - self.used)
+        {
+            let growth = if self.string_bytes == 0 {
+                16 * 1024
+            } else {
+                self.string_bytes.min(8 * 1024 * 1024)
+            };
+            let needed = HEADER
+                .checked_add(count)
+                .and_then(|n| n.checked_add(1))
+                .ok_or(ParseError::Limit("syntax spelling limit"))?;
+            let size = growth.max(needed);
+            self.string_bytes = self
+                .string_bytes
+                .checked_add(size)
+                .ok_or(ParseError::Limit("syntax spelling limit"))?;
+            self.strings.push(vec![0; size - HEADER].into_boxed_slice());
+            self.used = 0;
+        }
+        let block = std::num::NonZeroU32::new(
+            u32::try_from(self.strings.len())
+                .map_err(|_| ParseError::Limit("syntax spelling limit"))?,
+        )
+        .ok_or(ParseError::Invariant("missing spelling block"))?;
+        let begin =
+            u32::try_from(self.used).map_err(|_| ParseError::Limit("syntax spelling limit"))?;
+        let end = self
+            .used
+            .checked_add(bytes.len())
+            .ok_or(ParseError::Limit("syntax spelling limit"))?;
+        self.strings[(block.get() - 1) as usize][self.used..end].copy_from_slice(bytes);
+        self.used += count;
+        Ok(Text {
+            begin,
+            end: u32::try_from(end).map_err(|_| ParseError::Limit("syntax spelling limit"))?,
+            block: Some(block),
+        })
+    }
+    pub(crate) fn spelling_bytes(&self) -> usize {
+        self.string_bytes
+    }
+    pub(crate) fn reserved_bytes(&self) -> usize {
+        self.bytes.capacity().saturating_add(
+            self.strings
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Box<[u8]>>()),
+        )
+    }
+
     pub(crate) fn add(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
         let begin = u32::try_from(self.bytes.len())
             .map_err(|_| ParseError::Limit("syntax spelling limit"))?;
@@ -192,10 +271,15 @@ impl TextStore {
             .checked_add(count)
             .ok_or(ParseError::Limit("syntax spelling limit"))?;
         self.bytes.extend_from_slice(bytes);
-        Ok(Text { begin, end })
+        Ok(Text {
+            begin,
+            end,
+            block: None,
+        })
     }
     pub(crate) fn unquote(text: Text) -> Text {
         Text {
+            block: text.block,
             begin: text.begin.saturating_add(1).min(text.end),
             end: text
                 .end
@@ -204,6 +288,36 @@ impl TextStore {
         }
     }
     pub(crate) fn get(&self, text: Text) -> &[u8] {
-        &self.bytes[text.begin as usize..text.end as usize]
+        let bytes = text.block.map_or(self.bytes.as_slice(), |block| {
+            self.strings[(block.get() - 1) as usize].as_ref()
+        });
+        &bytes[text.begin as usize..text.end as usize]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn source_spelling_blocks_preserve_views_across_growth() -> Result<(), ParseError> {
+        let mut store = TextStore::default();
+        let scalar = store.add(b"123")?;
+        assert_eq!(store.spelling_bytes(), 0);
+        let first = store.copy_string(b"\"first\"")?;
+        let first_reservation = store.spelling_bytes();
+        let larger = vec![b'x'; first_reservation];
+        let second = store.copy_string(&larger)?;
+        assert!(store.spelling_bytes() > first_reservation);
+        assert_eq!(store.get(scalar), b"123");
+        assert_eq!(store.get(first), b"\"first\"");
+        assert_eq!(store.get(TextStore::unquote(first)), b"first");
+        assert_eq!(store.get(second), larger);
+        let owned: usize = store
+            .strings
+            .iter()
+            .map(|block| block.len() + std::mem::size_of::<Box<[u8]>>())
+            .sum();
+        assert_eq!(store.spelling_bytes(), owned);
+        Ok(())
     }
 }

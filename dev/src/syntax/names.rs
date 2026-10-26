@@ -87,7 +87,8 @@ impl Parser<'_> {
         let member_context = matches!(mode, NameMode::Member);
         let declared = matches!(mode, NameMode::Declarator | NameMode::DeclaredType);
         let mentions = self.template_mentions;
-        let typename_keyword = self.accept_keyword(K::Typename)?;
+        let typename_keyword =
+            matches!(mode, NameMode::Expression) && self.accept_keyword(K::Typename)?;
         let location = self.location()?;
         let global = self.accept(P::Scope)?;
         let start = self.tree.name_lists.begin();
@@ -98,13 +99,16 @@ impl Parser<'_> {
             let location = self.location()?;
             let template_keyword =
                 (qualified || member_context) && self.accept_keyword(K::Template)?;
-            if !qualified
-                && (self.keyword()? == Some(K::Decltype)
-                    || (matches!(mode, NameMode::Expression | NameMode::Type)
-                        && (self.at_type_transform()?.is_some()
-                            || self.at_typeof(0)?
-                            || self.at_bit_int(0)?)))
-            {
+            // GNU type operators are names only with a following `(`. Keep
+            // this bounded dispatch lookahead even when the head is invalid.
+            let gnu_decltype = !qualified
+                && self.tree.name_lists.begin() == start
+                && matches!(mode, NameMode::Expression | NameMode::Type)
+                && self.at_ahead(P::LeftParen, 1)?
+                && (self.at_type_transform()?.is_some()
+                    || self.at_typeof(0)?
+                    || self.at_bit_int(0)?);
+            if !qualified && (self.keyword()? == Some(K::Decltype) || gnu_decltype) {
                 let operand = if self.at_typeof(0)? {
                     self.typeof_operand()?
                 } else if self.at_bit_int(0)? {
@@ -312,10 +316,12 @@ impl Parser<'_> {
                 array: false,
             });
         }
+        // A split literal-operator suffix can be a keyword token. Its
+        // adjacency check is part of dispatch, including invalid heads.
+        let next = self.cursor.peek(1)?;
         if let TokenKind::Literal(literal) = self.token()?.kind
             && self.cursor.spellings.get(literal.spelling) == b"\"\""
         {
-            let next = self.cursor.peek(1)?;
             let suffix = match next.kind {
                 TokenKind::Identifier(name) => Some(name),
                 TokenKind::Simple(_) if next.location.0 == self.location()?.0.wrapping_add(2) => {

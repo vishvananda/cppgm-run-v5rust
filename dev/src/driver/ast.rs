@@ -1,5 +1,6 @@
 // Translated from cppgm++.cpp::run_emit_ast_mode. See NOTICE.
 //! One source owner and one parsed syntax unit at a time.
+pub use super::source_observations::SourceObservations;
 use crate::preprocess::{error::PreprocessError, options::PredefinedValues, unit::Preprocessor};
 use crate::support::source::SourceBuffer;
 use crate::syntax::{ParseError, SyntaxUnit};
@@ -330,6 +331,7 @@ fn validate_lowir(
 }
 pub enum Destination<'a> {
     Text(&'a mut dyn std::io::Write),
+    ObservedText(&'a mut dyn std::io::Write, &'a mut SourceObservations),
     LowIr(&'a mut LowIrOutput),
     Check,
 }
@@ -433,6 +435,12 @@ fn emit_preprocessed(
     mode: EmitMode,
     options: &crate::preprocess::options::DriverOptions,
 ) -> Result<(), AstToolError> {
+    let (destination, mut observations) = match destination {
+        Destination::ObservedText(out, observations) => {
+            (Destination::Text(out), Some(observations))
+        }
+        destination => (destination, None),
+    };
     let front_start = std::time::Instant::now();
     let hosted = preprocessor.hosted() || mode == EmitMode::LowIr;
     let origins = if hosted {
@@ -454,7 +462,12 @@ fn emit_preprocessed(
     unit.set_hosted(hosted);
     unit.set_source_origin(origins.source);
     unit.set_stack_budget(stack_budget);
-    if let Err(error) = unit.parse() {
+    let parsed = unit.parse();
+    if let Some(observations) = observations.as_deref_mut() {
+        observations.parse_ms = front_start.elapsed().as_secs_f64() * 1000.0;
+        observations.syntax = Some(unit.statistics());
+    }
+    if let Err(error) = parsed {
         return Err(match error {
             ParseError::NotImplemented(group)
             | ParseError::Preprocess(PreprocessError::NotImplemented(group)) => {
@@ -588,8 +601,9 @@ fn emit_preprocessed(
             output.lower_ms += lower_start.elapsed().as_secs_f64() * 1000.0;
             return Ok(());
         }
-        Destination::Text(output) => output,
+        Destination::Text(output) | Destination::ObservedText(output, _) => output,
     };
+    let print_start = std::time::Instant::now();
     writeln!(output, "start translation unit {ordinal}").map_err(AstToolError::Output)?;
     if let Some(graph) = graph {
         let (tree, cursor, declarations) = unit
@@ -607,7 +621,11 @@ fn emit_preprocessed(
     } else {
         unit.print(output).map_err(AstToolError::Output)?;
     }
-    writeln!(output, "end translation unit").map_err(AstToolError::Output)
+    let result = writeln!(output, "end translation unit").map_err(AstToolError::Output);
+    if let Some(observations) = observations {
+        observations.print_ms = print_start.elapsed().as_secs_f64() * 1000.0;
+    }
+    result
 }
 
 fn lower_error(error: crate::lower::Error) -> AstToolError {

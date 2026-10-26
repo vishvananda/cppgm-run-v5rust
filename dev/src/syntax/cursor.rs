@@ -31,6 +31,11 @@ pub(super) struct TokenRun {
     end: u32,
     absolute: u64,
 }
+impl TokenRun {
+    pub(super) fn len(self) -> u32 {
+        self.end - self.begin
+    }
+}
 struct PackChange {
     ordinal: u64,
     alignment: u32,
@@ -100,9 +105,10 @@ impl<'a> Cursor<'a> {
         }
         while self.window.len() <= index {
             if self.end.is_some() {
-                return Ok(Self::synthetic_end_token());
+                self.window.push(Self::synthetic_end_token());
+            } else {
+                self.pull()?;
             }
-            self.pull()?;
         }
         self.peak_window = self.peak_window.max(self.window.len());
         Ok(self.window[index])
@@ -180,7 +186,11 @@ impl<'a> Cursor<'a> {
             kind => TokenKind::Literal(Literal {
                 kind,
                 token_form: false,
-                spelling: self.spellings.add(post.source)?,
+                spelling: if matches!(kind, PostTokenKind::String { .. }) {
+                    self.spellings.copy_string(post.source)?
+                } else {
+                    self.spellings.add(post.source)?
+                },
                 data: self.spellings.add(post.data)?,
                 suffix_name: None,
             }),

@@ -114,7 +114,6 @@ impl Ord for Pending {
 }
 #[derive(Clone, Copy)]
 pub(super) enum Change {
-    Unnamed(ScopeId, Option<ScopeId>),
     Binding((ScopeId, NameId), Option<Binding>),
     Edge(ScopeId, Option<Edge>),
     Complete(ScopeId, bool, bool),
@@ -151,6 +150,7 @@ struct SearchFrame {
     remaining: usize,
 }
 pub(super) struct Scopes {
+    lookups: u64,
     records: Vec<Scope>,
     // Tombstones retain the oracle binding census; identities never recycle.
     bindings: HashMap<(ScopeIdentity, NameId), Option<Binding>>,
@@ -161,7 +161,7 @@ pub(super) struct Scopes {
     incoming: HashMap<ScopeId, HashSet<ScopeId>>,
     invalidation_work: Vec<ScopeId>,
     invalidation_seen: HashSet<ScopeId>,
-    unnamed: HashMap<ScopeId, ScopeId>,
+    unnamed_name: Option<NameId>,
     changes: Vec<Change>,
     pub current: ScopeId,
     environment: u64,
@@ -182,6 +182,7 @@ pub(super) struct Scopes {
 impl Default for Scopes {
     fn default() -> Self {
         Self {
+            lookups: 0,
             records: vec![Scope {
                 identity: ScopeIdentity(0),
                 specialization: false,
@@ -201,7 +202,7 @@ impl Default for Scopes {
             incoming: HashMap::new(),
             invalidation_work: Vec::new(),
             invalidation_seen: HashSet::new(),
-            unnamed: HashMap::new(),
+            unnamed_name: None,
             changes: Vec::new(),
             current: ScopeId(0),
             environment: 0,
@@ -222,6 +223,10 @@ impl Default for Scopes {
     }
 }
 impl Scopes {
+    pub(super) fn observations(&self) -> (u64, usize, usize) {
+        (self.lookups, self.bindings.len(), self.searches.len())
+    }
+
     fn template_home(&self, scope: ScopeId) -> ScopeId {
         let mut home = self.records[scope.0 as usize]
             .parent
@@ -559,7 +564,9 @@ impl Scopes {
         Ok(id)
     }
     pub(super) fn unnamed(&self, scope: ScopeId) -> Option<ScopeId> {
-        self.unnamed.get(&scope).copied()
+        self.unnamed_name
+            .and_then(|name| self.own(scope, name))
+            .and_then(|binding| binding.scope)
     }
     pub(super) fn parameter_bases(&self, scope: ScopeId) -> &[ParameterBase] {
         &self.records[scope.0 as usize].parameter_bases
@@ -580,10 +587,23 @@ impl Scopes {
         matches!(self.kind(scope), ScopeKind::Class(name)
             if !self.specialization(scope) && self.records[scope.0 as usize].edges.is_empty() && self.own(scope, name).is_none())
     }
-    pub(super) fn set_unnamed(&mut self, parent: ScopeId, scope: ScopeId) {
-        let old = self.unnamed.insert(parent, scope);
-        self.changes.push(Change::Unnamed(parent, old));
+    pub(super) fn set_unnamed(&mut self, parent: ScopeId, scope: ScopeId, name: NameId) {
+        self.unnamed_name = Some(name);
+        self.declare_in(
+            parent,
+            name,
+            Binding {
+                pack: false,
+                category: Category::Namespace,
+                parameter: false,
+                scope: Some(scope),
+                specialization: 0,
+                alternatives: Categories::default(),
+                guesses: Guesses::default(),
+            },
+        );
     }
+
     pub(super) fn enclosing_declaration_scope(&self) -> ScopeId {
         let mut scope = self.current;
         while !matches!(self.kind(scope), ScopeKind::Namespace | ScopeKind::Block) {
@@ -741,6 +761,7 @@ impl Scopes {
         self.lookup_name(name, false)
     }
     pub(super) fn lookup_name(&mut self, name: NameId, prefix_only: bool) -> Option<Binding> {
+        self.lookups += 1;
         if self
             .name_marks
             .get(name.index())
@@ -826,6 +847,7 @@ impl Scopes {
         prefix_only: bool,
         specialization: bool,
     ) -> Option<Binding> {
+        self.lookups += 1;
         if self
             .name_marks
             .get(name.index())
@@ -1095,14 +1117,7 @@ impl Scopes {
             Change::ParameterBase(scope, None) => {
                 Change::ParameterBase(scope, self.records[scope.0 as usize].parameter_bases.pop())
             }
-            Change::Unnamed(parent, value) => {
-                let old = if let Some(value) = value {
-                    self.unnamed.insert(parent, value)
-                } else {
-                    self.unnamed.remove(&parent)
-                };
-                Change::Unnamed(parent, old)
-            }
+
             Change::Binding(key, value) => {
                 self.touch_name(key.1);
                 let identity = self.records[key.0.0 as usize].identity;

@@ -63,6 +63,11 @@ mod driver_queries;
 mod host_configuration;
 #[path = "source_tool/stack_limit.rs"]
 mod stack_limit;
+fn source_values() -> Result<cppgm_rust::preprocess::options::PredefinedValues, String> {
+    let mut values = build_time::query()?;
+    values.author = b"Vish Abrams".to_vec();
+    Ok(values)
+}
 fn peak_rss() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
@@ -80,6 +85,7 @@ fn peak_rss() -> u64 {
 enum CliError {
     Message(String),
     Diagnostic(Vec<u8>),
+    ReportedDiagnostic(Vec<u8>),
     PassVerification(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
@@ -158,7 +164,8 @@ fn preprocessing_option(
     }
     Ok(true)
 }
-fn invocation(args: &[OsString], lowir: bool) -> Result<Invocation<'_>, CliError> {
+fn invocation(args: &[OsString], mode: EmitMode) -> Result<Invocation<'_>, CliError> {
+    let lowir = mode == EmitMode::LowIr;
     let mut output = None;
     let mut inputs = Vec::new();
     let mut limits = cppgm_rust::opt::Limits::default();
@@ -204,7 +211,7 @@ fn invocation(args: &[OsString], lowir: bool) -> Result<Invocation<'_>, CliError
         if preprocessing_option(args, &mut index, &mut preprocessor)? {
             continue;
         }
-        if arg == "--stats" && !lowir {
+        if arg == "--stats" && matches!(mode, EmitMode::Types | EmitMode::Semantics) {
             return Err(CliError::Missing(
                 "AST statistics and hosted/preprocessing invocation options",
             ));
@@ -247,7 +254,7 @@ fn run() -> Result<(), CliError> {
         if driver_queries::run(&args)? {
             return Ok(());
         }
-        let values = build_time::query().map_err(CliError::Message)?;
+        let values = source_values().map_err(CliError::Message)?;
         let budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
             .map_err(CliError::Internal)?;
         let host = host_configuration::query();
@@ -292,7 +299,7 @@ fn run() -> Result<(), CliError> {
             b"--emit-ast" | b"--emit-types" | b"--emit-semantics" | b"--emit-lowir"
         )
     });
-    let statistics = lowir && consume_flag(&mut args, b"--stats");
+    let statistics = (lowir || ast) && consume_flag(&mut args, b"--stats");
     let validate = lowir && consume_flag(&mut args, b"--validate");
     let Invocation {
         output: destination,
@@ -302,8 +309,8 @@ fn run() -> Result<(), CliError> {
         level,
         hosted,
         debug,
-    } = invocation(&args, lowir)?;
-    let values = build_time::query().map_err(CliError::Message)?;
+    } = invocation(&args, mode)?;
+    let values = source_values().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
         .map_err(CliError::Internal)?;
     if lowir || hosted {
@@ -350,7 +357,8 @@ fn run() -> Result<(), CliError> {
         let _read_status = file.read_to_end(&mut bytes);
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
-        emit_configured_unit(
+        let mut source_observations = cppgm_rust::driver::ast::SourceObservations::default();
+        let result = emit_configured_unit(
             &source,
             path.as_bytes(),
             UnitOptions {
@@ -360,6 +368,8 @@ fn run() -> Result<(), CliError> {
             },
             if lowir {
                 Destination::LowIr(&mut lowir_output)
+            } else if statistics {
+                Destination::ObservedText(&mut output, &mut source_observations)
             } else {
                 Destination::Text(&mut output)
             },
@@ -389,7 +399,26 @@ fn run() -> Result<(), CliError> {
                 );
                 CliError::Diagnostic(bytes)
             }
-        })?;
+        });
+        if statistics && !lowir {
+            if let Err(CliError::Diagnostic(diagnostic)) = result {
+                let mut bytes = b"ERROR: ".to_vec();
+                bytes.extend(diagnostic);
+                bytes.push(b'\n');
+                source_observations
+                    .write(&mut bytes, path.as_bytes(), peak_rss())
+                    .map_err(|_| CliError::Output)?;
+                return Err(CliError::ReportedDiagnostic(bytes));
+            }
+            if result.is_ok() {
+                let _status = source_observations.write(
+                    &mut io::stderr().lock(),
+                    path.as_bytes(),
+                    peak_rss(),
+                );
+            }
+        }
+        result?;
     }
     let mut observations = None;
     if lowir {
@@ -426,6 +455,10 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(CliError::Output) => ExitCode::FAILURE,
+        Err(CliError::ReportedDiagnostic(bytes)) => {
+            let _status = io::stderr().lock().write_all(&bytes);
+            ExitCode::FAILURE
+        }
         Err(CliError::PassVerification(bytes)) => {
             let _ = io::stderr().lock().write_all(&bytes);
             ExitCode::from(3)

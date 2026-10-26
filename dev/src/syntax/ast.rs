@@ -788,6 +788,49 @@ pub(crate) struct TreeMark {
     attributes: ListMark,
 }
 impl Tree {
+    pub(crate) fn reserved_bytes(&self) -> usize {
+        [
+            self.lambdas.reserved_bytes(),
+            self.captures.reserved_bytes(),
+            self.lambda_parameter_packs.reserved_bytes(),
+            self.declarations.reserved_bytes(),
+            self.expressions.reserved_bytes(),
+            self.declarators.reserved_bytes(),
+            self.types.reserved_bytes(),
+            self.names.reserved_bytes(),
+            self.classes.reserved_bytes(),
+            self.bodies.reserved_bytes(),
+            self.statements.reserved_bytes(),
+            self.assembly.reserved_bytes(),
+            self.asm_operands.reserved_bytes(),
+            self.asm_clobbers.reserved_bytes(),
+            self.statement_readings.reserved_bytes(),
+            self.decl_lists.reserved_bytes(),
+            self.expr_lists.reserved_bytes(),
+            self.designators.reserved_bytes(),
+            self.stmt_lists.reserved_bytes(),
+            self.name_lists.reserved_bytes(),
+            self.specs.reserved_bytes(),
+            self.pointers.reserved_bytes(),
+            self.cvs.reserved_bytes(),
+            self.suffixes.reserved_bytes(),
+            self.parameters.reserved_bytes(),
+            self.qualifiers.reserved_bytes(),
+            self.type_lists.reserved_bytes(),
+            self.init_declarators.reserved_bytes(),
+            self.enumerators.reserved_bytes(),
+            self.bases.reserved_bytes(),
+            self.bit_fields.reserved_bytes(),
+            self.mem_initializers.reserved_bytes(),
+            self.handlers.reserved_bytes(),
+            self.template_parameters.reserved_bytes(),
+            self.template_arguments.reserved_bytes(),
+            self.attributes.reserved_bytes(),
+        ]
+        .into_iter()
+        .fold(0_usize, usize::saturating_add)
+    }
+
     /// Semantic equivalents use the same flat syntax storage without parsing text.
     pub(crate) fn implicit_name(
         &mut self,

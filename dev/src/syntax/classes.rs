@@ -377,9 +377,6 @@ impl Parser<'_> {
                 None
             };
             let is_virtual = virtual_first || self.accept_keyword(K::Virtual)?;
-            if self.keyword()? == Some(K::Typename) {
-                return self.fail();
-            }
             let mentions = self.pack_mentions;
             let (name, binding) = self.type_name()?;
             let pack = self.accept(P::Ellipsis)?;
@@ -449,7 +446,22 @@ impl Parser<'_> {
                 message: "syntax error",
             });
         }
-        let (name, _) = self.declarator_id()?;
+        let constructor = match (
+            self.scopes.kind(self.scopes.declaration_scope()),
+            self.token()?.kind,
+        ) {
+            (ScopeKind::Class(owner), TokenKind::Identifier(name)) => {
+                owner == name && self.at_ahead(P::LeftParen, 1)?
+            }
+            _ => false,
+        };
+        let name = if constructor {
+            let location = self.location()?;
+            let identifier = self.identifier()?;
+            self.tree.implicit_name(identifier, location)?
+        } else {
+            self.declarator_id()?.0
+        };
         if !self.at(P::LeftParen)? {
             return Err(ParseError::Syntax {
                 location: self.location()?,
@@ -494,29 +506,18 @@ impl Parser<'_> {
         name: Name,
     ) -> Result<DeclId, ParseError> {
         self.pending_template = false;
-        let enclosing = self.scopes.current;
         let in_class = self.in_class();
         self.function_scope = None;
-        let member = self.tree.names.get(name).prefix_scope;
-        let parameters = self.parameter_clause_member(true, member)?;
-        self.function_scope = self.parameter_scope;
-        if member.is_some() {
-            self.scopes.current = self
-                .parameter_scope
-                .ok_or(ParseError::Invariant("missing special member scope"))?;
-        }
+        let member = self.special_member_scope(name);
         let attribute_start = self.tree.attributes.begin();
-        let result = self.function_qualifiers_with_attributes(true);
-        self.scopes.current = enclosing;
-        let qualifiers = result?;
-        self.declarator_asm_label()?;
+        let suffixes = self.declarator_suffixes(Mode::Named, Some(name), true, member, true)?;
+        if !matches!(
+            self.tree.suffixes.get(suffixes).first(),
+            Some(Suffix::Function { .. })
+        ) {
+            return self.fail();
+        }
         let attributes = self.tree.attributes.finish(attribute_start)?;
-        let start = self.tree.suffixes.begin();
-        self.tree.suffixes.push(Suffix::Function {
-            parameters,
-            qualifiers,
-        });
-        let suffixes = self.tree.suffixes.finish(start)?;
         let declarator = self.tree.declarators.add(Declarator {
             member_scope: member,
             attributes,
@@ -539,6 +540,10 @@ impl Parser<'_> {
             }
             None
         } else {
+            if !self.at(P::LeftBrace)? && !self.at(P::Colon)? && self.keyword()? != Some(K::Try) {
+                return self.fail();
+            }
+            self.commit_transaction()?;
             Some(self.finish_function_body(in_class, true)?)
         };
         self.tree.declarations.add(Declaration {
@@ -552,6 +557,35 @@ impl Parser<'_> {
                 body,
             },
         })
+    }
+    // The declaration context is established afresh after recognizing the
+    // special-member head; template arguments here are dependent (as in
+    // parse_special_member's advance_prefix loop), unlike the earlier probe.
+    fn special_member_scope(&mut self, name: Name) -> Option<ScopeId> {
+        let node = *self.tree.names.get(name);
+        let count = self.tree.name_lists.get(node.components).len();
+        if !node.global && count < 2 {
+            return None;
+        }
+        let mut prefix = super::name_lookup::NamePrefix::new(node.global);
+        for index in 0..count.saturating_sub(1) {
+            let component = self.tree.name_lists.get(node.components)[index];
+            if let NameKind::Identifier(identifier) = component.kind {
+                self.advance_name_prefix(identifier, component.arguments, true, &mut prefix, true);
+            } else {
+                let uncertain = if prefix.state == super::ast::PrefixState::Dependent {
+                    prefix.uncertain
+                } else {
+                    !self.scopes.in_template_definition()
+                };
+                prefix.make_dependent(uncertain);
+            }
+        }
+        if prefix.state == super::ast::PrefixState::Known {
+            prefix.scope
+        } else {
+            None
+        }
     }
     pub(super) fn bit_field(
         &mut self,
@@ -605,6 +639,7 @@ impl Parser<'_> {
                 .and_then(|()| self.cursor.capture(begin, absolute));
             self.cursor.release();
             let tokens = result?;
+            self.deferred_tokens += u64::from(tokens.len());
             let target = self.tree.bodies.add(Body::Deferred)?;
             self.deferred.push(DeferredBody {
                 target,
@@ -625,6 +660,7 @@ impl Parser<'_> {
         let last = self.deferred.len();
         for index in first..last {
             let entry = self.deferred[index];
+            self.deferred_bodies += 1;
             let enclosing = self.scopes.current;
             self.scopes.current = entry.scope;
             self.cursor.push_run(entry.tokens);

@@ -1,0 +1,180 @@
+1 translation units
+start translation unit 1
+translation-unit
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_CONST:const
+      decl-specifier KW_CHAR:char
+    init-declarator-list
+      init-declarator
+        declarator
+          ptr-operator OP_STAR:*
+          identifier compiler_author
+        initializer
+          literal "Vish Abrams"
+  namespace-definition observed
+    class-specifier Counter
+      class-key KW_STRUCT:struct
+      special-member-declaration Counter
+        declarator
+          identifier Counter
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+      special-member-declaration ~Counter
+        declarator
+          identifier ~Counter
+          parameter-clause
+      simple-declaration
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        init-declarator-list
+          init-declarator
+            declarator
+              identifier value
+      function-definition
+        decl-specifier-seq
+          decl-specifier KW_INT:int
+        declarator
+          identifier step
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              declarator
+                identifier n
+        compound-statement
+          for-statement
+            for-init-statement
+              simple-declaration
+                decl-specifier-seq
+                  decl-specifier KW_INT:int
+                init-declarator-list
+                  init-declarator
+                    declarator
+                      identifier i
+                    initializer
+                      literal 0
+            condition
+              binary-expression OP_LT:<
+                id-expression i
+                id-expression n
+            iteration
+              unary-expression OP_INC:++
+                id-expression i
+            expression-statement
+              assignment-expression OP_PLUSASS:+=
+                id-expression value
+                id-expression i
+          return-statement
+            id-expression value
+    special-member-definition Counter::Counter
+      declarator
+        identifier Counter::Counter
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier n
+      ctor-initializer
+        mem-initializer
+          mem-initializer-id value
+          paren-argument-list
+            id-expression n
+      compound-statement
+    special-member-definition Counter::~Counter
+      declarator
+        identifier Counter::~Counter
+        parameter-clause
+      compound-statement
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_VOID:void
+      declarator
+        identifier syntax
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier value
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier TT_IDENTIFIER:Counter
+          init-declarator-list
+            init-declarator
+              declarator
+                nested-declarator
+                  declarator
+                    identifier value
+    function-definition
+      decl-specifier-seq
+        decl-specifier KW_INT:int
+      declarator
+        identifier compute
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              identifier n
+      compound-statement
+        simple-declaration
+          decl-specifier-seq
+            decl-specifier KW_AUTO:auto
+          init-declarator-list
+            init-declarator
+              declarator
+                identifier increment
+              initializer
+                lambda-expression
+                  lambda-introducer []
+                  lambda-declarator
+                    parameter-clause
+                      parameter-declaration
+                        decl-specifier-seq
+                          decl-specifier KW_INT:int
+                        declarator
+                          identifier x
+                  compound-statement
+                    return-statement
+                      binary-expression OP_PLUS:+
+                        id-expression x
+                        literal 1
+        return-statement
+          conditional-expression
+            id-expression n
+            call-expression
+              id-expression increment
+              argument-list
+                id-expression n
+            literal 0
+  namespace-definition <unnamed>
+    simple-declaration
+      decl-specifier-seq
+        decl-specifier KW_TYPEDEF:typedef
+        decl-specifier KW_INT:int
+      init-declarator-list
+        init-declarator
+          declarator
+            identifier word
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_INT:int
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier width
+        initializer
+          sizeof-expression
+            call-expression
+              id-expression observed::Counter
+              argument-list
+                literal 1
+  static-assert-declaration
+    keyword-literal KW_TRUE:true
+    message "source" " observations"
+end translation unit

@@ -493,7 +493,7 @@ impl Parser<'_> {
         } else {
             super::storage::List::default()
         };
-        let compound = self.compound_in_scope(false)?;
+        let compound = self.compound_in_scope(true)?;
         let handlers = if try_block {
             Some(self.handlers()?)
         } else {

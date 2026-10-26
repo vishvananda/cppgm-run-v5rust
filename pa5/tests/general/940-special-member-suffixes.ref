@@ -1,0 +1,30 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier Suffixes
+    class-key KW_STRUCT:struct
+    special-member-declaration Suffixes
+      declarator
+        identifier Suffixes
+        parameter-clause
+        array-suffix
+          literal 2
+    special-member-declaration Suffixes
+      declarator
+        identifier Suffixes
+        parameter-clause
+        parameter-clause
+    special-member-declaration operatorint
+      declarator
+        identifier operatorint
+        parameter-clause
+        array-suffix
+          literal 3
+  special-member-definition Suffixes::Suffixes
+    declarator
+      identifier Suffixes::Suffixes
+      parameter-clause
+      array-suffix
+        literal 2
+    compound-statement
+end translation unit

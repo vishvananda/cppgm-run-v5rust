@@ -14,6 +14,7 @@ mod expressions;
 mod lambdas;
 mod name_lookup;
 mod names;
+pub(crate) mod observations;
 mod parameter_bases;
 mod parser;
 mod printer;

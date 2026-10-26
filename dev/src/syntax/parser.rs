@@ -52,6 +52,8 @@ pub(super) struct Parser<'a> {
     pub speculation: usize,
     closers: Vec<P>,
     pub deferred_lambdas: u64,
+    pub deferred_bodies: u64,
+    pub deferred_tokens: u64,
     depth: u32,
     pub stack_budget: crate::support::stack::StackBudget,
     pub stack_base: Option<usize>,
@@ -71,6 +73,7 @@ pub(super) struct Parser<'a> {
     pub failed_selection_inits: Vec<u64>,
 }
 struct Checkpoint {
+    committed: bool,
     conflict: Option<super::conflicts::StatementConflict>,
     shared_lambdas: usize,
     position: usize,
@@ -125,6 +128,8 @@ impl<'a> Parser<'a> {
             speculation: 0,
             closers: Vec::new(),
             deferred_lambdas: 0,
+            deferred_bodies: 0,
+            deferred_tokens: 0,
             depth: 0,
             stack_budget: crate::support::stack::StackBudget::default(),
             stack_base: None,
@@ -384,34 +389,68 @@ impl<'a> Parser<'a> {
         self.speculation += 1;
         self.checkpoints += 1;
         let result = parse(self);
-        self.speculation -= 1;
-        if result.is_err() || !commit {
-            self.rewind_transaction()?;
-            self.rewinds += 1;
-        }
-        // Keep the checkpoint and retained cursor live until committed
-        // deferred bodies finish, including any nested transactions they open.
-        let bodies = if commit && result.is_ok() && self.speculation == 0 {
-            let first = self
-                .transactions
-                .last()
-                .ok_or(ParseError::Invariant("missing parser transaction"))?
-                .lambdas;
-            self.parse_deferred_lambdas(first)
-        } else {
+        let committed = self
+            .transactions
+            .last()
+            .ok_or(ParseError::Invariant("missing parser transaction"))?
+            .committed;
+        let bodies = if committed {
             Ok(())
+        } else {
+            self.speculation -= 1;
+            if result.is_err() || !commit {
+                self.rewind_transaction()?;
+                self.rewinds += 1;
+            }
+            // Keep retained storage live until deferred lambda bodies finish.
+            let bodies = if commit && result.is_ok() && self.speculation == 0 {
+                let first = self
+                    .transactions
+                    .last()
+                    .ok_or(ParseError::Invariant("missing parser transaction"))?
+                    .lambdas;
+                self.parse_deferred_lambdas(first)
+            } else {
+                Ok(())
+            };
+            self.tentative_depth -= 1;
+            self.cursor.release();
+            bodies
         };
-        self.tentative_depth -= 1;
-        self.cursor.release();
         self.transactions
             .pop()
             .ok_or(ParseError::Invariant("missing parser transaction"))?;
         bodies?;
         match result {
             Ok(value) => Ok(Some(value)),
+            Err(ParseError::Syntax { location, message }) if committed => {
+                Err(ParseError::CommittedSyntax { location, message })
+            }
             Err(ParseError::Syntax { .. }) => Ok(None),
             Err(error) => Err(error),
         }
+    }
+    /// A complete special-member signature commits before its body, which
+    /// has no declaration alternative and must not retain speculative state.
+    pub(super) fn commit_transaction(&mut self) -> Result<(), ParseError> {
+        let mark = self
+            .transactions
+            .last_mut()
+            .ok_or(ParseError::Invariant("missing parser transaction"))?;
+        if mark.committed {
+            return Ok(());
+        }
+        mark.committed = true;
+        let first = mark.lambdas;
+        self.speculation -= 1;
+        let result = if self.speculation == 0 {
+            self.parse_deferred_lambdas(first)
+        } else {
+            Ok(())
+        };
+        self.tentative_depth -= 1;
+        self.cursor.release();
+        result
     }
     // Checkpoint construction owns a large, short-lived aggregate. Keep that
     // frame out of recursive grammar calls; the reusable stack owns its data.
@@ -419,6 +458,7 @@ impl<'a> Parser<'a> {
     fn begin_transaction(&mut self) -> Result<(), ParseError> {
         self.initialize()?;
         let mark = Checkpoint {
+            committed: false,
             conflict: self.conflicts.statement,
             shared_lambdas: self.shared_lambdas.mark(),
             position: self.cursor.position,

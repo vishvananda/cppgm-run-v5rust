@@ -110,9 +110,11 @@ impl Parser<'_> {
                 self.explicit_instantiation(location)
             }
             _ => {
-                if !matches!(
+                if matches!(
                     self.scopes.kind(self.scopes.declaration_scope()),
-                    super::scopes::ScopeKind::Block
+                    super::scopes::ScopeKind::Namespace
+                        | super::scopes::ScopeKind::Class(_)
+                        | super::scopes::ScopeKind::AnonymousClass
                 ) && self.at_deduction_guide()?
                 {
                     return self.deduction_guide(location);
@@ -122,9 +124,11 @@ impl Parser<'_> {
                     super::scopes::ScopeKind::Namespace
                         | super::scopes::ScopeKind::Class(_)
                         | super::scopes::ScopeKind::AnonymousClass
-                ) && let Some((specifiers, name)) = self.attempt(Self::special_member_head)?
-                {
-                    return self.special_member(location, specifiers, name);
+                ) && let Some(declaration) = self.attempt(|parser| {
+                    let (specifiers, name) = parser.special_member_head()?;
+                    parser.special_member(location, specifiers, name)
+                })? {
+                    return Ok(declaration);
                 }
                 self.simple_declaration(location)
             }
@@ -178,7 +182,8 @@ impl Parser<'_> {
             );
         }
         if name.is_none() && existing.is_none() {
-            self.scopes.set_unnamed(enclosing, scope);
+            let name = self.cursor.intern_name(b" unnamed")?;
+            self.scopes.set_unnamed(enclosing, scope, name);
         }
         if name.is_none() || inline {
             self.scopes.add_edge(scope);
@@ -298,9 +303,6 @@ impl Parser<'_> {
         }
         let typename_keyword = !directive && self.accept_keyword(K::Typename)?;
         let (target, binding) = if directive {
-            if self.keyword()? == Some(K::Typename) {
-                return self.fail();
-            }
             self.type_name()?
         } else {
             self.declarator_id()?
@@ -519,7 +521,13 @@ impl Parser<'_> {
                     let complex = !has_type
                         && matches!(self.token()?.kind, TokenKind::Identifier(name) if self.complex_types.contains(&Some(name)));
                     let named = self.attempt(|parser| {
+                        let typename_keyword = parser.accept_keyword(K::Typename)?;
                         let (name, binding) = parser.type_name()?;
+                        if typename_keyword {
+                            let mut node = *parser.tree.names.get(name);
+                            node.typename_keyword = true;
+                            parser.tree.names.replace(name, node);
+                        }
                         let followed = matches!(parser.token()?.kind, TokenKind::Identifier(identifier)
                             if !matches!(parser.cursor.name(identifier), b"final" | b"override"));
                         if !parser.named_declaration_is_type(name, binding, definite, followed) {

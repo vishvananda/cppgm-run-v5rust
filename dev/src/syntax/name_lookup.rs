@@ -239,7 +239,7 @@ impl Parser<'_> {
         }
     }
     pub(super) fn named_declaration_is_type(
-        &self,
+        &mut self,
         name: Name,
         binding: Option<Binding>,
         definite: bool,
@@ -254,9 +254,21 @@ impl Parser<'_> {
             || (self.scopes.kind(self.scopes.declaration_scope())
                 == super::scopes::ScopeKind::Namespace
                 && self.tree.names.get(name).prefix_state == PrefixState::Known
-                && binding.is_some_and(|binding| {
-                    binding.category == Category::Value && binding.alternatives.has_type()
-                }))
+                && binding.is_some_and(|binding| binding.category == Category::Value)
+                && self.scopes.has_category_conflicts()
+                && node
+                    .prefix_scope
+                    .zip(self.last_identifier(name))
+                    .is_some_and(|(scope, identifier)| {
+                        self.scopes
+                            .lookup_specialization(
+                                scope,
+                                identifier,
+                                false,
+                                node.prefix_template == TemplatePrefix::Specialization,
+                            )
+                            .is_some_and(|found| found.alternatives.has_type())
+                    }))
     }
     pub(super) fn note_type_guesses(
         &mut self,
