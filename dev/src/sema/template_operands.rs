@@ -1182,6 +1182,9 @@ impl Analyzer<'_> {
                 .template_value(copy, scope, pattern.value_target, false)
                 .map(|ty| Some(Evaluation::Type(ty))),
         };
+        if !open && matches!(query, Query::Value | Query::Bound) {
+            self.graph.work.totals.value_substitutions += 1;
+        }
         self.declaration_access.substitution = saved_access;
         self.declaration_access.function = saved_function;
         self.declaration_access.class = saved_access_class;

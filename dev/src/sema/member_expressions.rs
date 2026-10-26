@@ -626,29 +626,7 @@ impl Analyzer<'_> {
         object: Option<EntityId>,
         scope: ScopeId,
     ) -> Option<AccessFailure> {
-        if self.graph.has_member_import(binding) {
-            return self.imported_member_access_failure(binding, naming, object, scope);
-        }
-        if !self.direct_member_accessible(binding, scope) {
-            return Some(AccessFailure::Inaccessible);
-        }
-        let home = self.graph.binding_scope(binding);
-        let owner = self.graph.scope(home).owner?;
-        if naming != owner && !self.accessible_base_name(naming, owner, scope) {
-            return Some(AccessFailure::Inaccessible);
-        }
-        if self.graph.binding_access(binding) == Access::Protected
-            && (self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .data_member
-                == Some(DataMemberKind::Instance)
-                || self.member_function_owner(binding).is_some())
-            && object.is_some_and(|object| !self.protected_object_accessible(scope, owner, object))
-        {
-            return Some(AccessFailure::ProtectedObject);
-        }
-        None
+        self.imported_member_access_failure(binding, naming, object, scope)
     }
 }
 

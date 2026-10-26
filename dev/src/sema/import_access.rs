@@ -25,52 +25,137 @@ fn stricter(first: Access, second: Access) -> Access {
 // class in this query. Absence means that no member reaches that class.
 struct MemberPaths<'a> {
     declaring: EntityId,
+    declared: Access,
     blocked: &'a HashSet<EntityId>,
     memo: HashMap<EntityId, Option<Access>>,
-    work: Vec<(EntityId, usize, Option<Access>)>,
+    work: Vec<AccessFrame>,
+}
+struct AccessFrame {
+    top: EntityId,
+    bottom: EntityId,
+    next: usize,
+    path: Access,
+    best: Option<Access>,
+}
+enum Chain {
+    Known(Option<Access>),
+    Pending,
+}
+fn chain_member(top: EntityId, bottom: EntityId, path: Access, access: Access) -> Option<Access> {
+    (top == bottom || access != Access::Private).then(|| stricter(path, access))
 }
 impl<'a> MemberPaths<'a> {
     fn new(declaring: EntityId, declared: Access, blocked: &'a HashSet<EntityId>) -> Self {
         Self {
             declaring,
+            declared,
             blocked,
-            memo: HashMap::from([(declaring, Some(declared))]),
+            memo: HashMap::new(),
             work: Vec::new(),
         }
     }
-
+    fn chain(&mut self, graph: &Graph, top: EntityId) -> Chain {
+        let mut class = top;
+        let mut path = Access::Public;
+        while class != self.declaring {
+            graph.work.base_steps(1);
+            let bases = &graph.entity(class).bases;
+            let Some(base) = bases.first() else {
+                return Chain::Known(None);
+            };
+            if bases.len() > 1 {
+                let direct = bases.iter().find(|base| base.class == self.declaring);
+                if let Some(direct) = direct.filter(|direct| {
+                    direct.access == Access::Public
+                        || !direct.is_virtual && graph.simple_base_hierarchy(class)
+                }) {
+                    return Chain::Known(chain_member(
+                        top,
+                        class,
+                        path,
+                        stricter(self.declared, direct.access),
+                    ));
+                }
+                self.work.push(AccessFrame {
+                    top,
+                    bottom: class,
+                    next: 0,
+                    path,
+                    best: None,
+                });
+                return Chain::Pending;
+            }
+            if class != top && base.access == Access::Private {
+                return Chain::Known(None);
+            }
+            path = stricter(path, base.access);
+            class = base.class;
+            if class != self.declaring && self.blocked.contains(&class) {
+                return Chain::Known(None);
+            }
+        }
+        Chain::Known(chain_member(top, class, path, self.declared))
+    }
     fn access(&mut self, graph: &Graph, naming: EntityId) -> Option<Access> {
-        if let Some(&access) = self.memo.get(&naming) {
+        if self.declared == Access::Private && naming != self.declaring {
+            return None;
+        }
+        self.work.clear();
+        if let Chain::Known(access) = self.chain(graph, naming) {
             return access;
         }
-        self.work.push((naming, 0, None));
-        while let Some((class, next, best)) = self.work.last_mut() {
-            if self.blocked.contains(class) {
-                self.memo.insert(*class, None);
-                self.work.pop();
-                continue;
-            }
-            if let Some(edge) = graph.entity(*class).bases.get(*next) {
-                let Some(&access) = self.memo.get(&edge.class) else {
-                    self.work.push((edge.class, 0, None));
-                    continue;
-                };
-                if let Some(access) = access.filter(|&access| access != Access::Private) {
-                    let access = stricter(access, edge.access);
-                    *best = Some(best.map_or(access, |best| match (best, access) {
-                        (Access::Public, _) | (_, Access::Public) => Access::Public,
-                        (Access::Protected, _) | (_, Access::Protected) => Access::Protected,
-                        _ => Access::Private,
-                    }));
+        let mut known = None;
+        while let Some(frame) = self.work.last() {
+            let Some(base) = graph.entity(frame.bottom).bases.get(frame.next).copied() else {
+                let done = self.work.pop()?;
+                let access = done
+                    .best
+                    .and_then(|best| chain_member(done.top, done.bottom, done.path, best));
+                if self.work.is_empty() {
+                    return access;
                 }
-                *next += 1;
-            } else {
-                self.memo.insert(*class, *best);
-                self.work.pop();
+                self.memo.insert(done.top, access);
+                known = Some(access);
+                continue;
+            };
+            if known.is_none() {
+                known = if base.class == self.declaring {
+                    Some(Some(self.declared))
+                } else if graph.entity(base.class).bases.is_empty()
+                    || self.blocked.contains(&base.class)
+                {
+                    Some(None)
+                } else if let Some(&access) = self.memo.get(&base.class) {
+                    Some(access)
+                } else {
+                    match self.chain(graph, base.class) {
+                        Chain::Known(access) => {
+                            self.memo.insert(base.class, access);
+                            Some(access)
+                        }
+                        Chain::Pending => continue,
+                    }
+                };
             }
+            let frame = self.work.last_mut()?;
+            if let Some(access) = known.flatten().filter(|&access| access != Access::Private) {
+                let access = stricter(access, base.access);
+                frame.best = Some(frame.best.map_or(access, |best| match (best, access) {
+                    (Access::Public, _) | (_, Access::Public) => Access::Public,
+                    (Access::Protected, _) | (_, Access::Protected) => Access::Protected,
+                    _ => Access::Private,
+                }));
+            }
+            frame.next += 1;
+            known = None;
         }
-        self.memo.get(&naming).copied().flatten()
+        None
     }
+}
+enum AccessTask {
+    Visit(EntityId),
+    Bases(EntityId, usize),
+    Unreached(EntityId),
 }
 
 impl Analyzer<'_> {
@@ -103,71 +188,131 @@ impl Analyzer<'_> {
         declarations
     }
 
-    fn imported_base_accessible(
-        &self,
-        class: EntityId,
-        access: Access,
-        scope: ScopeId,
-        cache: &mut HashMap<EntityId, bool>,
-    ) -> bool {
+    fn imported_base_accessible(&self, class: EntityId, access: Access, scope: ScopeId) -> bool {
         if access == Access::Public || self.member_or_friend(scope, class) {
             return true;
         }
         if access == Access::Private {
             return false;
         }
-        if let Some(&found) = cache.get(&class) {
-            return found;
-        }
-        // Base accessibility is the invented protected member query (11.2p4).
-        // Other declarations block only a query for the selected member's
-        // declaring class; they cannot block this different target.
+        // Each invented-member query owns its own complete target and memo.
         let empty = HashSet::new();
-        let mut paths = MemberPaths::new(class, Access::Protected, &empty);
-        let found = self
-            .access_contexts(scope)
-            .any(|context| paths.access(&self.graph, context).is_some());
-        cache.insert(class, found);
-        found
+        self.access_contexts(scope).any(|context| {
+            MemberPaths::new(class, Access::Protected, &empty)
+                .access(&self.graph, context)
+                .is_some()
+        })
     }
 
-    // An iterative form of accessible_below: evaluate bullets 1-3 at each
-    // class before bullet 4 visits its accessible bases left to right. The
-    // effective-member memo and failure set depend on one complete target.
+    // Summarize single-base chains without recursively walking each suffix.
+    // Branch tasks resume only after a failed child; no later branch is
+    // queried after an earlier one grants access.
     fn imported_declaration_access(
         &self,
         naming: EntityId,
         scope: ScopeId,
         paths: &mut MemberPaths<'_>,
     ) -> Option<GrantedAccess> {
-        let mut work = vec![naming];
-        let mut seen = HashSet::new();
-        let mut protected_bases = HashMap::new();
-        while let Some(class) = work.pop() {
-            if !seen.insert(class) || (class != paths.declaring && paths.blocked.contains(&class)) {
-                continue;
-            }
-            let access = paths.access(&self.graph, class);
-            if access == Some(Access::Public)
-                || (access.is_some() && self.member_or_friend(scope, class))
-            {
-                return Some(GrantedAccess::Unrestricted);
-            }
-            if access == Some(Access::Protected)
-                && let Some(context) = self.access_contexts(scope).find(|&context| {
-                    self.graph.is_base_of(class, context)
-                        && paths.access(&self.graph, context).is_some()
-                })
-            {
-                return Some(GrantedAccess::Protected(context));
-            }
-            if class == paths.declaring {
-                continue;
-            }
-            for edge in self.graph.entity(class).bases.iter().rev() {
-                if self.imported_base_accessible(class, edge.access, scope, &mut protected_bases) {
-                    work.push(edge.class);
+        let mut work = vec![AccessTask::Visit(naming)];
+        let mut unreached = HashSet::new();
+        let mut leads = HashMap::new();
+        'query: while let Some(task) = work.pop() {
+            let naming = match task {
+                AccessTask::Unreached(class) => {
+                    unreached.insert(class);
+                    continue;
                 }
+                AccessTask::Bases(class, index) => {
+                    let Some(base) = self.graph.entity(class).bases.get(index) else {
+                        continue;
+                    };
+                    work.push(AccessTask::Bases(class, index + 1));
+                    if base.class != paths.declaring
+                        && (paths.blocked.contains(&base.class)
+                            || unreached.contains(&base.class)
+                            || !super::base_facts::leads_to_base(
+                                &self.graph,
+                                base.class,
+                                paths.declaring,
+                                &mut leads,
+                            ))
+                    {
+                        continue;
+                    }
+                    if self.imported_base_accessible(class, base.access, scope) {
+                        if base.class != paths.declaring {
+                            work.push(AccessTask::Unreached(base.class));
+                        }
+                        work.push(AccessTask::Visit(base.class));
+                    }
+                    continue;
+                }
+                AccessTask::Visit(class) => class,
+            };
+            let mut bottom = naming;
+            let (mut edges, mut private, mut restricted) = (0usize, 0usize, 0usize);
+            while bottom != paths.declaring {
+                let [base] = self.graph.entity(bottom).bases.as_slice() else {
+                    break;
+                };
+                edges += 1;
+                if base.access == Access::Private {
+                    private = edges;
+                }
+                if base.access != Access::Public {
+                    restricted = edges;
+                }
+                bottom = base.class;
+                if bottom != paths.declaring && paths.blocked.contains(&bottom) {
+                    continue 'query;
+                }
+            }
+            let bottom_access = if bottom == paths.declaring {
+                Some(paths.declared)
+            } else {
+                paths.access(&self.graph, bottom)
+            };
+            let mut class = naming;
+            for level in 0..=edges {
+                let access = bottom_access
+                    .filter(|&access| {
+                        level == edges || access != Access::Private && private <= level + 1
+                    })
+                    .map(|access| {
+                        stricter(
+                            access,
+                            if private > level {
+                                Access::Private
+                            } else if restricted > level {
+                                Access::Protected
+                            } else {
+                                Access::Public
+                            },
+                        )
+                    });
+                if access == Some(Access::Public)
+                    || access.is_some() && self.member_or_friend(scope, class)
+                {
+                    return Some(GrantedAccess::Unrestricted);
+                }
+                if access == Some(Access::Protected)
+                    && let Some(context) = self.access_contexts(scope).find(|&context| {
+                        self.graph.is_base_of(class, context)
+                            && paths.access(&self.graph, context).is_some()
+                    })
+                {
+                    return Some(GrantedAccess::Protected(context));
+                }
+                if level != edges {
+                    let base = self.graph.entity(class).bases.first()?;
+                    if !self.imported_base_accessible(class, base.access, scope) {
+                        continue 'query;
+                    }
+                    class = base.class;
+                }
+            }
+            if bottom != paths.declaring {
+                work.push(AccessTask::Bases(bottom, 0));
             }
         }
         None
@@ -188,7 +333,11 @@ impl Analyzer<'_> {
         if naming == owner && self.graph.binding_access(binding) == Access::Public {
             return None;
         }
-        let declarations = self.member_declaration_frontier(naming, binding);
+        let declarations = if self.graph.has_member_import(binding) {
+            self.member_declaration_frontier(naming, binding)
+        } else {
+            Vec::new()
+        };
         let mut blocked = HashSet::new();
         if declarations.len() > 1 {
             blocked.extend(declarations.iter().map(|&(class, _)| class));

@@ -94,16 +94,22 @@ impl BitImage {
 
 impl Analyzer<'_> {
     pub(super) fn record_completed_image(&mut self, entity: EntityId) -> Result<bool, Error> {
-        let Some(value) = self.graph.aggregate_constants.get(entity) else {
-            return Ok(false);
-        };
-        let values: Vec<_> = value.placement_values().collect();
-        let ty = self.graph.lower_entity_type(entity)?;
-        let Some(image) = self.completed_cells(ty, values)? else {
+        let Some(image) = self.completed_variable_image(entity)? else {
             return Ok(false);
         };
         self.graph.array_images.set_constant(entity, image);
         Ok(true)
+    }
+    pub(super) fn completed_variable_image(
+        &mut self,
+        entity: EntityId,
+    ) -> Result<Option<Vec<Item>>, Error> {
+        let Some(value) = self.graph.aggregate_constants.get(entity) else {
+            return Ok(None);
+        };
+        let values = value.placement_values().collect();
+        let ty = self.graph.lower_entity_type(entity)?;
+        self.completed_cells(ty, values)
     }
     pub(super) fn completed_image(
         &mut self,

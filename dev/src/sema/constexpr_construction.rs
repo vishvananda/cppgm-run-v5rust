@@ -226,6 +226,16 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         self.constant_step(location)?;
+        self.initialize_constant_object(target, initializer, constructor, scope, location)
+    }
+    fn initialize_constant_object(
+        &mut self,
+        target: Address,
+        initializer: Option<ast::Initializer>,
+        constructor: Option<ConstructorId>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         if self.vector_shape(target.designated).is_some()
             && let Some(initializer) = initializer
         {
@@ -626,16 +636,15 @@ impl Analyzer<'_> {
         }
         *next += 1;
         let constructor = self.graph.expression_facts.get(expr)?.constructor;
-        self.construct_constant_object(
-            target,
-            Some(ast::Initializer {
-                kind: InitializerKind::Assign(expr),
-                location: self.tree.expressions.get(expr).location,
-            }),
-            constructor,
-            scope,
-            location,
-        )?;
+        let initializer = Some(ast::Initializer {
+            kind: InitializerKind::Assign(expr),
+            location: self.tree.expressions.get(expr).location,
+        });
+        if braced {
+            self.construct_constant_object(target, initializer, constructor, scope, location)?;
+        } else {
+            self.initialize_constant_object(target, initializer, constructor, scope, location)?;
+        }
         if matches!(
             self.graph.types.get(target.designated).kind,
             TypeKind::Reference { .. }
@@ -706,7 +715,6 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        self.constant_step(location)?;
         if self.graph.constructors.get(id).deleted {
             return Err(nonconstant(location, "a call of a deleted function"));
         }
@@ -904,23 +912,23 @@ impl Analyzer<'_> {
         for index in 0..self.graph.constructors.get(id).bases.len() {
             let base = self.graph.constructors.get(id).bases[index];
             let class = self.graph.constructors.get(id).class;
-            // The ordered plan names a direct base, even if that same class
-            // also occurs indirectly. This is not an unambiguous base conversion.
-            let edge = self
+            // ConstantInterpreter::to_base precedes the subobject's
+            // initialization, including a trivial base; virtual routes fail.
+            let offset = self
                 .graph
-                .entity(class)
-                .bases
-                .get(index)
-                .copied()
-                .filter(|edge| edge.class == base.class)
-                .ok_or(Error::Invariant(
-                    "constructor base plan without direct edge",
-                ))?;
+                .base_search_offset(
+                    class,
+                    base.class,
+                    super::base_projections::OffsetSearch::Constant,
+                )?
+                .ok_or_else(|| {
+                    nonconstant(
+                        location,
+                        "a conversion to a base class outside constant evaluation",
+                    )
+                })?;
             let place = Address {
-                offset: target.offset.wrapping_add(super::integral::signed(
-                    edge.offset
-                        .ok_or(Error::Invariant("constructor base without layout"))?,
-                )),
+                offset: target.offset.wrapping_add(super::integral::signed(offset)),
                 designated: self.graph.lower_entity_type(base.class)?,
                 ..target
             };
@@ -934,6 +942,13 @@ impl Analyzer<'_> {
                     scope,
                     location,
                 )?;
+                continue;
+            }
+            if base.initializer.is_none()
+                && base
+                    .constructor
+                    .is_none_or(|id| self.graph.lower_constructor_trivial(id))
+            {
                 continue;
             }
             self.construct_constant_object(

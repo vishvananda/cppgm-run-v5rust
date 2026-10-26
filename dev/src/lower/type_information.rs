@@ -58,6 +58,7 @@ impl Symbols<'_, '_> {
             TypeObject::Name => Target::TypeinfoName(node),
             TypeObject::Encoding => Target::Type(node),
         };
+        self.table.work.mangled_names += 1;
         Encoder::encode(&self.abi, target, &mut bytes, self.budget)?;
         String::from_utf8(bytes)
             .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI type name").into())

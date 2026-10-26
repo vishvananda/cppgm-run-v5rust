@@ -219,7 +219,10 @@ impl Analyzer<'_> {
         self.unevaluated -= 1;
         match result {
             Ok(()) => (),
-            Err(Error::Diagnostic { .. }) => return Ok(false),
+            Err(Error::Diagnostic { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(false);
+            }
             Err(error) => return Err(error),
         }
         match predicate {

@@ -379,6 +379,7 @@ impl Analyzer<'_> {
                 self.graph.inherited_constructors.discard_instance(key);
                 return Err(error);
             }
+            self.graph.work.totals.substitution_failures += 1;
             // The implicit definition's invalid subobject plan deletes this
             // selected forwarding entry; the use owns its final diagnostic.
             self.graph.entity_mut(inherited).availability =

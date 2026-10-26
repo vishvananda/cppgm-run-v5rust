@@ -91,6 +91,7 @@ pub(crate) fn optimize(program: &mut Program, level: u8) -> Result<(), Error> {
     optimize_with_limits(program, level, Limits::default(), false)
 }
 
+#[cfg(test)]
 pub(crate) fn optimize_with_limits(
     program: &mut Program,
     level: u8,

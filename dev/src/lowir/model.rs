@@ -17,6 +17,8 @@ pub(crate) use body_edits::LinkEditor;
 #[path = "body_import.rs"]
 mod body_import;
 pub(crate) use body_import::ImportMap;
+#[path = "model_storage.rs"]
+mod model_storage;
 #[path = "program_copies.rs"]
 mod program_copies;
 macro_rules! identity {
@@ -77,6 +79,9 @@ impl Names {
     }
     pub(crate) fn intern_view(&mut self, text: &str) -> Result<NameId, Error> {
         self.intern_kind(text.as_bytes(), false)
+    }
+    pub(crate) fn intern_view_bytes(&mut self, text: &[u8]) -> Result<NameId, Error> {
+        self.intern_kind(text, false)
     }
     fn intern_kind(&mut self, text: &[u8], logical: bool) -> Result<NameId, Error> {
         if let Some(&id) = self.index.get(text) {
@@ -594,6 +599,7 @@ impl Program {
         self.alias_names
             .extend(self.aliases.iter().map(|alias| alias.object));
     }
+    #[cfg(test)]
     pub(crate) fn globals(&self) -> &[Global] {
         &self.globals
     }

@@ -14,6 +14,7 @@ pub(crate) mod model;
 mod reader;
 mod runtime;
 mod statistics;
+pub(crate) use statistics::Construction;
 pub use statistics::Statistics;
 pub(crate) mod validator;
 #[cfg(test)]

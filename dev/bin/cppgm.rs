@@ -42,6 +42,7 @@ enum CliError {
     PassVerification(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
+    InvalidLowIr(Vec<u8>),
     Output,
 }
 // Like the oracle ofstream, failed output does not stop parsing later inputs.
@@ -163,7 +164,7 @@ fn invocation(args: &[OsString], lowir: bool) -> Result<Invocation<'_>, CliError
         if preprocessing_option(args, &mut index, &mut preprocessor)? {
             continue;
         }
-        if arg == "--stats" {
+        if arg == "--stats" && !lowir {
             return Err(CliError::Missing(
                 "AST statistics and hosted/preprocessing invocation options",
             ));
@@ -247,6 +248,8 @@ fn run() -> Result<(), CliError> {
             b"--emit-ast" | b"--emit-types" | b"--emit-semantics" | b"--emit-lowir"
         )
     });
+    let statistics = lowir && consume_flag(&mut args, b"--stats");
+    let validate = lowir && consume_flag(&mut args, b"--validate");
     let Invocation {
         output: destination,
         inputs,
@@ -282,7 +285,7 @@ fn run() -> Result<(), CliError> {
     let failed = !lowir && file.is_none();
     let mut output = Output { file, failed };
     let host_object = lowir && debug_level && destination.as_bytes().ends_with(b".lowir");
-    let mut lowir_output = if level > 0 {
+    let mut lowir_output = if level > 0 || validate {
         LowIrOutput::for_optimization(host_object).map_err(tool_error)?
     } else if host_object {
         LowIrOutput::host_object_view()
@@ -320,6 +323,7 @@ fn run() -> Result<(), CliError> {
         )
         .map_err(|error| match error {
             AstToolError::PassVerification(bytes) => CliError::PassVerification(bytes),
+            AstToolError::InvalidLowIr(bytes) => CliError::InvalidLowIr(bytes),
             AstToolError::Missing(group) => CliError::Missing(group),
             AstToolError::Internal(message) => CliError::Internal(message),
             AstToolError::Diagnostic(bytes) | AstToolError::NativeDiagnostic(bytes) => {
@@ -342,18 +346,14 @@ fn run() -> Result<(), CliError> {
             }
         })?;
     }
+    let mut observations = None;
     if lowir {
+        let view = lowir_output
+            .prepare(level, limits, validate)
+            .map_err(tool_error)?;
         output.file = File::create(destination).ok().map(io::BufWriter::new);
         output.failed = output.file.is_none();
-        if level > 0 {
-            lowir_output
-                .write_optimized(&mut output, level, limits)
-                .map_err(tool_error)?;
-        } else {
-            lowir_output
-                .write(&mut output)
-                .map_err(|_| CliError::Output)?;
-        }
+        observations = Some(view.write(&mut output).map_err(|_| CliError::Output)?);
     }
     output.flush().map_err(|_| CliError::Output)?;
     if output.failed {
@@ -364,7 +364,18 @@ fn run() -> Result<(), CliError> {
         }
         return Err(CliError::Output);
     }
+    if statistics && let Some(observations) = observations {
+        let _ = observations.write(&mut io::stderr().lock(), peak_rss());
+    }
     Ok(())
+}
+fn consume_flag(args: &mut Vec<OsString>, flag: &[u8]) -> bool {
+    if let Some(index) = args.iter().position(|arg| arg.as_bytes() == flag) {
+        args.remove(index);
+        true
+    } else {
+        false
+    }
 }
 fn main() -> ExitCode {
     match run() {
@@ -380,6 +391,13 @@ fn main() -> ExitCode {
         }
         Err(CliError::Internal(message)) => {
             eprintln!("internal compiler error: {message}");
+            ExitCode::from(70)
+        }
+        Err(CliError::InvalidLowIr(bytes)) => {
+            let mut out = io::stderr().lock();
+            let _ = out.write_all(b"internal compiler error: ");
+            let _ = out.write_all(&bytes);
+            let _ = out.write_all(b"\n");
             ExitCode::from(70)
         }
         Err(CliError::Message(message)) => {
@@ -398,6 +416,7 @@ fn main() -> ExitCode {
 
 fn tool_error(error: AstToolError) -> CliError {
     match error {
+        AstToolError::InvalidLowIr(bytes) => CliError::InvalidLowIr(bytes),
         AstToolError::PassVerification(bytes) => CliError::PassVerification(bytes),
         AstToolError::Missing(group)
         | AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {

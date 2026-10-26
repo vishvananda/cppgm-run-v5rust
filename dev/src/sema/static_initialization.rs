@@ -565,14 +565,13 @@ impl Analyzer<'_> {
             }
         }
         if self.integral_kind(source).is_some() {
-            let value = if let Some(value) = self.graph.constant_fact(id) {
-                Some(value)
-            } else {
-                match self.evaluate_constant(id, scope, false) {
-                    Ok(value) => Some(value),
-                    Err(Error::Missing(_) | Error::NonConstant { .. }) => None,
-                    Err(error) => return Err(error),
-                }
+            // A static-value request is an interpreter query, even if an
+            // earlier context recorded this expression's scalar. Its frame
+            // and substitution context are inputs to the answer.
+            let value = match self.evaluate_constant(id, scope, false) {
+                Ok(value) => Some(value),
+                Err(Error::Missing(_) | Error::NonConstant { .. }) => None,
+                Err(error) => return Err(error),
             };
             if let Some(value) = value.filter(|value| !value.indeterminate()) {
                 return Ok(Some(self.static_integer_value(value)));

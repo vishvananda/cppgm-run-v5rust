@@ -257,7 +257,7 @@ struct FunctionSignature {
 }
 
 pub(crate) struct Graph {
-    pub(super) work: Box<super::Work>,
+    pub(super) work: Box<super::work::Observations>,
     pub(super) hosted: bool,
     pub(super) cxx14: bool,
     pub(super) exceptions_enabled: bool,
@@ -278,7 +278,7 @@ pub(crate) struct Graph {
     pub(super) bit_fields: super::bit_fields::BitFields,
     pub(super) types: Types,
     pub(super) friendships: super::friendships::Friendships,
-    pub(super) base_paths: super::inheritance::BasePaths,
+    pub(super) base_paths: Box<super::inheritance::BasePaths>,
     pub(super) dependent_members: super::dependent_members::Members,
     // Unit-owned query tables stay off the recursive analyzer's stack value.
     pub(super) template_operands: Box<super::template_operands::Operands>,
@@ -366,7 +366,7 @@ pub(crate) struct Graph {
 }
 impl Graph {
     pub(crate) fn work(&self) -> super::Work {
-        *self.work
+        self.work.snapshot()
     }
     pub(super) fn note_effects(
         &mut self,
@@ -419,16 +419,18 @@ impl Graph {
             super::function_names::ValueKey::Identifier(name) => {
                 self.declared_name(scope, name, super::lookup::Filter::Ordinary)
             }
-            super::function_names::ValueKey::Special(name) => self
-                .special_values
-                .get(&(scope, name))
-                .copied()
-                .filter(|id| {
+            super::function_names::ValueKey::Special(name) => {
+                let binding = self.special_values.get(&(scope, name)).copied()?;
+                if self.scope(scope).kind == ScopeKind::Namespace && self.lookup_limit.is_some() {
+                    self.work.limited_lookup();
+                }
+                Some(binding).filter(|id| {
                     self.scope(scope).kind != ScopeKind::Namespace
                         || self
                             .lookup_limit
                             .is_none_or(|limit| self.ordinals[id.0 as usize] < limit)
-                }),
+                })
+            }
         }
     }
     /// Declaration agreement sees every declaration already introduced,
@@ -525,7 +527,7 @@ impl Graph {
             member_initializers: super::member_initializers::Initializers::default(),
             variable_instances: Box::default(),
             types: Types::default(),
-            base_paths: super::inheritance::BasePaths::default(),
+            base_paths: Box::default(),
             dependent_members: super::dependent_members::Members::default(),
             template_operands: Box::default(),
             class_templates: super::class_templates::ClassTemplates::default(),
@@ -1246,6 +1248,7 @@ impl Graph {
         if self.scope(scope).kind == ScopeKind::Namespace
             && let Some(limit) = self.lookup_limit
         {
+            self.work.limited_lookup();
             let visible = |id: BindingId| self.ordinals[id.0 as usize] < limit;
             entry.ty = entry.ty.filter(|&id| visible(id));
             let function_set = entry

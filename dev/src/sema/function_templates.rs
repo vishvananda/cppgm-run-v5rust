@@ -751,6 +751,8 @@ impl Analyzer<'_> {
                         check_access.then_some(self.graph.binding(primary).entity);
                     let Some(ty) = self.substitute_signature_type(pattern, &mut environment)?
                     else {
+                        self.graph.work.totals.substitution_failures +=
+                            usize::from(environment.failure.is_some());
                         return Ok(None);
                     };
                     let ty = self.graph.types.canonical_function(ty)?;
@@ -810,8 +812,16 @@ impl Analyzer<'_> {
             .remove(&active);
         let key = active.0;
         let ty = match result {
-            Ok(ty) => ty,
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => None,
+            Ok(Some(ty)) => Some(ty),
+            Ok(None) => {
+                self.graph.work.totals.substitution_failures +=
+                    usize::from(environment.failure.is_some());
+                None
+            }
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                None
+            }
             Err(error) => return Err(error),
         };
         let Some(ty) = ty else {
@@ -825,7 +835,10 @@ impl Analyzer<'_> {
         }
         let explicitness = match self.specialized_explicitness(primary, depth, &key.arguments) {
             Ok(value) => value,
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => return Ok(None),
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(None);
+            }
             Err(error) => return Err(error),
         };
         let origin = self.graph.binding(primary);
@@ -891,7 +904,7 @@ impl Analyzer<'_> {
             .function_templates
             .signatures
             .insert(key, binding);
-        self.graph.work.specializations += 1;
+        self.graph.work.totals.specializations += 1;
         Ok(Some(binding))
     }
 
@@ -1353,6 +1366,8 @@ impl Analyzer<'_> {
                 .substitute_signature_type(result, &mut environment)?
                 .is_none()
             {
+                self.graph.work.totals.substitution_failures +=
+                    usize::from(environment.failure.is_some());
                 return Ok(None);
             }
         }
@@ -1361,6 +1376,8 @@ impl Analyzer<'_> {
             let mut environment = Substitution::new(depth, &given);
             environment.context = Some(self.graph.binding(binding).entity);
             let Some(pattern) = self.substitute_signature_type(pattern, &mut environment)? else {
+                self.graph.work.totals.substitution_failures +=
+                    usize::from(environment.failure.is_some());
                 return Ok(None);
             };
             if !self.needs_deduction(pattern, depth)? {

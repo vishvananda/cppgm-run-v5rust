@@ -142,8 +142,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let source = self.constant_vector_list(elements, target.designated, scope, location)?;
-        self.copy_constant_object(target, source, location)
+        self.fill_vector_list(target, elements, scope, location)
     }
     fn constant_vector_list(
         &mut self,
@@ -152,6 +151,18 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Address, Error> {
+        let place = self.allocate_constant_value_storage(ty, location)?;
+        self.fill_vector_list(place, elements, scope, location)?;
+        Ok(place)
+    }
+    fn fill_vector_list(
+        &mut self,
+        place: Address,
+        elements: List<ast::ExprId>,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let ty = place.designated;
         let (lane, bound) = self
             .vector_shape(ty)
             .ok_or(Error::Invariant("constant vector list type"))?;
@@ -160,7 +171,6 @@ impl Analyzer<'_> {
         if count > bound {
             return Err(nonconstant(location, "more lanes than the vector has"));
         }
-        let place = self.allocate_constant_object(ty, None, location)?;
         let opaque = self.constant_lane_vector(ty).is_none();
         let stride = self.type_size(lane, location)?.0;
         for index in 0..count {
@@ -207,7 +217,7 @@ impl Analyzer<'_> {
                 self.store_constant_value(target, zero, location)?;
             }
         }
-        Ok(place)
+        Ok(())
     }
     pub(super) fn constant_vector_value(
         &mut self,
@@ -287,7 +297,7 @@ impl Analyzer<'_> {
                 if !imaginary {
                     return Ok(value);
                 }
-                let place = self.allocate_constant_object(facts.ty, None, node.location)?;
+                let place = self.allocate_constant_value_storage(facts.ty, node.location)?;
                 self.constant_zero_object(place, node.location)?;
                 Ok(place)
             }
@@ -386,7 +396,7 @@ impl Analyzer<'_> {
         if let Some(&first) = self.tree.expr_lists.get(arguments).first() {
             return self.constant_vector_cast(first, ty, scope, location);
         }
-        let place = self.allocate_constant_object(ty, None, location)?;
+        let place = self.allocate_constant_value_storage(ty, location)?;
         self.constant_zero_object(place, location)?;
         Ok(place)
     }
@@ -409,7 +419,7 @@ impl Analyzer<'_> {
             }
             return Ok(place);
         }
-        let target = self.allocate_constant_object(place.designated, None, location)?;
+        let target = self.allocate_constant_value_storage(place.designated, location)?;
         self.copy_constant_object(target, place, location)?;
         Ok(target)
     }
@@ -436,7 +446,7 @@ impl Analyzer<'_> {
                 if let Some(&first) = self.tree.expr_lists.get(elements).first() {
                     self.constant_vector_cast(first, ty, scope, location)?
                 } else {
-                    let place = self.allocate_constant_object(ty, None, location)?;
+                    let place = self.allocate_constant_value_storage(ty, location)?;
                     self.constant_zero_object(place, location)?;
                     place
                 }

@@ -341,7 +341,10 @@ impl Analyzer<'_> {
         })();
         let (constructor, destroyed) = match selection {
             Ok(selection) => selection,
-            Err(Error::Diagnostic { .. }) => return Ok(Properties::default()),
+            Err(Error::Diagnostic { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(Properties::default());
+            }
             Err(error) => return Err(error),
         };
         self.construction_properties(target, operands, constructor, destroyed)
@@ -485,7 +488,10 @@ impl Analyzer<'_> {
         match self.object_initializer(ast::Initializer { location, kind }, scope, target, location)
         {
             Ok(_) => (),
-            Err(Error::Diagnostic { .. }) => return Ok(Properties::default()),
+            Err(Error::Diagnostic { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(Properties::default());
+            }
             Err(error) => return Err(error),
         }
         let binding = self.graph.expression_facts.get(operand)?.conversion;
@@ -625,7 +631,10 @@ impl Analyzer<'_> {
         })();
         let constructor = match selection {
             Ok(constructor) => constructor,
-            Err(Error::Diagnostic { .. }) => return Ok(Properties::default()),
+            Err(Error::Diagnostic { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(Properties::default());
+            }
             Err(error) => return Err(error),
         };
         let mut nothrow = !self.expression_may_throw(operand)?;
@@ -680,7 +689,10 @@ impl Analyzer<'_> {
             .map_err(|_| Error::Limit("assignment query syntax limit"))?;
         let facts = match self.typed_expression(assignment, scope) {
             Ok(facts) => facts,
-            Err(Error::Diagnostic { .. }) => return Ok(Properties::default()),
+            Err(Error::Diagnostic { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(Properties::default());
+            }
             Err(error) => return Err(error),
         };
         let mut trivial = if let Some(CallTarget::Direct(binding)) = facts.call {

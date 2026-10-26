@@ -20,6 +20,17 @@ pub(super) struct ProjectionQuery {
     visited: std::collections::HashSet<(TypeId, i64)>,
 }
 
+#[derive(Clone, Copy)]
+enum SkeletonOrigin {
+    Fresh,
+    Copy,
+}
+impl SkeletonOrigin {
+    fn copied(self, copy: bool) -> Self {
+        if copy { Self::Copy } else { self }
+    }
+}
+
 impl Analyzer<'_> {
     pub(super) fn constant_string_array(
         &mut self,
@@ -105,13 +116,32 @@ impl Analyzer<'_> {
         value: Option<Value>,
         location: SourceOffset,
     ) -> Result<Address, Error> {
+        self.allocate_constant_cells(ty, value, location, SkeletonOrigin::Fresh)
+    }
+    // Scalar lane values are held in addressable cells for this interpreter.
+    // Materializing an already computed value does not construct an object
+    // skeleton in the frozen interpreter.
+    pub(super) fn allocate_constant_value_storage(
+        &mut self,
+        ty: TypeId,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
+        self.allocate_constant_cells(ty, None, location, SkeletonOrigin::Copy)
+    }
+    fn allocate_constant_cells(
+        &mut self,
+        ty: TypeId,
+        value: Option<Value>,
+        location: SourceOffset,
+        origin: SkeletonOrigin,
+    ) -> Result<Address, Error> {
         let cell_type = self.bare_type(ty)?;
         self.constant_object_leaves(cell_type, 0, location)?;
         let place = self
             .constexpr_frames
             .allocate((ty, cell_type), value, location)?;
         let root = self.constexpr_frames.locate(place, location)?;
-        self.constant_skeleton(place, root, location)?;
+        self.populate_constant_skeleton(place, root, location, origin)?;
         Ok(place)
     }
     fn constant_object_leaves(
@@ -162,17 +192,21 @@ impl Analyzer<'_> {
         }
         Ok(count)
     }
-    fn constant_skeleton(
+    fn populate_constant_skeleton(
         &mut self,
         place: Address,
         cell: CellId,
         location: SourceOffset,
+        origin: SkeletonOrigin,
     ) -> Result<(), Error> {
+        if matches!(origin, SkeletonOrigin::Fresh) {
+            self.graph.work.totals.constant_steps += 1;
+        }
         self.check_stack()?;
         match self.graph.types.get(place.designated).kind {
             TypeKind::Complex(part) => {
                 let size = self.type_size(part, location)?.0;
-                for offset in [0, size] {
+                for (index, offset) in [0, size].into_iter().enumerate() {
                     let child = Address {
                         designated: part,
                         offset: place.offset.wrapping_add(super::integral::signed(offset)),
@@ -181,7 +215,13 @@ impl Analyzer<'_> {
                     let child_cell = self
                         .constexpr_frames
                         .add_child(cell, child, None, location)?;
-                    self.constant_skeleton(child, child_cell, location)?;
+                    // C++ constructs one part/lane skeleton and copies it.
+                    self.populate_constant_skeleton(
+                        child,
+                        child_cell,
+                        location,
+                        origin.copied(index != 0),
+                    )?;
                 }
             }
             TypeKind::Array { element, bound, .. } | TypeKind::Vector { element, bound, .. } => {
@@ -204,7 +244,16 @@ impl Analyzer<'_> {
                     let child_cell = self
                         .constexpr_frames
                         .add_child(cell, child, None, location)?;
-                    self.constant_skeleton(child, child_cell, location)?;
+                    let copy = matches!(
+                        self.graph.types.get(place.designated).kind,
+                        TypeKind::Vector { .. }
+                    ) && index != 0;
+                    self.populate_constant_skeleton(
+                        child,
+                        child_cell,
+                        location,
+                        origin.copied(copy),
+                    )?;
                 }
             }
             TypeKind::Class(class) => {
@@ -226,7 +275,7 @@ impl Analyzer<'_> {
                     let child_cell = self
                         .constexpr_frames
                         .add_child(cell, child, None, location)?;
-                    self.constant_skeleton(child, child_cell, location)?;
+                    self.populate_constant_skeleton(child, child_cell, location, origin)?;
                 }
                 for index in 0..self.graph.entity(class).members.len() {
                     let member = self.graph.entity(class).members[index];
@@ -237,7 +286,7 @@ impl Analyzer<'_> {
                     let child_cell =
                         self.constexpr_frames
                             .add_child(cell, child, Some(member), location)?;
-                    self.constant_skeleton(child, child_cell, location)?;
+                    self.populate_constant_skeleton(child, child_cell, location, origin)?;
                 }
             }
             _ => (),

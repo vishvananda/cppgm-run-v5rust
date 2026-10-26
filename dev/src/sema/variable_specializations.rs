@@ -186,7 +186,7 @@ impl Analyzer<'_> {
             .templates
             .keys
             .insert(key, entity);
-        self.graph.work.specializations += 1;
+        self.graph.work.totals.specializations += 1;
         if !dependent && declared.is_none() && self.holds_auto(ty) {
             self.instantiate_variable_specialization(entity)?;
             if self
@@ -306,7 +306,7 @@ impl Analyzer<'_> {
             },
         );
         if result.is_ok() {
-            self.graph.work.instantiated_variables += 1;
+            self.graph.work.totals.instantiated_variables += 1;
         }
         self.graph.variable_instances.finish(entity, result)
     }

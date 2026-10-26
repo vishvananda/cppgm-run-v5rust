@@ -170,8 +170,8 @@ impl Analyzer<'_> {
         set: &[BindingId],
         scratch: &mut OperatorScratch,
     ) -> Result<Option<ExprFacts>, Error> {
-        self.graph.work.resolutions += 1;
-        self.graph.work.candidates += set.len();
+        self.graph.work.totals.resolutions += 1;
+        self.graph.work.totals.candidates += set.len();
         let OperatorQuery {
             id,
             op,

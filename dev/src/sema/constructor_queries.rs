@@ -73,7 +73,10 @@ impl Analyzer<'_> {
     ) -> Result<Option<DefaultProperties>, Error> {
         let selected = match self.declared_default_constructor(class) {
             Ok(selected) => selected,
-            Err(Error::Diagnostic { .. }) => return Ok(None),
+            Err(Error::Diagnostic { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(None);
+            }
             Err(error) => return Err(error),
         };
         if selected.is_none() && self.graph.entity(class).user_constructor.is_some() {
@@ -103,7 +106,10 @@ impl Analyzer<'_> {
         } else {
             match self.default_constructor(class, SourceOffset(0)) {
                 Ok(id) => Some(id),
-                Err(Error::Diagnostic { .. }) => None,
+                Err(Error::Diagnostic { .. }) => {
+                    self.graph.work.totals.substitution_failures += 1;
+                    None
+                }
                 Err(error) => return Err(error),
             }
         };

@@ -71,6 +71,8 @@ mod null_initialization;
 mod object_arrays;
 mod object_classes;
 mod object_storage;
+mod observations;
+pub(crate) use observations::Statistics;
 mod operator_calls;
 mod overflow_intrinsics;
 mod pointers;
@@ -133,6 +135,9 @@ pub(crate) struct Output {
     finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
+    pub(crate) fn statistics(&self, semantic: sema::Work) -> Statistics {
+        self.symbols.work.snapshot(&self.program, semantic)
+    }
     pub(crate) fn retain_definitions(&mut self) -> Result<(), Error> {
         self.program.retain_definitions()?;
         self.definitions.retain();
@@ -173,6 +178,15 @@ impl Output {
         // naming and definition-order caches have had their last consumer.
         Ok(self.program)
     }
+    pub(crate) fn finish_program_observed(
+        mut self,
+        work: sema::Work,
+    ) -> Result<(Program, Statistics), Error> {
+        self.finish_initialization()?;
+        self.finish_entry_aliases();
+        let statistics = self.statistics(work);
+        Ok((self.program, statistics))
+    }
 }
 fn finish_unit<'a>(
     program: &mut Program,
@@ -206,6 +220,16 @@ pub(crate) fn lower_unit(
     declarations: List<ast::DeclId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
+    if output.symbols.work.units == 0 {
+        // ProgramLowering's fixed names belong to the model even when no
+        // definition uses them. Presentation-only names remain separate.
+        for name in [
+            "entry", "this", "ret", "other", "__slot", "__range", "__begin", "__end", "__idx",
+        ] {
+            output.program.names.intern(name)?;
+        }
+    }
+    output.symbols.work.units += 1;
     let mut symbols = symbols::Symbols::new(graph, tree, cursor, budget, &mut output.symbols);
     emit_source_definitions(
         &mut globals::GlobalOutput {

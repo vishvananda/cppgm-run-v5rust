@@ -186,17 +186,20 @@ pub(super) fn lower<'a>(
     }
     let symbol = symbols.entry_symbol(program, entry)?;
     let replaces_entry = symbols.definition_replacement(program, entry, symbol)?;
-    let name = program.names.get(program.symbol(symbol).name).to_owned();
     let metadata = symbols.definition_metadata(program, entry, symbol)?;
     let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
-    let parameters: Vec<_> = names
-        .iter()
-        .map(|(name, ty)| (name.as_str(), *ty))
-        .collect();
+    let parameters = constructed_parameters(
+        program,
+        graph,
+        entity,
+        &names,
+        &parameter_bindings,
+        object_count + result_count + hidden_count,
+    )?;
     let mut builder = if replaces_entry {
-        FunctionBuilder::rebuild_abi_entry(program, symbol, &parameters, result_boundary.ty)?
+        FunctionBuilder::rebuild_parameter_ids(program, symbol, &parameters, result_boundary.ty)?
     } else {
-        FunctionBuilder::new(program, &name, &parameters, result_boundary.ty)?
+        FunctionBuilder::with_parameter_ids(program, symbol, &parameters, result_boundary.ty)?
     };
     builder.metadata(metadata);
     let distinct = entity.is_some_and(|entity| graph.lower_copy_constructor(entity));
@@ -996,12 +999,76 @@ impl Function<'_, '_, '_, '_> {
     }
 }
 
+fn constructed_parameters(
+    program: &mut Program,
+    graph: &Graph,
+    entity: Option<EntityId>,
+    names: &[(String, Type)],
+    bindings: &[(EntityId, Option<crate::lex::identifiers::NameId>, TypeId)],
+    hidden: usize,
+) -> Result<Vec<(crate::lowir::model::NameId, Type)>, Error> {
+    let implicit_copy = entity.is_some_and(|entity| {
+        graph.lower_implicit_assignment(entity) || graph.lower_implicit_copy(entity)
+    });
+    let mut parameters = Vec::with_capacity(names.len());
+    for (index, (name, ty)) in names.iter().enumerate() {
+        let unnamed = index
+            .checked_sub(hidden)
+            .and_then(|index| bindings.get(index))
+            .is_some_and(|(_, name, _)| name.is_none())
+            && !implicit_copy;
+        let name = if unnamed {
+            program.names.intern_view(name)?
+        } else {
+            program.names.intern(name)?
+        };
+        parameters.push((name, *ty));
+    }
+    Ok(parameters)
+}
+
 pub(super) fn signature(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
     ty: TypeId,
     nothrow: bool,
+) -> Result<crate::lowir::model::SignatureId, Error> {
+    signature_with_names(
+        program,
+        symbols,
+        graph,
+        ty,
+        nothrow,
+        SignatureNames::Arguments,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SignatureNames {
+    Arguments,
+    Declaration,
+}
+impl SignatureNames {
+    fn argument(
+        self,
+        program: &mut Program,
+        index: usize,
+    ) -> Result<crate::lowir::model::NameId, Error> {
+        let text = format!("arg{index}");
+        Ok(match self {
+            Self::Arguments => program.names.intern(&text)?,
+            Self::Declaration => program.names.intern_view(&text)?,
+        })
+    }
+}
+fn signature_with_names(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    ty: TypeId,
+    nothrow: bool,
+    names: SignatureNames,
 ) -> Result<crate::lowir::model::SignatureId, Error> {
     use crate::lowir::model::{Arity, Parameter, Signature};
     let TypeView::Function {
@@ -1018,7 +1085,7 @@ pub(super) fn signature(
     let result_boundary = symbols.result_boundary(result)?;
     if result_boundary.indirect {
         values.push(Parameter {
-            name: program.names.intern("arg0")?,
+            name: names.argument(program, 0)?,
             ty: Type::Ptr,
             pass: Some(crate::lowir::vocabulary::Pass::IndirectResult),
             no_alias: false,
@@ -1029,10 +1096,7 @@ pub(super) fn signature(
     for (index, &ty) in parameters.iter().enumerate() {
         let (pass, object_bytes) = reference_boundary(graph, ty)?;
         values.push(Parameter {
-            name: program.names.intern(&format!(
-                "arg{}",
-                index + usize::from(result_boundary.indirect)
-            ))?,
+            name: names.argument(program, index + usize::from(result_boundary.indirect))?,
             ty: parameter_type(graph, ty)?,
             pass,
             no_alias: false,
@@ -1187,7 +1251,14 @@ pub(super) fn declaration_signature(
     entry: super::construction::Entry,
 ) -> Result<crate::lowir::model::SignatureId, Error> {
     let facts = entry.facts(graph)?;
-    let signature = signature(program, symbols, graph, facts.ty, facts.nothrow)?;
+    let signature = signature_with_names(
+        program,
+        symbols,
+        graph,
+        facts.ty,
+        facts.nothrow,
+        SignatureNames::Declaration,
+    )?;
     if let Some(class) = facts.object {
         let first = usize::from(
             program
@@ -1196,9 +1267,9 @@ pub(super) fn declaration_signature(
                 .first()
                 .is_some_and(|p| p.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)),
         );
-        let name = program.names.intern(&format!("arg{first}"))?;
+        let name = SignatureNames::Declaration.argument(program, first)?;
         for index in first..program.signature_mut(signature).parameters.len() {
-            let name = program.names.intern(&format!("arg{}", index + 1))?;
+            let name = SignatureNames::Declaration.argument(program, index + 1)?;
             program.signature_mut(signature).parameters[index].name = name;
         }
         let object_bytes = types::layout(graph, graph.lower_entity_type(class)?)?.0;
@@ -1216,7 +1287,7 @@ pub(super) fn declaration_signature(
     }
     if entry.hidden_vtt(graph)? {
         let first = 1;
-        let name = program.names.intern("arg1")?;
+        let name = SignatureNames::Declaration.argument(program, 1)?;
         program.signature_mut(signature).parameters.insert(
             first,
             crate::lowir::model::Parameter {
@@ -1229,7 +1300,7 @@ pub(super) fn declaration_signature(
             },
         );
         for index in first + 1..program.signature(signature).parameters.len() {
-            let name = program.names.intern(&format!("arg{index}"))?;
+            let name = SignatureNames::Declaration.argument(program, index)?;
             program.signature_mut(signature).parameters[index].name = name;
         }
     }

@@ -222,6 +222,9 @@ impl Analyzer<'_> {
                 .partials
                 .primary(candidate)
                 .map(|_| primary);
+            if context.is_some() {
+                self.graph.work.totals.partial_candidates += 1;
+            }
             let Some(deduced) =
                 self.deduce_partial_arguments(head, deduction_pattern, arguments, context)?
             else {
@@ -301,7 +304,13 @@ impl Analyzer<'_> {
             let result = self.substitute_signature_type(pattern, &mut substitution);
             let substituted = match result {
                 Ok(Some(ty)) => self.graph.types.canonical_function(ty)?,
-                Ok(None) | Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                Ok(None) => {
+                    self.graph.work.totals.substitution_failures +=
+                        usize::from(substitution.failure.is_some());
+                    return Ok(None);
+                }
+                Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                    self.graph.work.totals.substitution_failures += 1;
                     return Ok(None);
                 }
                 Err(error) => return Err(error),

@@ -16,8 +16,7 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
         let mut phase_written = false;
         if phase == 0 || phase == 2 {
             for global in program
-                .globals()
-                .iter()
+                .globals_in_publication_order()
                 .filter(|g| matches!(g.init, GlobalInit::Declaration) == (phase == 0))
             {
                 if written && !phase_written {

@@ -126,6 +126,7 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn constant_step(&mut self, location: SourceOffset) -> Result<(), Error> {
+        self.graph.work.totals.constant_steps += 1;
         self.check_stack()?;
         self.constexpr_frames.step(location)
     }

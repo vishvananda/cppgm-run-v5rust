@@ -11,6 +11,7 @@ pub enum AstToolError {
     PassVerification(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
+    InvalidLowIr(Vec<u8>),
     Output(std::io::Error),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -31,6 +32,33 @@ pub struct LowIrOutput {
     )>,
     pub(crate) work: crate::sema::Work,
     pub(crate) front_ms: f64,
+    lower_ms: f64,
+}
+/// Owned reports from a completed source-to-LowIR view.
+pub struct LowIrStatistics {
+    lowering: crate::lower::Statistics,
+    optimizer: Option<crate::opt::Statistics>,
+    front_ms: f64,
+    lower_ms: f64,
+    write_ms: f64,
+}
+impl LowIrStatistics {
+    /// Write deterministic work counters and independently measured resources.
+    /// # Errors
+    /// Returns a diagnostic-sink write failure.
+    pub fn write(&self, out: &mut impl std::io::Write, peak_rss: u64) -> std::io::Result<()> {
+        self.lowering.write(out)?;
+        writeln!(
+            out,
+            " front_ms={} lower_ms={} write_ms={} peak_rss_kb={peak_rss}",
+            self.front_ms, self.lower_ms, self.write_ms
+        )?;
+        if let Some(statistics) = &self.optimizer {
+            statistics.write(out)?;
+            writeln!(out)?;
+        }
+        Ok(())
+    }
 }
 impl LowIrOutput {
     /// Retain typed definitions until the optimizer consumes the completed unit.
@@ -47,20 +75,63 @@ impl LowIrOutput {
         Ok(result)
     }
 
-    /// Optimize the retained unit and render its canonical `LowIR` view.
-    ///
+    /// Finish all compiler work before the driver opens its output file.
     /// # Errors
-    /// Returns a lowering, optimization or output failure.
-    pub fn write_optimized(
+    /// Returns a lowering, optimization or constructed-program validation failure.
+    pub fn prepare(
         self,
-        output: &mut impl std::io::Write,
         level: u8,
         limits: crate::opt::Limits,
-    ) -> Result<(), AstToolError> {
-        let mut program = self.output.finish_program().map_err(lower_error)?;
-        crate::opt::optimize_with_limits(&mut program, level, limits, false)
-            .map_err(native_error)?;
-        crate::lowir::writer::write(&program, output).map_err(AstToolError::Output)
+        validate: bool,
+    ) -> Result<LowIrView, AstToolError> {
+        let (storage, lowering, optimizer) = if level != 0 || validate {
+            let (mut program, mut lowering) = self
+                .output
+                .finish_program_observed(self.work)
+                .map_err(lower_error)?;
+            if validate {
+                validate_lowir(&program, false)?;
+            }
+            let optimizer = if level == 0 {
+                None
+            } else {
+                Some(
+                    crate::opt::optimize_observed(
+                        &mut program,
+                        level,
+                        limits,
+                        false,
+                        crate::opt::Verification::default(),
+                    )
+                    .map_err(native_error)?,
+                )
+            };
+            if validate && level != 0 {
+                validate_lowir(&program, true)?;
+            }
+            lowering.update_program(&program);
+            (
+                LowIrStorage::Retained(Box::new(program)),
+                lowering,
+                optimizer,
+            )
+        } else {
+            let mut output = self.output;
+            output.finish_initialization().map_err(lower_error)?;
+            output.finish_entry_aliases();
+            let lowering = output.statistics(self.work);
+            (LowIrStorage::Streamed(Box::new(output)), lowering, None)
+        };
+        Ok(LowIrView {
+            storage,
+            statistics: LowIrStatistics {
+                lowering,
+                optimizer,
+                front_ms: self.front_ms,
+                lower_ms: self.lower_ms,
+                write_ms: 0.0,
+            },
+        })
     }
 
     /// Create the textual `LowIR` half of a host object compilation.
@@ -118,6 +189,7 @@ impl LowIrOutput {
             object: Some((model, level, limits, observations)),
             work: crate::sema::Work::default(),
             front_ms: 0.0,
+            lower_ms: 0.0,
         })
     }
     #[cfg(test)]
@@ -167,30 +239,89 @@ impl LowIrOutput {
             std::io::Error::other(format!("startup finalization failed: {error:?}"))
         })?;
         self.output.finish_entry_aliases();
-        crate::lowir::writer::write_globals(
-            &self.output.program,
-            output,
-            !self.output.definitions.is_empty()
-                || self.output.initializer.is_some()
-                || self.output.finalizer.is_some(),
-        )?;
-        self.output
-            .definitions
-            .write(&self.output.program, output)?;
-        for symbol in [self.output.initializer, self.output.finalizer]
-            .into_iter()
-            .flatten()
-        {
-            let function = self
-                .output
-                .program
-                .function(self.output.program.symbol(symbol))
-                .ok_or_else(|| std::io::Error::other("missing startup function"))?;
-            crate::lowir::writer::write_definition(&self.output.program, function, output)?;
-        }
-        crate::lowir::writer::write_aliases(&self.output.program, output)?;
-        Ok(())
+        write_streamed(&self.output, output)
     }
+}
+/// A completed `LowIR` view has released all front ends and cannot demand more work.
+pub struct LowIrView {
+    storage: LowIrStorage,
+    statistics: LowIrStatistics,
+}
+enum LowIrStorage {
+    Retained(Box<crate::lowir::model::Program>),
+    Streamed(Box<crate::lower::Output>),
+}
+impl LowIrView {
+    /// Write the completed view and return its inert work/resource observations.
+    /// # Errors
+    /// Returns an output-sink failure.
+    pub fn write(
+        mut self,
+        output: &mut impl std::io::Write,
+    ) -> Result<LowIrStatistics, std::io::Error> {
+        let start = std::time::Instant::now();
+        match &self.storage {
+            LowIrStorage::Retained(program) => crate::lowir::writer::write(program, &mut *output)?,
+            LowIrStorage::Streamed(model) => write_streamed(model, output)?,
+        }
+        output.flush()?;
+        self.statistics.write_ms = start.elapsed().as_secs_f64() * 1000.0;
+        Ok(self.statistics)
+    }
+}
+fn write_streamed(
+    output_model: &crate::lower::Output,
+    output: &mut impl std::io::Write,
+) -> Result<(), std::io::Error> {
+    crate::lowir::writer::write_globals(
+        &output_model.program,
+        output,
+        !output_model.definitions.is_empty()
+            || output_model.initializer.is_some()
+            || output_model.finalizer.is_some(),
+    )?;
+    output_model
+        .definitions
+        .write(&output_model.program, output)?;
+    for symbol in [output_model.initializer, output_model.finalizer]
+        .into_iter()
+        .flatten()
+    {
+        let function = output_model
+            .program
+            .function(output_model.program.symbol(symbol))
+            .ok_or_else(|| std::io::Error::other("missing startup function"))?;
+        crate::lowir::writer::write_definition(&output_model.program, function, output)?;
+    }
+    crate::lowir::writer::write_aliases(&output_model.program, output)?;
+    Ok(())
+}
+fn validate_lowir(
+    program: &crate::lowir::model::Program,
+    optimized: bool,
+) -> Result<(), AstToolError> {
+    crate::lowir::validator::validate_constructed(program).map_err(|error| {
+        let detail = match error {
+            crate::lowir::Error::Diagnostic(message)
+            | crate::lowir::Error::Construction(message) => message.into_bytes(),
+            crate::lowir::Error::ByteDiagnostic(bytes)
+            | crate::lowir::Error::PassVerification(bytes) => bytes,
+            crate::lowir::Error::Limit => b"storage limit exceeded".to_vec(),
+            crate::lowir::Error::NotImplemented(group) => group.as_bytes().to_vec(),
+            crate::lowir::Error::Output(error) => error.to_string().into_bytes(),
+        };
+        AstToolError::InvalidLowIr(
+            [
+                if optimized {
+                    b"optimized LowIR is invalid: ".as_slice()
+                } else {
+                    b"invalid LowIR: ".as_slice()
+                },
+                &detail,
+            ]
+            .concat(),
+        )
+    })
 }
 pub enum Destination<'a> {
     Text(&'a mut dyn std::io::Write),
@@ -382,6 +513,7 @@ fn emit_preprocessed(
     let output = match destination {
         Destination::Check => return Ok(()),
         Destination::LowIr(output) => {
+            let lower_start = std::time::Instant::now();
             let graph = graph.ok_or(AstToolError::Internal("lowering without semantic graph"))?;
             let (tree, cursor, declarations) = unit
                 .semantic_inputs()
@@ -446,8 +578,9 @@ fn emit_preprocessed(
                     }
                 },
             })?;
-            output.work = graph.work();
+            output.work.add(graph.work());
             output.front_ms += front_ms;
+            output.lower_ms += lower_start.elapsed().as_secs_f64() * 1000.0;
             return Ok(());
         }
         Destination::Text(output) => output,

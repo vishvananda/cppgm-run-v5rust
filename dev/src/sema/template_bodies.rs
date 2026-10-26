@@ -684,7 +684,7 @@ impl Analyzer<'_> {
                     .bodies
                     .states
                     .insert(entity, State::Complete(body));
-                self.graph.work.instantiated_functions += 1;
+                self.graph.work.totals.instantiated_functions += 1;
                 Ok(())
             }
             Err(error) => {
@@ -763,7 +763,7 @@ impl Analyzer<'_> {
             .bodies
             .states
             .insert(entity, State::Synthesized);
-        self.graph.work.instantiated_functions += 1;
+        self.graph.work.totals.instantiated_functions += 1;
         Ok(true)
     }
 
@@ -1001,7 +1001,7 @@ impl Analyzer<'_> {
         });
         self.graph.lookup_limit = None;
         result?;
-        self.graph.work.instantiated_functions += 1;
+        self.graph.work.totals.instantiated_functions += 1;
         Ok(body)
     }
     pub(super) fn template_body_frame(

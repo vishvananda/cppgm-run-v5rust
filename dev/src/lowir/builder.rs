@@ -96,14 +96,42 @@ impl<'a> FunctionBuilder<'a> {
         if program.function_defined(symbol) {
             return Err(Error::Diagnostic("duplicate constructed function".into()));
         }
+        let parameters = parameters
+            .iter()
+            .map(|&(name, ty)| Ok((program.names.intern(name)?, ty)))
+            .collect::<Result<Vec<_>, Error>>()?;
+        Self::with_parameter_ids(program, symbol, &parameters, result)
+    }
+    pub(crate) fn with_parameter_ids(
+        program: &'a mut Program,
+        symbol: SymbolId,
+        parameters: &[(NameId, Type)],
+        result: Type,
+    ) -> Result<Self, Error> {
+        if program.function_defined(symbol) {
+            return Err(Error::Diagnostic("duplicate constructed function".into()));
+        }
         Self::construct(program, symbol, parameters, result)
     }
     /// Emit another ABI entry of a source function sharing an explicit object
     /// label. The lowering owner verifies the source and variant provenance.
+    #[cfg(test)]
     pub(crate) fn rebuild_abi_entry(
         program: &'a mut Program,
         symbol: SymbolId,
         parameters: &[(&str, Type)],
+        result: Type,
+    ) -> Result<Self, Error> {
+        let parameters = parameters
+            .iter()
+            .map(|&(name, ty)| Ok((program.names.intern(name)?, ty)))
+            .collect::<Result<Vec<_>, Error>>()?;
+        Self::rebuild_parameter_ids(program, symbol, &parameters, result)
+    }
+    pub(crate) fn rebuild_parameter_ids(
+        program: &'a mut Program,
+        symbol: SymbolId,
+        parameters: &[(NameId, Type)],
         result: Type,
     ) -> Result<Self, Error> {
         if !program.function_defined(symbol) {
@@ -116,7 +144,7 @@ impl<'a> FunctionBuilder<'a> {
     fn construct(
         program: &'a mut Program,
         symbol: SymbolId,
-        parameters: &[(&str, Type)],
+        parameters: &[(NameId, Type)],
         result: Type,
     ) -> Result<Self, Error> {
         let name = program.symbol(symbol).name;
@@ -126,8 +154,7 @@ impl<'a> FunctionBuilder<'a> {
             boundary: Boundary::default(),
         };
         let mut body = Body::new(None, parameters.len());
-        for &(text, ty) in parameters {
-            let name = program.names.intern(text)?;
+        for &(name, ty) in parameters {
             if body.find_temp(name).is_some() {
                 return Err(Error::Diagnostic("duplicate constructed parameter".into()));
             }

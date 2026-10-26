@@ -44,6 +44,34 @@ impl Values {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn integral_initializer_value(
+        &mut self,
+        entity: EntityId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+    ) -> Result<Option<super::constants::Constant>, Error> {
+        let ty = self.graph.lower_entity_type(entity)?;
+        let result = self.in_constant_evaluation(|analyzer| {
+            let place = analyzer.allocate_constant_storage(ty, None, initializer.location)?;
+            analyzer.constexpr_frames.initialize_declaration(place)?;
+            analyzer.construct_constant_object(
+                place,
+                Some(initializer),
+                None,
+                scope,
+                initializer.location,
+            )?;
+            analyzer.read_constant_integer(place, initializer.location)
+        });
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(error @ Error::NonConstant { .. }) if self.graph.entity(entity).constexpr => {
+                Err(error.constant_initializer(initializer.location))
+            }
+            Err(Error::NonConstant { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
     pub(super) fn constant_binds_temporary(&self, id: ast::ExprId) -> Result<bool, Error> {
         let mut id = self.graph.expression_facts.root(id);
         if let Some(step) = self.graph.expression_facts.function_conversion(id) {

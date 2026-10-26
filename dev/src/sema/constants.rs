@@ -183,7 +183,7 @@ impl Analyzer<'_> {
         } else {
             id
         };
-        if self.semantic() && !skipping {
+        if self.semantic() && !skipping && self.graph.expression_facts.get(id).is_ok() {
             self.constant_step(self.tree.expressions.get(id).location)?;
         }
         if let Some(value) = self.recorded_constant(id, scope, skipping)? {
@@ -1021,9 +1021,8 @@ impl Analyzer<'_> {
             {
                 break;
             }
-            if id != root && self.semantic() && !skipping {
-                self.constant_step(self.tree.expressions.get(id).location)?;
-            }
+            // Like ConstantInterpreter::binary, the whole left spine is one
+            // rvalue visit. Its operands retain their own budgeted visits.
             self.constant_spine.push(id);
             id = left;
         }
@@ -1560,13 +1559,10 @@ impl Analyzer<'_> {
                     if matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { elements, .. }
                         if self.tree.expr_lists.get(elements).is_empty()))
             {
-                let target = self.bare_type(object)?;
-                self.graph.entity_mut(entity).constant = ConstantState::Value(Constant {
-                    state: crate::sema::constant_addresses::ScalarState::Value,
-                    high: 0,
-                    bits: 0,
-                    ty: target,
-                });
+                self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
+                let value = self.integral_initializer_value(entity, initializer, scope)?;
+                self.graph.entity_mut(entity).constant =
+                    value.map_or(ConstantState::None, ConstantState::Value);
             }
             return Ok(());
         };
@@ -1575,7 +1571,9 @@ impl Analyzer<'_> {
         while let ExprKind::Paren(id) = self.tree.expressions.get(inner).kind {
             inner = id;
         }
-        let value = if self.semantic()
+        let value = if self.semantic() && !reference {
+            self.integral_initializer_value(entity, initializer, scope)?
+        } else if self.semantic()
             && (self.floating_expression(expr)
                 || self
                     .graph

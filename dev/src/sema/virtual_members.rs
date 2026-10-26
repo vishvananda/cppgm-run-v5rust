@@ -24,7 +24,8 @@ pub(super) struct VirtualFunction {
 pub(super) struct Virtuals {
     functions: HashMap<EntityId, VirtualFunction>,
     declarations: HashMap<(EntityId, ValueKey, TypeId), EntityId>,
-    signatures: HashSet<(ValueKey, TypeId)>,
+    names: HashSet<ValueKey>,
+    signatures: HashSet<TypeId>,
     destructors: HashMap<EntityId, EntityId>,
     pure_counts: HashMap<EntityId, u32>,
     pub(super) classes: HashMap<EntityId, ClassVirtuals>,
@@ -254,20 +255,15 @@ impl Analyzer<'_> {
             && self.graph.entity(function).template_head.is_none()
         {
             let destructor = special == Some(MemberKind::Destructor);
-            if destructor || self.graph.virtuals.signatures.contains(&(key, signature)) {
-                let mut work: Vec<_> = self
-                    .graph
-                    .entity(class)
-                    .bases
-                    .iter()
-                    .rev()
-                    .map(|edge| edge.class)
-                    .collect();
-                let mut seen = HashSet::new();
-                while let Some(base) = work.pop() {
-                    if !seen.insert(base) {
-                        continue;
-                    }
+            if destructor
+                || (self.graph.virtuals.names.contains(&key)
+                    && self.graph.virtuals.signatures.contains(&signature))
+            {
+                let primary = self.virtual_table_primary(class, location)?;
+                let mut search =
+                    super::override_search::OverrideSearch::new(&self.graph, class, primary);
+                while let Some((base, on_primary)) = search.next(&self.graph) {
+                    self.graph.work.totals.override_steps += 1;
                     let found = if destructor {
                         self.graph.virtuals.destructor(base)
                     } else {
@@ -294,14 +290,7 @@ impl Analyzer<'_> {
                             location,
                         );
                     } else {
-                        work.extend(
-                            self.graph
-                                .entity(base)
-                                .bases
-                                .iter()
-                                .rev()
-                                .map(|edge| edge.class),
-                        );
+                        search.descend_inherited(&self.graph, base, on_primary);
                     }
                 }
             }
@@ -328,7 +317,8 @@ impl Analyzer<'_> {
                 self.graph.virtuals.destructors.insert(class, function);
             } else {
                 self.note_virtual_assignment_target(key, info.ty)?;
-                self.graph.virtuals.signatures.insert((key, signature));
+                self.graph.virtuals.names.insert(key);
+                self.graph.virtuals.signatures.insert(signature);
                 self.graph
                     .virtuals
                     .declarations
@@ -432,20 +422,12 @@ impl Analyzer<'_> {
         for function in functions {
             let ty = self.graph.lower_entity_type(function)?;
             let signature = self.graph.types.declaration_signature(ty)?;
-            let mut work: Vec<_> = self
-                .graph
-                .entity(class)
-                .bases
-                .iter()
-                .rev()
-                .map(|base| base.class)
-                .collect();
-            let mut seen = HashSet::new();
+            let primary = self.virtual_table_primary(class, location)?;
+            let mut search =
+                super::override_search::OverrideSearch::new(&self.graph, class, primary);
             let mut overridden = None;
-            while let Some(base) = work.pop() {
-                if !seen.insert(base) {
-                    continue;
-                }
+            while let Some((base, on_primary)) = search.next(&self.graph) {
+                self.graph.work.totals.override_steps += 1;
                 if let Some(&found) = self
                     .graph
                     .virtuals
@@ -457,14 +439,7 @@ impl Analyzer<'_> {
                     self.note_exception_override(function, found, None, location);
                     overridden = overridden.or(Some(found));
                 } else {
-                    work.extend(
-                        self.graph
-                            .entity(base)
-                            .bases
-                            .iter()
-                            .rev()
-                            .map(|edge| edge.class),
-                    );
+                    search.descend_inherited(&self.graph, base, on_primary);
                 }
             }
             if let Some(found) = overridden {
@@ -1119,6 +1094,16 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let implicit = self.graph.entity(class).declared_destructor.is_none();
+        if implicit {
+            let primary = self.virtual_table_primary(class, location)?;
+            let mut search =
+                super::override_search::OverrideSearch::new(&self.graph, class, primary);
+            while search.next(&self.graph).is_some() {
+                // Every completed base owns a destructor declaration, including
+                // an implicit trivial one, so override_facts stops here.
+                self.graph.work.totals.override_steps += 1;
+            }
+        }
         for index in 0..self.graph.entity(class).bases.len() {
             let base = self.graph.entity(class).bases[index].class;
             if let Some(found) = self.graph.virtuals.destructor(base) {
@@ -1341,6 +1326,9 @@ impl super::graph::Graph {
                 || class == root
                 || facts.key.is_none_or(|key| self.lower_function_defined(key))
             {
+                if !self.virtuals.layouts.contains_key(&class) {
+                    self.work.totals.virtual_slots += work.len();
+                }
                 self.virtuals.layouts.insert(class, work.clone());
             }
             if retain_chain {

@@ -206,6 +206,7 @@ impl Symbols<'_, '_> {
         let derived = self.abi_type(self.graph.lower_entity_type(context.complete)?)?;
         let base = self.abi_type(self.graph.lower_entity_type(context.class)?)?;
         let mut encoded = Vec::new();
+        self.table.work.mangled_names += 1;
         Encoder::encode(
             &self.abi,
             Target::ConstructionVtable {
@@ -282,6 +283,7 @@ impl Symbols<'_, '_> {
         let mut points = Vec::new();
         let mut position = 0_u64;
         for (s, targets) in bodies {
+            self.table.work.vtables += 1;
             let mut items = self.context_rows(context, s)?;
             let point = self.table_header_bytes(context.class, s)?;
             items.push(integer(

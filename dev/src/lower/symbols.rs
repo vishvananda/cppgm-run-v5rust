@@ -52,6 +52,8 @@ use crate::{
 use std::{collections::HashMap, fmt::Write};
 #[derive(Default)]
 pub(super) struct SymbolTable {
+    pub(super) work: super::observations::Work,
+    deferred_globals: std::collections::HashSet<SymbolId>,
     pub(super) object_mode: bool,
     pub(super) host_objects: bool,
     objects: HashMap<NameId, Option<SymbolId>>,
@@ -239,6 +241,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn host_objects(&self) -> bool {
         self.table.host_objects
+    }
+    // Text streaming publishes pending source declarations at unit boundaries.
+    // They remain unresolved in C++ until finish(), unlike runtime declarations.
+    pub(super) fn note_deferred_global(&mut self, symbol: SymbolId) {
+        self.table.deferred_globals.insert(symbol);
+    }
+    pub(super) fn global_definition_conflicts(&self, program: &Program, symbol: SymbolId) -> bool {
+        program.symbol(symbol).declared()
+            && !(self.table.deferred_globals.contains(&symbol)
+                && program
+                    .global(program.symbol(symbol))
+                    .is_some_and(|global| {
+                        matches!(global.init, crate::lowir::model::GlobalInit::Declaration)
+                    }))
     }
     pub(super) fn note_declaration_only_global(&mut self, entity: EntityId) {
         self.declaration_only_globals.insert(entity);
@@ -998,6 +1014,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.variable_abi_name(owner)?
         };
         let mut bytes = Vec::new();
+        self.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
             &self.abi,
             abi::encoder::Target::ReferenceTemporary { owner, sequence },
@@ -1758,6 +1775,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 self.variable_abi_name(entity)?
             };
             let mut bytes = Vec::new();
+            self.table.work.mangled_names += 1;
             abi::encoder::Encoder::encode(
                 &self.abi,
                 abi::encoder::Target::Entity(name),
@@ -1881,6 +1899,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let base = program.names.get(program.symbol(global).name).to_owned();
         let name = self.variable_abi_name(entity)?;
         let mut bytes = Vec::new();
+        self.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
             &self.abi,
             abi::encoder::Target::GuardVariable(name),
@@ -2085,6 +2104,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let name = self.with_implicit_tags(name, facts.ty)?;
         self.local_static_names.insert(entity, name);
         let mut bytes = Vec::new();
+        if self.graph.lower_asm_label(entity).is_none() {
+            self.table.work.mangled_names += 1;
+        }
         abi::encoder::Encoder::encode(
             &self.abi,
             abi::encoder::Target::Entity(name),
@@ -2118,6 +2140,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         let guard = if dynamic {
             bytes.clear();
+            self.table.work.mangled_names += 1;
             abi::encoder::Encoder::encode(
                 &self.abi,
                 abi::encoder::Target::GuardVariable(name),
@@ -2356,6 +2379,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         let function = self.function_encoding(entity)?;
         let mut object = Vec::new();
+        self.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
             &self.abi,
             abi::encoder::Target::Entity(function),
@@ -2550,6 +2574,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             let function = self.encode_function(&facts, variant)?;
             let mut object = Vec::new();
+            self.table.work.mangled_names += 1;
             abi::encoder::Encoder::encode(
                 &self.abi,
                 abi::encoder::Target::Entity(function),
@@ -2626,13 +2651,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 FunctionName::Destructor(_)
             )
         {
-            if self
-                .entries
-                .get(&Entry::DestructorBase(entity))
-                .is_some_and(|&base| program.function_defined(base))
-            {
-                return Ok(());
-            }
             let object = self.base_entry_object(program, entry)?;
             self.table
                 .entry_aliases
@@ -2641,12 +2659,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     target: symbol,
                 });
         }
-        if let Entry::Constructor(id, Variant::Complete) = entry {
-            if let Some(&base) = self.entries.get(&Entry::Constructor(id, Variant::Base))
-                && program.function_defined(base)
-            {
-                return Ok(());
-            }
+        if let Entry::Constructor(_, Variant::Complete) = entry {
             let object = self.base_entry_object(program, entry)?;
             self.table
                 .entry_aliases
@@ -2673,6 +2686,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let facts = self.entry_facts(entry)?;
         let encoding = self.encode_function(&facts, super::construction::Variant::Base)?;
         let mut bytes = Vec::new();
+        self.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
             &self.abi,
             abi::encoder::Target::Entity(encoding),

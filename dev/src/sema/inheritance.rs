@@ -40,15 +40,12 @@ impl BaseReachability {
 }
 
 struct BaseQuery {
-    paths: HashMap<EntityId, BaseReachability>,
-    shared: u8,
+    total: u8,
+    virtual_path: bool,
 }
 impl BaseQuery {
-    fn count(&self, derived: EntityId) -> u8 {
-        self.paths[&derived]
-            .non_virtual
-            .saturating_add(self.shared)
-            .min(2)
+    fn count(&self) -> u8 {
+        self.total
     }
 }
 
@@ -57,6 +54,7 @@ pub(crate) struct BasePathId(u32);
 
 #[derive(Default)]
 pub(super) struct BasePaths {
+    facts: super::base_facts::Tables,
     records: Vec<Vec<(EntityId, usize)>>,
     index: HashMap<(EntityId, EntityId), BasePathId>,
 }
@@ -68,6 +66,9 @@ impl BasePaths {
 }
 
 impl Graph {
+    pub(super) fn simple_base_hierarchy(&self, class: EntityId) -> bool {
+        self.base_paths.facts.simple(self, class)
+    }
     pub(super) fn class_of(&self, ty: TypeId) -> Option<EntityId> {
         if let TypeKind::Class(class) = self.types.get(ty).kind {
             Some(class)
@@ -99,6 +100,29 @@ impl Graph {
     // Each graph edge is visited once, even for exponentially many subobjects.
     // Saturation at two preserves the only distinction needed by ambiguity checks.
     fn base_query(&self, derived: EntityId, base: EntityId) -> BaseQuery {
+        if let Some(fact) = self.base_paths.facts.get(self, derived, base) {
+            return BaseQuery {
+                total: fact.count,
+                virtual_path: fact.virtual_path,
+            };
+        }
+        // The no-table path follows a single-base prefix without entering
+        // base_paths; only the branching suffix owns memoized walk work.
+        let mut root = derived;
+        let mut virtual_chain = false;
+        while root != base {
+            let [edge] = self.entity(root).bases.as_slice() else {
+                break;
+            };
+            virtual_chain |= edge.is_virtual;
+            root = edge.class;
+        }
+        if root == base {
+            return BaseQuery {
+                total: 1,
+                virtual_path: virtual_chain,
+            };
+        }
         let mut counts = HashMap::new();
         counts.insert(
             base,
@@ -109,7 +133,7 @@ impl Graph {
         );
         let mut shared = 0u8;
         let mut counted = HashSet::new();
-        let mut work = vec![(derived, 0usize)];
+        let mut work = vec![(root, 0usize)];
         while let Some((class, next)) = work.last_mut() {
             if counts.contains_key(class) {
                 work.pop();
@@ -140,17 +164,21 @@ impl Graph {
                     }
                 }
                 counts.insert(*class, result);
+                self.work.base_steps(1);
                 work.pop();
             }
         }
         BaseQuery {
-            paths: counts,
-            shared,
+            total: counts[&root].non_virtual.saturating_add(shared).min(2),
+            virtual_path: virtual_chain || counts[&root].through_virtual,
         }
     }
 
     pub(super) fn base_count(&self, derived: EntityId, base: EntityId) -> u8 {
-        self.base_query(derived, base).count(derived)
+        if base != derived && !self.is_base_of(base, derived) {
+            return 0;
+        }
+        self.base_query(derived, base).count()
     }
 
     pub(super) fn retain_base_path(
@@ -162,27 +190,34 @@ impl Graph {
             return Ok(id);
         }
         let query = self.base_query(derived, base);
-        if query.count(derived) != 1 {
+        if query.count() != 1 {
             return Err(Error::Invariant("retaining a nonunique base path"));
         }
-        let mut class = derived;
-        let mut path = Vec::new();
-        while class != base {
-            let (index, edge) = self
-                .entity(class)
-                .bases
-                .iter()
-                .enumerate()
-                .find(|(_, edge)| {
-                    query
-                        .paths
-                        .get(&edge.class)
-                        .is_some_and(|facts| facts.reachable())
-                })
-                .ok_or(Error::Invariant("base path without an edge"))?;
-            path.push((class, index));
-            class = edge.class;
-        }
+        // Retain only the first route. Query-local misses bound a shared
+        // lattice to its edges, without copying a map of every path count.
+        let mut pending = vec![(derived, 0usize)];
+        let mut misses = HashSet::new();
+        let path = loop {
+            let Some((class, next)) = pending.last_mut() else {
+                return Err(Error::Invariant("base path without an edge"));
+            };
+            if *class == base {
+                pending.pop();
+                break pending
+                    .into_iter()
+                    .map(|(class, next)| (class, next - 1))
+                    .collect();
+            }
+            if let Some(edge) = self.entity(*class).bases.get(*next) {
+                *next += 1;
+                if !misses.contains(&edge.class) {
+                    pending.push((edge.class, 0));
+                }
+            } else {
+                misses.insert(*class);
+                pending.pop();
+            }
+        };
         let id = BasePathId(
             u32::try_from(self.base_paths.records.len())
                 .map_err(|_| Error::Limit("base path limit"))?,
@@ -275,13 +310,13 @@ impl Analyzer<'_> {
         downcast: bool,
     ) -> Result<BasePathId, Error> {
         let query = self.graph.base_query(derived, base);
-        if downcast && query.paths[&derived].through_virtual {
+        if downcast && query.virtual_path {
             return Err(Error::at(
                 location,
                 "a cast from a virtual base class to its derived class",
             ));
         }
-        if query.count(derived) > 1 {
+        if query.count() > 1 {
             return Err(Error::at(
                 location,
                 if downcast {
@@ -311,8 +346,8 @@ impl Analyzer<'_> {
         reverse: bool,
     ) -> Result<BasePathId, Error> {
         let query = self.graph.base_query(derived, base);
-        let ambiguous = query.count(derived) > 1;
-        let virtual_base = query.paths[&derived].through_virtual;
+        let ambiguous = query.count() > 1;
+        let virtual_base = query.virtual_path;
         if ambiguous || virtual_base {
             return Err(Error::at(
                 location,
@@ -529,38 +564,42 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let edges = self.graph.base_paths.get(path);
-        // A retained path selects a subobject for lowering. Access to a shared
-        // virtual subobject can instead use another route to that same object.
-        if edges
-            .iter()
-            .any(|&(class, index)| self.graph.entity(class).bases[index].is_virtual)
-        {
-            let &(derived, _) = edges
-                .first()
-                .ok_or(Error::Invariant("empty virtual base path"))?;
-            let &(last, index) = edges
-                .last()
-                .ok_or(Error::Invariant("empty virtual base path"))?;
-            let base = self.graph.entity(last).bases[index].class;
-            if self.accessible_base_name(derived, base, scope) {
-                return Ok(());
+        let Some(&(derived, _)) = edges.first() else {
+            return Ok(());
+        };
+        let &(last, index) = edges.last().ok_or(Error::Invariant("empty base path"))?;
+        let base = self.graph.entity(last).bases[index].class;
+        let mut class = derived;
+        let mut memo = HashMap::new();
+        while class != base {
+            let bases = &self.graph.entity(class).bases;
+            let edge = if bases.len() > 1 {
+                bases.iter().find(|edge| edge.class == base).or_else(|| {
+                    bases.iter().find(|edge| {
+                        super::base_facts::leads_to_base(&self.graph, edge.class, base, &mut memo)
+                    })
+                })
+            } else {
+                bases.first()
             }
-            return Err(Error::at(
-                location,
-                "conversion to an inaccessible base class",
-            ));
-        }
-        for &(class, index) in edges {
-            let edge = self.graph.entity(class).bases[index];
+            .ok_or(Error::Invariant("base access route lost"))?;
             if edge.access != Access::Public
                 && !self.member_or_friend(scope, class)
                 && !(edge.access == Access::Protected && self.class_context(scope, class))
             {
+                if edges
+                    .iter()
+                    .any(|&(class, index)| self.graph.entity(class).bases[index].is_virtual)
+                    && self.accessible_base_name(derived, base, scope)
+                {
+                    return Ok(());
+                }
                 return Err(Error::at(
                     location,
                     "conversion to an inaccessible base class",
                 ));
             }
+            class = edge.class;
         }
         Ok(())
     }
@@ -646,8 +685,8 @@ mod tests {
             (instance, 1, true),
         ] {
             let query = analyzer.graph.base_query(derived, base);
-            assert_eq!(query.count(derived), count);
-            assert_eq!(query.paths[&derived].through_virtual, virtual_path);
+            assert_eq!(query.count(), count);
+            assert_eq!(query.virtual_path, virtual_path);
         }
         let path = analyzer.graph.retain_base_path(diamond, base).unwrap();
         assert_eq!(

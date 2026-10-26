@@ -108,6 +108,7 @@ impl From<u64> for BaseProjection {
 pub(super) enum OffsetSearch {
     Nonvirtual,
     Constant,
+    VirtualSlot,
 }
 impl Graph {
     pub(crate) fn lower_path_projection(&self, path: BasePathId) -> Result<BaseProjection, Error> {
@@ -190,7 +191,9 @@ impl Graph {
         from: EntityId,
         to: EntityId,
     ) -> Result<Option<u64>, Error> {
-        self.base_search_offset(from, to, OffsetSearch::Nonvirtual)
+        // Analyzer::result_needs_adjustment uses NonVirtualBaseOffset, whose
+        // shape query is outside the lowering/interpreter base-step census.
+        self.base_search_offset(from, to, OffsetSearch::VirtualSlot)
     }
     pub(super) fn base_search_offset(
         &self,
@@ -203,17 +206,22 @@ impl Graph {
         // is the route chosen by the C++ ABI query, after semantic covariance.
         let mut known = HashMap::new();
         known.insert(base, Some(0_u64));
-        let mut work = vec![(derived, 0_usize)];
-        while let Some((class, next)) = work.last_mut() {
+        let mut work = vec![(derived, 0_usize, false)];
+        while let Some((class, next, entered)) = work.last_mut() {
             if known.contains_key(class) {
                 work.pop();
                 continue;
             }
+            if !*entered {
+                if !matches!(search, OffsetSearch::VirtualSlot) {
+                    self.work.base_steps(1);
+                }
+                *entered = true;
+            }
             let edges = &self.entity(*class).bases;
-            // ConstantInterpreter::base_search recognizes a direct nonvirtual
-            // base of a branching class before searching its other bases.
-            if matches!(search, OffsetSearch::Constant)
-                && *next == 0
+            // Both offset owners prefer a direct nonvirtual base before
+            // searching the other bases of a branching class.
+            if *next == 0
                 && edges.len() > 1
                 && let Some(edge) = edges
                     .iter()
@@ -248,8 +256,14 @@ impl Graph {
                 } else {
                     *next += 1;
                 }
+            } else if matches!(search, OffsetSearch::Nonvirtual | OffsetSearch::VirtualSlot)
+                && edges.len() > 1
+                && edge.class != base
+                && self.entity(edge.class).bases.is_empty()
+            {
+                *next += 1;
             } else {
-                work.push((edge.class, 0));
+                work.push((edge.class, 0, false));
             }
         }
         Ok(known[&derived])
@@ -259,7 +273,7 @@ impl Graph {
         from: EntityId,
         to: EntityId,
     ) -> Result<Option<u64>, Error> {
-        self.nonvirtual_result_offset(from, to)
+        self.base_search_offset(from, to, OffsetSearch::Nonvirtual)
     }
     pub(crate) fn lower_vcall_functions(&self, class: EntityId) -> Result<Vec<EntityId>, Error> {
         if !self.lower_polymorphic(class) {

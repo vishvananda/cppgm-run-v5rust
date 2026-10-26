@@ -166,7 +166,23 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(id).location,
             );
         }
-        let address = self.constant_place(id, scope)?;
+        // A static lvalue's symbol is already a typed fact. C++ static_lvalue
+        // uses it directly; references and other evaluated designations still
+        // ask the interpreter for their stored referent.
+        let node = self.graph.entity(entity);
+        let designated = self.graph.expression_facts.get(id)?.ty;
+        let address = if node.function.is_some() {
+            Address::new(Root::Function(entity), designated)
+        } else if node.variable.is_some_and(|variable| !variable.automatic)
+            && node.data_member != Some(super::graph::DataMemberKind::Instance)
+            && !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+            && self.graph.lower_binding_alias(entity).is_none()
+            && self.graph.predefined_variables.text(entity).is_none()
+        {
+            Address::new(Root::Variable(entity), designated)
+        } else {
+            self.constant_place(id, scope)?
+        };
         let mut place = StaticAddress::evaluated(address);
         if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
             && self.graph.entity(entity).home.is_some_and(|home| {

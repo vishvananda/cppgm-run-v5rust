@@ -919,8 +919,8 @@ impl Analyzer<'_> {
             [None; 2]
         };
         let declared = set.bindings(&self.graph).len();
-        self.graph.work.resolutions += 1;
-        self.graph.work.candidates += declared + copies.iter().flatten().count();
+        self.graph.work.totals.resolutions += 1;
+        self.graph.work.totals.candidates += declared + copies.iter().flatten().count();
         let has_templates = set.bindings(&self.graph).iter().any(|&id| {
             self.graph
                 .entity(self.graph.binding(id).entity)
@@ -1278,8 +1278,8 @@ impl Analyzer<'_> {
         args: &[ExprFacts],
         scratch: &mut CallScratch,
     ) -> Result<BindingId, Error> {
-        self.graph.work.resolutions += 1;
-        self.graph.work.candidates += bindings.len();
+        self.graph.work.totals.resolutions += 1;
+        self.graph.work.totals.candidates += bindings.len();
         for &binding in bindings {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.template_head.is_some() {

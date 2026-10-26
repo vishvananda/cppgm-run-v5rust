@@ -303,6 +303,7 @@ impl Symbols<'_, '_> {
                     init: GlobalInit::Declaration,
                 },
             )?;
+            self.note_deferred_global(symbol);
         }
         Ok(())
     }
@@ -317,6 +318,7 @@ impl Symbols<'_, '_> {
         let name = String::from_utf8(encoded)
             .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI class name"))?;
         let mut object = Vec::new();
+        self.table.work.mangled_names += 1;
         Encoder::encode(
             &self.abi,
             match kind {
@@ -494,6 +496,7 @@ impl Symbols<'_, '_> {
             self.append_group_items(program, class, metadata.binding, &mut items)?;
         }
         define(program, symbol, metadata, items)?;
+        self.table.work.vtables += 1;
         if group.is_some() && !one_object {
             self.define_views(program, class, symbol, metadata.binding)?;
         }
@@ -665,6 +668,7 @@ impl Symbols<'_, '_> {
                 address(typeinfo, 0),
             ]);
             self.append_view_targets(program, class, index, binding, &mut items)?;
+            self.table.work.vtables += 1;
             define(
                 program,
                 symbol,
@@ -826,6 +830,7 @@ impl Symbols<'_, '_> {
             .map(|(from, via)| self.vbase_row_offset(from, via))
             .transpose()?;
         let mut object = Vec::new();
+        self.table.work.mangled_names += 1;
         Encoder::encode(
             &self.abi,
             Target::Thunk {
@@ -942,6 +947,8 @@ impl Symbols<'_, '_> {
                 let function =
                     self.encode_function(&facts, crate::lower::construction::Variant::Base)?;
                 let mut object = Vec::new();
+                // Object-family aliases are backend observations. The C++
+                // lowering neither mangles nor interns these extra aliases.
                 Encoder::encode(
                     &self.abi,
                     Target::Thunk {
@@ -955,7 +962,7 @@ impl Symbols<'_, '_> {
                     &mut object,
                     self.budget,
                 )?;
-                Some(program.names.intern_bytes(&object)?)
+                Some(program.names.intern_view_bytes(&object)?)
             };
             Some((entity, object, variant))
         } else {

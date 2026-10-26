@@ -314,11 +314,7 @@ fn define_storage<'a>(
         Some(types::storage(graph, facts.ty)?)
     };
     let symbol = symbols.variable_symbol(output.program, entity)?;
-    if output
-        .program
-        .global(output.program.symbol(symbol))
-        .is_some_and(|global| !matches!(global.init, GlobalInit::Declaration))
-    {
+    if symbols.global_definition_conflicts(output.program, symbol) {
         return Err(Error::Semantic(crate::sema::Error::Diagnostic {
             location,
             message: "redefinition of a variable across translation units",
@@ -642,6 +638,7 @@ pub(super) fn finish(
                 init: GlobalInit::Declaration,
             },
         )?;
+        symbols.note_deferred_global(symbol);
     }
     Ok(())
 }

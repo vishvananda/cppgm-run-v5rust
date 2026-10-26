@@ -446,6 +446,7 @@ impl Analyzer<'_> {
             template: None,
             ..default
         });
+        self.graph.work.totals.instantiated_arguments += 1;
         Ok(())
     }
 

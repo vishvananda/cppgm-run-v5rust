@@ -159,6 +159,9 @@ impl Symbols<'_, '_> {
                 location: None,
             },
         )?;
+        // local_static_lowering.cpp declares lifetime helpers outside its
+        // lowering declaration-work counter.
+        self.table.work.lifetime_declarations.insert(symbol);
         self.table.guard_functions[call.index()] = Some(symbol);
         program.publish_runtime_declaration(symbol);
         Ok(symbol)
@@ -209,6 +212,9 @@ impl Symbols<'_, '_> {
                 location: None,
             },
         )?;
+        // local_static_lowering.cpp declares lifetime helpers outside its
+        // lowering declaration-work counter.
+        self.table.work.lifetime_declarations.insert(symbol);
         self.table.thread_atexit = Some(symbol);
         program.publish_runtime_declaration(symbol);
         Ok(symbol)
@@ -242,6 +248,9 @@ impl Symbols<'_, '_> {
                 init: GlobalInit::Declaration,
             },
         )?;
+        // local_static_lowering.cpp declares lifetime helpers outside its
+        // lowering declaration-work counter.
+        self.table.work.lifetime_declarations.insert(symbol);
         self.table.dso_handle = Some(symbol);
         Ok(symbol)
     }
@@ -302,6 +311,9 @@ impl Symbols<'_, '_> {
                 location: None,
             },
         )?;
+        // local_static_lowering.cpp declares lifetime helpers outside its
+        // lowering declaration-work counter.
+        self.table.work.lifetime_declarations.insert(symbol);
         self.table.atexit = Some(symbol);
         program.publish_runtime_declaration(symbol);
         Ok(symbol)
