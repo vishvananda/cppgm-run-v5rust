@@ -1,4 +1,25 @@
 //! Model census and phase observations for the `LowIR` tool. See NOTICE.
+/// Completed builder work, independent of whether a consumer retains bodies.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Construction {
+    pub(crate) functions: usize,
+    pub(crate) instructions: usize,
+    pub(crate) blocks: usize,
+    pub(crate) slots: usize,
+}
+impl Construction {
+    pub(super) fn record(&mut self, body: &super::model::Body) {
+        self.functions += 1;
+        self.instructions += body
+            .blocks()
+            .iter()
+            .map(|block| block.instructions.len())
+            .sum::<usize>();
+        // The function's entry is implicit in FunctionLowering's constructor.
+        self.blocks += body.blocks().len().saturating_sub(1);
+        self.slots += body.slots().len();
+    }
+}
 /// Counts read from the completed typed model, with independently measured times.
 #[derive(Default)]
 pub struct Statistics {

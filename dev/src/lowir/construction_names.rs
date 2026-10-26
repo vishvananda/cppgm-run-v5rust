@@ -54,14 +54,14 @@ pub(super) fn slots(
             SlotName::Generated(stem) => loop {
                 generated = generated.checked_add(1).ok_or(Error::Limit)?;
                 let text = format!("{stem}__{generated}");
-                if !taken.contains(&names.intern(&text)?) {
+                if !taken.contains(&names.intern_view(&text)?) {
                     break text;
                 }
             },
             SlotName::GeneratedName(stem) => loop {
                 generated = generated.checked_add(1).ok_or(Error::Limit)?;
                 let text = format!("{}__{generated}", names.get(*stem));
-                if !taken.contains(&names.intern(&text)?) {
+                if !taken.contains(&names.intern_view(&text)?) {
                     break text;
                 }
             },
@@ -72,10 +72,10 @@ pub(super) fn slots(
             }
         };
         let mut text = text;
-        while taken.contains(&names.intern(&text)?) {
+        while taken.contains(&names.intern_view(&text)?) {
             text.push('_');
         }
-        result.push(names.intern(&text)?);
+        result.push(names.intern_view(&text)?);
     }
     Ok(result)
 }

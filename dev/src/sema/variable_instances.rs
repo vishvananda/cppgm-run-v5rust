@@ -765,6 +765,7 @@ impl Analyzer<'_> {
         );
         match result {
             Ok(initializer) => {
+                self.graph.work.instantiated_variables += 1;
                 self.graph
                     .variable_instances
                     .states

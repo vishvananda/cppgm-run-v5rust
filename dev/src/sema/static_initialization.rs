@@ -266,7 +266,14 @@ impl Analyzer<'_> {
         ) {
             return Ok(());
         }
-        let value = if let Some(expr) = self.single_initializer(initializer) {
+        // initialization_value consumes the already evaluated variable before
+        // asking for another constant probe. Its initializer may be a call or
+        // size query whose expression has no scalar fold fact of its own.
+        let value = if let super::constants::ConstantState::Value(value) =
+            self.graph.entity(entity).constant
+        {
+            Some(self.static_integer_value(value))
+        } else if let Some(expr) = self.single_initializer(initializer) {
             self.static_scalar(expr, target, scope)?
         } else if matches!(
             self.graph.types.get(target).kind,

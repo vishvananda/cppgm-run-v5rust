@@ -46,6 +46,8 @@ pub(super) struct Landing {
 }
 #[derive(Default)]
 pub(super) struct Tables {
+    pub(super) walks: usize,
+    pub(super) states: usize,
     pub(super) landings: Vec<Landing>,
     pub(super) filters: Vec<i32>,
     pub(super) map: Vec<(i32, i32)>,
@@ -555,6 +557,7 @@ pub(super) fn analyze(
             while let Some(block) = work.pop() {
                 changed.clear();
                 analysis.walk(program, block, false, &mut changed)?;
+                analysis.plan.tables.walks += 1;
                 work.extend_from_slice(&changed);
             }
         } else {
@@ -572,6 +575,7 @@ pub(super) fn analyze(
                 listed[block.index()] = false;
                 changed.clear();
                 analysis.walk(program, block, false, &mut changed)?;
+                analysis.plan.tables.walks += 1;
                 for &next in &changed {
                     if !listed[next.index()] {
                         listed[next.index()] = true;
@@ -580,6 +584,7 @@ pub(super) fn analyze(
                 }
             }
         }
+        analysis.plan.tables.states = analysis.regions.len();
         for &block in &body.layout {
             if flow.reachable[block.index()] && analysis.incoming[block.index()].is_some() {
                 analysis.walk(program, block, true, &mut changed)?;

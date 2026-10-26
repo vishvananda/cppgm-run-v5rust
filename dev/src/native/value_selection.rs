@@ -328,7 +328,7 @@ pub(super) fn select_for_object(
             .enter_block(body, &selection.facts, &selection.addresses, block);
         let created = selection
             .mir
-            .begin_block(super::mir::BlockName::Named(body.block(block).name))?;
+            .begin_block(super::mir::BlockName::from_lowir(body.block(block)))?;
         if Some(created) != control.targets[block.index()] {
             return Err(Error::Construction("native block out of order".into()));
         }

@@ -72,6 +72,8 @@ struct Cell {
 }
 pub(crate) struct ObjectBuilder {
     level: u8,
+    observation_options: super::ObservationOptions,
+    observations: super::Observations,
     model: ObjectModel,
     cfi: Vec<u8>,
     unwind: Vec<(SectionId, u64, UnwindTarget, i64)>,
@@ -135,6 +137,13 @@ fn resize(bytes: &mut Vec<u8>, length: u64, fill: u8) -> Result<(), Error> {
     Ok(())
 }
 pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result<Object, Error> {
+    compile_observed(program, path, level).map(|(object, _)| object)
+}
+pub(crate) fn compile_observed(
+    program: &mut Program,
+    path: Vec<u8>,
+    level: u8,
+) -> Result<(Object, super::Observations), Error> {
     let mut compiler = if let Some(sink) = program.take_definition_sink() {
         *sink
             .into_any()
@@ -146,6 +155,8 @@ pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result
     compiler.out.path = path;
     compiler.encode(program, level)?;
     compiler.prune(program)?;
+    compiler.observations.statistics.pruned_functions =
+        compiler.ranges.iter().filter(|range| range.dropped).count();
     compiler.place_text(program)?;
     compiler.place_globals(program)?;
     compiler.place_startup(program)?;
@@ -179,17 +190,36 @@ pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result
         ));
     }
 
-    Ok(compiler.out)
+    Ok((compiler.out, compiler.observations))
 }
 impl ObjectBuilder {
     pub(crate) fn new(level: u8) -> Result<Self, Error> {
         Self::with_model(level, ObjectModel::Course)
     }
     pub(crate) fn with_model(level: u8, model: ObjectModel) -> Result<Self, Error> {
+        Self::with_census(level, model, false)
+    }
+    pub(crate) fn with_census(level: u8, model: ObjectModel, census: bool) -> Result<Self, Error> {
+        Self::with_observations(
+            level,
+            model,
+            super::ObservationOptions {
+                census,
+                clocks: false,
+            },
+        )
+    }
+    pub(crate) fn with_observations(
+        level: u8,
+        model: ObjectModel,
+        observation_options: super::ObservationOptions,
+    ) -> Result<Self, Error> {
         let mut image = Image::new(0);
         let runtime = Symbols::imports(&mut image)?;
         Ok(Self {
             level,
+            observation_options,
+            observations: super::Observations::default(),
             model,
             cfi: Vec::new(),
             unwind: Vec::new(),
@@ -229,17 +259,33 @@ impl ObjectBuilder {
         if let Some(thunk) = program.jump_thunk(symbol) {
             super::jump_thunk::emit(symbol, thunk, &mut self.image)?;
         } else {
+            let clock = (self.observation_options.clocks || self.observation_options.census)
+                .then(std::time::Instant::now);
             let mir = super::value_selection::select_for_object(
                 program, symbol, function, level, self.model,
             )?;
-            let _ = super::emission::emit_with_frame(
+            self.observations.statistics.selected(
+                &mir,
+                clock.map_or(0.0, |start| start.elapsed().as_secs_f64() * 1000.0),
+            )?;
+            if self.observation_options.census {
+                super::census::append(program, &mir, &mut self.observations.census);
+            }
+            let clock = clock.map(|_| std::time::Instant::now());
+            let emission = super::emission::emit_with_frame(
                 &mir,
                 &mut self.image,
                 Some(self.runtime),
                 (self.model == ObjectModel::Host).then_some(&mut facts),
             )?;
+            self.observations.statistics.encoded(
+                emission,
+                clock.map_or(0.0, |start| start.elapsed().as_secs_f64() * 1000.0),
+            )?;
             if self.model == ObjectModel::Host {
                 let lsda = super::lsda::encode(&facts, &mir.eh)?;
+                self.observations.statistics.landings += mir.eh.landings.len();
+                self.observations.statistics.lsdas += usize::from(!lsda.bytes.is_empty());
                 self.lsda.extend(lsda.bytes);
                 self.type_fields.extend(lsda.types);
             }
@@ -654,6 +700,7 @@ impl ObjectBuilder {
             }
             let symbol = range.symbol;
             let lsda = range.lsda.clone();
+            self.observations.statistics.unwind_bytes += lsda.len();
             let types = range.types.clone();
             let name = if let Some(name) = name {
                 name
@@ -733,6 +780,7 @@ impl ObjectBuilder {
                 ));
             }
         }
+        self.observations.statistics.unwind_bytes += bytes.len();
         self.out.section_mut(frame).size = u64::try_from(bytes.len()).map_err(|_| Error::Limit)?;
         self.cfi.clear();
         self.lsda.clear();

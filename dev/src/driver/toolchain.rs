@@ -43,7 +43,14 @@ enum DriverMode {
     Preprocess,
 }
 #[derive(Default)]
+struct AuditOptions {
+    verification: Option<PathBuf>,
+    census: bool,
+    statistics: bool,
+}
+#[derive(Default)]
 struct Invocation {
+    peak_rss: Option<fn() -> u64>,
     nostdinc: bool,
     syntax_only: bool,
     mode: DriverMode,
@@ -54,7 +61,21 @@ struct Invocation {
     preprocessor: DriverOptions,
     level: u8,
     inline_limits: crate::opt::Limits,
+    audit: AuditOptions,
 }
+impl Invocation {
+    fn verification(&self) -> crate::opt::Verification<'_> {
+        crate::opt::Verification {
+            enabled: self.audit.verification.is_some(),
+            dump: self
+                .audit
+                .verification
+                .as_deref()
+                .filter(|path| !path.as_os_str().is_empty()),
+        }
+    }
+}
+
 fn message(s: &str) -> AstToolError {
     AstToolError::Diagnostic(s.as_bytes().to_vec())
 }
@@ -136,6 +157,17 @@ fn parse(
             b"-c" => compile_only = true,
             b"-fsyntax-only" => invocation.syntax_only = true,
             b"-pthread" => pthread = true,
+            b"--verify-passes" => {
+                invocation
+                    .audit
+                    .verification
+                    .get_or_insert_with(PathBuf::new);
+            }
+            b"--stats-functions" => invocation.audit.census = true,
+            b"--stats" => invocation.audit.statistics = true,
+            _ if bytes.starts_with(b"--verify-passes=") => {
+                invocation.audit.verification = Some(OsStr::from_bytes(&bytes[16..]).into());
+            }
             b"-fno-exceptions" | b"-fexceptions" => {
                 invocation.preprocessor.modes.exceptions = bytes == b"-fexceptions";
             }
@@ -417,6 +449,11 @@ fn compile(
     values: &PredefinedValues,
     budget: StackBudget,
 ) -> Result<native::Object, AstToolError> {
+    let start = std::time::Instant::now();
+    let observations = native::ObservationOptions {
+        census: invocation.audit.census,
+        clocks: invocation.audit.statistics,
+    };
     let host = invocation.mode == DriverMode::Compile
         && !invocation.output.as_os_str().as_bytes().ends_with(b".obj");
     let model = if host {
@@ -428,11 +465,12 @@ fn compile(
         let mut program = crate::lowir::read_object_file(&input.path).map_err(ast::native_error)?;
         native::recover_jump_thunks(&mut program, model);
         if invocation.level != 0 {
-            crate::opt::optimize_with_limits(
+            crate::opt::optimize_observed(
                 &mut program,
                 invocation.level,
                 invocation.inline_limits,
                 model == native::ObjectModel::Course,
+                invocation.verification(),
             )
             .map_err(ast::native_error)?;
             program.clear_jump_thunks();
@@ -440,11 +478,11 @@ fn compile(
         }
         program
             .set_definition_sink(Box::new(
-                native::ObjectBuilder::with_model(invocation.level, model)
+                native::ObjectBuilder::with_observations(invocation.level, model, observations)
                     .map_err(ast::native_error)?,
             ))
             .map_err(ast::native_error)?;
-        return native::compile_object(
+        return native::compile_object_observed(
             &mut program,
             input.path.as_os_str().as_bytes().to_vec(),
             invocation.level,
@@ -454,12 +492,20 @@ fn compile(
                 [input.path.as_os_str().as_bytes(), b": ", &bytes].concat(),
             ),
             error => error,
+        })
+        .map(|(object, observations)| {
+            report_census(&observations.census);
+            object
         });
     }
     let source = read_source(input)?;
-    let mut output =
-        LowIrOutput::for_object_options(model, invocation.level, invocation.inline_limits)
-            .map_err(ast::native_error)?;
+    let mut output = LowIrOutput::for_object_options(
+        model,
+        invocation.level,
+        invocation.inline_limits,
+        observations,
+    )
+    .map_err(ast::native_error)?;
     ast::emit_compilation_unit(
         &source,
         input.path.as_os_str().as_bytes(),
@@ -472,14 +518,73 @@ fn compile(
     // Optimization owns typed LowIR alone; source storage ends with the front
     // end, before the retained unit reaches its optimizer/backend consumers.
     drop(source);
+    let work = output.work;
+    let front_ms = output.front_ms;
     output
-        .finish_object(input.path.as_os_str().as_bytes().to_vec())
+        .finish_object_observed(
+            input.path.as_os_str().as_bytes().to_vec(),
+            invocation.verification(),
+        )
         .map_err(|error| match error {
             AstToolError::NativeDiagnostic(bytes) => AstToolError::Diagnostic(
                 [input.path.as_os_str().as_bytes(), b": ", &bytes].concat(),
             ),
             error => error,
         })
+        .map(|(object, observations)| {
+            if invocation.audit.statistics {
+                let mut out = std::io::stderr().lock();
+                let _ = report_compile(
+                    input,
+                    &object,
+                    &observations,
+                    work,
+                    CompileTimes {
+                        front_ms,
+                        back_ms: start.elapsed().as_secs_f64() * 1000.0 - front_ms,
+                    },
+                    invocation.peak_rss.map_or(0, |query| query()),
+                    &mut out,
+                );
+            }
+            report_census(&observations.census);
+            object
+        })
+}
+#[derive(Clone, Copy)]
+struct CompileTimes {
+    front_ms: f64,
+    back_ms: f64,
+}
+fn report_compile(
+    input: &Input,
+    object: &native::Object,
+    observations: &native::Observations,
+    work: crate::sema::Work,
+    times: CompileTimes,
+    peak_rss: u64,
+    out: &mut impl std::io::Write,
+) -> std::io::Result<()> {
+    let CompileTimes { front_ms, back_ms } = times;
+    out.write_all(b"cppgm++ compile stats ")?;
+    out.write_all(input.path.as_os_str().as_bytes())?;
+    out.write_all(b": ")?;
+    observations.statistics.write(object, out)?;
+    work.write(out)?;
+    write!(
+        out,
+        " section_bytes={} front_ms={front_ms} lower_and_object_ms={back_ms}",
+        object.section_bytes()
+    )?;
+    observations.statistics.write_clocks(out)?;
+    writeln!(out, " peak_rss_kb={peak_rss}")
+}
+fn report_census(lines: &[String]) {
+    use std::io::Write;
+    let mut out = std::io::stderr().lock();
+    for line in lines {
+        let _ = writeln!(out, "{line}");
+    }
 }
 fn read_source(input: &Input) -> Result<SourceBuffer, AstToolError> {
     if !std::fs::metadata(&input.path).is_ok_and(|m| m.is_file()) {
@@ -574,8 +679,10 @@ pub fn run(
     budget: StackBudget,
     permissions: &std::fs::Permissions,
     host: &super::host_environment::HostEnvironment<'_>,
+    peak_rss: fn() -> u64,
 ) -> Result<(), AstToolError> {
     let mut invocation = parse(args, host)?;
+    invocation.peak_rss = Some(peak_rss);
     host.apply(&mut invocation.preprocessor, invocation.nostdinc);
     prune_include_paths(&mut invocation.preprocessor);
     if invocation.mode == DriverMode::Preprocess {
@@ -633,10 +740,16 @@ pub fn run(
                 .map_err(ast::native_error)?,
         });
     }
-    native::link_objects(objects, path, Some(permissions)).map_err(|error| {
-        let _ = std::fs::remove_file(path);
-        ast::native_error(error)
-    })
+    native::link_objects(objects, path, Some(permissions))
+        .map_err(|error| {
+            let _ = std::fs::remove_file(path);
+            ast::native_error(error)
+        })
+        .map(|statistics| {
+            if invocation.audit.statistics {
+                let _ = statistics.write(&mut std::io::stderr().lock(), peak_rss());
+            }
+        })
 }
 
 // The output opens before the first source; every unit writes sof even if

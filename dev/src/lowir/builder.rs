@@ -310,9 +310,15 @@ impl<'a> FunctionBuilder<'a> {
         self.body.use_block(name, 0)
     }
     pub(crate) fn block_origin(&mut self, block: BlockId, stem: &str) -> Result<(), Error> {
-        let stem = self.program.names.intern(stem)?;
+        let stem = self.program.names.intern_view(stem)?;
         self.body.generated_block_origin(block, stem);
         Ok(())
+    }
+    pub(crate) fn generated_block(&mut self, name: &str, stem: &str) -> Result<BlockId, Error> {
+        let name = self.program.names.intern_view(name)?;
+        let block = self.body.use_block(name, 0)?;
+        self.block_origin(block, stem)?;
+        Ok(block)
     }
     pub(crate) fn signature(
         &mut self,
@@ -350,8 +356,7 @@ impl<'a> FunctionBuilder<'a> {
         self.body.add_arguments(values)
     }
     pub(crate) fn block(&mut self, name: &str) -> Result<(), Error> {
-        let name = self.program.names.intern(name)?;
-        let id = self.body.use_block(name, 0)?;
+        let id = self.block_id(name)?;
         self.place_block(id)
     }
     pub(crate) fn place_block(&mut self, id: BlockId) -> Result<(), Error> {
@@ -603,6 +608,7 @@ impl<'a> FunctionBuilder<'a> {
         self.body.name_constructed_slots(&names)?;
         self.body.retain_slot_names(self.slot_names);
         self.body.name_blocks(&mut self.program.names)?;
+        self.program.construction.record(&self.body);
         if !self.publish {
             return self.program.complete_body(self.symbol, self.body);
         }
@@ -615,6 +621,21 @@ impl<'a> FunctionBuilder<'a> {
 mod tests {
     use super::*;
     use crate::lowir::{exercises, model::InstructionKind as I, validator};
+
+    #[test]
+    fn presentation_names_can_later_acquire_real_identity_without_changing_ids() -> Result<(), Error>
+    {
+        let mut names = crate::lowir::model::Names::default();
+        let before = names.logical_len();
+        let view = names.intern_view("for_cond_1")?;
+        assert_eq!(names.logical_len(), before);
+        assert_eq!(names.intern("for_cond_1")?, view);
+        assert_eq!(names.logical_len(), before + 1);
+        assert_eq!(names.intern_view("for_cond_1")?, view);
+        assert_eq!(names.intern("for_cond_1")?, view);
+        assert_eq!(names.logical_len(), before + 1);
+        Ok(())
+    }
 
     #[test]
     fn rebuilding_an_abi_entry_keeps_symbol_identity_and_new_rejects_duplicates()

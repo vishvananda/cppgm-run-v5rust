@@ -160,8 +160,17 @@ impl BlockId {
 #[derive(Clone, Copy)]
 pub(super) enum BlockName {
     Named(NameId),
+    Generated(NameId),
     Edge(NameId, NameId),
     Switch,
+}
+impl BlockName {
+    pub(super) fn from_lowir(block: &crate::lowir::model::Block) -> Self {
+        match block.source_name() {
+            Some(name) => Self::Named(name),
+            None => Self::Generated(block.name),
+        }
+    }
 }
 pub(super) struct Block {
     pub(super) name: BlockName,
@@ -172,6 +181,17 @@ pub(super) struct Block {
 pub(super) enum BranchLayout {
     Pending,
     Final,
+}
+#[derive(Clone, Copy, Default)]
+pub(super) struct AllocationWork {
+    pub(super) grants: usize,
+    pub(super) releases: usize,
+    pub(super) busy: usize,
+    pub(super) busy_parameters: usize,
+    pub(super) busy_values: usize,
+    pub(super) defined_in_plan: usize,
+    pub(super) defined_frame: usize,
+    pub(super) defined_other_register: usize,
 }
 pub(super) struct Function {
     pub(super) symbol: SymbolId,
@@ -208,6 +228,7 @@ pub(super) struct Function {
     pub(super) fused_compares: usize,
     pub(super) dynamic_copies: usize,
     pub(super) lowir_instructions: usize,
+    pub(super) allocation_work: AllocationWork,
     pub(super) global_registers: usize,
     pub(super) liveness_steps: usize,
     pub(super) hull_fallbacks: usize,
@@ -263,6 +284,7 @@ impl Function {
             fused_compares: 0,
             dynamic_copies: 0,
             lowir_instructions: 0,
+            allocation_work: AllocationWork::default(),
             global_registers: 0,
             liveness_steps: 0,
             hull_fallbacks: 0,
@@ -398,7 +420,9 @@ impl Function {
     fn block_name(program: &Program, name: BlockName, out: &mut impl Write) -> std::io::Result<()> {
         match name {
             BlockName::Switch => Err(std::io::Error::other("unnumbered switch block")),
-            BlockName::Named(n) => write!(out, "^{}", program.names.get(n)),
+            BlockName::Named(n) | BlockName::Generated(n) => {
+                write!(out, "^{}", program.names.get(n))
+            }
             BlockName::Edge(from, to) => write!(
                 out,
                 "^{}~{}",

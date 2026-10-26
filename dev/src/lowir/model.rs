@@ -51,6 +51,8 @@ impl SlotId {
 pub(crate) struct Names {
     text: Vec<Arc<[u8]>>,
     index: HashMap<Arc<[u8]>, NameId>,
+    logical: Vec<bool>,
+    logical_count: usize,
 }
 impl Default for Names {
     fn default() -> Self {
@@ -58,6 +60,8 @@ impl Default for Names {
         Self {
             text: vec![Arc::clone(&empty)],
             index: HashMap::from([(empty, NameId(0))]),
+            logical: vec![true],
+            logical_count: 1,
         }
     }
 }
@@ -69,21 +73,33 @@ impl Names {
         self.intern_bytes(text.as_bytes())
     }
     pub(crate) fn intern_bytes(&mut self, text: &[u8]) -> Result<NameId, Error> {
+        self.intern_kind(text, true)
+    }
+    pub(crate) fn intern_view(&mut self, text: &str) -> Result<NameId, Error> {
+        self.intern_kind(text.as_bytes(), false)
+    }
+    fn intern_kind(&mut self, text: &[u8], logical: bool) -> Result<NameId, Error> {
         if let Some(&id) = self.index.get(text) {
+            if logical && !self.logical[id.0 as usize] {
+                self.logical[id.0 as usize] = true;
+                self.logical_count += 1;
+            }
             return Ok(id);
         }
         let id = NameId(u32::try_from(self.text.len()).map_err(|_| Error::Limit)?);
         let text: Arc<[u8]> = Arc::from(text);
         self.text.push(Arc::clone(&text));
         self.index.insert(text, id);
+        self.logical.push(logical);
+        self.logical_count += usize::from(logical);
         Ok(id)
     }
     pub(crate) fn get(&self, id: NameId) -> &str {
         // Grammar names are ASCII; only debug file tokens use the byte view.
         std::str::from_utf8(self.bytes(id)).unwrap_or("")
     }
-    pub(crate) fn len(&self) -> usize {
-        self.text.len()
+    pub(crate) fn logical_len(&self) -> usize {
+        self.logical_count
     }
     pub(crate) fn storage_bytes(&self) -> usize {
         self.text.iter().map(|text| text.len()).sum()
@@ -103,6 +119,7 @@ pub(crate) trait DefinitionSink: std::any::Any {
 }
 #[derive(Default)]
 pub(crate) struct Program {
+    pub(crate) construction: super::statistics::Construction,
     pub(crate) object_facts: bool,
     definition_sink: Option<Box<dyn DefinitionSink>>,
     retained_definitions: Option<RetainedDefinitions>,
@@ -215,7 +232,7 @@ impl Program {
             functions: self.functions.len(),
             globals: self.globals.len(),
             signatures: self.signatures.len(),
-            names: self.names.len(),
+            names: self.names.logical_len(),
             name_arena_bytes: self.names.storage_bytes(),
             ..super::Statistics::default()
         };
@@ -874,6 +891,15 @@ pub(crate) struct Block {
     pub(crate) first_use: u32,
     pub(crate) instructions: Vec<InstId>,
     origin: BlockName,
+}
+impl Block {
+    /// The block's own identity, excluding names synthesized for a text view.
+    pub(crate) fn source_name(&self) -> Option<NameId> {
+        match self.origin {
+            BlockName::Source(name) if name != NameId(0) => Some(name),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy)]
 enum BlockName {

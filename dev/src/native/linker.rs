@@ -81,6 +81,7 @@ struct Location {
     offset: u64,
 }
 struct Linker {
+    statistics: super::link_statistics::Statistics,
     objects: Vec<Object>,
     names: HashMap<Arc<[u8]>, GlobalId>,
     groups: HashSet<Vec<u8>>,
@@ -136,8 +137,10 @@ pub(crate) fn link(
     objects: Vec<Object>,
     path: &Path,
     permissions: Option<&std::fs::Permissions>,
-) -> Result<(), Error> {
+) -> Result<super::link_statistics::Statistics, Error> {
+    let start = std::time::Instant::now();
     let mut linker = Linker {
+        statistics: super::link_statistics::Statistics::default(),
         objects,
         names: HashMap::new(),
         groups: HashSet::new(),
@@ -168,7 +171,15 @@ pub(crate) fn link(
             (!matches!(global.state, State::Undefined)).then_some(global.address)
         })
         .ok_or_else(|| Error::Diagnostic("no process entry".into()))?;
-    executable::write(path, &layout, &linker.image, entry, permissions)
+    executable::write(path, &layout, &linker.image, entry, permissions)?;
+    linker.statistics.objects = linker.objects.len();
+    linker.statistics.symbols = linker.globals.len();
+    linker.statistics.text_bytes = linker.image.text.len();
+    linker.statistics.rodata_bytes = linker.image.rodata.len();
+    linker.statistics.data_bytes = linker.image.data.len();
+    linker.statistics.bss_bytes = linker.image.bss;
+    linker.statistics.link_ms = start.elapsed().as_secs_f64() * 1000.0;
+    Ok(linker.statistics)
 }
 impl Linker {
     fn add_object(&mut self, object: ObjectId) -> Result<(), Error> {
@@ -197,6 +208,7 @@ impl Linker {
             if self.groups.insert(name.to_vec()) {
                 continue;
             }
+            self.statistics.discarded_groups += 1;
             for member in 0..self.objects[at].groups()[index].sections.len() {
                 let section = self.objects[at].groups()[index].sections[member];
                 self.kept[at][section.index()] = false;
@@ -297,6 +309,7 @@ impl Linker {
         Ok(())
     }
     fn add_runtime(&mut self) -> Result<(), Error> {
+        let start = std::time::Instant::now();
         let wanted: Vec<_> = self
             .globals
             .iter()
@@ -306,11 +319,13 @@ impl Linker {
             .map(|g| g.name.as_ref())
             .collect();
         let objects = super::runtime_link::build(&wanted)?;
+        self.statistics.runtime_names = wanted.len() + 1;
         let first = self.objects.len();
         self.objects.extend(objects);
         for index in first..self.objects.len() {
             self.add_object(ObjectId(u32::try_from(index).map_err(|_| Error::Limit)?))?;
         }
+        self.statistics.runtime_ms = start.elapsed().as_secs_f64() * 1000.0;
         for (name, bound) in [
             (&b"__cppgm_init_array_start"[..], Bound::InitStart),
             (&b"__cppgm_init_array_end"[..], Bound::InitEnd),
@@ -419,6 +434,7 @@ impl Linker {
             offset
         };
         self.locations[at][section.index()] = Some(Location { segment, offset });
+        self.statistics.sections += 1;
         Ok(())
     }
     fn layout(&mut self) -> Result<(), Error> {
@@ -546,6 +562,7 @@ impl Linker {
             self.local_got.insert((object, symbol), at);
         }
         self.image.data.extend_from_slice(&[0; 8]);
+        self.statistics.got_slots += 1;
     }
     fn segment_address(layout: &executable::Layout, segment: Segment) -> u64 {
         match segment {
@@ -741,6 +758,7 @@ impl Linker {
                         .get_mut(offset..offset.checked_add(bytes).ok_or(Error::Limit)?)
                         .ok_or(Error::Limit)?
                         .copy_from_slice(&stored.to_le_bytes()[..bytes]);
+                    self.statistics.relocations += 1;
                 }
             }
         }

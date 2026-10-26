@@ -138,7 +138,7 @@ impl Selection<'_> {
         let pad = landing.pad;
         let select = landing.select;
         let translate = landing.translate;
-        let name = BlockName::Named(self.body.block(block).name);
+        let name = BlockName::from_lowir(self.body.block(block));
         if let Some(pad) = pad {
             if self.mir.begin_block(name)? != pad {
                 return Err(Error::Limit);

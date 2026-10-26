@@ -524,6 +524,7 @@ impl Analyzer<'_> {
             },
         );
         if result.is_ok() {
+            self.graph.work.instantiated_classes += 1;
             self.graph
                 .class_templates
                 .definitions

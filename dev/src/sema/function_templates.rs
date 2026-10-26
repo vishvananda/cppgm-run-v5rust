@@ -891,6 +891,7 @@ impl Analyzer<'_> {
             .function_templates
             .signatures
             .insert(key, binding);
+        self.graph.work.specializations += 1;
         Ok(Some(binding))
     }
 

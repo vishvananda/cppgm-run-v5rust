@@ -179,10 +179,10 @@ impl Symbols<'_, '_> {
         builder.block("entry")?;
         if let Some(initializer) = initializer {
             let done = if optional {
-                let run = builder.block_id("local_static_ctor_run1")?;
-                let done = builder.block_id("local_static_ctor_done2")?;
-                builder.block_origin(run, "local_static_ctor_run")?;
-                builder.block_origin(done, "local_static_ctor_done")?;
+                let run =
+                    builder.generated_block("local_static_ctor_run1", "local_static_ctor_run")?;
+                let done =
+                    builder.generated_block("local_static_ctor_done2", "local_static_ctor_done")?;
                 let zero = builder.integer(0)?;
                 let test = builder.generated(crate::lowir::model::InstructionKind::Compare(
                     crate::lowir::vocabulary::Compare::Ne,

@@ -257,6 +257,7 @@ struct FunctionSignature {
 }
 
 pub(crate) struct Graph {
+    pub(super) work: Box<super::Work>,
     pub(super) hosted: bool,
     pub(super) cxx14: bool,
     pub(super) exceptions_enabled: bool,
@@ -364,6 +365,9 @@ pub(crate) struct Graph {
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
+    pub(crate) fn work(&self) -> super::Work {
+        *self.work
+    }
     pub(super) fn note_effects(
         &mut self,
         entity: EntityId,
@@ -501,6 +505,7 @@ impl Graph {
     }
     pub(super) fn new() -> Self {
         Self {
+            work: Box::default(),
             hosted: false,
             cxx14: false,
             exceptions_enabled: true,

@@ -22,9 +22,24 @@ mod driver_queries;
 mod host_configuration;
 #[path = "source_tool/stack_limit.rs"]
 mod stack_limit;
+fn peak_rss() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status.lines().find_map(|line| {
+                line.strip_prefix("VmHWM:")?
+                    .split_whitespace()
+                    .next()?
+                    .parse()
+                    .ok()
+            })
+        })
+        .unwrap_or(0)
+}
 enum CliError {
     Message(String),
     Diagnostic(Vec<u8>),
+    PassVerification(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
     Output,
@@ -202,6 +217,7 @@ fn run() -> Result<(), CliError> {
                 include_paths: &host.includes,
                 stdlib_flags: builtin_host_configuration::FLAGS,
             },
+            peak_rss,
         )
         .map_err(tool_error);
     }
@@ -303,6 +319,7 @@ fn run() -> Result<(), CliError> {
             mode,
         )
         .map_err(|error| match error {
+            AstToolError::PassVerification(bytes) => CliError::PassVerification(bytes),
             AstToolError::Missing(group) => CliError::Missing(group),
             AstToolError::Internal(message) => CliError::Internal(message),
             AstToolError::Diagnostic(bytes) | AstToolError::NativeDiagnostic(bytes) => {
@@ -353,6 +370,10 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(CliError::Output) => ExitCode::FAILURE,
+        Err(CliError::PassVerification(bytes)) => {
+            let _ = io::stderr().lock().write_all(&bytes);
+            ExitCode::from(3)
+        }
         Err(CliError::Missing(group)) => {
             eprintln!("cppgm++: Rust port is not implemented yet: {group}");
             ExitCode::from(86)
@@ -377,6 +398,7 @@ fn main() -> ExitCode {
 
 fn tool_error(error: AstToolError) -> CliError {
     match error {
+        AstToolError::PassVerification(bytes) => CliError::PassVerification(bytes),
         AstToolError::Missing(group)
         | AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {
             CliError::Missing(group)

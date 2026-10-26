@@ -581,6 +581,7 @@ impl Analyzer<'_> {
             .class_templates
             .specializations
             .insert(key, entity);
+        self.graph.work.specializations += 1;
         self.record_instance_declared_type(entity)?;
         Ok(entity)
     }

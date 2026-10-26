@@ -611,6 +611,10 @@ impl Analyzer<'_> {
     ) -> Result<CopyResolution, Error> {
         let copies = self.implicit_copy_candidates(class)?;
         candidates.clear();
+        self.graph.work.resolutions += 1;
+        self.graph.work.candidates += self.graph.entity(class).declared_constructors.len()
+            + usize::from(copies.copy.is_some())
+            + usize::from(copies.moving.is_some());
         let mut offered = copies.copy.is_some() || copies.moving.is_some();
         offered |= self.declared_copy_candidates(class, facts, context, false, candidates)?;
         for (kind, parameter, deleted) in [

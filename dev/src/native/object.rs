@@ -228,6 +228,12 @@ impl Object {
     pub(super) fn section_count(&self) -> usize {
         self.sections.len()
     }
+    pub(crate) fn section_bytes(&self) -> usize {
+        self.sections
+            .iter()
+            .map(|section| section.bytes.len())
+            .sum()
+    }
     pub(super) fn symbol_count(&self) -> usize {
         self.symbols.len()
     }

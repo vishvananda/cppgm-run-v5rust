@@ -62,6 +62,7 @@ pub(super) struct Placement {
     frame_objects: Vec<super::frame_layout::Object>,
     slots: Vec<Option<i32>>,
     pub(super) preserve: u32,
+    work: std::cell::Cell<super::mir::AllocationWork>,
     vector_boundary: bool,
     excluded: u32,
     dying: Vec<TempId>,
@@ -122,6 +123,7 @@ impl Placement {
             frame_objects: Vec::new(),
             slots: vec![None; body.slots().len()],
             preserve: 0,
+            work: std::cell::Cell::default(),
             vector_boundary,
             excluded,
             dying: Vec::new(),
@@ -129,6 +131,7 @@ impl Placement {
         }
     }
     fn bind(&mut self, temp: TempId, r: R) {
+        self.work.get_mut().grants += 1;
         self.owners[usize::from(r.code())] = Some(temp);
         self.locations[temp.index()].reg = Some(r);
         if self.incoming.get(temp.index()).copied().flatten() != Some(r) {
@@ -146,6 +149,7 @@ impl Placement {
         exclude: u32,
     ) -> Option<R> {
         if self.classes[temp.index()] == RegisterClass::Memory {
+            self.note_busy(0);
             return None;
         }
         let allowed = |r: R| {
@@ -155,6 +159,16 @@ impl Placement {
                     == 0
         };
         let vector = self.classes[temp.index()] == RegisterClass::Vector;
+        let pool = if vector {
+            0x00ff_0000
+        } else {
+            ORDER.iter().fold(0, |mask, r| mask | (1 << r.code()))
+                | if self.globals.rbp_free {
+                    1 << R::RBP.code()
+                } else {
+                    0
+                }
+        };
         let prefs = if facts.level >= 1
             && facts.intervals[temp.index()].hint.is_some()
             && facts.intervals[temp.index()].hint == prefs[1]
@@ -178,7 +192,11 @@ impl Placement {
             }
         }
         if vector {
-            return (0..8).filter_map(|i| R::xmm(i).ok()).find(|&r| allowed(r));
+            let register = (0..8).filter_map(|i| R::xmm(i).ok()).find(|&r| allowed(r));
+            if register.is_none() {
+                self.note_busy(pool);
+            }
+            return register;
         }
         if facts.intervals[temp.index()].forbid & super::abi::CALLER_SAVED
             == super::abi::CALLER_SAVED
@@ -218,7 +236,21 @@ impl Placement {
         if self.globals.rbp_free && allowed(R::RBP) {
             return Some(R::RBP);
         }
+        self.note_busy(pool);
         None
+    }
+    fn note_busy(&self, pool: u32) {
+        let mut work = self.work.get();
+        work.busy += 1;
+        let parameter = self.owners.iter().enumerate().any(|(code, owner)| {
+            pool & (1 << code) != 0 && owner.is_some_and(|temp| temp.index() < self.incoming.len())
+        });
+        if parameter {
+            work.busy_parameters += 1;
+        } else {
+            work.busy_values += 1;
+        }
+        self.work.set(work);
     }
     pub(super) fn atomic_staging(
         &mut self,
@@ -425,6 +457,7 @@ impl Placement {
         for owner in &mut self.owners {
             if let Some(temp) = owner.take() {
                 self.locations[temp.index()].reg = None;
+                self.work.get_mut().releases += 1;
             }
         }
         self.restore_global_registers();
@@ -797,6 +830,7 @@ impl Placement {
                 && self.dies(facts, temp, pos)
             {
                 self.owners[reg] = None;
+                self.work.get_mut().releases += 1;
                 self.pinned &= !(1 << reg);
                 self.written |= 1 << reg;
                 self.dying.push(temp);
@@ -828,9 +862,13 @@ impl Placement {
             if self.globals.precise {
                 self.bind(temp, r);
             }
+            self.work.get_mut().defined_in_plan += 1;
             return r;
         }
         if let Some(r) = self.allocate(facts, temp, prefs, exclude) {
+            if facts.global[temp.index()] {
+                self.work.get_mut().defined_other_register += 1;
+            }
             self.bind(temp, r);
             r
         } else {
@@ -841,6 +879,8 @@ impl Placement {
                     .is_some_and(|last| last > pos)
             {
                 mir.spills += 1;
+            } else if facts.global[temp.index()] {
+                self.work.get_mut().defined_frame += 1;
             }
             if self.classes[temp.index()] == RegisterClass::Vector {
                 // The selector reserves xmm14 as its result scratch.
@@ -890,6 +930,7 @@ impl Placement {
                 && self.owners[usize::from(r.code())] == Some(temp)
             {
                 self.owners[usize::from(r.code())] = None;
+                self.work.get_mut().releases += 1;
             }
             self.locations[temp.index()].reg = None;
         }
@@ -908,6 +949,7 @@ impl Placement {
         let frame = (u64::from(self.frame) + 8 * u64::from(self.preserve.count_ones()) + 15) & !15;
         mir.stack_size = u32::try_from(frame).map_err(|_| Error::Limit)?;
         mir.preserve = self.preserve;
+        mir.allocation_work = self.work.get();
         Ok(())
     }
     pub(super) fn restore_global_registers(&mut self) {

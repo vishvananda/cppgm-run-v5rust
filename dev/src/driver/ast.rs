@@ -8,6 +8,7 @@ pub enum AstToolError {
     Initialization(PreprocessError),
     Diagnostic(Vec<u8>),
     NativeDiagnostic(Vec<u8>),
+    PassVerification(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
     Output(std::io::Error),
@@ -22,7 +23,14 @@ pub enum EmitMode {
 #[derive(Default)]
 pub struct LowIrOutput {
     output: crate::lower::Output,
-    object: Option<(crate::native::ObjectModel, u8, crate::opt::Limits)>,
+    object: Option<(
+        crate::native::ObjectModel,
+        u8,
+        crate::opt::Limits,
+        crate::native::ObservationOptions,
+    )>,
+    pub(crate) work: crate::sema::Work,
+    pub(crate) front_ms: f64,
 }
 impl LowIrOutput {
     /// Retain typed definitions until the optimizer consumes the completed unit.
@@ -78,17 +86,23 @@ impl LowIrOutput {
         model: crate::native::ObjectModel,
         level: u8,
     ) -> Result<Self, crate::lowir::Error> {
-        Self::for_object_options(model, level, crate::opt::Limits::default())
+        Self::for_object_options(
+            model,
+            level,
+            crate::opt::Limits::default(),
+            crate::native::ObservationOptions::default(),
+        )
     }
     pub(crate) fn for_object_options(
         model: crate::native::ObjectModel,
         level: u8,
         limits: crate::opt::Limits,
+        observations: crate::native::ObservationOptions,
     ) -> Result<Self, crate::lowir::Error> {
         let mut output = crate::lower::Output::default();
         if level == 0 {
             output.program.set_definition_sink(Box::new(
-                crate::native::ObjectBuilder::with_model(0, model)?,
+                crate::native::ObjectBuilder::with_observations(0, model, observations)?,
             ))?;
             output.set_object_mode(model == crate::native::ObjectModel::Host);
         } else {
@@ -101,34 +115,47 @@ impl LowIrOutput {
         }
         Ok(Self {
             output,
-            object: Some((model, level, limits)),
+            object: Some((model, level, limits, observations)),
+            work: crate::sema::Work::default(),
+            front_ms: 0.0,
         })
     }
+    #[cfg(test)]
     pub(crate) fn finish_object(
         self,
         path: Vec<u8>,
     ) -> Result<crate::native::Object, AstToolError> {
+        self.finish_object_observed(path, crate::opt::Verification::default())
+            .map(|(object, _)| object)
+    }
+    pub(crate) fn finish_object_observed(
+        self,
+        path: Vec<u8>,
+        verification: crate::opt::Verification<'_>,
+    ) -> Result<(crate::native::Object, crate::native::Observations), AstToolError> {
         let mut program = self.output.finish_program().map_err(lower_error)?;
-        let (model, level, limits) = self
+        let (model, level, limits, observations) = self
             .object
             .ok_or(AstToolError::Internal("object output without model"))?;
         if level != 0 {
-            crate::opt::optimize_with_limits(
+            crate::opt::optimize_observed(
                 &mut program,
                 level,
                 limits,
                 model == crate::native::ObjectModel::Course,
+                verification,
             )
             .map_err(native_error)?;
             program.clear_jump_thunks();
             crate::native::recover_jump_thunks(&mut program, model);
             program
                 .set_definition_sink(Box::new(
-                    crate::native::ObjectBuilder::with_model(level, model).map_err(native_error)?,
+                    crate::native::ObjectBuilder::with_observations(level, model, observations)
+                        .map_err(native_error)?,
                 ))
                 .map_err(native_error)?;
         }
-        crate::native::compile_object(&mut program, path, level).map_err(native_error)
+        crate::native::compile_object_observed(&mut program, path, level).map_err(native_error)
     }
 
     /// Render the typed program accumulated across translation units.
@@ -270,6 +297,7 @@ fn emit_preprocessed(
     mode: EmitMode,
     options: &crate::preprocess::options::DriverOptions,
 ) -> Result<(), AstToolError> {
+    let front_start = std::time::Instant::now();
     let hosted = preprocessor.hosted() || mode == EmitMode::LowIr;
     let origins = if hosted {
         preprocessor
@@ -350,6 +378,7 @@ fn emit_preprocessed(
             crate::sema::Error::Invariant(message) => AstToolError::Internal(message),
         })?)
     };
+    let front_ms = front_start.elapsed().as_secs_f64() * 1000.0;
     let output = match destination {
         Destination::Check => return Ok(()),
         Destination::LowIr(output) => {
@@ -417,6 +446,8 @@ fn emit_preprocessed(
                     }
                 },
             })?;
+            output.work = graph.work();
+            output.front_ms += front_ms;
             return Ok(());
         }
         Destination::Text(output) => output,
@@ -454,9 +485,10 @@ fn lower_error(error: crate::lower::Error) -> AstToolError {
 pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
     match error {
         crate::lowir::Error::NotImplemented(group) => AstToolError::Missing(group),
-        crate::lowir::Error::Construction(_) | crate::lowir::Error::PassVerification(_) => {
+        crate::lowir::Error::Construction(_) => {
             AstToolError::Internal("native construction invariant")
         }
+        crate::lowir::Error::PassVerification(bytes) => AstToolError::PassVerification(bytes),
         crate::lowir::Error::Diagnostic(message) => {
             AstToolError::NativeDiagnostic(message.into_bytes())
         }

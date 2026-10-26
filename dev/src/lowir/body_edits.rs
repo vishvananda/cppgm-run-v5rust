@@ -705,10 +705,10 @@ impl Body {
                     BlockName::Optimizer(kind) => format!("{}_{index}", kind.spelling()),
                     _ => index.to_string(),
                 };
-                while taken.contains(&names.intern(&text)?) {
+                while taken.contains(&names.intern_view(&text)?) {
                     text.push('_');
                 }
-                block.name = names.intern(&text)?;
+                block.name = names.intern_view(&text)?;
             }
             self.block_index
                 .entry(block.name)
