@@ -51,6 +51,7 @@ mod linker;
 mod lsda;
 mod memory;
 mod memory_selection;
+mod memory_updates;
 mod mir;
 mod mir_cleanup;
 mod mir_globals;

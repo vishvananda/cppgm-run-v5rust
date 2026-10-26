@@ -60,7 +60,8 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
             | ScalarOp::Binary(_, ty, _, source)
             | ScalarOp::Scan(_, ty, _, source)
             | ScalarOp::CompareZero(ty, source) => visit(source, access_bytes(*ty)),
-            ScalarOp::Store(destination, ty, source) => {
+            ScalarOp::Store(destination, ty, source)
+            | ScalarOp::MemoryBinary(_, ty, destination, source) => {
                 visit(destination, access_bytes(*ty));
                 visit(source, access_bytes(*ty));
             }

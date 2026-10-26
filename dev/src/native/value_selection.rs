@@ -191,8 +191,9 @@ pub(super) fn select_for_object(
     } else {
         Vec::new()
     };
-    let addresses = super::address_facts::Addresses::analyze(program, body, &mut facts, model)?;
+    let mut addresses = super::address_facts::Addresses::analyze(program, body, &mut facts, model)?;
     super::branch_tests::fold(body, &mut facts, &addresses);
+    let updates = super::memory_updates::Updates::analyze(body, &mut facts, &mut addresses);
     super::branch_tests::bytes_only(
         program,
         body,
@@ -291,6 +292,7 @@ pub(super) fn select_for_object(
     }
     let mut selection = Selection {
         program,
+        updates,
         phis: super::control_selection::PhiInputs::default(),
         edge_moves: Vec::new(),
         parallel: super::parallel_transfer::Workspace::default(),

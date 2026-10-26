@@ -68,7 +68,10 @@ pub(super) fn simple_write(op: Op) -> Option<SimpleWrite> {
             | ScalarOp::Shift(_, _, r, source) => {
                 (Some(r), [Some(Operand::Register(r)), Some(source)])
             }
-            ScalarOp::Store(destination, _, source) => (None, [Some(destination), Some(source)]),
+            ScalarOp::Store(destination, _, source)
+            | ScalarOp::MemoryBinary(_, _, destination, source) => {
+                (None, [Some(destination), Some(source)])
+            }
             ScalarOp::Extend(_, r)
             | ScalarOp::Movzx(r)
             | ScalarOp::SetEqual(r)
@@ -170,6 +173,7 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
             | Op::Jump(..)
             | Op::Scalar(
                 ScalarOp::Binary(..)
+                | ScalarOp::MemoryBinary(..)
                 | ScalarOp::Unary(Unary::Neg, ..)
                 | ScalarOp::Scan(..)
                 | ScalarOp::Divide { .. }
@@ -401,7 +405,9 @@ pub(super) fn touches(op: Op, r: R) -> bool {
             | ScalarOp::Lea(to, source)
             | ScalarOp::Lea32(to, source)
             | ScalarOp::Binary(_, _, to, source) => [Some(Operand::Register(to)), Some(source)],
-            ScalarOp::Store(to, _, source) => [Some(to), Some(source)],
+            ScalarOp::Store(to, _, source) | ScalarOp::MemoryBinary(_, _, to, source) => {
+                [Some(to), Some(source)]
+            }
             ScalarOp::Condition(FlagOp::Compare(_, a, b) | FlagOp::MaskTest(_, a, b)) => {
                 [Some(a), Some(b)]
             }

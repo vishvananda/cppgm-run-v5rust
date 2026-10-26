@@ -41,6 +41,7 @@ fn simple_width(op: Op) -> u32 {
             ScalarOp::Load(_, ty, _)
             | ScalarOp::Store(_, ty, _)
             | ScalarOp::Binary(_, ty, _, _)
+            | ScalarOp::MemoryBinary(_, ty, _, _)
             | ScalarOp::Unary(_, ty, _)
             | ScalarOp::Extend(ty, _)
             | ScalarOp::ExtendMove(ty, _, _)
@@ -243,7 +244,7 @@ fn resolve(
             break;
         };
         // A remaining simple memory destination is an indirect store.
-        if let Op::Scalar(ScalarOp::Store(to, _, _)) = op {
+        if let Op::Scalar(ScalarOp::Store(to, _, _) | ScalarOp::MemoryBinary(_, _, to, _)) = op {
             if frame_based(to) {
                 break;
             }

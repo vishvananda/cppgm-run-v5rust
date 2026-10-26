@@ -137,6 +137,7 @@ pub(super) enum ScalarOp {
     Load(R, Type, Operand),
     Store(Operand, Type, Operand),
     Binary(Binary, Type, R, Operand),
+    MemoryBinary(Binary, Type, Operand, Operand),
     Unary(Unary, Type, R),
     Extend(Type, R),
     ExtendMove(Type, R, R),
@@ -208,6 +209,16 @@ impl ScalarOp {
                 d.write(program, out)?;
                 write!(out, ", ")?;
                 r.write(program, out)?;
+            }
+            Self::MemoryBinary(binary, ty, destination, source) => {
+                write!(out, "{}", binary.spelling())?;
+                if !matches!(ty, Type::I64 | Type::Ptr) {
+                    write!(out, ".{ty}")?;
+                }
+                write!(out, " ")?;
+                destination.write(program, out)?;
+                write!(out, ", ")?;
+                operand = Some(source);
             }
             Self::Binary(op, ty, r, src) => {
                 write!(
@@ -311,6 +322,9 @@ impl ScalarOp {
             Self::Lea32(r, m) => Self::Lea32(r, m.rebase(begin, bytes)),
             Self::Move(r, m) => Self::Move(r, m.rebase(begin, bytes)),
             Self::Binary(op, t, r, m) => Self::Binary(op, t, r, m.rebase(begin, bytes)),
+            Self::MemoryBinary(op, ty, d, s) => {
+                Self::MemoryBinary(op, ty, d.rebase(begin, bytes), s.rebase(begin, bytes))
+            }
             Self::Scan(op, t, r, m) => Self::Scan(op, t, r, m.rebase(begin, bytes)),
             Self::CompareZero(t, m) => Self::CompareZero(t, m.rebase(begin, bytes)),
             other => other,
@@ -379,6 +393,24 @@ impl ScalarOp {
             Self::ExtendMove(ty, r, source) => a.load(r, Rm::Reg(source), bytes(ty), signed(ty)),
             Self::Extend(ty, r) => a.load(r, Rm::Reg(r), bytes(ty), signed(ty)),
             Self::Binary(op, ty, r, src) => binary(a, op, ty, r, src),
+            Self::MemoryBinary(op, ty, d, s) => {
+                let digit = alu_digit(op)?;
+                let width = bytes(ty);
+                if let Operand::Immediate(bits) = s {
+                    return a.alu_ri(digit, d.rm()?, low_word(bits)?, width);
+                }
+                let register = s.register().ok_or(Error::Limit)?;
+                a.op(
+                    if width == 2 { 0x66 } else { 0 },
+                    width == 8,
+                    u32::from(digit) * 8 + u32::from(width != 1),
+                    1,
+                    register.code(),
+                    d.rm()?,
+                    width == 1,
+                    0,
+                )
+            }
             Self::Unary(op, ty, r) => match op {
                 Unary::Neg | Unary::BitNot => a.op(
                     0,
@@ -495,14 +527,7 @@ fn binary(a: &mut Assembler, op: Binary, ty: Type, r: R, src: Operand) -> Result
         }
         return a.op(0, width == 8, 0x0faf, 2, r.code(), src.rm()?, false, 0);
     }
-    let digit = match op {
-        Binary::Add => 0,
-        Binary::Sub => 5,
-        Binary::And => 4,
-        Binary::Or => 1,
-        Binary::Xor => 6,
-        _ => return Err(Error::Construction("non-ALU scalar operation".into())),
-    };
+    let digit = alu_digit(op)?;
     if let Operand::Immediate(v) = src {
         let v = low_word(v)?;
         if digit == 4 && width == 8 && (0..=0xffff_ffff).contains(&v) {
@@ -516,4 +541,15 @@ fn binary(a: &mut Assembler, op: Binary, ty: Type, r: R, src: Operand) -> Result
         return a.alu_rr(digit, r, Rm::Reg(scratch), width);
     }
     a.alu_rr(digit, r, src.rm()?, width)
+}
+
+fn alu_digit(op: Binary) -> Result<u8, Error> {
+    Ok(match op {
+        Binary::Add => 0,
+        Binary::Sub => 5,
+        Binary::And => 4,
+        Binary::Or => 1,
+        Binary::Xor => 6,
+        _ => return Err(Error::Construction("non-ALU scalar operation".into())),
+    })
 }

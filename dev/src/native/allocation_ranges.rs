@@ -40,6 +40,7 @@ pub(super) fn eligible(body: &Body, facts: &Facts, addresses: &Addresses, t: Tem
         && addresses.folded[i].is_none()
         && !facts.fused[i]
         && !facts.tested[i]
+        && !facts.updates[i]
         && matches!(facts.resolve(body,Value::Temp(t)),super::value_facts::Alias::Temporary(v) if v == t)
         && facts.definitions[i].is_none_or(|p| facts.active[p])
         && body

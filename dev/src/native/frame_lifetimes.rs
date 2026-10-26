@@ -75,7 +75,9 @@ fn admitted(function: &Function, objects: &[Object]) -> bool {
 }
 fn destination(op: Op) -> Option<(Operand, u32)> {
     match op {
-        Op::Scalar(ScalarOp::Store(to, ty, _)) => Some((to, u32::from(bytes(ty)))),
+        Op::Scalar(ScalarOp::Store(to, ty, _) | ScalarOp::MemoryBinary(_, ty, to, _)) => {
+            Some((to, u32::from(bytes(ty))))
+        }
         Op::FloatCopy(c) if c.destination.is_memory() => Some((
             c.destination,
             if c.ty == Type::F80 {
@@ -265,7 +267,9 @@ impl<'a> Bytes<'a> {
         let mut first = true;
         let mut op = instruction.op;
         operands(&mut op, |value, width| {
-            let skip = stores && first;
+            let skip = stores
+                && first
+                && !matches!(instruction.op, Op::Scalar(ScalarOp::MemoryBinary(..)));
             first = false;
             if !skip && let Some(range) = self.range(*value, width) {
                 for i in range {

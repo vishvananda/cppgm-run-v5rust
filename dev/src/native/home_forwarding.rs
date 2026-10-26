@@ -419,6 +419,14 @@ impl Forwarding {
                             Op::Scalar(ScalarOp::CompareZero(ty, Operand::Register(held)));
                     }
                 }
+                Op::Scalar(ScalarOp::MemoryBinary(_, ty, dst, _)) => {
+                    if let Some(offset) = fixed_frame(dst) {
+                        forget(holds, offset, offset.wrapping_add(i32::from(bytes(ty))));
+                    } else {
+                        self.drop_slots(holds);
+                    }
+                    continue;
+                }
                 Op::Scalar(ScalarOp::Store(dst, ty, src)) => {
                     if let Some(offset) = fixed_frame(dst) {
                         let count = bytes(ty);

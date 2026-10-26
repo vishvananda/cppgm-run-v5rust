@@ -14,6 +14,7 @@ use crate::lowir::{
     vocabulary::{Binary, Type, Unary},
 };
 pub(super) struct Selection<'a> {
+    pub(super) updates: super::memory_updates::Updates,
     pub(super) program: &'a crate::lowir::model::Program,
     pub(super) phis: super::control_selection::PhiInputs,
     pub(super) edge_moves: Vec<super::parallel_transfer::Transfer>,

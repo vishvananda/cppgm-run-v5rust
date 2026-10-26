@@ -149,6 +149,7 @@ impl Globals {
                 || addresses.folded[index].is_some()
                 || facts.fused[index]
                 || facts.tested[index]
+                || facts.updates[index]
             {
                 continue;
             }

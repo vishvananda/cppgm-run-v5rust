@@ -25,7 +25,7 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
                 [Some(Operand::Register(r)), Some(s)]
             }
             ScalarOp::Load(r, _, d) => [Some(Operand::Register(r)), Some(d)],
-            ScalarOp::Store(d, _, r) => [Some(d), Some(r)],
+            ScalarOp::Store(d, _, r) | ScalarOp::MemoryBinary(_, _, d, r) => [Some(d), Some(r)],
             ScalarOp::Extend(_, r) | ScalarOp::SetEqual(r) | ScalarOp::Movzx(r) => {
                 [Some(Operand::Register(r)), None]
             }

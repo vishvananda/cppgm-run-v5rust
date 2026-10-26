@@ -6,7 +6,7 @@ use crate::lowir::{
     model::{Body, InstructionKind as I, RuntimeInstruction as Runtime, TempId, Value},
     vocabulary::{Binary, Convert, Type},
 };
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Alias {
     Constant(Constant),
     Temporary(TempId),
@@ -40,6 +40,7 @@ pub(super) struct Facts {
     identities: Vec<Option<Identity>>,
     pub(super) fused: Vec<bool>,
     pub(super) tested: Vec<bool>,
+    pub(super) updates: Vec<bool>,
     pub(super) byte_only: Vec<bool>,
     pub(super) active: Vec<bool>,
     pub(super) intervals: Vec<Interval>,
@@ -98,6 +99,11 @@ impl Facts {
             Value::Slot(id) => Alias::Slot(id),
         }
     }
+    pub(super) fn resolved_value_eq(&self, body: &Body, left: Value, right: Value) -> bool {
+        let a = self.resolve(body, left);
+        let b = self.resolve(body, right);
+        a == b && (!matches!(a, Alias::Constant(_)) || self.same_value(left, right))
+    }
     pub(super) fn analyze(
         body: &Body,
         slots: &[Slot],
@@ -145,6 +151,7 @@ impl Facts {
             identities: vec![None; body.temps().len()],
             fused: vec![false; body.temps().len()],
             tested: vec![false; body.temps().len()],
+            updates: vec![false; body.temps().len()],
             byte_only: vec![false; body.temps().len()],
             intervals: vec![Interval::default(); body.temps().len()],
         };

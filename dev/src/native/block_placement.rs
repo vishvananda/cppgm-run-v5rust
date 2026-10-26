@@ -464,6 +464,10 @@ pub(super) fn copyable(f: &Function, b: usize, cap: usize, sets: bool) -> bool {
                     Binary::Add | Binary::Sub | Binary::And | Binary::Or | Binary::Xor,
                     ..,
                 )
+                | ScalarOp::MemoryBinary(
+                    Binary::Add | Binary::Sub | Binary::And | Binary::Or | Binary::Xor,
+                    ..,
+                )
                 | ScalarOp::Condition(
                     FlagOp::Compare(..)
                     | FlagOp::Test(..)

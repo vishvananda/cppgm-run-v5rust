@@ -212,6 +212,9 @@ impl Selection<'_> {
             return self.float_write(ty, value, address);
         }
         super::memory::scalar(ty)?;
+        if self.memory_update(ty, address)? {
+            return Ok(());
+        }
         let mut source = self.operand(value, ty, R::R11)?;
         let mem = self.address(address, R::R10)?;
         if source.is_memory() || source.is_symbol() {
