@@ -49,6 +49,7 @@ pub(super) struct FunctionTemplates {
     pub(super) argument_defaults: super::template_defaults::Defaults,
     pub(super) instantiations: super::explicit_instantiations::Instantiations,
     pub(super) arguments: HashMap<EntityId, Vec<TypeId>>,
+    pub(super) object_signatures: HashMap<EntityId, TypeId>,
     explicit: HashMap<BindingId, Vec<Option<TypeId>>>,
     defaults: HashMap<(HeadId, usize, Vec<TypeId>), TypeId>,
     demanded_bodies: HashSet<EntityId>,
@@ -661,7 +662,7 @@ impl Analyzer<'_> {
         };
         let mut substituted = Vec::with_capacity(parameters.len());
         for parameter in parameters {
-            substituted.push(self.graph.types.parameter(parameter)?);
+            substituted.push(self.graph.types.parameter_object(parameter)?);
         }
         let Some(result) = (if leading {
             substituted_result
@@ -823,6 +824,7 @@ impl Analyzer<'_> {
         let Some(ty) = ty else {
             return Ok(None);
         };
+        let object_signature = ty;
         let ty = self.graph.types.canonical_function(ty)?;
         // A nested formation may already have published this specialization.
         // Keep its identity, parameters and declaration-time facts.
@@ -896,6 +898,10 @@ impl Analyzer<'_> {
             .function_templates
             .arguments
             .insert(entity, key.arguments.clone());
+        self.graph
+            .function_templates
+            .object_signatures
+            .insert(entity, object_signature);
         self.graph
             .function_templates
             .signatures

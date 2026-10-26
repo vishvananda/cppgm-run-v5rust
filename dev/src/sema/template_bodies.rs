@@ -970,9 +970,14 @@ impl Analyzer<'_> {
             .body(definition.body)
             .map_err(|error| copy_error(&error))?;
         let parameter_packs = cloner.parameter_packs().to_vec();
-        // Substitute the definition's recorded object signature once. It
-        // retains parameter cv and pack shapes without repeating name lookup.
-        let ty = self.specialization_object_signature(entity, definition.ty)?;
+        // The formed declaration owns object parameter types; calls use its
+        // canonical signature, while the body retains declared cv exactly once.
+        let ty = *self
+            .graph
+            .function_templates
+            .object_signatures
+            .get(&entity)
+            .ok_or(Error::Invariant("template body without object signature"))?;
         let frame = self.function_pack_scope(frame, source_parameters, &parameter_packs, ty)?;
         self.graph.entity_mut(entity).function_definition =
             self.graph.entity(definition.entity).function_definition;
