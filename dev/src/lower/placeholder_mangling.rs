@@ -3,7 +3,7 @@
 use super::{Error, Node, NodeId, Symbols};
 use crate::{
     abi::vocabulary::Operation as O,
-    lex::{pp_lexer::Punctuator as P, vocabulary::Keyword},
+    lex::{identifiers::NameId, pp_lexer::Punctuator as P, vocabulary::Keyword},
     sema::lowering::{EntityId, KeyNode as N, KeyWord as W, TypeId, TypeView},
 };
 
@@ -11,6 +11,15 @@ struct OperandReader<'a> {
     words: &'a [W],
     at: usize,
     object: Option<TypeId>,
+}
+enum OperandName {
+    Type(TypeId),
+    Entity(EntityId),
+    Identifier(NameId),
+}
+struct OperandComponent {
+    name: OperandName,
+    arguments: Vec<TypeId>,
 }
 impl<'a> OperandReader<'a> {
     fn next(&mut self) -> Result<&'a W, Error> {
@@ -81,7 +90,12 @@ impl Symbols<'_, '_> {
                 continue;
             }
             if let Some(dependent) = self.graph.lower_operand_key_dependent(ty) {
-                if dependent {
+                if dependent
+                    || self
+                        .graph
+                        .lower_template_operand(ty)
+                        .is_some_and(|(_, words)| words.is_empty())
+                {
                     return Ok(true);
                 }
                 continue;
@@ -572,12 +586,13 @@ impl Symbols<'_, '_> {
         }
         let node = self.operand_type(written)?;
         let mut ty = written;
+        let pointer = matches!(self.graph.lower_type(ty)?, TypeView::Pointer(_));
         while let TypeView::Pointer(element) = self.graph.lower_type(ty)? {
             ty = element;
         }
         let fixed = match self.graph.lower_type(ty)? {
             TypeView::Scalar(_) | TypeView::Enum(_) => true,
-            TypeView::Class(class) => !self.graph.lower_templated_class(class),
+            TypeView::Class(class) => pointer && !self.graph.lower_templated_class(class),
             _ => false,
         };
         if fixed
@@ -767,54 +782,39 @@ impl Symbols<'_, '_> {
         if count == 0 {
             return Err(missing());
         }
-        let mut root = None;
-        let mut levels = Vec::new();
-        let mut terminal = None;
-        let mut arguments = Vec::new();
-        let mut parameter_root = false;
+        // Read typed components once. Qualifier ABI nodes are demanded only by
+        // a dependent resolution or overload set, after the terminal arguments.
+        let mut components = Vec::new();
         for index in 0..count {
-            let word = words.next()?;
-            let name = match word {
-                W::Type(ty) if index == 0 && !global => {
-                    parameter_root = self.graph.lower_template_parameter(*ty).is_some();
-                    if parameter_root {
-                        root = self.parameter_qualifier_root(*ty, words, count)?;
-                    } else {
-                        root = self.qualifier_levels(*ty, &mut levels)?;
-                    }
-                    None
-                }
-                W::Entity(entity) if index == 0 && !global => self.graph.lower_local_name(*entity),
-                W::Identifier(name) => Some(*name),
+            let name = match words.next()? {
+                W::Type(ty) if index == 0 && !global => OperandName::Type(*ty),
+                W::Entity(entity) if index == 0 && !global => OperandName::Entity(*entity),
+                W::Identifier(name) => OperandName::Identifier(*name),
                 _ => return Err(missing()),
             };
-            arguments = self.operand_arguments(words)?;
-            if let Some(name) = name {
-                let name = self.abi.string(self.cursor.name(name))?;
-                if index + 1 == count {
-                    terminal = Some(name);
-                } else {
-                    levels.push(self.abi.intern(Node::UnresolvedName(name), &arguments)?);
-                }
-            } else if !arguments.is_empty() {
-                return Err(missing());
-            }
+            let arguments = (0..words.argument_count()?)
+                .map(|_| words.ty())
+                .collect::<Result<Vec<_>, _>>()?;
+            components.push(OperandComponent { name, arguments });
         }
+        let (last, qualifiers) = components.split_last().ok_or_else(missing)?;
+        let OperandName::Identifier(terminal) = last.name else {
+            return Err(missing());
+        };
+        let arguments = last
+            .arguments
+            .iter()
+            .map(|&ty| self.operand_type(ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        let parameter_root = matches!(
+            components.first().map(|component| &component.name),
+            Some(OperandName::Type(ty)) if self.graph.lower_template_parameter(*ty).is_some()
+        );
         // The resolution distinguishes a dependent qualifier, a single
         // function, an overload set, and a named entity. Written levels alone
         // cannot decide which ABI production the frozen reader uses.
-        match words.next()? {
-            // One parameter qualifier uses the resolved dependent qualifier
-            // type, including its defaults. Longer qualifiers retain the
-            // parameter template-id as written, followed by member levels.
-            W::Type(ty) if implicit_object => {
-                levels.clear();
-                root = self.qualifier_levels(*ty, &mut levels)?;
-            }
-            W::Type(ty) if parameter_root && count == 2 => {
-                root = Some(self.operand_type(*ty)?);
-            }
-            W::Type(_) => (),
+        let qualifier = match words.next()? {
+            W::Type(ty) => Some(*ty),
             W::Node(N::Function) => match words.next()? {
                 W::Entity(entity) if !implicit_object && !parameter_root => {
                     let encoding = self.function_encoding(*entity)?;
@@ -823,10 +823,11 @@ impl Symbols<'_, '_> {
                 }
                 W::Absent | W::Entity(_) => {
                     if implicit_object || parameter_root {
-                        let member = terminal.ok_or_else(missing)?;
+                        let member = self.abi.string(self.cursor.name(terminal))?;
                         let node = self.abi.intern(Node::UnresolvedName(member), &arguments)?;
                         return Ok((node, None));
                     }
+                    None
                 }
                 _ => return Err(missing()),
             },
@@ -837,20 +838,87 @@ impl Symbols<'_, '_> {
                 return self.operand_entity(*entity, words.object, allow_type);
             }
             _ => return Err(missing()),
-        }
-        let owner = self
-            .abi
-            .intern(Node::UnresolvedPrefix { root, global }, &levels)?;
+        };
+        let owner = self.operand_qualifier(qualifiers, global, implicit_object, qualifier)?;
+        let member = self.abi.string(self.cursor.name(terminal))?;
         self.abi
             .intern(
                 Node::ScopedMember {
                     owner,
-                    member: terminal.ok_or_else(missing)?,
+                    member,
                     close_qualifier: false,
                 },
                 &arguments,
             )
             .map(|node| (node, None))
+            .map_err(Error::from)
+    }
+    fn operand_qualifier(
+        &mut self,
+        components: &[OperandComponent],
+        global: bool,
+        implicit_object: bool,
+        resolved: Option<TypeId>,
+    ) -> Result<NodeId, Error> {
+        let mut levels = Vec::new();
+        let root = if implicit_object {
+            self.qualifier_levels(resolved.ok_or_else(missing)?, &mut levels)?
+        } else if let Some((first, rest)) = components.split_first() {
+            let root = match first.name {
+                OperandName::Type(ty) if self.graph.lower_template_parameter(ty).is_some() => {
+                    Some(if rest.is_empty() {
+                        self.operand_type(resolved.ok_or_else(missing)?)?
+                    } else if first.arguments.is_empty() {
+                        self.abi_type(ty)?
+                    } else {
+                        self.name_template_id(
+                            self.graph.lower_named_template_id(ty, &first.arguments),
+                        )?
+                    })
+                }
+                OperandName::Type(ty) => self.qualifier_levels(ty, &mut levels)?,
+                OperandName::Entity(entity)
+                    if !self.graph.lower_operand_function(entity)
+                        && !self.graph.lower_is_variable(entity) =>
+                {
+                    let name = self.graph.lower_local_name(entity).ok_or_else(missing)?;
+                    levels.push(self.operand_qualifier_level(name, &first.arguments)?);
+                    None
+                }
+                OperandName::Identifier(name) if global => {
+                    levels.push(self.operand_qualifier_level(name, &first.arguments)?);
+                    None
+                }
+                _ => return Err(missing()),
+            };
+            for component in rest {
+                let OperandName::Identifier(name) = component.name else {
+                    return Err(missing());
+                };
+                levels.push(self.operand_qualifier_level(name, &component.arguments)?);
+            }
+            root
+        } else if global && resolved.is_none() {
+            None
+        } else {
+            return Err(missing());
+        };
+        self.abi
+            .intern(Node::UnresolvedPrefix { root, global }, &levels)
+            .map_err(Error::from)
+    }
+    fn operand_qualifier_level(
+        &mut self,
+        name: NameId,
+        arguments: &[TypeId],
+    ) -> Result<NodeId, Error> {
+        let arguments = arguments
+            .iter()
+            .map(|&ty| self.operand_type(ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        let name = self.abi.string(self.cursor.name(name))?;
+        self.abi
+            .intern(Node::UnresolvedName(name), &arguments)
             .map_err(Error::from)
     }
     fn operand_function_name(
@@ -941,30 +1009,6 @@ impl Symbols<'_, '_> {
             levels.push(self.abi.intern(Node::UnresolvedName(name), &[])?);
         }
         Ok(root)
-    }
-    fn parameter_qualifier_root(
-        &mut self,
-        ty: TypeId,
-        words: &mut OperandReader<'_>,
-        components: usize,
-    ) -> Result<Option<NodeId>, Error> {
-        let count = words.argument_count()?;
-        // A single qualifier uses the recorded dependent type at resolution.
-        // Consume and validate its written words without allocating ABI nodes.
-        if components == 2 {
-            for _ in 0..count {
-                words.ty()?;
-            }
-            return Ok(None);
-        }
-        if count == 0 {
-            return self.abi_type(ty).map(Some);
-        }
-        let arguments = (0..count)
-            .map(|_| words.ty())
-            .collect::<Result<Vec<_>, _>>()?;
-        self.name_template_id(self.graph.lower_named_template_id(ty, &arguments))
-            .map(Some)
     }
     fn operand_arguments(&mut self, words: &mut OperandReader<'_>) -> Result<Vec<NodeId>, Error> {
         let count = words.argument_count()?;

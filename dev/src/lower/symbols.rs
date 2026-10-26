@@ -1399,8 +1399,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     operand: self.abi_type(element)?,
                 },
                 TypeView::Array { element, bound } => Node::Modified {
-                    modifier: if let Some(operand) = self.graph.lower_array_operand(ty) {
-                        Modifier::ExpressionArray(self.placeholder_expression(operand)?)
+                    modifier: if let Some(expression) = self
+                        .graph
+                        .lower_array_operand(ty)
+                        .map(|operand| self.placeholder_node(operand))
+                        .transpose()?
+                        .flatten()
+                    {
+                        Modifier::ExpressionArray(expression)
                     } else if bound == 0 {
                         Modifier::UnknownArray
                     } else {
@@ -1576,8 +1582,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
 
     fn expansion_abi_node(&mut self, pattern: TypeId) -> Result<Node, Error> {
-        if self.graph.lower_value_argument(pattern) {
-            let operand = if let Some(index) = self.graph.lower_template_parameter(pattern) {
+        let operand = if self.graph.lower_value_argument(pattern) {
+            if let Some(index) = self.graph.lower_template_parameter(pattern) {
                 let parameter = self.abi_parameter_level(pattern)?;
                 let node = Node::TemplateParam {
                     index,
@@ -1585,11 +1591,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     substitutable: false,
                     kind: ParameterKind::Type,
                 };
-                self.abi.intern(node, &[])?
+                Some(self.abi.intern(node, &[])?)
             } else {
                 self.placeholder_node(pattern)?
-                    .ok_or(Error::Missing("value pack expansion ABI operand"))?
-            };
+            }
+        } else {
+            None
+        };
+        if let Some(operand) = operand {
             let expression = self.abi.intern(
                 Node::Operation(abi::vocabulary::Operation::PackExpansion),
                 &[operand],

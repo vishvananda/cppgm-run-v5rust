@@ -1,0 +1,10 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @value()
+    %t2 = binary sub nowrap i32 %t1, 3
+    return i32 %t2
+}
+function @value() -> i32 [binding=weak, object=_Z5valueI1XTnT_Li3EEiv] {
+  block ^entry:
+    return i32 3
+}
