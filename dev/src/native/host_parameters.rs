@@ -21,6 +21,7 @@ struct Observation<'a> {
     facts: &'a Facts,
     from: Vec<u64>,
     observed: Vec<bool>,
+    loops: Vec<bool>,
 }
 impl Observation<'_> {
     fn source(&self, value: Value) -> Option<TempId> {
@@ -110,6 +111,18 @@ impl Observation<'_> {
                 safe
             }
             I::Unary(op, ..) => matches!(op, Unary::Ctz | Unary::Clz),
+            I::Branch(..) => self.facts.level >= 1,
+            I::Switch(selector, ..) => {
+                if self.facts.level >= 1
+                    && !self.loops[self.facts.flow.blocks[position].index()]
+                    && let Some(temp) = self.source(*selector)
+                    && temp.index() < self.body.parameter_count
+                    && self.body.temp(temp).ty != Some(Type::I1)
+                {
+                    return false;
+                }
+                false
+            }
             I::Convert(op, ..) => {
                 if let Some(result) = inst.result
                     && !matches!(self.facts.resolve(self.body, Value::Temp(result)), Alias::Temporary(t) if t == result)
@@ -136,12 +149,22 @@ impl Observation<'_> {
         false
     }
 }
-pub(super) fn observe(body: &Body, facts: &Facts) -> Vec<bool> {
+pub(super) fn observe(body: &Body, facts: &Facts) -> Result<Vec<bool>, Error> {
+    let switches =
+        facts.level >= 1
+            && facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
+                facts.active[p] && matches!(body.instruction(id).kind, I::Switch(..))
+            });
     let mut query = Observation {
         body,
         facts,
         from: vec![0; body.temps().len()],
         observed: vec![false; body.parameter_count],
+        loops: if switches {
+            super::allocation_weights::Weights::loop_membership(body, &facts.flow)?
+        } else {
+            Vec::new()
+        },
     };
     for (p, param) in body.temps().iter().take(body.parameter_count).enumerate() {
         if param.ty.is_some_and(narrow) {
@@ -163,7 +186,7 @@ pub(super) fn observe(body: &Body, facts: &Facts) -> Vec<bool> {
             }
         }
     }
-    query.observed
+    Ok(query.observed)
 }
 pub(super) fn normalize(
     body: &Body,
@@ -192,6 +215,22 @@ pub(super) fn normalize(
         }
     }
     Ok(())
+}
+pub(super) fn switch_type(
+    body: &Body,
+    facts: &Facts,
+    observed: &[bool],
+    value: Value,
+) -> Option<Type> {
+    let Alias::Temporary(temp) = facts.resolve(body, value) else {
+        return None;
+    };
+    let ty = body.temp(temp).ty?;
+    (temp.index() < body.parameter_count
+        && observed.get(temp.index()) == Some(&false)
+        && narrow(ty)
+        && ty != Type::I1)
+        .then_some(ty)
 }
 
 // emit_calls.cpp::fold_entry_extensions: only the entry sequence is visible,

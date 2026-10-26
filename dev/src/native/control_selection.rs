@@ -218,6 +218,20 @@ impl Selection<'_> {
                 if source.register().is_none() {
                     self.load(super::x86::Register::R10, source, ty);
                     source = Operand::Register(super::x86::Register::R10);
+                } else if self.mir.object_model == super::object_compile::ObjectModel::Host
+                    && let Some(from) = super::host_parameters::switch_type(
+                        self.body,
+                        &self.facts,
+                        &self.placement.host_parameters,
+                        *value,
+                    )
+                {
+                    self.emit(ScalarOp::ExtendMove(
+                        from,
+                        super::x86::Register::R10,
+                        source.register().ok_or(Error::Limit)?,
+                    ));
+                    source = Operand::Register(super::x86::Register::R10);
                 }
                 if self.facts.level >= 1
                     && self.clustered_switch(

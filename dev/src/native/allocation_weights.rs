@@ -46,9 +46,12 @@ fn walk(body: &Body, flow: &Flow) -> Walk {
     Walk { post, back }
 }
 impl Weights {
-    pub(super) fn analyze(program: &Program, body: &Body, facts: &Facts) -> Result<Self, Error> {
+    pub(super) fn loop_membership(body: &Body, flow: &Flow) -> Result<Vec<bool>, Error> {
+        let loops = Self::discover(body, flow, &walk(body, flow))?;
+        Ok(loops.depth.into_iter().map(|depth| depth != 0).collect())
+    }
+    fn discover(body: &Body, flow: &Flow, walk: &Walk) -> Result<Self, Error> {
         let n = body.blocks().len();
-        let walk = walk(body, &facts.flow);
         let mut out = Self {
             depth: vec![0; n],
             loops: Vec::new(),
@@ -81,7 +84,7 @@ impl Weights {
             }
             while !work.is_empty() && steps <= budget {
                 let x = work.pop().ok_or(Error::Limit)?;
-                for &q in facts.flow.predecessors(x) {
+                for &q in flow.predecessors(x) {
                     steps += 1;
                     if mark[q.index()] != epoch {
                         mark[q.index()] = epoch;
@@ -96,7 +99,12 @@ impl Weights {
                 out.loops.push(members);
             }
         }
-        let mut cold = vec![false; n];
+        Ok(out)
+    }
+    pub(super) fn analyze(program: &Program, body: &Body, facts: &Facts) -> Result<Self, Error> {
+        let walk = walk(body, &facts.flow);
+        let mut out = Self::discover(body, &facts.flow, &walk)?;
+        let mut cold = vec![false; body.blocks().len()];
         for (pos, &id) in facts.flow.instructions.iter().enumerate() {
             let kind = &body.instruction(id).kind;
             let no_return = if let I::Call(call) = kind {

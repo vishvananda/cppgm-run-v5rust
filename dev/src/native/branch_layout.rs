@@ -59,8 +59,10 @@ pub(super) fn layout(
     if let Some(flow) = Flow::new(f) {
         flow.place(f)?;
     }
-    if f.rotated_loops != 0 {
+    if super::shrink_wrap::run(f)? || f.rotated_loops != 0 {
         super::home_forwarding::forward(f);
+    }
+    if f.rotated_loops != 0 {
         super::flag_cleanup::drop_tests(f);
     }
     let n = f.blocks.len();
@@ -83,12 +85,15 @@ pub(super) fn layout(
         }
         if t.index() != b
             && t.index() < n
-            && bare
             && f.blocks[t.index()].range.len() == 1
-            && matches!(
+            && (matches!(
                 f.instructions[f.blocks[t.index()].range.start].op,
-                Op::Return(_)
-            )
+                Op::FramelessReturn(_)
+            ) || bare
+                && matches!(
+                    f.instructions[f.blocks[t.index()].range.start].op,
+                    Op::Return(_)
+                ))
         {
             f.instructions[last] = f.instructions[f.blocks[t.index()].range.start];
         }

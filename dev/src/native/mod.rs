@@ -55,12 +55,16 @@ mod memory_updates;
 mod mir;
 mod mir_cleanup;
 mod mir_globals;
+mod mir_registers;
 mod object;
 mod object_compile;
 mod object_storage;
 mod region_flow;
 mod register_allocation;
+mod shrink_region;
+mod shrink_wrap;
 mod split_placement;
+mod store_coalescing;
 mod unwind_rules;
 pub(crate) use elf_reader::read as read_object;
 #[cfg(test)]

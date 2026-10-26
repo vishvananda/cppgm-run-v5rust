@@ -103,6 +103,8 @@ pub(super) enum Op {
     Move(R, u128),
     SymbolMove(R, SymbolId),
     Return(Option<R>),
+    FramelessReturn(Option<R>),
+    Prologue,
     Trap,
     Call(CallSite),
     TailJump(CallSite),
@@ -454,13 +456,14 @@ impl Function {
                 reg.spelling(),
                 program.names.get(program.symbol(symbol).name)
             )?,
-            Op::Return(reg) => {
+            Op::Return(reg) | Op::FramelessReturn(reg) => {
                 write!(out, "    ret")?;
                 if let Some(reg) = reg {
                     write!(out, " {}", reg.spelling())?;
                 }
             }
             Op::Trap => write!(out, "    trap")?,
+            Op::Prologue => write!(out, "    prologue")?,
             Op::Call(site) => site.write(program, out)?,
             Op::TailJump(site) => {
                 write!(out, "    tail_jump ")?;

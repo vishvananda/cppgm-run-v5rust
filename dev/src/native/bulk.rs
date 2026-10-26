@@ -46,6 +46,15 @@ pub(super) struct Bulk {
     align: u32,
 }
 impl Bulk {
+    pub(super) fn frameless(self) -> bool {
+        if let Some(source) = self.source {
+            let scratch = (1 << R::R10.code()) | (1 << R::R11.code());
+            direct_copy(u64::from(self.bytes), self.align, true)
+                && (self.destination.mask() | source.mask()) & scratch != scratch
+        } else {
+            direct_zero(u64::from(self.bytes), true)
+        }
+    }
     pub(super) fn bytes(self) -> u32 {
         self.bytes
     }

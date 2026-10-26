@@ -16,6 +16,7 @@ pub(super) fn terminal(op: Op) -> bool {
         Op::Jump(_)
             | Op::JumpTable(_)
             | Op::Return(_)
+            | Op::FramelessReturn(_)
             | Op::Trap
             | Op::TailJump(_)
             | Op::Exception(ExceptionOp::Throw(_) | ExceptionOp::Resume)
@@ -258,11 +259,9 @@ impl Flow {
             return if calls(t) { p } else { 1000 - p };
         }
         let returns = |s: usize| {
-            f.blocks[s]
-                .range
-                .clone()
-                .last()
-                .is_some_and(|i| matches!(f.instructions[i].op, Op::Return(_)))
+            f.blocks[s].range.clone().last().is_some_and(|i| {
+                matches!(f.instructions[i].op, Op::Return(_) | Op::FramelessReturn(_))
+            })
         };
         if returns(t) != returns(no) {
             return if returns(t) { 350 } else { 650 };
@@ -425,11 +424,12 @@ impl Flow {
         let mut chains: Vec<_> = (1..count).filter(|&b| root(&mut parent, b) == b).collect();
         chains.sort_by_key(|&b| (self.cold[b], b));
         let returns = |b: usize| {
-            function.blocks[b]
-                .range
-                .clone()
-                .last()
-                .is_some_and(|i| matches!(function.instructions[i].op, Op::Return(_)))
+            function.blocks[b].range.clone().last().is_some_and(|i| {
+                matches!(
+                    function.instructions[i].op,
+                    Op::Return(_) | Op::FramelessReturn(_)
+                )
+            })
         };
         if returns(count - 1)
             && chains.last().is_some_and(|&second| !returns(tail[second]))

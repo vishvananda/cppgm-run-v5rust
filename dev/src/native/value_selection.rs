@@ -169,15 +169,6 @@ pub(super) fn select_for_object(
     } else {
         None
     };
-    if level >= 1
-        && model == super::object_compile::ObjectModel::Host
-        && (flow.reachable.iter().filter(|&&r| r).count() > 1
-            || !flow.predecessors(body.layout[0]).is_empty())
-    {
-        return Err(Error::NotImplemented(
-            "native optimized host allocation and shrink wrapping",
-        ));
-    }
     let slots = slot_analysis::analyze(body, &flow)?;
     let mut facts = if model == super::object_compile::ObjectModel::Course {
         Facts::analyze(body, &slots, flow, level)?
@@ -187,7 +178,7 @@ pub(super) fn select_for_object(
     // Address folding suppresses emission, not the typed reads that decide
     // host parameter normalization (notably a lazy array index).
     let host_parameters = if model == super::object_compile::ObjectModel::Host {
-        super::host_parameters::observe(body, &facts)
+        super::host_parameters::observe(body, &facts)?
     } else {
         Vec::new()
     };
@@ -483,6 +474,7 @@ pub(super) fn select_for_object(
     selection.placement.finish_frame(&mut selection.mir)?;
     selection.mir.frame_policy.omit_pointer = super::frame_encoding::can_omit(&selection.mir);
     if level >= 1 {
+        super::store_coalescing::merge_runs(&mut selection.mir);
         super::return_slots::forward(&mut selection.mir);
         super::home_forwarding::forward(&mut selection.mir);
         super::mir_cleanup::extensions(&mut selection.mir);

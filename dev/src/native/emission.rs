@@ -203,7 +203,11 @@ impl<'a> Pass<'a> {
     }
     fn run(&mut self, image: &mut Image, order: &Order) -> Result<(), Error> {
         let f = self.function;
-        self.prologue()?;
+        self.frame.frameless = self.plan.omit;
+        self.frame.reserve = self.plan.reserve;
+        if !f.frame_policy.shrink_wrapped {
+            self.prologue()?;
+        }
         self.assembler.frame_addressing(self.plan.address);
         for block in 0..f.blocks.len() {
             if order.targets[block] != block {
@@ -314,13 +318,21 @@ impl<'a> Pass<'a> {
     fn prologue(&mut self) -> Result<(), Error> {
         let f = self.function;
         let a = &mut self.assembler;
+        let first = self.frame.prologues.is_empty();
+        let mut prologue = super::host_unwind::Prologue {
+            start: a.position()?,
+            ..Default::default()
+        };
         self.frame.frameless = self.plan.omit;
         self.frame.reserve = self.plan.reserve;
         if self.plan.omit {
             if self.plan.reserve != 0 {
                 a.alu_ri(5, Rm::Reg(R::RSP), self.plan.reserve.into(), 8)?;
             }
-            self.frame.reserve_end = a.position()?;
+            prologue.reserve_end = a.position()?;
+            if first {
+                self.frame.reserve_end = prologue.reserve_end;
+            }
         } else {
             a.push(R::RBP);
             self.frame.push_end = a.position()?;
@@ -339,11 +351,14 @@ impl<'a> Pass<'a> {
                 .wrapping_neg()
                 .wrapping_add(saved.cast_signed())
         };
+        let mut pushed = 0;
         for reg in super::frame_encoding::SAVES.into_iter().rev() {
             if f.preserve & (1 << reg.code()) != 0 {
                 a.push(reg);
                 offset = offset.wrapping_sub(8);
-                if self.record_frame {
+                prologue.save_end[pushed] = a.position()?;
+                pushed += 1;
+                if self.record_frame && first {
                     self.frame.saves.push((a.position()?, reg, offset));
                 }
             }
@@ -359,6 +374,9 @@ impl<'a> Pass<'a> {
                 ),
             )?;
             a.alu_ri(4, Rm::Reg(R::R12), -i64::from(f.aligned_base), 8)?;
+        }
+        if f.frame_policy.shrink_wrapped {
+            self.frame.prologues.push(prologue);
         }
         Ok(())
     }
@@ -448,6 +466,14 @@ impl<'a> Pass<'a> {
         let f = self.function;
         match op {
             Op::Nop => {}
+            Op::Prologue => self.prologue()?,
+            Op::FramelessReturn(reg) => {
+                if let Some(reg) = reg {
+                    return_register(&mut self.assembler, reg)?;
+                }
+                self.stats.returns += 1;
+                self.assembler.ret();
+            }
             Op::HostEh(super::landing_pad::Effect::Resume) => {
                 self.branch(None, self.terminal.ok_or(Error::Limit)?);
             }

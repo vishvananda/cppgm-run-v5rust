@@ -50,6 +50,27 @@ pub(super) enum Effect {
     Resume,
 }
 impl Effect {
+    // The frozen MIR carries these frame addresses explicitly. This typed
+    // effect derives them from the single function-owned exception area;
+    // frame ordering counts each address and relocates that area once.
+    pub(super) fn visit_slots(self, tables: &Tables, mut visit: impl FnMut(i32)) {
+        let slot = tables.slot;
+        match self {
+            Self::Landing { copy_selector } => {
+                visit(slot);
+                visit(slot.wrapping_add(if tables.raw { 16 } else { 8 }));
+                if copy_selector {
+                    visit(slot.wrapping_add(8));
+                }
+            }
+            Self::Select(_) => {
+                visit(slot.wrapping_add(8));
+                visit(slot.wrapping_add(16));
+            }
+            Self::CatchAll(_) => visit(slot.wrapping_add(8)),
+            Self::Resume => {}
+        }
+    }
     pub(super) fn emit(self, a: &mut Assembler, tables: &Tables) -> Result<(), Error> {
         let slot = tables.slot;
         match self {

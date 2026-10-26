@@ -64,6 +64,7 @@ impl Addressing {
 pub(super) struct Policy {
     pub(super) omit_pointer: bool,
     pub(super) records_pushed: bool,
+    pub(super) shrink_wrapped: bool,
 }
 impl Policy {
     pub(super) fn for_body(
@@ -91,6 +92,7 @@ impl Policy {
         Self {
             omit_pointer: false,
             records_pushed,
+            shrink_wrapped: false,
         }
     }
 }

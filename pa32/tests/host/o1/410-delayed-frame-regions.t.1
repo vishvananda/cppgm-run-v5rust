@@ -1,0 +1,39 @@
+extern int observed(int);
+
+int shared_return(int first, int second)
+{
+  int result = second;
+  if(first)
+    result += observed(first);
+  return result;
+}
+
+int retained_arguments(int a, int b, int c, int d, int e, int f)
+{
+  if(!a)
+    return b + c + d + e + f;
+  int value = observed(a);
+  return value + a + b + c + d + e + f;
+}
+
+int two_exits(int value, int other)
+{
+  if(!value)
+    return other;
+  if(value < 0)
+    return observed(other) + value;
+  return observed(value) + other;
+}
+
+int main()
+{
+  if(shared_return(0, 9) != 9 || shared_return(3, 9) != 15)
+    return 1;
+  if(retained_arguments(0, 2, 3, 4, 5, 6) != 20)
+    return 2;
+  if(retained_arguments(1, 2, 3, 4, 5, 6) != 23)
+    return 3;
+  if(two_exits(0, 4) != 4 || two_exits(-3, 4) != 5 || two_exits(3, 4) != 10)
+    return 4;
+  return 0;
+}

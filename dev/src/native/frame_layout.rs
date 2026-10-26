@@ -189,6 +189,8 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
         | Op::Move(..)
         | Op::SymbolMove(..)
         | Op::Return(_)
+        | Op::FramelessReturn(_)
+        | Op::Prologue
         | Op::Trap
         | Op::DynamicCopy
         | Op::StackAlloc(_)
@@ -223,7 +225,7 @@ pub(super) fn order(function: &mut Function, objects: &[Object]) {
     for b in 0..function.blocks.len() {
         let weight = frequency.as_ref().map_or(1, |f| f[b]);
         for i in function.blocks[b].range.clone() {
-            let permitted = operands(&mut function.instructions[i].op, |operand, bytes| {
+            let mut weigh = |operand: &mut Operand, bytes| {
                 let indexed = operand.memory().is_some_and(|m| m.index.is_some());
                 let Some(offset) = displacement(operand) else {
                     return;
@@ -236,7 +238,13 @@ pub(super) fn order(function: &mut Function, objects: &[Object]) {
                 } else {
                     valid = false;
                 }
-            });
+            };
+            let permitted = if let Op::HostEh(effect) = function.instructions[i].op {
+                effect.visit_slots(&function.eh, |offset| weigh(&mut Operand::Frame(offset), 1));
+                true
+            } else {
+                operands(&mut function.instructions[i].op, weigh)
+            };
             valid &= permitted;
         }
     }
@@ -284,6 +292,9 @@ pub(super) fn order(function: &mut Function, objects: &[Object]) {
     }
     if function.scratch_bytes != 0 {
         relocate(&mut function.scratch_offset);
+    }
+    if function.eh.slot < 0 {
+        relocate(&mut function.eh.slot);
     }
     if function.preserve != 0 {
         size = size
