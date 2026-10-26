@@ -358,12 +358,12 @@ dev/src/sema/vtable_records.h	dev/src/sema/final_overriders.rs,dev/src/sema/virt
 dev/src/support/file_handle.h	dev/src/driver/toolchain.rs,dev/src/driver/lowir.rs,dev/src/native/elf_reader.rs	PA33 census ownership located: owned std File/BufWriter and Result paths replace FILE RAII; final I/O failure census remains
 dev/src/support/flat_map.h	dev/src/sema/graph.rs,dev/src/sema/types.rs,dev/src/lower/symbols.rs	complete
 dev/src/support/internal_error.h	dev/src/sema/mod.rs,dev/src/driver/ast.rs,dev/bin/cppgm.rs	complete
-dev/src/support/memory/arena.cpp	dev/src/syntax/storage.rs,dev/src/sema/graph.rs,dev/src/abi/graph.rs	PA33 census ownership located: owned checked Vec slabs, transactional truncate and bulk owner drop replace raw bump allocation; resource capacities remain implementation measurements; final consumer census remains
-dev/src/support/memory/arena.h	dev/src/syntax/storage.rs,dev/src/syntax/ast.rs	partial: PA5 safe typed slabs/list storage and full parser rewind snapshots replace raw arena allocation; later phase arena owners pending PA33 syntax source strings use safe owned blocks with compact typed spans, exact spelling reservation growth and retained views across growth; scalar/data copies and actual slab capacity remain separate. Other phase arena ownership still requires the full census review.
-dev/src/support/memory/zeroed_allocator.h	dev/src/sema/graph.rs,dev/src/native/global_data.rs	PA33 census ownership located: initialized standard-library map storage and explicit zero-filled target byte buffers replace raw calloc/value initialization; final consumer census remains
+dev/src/support/memory/arena.cpp	dev/src/syntax/storage.rs,dev/src/sema/graph.rs,dev/src/abi/graph.rs	complete
+dev/src/support/memory/arena.h	dev/src/syntax/storage.rs,dev/src/syntax/ast.rs	complete
+dev/src/support/memory/zeroed_allocator.h	dev/src/sema/graph.rs,dev/src/native/global_data.rs,dev/src/native/image.rs	complete
 dev/src/support/not_implemented.h	dev/bin/cppgm.rs,dev/src/driver/ast.rs,dev/src/lowir/mod.rs	PA33 census ownership located: structured Missing/NotImplemented tool boundaries preserve status 86; actual reachable production gaps remain, including source-view statistics
 dev/src/support/pointer_map.h	dev/src/lower/symbols.rs,dev/src/lower/function.rs,dev/src/sema/graph.rs	complete
-dev/src/support/small_list.h	dev/src/syntax/storage.rs,dev/src/sema/graph.rs	PA33 census ownership located: owned slice/slab lists and query scratch replace raw inline/heap list storage; common-case allocations and final consumer census remain under architecture review
+dev/src/support/small_list.h	dev/src/syntax/storage.rs,dev/src/sema/graph.rs	complete
 dev/src/support/stack_budget.h	dev/src/support/stack.rs,dev/bin/source_tool/stack_limit.rs,dev/src/syntax/parser.rs	complete
 dev/src/support/telemetry.h	dev/src/lowir/statistics.rs,dev/bin/lowir.rs	partial PA8: LowIR model census, phase measurements and boundary-owned peak RSS; remaining compiler-wide counter and telemetry-off interfaces pending
 dev/src/support/testing/test_runner.cpp	dev/bin/source_tool/mod.rs,scripts/clone_check.py	PA33 census ownership located: test-only runner routes to protected adapter and candidate executables; full direct-worker surface/rejection isolation remains under release census; no oracle phase fallback
