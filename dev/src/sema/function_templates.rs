@@ -337,21 +337,32 @@ impl Analyzer<'_> {
             for (slot, &argument) in arguments.iter_mut().zip(&converted) {
                 *slot = Some(argument);
             }
-            let partial = (converted.len()..count)
-                .any(|index| self.graph.templates.default_argument(head, index).is_none());
-            let binding = if call || partial {
-                let binding = self.graph.binding(primary);
-                let hidden = self.graph.add_hidden_function(primary, binding)?;
-                self.graph
-                    .function_templates
-                    .explicit
-                    .insert(hidden, arguments);
-                hidden
-            } else if let Some(binding) = self.complete_signature(primary, &mut arguments)? {
-                binding
-            } else {
-                continue;
-            };
+            let partial = (converted.len()..count).any(|index| {
+                !self.argument_parameter_pack(head, index)
+                    && self.graph.templates.default_argument(head, index).is_none()
+            });
+            let packs =
+                (converted.len()..count).any(|index| self.argument_parameter_pack(head, index));
+            // A template-id forms its no-target declaration with unfilled
+            // packs empty. Keep the original explicit arguments independently:
+            // an ensuing target type can still deduce those packs.
+            if !call && !partial {
+                let mut complete = arguments.clone();
+                let Some(binding) = self.complete_signature(primary, &mut complete)? else {
+                    continue;
+                };
+                if !packs {
+                    specializations.push(binding);
+                    continue;
+                }
+            }
+            let binding = self.graph.binding(primary);
+            let hidden = self.graph.add_hidden_function(primary, binding)?;
+            self.graph
+                .function_templates
+                .explicit
+                .insert(hidden, arguments);
+            let binding = hidden;
             specializations.push(binding);
         }
         if specializations.as_slice().is_empty() {
@@ -708,8 +719,8 @@ impl Analyzer<'_> {
         };
         let depth = self.graph.templates.depth(head);
         let mut earlier = Vec::with_capacity(arguments.len());
-        for index in 0..arguments.len() {
-            let ty = if let Some(ty) = arguments[index] {
+        for (index, slot) in arguments.iter_mut().enumerate() {
+            let ty = if let Some(ty) = *slot {
                 ty
             } else if self.argument_parameter_pack(head, index) {
                 self.graph
@@ -723,44 +734,29 @@ impl Analyzer<'_> {
                 if let Some(&ty) = self.graph.function_templates.defaults.get(&key) {
                     ty
                 } else {
-                    let pattern = if let Some(bound) = default.bound {
-                        bound
-                    } else {
-                        let copy = self.copy_template_pattern(default.syntax)?;
-                        // Form a dependent default's pattern in its declaration
-                        // context before substituting this candidate's arguments.
-                        self.template_depth += 1;
-                        let saved = self.graph.lookup_limit.replace(default.limit);
-                        let template = self
-                            .template_argument_parameter(head, index)
-                            .map(|info| info.inner.is_some());
-                        let result = self.template_argument_at(
-                            copy,
-                            default.scope,
-                            self.default_location(default),
-                            None,
-                            template,
-                            false,
-                        );
-                        self.graph.lookup_limit = saved;
-                        self.template_depth -= 1;
-                        result?
-                    };
-                    let mut environment = Substitution::new(depth, &arguments[..index]);
-                    environment.context =
-                        check_access.then_some(self.graph.binding(primary).entity);
-                    let Some(ty) = self.substitute_signature_type(pattern, &mut environment)?
-                    else {
-                        self.graph.work.totals.substitution_failures +=
-                            usize::from(environment.failure.is_some());
-                        return Ok(None);
+                    // Defaults use the same declaration-scope instantiation
+                    // owner as class templates, with earlier arguments bound.
+                    let result = self.class_default_type_in(
+                        default,
+                        head,
+                        &earlier,
+                        super::class_templates::DefaultUse::Signature,
+                        None,
+                    );
+                    let ty = match result {
+                        Ok(ty) => ty,
+                        Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                            self.graph.work.totals.substitution_failures += 1;
+                            return Ok(None);
+                        }
+                        Err(error) => return Err(error),
                     };
                     let ty = self.graph.types.canonical_function(ty)?;
                     self.graph.function_templates.defaults.insert(key, ty);
                     ty
                 }
             };
-            arguments[index] = Some(ty);
+            *slot = Some(ty);
             earlier.push(ty);
         }
         // Frozen complete_deduction keeps newly supplied defaults in source

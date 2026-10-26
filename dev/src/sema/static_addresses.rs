@@ -63,8 +63,9 @@ impl Analyzer<'_> {
                 let entity = self
                     .graph
                     .binding(
-                        self.graph
-                            .resolved_name(name)
+                        facts
+                            .function
+                            .or_else(|| self.graph.resolved_name(name))
                             .ok_or(Error::Invariant("static reference binding"))?,
                     )
                     .entity;

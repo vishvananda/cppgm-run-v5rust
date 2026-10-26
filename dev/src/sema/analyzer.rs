@@ -961,15 +961,7 @@ impl<'tree> Analyzer<'tree> {
         {
             let syntax_item = self.tree.parameters.get(body.parameters.parameters)[index];
             let parameter = &syntax_item;
-            let mut ty = self.graph.types.function_parameter(body.ty, index)?;
-            if self.graph.function_templates.primary(body.entity).is_some() {
-                // The canonical signature discards top-level cv. Parameter
-                // objects keep the definition's declared type, substituted in
-                // its immutable argument frame (an array/function adjusts).
-                let specs = self.specifiers(parameter.specifiers, scope, false)?;
-                let info = self.declarator(parameter.declarator, specs.ty, scope)?;
-                ty = self.graph.types.parameter_object(info.ty)?;
-            }
+            let ty = self.graph.types.function_parameter(body.ty, index)?;
             let name = self.declarator_name(parameter.declarator)?;
             if let Some(name) = name
                 && self

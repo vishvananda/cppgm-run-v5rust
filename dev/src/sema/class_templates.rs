@@ -27,7 +27,7 @@ struct DefaultKey {
 }
 
 #[derive(Clone, Copy)]
-enum DefaultUse {
+pub(super) enum DefaultUse {
     Required,
     Signature,
 }
@@ -316,7 +316,7 @@ impl Analyzer<'_> {
         Ok(())
     }
 
-    fn class_default_type_in(
+    pub(super) fn class_default_type_in(
         &mut self,
         default: super::templates::DefaultArgument,
         head: HeadId,
