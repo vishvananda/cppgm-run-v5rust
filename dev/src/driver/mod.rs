@@ -3,7 +3,7 @@
 pub mod batch;
 mod compatibility;
 pub mod debug_options;
-mod file_identity;
+pub mod file_identity;
 pub mod optimization_options;
 pub mod pptoken;
 mod source_observations;

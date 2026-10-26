@@ -103,7 +103,7 @@ impl<'a> SourceInput<'a> {
             name,
             FileServices {
                 identity: |_| None,
-                read: |_| None,
+                read: |_| Ok(None),
             },
         )
     }

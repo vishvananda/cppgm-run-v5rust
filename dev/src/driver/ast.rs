@@ -462,7 +462,12 @@ fn emit_preprocessed(
     unit.set_hosted(hosted);
     unit.set_source_origin(origins.source);
     unit.set_stack_budget(stack_budget);
-    let parsed = unit.parse();
+    let parsed = match unit.parse() {
+        Err(ParseError::Preprocess(PreprocessError::Read(error))) => {
+            return Err(AstToolError::Initialization(PreprocessError::Read(error)));
+        }
+        parsed => parsed,
+    };
     if let Some(observations) = observations.as_deref_mut() {
         observations.view = Some(mode);
         observations.parse_ms = front_start.elapsed().as_secs_f64() * 1000.0;

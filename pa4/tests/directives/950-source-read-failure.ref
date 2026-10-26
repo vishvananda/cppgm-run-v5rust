@@ -1,0 +1,3 @@
+preproc 1
+sof tests/directives/950-source-read-failure.t
+identifier before

@@ -7,7 +7,7 @@ use cppgm_rust::{
 use std::{
     ffi::OsString,
     fs::File,
-    io::{self, Read, Write},
+    io::{self, Write},
     os::unix::ffi::OsStrExt,
     process::ExitCode,
 };
@@ -82,15 +82,14 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
             .and_then(|()| output.write_all(path.as_bytes()))
             .and_then(|()| output.write_all(b"\n"))
             .map_err(|error| CliError::Message(error.to_string()))?;
-        let mut bytes = Vec::new();
         // Match SourceFiles' stat-before-open boundary, including nonregular
         // inputs that could block if opened (such as a FIFO).
         if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
             return Err(path_diagnostic(path, b"cannot open the source file"));
         }
-        let mut file =
-            File::open(path).map_err(|_| path_diagnostic(path, b"cannot open the source file"))?;
-        let _read_status = file.read_to_end(&mut bytes);
+        let bytes = cppgm_rust::driver::file_identity::read(path.as_bytes())
+            .map_err(|error| CliError::Message(error.to_string()))?
+            .ok_or_else(|| path_diagnostic(path, b"cannot open the source file"))?;
         let source =
             SourceBuffer::new(bytes).map_err(|message| CliError::Message(message.to_owned()))?;
         let mut counters = None;
@@ -102,12 +101,14 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
             &mut counters,
         )
         .map_err(|error| match error {
+            PreprocToolError::Input(error) => CliError::Message(error.to_string()),
             PreprocToolError::Initialization(PreprocessError::Source(error)) => {
                 CliError::Message(error.to_string())
             }
             PreprocToolError::Initialization(error) => match error {
                 PreprocessError::NotImplemented(group) => CliError::Missing(group),
                 PreprocessError::Invariant(message) => CliError::Internal(message),
+                PreprocessError::Read(error) => CliError::Message(error.to_string()),
                 _ => {
                     let mut diagnostic = path.as_bytes().to_vec();
                     diagnostic.push(b':');

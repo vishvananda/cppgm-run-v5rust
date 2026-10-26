@@ -163,3 +163,53 @@ fn emit_invocation_preserves_level_spelling_and_argument_bytes()
     }
     Ok(())
 }
+
+#[test]
+fn opened_source_read_failures_remain_unlocated_and_skip_statistics()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory =
+        Scratch(std::env::temp_dir().join(format!("cppgm-source-read-{}", std::process::id())));
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("include.cpp");
+    std::fs::write(&source, b"int before;\n#include \"/proc/self/mem\"\n")?;
+    let primary = std::path::Path::new("/proc/self/mem");
+    let expected = b"ERROR: basic_filebuf::xsgetn error reading the file: Input/output error\n";
+    for path in [primary, &source] {
+        for mode in [
+            "--emit-ast",
+            "--emit-types",
+            "--emit-semantics",
+            "--emit-lowir",
+        ] {
+            let output = directory.0.join(mode);
+            let result = Command::new(env!("CARGO_BIN_EXE_cppgm"))
+                .args([mode, "-o"])
+                .arg(&output)
+                .arg(path)
+                .output()?;
+            assert_eq!(result.status.code(), Some(1));
+            assert_eq!(result.stderr, expected);
+            if mode == "--emit-lowir" {
+                assert!(!output.exists());
+            } else {
+                assert_eq!(std::fs::read(&output)?, b"1 translation units\n");
+                std::fs::remove_file(&output)?;
+            }
+        }
+        let result = Command::new(env!("CARGO_BIN_EXE_cppgm"))
+            .args(["--emit-ast", "--stats", "-o"])
+            .arg(directory.0.join("reported.ast"))
+            .arg(path)
+            .output()?;
+        assert_eq!(result.status.code(), Some(1));
+        assert_eq!(result.stderr, expected);
+        let result = Command::new(env!("CARGO_BIN_EXE_preproc"))
+            .args(["--stats", "-o"])
+            .arg(directory.0.join("tokens"))
+            .arg(path)
+            .output()?;
+        assert_eq!(result.status.code(), Some(1));
+        assert_eq!(result.stderr, expected);
+    }
+    Ok(())
+}

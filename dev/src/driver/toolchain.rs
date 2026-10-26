@@ -588,19 +588,16 @@ fn read_source(input: &Input) -> Result<SourceBuffer, AstToolError> {
             .concat(),
         ));
     }
-    let bytes = std::fs::read(&input.path).map_err(|_| {
-        AstToolError::Diagnostic(
-            [
-                input.path.as_os_str().as_bytes(),
-                b": cannot open the source file",
-            ]
-            .concat(),
-        )
-    })?;
+    let bytes = super::file_identity::read(input.path.as_os_str().as_bytes())
+        .map_err(|error| AstToolError::Diagnostic(error.to_string().into_bytes()))?
+        .ok_or_else(|| argument_source(&input.path, b"cannot open the source file"))?;
     SourceBuffer::new(bytes).map_err(message)
 }
 fn source_error(input: &Input, source: &SourceBuffer, error: AstToolError) -> AstToolError {
     match error {
+        AstToolError::Initialization(PreprocessError::Read(error)) => {
+            AstToolError::Diagnostic(error.to_string().into_bytes())
+        }
         AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {
             AstToolError::Missing(group)
         }
@@ -782,7 +779,8 @@ fn preprocess(invocation: &Invocation, values: &PredefinedValues) -> Result<(), 
             .and_then(|()| output.write_all(b"\n"))
             .map_err(AstToolError::Output)?;
         let bytes = if std::fs::metadata(&input.path).is_ok_and(|m| m.is_file()) {
-            std::fs::read(&input.path).ok()
+            super::file_identity::read(input.path.as_os_str().as_bytes())
+                .map_err(|error| AstToolError::Diagnostic(error.to_string().into_bytes()))?
         } else {
             None
         }
@@ -796,6 +794,9 @@ fn preprocess(invocation: &Invocation, values: &PredefinedValues) -> Result<(), 
             &mut output,
         )
         .map_err(|error| match error {
+            super::preproc::PreprocToolError::Input(error) => {
+                AstToolError::Diagnostic(error.to_string().into_bytes())
+            }
             super::preproc::PreprocToolError::Initialization(PreprocessError::NotImplemented(
                 group,
             ))

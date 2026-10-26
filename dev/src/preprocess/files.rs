@@ -17,11 +17,14 @@ impl FileIdentity {
 /// Demand-only host service; a missing or nonregular file returns None.
 pub type FileIdentityQuery = fn(&[u8]) -> Option<FileIdentity>;
 
+/// A missing file is distinct from a failure while reading an opened image.
+pub type FileReadResult = Result<Option<Vec<u8>>, crate::support::source::SourceReadError>;
+
 /// Host source-file operations supplied explicitly at the driver boundary.
 #[derive(Clone, Copy)]
 pub struct FileServices {
     pub identity: FileIdentityQuery,
-    pub read: fn(&[u8]) -> Option<Vec<u8>>,
+    pub read: fn(&[u8]) -> FileReadResult,
 }
 
 use super::error::PreprocessError;
@@ -76,9 +79,7 @@ impl<'a> SourceFiles<'a> {
                 .map_err(|_| PreprocessError::Limit("too many source files"))?,
         );
         self.files.push(SourceFile {
-            image: SourceImage::Shared(Rc::new(
-                SourceBuffer::new(bytes).map_err(PreprocessError::Limit)?,
-            )),
+            image: SourceImage::Shared(Rc::new(source_image(bytes)?)),
             identity: None,
             guard: None,
         });
@@ -111,12 +112,10 @@ impl<'a> SourceFiles<'a> {
         if let Some(&id) = self.identities.get(&identity) {
             return Ok(Some(id));
         }
-        let Some(bytes) = (self.services.read)(path) else {
+        let Some(bytes) = (self.services.read)(path).map_err(PreprocessError::Read)? else {
             return Ok(None);
         };
-        let image = SourceImage::Shared(Rc::new(
-            SourceBuffer::new(bytes).map_err(PreprocessError::Limit)?,
-        ));
+        let image = SourceImage::Shared(Rc::new(source_image(bytes)?));
         let id = FileId(
             u32::try_from(self.files.len())
                 .map_err(|_| PreprocessError::Limit("too many source files"))?,
@@ -131,10 +130,46 @@ impl<'a> SourceFiles<'a> {
     }
 }
 
+fn source_image(bytes: Vec<u8>) -> Result<SourceBuffer, PreprocessError> {
+    SourceBuffer::new(bytes).map_err(|message| {
+        PreprocessError::Read(crate::support::source::SourceReadError::Image(message))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn read_failures_publish_neither_images_nor_cached_misses() {
+        static READS: AtomicUsize = AtomicUsize::new(0);
+        let source = SourceBuffer::new(Vec::new()).unwrap();
+        let mut files = SourceFiles::new(
+            &source,
+            b"primary",
+            FileServices {
+                identity: |path| Some(FileIdentity::new(1, u64::from(path != b"primary") + 1)),
+                read: |_| {
+                    if READS.fetch_add(1, Ordering::Relaxed) == 0 {
+                        Err(crate::support::source::SourceReadError::Read(
+                            std::io::Error::from_raw_os_error(5),
+                        ))
+                    } else {
+                        Ok(Some(b"header\n".to_vec()))
+                    }
+                },
+            },
+        );
+        assert!(matches!(
+            files.open(b"header"),
+            Err(PreprocessError::Read(_))
+        ));
+        assert_eq!(files.counts().0, 1);
+        let alias = files.open(b"alias").unwrap().unwrap();
+        assert!(files.open(b"header").unwrap() == Some(alias));
+        assert_eq!(READS.load(Ordering::Relaxed), 2);
+    }
 
     #[test]
     fn aliases_share_images_and_line_indices_and_misses_stay_cached() {
@@ -153,7 +188,14 @@ mod tests {
             (path == b"header").then(|| b"first\nsecond\n".to_vec())
         }
         let primary = SourceBuffer::new(Vec::new()).unwrap();
-        let mut files = SourceFiles::new(&primary, b"primary", FileServices { identity, read });
+        let mut files = SourceFiles::new(
+            &primary,
+            b"primary",
+            FileServices {
+                identity,
+                read: |path| Ok(read(path)),
+            },
+        );
         let first = files.open(b"header").unwrap().unwrap();
         let alias = files.open(b"alias").unwrap().unwrap();
         assert!(first == alias);

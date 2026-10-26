@@ -65,7 +65,7 @@ impl<'a> Preprocessor<'a> {
             name,
             super::files::FileServices {
                 identity: identity_query,
-                read: |_| None,
+                read: |_| Ok(None),
             },
         )
     }
@@ -303,6 +303,7 @@ impl<'a> Preprocessor<'a> {
     }
     pub(crate) fn describe(&self, error: &PreprocessError) -> Result<Vec<u8>, PreprocessError> {
         match error {
+            PreprocessError::Read(error) => Ok(error.to_string().into_bytes()),
             PreprocessError::Source(error) => self.source.describe(error),
             PreprocessError::Directive { location, message } => {
                 self.source.describe_at(*location, message)
@@ -396,7 +397,7 @@ mod tests {
             b"primary",
             super::super::files::FileServices {
                 identity: |_| None,
-                read: |_| None,
+                read: |_| Ok(None),
             },
             &values,
         )
@@ -686,7 +687,7 @@ mod inclusion_tests {
                 _ => None,
             },
             read: |_| {
-                Some(b"#ifndef GUARD\n#define GUARD\n#define ID(x) x\n#define SAVED 9\n__FILE__ __LINE__\nID\n#endif\n".to_vec())
+                Ok(Some(b"#ifndef GUARD\n#define GUARD\n#define ID(x) x\n#define SAVED 9\n__FILE__ __LINE__\nID\n#endif\n".to_vec()))
             },
         }
     }
@@ -718,7 +719,7 @@ mod inclusion_tests {
             b"hosted",
             FileServices {
                 identity: |_| None,
-                read: |_| None,
+                read: |_| Ok(None),
             },
             &PredefinedValues::default(),
             &options,
@@ -770,9 +771,10 @@ parent
                 b"second/chain.h" => Some(FileIdentity::new(1, 3)),
                 _ => None,
             },
-            read: |name| match name {
-                b"first/chain.h" => Some(
-                    br#"
+            read: |name| {
+                Ok(match name {
+                    b"first/chain.h" => Some(
+                        br#"
 #if __has_include_next(<chain.h>)
 first
 #endif
@@ -780,18 +782,19 @@ first
 #include_next <chain.h>
 first_again
 "#
-                    .to_vec(),
-                ),
-                b"second/chain.h" => Some(
-                    br"
+                        .to_vec(),
+                    ),
+                    b"second/chain.h" => Some(
+                        br"
 #if __has_include_next(<chain.h>)
 #error must not restart the search
 #endif
 second
 "
-                    .to_vec(),
-                ),
-                _ => None,
+                        .to_vec(),
+                    ),
+                    _ => None,
+                })
             },
         };
         let mut input = Preprocessor::with_driver_options(
@@ -862,7 +865,7 @@ __has_feature(cxx_constexpr)
             b"primary",
             FileServices {
                 identity: |_| None,
-                read: |_| None,
+                read: |_| Ok(None),
             },
             &PredefinedValues::default(),
             &options,
@@ -925,7 +928,7 @@ __has_feature(cxx_constexpr)
     fn macro_invocations_run_through_header_eof_without_a_directive_boundary() {
         let source = SourceBuffer::new(b"#include \"header\"\n(7)\n".to_vec()).unwrap();
         let mut services = services();
-        services.read = |_| Some(b"#define F(x) x\nF\n".to_vec());
+        services.read = |_| Ok(Some(b"#define F(x) x\nF\n".to_vec()));
         let mut input = Preprocessor::with_file_services(&source, b"primary", services).unwrap();
         let kind = input.next_non_whitespace_kind().unwrap();
         assert_eq!(input.token(kind).spelling, b"7");
@@ -939,7 +942,7 @@ __has_feature(cxx_constexpr)
     fn builtin_locations_remain_with_a_header_after_lookahead_returns_to_parent() {
         let source = SourceBuffer::new(b"#include \"header\"\n".to_vec()).unwrap();
         let mut services = services();
-        services.read = |_| Some(b"#define F(x) x\nF(__FILE__ __LINE__)\n".to_vec());
+        services.read = |_| Ok(Some(b"#define F(x) x\nF(__FILE__ __LINE__)\n".to_vec()));
         let mut input = Preprocessor::with_file_services(&source, b"primary", services).unwrap();
         let kind = input.next_non_whitespace_kind().unwrap();
         assert_eq!(input.token(kind).spelling, b"\"header\"");
@@ -957,9 +960,9 @@ __has_feature(cxx_constexpr)
                 SourceBuffer::new(b"#if 1\n#include \"header\"\n#endif\n".to_vec()).unwrap();
             let mut services = services();
             services.read = match directive {
-                b"#endif\n" => |_| Some(b"#endif\n".to_vec()),
-                b"#else\n" => |_| Some(b"#else\n".to_vec()),
-                _ => |_| Some(b"#elif 1\n".to_vec()),
+                b"#endif\n" => |_| Ok(Some(b"#endif\n".to_vec())),
+                b"#else\n" => |_| Ok(Some(b"#else\n".to_vec())),
+                _ => |_| Ok(Some(b"#elif 1\n".to_vec())),
             };
             let mut input =
                 Preprocessor::with_file_services(&source, b"primary", services).unwrap();

@@ -4,6 +4,7 @@ use crate::support::source::{SourceError, SourceOffset};
 #[derive(Debug)]
 pub enum PreprocessError {
     Source(SourceError),
+    Read(crate::support::source::SourceReadError),
     Directive {
         location: SourceOffset,
         message: &'static str,

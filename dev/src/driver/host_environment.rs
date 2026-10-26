@@ -189,7 +189,7 @@ mod tests {
                 b"host-input",
                 FileServices {
                     identity: |_| None,
-                    read: |_| None,
+                    read: |_| Ok(None),
                 },
                 &PredefinedValues::default(),
                 &options,

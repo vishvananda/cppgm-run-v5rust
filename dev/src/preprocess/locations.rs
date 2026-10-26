@@ -57,7 +57,7 @@ impl<'a> Locations<'a> {
             .starts()
             .partition_point(|&start| start <= location.0)
             .saturating_sub(1)];
-        location.0 - start + 1
+        location.0.saturating_sub(start) + 1
     }
     pub(crate) fn line_at(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
         Ok((self.physical_line(location)? + self.state_at(location).delta).max(1))
@@ -235,6 +235,8 @@ mod tests {
             b"\"a\\\"\\\\\\012\\011\\177\xff\""
         );
         assert_eq!(locations.presumed_line(SourceOffset(3)).unwrap(), 1);
+        assert_eq!(locations.column_at(SourceOffset(0)), 1);
+        assert_eq!(locations.column_at(SourceOffset(3)), 1);
         assert_eq!(
             locations
                 .describe(&SourceError::new(SourceOffset(0), "bom"))

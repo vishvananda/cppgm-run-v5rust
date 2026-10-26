@@ -35,6 +35,41 @@ impl SourceError {
     }
 }
 
+/// An opened physical source failed before its image could be published.
+#[derive(Debug)]
+pub enum SourceReadError {
+    Read(std::io::Error),
+    Image(&'static str),
+    Rewind,
+    Capacity,
+    Allocation,
+}
+impl std::fmt::Display for SourceReadError {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Read(error) => {
+                let message = error.to_string();
+                let suffix = error
+                    .raw_os_error()
+                    .map(|code| format!(" (os error {code})"));
+                let message = suffix
+                    .as_deref()
+                    .and_then(|suffix| message.strip_suffix(suffix))
+                    .unwrap_or(&message);
+                write!(
+                    output,
+                    "basic_filebuf::xsgetn error reading the file: {message}"
+                )
+            }
+            Self::Rewind => output.write_str("cannot rewind source input"),
+            Self::Image(message) => output.write_str(message),
+            Self::Capacity => output.write_str("basic_string::_M_create"),
+            Self::Allocation => output.write_str("std::bad_alloc"),
+        }
+    }
+}
+impl std::error::Error for SourceReadError {}
+
 /// One retained image, including the implicit final newline when required.
 pub struct SourceBuffer {
     bytes: Vec<u8>,

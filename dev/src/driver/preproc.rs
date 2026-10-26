@@ -7,6 +7,7 @@ use std::io::Write;
 
 #[derive(Debug)]
 pub enum PreprocToolError {
+    Input(crate::support::source::SourceReadError),
     Initialization(PreprocessError),
     Preprocess {
         error: PreprocessError,
@@ -36,7 +37,11 @@ pub fn emit_preprocessed(
     .map_err(PreprocToolError::Initialization)?;
     let mut tokens = PostTokenizer::from_input(input, NumberDialect::Cxx11);
     let result = write_tokens(&mut tokens, output);
-    *counters = Some(tokens.input().counters());
+    *counters = if matches!(&result, Err(PreprocToolError::Input(_))) {
+        None
+    } else {
+        Some(tokens.input().counters())
+    };
     result
 }
 /// Emit one hosted translation unit through the shared token stream.
@@ -78,6 +83,9 @@ fn write_tokens(
             Ok(token) => token,
             Err(error) => {
                 let error = match error {
+                    PostTokenError::Source(PreprocessError::Read(error)) => {
+                        return Err(PreprocToolError::Input(error));
+                    }
                     PostTokenError::Source(error) => error,
                     PostTokenError::Numeric(_) => {
                         PreprocessError::Limit("numeric literal implementation limit")
@@ -106,6 +114,7 @@ fn write_tokens(
 #[must_use]
 pub fn describe(source: &SourceBuffer, error: &PreprocessError) -> String {
     match error {
+        PreprocessError::Read(error) => error.to_string(),
         PreprocessError::Source(error) => source.format_error(error),
         PreprocessError::Directive { location, message } => {
             source.format_error(&SourceError::new(*location, message))
