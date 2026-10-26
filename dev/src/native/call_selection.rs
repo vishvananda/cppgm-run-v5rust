@@ -4,7 +4,7 @@ use super::{
     address_facts::{AddressBase, Expression},
     call_facts::{CallKind, CallPlan},
     memory::{Base, Memory},
-    mir::{Binding, BindingKind, CallSite, Instruction, Op},
+    mir::{Binding, BindingKind, CallPrefix, CallSite, Instruction, Op},
     parallel_transfer::{self, Transfer},
     scalar_mir::{Operand, ScalarOp},
     scalar_selection::Selection,
@@ -444,6 +444,10 @@ impl Selection<'_> {
             self.outgoing = staged;
             return Ok(());
         }
+        let strlen_prefix = self.facts.level >= 1
+            && self.mir.object_model == super::object_compile::ObjectModel::Course
+            && plan.kind == CallKind::Strlen;
+        self.mir.strlen_prefixes += usize::from(strlen_prefix);
         self.mir.instructions.push(Instruction {
             volatile: false,
             op: Op::Call(CallSite {
@@ -453,6 +457,11 @@ impl Selection<'_> {
                 variadic: plan.variadic,
                 no_unwind: plan.no_unwind,
                 no_return: plan.no_return,
+                prefix: if strlen_prefix {
+                    CallPrefix::Strlen
+                } else {
+                    CallPrefix::None
+                },
                 landing: None,
             }),
             location: self.location,
@@ -546,6 +555,52 @@ mod tests {
         builder::FunctionBuilder,
         model::{Facts, Program},
     };
+    #[test]
+    fn strlen_probe_requires_course_optimization_and_an_exact_call_boundary() -> Result<(), Error> {
+        use super::super::object_compile::ObjectModel;
+        for (metadata, argument, result, eligible) in [
+            ("object=cppgm_builtin_strlen", "ptr", "i64", true),
+            ("object=strlen, linkage=c", "ptr", "i64", true),
+            ("object=strlen", "ptr", "i64", false),
+            ("object=cppgm_builtin_strlen_suffix", "ptr", "i64", false),
+            ("object=cppgm_builtin_strlen", "i64", "i64", false),
+            ("object=cppgm_builtin_strlen", "ptr", "i32", false),
+            (
+                "object=cppgm_builtin_strlen, arity=variadic",
+                "ptr",
+                "i64",
+                false,
+            ),
+        ] {
+            let source = format!(
+                "declare function @length(%p : {argument}) -> {result} [{metadata}]
+                 function @probe(%p : {argument}) -> {result} {{ block ^entry:
+                   %r = call {result} @length(%p) return {result} %r }}"
+            );
+            let program = crate::lowir::test_program(source.as_bytes())?;
+            let symbol = *program.publications().last().ok_or(Error::Limit)?;
+            let function = program
+                .function(program.symbol(symbol))
+                .ok_or(Error::Limit)?;
+            for (level, model, enabled) in [
+                (0, ObjectModel::Course, false),
+                (1, ObjectModel::Course, eligible),
+                (2, ObjectModel::Host, false),
+            ] {
+                let mir = super::super::value_selection::select_for_object(
+                    &program, symbol, function, level, model,
+                )?;
+                assert_eq!(mir.strlen_prefixes, usize::from(enabled), "{source}");
+                assert!(
+                    mir.instructions.iter().any(
+                        |inst| matches!(inst.op, Op::Call(site) | Op::TailJump(site) if (site.prefix == CallPrefix::Strlen) == enabled)
+                    ),
+                    "{source}"
+                );
+            }
+        }
+        Ok(())
+    }
     #[test]
     fn encoded_callee_keeps_its_canonical_return_contract() -> Result<(), Error> {
         let mut program = crate::lowir::test_program(

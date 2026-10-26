@@ -198,7 +198,10 @@ pub(super) fn narrow_to_u32(function: &mut Function, at: usize, r: R, end: usize
             if !super::mir::low_word(bits).is_ok_and(|v| i32::try_from(v).is_ok()) {
                 return false;
             }
-            Op::Scalar(ScalarOp::Move(r, Operand::Immediate(u128::from(low))))
+            // The frozen rewrite changes only Literal.low. Literal.high is
+            // still observable in MIR even though scalar encoding ignores it.
+            let narrowed = (bits & (u128::MAX << 64)) | u128::from(low);
+            Op::Scalar(ScalarOp::Move(r, Operand::Immediate(narrowed)))
         }
         Op::Scalar(ScalarOp::Move(writer, Operand::Register(source)))
             if writer == r && source.code() < 16 =>

@@ -10,6 +10,7 @@ pub(super) enum CallKind {
     Ordinary,
     Trap,
     Memcpy,
+    Strlen,
 }
 pub(super) struct CallPlan {
     pub(super) layout: Layout,
@@ -106,6 +107,16 @@ impl CallPlan {
             && passes.iter().all(Option::is_none)
             && sig.result == Type::Ptr
             && sig.boundary.arity != Arity::Variadic;
+        let strlen = matches!(facts.resolve(body, call.callee),
+            super::value_facts::Alias::Symbol(symbol) if program.strlen_function(symbol))
+            && args.len() == 1
+            && sig.parameters.len() == 1
+            && types == [Type::Ptr]
+            && passes == [None]
+            && sig.result == Type::I64
+            && sig.boundary.arity != Arity::Variadic
+            && sig.boundary.returns != Returns::NoReturn
+            && layout.stack == 0;
         Ok(Self {
             layout,
             types,
@@ -119,6 +130,8 @@ impl CallPlan {
                 CallKind::Trap
             } else if memcpy {
                 CallKind::Memcpy
+            } else if strlen {
+                CallKind::Strlen
             } else {
                 CallKind::Ordinary
             },

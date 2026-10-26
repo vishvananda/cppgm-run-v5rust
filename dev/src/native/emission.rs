@@ -520,8 +520,12 @@ impl<'a> Pass<'a> {
                 self.return_jump(last)?;
             }
             Op::Call(site) => {
+                let done = site.emit_prefix(&mut self.assembler)?;
                 let begin = self.assembler.position()?;
                 site.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?;
+                if let Some(done) = done {
+                    self.assembler.bind(done);
+                }
                 if self.record_frame && (site.landing.is_some() || !site.no_unwind) {
                     self.frame.calls.push(super::host_unwind::Call {
                         begin,

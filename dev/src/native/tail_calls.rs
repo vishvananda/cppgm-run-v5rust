@@ -1,7 +1,7 @@
 //! Host sibling-call admission over final native block ranges. See NOTICE.
 use super::{
     memory::Base,
-    mir::{Function, Op},
+    mir::{CallPrefix, Function, Op},
     scalar_mir::ScalarOp,
     x86::Register as R,
 };
@@ -65,6 +65,7 @@ pub(super) fn form(function: &mut Function) {
             || site.landing.is_some()
             || site.stack != 0
             || site.no_return
+            || site.prefix != CallPrefix::None
         {
             continue;
         }
@@ -114,6 +115,7 @@ mod tests {
             variadic: false,
             no_unwind: false,
             no_return: false,
+            prefix: CallPrefix::None,
             landing: None,
         }
     }
@@ -153,7 +155,7 @@ mod tests {
     }
     #[test]
     fn escaping_frames_stack_arguments_and_noncanonical_returns_keep_calls() -> Result<(), Error> {
-        for guard in 0..10 {
+        for guard in 0..11 {
             let mut f = function()?;
             let mut site = call();
             let mut result = Some(R::RAX);
@@ -176,6 +178,10 @@ mod tests {
                 }
                 4 => {
                     result = Some(R::RDX);
+                    Op::Nop
+                }
+                10 => {
+                    site.prefix = CallPrefix::Strlen;
                     Op::Nop
                 }
                 5 => Op::Scalar(ScalarOp::Lea(R::RDI, Operand::Frame(-8))),

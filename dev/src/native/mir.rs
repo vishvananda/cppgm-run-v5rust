@@ -11,6 +11,11 @@ use crate::lowir::{
     vocabulary::Type,
 };
 use std::io::Write;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CallPrefix {
+    None,
+    Strlen,
+}
 #[derive(Clone, Copy)]
 pub(super) struct CallSite {
     pub(super) target: Operand,
@@ -19,6 +24,7 @@ pub(super) struct CallSite {
     pub(super) variadic: bool,
     pub(super) no_unwind: bool,
     pub(super) no_return: bool,
+    pub(super) prefix: CallPrefix,
     pub(super) landing: Option<super::region_flow::LandingId>,
 }
 impl CallSite {
@@ -78,12 +84,67 @@ impl CallSite {
             (self.variadic, "variadic"),
             (self.no_unwind, "unwind=no"),
             (self.no_return, "returns=noreturn"),
+            (self.prefix == CallPrefix::Strlen, "strlen_prefix=16"),
         ] {
             if set {
                 write!(out, ", {name}")?;
             }
         }
         write!(out, "]")
+    }
+    // emitter.cpp::strlen_prefix: page-safe first-16-byte probe. These local
+    // branches do not participate in function branch relaxation or counters.
+    pub(super) fn emit_prefix(self, a: &mut Assembler) -> Result<Option<super::x86::Label>, Error> {
+        use super::x86::Rm;
+        if self.prefix == CallPrefix::None {
+            return Ok(None);
+        }
+        let call = a.label()?;
+        let done = a.label()?;
+        let probe = R::xmm(1)?;
+        a.op(0, false, 0x8b, 1, R::RAX.code(), Rm::Reg(R::RDI), false, 0)?;
+        a.alu_ri(4, Rm::Reg(R::RAX), 0xfff, 4)?;
+        a.alu_ri(7, Rm::Reg(R::RAX), 0x1000 - 16, 4)?;
+        a.branch(Some(super::condition::Condition::Above.code()), call, true);
+        a.sse(0x66, 0xef, R::XMM0, Rm::Reg(R::XMM0))?;
+        a.sse(
+            0xf3,
+            0x6f,
+            probe,
+            Rm::Memory {
+                base: Some(R::RDI),
+                index: None,
+                scale: 1,
+                disp: 0,
+                target: None,
+            },
+        )?;
+        a.sse(0x66, 0x74, probe, Rm::Reg(R::XMM0))?;
+        a.op(
+            0x66,
+            false,
+            0x0fd7,
+            2,
+            R::RAX.code(),
+            Rm::Reg(probe),
+            false,
+            0,
+        )?;
+        a.op(0, false, 0x85, 1, R::RAX.code(), Rm::Reg(R::RAX), false, 0)?;
+        a.branch(Some(super::condition::Condition::Equal.code()), call, true);
+        a.op(
+            0,
+            false,
+            0x0fbc,
+            2,
+            R::RAX.code(),
+            Rm::Reg(R::RAX),
+            false,
+            0,
+        )?;
+        a.branch(None, done, true);
+        a.bind(call);
+        Ok(Some(done))
     }
     pub(super) fn emit(self, a: &mut Assembler, begin: i32, size: u32) -> Result<(), Error> {
         if let Operand::Symbol(symbol) = self.target {
@@ -226,6 +287,7 @@ pub(super) struct Function {
     pub(super) lazy_addresses: usize,
     pub(super) folded_loads: usize,
     pub(super) fused_compares: usize,
+    pub(super) strlen_prefixes: usize,
     pub(super) dynamic_copies: usize,
     pub(super) lowir_instructions: usize,
     pub(super) allocation_work: AllocationWork,
@@ -282,6 +344,7 @@ impl Function {
             lazy_addresses: 0,
             folded_loads: 0,
             fused_compares: 0,
+            strlen_prefixes: 0,
             dynamic_copies: 0,
             lowir_instructions: 0,
             allocation_work: AllocationWork::default(),
@@ -600,6 +663,7 @@ mod tests {
                 variadic: false,
                 no_unwind: false,
                 no_return: false,
+                prefix: CallPrefix::None,
                 landing: None,
             };
             let mut text = Vec::new();

@@ -25,6 +25,9 @@ pub(super) enum LibraryCall {
     Memcmp,
 }
 pub(super) fn library(program: &Program, symbol: SymbolId, kind: LibraryCall) -> bool {
+    if kind == LibraryCall::Strlen {
+        return program.strlen_function(symbol);
+    }
     let Some(function) = program.function(program.symbol(symbol)) else {
         return false;
     };

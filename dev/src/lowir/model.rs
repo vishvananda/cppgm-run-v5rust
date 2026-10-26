@@ -679,6 +679,24 @@ impl Program {
             None
         }
     }
+    // program.cpp::strlen_function observes published function metadata only.
+    pub(crate) fn strlen_function(&self, symbol: SymbolId) -> bool {
+        let Some(function) = self.function(self.symbol(symbol)) else {
+            return false;
+        };
+        let name = self.names.bytes(
+            function
+                .metadata
+                .object
+                .filter(|&id| !self.names.bytes(id).is_empty())
+                .unwrap_or(function.name),
+        );
+        let named = |expected: &[u8]| {
+            name.starts_with(expected) && name.get(expected.len()).is_none_or(|&byte| byte == 0)
+        };
+        named(b"cppgm_builtin_strlen")
+            || function.metadata.linkage == Linkage::C && named(b"strlen")
+    }
     pub(crate) fn take_body(&mut self, symbol: SymbolId) -> Result<Option<Body>, Error> {
         let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
             return Err(Error::Construction(

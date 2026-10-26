@@ -294,6 +294,20 @@ mod tests {
         }
     }
     #[test]
+    fn immediate_narrowing_preserves_the_literal_high_word_in_the_view() {
+        let bits = (-3_i128).cast_unsigned();
+        let mut f = function(&[
+            Op::Move(R::RAX, bits),
+            Op::Scalar(ScalarOp::Extend(Type::U32, R::RAX)),
+            Op::Return(Some(R::RAX)),
+        ]);
+        run(&mut f);
+        let expected = (bits & (u128::MAX << 64)) | u128::from(u32::MAX - 2);
+        assert!(matches!(f.instructions[0].op,
+            Op::Scalar(ScalarOp::Move(R::RAX, Operand::Immediate(value))) if value == expected));
+        assert!(matches!(f.instructions[1].op, Op::Nop));
+    }
+    #[test]
     fn narrowing_crosses_sixteen_unrelated_instructions_and_respects_volatile_loads() {
         for (between, removed) in [(16, true), (17, false)] {
             let mut ops = vec![Op::Scalar(ScalarOp::Load(

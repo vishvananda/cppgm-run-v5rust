@@ -389,6 +389,7 @@ mod tests {
                     variadic: false,
                     no_unwind: true,
                     no_return: false,
+                    prefix: super::super::mir::CallPrefix::None,
                     landing: None,
                 }),
                 location: None,
