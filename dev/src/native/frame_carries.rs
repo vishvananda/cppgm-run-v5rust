@@ -15,7 +15,10 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
         Op::Move(r, v) => [Some(Operand::Register(r)), Some(Operand::Immediate(v))],
         Op::Scalar(op) => match op {
             ScalarOp::Condition(
-                super::condition_mir::FlagOp::Move(..) | super::condition_mir::FlagOp::Test(..),
+                super::condition_mir::FlagOp::Move(..)
+                | super::condition_mir::FlagOp::Test(..)
+                | super::condition_mir::FlagOp::MaskTest(..)
+                | super::condition_mir::FlagOp::BitTest(..),
             ) => return None,
             ScalarOp::Condition(op) => op.operands(),
             ScalarOp::Move(r, s) | ScalarOp::Lea(r, s) | ScalarOp::Binary(_, _, r, s) => {

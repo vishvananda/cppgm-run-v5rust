@@ -61,6 +61,12 @@ struct Order {
 impl Order {
     fn new(function: &Function) -> Self {
         let count = function.blocks.len();
+        if function.branches_laid_out == super::mir::BranchLayout::Final {
+            return Self {
+                targets: (0..count).collect(),
+                next: (0..=count).collect(),
+            };
+        }
         let mut chains = vec![Chain::Unknown; count];
         let mut walk = Vec::new();
         let jump = |block: usize| {
@@ -116,6 +122,7 @@ impl Order {
 struct Branch {
     offset: usize,
     label: Label,
+    conditional: bool,
 }
 struct Pass<'a> {
     runtime: Option<super::runtime::Symbols>,
@@ -131,6 +138,7 @@ struct Pass<'a> {
     stats: Emission,
     frame: super::host_unwind::Frame,
     plan: super::frame_encoding::Plan,
+    block_first: usize,
     record_frame: bool,
 }
 impl<'a> Pass<'a> {
@@ -169,6 +177,7 @@ impl<'a> Pass<'a> {
             branches: Vec::new(),
             short,
             flags: super::condition_mir::flags_after(&function.instructions),
+            block_first: 0,
             carries: Carries::new(&function.bindings),
             stats: Emission::default(),
             frame: super::host_unwind::Frame::default(),
@@ -186,6 +195,7 @@ impl<'a> Pass<'a> {
         self.branches.push(Branch {
             offset: self.assembler.code.len(),
             label,
+            conditional: condition.is_some(),
         });
         self.assembler.branch(condition, label, short);
     }
@@ -212,6 +222,7 @@ impl<'a> Pass<'a> {
             } else {
                 f.blocks[block].range.clone()
             };
+            self.block_first = range.start;
             for index in range.clone() {
                 let op = f.instructions[index].op;
                 if matches!(op, Op::Nop) {
@@ -224,7 +235,8 @@ impl<'a> Pass<'a> {
                     self.stats.carried_reloads += 1;
                     continue;
                 }
-                if let Op::Branch(cond, target) = op
+                if f.branches_laid_out == super::mir::BranchLayout::Pending
+                    && let Op::Branch(cond, target) = op
                     && index + 2 == range.end
                     && next < f.blocks.len()
                     && let Op::Jump(other) = f.instructions[index + 1].op
@@ -233,7 +245,8 @@ impl<'a> Pass<'a> {
                     self.branch(Some(cond.invert().code()), self.labels[other.index()]);
                     break;
                 }
-                if matches!(op,Op::Jump(target) if next<f.blocks.len()&&self.labels[target.index()]==self.labels[next])
+                if f.branches_laid_out == super::mir::BranchLayout::Pending
+                    && matches!(op,Op::Jump(target) if next<f.blocks.len()&&self.labels[target.index()]==self.labels[next])
                 {
                     continue;
                 }
@@ -429,6 +442,7 @@ impl<'a> Pass<'a> {
                 &mut self.assembler,
                 self.runtime.ok_or(Error::Limit)?,
                 &self.labels,
+                f.frame_policy.records_pushed,
             )?,
             Op::Jump(target) => self.branch(None, self.labels[target.index()]),
             Op::Branch(cond, target) => self.branch(Some(cond.code()), self.labels[target.index()]),
@@ -483,9 +497,18 @@ impl<'a> Pass<'a> {
                 self.assembler.byte(0xf3);
                 self.assembler.byte(0xa4);
             }
-            Op::Bulk(op) => op
-                .rebase(f.aligned_disp, f.aligned_bytes)
-                .emit(&mut self.assembler)?,
+            Op::Bulk(op) => {
+                let limit = if f.optimized {
+                    super::bulk::chunk_limit(f, index, self.block_first, op)
+                } else {
+                    16
+                };
+                op.rebase(f.aligned_disp, f.aligned_bytes).emit(
+                    &mut self.assembler,
+                    f.optimized,
+                    limit,
+                )?;
+            }
             Op::FloatCopy(op) => op
                 .rebase(f.aligned_disp, f.aligned_bytes)
                 .emit(&mut self.assembler, image)?,
@@ -524,6 +547,7 @@ impl<'a> Pass<'a> {
                         branches.push(Branch {
                             offset: a.code.len(),
                             label,
+                            conditional: condition.is_some(),
                         });
                         a.branch(condition, label, is_short);
                     },
@@ -596,15 +620,49 @@ pub(super) fn emit_with_frame(
     let order = Order::new(function);
     let mut pass = Pass::new(function, &order, &[], runtime, frame.is_some())?;
     pass.run(image, &order)?;
-    let mut short = Vec::with_capacity(pass.branches.len());
-    for branch in &pass.branches {
-        let target = pass
-            .assembler
-            .label_position(branch.label)
-            .ok_or(Error::Limit)?;
-        let displacement = i64::try_from(target).map_err(|_| Error::Limit)?
-            - i64::try_from(branch.offset + 2).map_err(|_| Error::Limit)?;
-        short.push(i8::try_from(displacement).is_ok());
+    let mut short = vec![false; pass.branches.len()];
+    let targets = pass
+        .branches
+        .iter()
+        .map(|branch| {
+            pass.assembler
+                .label_position(branch.label)
+                .ok_or(Error::Limit)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut saved = vec![0_usize; short.len() + 1];
+    let rounds = if function.branches_laid_out == super::mir::BranchLayout::Final {
+        3
+    } else {
+        1
+    };
+    for _ in 0..rounds {
+        for (i, branch) in pass.branches.iter().enumerate() {
+            saved[i + 1] = saved[i]
+                + if short[i] {
+                    if branch.conditional { 4 } else { 3 }
+                } else {
+                    0
+                };
+        }
+        let mut changed = false;
+        for (i, branch) in pass.branches.iter().enumerate() {
+            if short[i] {
+                continue;
+            }
+            let before = pass
+                .branches
+                .partition_point(|branch| branch.offset < targets[i]);
+            let target = i64::try_from(targets[i] - saved[before]).map_err(|_| Error::Limit)?;
+            let offset = i64::try_from(branch.offset - saved[i] + 2).map_err(|_| Error::Limit)?;
+            if i8::try_from(target - offset).is_ok() {
+                short[i] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
     }
     if short.iter().any(|&short| short) {
         pass = Pass::new(function, &order, &short, runtime, frame.is_some())?;

@@ -164,10 +164,19 @@ pub(super) struct Block {
     pub(super) range: std::ops::Range<usize>,
     pub(super) landing: bool,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum BranchLayout {
+    Pending,
+    Final,
+}
 pub(super) struct Function {
     pub(super) symbol: SymbolId,
     signature: SignatureId,
     pub(super) optimized: bool,
+    pub(super) branches_laid_out: BranchLayout,
+    pub(super) rotated_loops: usize,
+    pub(super) threaded_blocks: usize,
+    pub(super) layout_branches: usize,
     pub(super) frame_policy: super::frame_encoding::Policy,
     pub(super) object_model: super::object_compile::ObjectModel,
     pub(super) eh: super::region_flow::Tables,
@@ -211,6 +220,10 @@ impl Function {
             symbol,
             signature,
             optimized: false,
+            branches_laid_out: BranchLayout::Pending,
+            rotated_loops: 0,
+            threaded_blocks: 0,
+            layout_branches: 0,
             frame_policy: super::frame_encoding::Policy::default(),
             object_model: super::object_compile::ObjectModel::Course,
             eh: super::region_flow::Tables::default(),

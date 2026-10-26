@@ -293,7 +293,7 @@ impl Forwarding {
     }
     fn caller_saved(holds: &mut [Held; 16]) {
         for (r, h) in holds.iter_mut().enumerate() {
-            if CALLER_SAVED & (1 << r) != 0 {
+            if (CALLER_SAVED | (1 << R::R10.code()) | (1 << R::R11.code())) & (1 << r) != 0 {
                 *h = Held::Nothing;
             }
         }
@@ -318,7 +318,9 @@ impl Forwarding {
                 continue;
             }
             if let Op::Bulk(bulk) = op
-                && (bulk.source.is_some() || bulk.bytes() == 16)
+                && (bulk.source.is_some()
+                    || bulk.bytes() == 16
+                    || function.optimized && bulk.bytes() > 16 && bulk.bytes() <= 128)
             {
                 if bulk.source.is_some() {
                     Self::caller_saved(holds);
@@ -525,6 +527,45 @@ mod tests {
             .collect();
         f.stack_size = 16;
         Ok(f)
+    }
+    #[test]
+    fn calls_forget_scratch_holders_but_keep_callee_saved_home_holders() -> Result<(), Error> {
+        for register in [R::R10, R::RBX] {
+            let mut function = sample(
+                &[
+                    Op::Scalar(ScalarOp::Store(
+                        Operand::Frame(-8),
+                        Type::I64,
+                        Operand::Register(register),
+                    )),
+                    Op::Nop,
+                    Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, Operand::Frame(-8))),
+                    Op::Return(Some(R::RAX)),
+                ],
+                std::slice::from_ref(&(0..4)),
+            )?;
+            function.bindings.push(super::super::mir::Binding {
+                name: None,
+                ty: Type::I64,
+                offset: -8,
+                kind: BindingKind::Temp,
+            });
+            function.instructions[1].op = Op::Call(super::super::mir::CallSite {
+                target: Operand::Symbol(function.symbol),
+                arguments: 0,
+                stack: 0,
+                variadic: false,
+                no_unwind: true,
+                no_return: false,
+                landing: None,
+            });
+            forward(&mut function);
+            assert_eq!(
+                matches!(function.instructions[2].op, Op::Scalar(ScalarOp::Load(..))),
+                register == R::R10
+            );
+        }
+        Ok(())
     }
     #[test]
     fn a_join_forwards_only_the_holder_every_edge_preserves() -> Result<(), Error> {

@@ -125,7 +125,9 @@ impl Selection<'_> {
                 let yes = control.target(from, *yes)?;
                 let no = control.target(from, *no)?;
                 match self.facts.resolve(self.body, *value) {
-                    Alias::Temporary(temp) if self.facts.fused[temp.index()] => {
+                    Alias::Temporary(temp)
+                        if self.facts.fused[temp.index()] || self.facts.tested[temp.index()] =>
+                    {
                         if !self.wide_branch(temp, yes, no)? && !self.float_branch(temp, yes, no)? {
                             let cc = self.fused_flags(temp)?;
                             self.branch(cc, yes);
@@ -150,8 +152,15 @@ impl Selection<'_> {
                         if let Operand::Immediate(bits) = source {
                             self.jump(if bits != 0 { yes } else { no });
                         } else {
+                            let width = if self.facts.level >= 1
+                                && matches!(resolved,Alias::Temporary(t) if super::value_facts::Facts::known_boolean(self.body,t,0))
+                            {
+                                Type::U8
+                            } else {
+                                ty
+                            };
                             self.emit(ScalarOp::Condition(FlagOp::Compare(
-                                ty,
+                                width,
                                 source,
                                 Operand::Immediate(0),
                             )));
@@ -162,6 +171,9 @@ impl Selection<'_> {
                 }
             }
             I::Switch(value, fallback, cases) => {
+                if self.facts.level >= 1 {
+                    return Err(Error::NotImplemented("optimized native switch planning"));
+                }
                 let ty = if let Value::Temp(temp) = *value {
                     self.body.temp(temp).ty.ok_or(Error::Limit)?
                 } else {

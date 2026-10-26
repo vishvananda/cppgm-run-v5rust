@@ -145,6 +145,12 @@ impl Addresses {
                 }
                 expr.index = Some(t);
                 expr.scale = u8::try_from(size).map_err(|_| Error::Limit)?;
+                if size == 1
+                    && let Value::Temp(raw) = offset
+                    && facts.scales[raw.index()] != 0
+                {
+                    expr.scale = facts.scales[raw.index()];
+                }
             }
             _ => return Ok(None),
         }
@@ -359,17 +365,19 @@ impl Addresses {
                             ) || op == Binary::Sub && right),
                     )
                 }
+                I::Branch(value, ..) if facts.level >= 1 => (ty, value, value, ty != Type::I128),
                 I::Compare(_, user_ty, a, b) => (
                     user_ty,
                     a,
                     b,
-                    ty != Type::I1 && !facts.sunk_compare(body, next),
+                    (ty != Type::I1 || facts.level >= 1) && !facts.sunk_compare(body, next),
                 ),
                 _ => continue,
             };
             let left = matches!(facts.resolve(body,a),Alias::Temporary(t) if t==temp);
             let right = matches!(facts.resolve(body,b),Alias::Temporary(t) if t==temp);
-            if user_ty != ty || left == right || !allowed {
+            if user_ty != ty || !matches!(consumer.kind, I::Branch(..)) && left == right || !allowed
+            {
                 continue;
             }
             facts.reads[pos] = next;

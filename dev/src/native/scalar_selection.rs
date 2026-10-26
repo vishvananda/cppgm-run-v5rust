@@ -240,6 +240,14 @@ impl Selection<'_> {
         }
         let mut a = self.operand(left, ty, R::R10)?;
         let mut b = self.operand(right, ty, R::R11)?;
+        if op == Binary::Mul && self.facts.scales[temp.index()] != 0 {
+            if matches!(a, Operand::Immediate(_)) {
+                std::mem::swap(&mut a, &mut b);
+            }
+            if let Operand::Immediate(bits) = b {
+                b = Operand::Immediate(bits / u128::from(self.facts.scales[temp.index()]));
+            }
+        }
         if b.is_symbol() {
             self.load(R::R11, b, Type::Ptr);
             b = Operand::Register(R::R11);
@@ -387,6 +395,11 @@ impl Selection<'_> {
         let count = if let Alias::Constant(Constant::Integer(bits)) =
             self.facts.resolve(self.body, right)
         {
+            let bits = if op == Binary::Shl && self.facts.scales[temp.index()] != 0 {
+                bits - u128::from(self.facts.scales[temp.index()].trailing_zeros())
+            } else {
+                bits
+            };
             Operand::Immediate(bits & 63)
         } else {
             let own = if let Value::Temp(t) = right {

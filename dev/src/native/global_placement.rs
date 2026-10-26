@@ -17,7 +17,17 @@ struct Hull {
     start: usize,
     end: usize,
 }
+#[derive(Clone, Copy)]
+pub(super) struct Entry {
+    pub(super) temp: TempId,
+    pub(super) live_in: bool,
+    pub(super) release: Option<usize>,
+}
 pub(super) struct Globals {
+    pub(super) precise: bool,
+    pub(super) entries: Vec<Entry>,
+    pub(super) defined: Vec<u32>,
+    pub(super) rbp_free: bool,
     pub(super) registers: Vec<Option<R>>,
     pub(super) reserved: Vec<u32>,
     pub(super) binding_first: Vec<usize>,
@@ -28,12 +38,12 @@ pub(super) struct Globals {
 }
 // Counts of each physical clobber bit: fixed-width prefix differences answer
 // the same range OR in constant time, with linear function-owned storage.
-struct Ranges {
+pub(super) struct Ranges {
     prefix: Vec<u32>,
     registers: usize,
 }
 impl Ranges {
-    fn new(values: &[u32], vectors: bool) -> Result<Self, Error> {
+    pub(super) fn new(values: &[u32], vectors: bool) -> Result<Self, Error> {
         let registers = if vectors { 32 } else { 16 };
         let capacity = values
             .len()
@@ -53,7 +63,7 @@ impl Ranges {
         }
         Ok(Self { prefix, registers })
     }
-    fn query(&self, first: usize, past: usize) -> u32 {
+    pub(super) fn query(&self, first: usize, past: usize) -> u32 {
         if first >= past {
             return 0;
         }
@@ -101,6 +111,10 @@ impl Globals {
         reserved: u32,
     ) -> Result<Self, Error> {
         let mut out = Self {
+            precise: false,
+            entries: Vec::new(),
+            defined: vec![0; body.blocks().len()],
+            rbp_free: false,
             registers: vec![None; body.temps().len()],
             reserved: vec![0; body.blocks().len()],
             binding_first: vec![0; body.blocks().len() + 1],
@@ -134,6 +148,7 @@ impl Globals {
                 || addresses.lazy[index]
                 || addresses.folded[index].is_some()
                 || facts.fused[index]
+                || facts.tested[index]
             {
                 continue;
             }

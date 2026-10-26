@@ -12,6 +12,8 @@ pub(super) enum FlagOp {
     Compare(Type, Operand, Operand),
     CompareFloatLiteral(crate::lowir::literals::FloatKind, Operand, u128),
     Test(Type, R),
+    MaskTest(Type, Operand, Operand),
+    BitTest(Type, R, Operand),
     Set(Condition, R),
     Move(Condition, R, Operand),
 }
@@ -36,6 +38,16 @@ impl FlagOp {
                 b.write(program, out)
             }
             Self::Test(ty, r) => write!(out, "test.{ty} {}, {}", r.spelling(), r.spelling()),
+            Self::MaskTest(ty, a, b) => {
+                write!(out, "test.{ty} ")?;
+                a.write(program, out)?;
+                write!(out, ", ")?;
+                b.write(program, out)
+            }
+            Self::BitTest(ty, r, b) => {
+                write!(out, "bt.{ty} {}, ", r.spelling())?;
+                b.write(program, out)
+            }
             Self::Set(cc, r) => write!(out, "set{} {}", cc.spelling(), r.spelling()),
             Self::Move(cc, r, source) => {
                 write!(out, "cmov{} {}, ", cc.spelling(), r.spelling())?;
@@ -52,6 +64,10 @@ impl FlagOp {
                 Self::Compare(t, a.rebase(begin, size), b.rebase(begin, size))
             }
             Self::Move(c, r, s) => Self::Move(c, r, s.rebase(begin, size)),
+            Self::MaskTest(ty, a, b) => {
+                Self::MaskTest(ty, a.rebase(begin, size), b.rebase(begin, size))
+            }
+            Self::BitTest(ty, r, b) => Self::BitTest(ty, r, b.rebase(begin, size)),
             other => other,
         }
     }
@@ -94,6 +110,31 @@ impl FlagOp {
                 0,
             ),
             Self::Compare(ty, left, right) => compare(a, ty, left, right),
+            Self::MaskTest(ty, left, right) => mask_test(a, ty, left, right),
+            Self::BitTest(ty, r, b) => {
+                let width = bytes(ty);
+                let prefix = if width == 2 { 0x66 } else { 0 };
+                if let Operand::Immediate(bits) = b {
+                    a.op(prefix, width == 8, 0x0fba, 2, 4, Rm::Reg(r), false, 1)?;
+                    a.imm(
+                        i64::try_from(bits & (u128::from(width) * 8 - 1))
+                            .map_err(|_| Error::Limit)?,
+                        1,
+                    );
+                    Ok(())
+                } else {
+                    a.op(
+                        prefix,
+                        width == 8,
+                        0x0fa3,
+                        2,
+                        b.register().ok_or(Error::Limit)?.code(),
+                        Rm::Reg(r),
+                        false,
+                        0,
+                    )
+                }
+            }
         }
     }
     pub(super) fn operands(self) -> [Option<Operand>; 2] {
@@ -101,12 +142,61 @@ impl FlagOp {
             Self::CompareFloatLiteral(_, left, bits) => {
                 [Some(left), Some(Operand::Immediate(bits))]
             }
-            Self::Compare(_, a, b) => [Some(a), Some(b)],
+            Self::Compare(_, a, b) | Self::MaskTest(_, a, b) => [Some(a), Some(b)],
+            Self::BitTest(_, r, b) => [Some(Operand::Register(r)), Some(b)],
             Self::Test(_, r) => [Some(Operand::Register(r)), Some(Operand::Register(r))],
             Self::Set(_, r) => [Some(Operand::Register(r)), None],
             Self::Move(_, r, s) => [Some(Operand::Register(r)), Some(s)],
         }
     }
+}
+fn mask_test(a: &mut Assembler, ty: Type, left: Operand, right: Operand) -> Result<(), Error> {
+    let width = bytes(ty);
+    let prefix = if width == 2 { 0x66 } else { 0 };
+    if let Some(reg) = right.register() {
+        return a.op(
+            prefix,
+            width == 8,
+            if width == 1 { 0x84 } else { 0x85 },
+            1,
+            reg.code(),
+            left.rm()?,
+            width == 1,
+            0,
+        );
+    }
+    let Operand::Immediate(bits) = right else {
+        return Err(Error::Limit);
+    };
+    let word = low_word(bits)?;
+    if width < 8 || i32::try_from(word).is_ok() {
+        let count = if width == 1 {
+            1
+        } else if width == 2 {
+            2
+        } else {
+            4
+        };
+        a.op(
+            prefix,
+            width == 8,
+            if width == 1 { 0xf6 } else { 0xf7 },
+            1,
+            0,
+            left.rm()?,
+            width == 1,
+            count,
+        )?;
+        a.imm(word, count);
+        return Ok(());
+    }
+    let reg = if left.mask() & (1 << R::R11.code()) == 0 {
+        R::R11
+    } else {
+        R::R10
+    };
+    a.mov_ri(reg, word)?;
+    a.op(prefix, true, 0x85, 1, reg.code(), left.rm()?, false, 0)
 }
 fn compare(a: &mut Assembler, ty: Type, left: Operand, right: Operand) -> Result<(), Error> {
     let width = bytes(ty);

@@ -65,12 +65,12 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
                 visit(source, access_bytes(*ty));
             }
             ScalarOp::Condition(flag) => match flag {
-                FlagOp::Compare(ty, left, right) => {
+                FlagOp::Compare(ty, left, right) | FlagOp::MaskTest(ty, left, right) => {
                     visit(left, access_bytes(*ty));
                     visit(right, access_bytes(*ty));
                 }
                 FlagOp::CompareFloatLiteral(kind, left, _) => visit(left, access_bytes(kind.ty())),
-                FlagOp::Move(_, _, source) => visit(source, 1),
+                FlagOp::Move(_, _, source) | FlagOp::BitTest(_, _, source) => visit(source, 1),
                 FlagOp::Test(..) | FlagOp::Set(..) => {}
             },
             ScalarOp::Move(_, source)
@@ -209,34 +209,34 @@ pub(super) fn order(function: &mut Function, objects: &[Object]) {
         || function.variadic
         || function.aligned_base != 0
         || function.frame_pinned
+        || function.frame_policy.records_pushed
     {
-        return;
-    }
-    // Current optimized selection admits a single reachable block. CFG-weighted
-    // ordering is owned by the later function allocator, alongside block placement.
-    if function.blocks.len() != 1 {
         return;
     }
     let index = Index::new(objects);
     let find = |offset| index.find(offset);
     let mut weights = vec![0_u64; objects.len()];
     let mut valid = true;
-    for inst in &mut function.instructions {
-        let permitted = operands(&mut inst.op, |operand, bytes| {
-            let indexed = operand.memory().is_some_and(|m| m.index.is_some());
-            let Some(offset) = displacement(operand) else {
-                return;
-            };
-            if let Some(i) = find(*offset) {
-                valid &= indexed
-                    || i64::from(*offset) + i64::from(bytes)
-                        <= i64::from(objects[i].offset) + i64::from(objects[i].bytes);
-                weights[i] = weights[i].wrapping_add(1);
-            } else {
-                valid = false;
-            }
-        });
-        valid &= permitted;
+    let frequency = super::block_placement::Flow::new(function).map(|flow| flow.frequencies);
+    for b in 0..function.blocks.len() {
+        let weight = frequency.as_ref().map_or(1, |f| f[b]);
+        for i in function.blocks[b].range.clone() {
+            let permitted = operands(&mut function.instructions[i].op, |operand, bytes| {
+                let indexed = operand.memory().is_some_and(|m| m.index.is_some());
+                let Some(offset) = displacement(operand) else {
+                    return;
+                };
+                if let Some(i) = find(*offset) {
+                    valid &= indexed
+                        || i64::from(*offset) + i64::from(bytes)
+                            <= i64::from(objects[i].offset) + i64::from(objects[i].bytes);
+                    weights[i] = weights[i].wrapping_add(weight);
+                } else {
+                    valid = false;
+                }
+            });
+            valid &= permitted;
+        }
     }
     if !valid {
         return;

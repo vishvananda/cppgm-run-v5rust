@@ -2,7 +2,13 @@
 mod abi;
 mod address_facts;
 mod aggregate;
+mod allocation_pressure;
+mod allocation_ranges;
+mod allocation_weights;
 mod atomic;
+mod block_placement;
+mod branch_layout;
+mod branch_tests;
 mod builtins;
 mod bulk;
 mod call_facts;
@@ -15,6 +21,7 @@ mod control_flow;
 mod control_selection;
 mod conversion;
 mod conversion_selection;
+mod decided_tests;
 mod divide_sequences;
 mod division;
 mod elf_reader;
@@ -22,6 +29,7 @@ mod elf_writer;
 mod emission;
 mod exception;
 mod executable;
+mod flag_cleanup;
 mod float_transport;
 mod floating_mir;
 mod floating_selection;
@@ -50,6 +58,7 @@ mod object;
 mod object_compile;
 mod object_storage;
 mod region_flow;
+mod register_allocation;
 mod unwind_rules;
 pub(crate) use elf_reader::read as read_object;
 #[cfg(test)]
@@ -212,6 +221,9 @@ pub(crate) struct Statistics {
     liveness_steps: usize,
     hull_fallbacks: usize,
     edge_blocks: usize,
+    rotated_loops: usize,
+    threaded_blocks: usize,
+    layout_branches: usize,
     short_branches: usize,
     long_branches: usize,
     fixups: usize,
@@ -224,6 +236,9 @@ impl Statistics {
     fn selected(&mut self, function: &mir::Function) -> Result<(), Error> {
         for (counter, increment) in [
             (&mut self.functions, 1),
+            (&mut self.rotated_loops, function.rotated_loops),
+            (&mut self.threaded_blocks, function.threaded_blocks),
+            (&mut self.layout_branches, function.layout_branches),
             (&mut self.ordered_frames, function.ordered_frames),
             (&mut self.dead_frame_stores, function.dead_frame_stores),
             (&mut self.global_registers, function.global_registers),
@@ -268,7 +283,7 @@ impl Statistics {
         // Counters follow the selected function plans and final native encoding.
         writeln!(
             out,
-            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers={} liveness_steps={} hull_fallbacks={} edge_blocks={} threaded_blocks=0 layout_branches=0 strlen_prefixes=0 dynamic_copies={} jump_tables=0 rotated_loops=0 loop_splits=0 home_splits=0 ordered_frames={} dead_frame_stores={} native_returns={} short_branches={} long_branches={} fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
+            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers={} liveness_steps={} hull_fallbacks={} edge_blocks={} threaded_blocks={} layout_branches={} strlen_prefixes=0 dynamic_copies={} jump_tables=0 rotated_loops={} loop_splits=0 home_splits=0 ordered_frames={} dead_frame_stores={} native_returns={} short_branches={} long_branches={} fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
             self.functions,
             self.lowir_instructions,
             self.mir_instructions,
@@ -283,7 +298,10 @@ impl Statistics {
             self.liveness_steps,
             self.hull_fallbacks,
             self.edge_blocks,
+            self.threaded_blocks,
+            self.layout_branches,
             self.dynamic_copies,
+            self.rotated_loops,
             self.ordered_frames,
             self.dead_frame_stores,
             self.native_returns,

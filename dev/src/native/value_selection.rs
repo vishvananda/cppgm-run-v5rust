@@ -169,21 +169,14 @@ pub(super) fn select_for_object(
     } else {
         None
     };
-    // Optimized function-level allocation and branch layout have separate
-    // owners. Until translated, do not substitute the O0 hull policy.
     if level >= 1
-        && (flow
-            .reachable
-            .iter()
-            .filter(|&&reachable| reachable)
-            .count()
-            > 1
-            || flow
-                .predecessors(body.layout[0])
-                .iter()
-                .any(|p| flow.reachable[p.index()]))
+        && model == super::object_compile::ObjectModel::Host
+        && (flow.reachable.iter().filter(|&&r| r).count() > 1
+            || !flow.predecessors(body.layout[0]).is_empty())
     {
-        return Err(unsupported());
+        return Err(Error::NotImplemented(
+            "native optimized host allocation and shrink wrapping",
+        ));
     }
     let slots = slot_analysis::analyze(body, &flow)?;
     let mut facts = if model == super::object_compile::ObjectModel::Course {
@@ -199,6 +192,13 @@ pub(super) fn select_for_object(
         Vec::new()
     };
     let addresses = super::address_facts::Addresses::analyze(program, body, &mut facts, model)?;
+    super::branch_tests::fold(body, &mut facts, &addresses);
+    super::branch_tests::bytes_only(
+        program,
+        body,
+        &mut facts,
+        model == super::object_compile::ObjectModel::Host,
+    );
     let calls = super::call_facts::Calls::analyze(program, body, &facts)?;
     facts.apply_calls(body, &calls)?;
     let mut mir = MirFunction::new(
@@ -208,6 +208,25 @@ pub(super) fn select_for_object(
         layout,
     );
     mir.optimized = level >= 1;
+    mir.frame_policy.records_pushed = level >= 1
+        && model == super::object_compile::ObjectModel::Course
+        && facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
+            facts.active[p]
+                && matches!(
+                    body.instruction(id).kind,
+                    I::Runtime(
+                        crate::lowir::model::RuntimeInstruction::EhTry(_)
+                            | crate::lowir::model::RuntimeInstruction::EhCleanup(_)
+                    )
+                )
+        })
+        && !facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
+            facts.active[p]
+                && matches!(
+                    body.instruction(id).kind,
+                    I::Runtime(crate::lowir::model::RuntimeInstruction::StackAlloc(_))
+                )
+        });
     mir.object_model = model;
     mir.variadic = signature.boundary.arity == Arity::Variadic;
     mir.lowir_instructions = body.instructions().len();
@@ -217,13 +236,36 @@ pub(super) fn select_for_object(
         .filter(|s| matches!(s, Slot::Promoted(_)))
         .count();
     let registers = EntryRegisters::analyze(body, &slots, &mir, program, function);
-    let globals = super::global_placement::Globals::analyze(
+    let rbp_free = super::register_allocation::rbp_available(
         body,
         &facts,
-        &addresses,
-        &mir.layout,
+        &calls,
+        signature.boundary.arity,
         registers.reserved,
-    )?;
+        model,
+    );
+    let globals = if level >= 1 {
+        super::register_allocation::analyze(
+            program,
+            body,
+            &mut facts,
+            &addresses,
+            &mir.layout,
+            registers.reserved,
+            rbp_free,
+            model == super::object_compile::ObjectModel::Host,
+            region_flow.as_ref(),
+            &calls,
+        )?
+    } else {
+        super::global_placement::Globals::analyze(
+            body,
+            &facts,
+            &addresses,
+            &mir.layout,
+            registers.reserved,
+        )?
+    };
     mir.global_registers = globals.count;
     mir.liveness_steps = globals.steps;
     mir.hull_fallbacks = globals.fallbacks;
@@ -452,6 +494,9 @@ pub(super) fn select_for_object(
         super::home_forwarding::forward(&mut selection.mir);
         super::mir_cleanup::extensions(&mut selection.mir);
         selection.placement.optimize_frame(&mut selection.mir)?;
+    }
+    if level >= 1 {
+        super::branch_layout::layout(&mut selection.mir, program)?;
     }
     if level >= 2 && model == super::object_compile::ObjectModel::Host {
         super::tail_calls::form(&mut selection.mir);

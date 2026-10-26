@@ -49,6 +49,7 @@ pub(super) struct Placement {
     block: Option<BlockId>,
     pinned: u32,
     written: u32,
+    block_globals: u32,
     exit_block: bool,
     last: Vec<Option<usize>>,
     available: Vec<u32>,
@@ -97,6 +98,7 @@ impl Placement {
             block: None,
             pinned: 0,
             written: 0,
+            block_globals: 0,
             exit_block: false,
             last: vec![None; body.temps().len()],
             available: vec![0; body.blocks().len()],
@@ -130,7 +132,7 @@ impl Placement {
         if self.incoming.get(temp.index()).copied().flatten() != Some(r) {
             self.written |= 1 << r.code();
         }
-        if SAVED.contains(&r) {
+        if SAVED.contains(&r) || r == R::RBP {
             self.preserve |= 1 << r.code();
         }
     }
@@ -151,6 +153,14 @@ impl Placement {
                     == 0
         };
         let vector = self.classes[temp.index()] == RegisterClass::Vector;
+        let prefs = if facts.level >= 1
+            && facts.intervals[temp.index()].hint.is_some()
+            && facts.intervals[temp.index()].hint == prefs[1]
+        {
+            [prefs[1], prefs[0]]
+        } else {
+            prefs
+        };
         for reg in prefs
             .into_iter()
             .chain([facts.intervals[temp.index()].hint])
@@ -159,7 +169,7 @@ impl Placement {
             if (if vector {
                 (16..24).contains(&reg.code())
             } else {
-                ORDER.contains(&reg)
+                ORDER.contains(&reg) || self.globals.rbp_free && reg == R::RBP
             }) && allowed(reg)
             {
                 return Some(reg);
@@ -203,6 +213,9 @@ impl Placement {
                 }
             }
         }
+        if self.globals.rbp_free && allowed(R::RBP) {
+            return Some(R::RBP);
+        }
         None
     }
     pub(super) fn atomic_staging(
@@ -242,7 +255,7 @@ impl Placement {
             .chain([R::R10, R::R11])
             .find(|r| u32::from(r.code()) == code)
             .ok_or(Error::Limit)?;
-        if SAVED.contains(&r) {
+        if SAVED.contains(&r) || r == R::RBP {
             self.preserve |= 1 << r.code();
         }
         self.written |= 1 << r.code();
@@ -415,16 +428,28 @@ impl Placement {
         self.dying.clear();
         self.block = Some(block);
         self.pinned = self.globals.reserved[block.index()];
+        self.block_globals = 0;
         self.written = 0;
         self.exit_block = facts.flow.successors(block).is_empty();
         self.last[..body.parameter_count.min(32)].fill(None);
         for index in
             self.globals.binding_first[block.index()]..self.globals.binding_first[block.index() + 1]
         {
-            let temp = self.globals.bindings[index];
-            self.last[temp.index()] = None;
-            if let Some(reg) = self.globals.registers[temp.index()] {
-                self.bind(temp, reg);
+            if self.globals.precise {
+                let entry = self.globals.entries[index];
+                self.last[entry.temp.index()] = entry.release;
+                if entry.live_in
+                    && let Some(reg) = self.globals.registers[entry.temp.index()]
+                {
+                    self.bind(entry.temp, reg);
+                    self.block_globals |= 1 << reg.code();
+                }
+            } else {
+                let temp = self.globals.bindings[index];
+                self.last[temp.index()] = None;
+                if let Some(reg) = self.globals.registers[temp.index()] {
+                    self.bind(temp, reg);
+                }
             }
         }
         let mut late = [None; 16];
@@ -455,7 +480,7 @@ impl Placement {
                     .into_iter()
                     .flatten()
                 {
-                    if self.globals.registers[temp.index()].is_some() {
+                    if !self.globals.precise && self.globals.registers[temp.index()].is_some() {
                         self.last[temp.index()] =
                             Some(self.last[temp.index()].map_or(at, |old| old.max(at)));
                     }
@@ -506,6 +531,8 @@ impl Placement {
                 if let Some(reg) = self.incoming[p]
                     && self.owners[usize::from(reg.code())].is_none()
                     && self.pinned & (1 << reg.code()) == 0
+                    && (!self.globals.precise
+                        || self.globals.defined[block.index()] & (1 << reg.code()) == 0)
                     && let Some(temp) = body.temp_id(p)
                 {
                     self.bind(temp, reg);
@@ -518,7 +545,12 @@ impl Placement {
         self.written |= mask;
     }
     pub(super) fn finish_block(&mut self, block: BlockId) {
-        let written = self.written | self.pinned;
+        let written = self.written
+            | if self.globals.precise {
+                self.block_globals
+            } else {
+                self.pinned
+            };
         self.available[block.index()] = self.available_in;
         for p in 0..self.incoming.len().min(32) {
             if self.incoming[p].is_some_and(|r| written & (1 << r.code()) != 0) {
@@ -731,7 +763,11 @@ impl Placement {
     }
     fn dies(&self, facts: &Facts, temp: TempId, pos: usize) -> bool {
         if self.globals.registers[temp.index()].is_some() {
-            return self.exit_block && self.last[temp.index()].is_none_or(|last| last <= pos);
+            return if self.globals.precise {
+                self.last[temp.index()].is_some_and(|last| last <= pos)
+            } else {
+                self.exit_block && self.last[temp.index()].is_none_or(|last| last <= pos)
+            };
         }
         let own =
             facts.definitions[temp.index()].map_or(facts.flow.blocks[0], |p| facts.flow.blocks[p]);
@@ -776,6 +812,9 @@ impl Placement {
     ) -> R {
         self.release(facts, pos);
         if let Some(r) = self.globals.registers[temp.index()] {
+            if self.globals.precise {
+                self.bind(temp, r);
+            }
             return r;
         }
         if let Some(r) = self.allocate(facts, temp, prefs, exclude) {

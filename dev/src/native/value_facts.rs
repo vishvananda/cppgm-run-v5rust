@@ -30,6 +30,7 @@ pub(super) struct Facts {
     host: bool,
     pub(super) level: u8,
     pub(super) fits: Vec<u32>,
+    pub(super) scales: Vec<u8>,
     pub(super) flow: super::control_flow::Flow,
     pub(super) global: Vec<bool>,
     pub(super) definitions: Vec<Option<usize>>,
@@ -38,6 +39,8 @@ pub(super) struct Facts {
     aliases: Vec<Option<Alias>>,
     identities: Vec<Option<Identity>>,
     pub(super) fused: Vec<bool>,
+    pub(super) tested: Vec<bool>,
+    pub(super) byte_only: Vec<bool>,
     pub(super) active: Vec<bool>,
     pub(super) intervals: Vec<Interval>,
 }
@@ -130,6 +133,7 @@ impl Facts {
             clobbers: vec![(0, 0); ids.len()],
             level,
             fits: Vec::new(),
+            scales: vec![0; body.temps().len()],
             reads: (0..ids.len()).collect(),
             active: flow
                 .blocks
@@ -140,6 +144,8 @@ impl Facts {
             aliases: vec![None; body.temps().len()],
             identities: vec![None; body.temps().len()],
             fused: vec![false; body.temps().len()],
+            tested: vec![false; body.temps().len()],
+            byte_only: vec![false; body.temps().len()],
             intervals: vec![Interval::default(); body.temps().len()],
         };
         let fits = super::integer_facts::analyze(body, &facts);
@@ -262,6 +268,7 @@ impl Facts {
                 }
             }
         }
+        facts.find_scaled_offsets(body);
         let mut uses = vec![0_u32; body.temps().len()];
         for (pos, &id) in ids.iter().enumerate() {
             if facts.active[pos] {
@@ -343,6 +350,108 @@ impl Facts {
                 interval.last = Some(interval.last.map_or(at, |last| last.max(at)));
             } else {
                 self.global[temp.index()] = true;
+            }
+        }
+    }
+    fn find_scaled_offsets(&mut self, body: &Body) {
+        if self.level < 1 {
+            return;
+        }
+        let mut source = vec![None; body.temps().len()];
+        let mut factor = vec![0; body.temps().len()];
+        let mut state = vec![0; body.temps().len()];
+        for (pos, &id) in self.flow.instructions.iter().enumerate() {
+            if !self.active[pos] {
+                continue;
+            }
+            let inst = body.instruction(id);
+            let (Some(temp), I::Binary(op, _, Type::I64 | Type::Ptr, left, right)) =
+                (inst.result, &inst.kind)
+            else {
+                continue;
+            };
+            let (mut value, mut constant) = (self.resolve(body, *left), self.resolve(body, *right));
+            if *op == Binary::Mul && matches!(value, Alias::Constant(Constant::Integer(_))) {
+                std::mem::swap(&mut value, &mut constant);
+            }
+            let (Alias::Temporary(value), Alias::Constant(Constant::Integer(bits))) =
+                (value, constant)
+            else {
+                continue;
+            };
+            let multiplier = match op {
+                Binary::Mul => bits,
+                Binary::Shl if bits < 7 => 1 << bits,
+                _ => continue,
+            };
+            if !(2..=72).contains(&multiplier) {
+                continue;
+            }
+            let scale = [8_u8, 4, 2].into_iter().find(|&scale| {
+                multiplier % u128::from(scale) == 0
+                    && matches!(multiplier / u128::from(scale), 1 | 2 | 3 | 4 | 5 | 8 | 9)
+            });
+            if let Some(scale) = scale {
+                state[temp.index()] = 1;
+                source[temp.index()] = Some(value);
+                factor[temp.index()] = scale;
+            }
+        }
+        for (pos, &id) in self.flow.instructions.iter().enumerate() {
+            if !self.active[pos] {
+                continue;
+            }
+            let kind = &body.instruction(id).kind;
+            let mut check = |value, offset| {
+                if let Alias::Temporary(temp) = self.resolve(body, value)
+                    && state[temp.index()] == 1
+                {
+                    let index = matches!(kind,I::Index(Type::I8|Type::U8|Type::I1,_,base,_) if !matches!(self.resolve(body,*base),Alias::Symbol(_)));
+                    if !(index && offset && matches!(value,Value::Temp(raw) if raw==temp)) {
+                        state[temp.index()] = 2;
+                    }
+                }
+            };
+            if let I::Index(_, _, base, offset) = kind {
+                check(*base, false);
+                check(*offset, true);
+            } else {
+                body.visit_values(kind, |v| check(v, false));
+            }
+        }
+        for (pos, &id) in self.flow.instructions.iter().enumerate() {
+            let inst = body.instruction(id);
+            let Some(temp) = inst.result else {
+                continue;
+            };
+            if state[temp.index()] != 1 {
+                continue;
+            }
+            self.scales[temp.index()] = factor[temp.index()];
+            let I::Binary(op, _, _, a, b) = inst.kind else {
+                continue;
+            };
+            let constant = match self.resolve(body, b) {
+                Alias::Constant(Constant::Integer(bits)) => bits,
+                _ => {
+                    if let Alias::Constant(Constant::Integer(bits)) = self.resolve(body, a) {
+                        bits
+                    } else {
+                        continue;
+                    }
+                }
+            };
+            let multiplier = if op == Binary::Shl {
+                1 << constant
+            } else {
+                constant
+            };
+            if multiplier == u128::from(factor[temp.index()])
+                && let Some(source) = source[temp.index()]
+            {
+                self.aliases[temp.index()] = Some(Alias::Temporary(source));
+                self.identities[temp.index()] = Some(self.identity(Value::Temp(source)));
+                self.active[pos] = false;
             }
         }
     }
@@ -595,13 +704,13 @@ impl Facts {
             {
                 super::division::Form::at(self, body, op, flags, ty, right).clobbers()
             } else if let I::CopyObject(bytes, align, ..) = inst.kind {
-                if super::bulk::direct_copy(bytes, super::bulk::alignment(align)) {
+                if super::bulk::direct_copy(bytes, super::bulk::alignment(align), self.level >= 1) {
                     0
                 } else {
                     (1 << R::RDI.code()) | (1 << R::RSI.code()) | (1 << R::RCX.code())
                 }
             } else if let I::ZeroInit(bytes, ..) = inst.kind {
-                if super::bulk::direct_zero(bytes) {
+                if super::bulk::direct_zero(bytes, self.level >= 1) {
                     0
                 } else {
                     (1 << R::RDI.code()) | (1 << R::RAX.code()) | (1 << R::RCX.code())
@@ -610,7 +719,7 @@ impl Facts {
             | I::Store(_, ty @ Type::Object { .. }, _, _)
             | I::Copy(ty @ Type::Object { .. }, _) = inst.kind
             {
-                super::bulk::object_clobbers(ty)?
+                super::bulk::object_clobbers(ty, self.level >= 1)?
             } else if self.compare_scratch(body, pos) {
                 1 << R::RDX.code()
             } else if matches!(inst.kind,I::Binary(Binary::Shl|Binary::Shr|Binary::UShr,_,_,_,count) if !matches!(self.resolve(body,count),Alias::Constant(Constant::Integer(_))))

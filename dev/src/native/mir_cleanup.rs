@@ -38,6 +38,7 @@ pub(super) fn extensions(function: &mut Function) {
         }
     }
     erase(function, &removed);
+    super::flag_cleanup::drop_tests(function);
     redundant_copies(function);
     redundant_constants(function);
 }
@@ -143,7 +144,7 @@ fn redundant_constants(function: &mut Function) {
     erase(function, &removed);
 }
 
-fn flags_dead_after(function: &Function, at: usize, end: usize) -> bool {
+pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bool {
     use super::condition_mir::FlagOp;
     use crate::lowir::vocabulary::Unary;
     for inst in &function.instructions[at + 1..end] {
@@ -173,7 +174,12 @@ fn flags_dead_after(function: &Function, at: usize, end: usize) -> bool {
                 | ScalarOp::Scan(..)
                 | ScalarOp::Divide { .. }
                 | ScalarOp::MultiplyWide { .. }
-                | ScalarOp::Condition(FlagOp::Compare(..) | FlagOp::Test(..)),
+                | ScalarOp::Condition(
+                    FlagOp::Compare(..)
+                    | FlagOp::Test(..)
+                    | FlagOp::MaskTest(..)
+                    | FlagOp::BitTest(..),
+                ),
             ) => return true,
             _ => return false,
         }
@@ -379,7 +385,7 @@ pub(super) fn erase(function: &mut Function, removed: &[bool]) {
     }
 }
 
-fn touches(op: Op, r: R) -> bool {
+pub(super) fn touches(op: Op, r: R) -> bool {
     use super::condition_mir::FlagOp;
     use crate::lowir::vocabulary::Unary;
     if matches!(op, Op::Scalar(ScalarOp::Binary(Binary::Shl | Binary::Shr | Binary::UShr, _, _, source)) if !matches!(source, Operand::Immediate(_)))
@@ -396,7 +402,10 @@ fn touches(op: Op, r: R) -> bool {
             | ScalarOp::Lea32(to, source)
             | ScalarOp::Binary(_, _, to, source) => [Some(Operand::Register(to)), Some(source)],
             ScalarOp::Store(to, _, source) => [Some(to), Some(source)],
-            ScalarOp::Condition(FlagOp::Compare(_, a, b)) => [Some(a), Some(b)],
+            ScalarOp::Condition(FlagOp::Compare(_, a, b) | FlagOp::MaskTest(_, a, b)) => {
+                [Some(a), Some(b)]
+            }
+            ScalarOp::Condition(FlagOp::BitTest(_, r, b)) => [Some(Operand::Register(r)), Some(b)],
             ScalarOp::Condition(FlagOp::CompareFloatLiteral(_, a, _))
             | ScalarOp::CompareZero(_, a) => [Some(a), None],
             ScalarOp::Extend(_, to)

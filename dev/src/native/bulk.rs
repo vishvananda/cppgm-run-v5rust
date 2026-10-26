@@ -15,17 +15,18 @@ use std::io::Write;
 pub(super) fn alignment(log: u8) -> u32 {
     1_u32.wrapping_shl(u32::from(log))
 }
-pub(super) fn direct_copy(bytes: u64, align: u32) -> bool {
-    bytes <= 32 || bytes <= 64 && align >= 8
+pub(super) fn direct_copy(bytes: u64, align: u32, wide: bool) -> bool {
+    bytes <= 32 || bytes <= 64 && align >= 8 || wide && bytes <= 128
 }
-pub(super) fn direct_zero(bytes: u64) -> bool {
-    matches!(bytes, 1 | 2 | 4 | 8 | 16)
+pub(super) fn direct_zero(bytes: u64, wide: bool) -> bool {
+    matches!(bytes, 1 | 2 | 4 | 8 | 16) || wide && bytes <= 128
 }
-pub(super) fn object_clobbers(ty: Type) -> Result<u32, Error> {
+pub(super) fn object_clobbers(ty: Type, wide: bool) -> Result<u32, Error> {
     Ok(
         if direct_copy(
             u64::from(super::abi::value_bytes(ty)?),
             super::abi::value_align(ty)?,
+            wide,
         ) {
             0
         } else {
@@ -85,15 +86,20 @@ impl Bulk {
         self.source = self.source.map(|source| source.rebase(begin, bytes));
         self
     }
-    pub(super) fn emit(self, assembler: &mut Assembler) -> Result<(), Error> {
+    pub(super) fn emit(
+        self,
+        assembler: &mut Assembler,
+        wide: bool,
+        limit: u8,
+    ) -> Result<(), Error> {
         if let Some(source) = self.source {
-            self.copy(assembler, source)
+            self.copy(assembler, source, wide, limit)
         } else {
-            self.zero(assembler)
+            self.zero(assembler, wide)
         }
     }
-    fn copy(self, a: &mut Assembler, source: Operand) -> Result<(), Error> {
-        if !direct_copy(u64::from(self.bytes), self.align) {
+    fn copy(self, a: &mut Assembler, source: Operand, wide: bool, limit: u8) -> Result<(), Error> {
+        if !direct_copy(u64::from(self.bytes), self.align, wide) {
             if source.mask() & (1 << R::RDI.code()) == 0 {
                 address_into(a, R::RDI, self.destination)?;
                 address_into(a, R::RSI, source)?;
@@ -114,7 +120,7 @@ impl Bulk {
         let mut from = location(source)?;
         let vector = R::xmm(15)?;
         let mut offset = 0_u32;
-        while self.bytes - offset >= 16 {
+        while limit >= 16 && self.bytes - offset >= 16 {
             a.sse(0xf3, 0x6f, vector, from.displaced(offset.cast_signed()))?;
             a.sse(0xf3, 0x7f, vector, to.displaced(offset.cast_signed()))?;
             offset += 16;
@@ -147,7 +153,7 @@ impl Bulk {
             }
         }
         for width in [8_u8, 4, 2, 1] {
-            while self.bytes - offset >= u32::from(width) {
+            while width <= limit && self.bytes - offset >= u32::from(width) {
                 a.load(spare, from.displaced(offset.cast_signed()), width, false)?;
                 a.store(to.displaced(offset.cast_signed()), spare, width)?;
                 offset += u32::from(width);
@@ -158,12 +164,23 @@ impl Bulk {
         }
         Ok(())
     }
-    fn zero(self, a: &mut Assembler) -> Result<(), Error> {
+    fn zero(self, a: &mut Assembler, wide: bool) -> Result<(), Error> {
         let to = location(self.destination)?;
-        if self.bytes == 16 {
+        if self.bytes == 16 || wide && self.bytes > 16 && self.bytes <= 128 {
             let vector = R::xmm(15)?;
             a.sse(0x66, 0xef, vector, Rm::Reg(vector))?;
-            return a.sse(0xf3, 0x7f, vector, to);
+            let mut offset = 0;
+            while self.bytes - offset >= 16 {
+                a.sse(0xf3, 0x7f, vector, to.displaced(offset.cast_signed()))?;
+                offset += 16;
+            }
+            for width in [8_u8, 4, 2, 1] {
+                while self.bytes - offset >= u32::from(width) {
+                    a.store_imm(to.displaced(offset.cast_signed()), 0, width)?;
+                    offset += u32::from(width);
+                }
+            }
+            return Ok(());
         }
         let mut cost = 0_u32;
         let mut offset = 0_u32;
@@ -181,7 +198,7 @@ impl Bulk {
         } + 2
             + 5
             + 2;
-        if direct_zero(u64::from(self.bytes)) || cost <= setup {
+        if direct_zero(u64::from(self.bytes), wide) || cost <= setup {
             let mut offset = 0_u32;
             for width in [8_u8, 4, 2, 1] {
                 while self.bytes - offset >= u32::from(width) {
@@ -346,6 +363,76 @@ impl Selection<'_> {
     }
 }
 
+// Store forwarding limits the load width using only the current block's
+// preceding sixteen MIR positions, exactly as the encoder's window does.
+pub(super) fn chunk_limit(
+    function: &super::mir::Function,
+    index: usize,
+    block_first: usize,
+    bulk: Bulk,
+) -> u8 {
+    use super::mir::Op;
+    let Some(source) = bulk.source else {
+        return 16;
+    };
+    let (base, disp) = if let Some(r) = source.register() {
+        (Base::Register(r), 0)
+    } else if let Some(m) = source.memory() {
+        if m.index.is_some() || matches!(m.base, Base::Symbol(_) | Base::Absolute) {
+            return 16;
+        }
+        (m.base, m.displacement)
+    } else {
+        return 16;
+    };
+    let mut limit = 16;
+    let stop = index.saturating_sub(16).max(block_first);
+    for i in (stop..index).rev() {
+        let op = function.instructions[i].op;
+        if matches!(op, Op::Call(_)) {
+            break;
+        }
+        let (at, width, extent) = match op {
+            Op::Bulk(b) => (
+                b.destination,
+                if b.bytes >= 8 { 8 } else { 4 },
+                i64::from(b.bytes),
+            ),
+            Op::Scalar(super::scalar_mir::ScalarOp::Store(at, ty, _)) if at.is_memory() => (
+                at,
+                super::scalar_mir::bytes(ty),
+                i64::from(super::scalar_mir::bytes(ty)),
+            ),
+            Op::FloatCopy(c) if c.destination.is_memory() => (
+                c.destination,
+                super::scalar_mir::bytes(c.ty),
+                i64::from(super::scalar_mir::bytes(c.ty)),
+            ),
+            _ => continue,
+        };
+        let at = if let Some(r) = at.register() {
+            if base != Base::Register(r) || disp != 0 {
+                continue;
+            }
+            0
+        } else if let Some(m) = at.memory() {
+            if m.base != base || m.index.is_some() || matches!(m.base, Base::Symbol(_)) {
+                continue;
+            }
+            m.displacement
+        } else {
+            continue;
+        };
+        if width < limit
+            && i64::from(at) < i64::from(disp) + i64::from(bulk.bytes)
+            && i64::from(disp) < i64::from(at) + extent
+        {
+            limit = width.max(4);
+        }
+    }
+    limit
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,7 +483,11 @@ mod tests {
         let mut source = Memory::new(Base::Register(R::R10), 0);
         source.index = Some(R::R11);
         let mut assembler = Assembler::default();
-        Bulk::new(destination, Some(Operand::Memory(source)), 4, 4).emit(&mut assembler)?;
+        Bulk::new(destination, Some(Operand::Memory(source)), 4, 4).emit(
+            &mut assembler,
+            false,
+            16,
+        )?;
         // push rax; mov eax,[r10+r11]; mov [rsp+24],eax; pop rax.
         assert_eq!(
             assembler.code,

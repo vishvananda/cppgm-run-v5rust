@@ -86,6 +86,7 @@ impl ExceptionOp {
         a: &mut Assembler,
         runtime: Symbols,
         labels: &[Label],
+        pushed: bool,
     ) -> Result<(), Error> {
         match self {
             Self::Push {
@@ -93,7 +94,12 @@ impl ExceptionOp {
                 cleanup,
                 offset,
             } => {
-                a.lea(R::R11, Rm::mem(R::RBP, offset))?;
+                if pushed {
+                    a.alu_ri(5, Rm::Reg(R::RSP), 80, 8)?;
+                    a.mov_rr(R::R11, R::RSP)?;
+                } else {
+                    a.lea(R::R11, Rm::mem(R::RBP, offset))?;
+                }
                 a.load(R::R10, Rm::rip(runtime.top, 0), 8, false)?;
                 a.store(Rm::mem(R::R11, 0), R::R10, 8)?;
                 a.lea_label(R::R10, labels[target.index()]);
@@ -122,8 +128,13 @@ impl ExceptionOp {
             }
             Self::Pop => {
                 a.load(R::R11, Rm::rip(runtime.top, 0), 8, false)?;
-                a.load(R::R11, Rm::mem(R::R11, 0), 8, false)?;
-                a.store(Rm::rip(runtime.top, 0), R::R11, 8)
+                let previous = if pushed { R::R10 } else { R::R11 };
+                a.load(previous, Rm::mem(R::R11, 0), 8, false)?;
+                a.store(Rm::rip(runtime.top, 0), previous, 8)?;
+                if pushed {
+                    a.lea(R::RSP, Rm::mem(R::R11, 80))?;
+                }
+                Ok(())
             }
             Self::Throw(value) => {
                 let to = Rm::rip(runtime.payload, 0);
@@ -154,8 +165,12 @@ impl ExceptionOp {
             Self::Read { ty, destination } => {
                 let taken = a.label()?;
                 active_try(a, runtime.top, taken)?;
-                a.load(R::R11, Rm::mem(R::R11, 0), 8, false)?;
-                a.store(Rm::rip(runtime.top, 0), R::R11, 8)?;
+                let previous = if pushed { R::R10 } else { R::R11 };
+                a.load(previous, Rm::mem(R::R11, 0), 8, false)?;
+                a.store(Rm::rip(runtime.top, 0), previous, 8)?;
+                if pushed {
+                    a.lea(R::RSP, Rm::mem(R::R11, 80))?;
+                }
                 a.bind(taken);
                 a.load(
                     destination,
@@ -213,7 +228,11 @@ impl Selection<'_> {
             Runtime::EhTry(target) | Runtime::EhCleanup(Some(target)) => ExceptionOp::Push {
                 target: targets[target.index()].ok_or(Error::Limit)?,
                 cleanup: matches!(inst, Runtime::EhCleanup(_)),
-                offset: self.placement.frame_alloc(80, 8)?,
+                offset: if self.mir.frame_policy.records_pushed {
+                    0
+                } else {
+                    self.placement.frame_alloc(80, 8)?
+                },
             },
             Runtime::EhCleanup(None) => ExceptionOp::Mark,
             Runtime::EhEnd => ExceptionOp::Pop,

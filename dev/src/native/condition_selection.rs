@@ -61,9 +61,28 @@ impl Selection<'_> {
             self.load(R::RDX, b, Type::I64);
             b = Operand::Register(R::RDX);
         }
+        let boolean_literal = |value, other| {
+            matches!(self.facts.resolve(self.body,value),Alias::Temporary(temp)
+            if super::value_facts::Facts::known_boolean(self.body,temp,0))
+                && matches!(
+                    self.facts.resolve(self.body, other),
+                    Alias::Constant(Constant::Integer(0 | 1))
+                )
+        };
+        let width = if self.facts.level >= 1
+            && ty.bits() != 0
+            && ty != Type::I128
+            && super::scalar_mir::bytes(ty) != 1
+            && matches!(pred, Compare::Eq | Compare::Ne)
+            && (boolean_literal(left, right) || boolean_literal(right, left))
+        {
+            Type::U8
+        } else {
+            ty
+        };
         Ok(Comparison {
             condition: cc,
-            op: FlagOp::Compare(ty, a, b),
+            op: FlagOp::Compare(width, a, b),
         })
     }
     pub(super) fn compare(
@@ -94,7 +113,9 @@ impl Selection<'_> {
         );
         self.emit(ScalarOp::Condition(comparison.op));
         self.emit(ScalarOp::Condition(FlagOp::Set(comparison.condition, r)));
-        self.emit(ScalarOp::Movzx(r));
+        if !self.facts.byte_only[temp.index()] {
+            self.emit(ScalarOp::Movzx(r));
+        }
         self.finish(temp, r)
     }
     pub(super) fn convert(
@@ -154,6 +175,20 @@ impl Selection<'_> {
     }
     pub(super) fn fused_flags(&mut self, temp: TempId) -> Result<Condition, Error> {
         let def = self.body.temp(temp).definition.ok_or(Error::Limit)?;
+        if self.facts.tested[temp.index()] {
+            return self.mask_flags(temp, true);
+        }
+        if let I::Compare(pred, _, a, b) = self.body.instruction(def).kind
+            && matches!(pred, Compare::Eq | Compare::Ne)
+            && matches!(
+                self.facts.resolve(self.body, b),
+                Alias::Constant(Constant::Integer(0))
+            )
+            && let Alias::Temporary(t) = self.facts.resolve(self.body, a)
+            && self.facts.tested[t.index()]
+        {
+            return self.mask_flags(t, pred == Compare::Ne);
+        }
         let cc = match self.body.instruction(def).kind {
             I::Compare(pred, ty, a, b) => {
                 let comparison = self.comparison(pred, ty, a, b, false)?;

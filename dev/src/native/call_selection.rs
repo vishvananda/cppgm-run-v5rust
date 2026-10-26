@@ -532,7 +532,7 @@ impl Selection<'_> {
             (self.facts.level >= 1 || self.body.layout.len() == 1 || terminal).then_some(R::RAX);
         let destination = self.result(temp, [preference, None], 0);
         self.load(destination, Operand::Register(R::RAX), Type::I64);
-        if !stored && !own {
+        if !stored && !own && !self.facts.byte_only[temp.index()] {
             self.normalize(destination, ty);
         }
         self.finish(temp, destination)
