@@ -391,14 +391,22 @@ impl Facts {
             return false;
         };
         let inst = body.instruction(def);
+        let boolean = |v| match v {
+            Value::Integer(id) => body.literal(id) <= 1,
+            Value::Temp(t) => Self::known_boolean(body, t, depth + 1),
+            _ => false,
+        };
+        if let I::Phi(ty, pairs) = &inst.kind
+            && depth < 4
+            && ty.bits() != 0
+            && *ty != Type::I128
+        {
+            return !pairs.is_empty() && pairs.iter().all(|&(_, v)| boolean(v));
+        }
         if let I::Select(_, _, left, right) = inst.kind
             && depth < 4
         {
-            return [left, right].into_iter().all(|v| match v {
-                Value::Integer(id) => body.literal(id) <= 1,
-                Value::Temp(t) => Self::known_boolean(body, t, depth + 1),
-                _ => false,
-            });
+            return boolean(left) && boolean(right);
         }
         matches!(
             inst.kind,
@@ -707,5 +715,46 @@ fn alias_bits(bits: u128, ty: Type) -> u128 {
         normalize(bits, ty)
     } else {
         bits
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boolean_phi_facts_are_bounded_and_require_every_input() -> Result<(), Error> {
+        for (other, expected) in [
+            ("0", true),
+            ("1", true),
+            ("2", false),
+            ("%value", false),
+            ("%choice", false),
+        ] {
+            let program = crate::lowir::test_program(
+                format!(
+                    "function @f(%value : i64) -> i64 {{
+                  block ^entry:
+                    %positive = cmp gt i64 %value, 0
+                    jump ^merge
+                  block ^merge:
+                    %choice = phi i64 [^entry: %positive, ^merge: {other}]
+                    branch %choice, ^merge, ^done
+                  block ^done: return i64 %choice
+                }}"
+                )
+                .as_bytes(),
+            )?;
+            let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
+            let temp = body
+                .temps()
+                .iter()
+                .position(|t| program.names.get(t.name) == "choice")
+                .and_then(|i| body.temp_id(i))
+                .ok_or(Error::Limit)?;
+            assert_eq!(Facts::known_boolean(body, temp, 0), expected, "{other}");
+            assert!(!Facts::known_boolean(body, temp, 4));
+        }
+        Ok(())
     }
 }

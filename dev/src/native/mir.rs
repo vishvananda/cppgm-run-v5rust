@@ -104,6 +104,7 @@ pub(super) enum Op {
     Return(Option<R>),
     Trap,
     Call(CallSite),
+    TailJump(CallSite),
     DynamicCopy,
     Atomic(super::atomic::Atomic),
     VaStart(super::variadic::Start),
@@ -338,7 +339,7 @@ impl Function {
             write!(out, "\n  block ")?;
             Self::block_name(program, block.name, out)?;
             writeln!(out)?;
-            let end = if self.blocks.len() == 1 {
+            let end = if self.blocks.len() == 1 && block.range.end == 0 {
                 self.instructions.len()
             } else {
                 block.range.end
@@ -419,6 +420,10 @@ impl Function {
             }
             Op::Trap => write!(out, "    trap")?,
             Op::Call(site) => site.write(program, out)?,
+            Op::TailJump(site) => {
+                write!(out, "    tail_jump ")?;
+                site.target.write(program, out)?;
+            }
             Op::VaStart(op) => op.write(program, out)?,
             Op::VaArg(op) => op.write(program, out)?,
             Op::StackAlloc(op) => op.write(program, out)?,

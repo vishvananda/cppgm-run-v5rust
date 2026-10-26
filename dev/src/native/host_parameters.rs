@@ -193,3 +193,137 @@ pub(super) fn normalize(
     }
     Ok(())
 }
+
+// emit_calls.cpp::fold_entry_extensions: only the entry sequence is visible,
+// before ordinary instructions are selected. Preserve the frozen explicit
+// operand reads and writes, including reads through an address's base/index.
+pub(super) fn fold_entry_extensions(instructions: &mut [Instruction]) {
+    use super::x86::Register as R;
+    for at in 0..instructions.len() {
+        let Op::Scalar(ScalarOp::Extend(ty, reg)) = instructions[at].op else {
+            continue;
+        };
+        let mut reader = None;
+        let mut readers = 0;
+        for (next, inst) in instructions.iter().enumerate().skip(at + 1) {
+            let mut reads = false;
+            let mut writes = false;
+            let mut op = inst.op;
+            super::frame_layout::operands(&mut op, |operand, _| {
+                reads |= operand.mask() & (1 << reg.code()) != 0;
+            });
+            let destination = match inst.op {
+                Op::Move(r, _)
+                | Op::SymbolMove(r, _)
+                | Op::Scalar(
+                    ScalarOp::Move(r, _)
+                    | ScalarOp::Load(r, _, _)
+                    | ScalarOp::Lea(r, _)
+                    | ScalarOp::Lea32(r, _),
+                ) => Some((r, false)),
+                Op::Scalar(ScalarOp::Extend(_, r) | ScalarOp::Binary(_, _, r, _)) => {
+                    Some((r, true))
+                }
+                Op::Scalar(ScalarOp::ExtendMove(_, r, source)) => {
+                    reads |= source == reg;
+                    Some((r, true))
+                }
+                _ => None,
+            };
+            if let Some((destination, read)) = destination
+                && destination == reg
+            {
+                writes = true;
+                reads |= read;
+            }
+            if reads {
+                readers += 1;
+                reader = Some(next);
+            }
+            if writes || readers > 1 {
+                break;
+            }
+        }
+        if readers != 1 {
+            continue;
+        }
+        if let Some(reader) = reader
+            && let Op::Scalar(ScalarOp::Move(destination, Operand::Register(source))) =
+                instructions[reader].op
+            && destination.code() < R::XMM0.code()
+            && source == reg
+        {
+            instructions[reader].op = Op::Scalar(ScalarOp::ExtendMove(ty, destination, source));
+            instructions[at].op = Op::Nop;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{
+        memory::{Base, Memory},
+        x86::Register as R,
+    };
+    use super::*;
+
+    fn instruction(op: ScalarOp) -> Instruction {
+        Instruction {
+            op: Op::Scalar(op),
+            volatile: false,
+            location: None,
+        }
+    }
+    #[test]
+    fn entry_extensions_follow_a_single_copy_until_the_incoming_register_is_written() {
+        for ty in [
+            Type::I8,
+            Type::I16,
+            Type::I32,
+            Type::U8,
+            Type::U16,
+            Type::U32,
+        ] {
+            let mut insts = [
+                instruction(ScalarOp::Extend(ty, R::RDI)),
+                instruction(ScalarOp::Move(R::RBX, Operand::Register(R::RDI))),
+                instruction(ScalarOp::Move(R::RDI, Operand::Register(R::RAX))),
+                instruction(ScalarOp::Move(R::R12, Operand::Register(R::RDI))),
+            ];
+            fold_entry_extensions(&mut insts);
+            assert!(matches!(insts[0].op, Op::Nop));
+            assert!(
+                matches!(insts[1].op, Op::Scalar(ScalarOp::ExtendMove(t, R::RBX, R::RDI)) if t == ty)
+            );
+        }
+    }
+    #[test]
+    fn multiple_reads_address_reads_and_earlier_writes_keep_entry_extensions() {
+        let copy = ScalarOp::Move(R::RBX, Operand::Register(R::RDI));
+        for middle in [
+            copy,
+            ScalarOp::Move(R::RDI, Operand::Register(R::RAX)),
+            ScalarOp::Load(
+                R::R12,
+                Type::I64,
+                Operand::Memory(Memory::new(Base::Register(R::RDI), 0)),
+            ),
+            ScalarOp::Load(
+                R::RDI,
+                Type::I64,
+                Operand::Memory(Memory::new(Base::Register(R::RDI), 0)),
+            ),
+        ] {
+            let mut insts = [
+                instruction(ScalarOp::Extend(Type::I32, R::RDI)),
+                instruction(middle),
+                instruction(copy),
+            ];
+            fold_entry_extensions(&mut insts);
+            assert!(matches!(
+                insts[0].op,
+                Op::Scalar(ScalarOp::Extend(Type::I32, R::RDI))
+            ));
+        }
+    }
+}

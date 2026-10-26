@@ -71,6 +71,7 @@ mod slot_analysis;
 mod stack;
 mod startup;
 mod symbol_access;
+mod tail_calls;
 mod value_facts;
 mod value_selection;
 mod variadic;
@@ -236,7 +237,10 @@ impl Statistics {
             (&mut self.fused_compares, function.fused_compares),
             (&mut self.dynamic_copies, function.dynamic_copies),
             (&mut self.lowir_instructions, function.lowir_instructions),
-            (&mut self.mir_instructions, function.instructions.len()),
+            (
+                &mut self.mir_instructions,
+                function.blocks.iter().map(|b| b.range.len()).sum(),
+            ),
             (&mut self.dead_slots, function.dead_slots),
             (&mut self.promoted_slots, function.promoted_slots),
         ] {

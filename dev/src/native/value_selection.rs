@@ -69,6 +69,18 @@ fn floating_scratch(
     }
     floating
 }
+fn emit_entry(selection: &mut Selection<'_>) -> Result<(), Error> {
+    let first = selection.mir.instructions.len();
+    let mut moves =
+        selection
+            .placement
+            .entry(selection.body, &selection.facts, &mut selection.mir)?;
+    super::parallel_transfer::emit(selection, &mut moves)?;
+    if selection.facts.level >= 1 {
+        super::host_parameters::fold_entry_extensions(&mut selection.mir.instructions[first..]);
+    }
+    Ok(())
+}
 // Signature register classes and aligned local storage jointly reserve the
 // physical entry pool before either allocator or selector consumes it.
 struct EntryRegisters {
@@ -270,10 +282,7 @@ pub(super) fn select_for_object(
             body.block(entry).name,
             body.block(entry).name,
         ))?;
-        let mut moves = selection
-            .placement
-            .entry(body, &selection.facts, &mut selection.mir)?;
-        super::parallel_transfer::emit(&mut selection, &mut moves)?;
+        emit_entry(&mut selection)?;
         selection.jump(control.targets[entry.index()].ok_or(Error::Limit)?);
         selection.mir.end_block();
     }
@@ -300,11 +309,7 @@ pub(super) fn select_for_object(
             return Err(Error::Construction("native block out of order".into()));
         }
         if block == body.layout[0] && !control.entry_loop {
-            let mut moves =
-                selection
-                    .placement
-                    .entry(body, &selection.facts, &mut selection.mir)?;
-            super::parallel_transfer::emit(&mut selection, &mut moves)?;
+            emit_entry(&mut selection)?;
         }
         for pos in selection.facts.flow.ranges[block.index()].clone() {
             let id = selection.facts.flow.instructions[pos];
@@ -447,6 +452,9 @@ pub(super) fn select_for_object(
         super::home_forwarding::forward(&mut selection.mir);
         super::mir_cleanup::extensions(&mut selection.mir);
         selection.placement.optimize_frame(&mut selection.mir)?;
+    }
+    if level >= 2 && model == super::object_compile::ObjectModel::Host {
+        super::tail_calls::form(&mut selection.mir);
     }
     Ok(selection.mir)
 }

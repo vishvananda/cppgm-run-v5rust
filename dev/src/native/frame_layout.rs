@@ -152,7 +152,7 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
             visit(&mut convert.destination, access_bytes(convert.from));
             visit(&mut convert.source, access_bytes(convert.from));
         }
-        Op::Call(call) => visit(&mut call.target, 1),
+        Op::Call(call) | Op::TailJump(call) => visit(&mut call.target, 1),
         Op::Atomic(atomic) => match atomic {
             Atomic::Exchange(_, ty, target, _) => visit(target, access_bytes(*ty)),
             Atomic::LoadWide {

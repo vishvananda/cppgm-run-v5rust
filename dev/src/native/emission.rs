@@ -207,7 +207,7 @@ impl<'a> Pass<'a> {
             }
             self.carries.clear();
             let next = order.next[block + 1];
-            let range = if f.blocks.len() == 1 {
+            let range = if f.blocks.len() == 1 && f.blocks[block].range.end == 0 {
                 0..f.instructions.len()
             } else {
                 f.blocks[block].range.clone()
@@ -335,7 +335,7 @@ impl<'a> Pass<'a> {
         }
         Ok(())
     }
-    fn epilogue_body(&mut self) -> Result<super::host_unwind::Epilogue, Error> {
+    fn teardown(&mut self) -> Result<super::host_unwind::Epilogue, Error> {
         let f = self.function;
         if f.preserve != 0 && self.plan.dynamic {
             self.assembler.lea(
@@ -359,6 +359,10 @@ impl<'a> Pass<'a> {
                 .alu_ri(0, Rm::Reg(R::RSP), self.plan.reserve.into(), 8)?;
         }
         record.released = self.assembler.position()?;
+        Ok(record)
+    }
+    fn epilogue_body(&mut self) -> Result<super::host_unwind::Epilogue, Error> {
+        let mut record = self.teardown()?;
         self.assembler.ret();
         record.returned = self.assembler.position()?;
         Ok(record)
@@ -453,6 +457,23 @@ impl<'a> Pass<'a> {
                         args: site.stack.wrapping_add(15) & !15,
                     });
                 }
+            }
+            Op::TailJump(site) => {
+                use super::scalar_mir::Operand;
+                let target = site.target.rebase(f.aligned_disp, f.aligned_bytes);
+                match target {
+                    Operand::Symbol(_) => {}
+                    Operand::Register(reg) => self.assembler.mov_rr(R::R11, reg)?,
+                    _ => self.assembler.load(R::R11, target.rm()?, 8, false)?,
+                }
+                let mut record = self.teardown()?;
+                if let Operand::Symbol(symbol) = target {
+                    self.assembler.jump_symbol(ImageSymbol::Program(symbol))?;
+                } else {
+                    self.assembler.jump_rm(Rm::Reg(R::R11))?;
+                }
+                record.returned = self.assembler.position()?;
+                self.frame.returns.push(record);
             }
             Op::VaStart(op) => op.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,
             Op::VaArg(op) => op.emit(&mut self.assembler, f.aligned_disp, f.aligned_bytes)?,

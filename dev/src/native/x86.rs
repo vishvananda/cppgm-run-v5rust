@@ -516,6 +516,9 @@ impl Assembler {
     pub(super) fn call_rm(&mut self, target: Rm) -> Result<(), Error> {
         self.op(0, false, 0xff, 1, 2, target, false, 0)
     }
+    pub(super) fn jump_rm(&mut self, target: Rm) -> Result<(), Error> {
+        self.op(0, false, 0xff, 1, 4, target, false, 0)
+    }
     pub(super) fn push(&mut self, reg: Register) {
         self.plus(false, 0x50, reg);
     }
