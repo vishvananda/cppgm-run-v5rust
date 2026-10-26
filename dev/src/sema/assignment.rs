@@ -74,6 +74,14 @@ mod tests {
             .find(|&f| analyzer.graph.entity(f).assignment_kind == Some(RefKind::Lvalue))
             .unwrap();
         let action = analyzer.graph.lower_assignment(function).unwrap().actions[0];
+        assert!(analyzer.graph.entity(function).scope.is_none());
+        assert!(
+            analyzer
+                .graph
+                .entity(function)
+                .parameter_entities
+                .is_empty()
+        );
         assert!(action.parameter_copy.is_some());
         assert!(action.parameter_constructor.is_none());
         analyzer.finish_lowering_boundaries().unwrap();
@@ -494,32 +502,6 @@ impl Analyzer<'_> {
             self.graph.entity_mut(function).availability = FunctionAvailability::Deleted;
         }
         self.graph.entity_mut(function).assignment = Some(properties);
-        if self.graph.entity(function).scope.is_none() {
-            let scope = self
-                .graph
-                .add_scope(ScopeKind::Function, home, None, None)?;
-            self.graph.scope_mut(scope).owner = Some(function);
-            self.graph.entity_mut(function).scope = Some(scope);
-            // A defaulted assignment has a synthesized body, with an unnamed
-            // parameter binding even when its declaration supplied a name.
-            let name = None;
-            let other = self.graph.add_entity(
-                Some(parameter),
-                name,
-                crate::lex::vocabulary::Keyword::Int,
-            )?;
-            self.graph.add_binding(
-                scope,
-                Some(scope),
-                super::graph::Binding {
-                    kind: super::graph::BindingKind::Parameter,
-                    name,
-                    entity: other,
-                    ty: Some(parameter),
-                    key: crate::lex::vocabulary::Keyword::Int,
-                },
-            )?;
-        }
         Ok(())
     }
     fn const_assignment_source(&self, class: EntityId) -> Result<bool, Error> {

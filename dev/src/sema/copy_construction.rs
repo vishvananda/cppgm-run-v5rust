@@ -7,7 +7,7 @@ use super::{
     construction::{Constructor, ConstructorId, ConstructorState, Triviality},
     copy_initialization::{CopyOrigin, CopySelection},
     copy_properties::CopyPropertiesId,
-    graph::{Binding, BindingId, BindingKind, EntityId, MemberKey, MemberKind, ScopeKind},
+    graph::{BindingId, EntityId, MemberKey, MemberKind},
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset};
@@ -283,7 +283,6 @@ impl Analyzer<'_> {
                 self.implicit_copy_binding(class, kind, properties)?
             }
         };
-        self.prepare_copy_parameters(binding)?;
         let targets = self.graph.copy_targets(class)?;
         let mut actions = Vec::with_capacity(targets.len());
         let mut child_index = 0;
@@ -430,52 +429,6 @@ impl Analyzer<'_> {
         self.graph.copy_properties.get_mut(properties).callable = Some(binding);
         Ok(binding)
     }
-    fn prepare_copy_parameters(&mut self, binding: BindingId) -> Result<(), Error> {
-        let function = self.graph.binding(binding).entity;
-        if self.graph.entity(function).scope.is_some() {
-            return Ok(());
-        }
-        let home = self
-            .graph
-            .entity(function)
-            .home
-            .ok_or(Error::Invariant("copy function home"))?;
-        let scope = self
-            .graph
-            .add_scope(ScopeKind::Function, home, None, None)?;
-        self.graph.scope_mut(scope).owner = Some(function);
-        self.graph.entity_mut(function).scope = Some(scope);
-        let signature = self
-            .graph
-            .entity(function)
-            .ty
-            .ok_or(Error::Invariant("copy function type"))?;
-        let count = self.graph.types.function_parameter_count(signature)?;
-        for index in 0..count {
-            let parameter = self.graph.types.function_parameter(signature, index)?;
-            // Implicit and explicitly defaulted copy bodies are synthesized.
-            // Their parameter objects are unnamed even when the declaration
-            // retained a written parameter name for its source-facing clause.
-            let name = None;
-            let other = self.graph.add_entity(Some(parameter), name, Keyword::Int)?;
-            self.graph.add_binding(
-                scope,
-                Some(scope),
-                Binding {
-                    kind: BindingKind::Parameter,
-                    name,
-                    entity: other,
-                    ty: Some(parameter),
-                    key: Keyword::Int,
-                },
-            )?;
-            self.graph
-                .entity_mut(function)
-                .parameter_entities
-                .push(other);
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -605,8 +558,8 @@ mod tests {
                 .name
                 .is_some()
         );
-        assert_eq!(function.parameter_entities.len(), 1);
-        assert!(graph.entity(function.parameter_entities[0]).name.is_none());
+        assert!(function.parameter_entities.is_empty());
+        assert!(function.scope.is_none());
     }
 
     #[test]

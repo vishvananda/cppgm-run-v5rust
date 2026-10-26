@@ -1528,13 +1528,10 @@ impl Graph {
             .scope
             .ok_or(Error::Invariant("assignment class scope"))?;
         let function = self.add_entity(Some(signature), None, Keyword::Int)?;
-        let scope = self.add_scope(ScopeKind::Function, home, None, None)?;
-        self.scope_mut(scope).owner = Some(function);
         let special = super::assignment::key()?
             .special()
             .ok_or(Error::Invariant("assignment key"))?;
         let entity = self.entity_mut(function);
-        entity.scope = Some(scope);
         entity.defined = true;
         entity.inline = super::specifiers::InlinePreference::Inline;
         entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
@@ -1562,19 +1559,6 @@ impl Graph {
             special: Some(special),
             allocation: None,
         });
-        let parameter = self.types.function_parameter(signature, 0)?;
-        let other = self.add_entity(Some(parameter), None, Keyword::Int)?;
-        self.add_binding(
-            scope,
-            Some(scope),
-            Binding {
-                kind: BindingKind::Parameter,
-                name: None,
-                entity: other,
-                ty: Some(parameter),
-                key: Keyword::Int,
-            },
-        )?;
         let binding = self.add_binding(
             home,
             None,

@@ -23,12 +23,43 @@ pub(super) struct RValue {
     pub literal: bool,
     pub bits: Option<u64>,
 }
+struct Parameter {
+    entity: Option<EntityId>,
+    name: Option<crate::lex::identifiers::NameId>,
+    ty: TypeId,
+}
+fn parameter_bindings(
+    graph: &Graph,
+    scope: Option<crate::sema::lowering::ScopeId>,
+    types: &[TypeId],
+) -> Vec<Parameter> {
+    if scope.is_some() {
+        graph
+            .lower_parameters(scope)
+            .map(|(entity, name, ty)| Parameter {
+                entity: Some(entity),
+                name,
+                ty,
+            })
+            .collect()
+    } else {
+        types
+            .iter()
+            .map(|&ty| Parameter {
+                entity: None,
+                name: None,
+                ty,
+            })
+            .collect()
+    }
+}
 pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub graph: &'a Graph,
     pub tree: &'a ast::Tree,
     pub builder: FunctionBuilder<'program>,
     pub symbols: &'symbols mut Symbols<'a, 'source>,
     pub locals: HashMap<EntityId, Value>,
+    pub parameter_slots: Vec<Value>,
     pub untyped_places: std::collections::HashSet<Value>,
     pub empty_storage: super::member_initialization::EmptyStorage,
     pub bit_initialization: super::bit_fields::Initialization,
@@ -140,14 +171,14 @@ pub(super) fn lower<'a>(
             "function signature missing",
         )));
     };
-    let parameter_bindings: Vec<_> = graph.lower_parameters(facts.scope).collect();
+    let parameter_bindings = parameter_bindings(graph, facts.scope, parameters);
     if parameters.len() != parameter_bindings.len() {
         return Err(Error::Semantic(crate::sema::Error::Invariant(
             "function parameter binding mismatch",
         )));
     }
     let mut reserved = std::collections::HashSet::new();
-    for &(_, name, _) in &parameter_bindings {
+    for &Parameter { name, .. } in &parameter_bindings {
         if let Some(name) = name {
             reserved.insert(symbols.parameter_name(name)?);
         }
@@ -166,7 +197,7 @@ pub(super) fn lower<'a>(
     if hidden_count != 0 {
         names.push(("__vtt".to_owned(), Type::Ptr));
     }
-    for &(_, name, ty) in &parameter_bindings {
+    for &Parameter { name, ty, .. } in &parameter_bindings {
         names.push((
             if entity.is_some_and(|entity| {
                 graph.lower_implicit_assignment(entity) || graph.lower_implicit_copy(entity)
@@ -374,6 +405,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             builder,
             symbols,
             locals: HashMap::new(),
+            parameter_slots: Vec::new(),
             untyped_places: std::collections::HashSet::new(),
             empty_storage: super::member_initialization::EmptyStorage::Owned,
             bit_initialization: super::bit_fields::Initialization::default(),
@@ -436,11 +468,19 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
 impl Function<'_, '_, '_, '_> {
     fn initialize_parameters(
         &mut self,
-        bindings: &[(EntityId, Option<crate::lex::identifiers::NameId>, TypeId)],
+        bindings: &[Parameter],
         names: &[(String, Type)],
         first: usize,
     ) -> Result<(), Error> {
-        for (ordinal, &(entity, name, parameter)) in bindings.iter().enumerate() {
+        for (
+            ordinal,
+            &Parameter {
+                entity,
+                name,
+                ty: parameter,
+            },
+        ) in bindings.iter().enumerate()
+        {
             let index = ordinal + first;
             let storage = types::storage(self.graph, parameter)?;
             let slot = if name.is_some()
@@ -452,16 +492,20 @@ impl Function<'_, '_, '_, '_> {
                 self.builder.parameter_slot(index, storage)?
             };
             let incoming = self.builder.parameter(index)?;
-            if matches!(self.graph.lower_type(parameter)?, TypeView::Class(class) if !self.graph.lower_direct_class_parameter(class)?)
+            let place = if matches!(self.graph.lower_type(parameter)?, TypeView::Class(class) if !self.graph.lower_direct_class_parameter(class)?)
                 && !self
                     .entity
                     .is_some_and(|entity| self.graph.lower_positional_parameters(entity))
             {
-                self.locals.insert(entity, incoming);
+                incoming
             } else {
                 self.initialize_parameter(parameter, incoming, slot)?;
-                self.locals.insert(entity, slot);
+                slot
+            };
+            if let Some(entity) = entity {
+                self.locals.insert(entity, place);
             }
+            self.parameter_slots.push(slot);
         }
         Ok(())
     }
@@ -1005,7 +1049,7 @@ fn constructed_parameters(
     graph: &Graph,
     entity: Option<EntityId>,
     names: &[(String, Type)],
-    bindings: &[(EntityId, Option<crate::lex::identifiers::NameId>, TypeId)],
+    bindings: &[Parameter],
     hidden: usize,
 ) -> Result<Vec<(crate::lowir::model::NameId, Type)>, Error> {
     let implicit_copy = entity.is_some_and(|entity| {
@@ -1016,7 +1060,7 @@ fn constructed_parameters(
         let unnamed = index
             .checked_sub(hidden)
             .and_then(|index| bindings.get(index))
-            .is_some_and(|(_, name, _)| name.is_none())
+            .is_some_and(|parameter| parameter.name.is_none())
             && !implicit_copy;
         let name = if unnamed {
             program.names.intern_view(name)?

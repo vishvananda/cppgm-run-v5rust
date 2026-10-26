@@ -66,15 +66,16 @@ impl Function<'_, '_, '_, '_> {
             .value)
     }
     pub(super) fn assignment_source(&mut self, function: EntityId) -> Result<Value, Error> {
-        let scope = self.graph.lower_function(function)?.scope;
-        let (parameter, _, ty) = self
-            .graph
-            .lower_parameters(scope)
-            .next()
+        let signature = self.graph.lower_function(function)?.ty;
+        let TypeView::Function { parameters, .. } = self.graph.lower_type(signature)? else {
+            return Err(crate::sema::Error::Invariant("assignment source signature").into());
+        };
+        let ty = *parameters
+            .first()
             .ok_or(crate::sema::Error::Invariant("assignment source parameter"))?;
         let slot = self
-            .locals
-            .get(&parameter)
+            .parameter_slots
+            .first()
             .copied()
             .ok_or(crate::sema::Error::Invariant("assignment source slot"))?;
         Ok(self
