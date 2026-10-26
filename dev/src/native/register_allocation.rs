@@ -154,6 +154,34 @@ impl Assignment<'_> {
             .chain([R::RBP])
             .find(|r| allowed & (1 << r.code()) != 0)
     }
+    fn split_conflicts(&self, c: usize, blocked: &mut Vec<(BlockId, u32)>) -> u32 {
+        blocked.clear();
+        for range in &self.ranges.candidates[c].ranges {
+            let (pressure, taken) = self.gpr.query(range.first, range.last);
+            let capacity = 12 + i32::from(self.rbp_free) - i32::from(self.reserved != 0);
+            let mask = if pressure + 1 > capacity {
+                u32::MAX
+            } else {
+                taken
+                    | self
+                        .late
+                        .query(range.first + 1, range.last.max(range.first + 1))
+                    | self.early.query(range.first + 1, range.last + 1)
+            };
+            blocked.push((range.block, mask));
+        }
+        let saved_mask = SAVED
+            .iter()
+            .chain([R::RBP].iter())
+            .fold(0, |m, r| m | (1 << r.code()));
+        let mut allowed = (CALLER_SAVED
+            | saved_mask & !(if self.rbp_free { 0 } else { 1 << R::RBP.code() }))
+            & !self.reserved;
+        if self.ranges.candidates[c].weight < 2 * SCALE && self.saved & saved_mask != 0 {
+            allowed &= !(saved_mask & !self.saved);
+        }
+        allowed
+    }
     fn assign_web(&mut self, c: usize, members: &[usize], tied: Option<R>) -> Option<R> {
         if members.len() < 2 {
             return None;
@@ -208,13 +236,16 @@ impl Assignment<'_> {
         Some(reg)
     }
     fn commit(&mut self, c: usize, r: R) {
+        self.commit_ranges(c, r, &self.ranges.candidates[c].ranges);
+    }
+    fn commit_ranges(&mut self, c: usize, r: R, ranges: &[Range]) {
         let temp = self.ranges.candidates[c].temp;
         let tree = if self.body.temp(temp).ty.is_some_and(|t| t.float_rank() != 0) {
             &mut self.xmm
         } else {
             &mut self.gpr
         };
-        for range in &self.ranges.candidates[c].ranges {
+        for range in ranges {
             tree.add(range.first, range.last, 1, 1 << r.code());
         }
         self.registers[temp.index()] = Some(r);
@@ -267,6 +298,56 @@ fn pressure(
     xmm.pop();
     Ok((Pressure::new(&gpr)?, Pressure::new(&xmm)?))
 }
+fn use_hints(
+    body: &Body,
+    facts: &Facts,
+    index: &[Option<usize>],
+    calls: &super::call_facts::Calls,
+    m: usize,
+) -> Vec<Option<R>> {
+    let mut hints = vec![None; m];
+    for (p, &id) in facts.flow.instructions.iter().enumerate() {
+        if !facts.active[p] {
+            continue;
+        }
+        let inst = body.instruction(id);
+        let mut hint = |v, r| {
+            if let Some(t) = resolved(body, facts, v)
+                && let Some(c) = index[t.index()]
+                && hints[c].is_none()
+            {
+                hints[c] = Some(r);
+            }
+        };
+        match &inst.kind {
+            I::Return(ty, Some(v)) if !matches!(ty, Type::Object { .. }) => hint(
+                *v,
+                if ty.float_rank() != 0 {
+                    R::XMM0
+                } else {
+                    R::RAX
+                },
+            ),
+            I::Call(call) => {
+                if let Some(plan) = calls.at(p) {
+                    for (&v, arg) in body
+                        .arguments(call.arguments)
+                        .iter()
+                        .zip(&plan.layout.arguments)
+                    {
+                        if let [part] = plan.layout.parts(arg)
+                            && let Some(r) = part.register
+                        {
+                            hint(v, r);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    hints
+}
 #[expect(
     clippy::too_many_arguments,
     reason = "one typed function allocation boundary"
@@ -284,6 +365,7 @@ pub(super) fn analyze(
     calls: &super::call_facts::Calls,
 ) -> Result<Globals, Error> {
     let mut out = Globals {
+        splits: super::split_placement::Splits::default(),
         precise: true,
         entries: Vec::new(),
         defined: vec![0; body.blocks().len()],
@@ -335,9 +417,6 @@ pub(super) fn analyze(
     }
     let weights = Weights::analyze(program, body, facts)?;
     ranges.live(body, facts, &weights, &exceptional)?;
-    // The next dependency is the splitter's edge/home contract. No hull or
-    // greedy spill substitution is used when a whole-range choice fails.
-
     out.steps = ranges.steps;
     out.fallbacks = ranges.fallbacks;
     let m = ranges.candidates.len();
@@ -368,47 +447,7 @@ pub(super) fn analyze(
                 .and_then(|t| index[t.index()]);
         }
     }
-    let mut hints = vec![None; m];
-    for (p, &id) in facts.flow.instructions.iter().enumerate() {
-        if !facts.active[p] {
-            continue;
-        }
-        let inst = body.instruction(id);
-        let mut hint = |v, r| {
-            if let Some(t) = resolved(body, facts, v)
-                && let Some(c) = index[t.index()]
-                && hints[c].is_none()
-            {
-                hints[c] = Some(r);
-            }
-        };
-        match &inst.kind {
-            I::Return(ty, Some(v)) if !matches!(ty, Type::Object { .. }) => hint(
-                *v,
-                if ty.float_rank() != 0 {
-                    R::XMM0
-                } else {
-                    R::RAX
-                },
-            ),
-            I::Call(call) => {
-                if let Some(plan) = calls.at(p) {
-                    for (&v, arg) in body
-                        .arguments(call.arguments)
-                        .iter()
-                        .zip(&plan.layout.arguments)
-                    {
-                        if let [part] = plan.layout.parts(arg)
-                            && let Some(r) = part.register
-                        {
-                            hint(v, r);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    let hints = use_hints(body, facts, &index, calls, m);
     let (gpr, xmm) = pressure(body, facts, addresses, &ranges)?;
     let mut late = vec![0; ranges.total + 1];
     let mut early = late.clone();
@@ -453,6 +492,17 @@ pub(super) fn analyze(
         members[find(&mut group, c)].push(c);
     }
     let mut group_reg = vec![None; m];
+    let mut splitter = super::split_placement::Planner::new(
+        body,
+        facts,
+        &ranges.bases,
+        &weights,
+        &exceptional,
+        region,
+    );
+    let mut replacements: Vec<Option<Vec<Range>>> = (0..m).map(|_| None).collect();
+    let mut homed = Vec::new();
+    let mut blocked = Vec::new();
     for c in order {
         if assignment.registers[ranges.candidates[c].temp.index()].is_some() {
             continue;
@@ -466,24 +516,56 @@ pub(super) fn analyze(
             continue;
         }
         let candidate = &ranges.candidates[c];
-        let Some(reg) = assignment.choose(
+        let mut reg = assignment.choose(
             c,
             &candidate.ranges,
             candidate.weight,
             group_reg[root],
             tied,
-        ) else {
-            return Err(Error::NotImplemented(
-                "native loop and home split allocation",
-            ));
-        };
-        assignment.commit(c, reg);
-        if group_reg[root].is_none() {
-            group_reg[root] = Some(reg);
+        );
+        if reg.is_none()
+            && body
+                .temp(candidate.temp)
+                .ty
+                .is_some_and(|t| t.float_rank() == 0)
+        {
+            let allowed = assignment.split_conflicts(c, &mut blocked);
+            if let Some(homes) = splitter.select(candidate, allowed, &blocked) {
+                reg =
+                    assignment.choose(c, &splitter.ranges, candidate.weight, group_reg[root], tied);
+                if let Some(r) = reg {
+                    assignment.commit_ranges(c, r, &splitter.ranges);
+                    replacements[c] = Some(std::mem::take(&mut splitter.ranges));
+                    for mut movement in splitter.moves.iter().copied() {
+                        movement.register = r;
+                        out.splits.moves.push(movement);
+                    }
+                    if homes {
+                        homed.extend(splitter.homed.iter().map(|&b| (b, candidate.temp)));
+                        out.splits.blocks += 1;
+                    } else {
+                        out.splits.loops += 1;
+                    }
+                }
+            }
+        }
+        if let Some(reg) = reg {
+            if replacements[c].is_none() {
+                assignment.commit(c, reg);
+            }
+            if group_reg[root].is_none() {
+                group_reg[root] = Some(reg);
+            }
         }
     }
     out.registers = assignment.registers;
     out.count = out.registers.iter().filter(|r| r.is_some()).count();
+    for (candidate, replacement) in ranges.candidates.iter_mut().zip(replacements) {
+        if let Some(replacement) = replacement {
+            candidate.ranges = replacement;
+        }
+    }
+    out.splits.install(body, &mut homed);
     emission(body, facts, addresses, &ranges, &mut out)?;
     Ok(out)
 }
@@ -645,9 +727,13 @@ fn emission(
         }
     }
     defs.sort_by_key(|(b, p, _, _)| (b.index(), *p));
-    for i in 0..body.temps().len() {
+    let mut homed = vec![false; body.temps().len()];
+    for t in &out.splits.homes {
+        homed[t.index()] = true;
+    }
+    for (i, &homed) in homed.iter().enumerate() {
         let t = body.temp_id(i).ok_or(Error::Limit)?;
-        if out.registers[i].is_some() || !eligible(body, facts, addresses, t) {
+        if out.registers[i].is_some() && !homed || !eligible(body, facts, addresses, t) {
             continue;
         }
         let def = facts.definitions[i];
@@ -660,7 +746,10 @@ fn emission(
             .iter()
             .take_while(|&&(block, p, _, _)| block == b && last.is_some_and(|last| p <= last))
         {
-            if facts.intervals[i].last == Some(p) && computed(body, facts, g, t) {
+            if out.registers[i].is_none()
+                && facts.intervals[i].last == Some(p)
+                && computed(body, facts, g, t)
+            {
                 hint_chain(body, facts, addresses, t, block, reg);
             } else {
                 facts.intervals[i].forbid |= 1 << reg.code();

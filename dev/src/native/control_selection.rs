@@ -24,13 +24,11 @@ pub(super) struct Control {
     pub(super) next: u32,
 }
 impl Control {
-    pub(super) fn new(body: &Body, facts: &super::value_facts::Facts) -> Result<Self, Error> {
-        Self::with_eh(body, facts, None)
-    }
-    pub(super) fn with_eh(
+    pub(super) fn with_splits(
         body: &Body,
         facts: &super::value_facts::Facts,
         mut eh: Option<&mut super::region_flow::Plan>,
+        splits: &super::split_placement::Splits,
     ) -> Result<Self, Error> {
         let entry_loop = !facts.flow.predecessors(body.layout[0]).is_empty();
         let mut next = u32::from(entry_loop);
@@ -70,6 +68,7 @@ impl Control {
                     if eh
                         .as_ref()
                         .is_some_and(|plan| plan.entry_selectors[target.index()] != 0)
+                        || !splits.transfers(block, target).is_empty()
                         || body
                             .block(target)
                             .instructions
@@ -267,10 +266,10 @@ impl Selection<'_> {
             if created != id {
                 return Err(Error::Construction("phi edge block out of order".into()));
             }
-            self.phi_transfers(from, to)?;
             if let Some(plan) = &control.host_selectors {
                 self.host_entry_selector(plan[to.index()]);
             }
+            self.phi_transfers(from, to)?;
             self.jump(control.targets[to.index()].ok_or(Error::Limit)?);
             self.mir.end_block();
         }
@@ -335,6 +334,26 @@ impl Selection<'_> {
                 source_type,
                 ty: *ty,
                 address,
+            });
+        }
+        for index in 0..self.placement.globals.splits.transfers(from, to).len() {
+            let movement = self.placement.globals.splits.transfers(from, to)[index];
+            let ty = self.body.temp(movement.temp).ty.ok_or(Error::Limit)?;
+            let register = Operand::Register(movement.register);
+            let home = Operand::Frame(self.placement.home(
+                self.body,
+                movement.temp,
+                &mut self.mir,
+            )?);
+            if !movement.store {
+                self.placement.note_clobbers(1 << movement.register.code());
+            }
+            moves.push(Transfer {
+                destination: if movement.store { home } else { register },
+                source: if movement.store { register } else { home },
+                source_type: None,
+                ty,
+                address: false,
             });
         }
         let result = parallel_transfer::emit(self, &mut moves);

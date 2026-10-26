@@ -60,6 +60,7 @@ mod object_compile;
 mod object_storage;
 mod region_flow;
 mod register_allocation;
+mod split_placement;
 mod unwind_rules;
 pub(crate) use elf_reader::read as read_object;
 #[cfg(test)]
@@ -224,6 +225,8 @@ pub(crate) struct Statistics {
     global_registers: usize,
     liveness_steps: usize,
     hull_fallbacks: usize,
+    loop_splits: usize,
+    home_splits: usize,
     edge_blocks: usize,
     rotated_loops: usize,
     threaded_blocks: usize,
@@ -248,6 +251,8 @@ impl Statistics {
             (&mut self.global_registers, function.global_registers),
             (&mut self.liveness_steps, function.liveness_steps),
             (&mut self.hull_fallbacks, function.hull_fallbacks),
+            (&mut self.loop_splits, function.loop_splits),
+            (&mut self.home_splits, function.home_splits),
             (&mut self.edge_blocks, function.edge_blocks),
             (&mut self.spills, function.spills),
             (&mut self.homes, function.homes),
@@ -288,7 +293,7 @@ impl Statistics {
         // Counters follow the selected function plans and final native encoding.
         writeln!(
             out,
-            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers={} liveness_steps={} hull_fallbacks={} edge_blocks={} threaded_blocks={} layout_branches={} strlen_prefixes=0 dynamic_copies={} jump_tables={} rotated_loops={} loop_splits=0 home_splits=0 ordered_frames={} dead_frame_stores={} native_returns={} short_branches={} long_branches={} fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
+            "lowir2native_stats functions={} lowir_instructions={} mir_instructions={} spills={} homes={} lazy_addresses={} folded_loads={} fused_compares={} promoted_slots={} dead_slots={} global_registers={} liveness_steps={} hull_fallbacks={} edge_blocks={} threaded_blocks={} layout_branches={} strlen_prefixes=0 dynamic_copies={} jump_tables={} rotated_loops={} loop_splits={} home_splits={} ordered_frames={} dead_frame_stores={} native_returns={} short_branches={} long_branches={} fixups={} scratch_carried_reloads={} code_bytes={} select_ms={} encode_ms={} total_ms={} peak_rss_kb={peak_rss}",
             self.functions,
             self.lowir_instructions,
             self.mir_instructions,
@@ -308,6 +313,8 @@ impl Statistics {
             self.dynamic_copies,
             self.jump_tables,
             self.rotated_loops,
+            self.loop_splits,
+            self.home_splits,
             self.ordered_frames,
             self.dead_frame_stores,
             self.native_returns,

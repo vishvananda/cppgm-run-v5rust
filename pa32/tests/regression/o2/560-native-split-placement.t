@@ -1,0 +1,110 @@
+global @observed : i64 = 0
+
+function @touch() -> void [unwind=no, no_inline=yes] {
+  block ^entry:
+    store volatile i64 1, @observed
+    return void
+}
+
+function @loop_cut(%p0 : i64, %p1 : i64, %p2 : i64, %p3 : i64, %p4 : i64, %p5 : i64, %gate : i64) -> i64 [unwind=no, no_inline=yes] {
+  block ^entry:
+    store volatile i64 %p0, @observed
+    store volatile i64 %p1, @observed
+    store volatile i64 %p2, @observed
+    store volatile i64 %p3, @observed
+    store volatile i64 %p4, @observed
+    store volatile i64 %p5, @observed
+    jump ^head
+
+  block ^head:
+    %iteration = phi i64 [^entry: 0, ^body: %next]
+    %more = cmp lt i64 %iteration, %gate
+    branch %more, ^body, ^done
+
+  block ^body:
+    call void @touch()
+    %next = binary add i64 %iteration, 1
+    jump ^head
+
+  block ^done:
+    %s1 = binary add i64 %p0, %p1
+    %s2 = binary add i64 %s1, %p2
+    %s3 = binary add i64 %s2, %p3
+    %s4 = binary add i64 %s3, %p4
+    %s5 = binary add i64 %s4, %p5
+    return i64 %s5
+}
+
+function @block_cut(%p0 : i64, %p1 : i64, %p2 : i64, %p3 : i64, %p4 : i64, %p5 : i64, %gate : i64) -> i64 [unwind=no, no_inline=yes] {
+  block ^entry:
+    store volatile i64 %p0, @observed
+    store volatile i64 %p1, @observed
+    store volatile i64 %p2, @observed
+    store volatile i64 %p3, @observed
+    store volatile i64 %p4, @observed
+    store volatile i64 %p5, @observed
+    branch %gate, ^called, ^direct
+
+  block ^called:
+    call void @touch()
+    jump ^done
+
+  block ^direct:
+    jump ^done
+
+  block ^done:
+    %s1 = binary add i64 %p0, %p1
+    %s2 = binary add i64 %s1, %p2
+    %s3 = binary add i64 %s2, %p3
+    %s4 = binary add i64 %s3, %p4
+    %s5 = binary add i64 %s4, %p5
+    return i64 %s5
+}
+
+function @defined_cut(%p0 : i64, %p1 : i64, %p2 : i64, %p3 : i64, %p4 : i64, %p5 : i64, %gate : i64) -> i64 [unwind=no, no_inline=yes] {
+  block ^entry:
+    store volatile i64 %p0, @observed
+    store volatile i64 %p1, @observed
+    store volatile i64 %p2, @observed
+    store volatile i64 %p3, @observed
+    store volatile i64 %p4, @observed
+    store volatile i64 %p5, @observed
+    %loaded = load volatile i64 @observed
+    store volatile i64 %p0, @observed
+    store volatile i64 %p1, @observed
+    store volatile i64 %p2, @observed
+    store volatile i64 %p3, @observed
+    store volatile i64 %p4, @observed
+    store volatile i64 %p5, @observed
+    call void @touch()
+    jump ^done
+
+  block ^done:
+    store volatile i64 %loaded, @observed
+    store volatile i64 %loaded, @observed
+    %s1 = binary add i64 %p0, %p1
+    %s2 = binary add i64 %s1, %p2
+    %s3 = binary add i64 %s2, %p3
+    %s4 = binary add i64 %s3, %p4
+    %s5 = binary add i64 %s4, %p5
+    return i64 %s5
+}
+
+function @main() -> i32 [role=entry, unwind=no] {
+  block ^entry:
+    %result0 = call i64 @loop_cut(1, 2, 3, 4, 5, 6, 3)
+    %bad0 = cmp ne i64 %result0, 21
+    %result1 = call i64 @loop_cut(1, 2, 3, 4, 5, 6, 0)
+    %bad1 = cmp ne i64 %result1, 21
+    %result2 = call i64 @block_cut(1, 2, 3, 4, 5, 6, 1)
+    %bad2 = cmp ne i64 %result2, 21
+    %result3 = call i64 @block_cut(1, 2, 3, 4, 5, 6, 0)
+    %bad3 = cmp ne i64 %result3, 21
+    %result4 = call i64 @defined_cut(1, 2, 3, 4, 5, 6, 0)
+    %bad4 = cmp ne i64 %result4, 21
+    %sum1 = binary or i32 %bad0, %bad1
+    %sum2 = binary or i32 %sum1, %bad2
+    %sum3 = binary or i32 %sum2, %bad3
+    %sum4 = binary or i32 %sum3, %bad4
+    return i32 %sum4
+}

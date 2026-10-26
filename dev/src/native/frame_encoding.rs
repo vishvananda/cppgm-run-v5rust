@@ -65,6 +65,35 @@ pub(super) struct Policy {
     pub(super) omit_pointer: bool,
     pub(super) records_pushed: bool,
 }
+impl Policy {
+    pub(super) fn for_body(
+        body: &crate::lowir::model::Body,
+        facts: &super::value_facts::Facts,
+        model: ObjectModel,
+    ) -> Self {
+        use crate::lowir::model::{InstructionKind as I, RuntimeInstruction as Runtime};
+        let records_pushed = facts.level >= 1
+            && model == ObjectModel::Course
+            && facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
+                facts.active[p]
+                    && matches!(
+                        body.instruction(id).kind,
+                        I::Runtime(Runtime::EhTry(_) | Runtime::EhCleanup(_))
+                    )
+            })
+            && !facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
+                facts.active[p]
+                    && matches!(
+                        body.instruction(id).kind,
+                        I::Runtime(Runtime::StackAlloc(_))
+                    )
+            });
+        Self {
+            omit_pointer: false,
+            records_pushed,
+        }
+    }
+}
 pub(super) struct Plan {
     pub(super) address: Addressing,
     pub(super) omit: bool,

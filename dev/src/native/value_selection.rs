@@ -209,25 +209,7 @@ pub(super) fn select_for_object(
         layout,
     );
     mir.optimized = level >= 1;
-    mir.frame_policy.records_pushed = level >= 1
-        && model == super::object_compile::ObjectModel::Course
-        && facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
-            facts.active[p]
-                && matches!(
-                    body.instruction(id).kind,
-                    I::Runtime(
-                        crate::lowir::model::RuntimeInstruction::EhTry(_)
-                            | crate::lowir::model::RuntimeInstruction::EhCleanup(_)
-                    )
-                )
-        })
-        && !facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
-            facts.active[p]
-                && matches!(
-                    body.instruction(id).kind,
-                    I::Runtime(crate::lowir::model::RuntimeInstruction::StackAlloc(_))
-                )
-        });
+    mir.frame_policy = super::frame_encoding::Policy::for_body(body, &facts, model);
     mir.object_model = model;
     mir.variadic = signature.boundary.arity == Arity::Variadic;
     mir.lowir_instructions = body.instructions().len();
@@ -268,13 +250,16 @@ pub(super) fn select_for_object(
         )?
     };
     mir.global_registers = globals.count;
+    mir.loop_splits = globals.splits.loops;
+    mir.home_splits = globals.splits.blocks;
     mir.liveness_steps = globals.steps;
     mir.hull_fallbacks = globals.fallbacks;
-    let mut control = if let Some(plan) = region_flow.as_mut() {
-        super::control_selection::Control::with_eh(body, &facts, Some(plan))?
-    } else {
-        super::control_selection::Control::new(body, &facts)?
-    };
+    let mut control = super::control_selection::Control::with_splits(
+        body,
+        &facts,
+        region_flow.as_mut(),
+        &globals.splits,
+    )?;
     mir.edge_blocks = control.edges.len();
     let mut placement = Placement::new(
         body,
@@ -489,6 +474,7 @@ pub(super) fn select_for_object(
         selection.placement.finish_block(block);
     }
     selection.deferred_switches()?;
+    selection.placement.restore_global_registers();
     selection.mir.scratch_bytes = if floating || selection.mir.scratch_bytes != 0 {
         48
     } else {

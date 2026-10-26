@@ -24,6 +24,7 @@ pub(super) struct Entry {
     pub(super) release: Option<usize>,
 }
 pub(super) struct Globals {
+    pub(super) splits: super::split_placement::Splits,
     pub(super) precise: bool,
     pub(super) entries: Vec<Entry>,
     pub(super) defined: Vec<u32>,
@@ -111,6 +112,7 @@ impl Globals {
         reserved: u32,
     ) -> Result<Self, Error> {
         let mut out = Self {
+            splits: super::split_placement::Splits::default(),
             precise: false,
             entries: Vec::new(),
             defined: vec![0; body.blocks().len()],

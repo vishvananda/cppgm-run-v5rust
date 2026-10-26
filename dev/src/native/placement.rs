@@ -65,6 +65,7 @@ pub(super) struct Placement {
     vector_boundary: bool,
     excluded: u32,
     dying: Vec<TempId>,
+    cleared: Vec<(TempId, R)>,
 }
 impl Placement {
     pub(super) fn new(
@@ -124,6 +125,7 @@ impl Placement {
             vector_boundary,
             excluded,
             dying: Vec::new(),
+            cleared: Vec::new(),
         }
     }
     fn bind(&mut self, temp: TempId, r: R) {
@@ -423,6 +425,17 @@ impl Placement {
         for owner in &mut self.owners {
             if let Some(temp) = owner.take() {
                 self.locations[temp.index()].reg = None;
+            }
+        }
+        self.restore_global_registers();
+        if !self.globals.splits.homes.is_empty() {
+            for k in self.globals.splits.home_first[block.index()]
+                ..self.globals.splits.home_first[block.index() + 1]
+            {
+                let temp = self.globals.splits.homes[k];
+                if let Some(register) = self.globals.registers[temp.index()].take() {
+                    self.cleared.push((temp, register));
+                }
             }
         }
         self.dying.clear();
@@ -896,6 +909,11 @@ impl Placement {
         mir.stack_size = u32::try_from(frame).map_err(|_| Error::Limit)?;
         mir.preserve = self.preserve;
         Ok(())
+    }
+    pub(super) fn restore_global_registers(&mut self) {
+        for (temp, register) in self.cleared.drain(..) {
+            self.globals.registers[temp.index()] = Some(register);
+        }
     }
     pub(super) fn optimize_frame(&self, mir: &mut Function) -> Result<(), Error> {
         super::frame_lifetimes::forward_copies(mir, &self.frame_objects);
