@@ -165,17 +165,23 @@ impl Analyzer<'_> {
         inner.member_address = Some(address);
         self.graph.expression_facts.set(operand, inner);
         super::record(&mut self.graph.expression_types, operand.index(), inner.ty);
-        let ty = self.function_address_type(binding, inner.ty)?;
-        let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
-        facts.functions = inner.functions;
-        facts.member_address = Some(address);
-        if found.functions.as_slice().len() == 1
+        let concrete = found.functions.as_slice().len() == 1
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
                 .template_head
-                .is_none()
-        {
+                .is_none();
+        // An overload set has no concrete address type until selection. Its
+        // pending facts retain the source signature without interning a pointer.
+        let ty = if concrete {
+            self.function_address_type(binding, inner.ty)?
+        } else {
+            inner.ty
+        };
+        let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
+        facts.functions = inner.functions;
+        facts.member_address = Some(address);
+        if concrete {
             if self
                 .graph
                 .entity(self.graph.binding(binding).entity)

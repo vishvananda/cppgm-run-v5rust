@@ -110,11 +110,17 @@ impl Analyzer<'_> {
         if let Some(class) = self.member_initializer_class {
             return Ok(Some(self.graph.lower_entity_type(class)?));
         }
-        let Some(body) = &self.body_context else {
+        let Some(function) = self.body_context.as_ref().map(|body| body.entity) else {
             return Ok(None);
         };
-        let entity = self.graph.entity(body.entity);
-        if let Some(frame) = self.capture_frames.get(body.entity) {
+        self.function_object_type(function)
+    }
+    pub(super) fn function_object_type(
+        &mut self,
+        function: super::graph::EntityId,
+    ) -> Result<Option<super::types::TypeId>, Error> {
+        let entity = self.graph.entity(function);
+        if let Some(frame) = self.capture_frames.get(function) {
             return Ok(frame.object_type());
         }
         if entity.function.is_some_and(|function| function.is_static) {
@@ -649,6 +655,40 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn body_entry_forms_the_qualified_object_pointer_without_a_this_expression() {
+        let source = SourceBuffer::new(
+            b"struct X{void f(){}void c()const{}};struct S{static void f(){}};".to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"body-object").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let x_name = cursor.intern_name(b"X").unwrap();
+        let s_name = cursor.intern_name(b"S").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        let class_type = |graph: &crate::sema::Graph, name| {
+            let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
+            graph.entity(graph.binding(binding).entity).ty.unwrap()
+        };
+        let object = class_type(&graph, x_name);
+        for cv in [
+            super::super::types::Cv::default(),
+            super::super::types::Cv::CONST,
+        ] {
+            let before = graph.types.observations().0;
+            let object = graph.types.qualify(object, cv).unwrap();
+            graph.types.pointer(object).unwrap();
+            assert_eq!(graph.types.observations().0, before);
+        }
+        let object = class_type(&graph, s_name);
+        let before = graph.types.observations().0;
+        graph.types.pointer(object).unwrap();
+        assert!(graph.types.observations().0 > before);
+    }
 
     #[test]
     fn rejected_address_selection_keeps_use_location_without_body_demand() {

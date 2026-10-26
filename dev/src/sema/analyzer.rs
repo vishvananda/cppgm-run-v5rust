@@ -959,6 +959,15 @@ impl<'tree> Analyzer<'tree> {
         result
     }
     fn function_body_scopes(&mut self, body: DeferredBody) -> Result<(), Error> {
+        if self.semantic() && body.template_depth == 0 {
+            let pointer = self
+                .function_object_type(body.entity)?
+                .map(|object| self.graph.types.pointer(object))
+                .transpose()?;
+            if let Some(context) = self.body_context.as_mut() {
+                context.object_pointer = pointer;
+            }
+        }
         let scope = self.graph.add_scope(
             ScopeKind::Function,
             body.parent,

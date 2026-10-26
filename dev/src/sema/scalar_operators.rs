@@ -109,13 +109,10 @@ impl Analyzer<'_> {
             && self.ordinary_function_operand(facts).is_none()
             && matches!(op, P::BitAnd | P::Multiply)
         {
-            let ty = if op == P::BitAnd {
-                self.graph.types.pointer(facts.ty)?
-            } else {
-                facts.ty
-            };
+            // Unresolved address/dereference syntax retains only the overload
+            // set's source signature. Selection forms its actual pointer type.
             let mut result = self.new_expression_facts(
-                ty,
+                facts.ty,
                 if op == P::BitAnd {
                     V::Prvalue
                 } else {
