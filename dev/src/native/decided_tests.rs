@@ -53,7 +53,9 @@ fn exit_value(f: &Function, program: &Program, b: usize, r: R) -> Option<(u128, 
             Op::Scalar(ScalarOp::Move(to, Operand::Immediate(bits))) if to == r => {
                 return Some((bits, false));
             }
-            Op::Scalar(ScalarOp::Move(to, Operand::Symbol(s))) if to == r => {
+            Op::Scalar(ScalarOp::Move(to, Operand::Symbol(s) | Operand::SymbolOffset(s, _)))
+                if to == r =>
+            {
                 return defined(s).then_some((0, true));
             }
             Op::Scalar(ScalarOp::Lea(to, source)) if to == r => {
@@ -61,7 +63,11 @@ fn exit_value(f: &Function, program: &Program, b: usize, r: R) -> Option<(u128, 
                     .memory()
                     .filter(|m| {
                         m.index.is_none()
-                            && matches!(m.base, Base::Frame | Base::Register(R::RBP | R::RSP))
+                            && match m.base {
+                                Base::Frame | Base::Register(R::RBP | R::RSP) => true,
+                                Base::Symbol(s) => defined(s),
+                                _ => false,
+                            }
                     })
                     .map(|_| (0, true));
             }
@@ -77,6 +83,7 @@ fn exit_value(f: &Function, program: &Program, b: usize, r: R) -> Option<(u128, 
     }
     None
 }
+
 pub(super) fn thread(f: &mut Function, program: &Program) {
     for b in 0..f.blocks.len() {
         let range = f.blocks[b].range.clone();
@@ -141,5 +148,39 @@ pub(super) fn thread(f: &mut Function, program: &Program) {
             };
             f.instructions[last].op = Op::Jump(if holds { yes } else { no });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lowir::Error;
+
+    #[test]
+    fn defined_symbol_offsets_thread_the_same_zero_test_as_symbol_addresses() -> Result<(), Error> {
+        let program = crate::lowir::test_program(
+            b"global @data : obj<16x8> = zero
+              function @f(%condition : i64) -> i64 {
+                block ^entry: branch %condition, ^left, ^right
+                block ^left:
+                  %offset = index i8 @data, 8
+                  jump ^merge
+                block ^right: jump ^merge
+                block ^merge:
+                  %address = phi ptr [^left: %offset, ^right: 0]
+                  branch %address, ^yes, ^no
+                block ^yes: return i64 1
+                block ^no: return i64 0
+              }",
+        )?;
+        let function = &program.functions()[0];
+        let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
+        let selected = super::super::value_selection::select(&program, symbol, function, 1)?;
+        let mut output = Vec::new();
+        selected
+            .write(&program, &mut output)
+            .map_err(|_| Error::Limit)?;
+        let output = String::from_utf8(output).map_err(|_| Error::Limit)?;
+        assert!(output.contains("block ^left\n    mov r8, @data+8\n\n  block ^yes"));
+        Ok(())
     }
 }

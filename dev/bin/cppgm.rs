@@ -65,6 +65,9 @@ struct Invocation<'a> {
     inputs: Vec<&'a std::ffi::OsStr>,
     limits: cppgm_rust::opt::Limits,
     preprocessor: cppgm_rust::preprocess::options::DriverOptions,
+    level: u8,
+    hosted: bool,
+    debug_level: bool,
 }
 fn preprocessing_option(
     args: &[OsString],
@@ -98,32 +101,28 @@ fn preprocessing_option(
     }
     Ok(true)
 }
-fn invocation(args: &[OsString]) -> Result<Invocation<'_>, CliError> {
-    if !args.iter().any(|arg| {
-        arg == "--emit-ast"
-            || arg == "--emit-types"
-            || arg == "--emit-semantics"
-            || arg == "--emit-lowir"
-    }) {
-        return Err(CliError::Missing("source compiler modes beyond --emit-ast"));
-    }
-    let lowir = args.iter().any(|arg| arg == "--emit-lowir");
+fn invocation(args: &[OsString], lowir: bool) -> Result<Invocation<'_>, CliError> {
     let mut output = None;
     let mut inputs = Vec::new();
     let mut limits = cppgm_rust::opt::Limits::default();
     let mut preprocessor = cppgm_rust::preprocess::options::DriverOptions::default();
+    let mut level = 0;
+    let mut hosted = false;
+    let mut debug_level = false;
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
         index += 1;
-        if arg == "--emit-ast"
-            || arg == "--emit-types"
-            || arg == "--emit-semantics"
-            || arg == "--emit-lowir"
-            || lowir && arg == "-g0"
-            || lowir && matches!(arg.as_bytes(), [b'-', b'O', b'0'..=b'3'])
-            || arg == "--hosted"
-        {
+        if arg == "--hosted" {
+            hosted = true;
+            continue;
+        }
+        if lowir && arg == "-g0" {
+            debug_level = true;
+            continue;
+        }
+        if lowir && let [b'-', b'O', value @ b'0'..=b'3'] = arg.as_bytes() {
+            level = value - b'0';
             continue;
         }
         if lowir && arg == "--inline-limit" {
@@ -171,10 +170,13 @@ fn invocation(args: &[OsString]) -> Result<Invocation<'_>, CliError> {
         inputs,
         limits,
         preprocessor,
+        level,
+        hosted,
+        debug_level,
     })
 }
 fn run() -> Result<(), CliError> {
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
     if !args.iter().any(|arg| {
         matches!(
             arg.as_bytes(),
@@ -221,27 +223,27 @@ fn run() -> Result<(), CliError> {
     } else {
         EmitMode::Ast
     };
+    // The frozen parse_emit_mode removes every emit flag before parsing
+    // operand-taking options, even when a flag follows -I, -D, -U or -o.
+    args.retain(|arg| {
+        !matches!(
+            arg.as_bytes(),
+            b"--emit-ast" | b"--emit-types" | b"--emit-semantics" | b"--emit-lowir"
+        )
+    });
     let Invocation {
         output: destination,
         inputs,
         limits,
         preprocessor: mut preprocessor_options,
-    } = invocation(&args)?;
+        level,
+        hosted,
+        debug_level,
+    } = invocation(&args, lowir)?;
     let values = build_time::query().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
         .map_err(CliError::Internal)?;
-    let level = if lowir {
-        args.iter()
-            .rev()
-            .find_map(|arg| match arg.as_bytes() {
-                [b'-', b'O', level @ b'0'..=b'3'] => Some(level - b'0'),
-                _ => None,
-            })
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    if lowir || args.iter().any(|arg| arg == "--hosted") {
+    if lowir || hosted {
         let host = host_configuration::query();
         cppgm_rust::driver::host_environment::HostEnvironment {
             strict_predefined_macros: &host.strict_macros,
@@ -263,8 +265,7 @@ fn run() -> Result<(), CliError> {
     };
     let failed = !lowir && file.is_none();
     let mut output = Output { file, failed };
-    let host_object =
-        lowir && args.iter().any(|arg| arg == "-g0") && destination.as_bytes().ends_with(b".lowir");
+    let host_object = lowir && debug_level && destination.as_bytes().ends_with(b".lowir");
     let mut lowir_output = if level > 0 {
         LowIrOutput::for_optimization(host_object).map_err(tool_error)?
     } else if host_object {
