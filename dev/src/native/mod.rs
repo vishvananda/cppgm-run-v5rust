@@ -1,6 +1,7 @@
 //! Typed native boundary and standalone compilation ordering. See NOTICE.
 mod abi;
 mod address_facts;
+mod address_fusion;
 mod aggregate;
 mod allocation_pressure;
 mod allocation_ranges;

@@ -47,9 +47,11 @@ pub(super) struct Context<'a> {
     pub(super) symbol: SymbolId,
     pub(super) body: &'a mut Body,
     pub(super) level: u8,
+    pub(super) verification: super::Verification<'a>,
     pub(super) nounwind: &'a [bool],
     pub(super) dead: u64,
     pub(super) loops_removed: u64,
+    pub(super) loops_unrolled: u64,
     pub(super) propagated: u64,
     pub(super) unwritten: &'a [bool],
     pub(super) branches_folded: u64,
@@ -89,9 +91,11 @@ impl<'a> Context<'a> {
             symbol,
             body,
             level,
+            verification: super::Verification::default(),
             nounwind,
             dead: 0,
             loops_removed: 0,
+            loops_unrolled: 0,
             propagated: 0,
             unwritten,
             branches_folded: 0,
@@ -263,12 +267,16 @@ impl<'a> Context<'a> {
         let result = self.dispatch(pass);
         self.running = None;
         let changed = result?;
+        self.verify_after(pass.name())?;
         if changed && self.kept_body != Some(pass) {
             self.version = self.version.checked_add(1).ok_or(Error::Limit)?;
             if self.left_ordered || (ordered && matches!(pass, Pass::DeadCode | Pass::Constants)) {
                 self.ordered_version = Some(self.version);
             }
             return Ok(true);
+        }
+        if self.verification.enabled {
+            self.verify_kept_analyses(pass.name())?;
         }
         if let Some(entry) = self.settled.iter_mut().find(|entry| entry.0 == pass) {
             *entry = (pass, self.version, changed);
@@ -277,16 +285,43 @@ impl<'a> Context<'a> {
         }
         Ok(changed)
     }
+    fn verify_kept_analyses(&self, pass: &str) -> Result<(), Error> {
+        let mut stale = false;
+        if self.block_of_key == Some((self.version, self.body.instructions().len())) {
+            let mut fresh = vec![None; self.body.instructions().len()];
+            for &block in &self.body.layout {
+                for &id in &self.body.block(block).instructions {
+                    fresh[id.index()] = Some(block);
+                }
+            }
+            stale = fresh != self.block_of;
+        }
+        if self.uses_key == Some((self.version, self.body.temps().len())) {
+            stale |= self.body.count_uses()? != self.uses;
+        }
+        if stale {
+            return Err(Error::PassVerification(
+                format!(
+                    "lowiropt verify: stale block map or use counts after {pass} in @{}\n",
+                    self.program
+                        .names
+                        .get(self.program.symbol(self.symbol).name)
+                )
+                .into_bytes(),
+            ));
+        }
+        Ok(())
+    }
     pub(super) fn restore_order(&mut self) -> Result<(), Error> {
         if self.ordered_version == Some(self.version) {
-            return Ok(());
+            return self.verify_after(Pass::DefinitionOrder.name());
         }
         if self.dispatch(Pass::DefinitionOrder)? {
             self.version = self.version.checked_add(1).ok_or(Error::Limit)?;
         } else {
             self.ordered_version = Some(self.version);
         }
-        Ok(())
+        self.verify_after(Pass::DefinitionOrder.name())
     }
 }
 
@@ -297,6 +332,25 @@ mod tests {
         model::{Instruction, InstructionKind as I},
         vocabulary::Type,
     };
+    #[test]
+    fn verification_rejects_an_unreported_change_to_retained_uses() {
+        let mut program =
+            crate::lowir::test_program(b"function @f(%v:i64)->i64 {block ^entry:return i64 %v}")
+                .unwrap();
+        let symbol = program.publications()[0];
+        let mut body = program.take_body(symbol).unwrap().unwrap();
+        let mut context = Context::new(&mut program, symbol, &mut body, 1, &[], &[]);
+        context.running = Some(Pass::SimplifyValues);
+        context.prepare_uses(Pass::SimplifyValues, true).unwrap();
+        let zero = context.body.integer(0).unwrap();
+        let id = context.body.block(context.body.layout[0]).instructions[0];
+        context.body.rewrite_values(id, |_| Ok(zero)).unwrap();
+        assert!(
+            matches!(context.verify_kept_analyses("simplify_values"), Err(Error::PassVerification(message)) if message == b"lowiropt verify: stale block map or use counts after simplify_values in @f\n")
+        );
+        context.invalidate_uses();
+        context.verify_kept_analyses("simplify_values").unwrap();
+    }
     #[test]
     fn settled_versions_preserve_order_and_cfg_for_dead_values() {
         let mut program = crate::lowir::test_program(

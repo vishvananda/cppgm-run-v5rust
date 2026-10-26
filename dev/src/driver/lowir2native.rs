@@ -63,7 +63,9 @@ fn write_error(out: &mut impl Write, error: Error) -> io::Result<()> {
         Error::Diagnostic(message) => out.write_all(message.as_bytes())?,
         Error::Output(error) => write!(out, "{error}")?,
         Error::Limit => out.write_all(b"LowIR storage limit exceeded")?,
-        Error::Construction(_) | Error::NotImplemented(_) => return Ok(()),
+        Error::Construction(_) | Error::NotImplemented(_) | Error::PassVerification(_) => {
+            return Ok(());
+        }
     }
     out.write_all(b"\n")
 }

@@ -23,21 +23,7 @@ fn simple_binary(op: ScalarOp) -> Option<(Binary, Type, R, Operand)> {
 }
 pub(super) fn extensions(function: &mut Function) {
     copies_into_lea(function);
-    let mut removed = vec![false; function.instructions.len()];
-    for block in 0..function.blocks.len() {
-        let range = function.blocks[block].range.clone();
-        // This is narrow_to_u32's ALU case: an in-place u32 extension
-        // immediately follows a full-width result whose flags are dead.
-        for i in range.clone().skip(1) {
-            let Op::Scalar(ScalarOp::Extend(Type::U32, r)) = function.instructions[i].op else {
-                continue;
-            };
-            if narrow_to_u32(function, i - 1, r, range.end) {
-                removed[i] = true;
-            }
-        }
-    }
-    erase(function, &removed);
+    super::address_fusion::run(function);
     super::flag_cleanup::drop_tests(function);
     redundant_copies(function);
     redundant_constants(function);
@@ -163,6 +149,7 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
                 | ScalarOp::Load(..)
                 | ScalarOp::Store(..)
                 | ScalarOp::Lea(..)
+                | ScalarOp::Lea32(..)
                 | ScalarOp::Movzx(..)
                 | ScalarOp::Extend(..)
                 | ScalarOp::ExtendMove(..)
@@ -192,9 +179,14 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
     false
 }
 
-fn narrow_to_u32(function: &mut Function, at: usize, r: R, end: usize) -> bool {
+pub(super) fn narrow_to_u32(function: &mut Function, at: usize, r: R, end: usize) -> bool {
     use crate::lowir::vocabulary::Unary;
     let op = function.instructions[at].op;
+    if function.instructions[at].volatile
+        || !matches!(simple_write(op), Some(SimpleWrite::Register(writer)) if writer == r)
+    {
+        return false;
+    }
     let narrowed = match op {
         Op::Move(writer, bits) | Op::Scalar(ScalarOp::Move(writer, Operand::Immediate(bits)))
             if writer == r =>
@@ -213,14 +205,33 @@ fn narrow_to_u32(function: &mut Function, at: usize, r: R, end: usize) -> bool {
         {
             Op::Scalar(ScalarOp::ExtendMove(Type::U32, r, source))
         }
+        Op::Scalar(ScalarOp::Load(writer, ty, source))
+            if writer == r
+                && super::scalar_mir::bytes(ty) >= 4
+                && !matches!(ty, Type::F32 | Type::F64) =>
+        {
+            Op::Scalar(ScalarOp::Load(r, Type::U32, source))
+        }
+        Op::Scalar(ScalarOp::Lea(writer, source)) if writer == r => {
+            Op::Scalar(ScalarOp::Lea32(r, source))
+        }
+        Op::Scalar(ScalarOp::Shift(
+            Binary::Shl,
+            Type::Void | Type::I64 | Type::Ptr,
+            writer,
+            Operand::Immediate(bits),
+        )) if writer == r && bits < 32 && flags_dead_after(function, at, end) => Op::Scalar(
+            ScalarOp::Shift(Binary::Shl, Type::U32, r, Operand::Immediate(bits)),
+        ),
         Op::Scalar(previous) if flags_dead_after(function, at, end) => {
-            if let Some((binary, Type::I64 | Type::Ptr, writer, source)) = simple_binary(previous)
+            if let Some((binary, Type::Void | Type::I64 | Type::Ptr, writer, source)) =
+                simple_binary(previous)
                 && writer == r
             {
                 Op::Scalar(ScalarOp::Binary(binary, Type::U32, r, source))
             } else if let ScalarOp::Unary(
                 unary @ (Unary::Neg | Unary::BitNot),
-                Type::I64 | Type::Ptr,
+                Type::Void | Type::I64 | Type::Ptr,
                 writer,
             ) = previous
                 && writer == r

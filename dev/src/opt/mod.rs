@@ -53,6 +53,7 @@ mod select_formation;
 mod slot_copies;
 mod slot_promotion;
 mod sparse_constants;
+mod statistics;
 mod storage_arguments;
 mod store_liveness;
 mod switch_formation;
@@ -60,10 +61,13 @@ mod trip_counts;
 mod unit_graph;
 mod unroll_admission;
 mod value_reuse;
+mod verification;
 mod wide_fills;
 mod wide_integers;
 use crate::lowir::{Error, model::Program};
 pub use inline_policy::Limits;
+pub(crate) use statistics::Statistics;
+pub(crate) use verification::Verification;
 
 pub(super) fn pure(kind: &crate::lowir::model::InstructionKind) -> bool {
     use crate::lowir::model::InstructionKind as I;
@@ -93,14 +97,36 @@ pub(crate) fn optimize_with_limits(
     limits: Limits,
     inline_thunk_targets: bool,
 ) -> Result<(), Error> {
+    optimize_observed(
+        program,
+        level,
+        limits,
+        inline_thunk_targets,
+        Verification::default(),
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn optimize_observed(
+    program: &mut Program,
+    level: u8,
+    limits: Limits,
+    inline_thunk_targets: bool,
+    verification: Verification<'_>,
+) -> Result<Statistics, Error> {
+    let start = std::time::Instant::now();
+    let mut observations = Statistics::default();
+    (observations.instructions_in, observations.blocks_in) = statistics::size(program)?;
     if level == 0 {
-        return Ok(());
+        observations.finish(program, start)?;
+        return Ok(observations);
     }
     let mut original = vec![0; program.symbols().len()];
     let mut input = 0_u64;
     for (index, symbol) in program.symbols().iter().enumerate() {
         if let Some(body) = program.function(symbol).and_then(|f| f.body.as_ref()) {
             let size = inline_wave::instruction_count(body)?;
+            observations.functions += 1;
             original[index] = size;
             input = input.checked_add(u64::from(size)).ok_or(Error::Limit)?;
         }
@@ -119,7 +145,15 @@ pub(crate) fn optimize_with_limits(
         inline_policy::Wave::Late,
     ] {
         let mut simplify = |program: &mut Program, symbol, nounwind: &mut Vec<bool>| {
-            simplify_function(program, symbol, level, nounwind, &unwritten)
+            simplify_function(
+                program,
+                symbol,
+                level,
+                nounwind,
+                &unwritten,
+                &mut observations,
+                verification,
+            )
         };
         inline_wave::Runner::new(
             program,
@@ -134,13 +168,23 @@ pub(crate) fn optimize_with_limits(
             &mut simplify,
         )?
         .run()?;
-        unit_graph::prune_unreachable(program)?;
+        observations.functions_pruned += u64::from(unit_graph::prune_unreachable(program)?);
     }
     if level >= 2 {
-        if argument_specialization::specialize(program, |program, symbol| {
-            simplify_function(program, symbol, level, &mut nounwind, &unwritten)
-        })? {
-            unit_graph::prune_unreachable(program)?;
+        let specialized = argument_specialization::specialize(program, |program, symbol| {
+            simplify_function(
+                program,
+                symbol,
+                level,
+                &mut nounwind,
+                &unwritten,
+                &mut observations,
+                verification,
+            )
+        })?;
+        observations.specialized = specialized;
+        if specialized != 0 {
+            observations.functions_pruned += u64::from(unit_graph::prune_unreachable(program)?);
         }
         let mut index = 0;
         while index < program.symbols().len() {
@@ -149,12 +193,23 @@ pub(crate) fn optimize_with_limits(
                 .function(program.symbol(symbol))
                 .is_some_and(|f| f.body.is_some())
             {
-                finish_function(program, symbol, level, &nounwind, &unwritten)?;
+                finish_function(
+                    program,
+                    symbol,
+                    level,
+                    &nounwind,
+                    &unwritten,
+                    &mut observations,
+                    verification,
+                )?;
             }
             index += 1;
         }
     }
-    Ok(())
+    observations.calls_inlined = stats.calls;
+    observations.inlined_instructions = stats.instructions;
+    observations.finish(program, start)?;
+    Ok(observations)
 }
 
 fn finish_function(
@@ -163,12 +218,17 @@ fn finish_function(
     level: u8,
     nounwind: &[bool],
     unwritten: &[bool],
+    observations: &mut Statistics,
+    verification: Verification<'_>,
 ) -> Result<(), Error> {
     let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
     let result = {
         let mut context =
             pass_context::Context::new(program, symbol, &mut body, 2, nounwind, unwritten);
-        local_pipeline::finish(&mut context, level)
+        context.verification = verification;
+        let result = local_pipeline::finish(&mut context, level);
+        observations.collect(&context);
+        result
     }
     .and_then(|changed| {
         if changed {
@@ -187,12 +247,19 @@ fn simplify_function(
     level: u8,
     nounwind: &mut Vec<bool>,
     unwritten: &[bool],
+    observations: &mut Statistics,
+    verification: Verification<'_>,
 ) -> Result<(), Error> {
     let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
     let result = {
         let mut context =
             pass_context::Context::new(program, symbol, &mut body, level, nounwind, unwritten);
-        local_pipeline::simplify(&mut context)
+        context.verification = verification;
+        let result = context
+            .verify_after("inlining")
+            .and_then(|()| local_pipeline::simplify(&mut context));
+        observations.collect(&context);
+        result
     }
     .and_then(|proven| {
         nounwind.resize(program.symbols().len(), false);

@@ -411,7 +411,8 @@ fn emit_preprocessed(
                     crate::lowir::Error::ByteDiagnostic(bytes) => {
                         AstToolError::NativeDiagnostic(bytes)
                     }
-                    crate::lowir::Error::Construction(_) => {
+                    crate::lowir::Error::Construction(_)
+                    | crate::lowir::Error::PassVerification(_) => {
                         AstToolError::Internal("typed LowIR construction failed")
                     }
                 },
@@ -453,7 +454,7 @@ fn lower_error(error: crate::lower::Error) -> AstToolError {
 pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
     match error {
         crate::lowir::Error::NotImplemented(group) => AstToolError::Missing(group),
-        crate::lowir::Error::Construction(_) => {
+        crate::lowir::Error::Construction(_) | crate::lowir::Error::PassVerification(_) => {
             AstToolError::Internal("native construction invariant")
         }
         crate::lowir::Error::Diagnostic(message) => {

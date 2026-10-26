@@ -399,7 +399,7 @@ impl Body {
                 }
             }))
     }
-    pub(crate) fn recount_uses(&mut self) -> Result<(), Error> {
+    pub(crate) fn count_uses(&self) -> Result<Vec<u32>, Error> {
         let mut counts = vec![0_u32; self.temps.len()];
         let mut overflow = false;
         for &block in &self.layout {
@@ -419,6 +419,10 @@ impl Body {
         if overflow {
             return Err(Error::Limit);
         }
+        Ok(counts)
+    }
+    pub(crate) fn recount_uses(&mut self) -> Result<(), Error> {
+        let counts = self.count_uses()?;
         for (temp, count) in self.temps.iter_mut().zip(counts) {
             temp.uses = count;
         }

@@ -48,6 +48,7 @@ pub enum Error {
     Diagnostic(String),
     ByteDiagnostic(Vec<u8>),
     Construction(String),
+    PassVerification(Vec<u8>),
     NotImplemented(&'static str),
     Limit,
     Output(std::io::Error),

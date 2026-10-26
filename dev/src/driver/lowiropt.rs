@@ -1,6 +1,7 @@
 //! Standalone optimizer boundary, translated from lowiropt.cpp. See NOTICE.
 use crate::{lowir, opt};
 use lowir::Error;
+use std::os::unix::ffi::OsStrExt;
 use std::{
     ffi::OsString,
     io::{self, BufRead, Write},
@@ -29,16 +30,21 @@ struct Invocation {
     validate: bool,
     stats: bool,
     verify: bool,
+    verify_dump: PathBuf,
 }
 
 /// Run the optimizer with arguments collected by its executable.
 #[must_use]
-pub fn run(args: &[OsString]) -> std::process::ExitCode {
-    match execute(args) {
+pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
+    match execute(args, peak_rss) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(Error::NotImplemented(feature)) => {
             eprintln!("lowiropt: Rust port is not implemented yet: {feature}");
             std::process::ExitCode::from(86)
+        }
+        Err(Error::PassVerification(message)) => {
+            let _ = io::stderr().lock().write_all(&message);
+            std::process::ExitCode::from(3)
         }
         Err(Error::Construction(message)) => {
             eprintln!("internal compiler error: {message}");
@@ -51,7 +57,9 @@ pub fn run(args: &[OsString]) -> std::process::ExitCode {
                 Error::ByteDiagnostic(bytes) => stderr.write_all(&bytes),
                 Error::Output(error) => write!(stderr, "{error}"),
                 Error::Limit => stderr.write_all(b"LowIR storage limit exceeded"),
-                Error::Construction(_) | Error::NotImplemented(_) => Ok(()),
+                Error::Construction(_) | Error::NotImplemented(_) | Error::PassVerification(_) => {
+                    Ok(())
+                }
             });
             let _ = stderr.write_all(b"\n");
             std::process::ExitCode::FAILURE
@@ -59,7 +67,7 @@ pub fn run(args: &[OsString]) -> std::process::ExitCode {
     }
 }
 
-fn execute(args: &[OsString]) -> Result<(), Error> {
+fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
     if args.iter().any(|arg| arg == "--batch-stdin") {
         let mut out = io::stdout().lock();
         for line in io::stdin().lock().split(b'\n') {
@@ -76,17 +84,17 @@ fn execute(args: &[OsString]) -> Result<(), Error> {
             .map_err(Error::Output);
     }
     let invocation = parse(args)?;
-    let (mut program, _) = lowir::read_files(&invocation.inputs, false)?;
-    if invocation.stats || invocation.verify {
-        return Err(Error::NotImplemented(
-            "LowIR optimizer telemetry and pass verification",
-        ));
-    }
-    opt::optimize_with_limits(
+    let (mut program, read) = lowir::read_files(&invocation.inputs, false)?;
+    let stats = opt::optimize_observed(
         &mut program,
         invocation.level.ok_or(Error::Limit)?,
         invocation.limits,
         false,
+        opt::Verification {
+            enabled: invocation.verify,
+            dump: (!invocation.verify_dump.as_os_str().is_empty())
+                .then_some(invocation.verify_dump.as_path()),
+        },
     )?;
     if invocation.validate {
         lowir::validator::validate_constructed(&program).map_err(|error| {
@@ -98,7 +106,22 @@ fn execute(args: &[OsString]) -> Result<(), Error> {
             Error::Construction(format!("optimized LowIR is invalid: {message}"))
         })?;
     }
-    lowir::write_file(&program, &invocation.output)
+    let start = std::time::Instant::now();
+    lowir::write_file(&program, &invocation.output)?;
+    if invocation.stats {
+        let mut out = io::stderr().lock();
+        stats.write(&mut out).map_err(Error::Output)?;
+        writeln!(
+            out,
+            " parse_ms={} validate_ms={} write_ms={} peak_rss_kb={}",
+            read.parse_ms,
+            read.validate_ms,
+            start.elapsed().as_secs_f64() * 1000.0,
+            peak_rss()
+        )
+        .map_err(Error::Output)?;
+    }
+    Ok(())
 }
 
 fn parse(args: &[OsString]) -> Result<Invocation, Error> {
@@ -131,7 +154,10 @@ fn parse(args: &[OsString]) -> Result<Invocation, Error> {
             b"--stats" => invocation.stats = true,
             b"--validate" => invocation.validate = true,
             b"--verify-passes" => invocation.verify = true,
-            bytes if bytes.starts_with(b"--verify-passes=") => invocation.verify = true,
+            bytes if bytes.starts_with(b"--verify-passes=") => {
+                invocation.verify = true;
+                invocation.verify_dump = std::ffi::OsStr::from_bytes(&bytes[16..]).into();
+            }
             bytes if bytes.starts_with(b"-") => {
                 return Err(Error::argument("unknown option: ", argument));
             }
@@ -199,6 +225,29 @@ mod tests {
         let invalid = OsString::from_vec(b"-\xff".to_vec());
         assert!(
             matches!(parse(&[invalid]), Err(Error::ByteDiagnostic(bytes)) if bytes == b"unknown option: -\xff")
+        );
+    }
+
+    #[test]
+    fn verification_dump_options_keep_byte_paths_and_frozen_overwrite_order() {
+        let mut arguments = vec![
+            OsString::from_vec(b"--verify-passes=\xff.lowir".to_vec()),
+            "--verify-passes".into(),
+            "-O0".into(),
+            "-o".into(),
+            "out".into(),
+            "in".into(),
+        ];
+        let invocation = parse(&arguments).unwrap();
+        assert!(invocation.verify);
+        assert_eq!(invocation.verify_dump.as_os_str().as_bytes(), b"\xff.lowir");
+        arguments.push("--verify-passes=".into());
+        assert!(
+            parse(&arguments)
+                .unwrap()
+                .verify_dump
+                .as_os_str()
+                .is_empty()
         );
     }
 }

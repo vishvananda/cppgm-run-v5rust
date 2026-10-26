@@ -9,6 +9,9 @@ use super::{
 };
 use std::collections::HashSet;
 pub(super) fn validate(program: &Program) -> Result<(), Error> {
+    validate_options(program, true)
+}
+fn validate_options(program: &Program, source_locations: bool) -> Result<(), Error> {
     let mut roles = HashSet::new();
     let mut wrapped = vec![false; program.symbols().len()];
     for symbol in program.symbols() {
@@ -65,7 +68,7 @@ pub(super) fn validate(program: &Program) -> Result<(), Error> {
     }
     for function in program.functions_in_symbol_order() {
         if let Some(body) = &function.body {
-            validate_body(program, function, body)?;
+            validate_body(program, function, body, source_locations)?;
         }
     }
     Ok(())
@@ -75,7 +78,13 @@ pub(crate) fn validate_constructed(program: &Program) -> Result<(), Error> {
     program.finish_symbols()?;
     for function in program.functions_in_symbol_order() {
         if let Some(body) = &function.body {
-            for (index, inst) in body.instructions().iter().enumerate() {
+            for &id in body
+                .layout
+                .iter()
+                .flat_map(|&block| &body.block(block).instructions)
+            {
+                let index = id.index();
+                let inst = body.instruction(id);
                 let ty = inst.kind.result_type();
                 let message = if inst.result.is_some() != (ty != Type::Void) {
                     Some(if ty == Type::Void {
@@ -96,12 +105,12 @@ pub(crate) fn validate_constructed(program: &Program) -> Result<(), Error> {
                     None
                 };
                 if let Some(message) = message {
-                    return Err(fail(program, function, body, inst, message));
+                    return Err(fail(program, function, body, inst, message, false));
                 }
             }
         }
     }
-    validate(program)
+    validate_options(program, false)
 }
 fn fail(
     program: &Program,
@@ -109,17 +118,23 @@ fn fail(
     body: &Body,
     inst: &Instruction,
     message: impl Into<String>,
+    source_locations: bool,
 ) -> Error {
     let message = message.into();
     let name = program.names.get(function.name);
     let message = format!("{message} in function @{name}");
-    if let Some(source) = body.source {
+    if let Some(source) = body.source.filter(|_| source_locations) {
         Error::at_path(message, program.source(source), inst.line)
     } else {
         Error::Diagnostic(message)
     }
 }
-fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<(), Error> {
+fn validate_body(
+    program: &Program,
+    function: &Function,
+    body: &Body,
+    source_locations: bool,
+) -> Result<(), Error> {
     if body.layout.is_empty() {
         return Err(Error::Diagnostic(format!(
             "function has no blocks in function @{}",
@@ -156,7 +171,7 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
         let mut ordinary = false;
         for &id in &body.block(block).instructions {
             let inst = body.instruction(id);
-            let error = |message| fail(program, function, body, inst, message);
+            let error = |message| fail(program, function, body, inst, message, source_locations);
             if matches!(inst.kind, I::Phi(..)) && ordinary {
                 return Err(error("phi instructions must precede ordinary instructions"));
             }
@@ -183,6 +198,7 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                     body,
                     inst,
                     format!("undefined temporary: {}", program.names.get(name)),
+                    source_locations,
                 ));
             }
             match &inst.kind {
@@ -261,12 +277,26 @@ fn validate_body(program: &Program, function: &Function, body: &Body) -> Result<
                     if let Some(message) =
                         phi_error(program, body, *ty, pairs, &predecessors[block.index()])
                     {
-                        return Err(fail(program, function, body, inst, message));
+                        return Err(fail(
+                            program,
+                            function,
+                            body,
+                            inst,
+                            message,
+                            source_locations,
+                        ));
                     }
                 }
                 I::Call(call) => {
                     if let Some(message) = call_error(program, body, call) {
-                        return Err(fail(program, function, body, inst, message));
+                        return Err(fail(
+                            program,
+                            function,
+                            body,
+                            inst,
+                            message,
+                            source_locations,
+                        ));
                     }
                 }
                 I::Runtime(inst) => {

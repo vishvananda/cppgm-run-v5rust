@@ -23,6 +23,10 @@ pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
                 .and_then(|()| stderr.write_all(b"\n"));
             std::process::ExitCode::FAILURE
         }
+        Err(Error::PassVerification(message)) => {
+            let _ = io::stderr().lock().write_all(&message);
+            std::process::ExitCode::from(3)
+        }
         Err(Error::Construction(message)) => {
             eprintln!("internal compiler error: invalid exercise program: {message}");
             std::process::ExitCode::from(70)

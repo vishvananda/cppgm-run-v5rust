@@ -11,10 +11,10 @@ use crate::lowir::vocabulary::{Binary, Type, Unary};
 fn narrow(ty: Type) -> bool {
     matches!(ty, Type::I32 | Type::U32)
 }
-fn zeroes(op: Op, known: u32) -> bool {
+pub(super) fn zeroes(op: Op, known: u32) -> bool {
     match op {
         Op::Move(_, bits) | Op::Scalar(ScalarOp::Move(_, Operand::Immediate(bits))) => {
-            bits <= u128::from(u32::MAX)
+            super::mir::low_word(bits).is_ok_and(|word| u32::try_from(word).is_ok())
         }
         Op::Scalar(ScalarOp::Move(_, Operand::Register(r))) => {
             r.code() < 16 && known & (1 << r.code()) != 0
@@ -25,7 +25,8 @@ fn zeroes(op: Op, known: u32) -> bool {
             | ScalarOp::Movzx(_),
         ) => true,
         Op::Scalar(ScalarOp::Binary(Binary::And, ty, _, source)) => {
-            narrow(ty) || matches!(source,Operand::Immediate(bits) if bits<=u128::from(u32::MAX))
+            narrow(ty)
+                || matches!(source,Operand::Immediate(bits) if super::mir::low_word(bits).is_ok_and(|word| u32::try_from(word).is_ok()))
         }
         Op::Scalar(
             ScalarOp::Binary(_, ty, _, _) | ScalarOp::Unary(Unary::Neg | Unary::BitNot, ty, _),
@@ -63,7 +64,7 @@ fn width(op: Op, reg: R) -> Option<(u8, bool)> {
             let full = matches!(binary, Binary::And | Binary::Or | Binary::Xor);
             if binary == Binary::And
                 && width == 8
-                && matches!(source,Operand::Immediate(bits) if bits<=u128::from(u32::MAX))
+                && matches!(source,Operand::Immediate(bits) if super::mir::low_word(bits).is_ok_and(|word| u32::try_from(word).is_ok()))
             {
                 width = 4;
             }

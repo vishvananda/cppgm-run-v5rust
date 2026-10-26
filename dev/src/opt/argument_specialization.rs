@@ -195,7 +195,7 @@ impl Specializer<'_> {
 pub(super) fn specialize(
     program: &mut Program,
     mut simplify: impl FnMut(&mut Program, SymbolId) -> Result<(), Error>,
-) -> Result<bool, Error> {
+) -> Result<u64, Error> {
     let graph = CallGraph::build(program)?;
     let n = graph.functions.len();
     let mut sp = Specializer {
@@ -227,7 +227,7 @@ pub(super) fn specialize(
     }
     let callers = graph.reverse_calls();
     let mut changed_callers = vec![false; n];
-    let mut any = false;
+    let mut count = 0;
     for (f, callers) in callers.iter().enumerate() {
         if !sp.ok[f] {
             continue;
@@ -262,14 +262,14 @@ pub(super) fn specialize(
                 changed_callers[g.index()] = true;
             }
         }
-        any = true;
+        count += 1;
     }
     for (g, changed) in changed_callers.into_iter().enumerate() {
         if changed {
             simplify(program, graph.functions[g])?;
         }
     }
-    Ok(any)
+    Ok(count)
 }
 
 #[cfg(test)]
@@ -279,11 +279,20 @@ mod tests {
     fn parameter_removal_repairs_compacted_call_sites_of_later_candidates() {
         let mut program = crate::lowir::test_program(b"function @root(%x:i64)->i64 {block ^entry:%a=call i64 @first(%x,7) return i64 %a} function @first(%x:i64,%bias:i64)->i64 [binding=internal,no_inline=yes] {block ^entry:%b=call i64 @second(%bias,%x) return i64 %b} function @second(%bias:i64,%x:i64)->i64 [binding=internal,no_inline=yes] {block ^entry:%r=binary add i64 %x,7 return i64 %r}").unwrap();
         let mut nounwind = Vec::new();
-        assert!(
+        assert_eq!(
             specialize(&mut program, |program, symbol| {
-                super::super::simplify_function(program, symbol, 2, &mut nounwind, &[])
+                super::super::simplify_function(
+                    program,
+                    symbol,
+                    2,
+                    &mut nounwind,
+                    &[],
+                    &mut super::super::Statistics::default(),
+                    super::super::Verification::default(),
+                )
             })
-            .unwrap()
+            .unwrap(),
+            2
         );
         crate::lowir::validate_test_program(&program).unwrap();
         let mut out = Vec::new();
@@ -297,7 +306,7 @@ mod tests {
     #[test]
     fn signed_zero_disagreement_keeps_a_float_parameter() {
         let mut program = crate::lowir::test_program(b"function @root()->f64 {block ^entry:%a=call f64 @f(0.0) %b=call f64 @f(-0.0) %c=binary add f64 %a,%b return f64 %c} function @f(%v:f64)->f64 [binding=internal,no_inline=yes] {block ^entry:return f64 %v}").unwrap();
-        assert!(!specialize(&mut program, |_, _| Ok(())).unwrap());
+        assert_eq!(specialize(&mut program, |_, _| Ok(())).unwrap(), 0);
         crate::lowir::validate_test_program(&program).unwrap();
     }
 }

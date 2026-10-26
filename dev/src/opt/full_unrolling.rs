@@ -187,6 +187,7 @@ fn straight(context: &mut Context<'_>, forest: &Forest, loop_: LoopId) -> Result
         }
     }
     replace_layout(context.body, forest, loop_, &[target], &[]);
+    context.loops_unrolled += 1;
     Ok(true)
 }
 fn replace_layout(
@@ -410,6 +411,7 @@ fn branching(context: &mut Context<'_>, forest: &Forest, loop_: LoopId) -> Resul
         passes[0][l.header.index()].ok_or(Error::Limit)?,
     );
     replace_layout(context.body, forest, loop_, &copied, &plan.owned);
+    context.loops_unrolled += 1;
     Ok(true)
 }
 pub(super) fn run(context: &mut Context<'_>) -> Result<bool, Error> {
