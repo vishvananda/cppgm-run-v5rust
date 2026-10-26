@@ -10,6 +10,8 @@ mod call_signatures;
 mod callable_encoding;
 #[path = "complex.rs"]
 pub(super) mod complex;
+#[path = "definition_families.rs"]
+mod definition_families;
 #[path = "exception_information.rs"]
 mod exception_information;
 #[path = "inline_definitions.rs"]
@@ -187,10 +189,7 @@ pub(super) struct Symbols<'a, 'source> {
     pub(super) pending_copies: Vec<EntityId>,
     inline_static_owners: Vec<EntityId>,
     entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
-    entry_families:
-        HashMap<crate::sema::lowering::ConstructorId, super::definition_order::FamilyId>,
-    destructor_families: HashMap<EntityId, super::definition_order::FamilyId>,
-    copy_families: HashMap<(EntityId, bool), super::definition_order::FamilyId>,
+    families: definition_families::Families,
     ordinals: HashMap<EntityId, usize>,
     names: HashMap<EntityId, std::sync::Arc<str>>,
     callees: HashMap<EntityId, Value>,
@@ -298,9 +297,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             pending_copies: Vec::new(),
             inline_static_owners: Vec::new(),
             entry_objects: HashMap::new(),
-            entry_families: HashMap::new(),
-            destructor_families: HashMap::new(),
-            copy_families: HashMap::new(),
+            families: definition_families::Families::default(),
             ordinals: HashMap::new(),
             names: HashMap::new(),
             callees: HashMap::new(),
@@ -2652,6 +2649,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )
         {
             let object = self.base_entry_object(program, entry)?;
+            self.families.note_alias(entry, object);
             self.table
                 .entry_aliases
                 .push(crate::lowir::model::ObjectAlias {
@@ -2661,6 +2659,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         if let Entry::Constructor(_, Variant::Complete) = entry {
             let object = self.base_entry_object(program, entry)?;
+            self.families.note_alias(entry, object);
             self.table
                 .entry_aliases
                 .push(crate::lowir::model::ObjectAlias {
@@ -2734,108 +2733,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
             location: self.tree.declarations.get(declaration).location,
             message: "redefinition of a function across translation units",
         }))
-    }
-    pub(super) fn stream_definition(
-        &mut self,
-        program: &mut Program,
-        output: &mut super::definition_order::Definitions,
-        entry: super::construction::Entry,
-    ) -> Result<(), Error> {
-        output.generated(&mut self.generated_definitions)?;
-        if self.table.object_mode {
-            if let super::construction::Entry::Function(entity) = entry
-                && self.destructor_inert(entity)?
-            {
-                return output.defer_definition(program);
-            }
-            return output.stream(program, None);
-        }
-        let destructor = if matches!(self.entry_facts(entry)?.name, FunctionName::Destructor(_)) {
-            entry.entity(self.graph)
-        } else {
-            None
-        };
-        let family = if let super::construction::Entry::Constructor(id, variant) = entry {
-            let family = if let Some(&family) = self.entry_families.get(&id) {
-                family
-            } else {
-                let facts = self.entry_facts(entry)?;
-                let object = if facts.internal {
-                    None
-                } else {
-                    Some(self.base_entry_object(program, entry)?)
-                };
-                let family = output.family(object)?;
-                self.entry_families.insert(id, family);
-                family
-            };
-            Some((family, variant))
-        } else if let Some(entity) = destructor {
-            let family = if let Some(&family) = self.destructor_families.get(&entity) {
-                family
-            } else {
-                let facts = self.entry_facts(entry)?;
-                let object = if facts.internal {
-                    None
-                } else {
-                    Some(self.base_entry_object(program, entry)?)
-                };
-                let family = output.family(object)?;
-                self.destructor_families.insert(entity, family);
-                family
-            };
-            Some((
-                family,
-                match entry {
-                    super::construction::Entry::DestructorBase(_) => {
-                        super::construction::Variant::Base
-                    }
-                    super::construction::Entry::DestructorDeleting(_) => {
-                        super::construction::Variant::Deleting
-                    }
-                    _ => super::construction::Variant::Complete,
-                },
-            ))
-        } else {
-            None
-        };
-        if let super::construction::Entry::Function(entity) = entry
-            && self.destructor_inert(entity)?
-        {
-            // Later object declarations may root this destructor after its
-            // source definition. Release its body now, defer only its header.
-            output.defer_definition(program)
-        } else {
-            output.stream(program, family)?;
-            if let Some(entity) = entry.entity(self.graph)
-                && let Some(form) = self.graph.lower_copy_form(entity)?
-            {
-                let key = (form.class, form.assignment);
-                let family = if let Some(&family) = self.copy_families.get(&key) {
-                    family
-                } else {
-                    let ty = self.graph.lower_entity_type(form.class)?;
-                    let object = if form.locality == crate::sema::lowering::Locality::Unit {
-                        None
-                    } else {
-                        let node = self.abi_type(ty)?;
-                        let mut bytes = Vec::new();
-                        abi::encoder::Encoder::encode(
-                            &self.abi,
-                            abi::encoder::Target::Type(node),
-                            &mut bytes,
-                            self.budget,
-                        )?;
-                        Some(program.names.intern_bytes(&bytes)?)
-                    };
-                    let family = output.form_family(object, form.assignment)?;
-                    self.copy_families.insert(key, family);
-                    family
-                };
-                output.note_form(family, form.moving)?;
-            }
-            Ok(())
-        }
     }
 }
 

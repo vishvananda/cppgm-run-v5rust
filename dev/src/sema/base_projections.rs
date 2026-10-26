@@ -129,6 +129,24 @@ impl Graph {
             self.lower_path_offset(path).map(BaseProjection::Fixed)
         }
     }
+    /// Member access performs ProgramLowering::base_route even for a fixed,
+    /// zero-offset base. Keep endpoints until that query is demanded.
+    pub(super) fn lower_member_route_projection(
+        &self,
+        path: BasePathId,
+    ) -> Result<BaseProjection, Error> {
+        let edges = self.base_paths.get(path);
+        let &(from, _) = edges
+            .first()
+            .ok_or(Error::Invariant("empty member base path"))?;
+        let &(owner, index) = edges
+            .last()
+            .ok_or(Error::Invariant("empty member base path"))?;
+        Ok(BaseProjection::Route {
+            from,
+            to: self.entity(owner).bases[index].class,
+        })
+    }
     /// Projection queries run after their storage-layout boundary; an absent
     /// sparse layout then denotes a class with no virtual bases.
     pub(crate) fn lower_virtual_bases(&self, class: EntityId) -> &[(EntityId, u64)] {

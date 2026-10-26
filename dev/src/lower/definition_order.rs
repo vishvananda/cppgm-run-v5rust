@@ -1,5 +1,5 @@
 // Translated from lower/definition_order.cpp's constructor entry families. See NOTICE.
-//! Serialized spans retain completion order while function bodies are released.
+//! Serialized spans or retained IDs carry completion and special-member order.
 use super::Error;
 use crate::lowir::model::{NameId, Program, SymbolId};
 use std::{
@@ -42,10 +42,20 @@ impl Definitions {
     ) {
         if self.retained {
             program.finish_retained_definitions(startup);
+            let spans: Vec<_> = self.spans.iter().chain(&self.held).collect();
+            let mut order: Vec<_> = (0..spans.len()).collect();
+            Self::order_families(&spans, &mut order, false);
+            Self::order_families(&spans, &mut order, true);
+            let mut completed: Vec<_> = order
+                .into_iter()
+                .filter_map(|index| spans[index].header)
+                .collect();
+            completed.extend(startup.into_iter().flatten());
+            program.order_retained_definitions(&completed);
         }
     }
     pub(crate) fn is_empty(&self) -> bool {
-        self.spans.is_empty() && self.held.is_empty()
+        self.bytes.is_empty()
     }
     pub(super) fn family(&mut self, object: Option<NameId>) -> Result<FamilyId, Error> {
         self.make_family(FamilyKind::Entries, object)
@@ -105,19 +115,20 @@ impl Definitions {
         program: &mut Program,
         entry: Option<(FamilyId, super::construction::Variant)>,
     ) -> Result<(), Error> {
-        if self.retained {
-            program.stream_last_definition(&mut io::sink())?;
-            return Ok(());
-        }
         if program.has_definition_sink() {
             program.stream_last_definition(&mut io::sink())?;
             return Ok(());
         }
         let start = self.bytes.len();
-        program.stream_last_definition(&mut self.bytes)?;
+        let header = if self.retained {
+            Some(program.stream_last_body(&mut io::sink())?)
+        } else {
+            program.stream_last_definition(&mut self.bytes)?;
+            None
+        };
         self.spans.push(Definition {
             bytes: start..self.bytes.len(),
-            header: None,
+            header,
             entry: entry.map(|(family, variant)| {
                 (
                     family,
@@ -133,9 +144,6 @@ impl Definitions {
         Ok(())
     }
     pub(super) fn note_form(&mut self, family: FamilyId, moving: bool) -> Result<(), Error> {
-        if self.retained {
-            return Ok(());
-        }
         self.spans
             .last_mut()
             .ok_or(crate::sema::Error::Invariant(
@@ -197,16 +205,16 @@ impl Definitions {
         }
     }
     pub(super) fn defer_definition(&mut self, program: &mut Program) -> Result<(), Error> {
-        if self.retained {
-            program.defer_last_definition()?;
-            return Ok(());
-        }
         if program.has_definition_sink() {
             program.defer_last_definition()?;
             return Ok(());
         }
         let start = self.bytes.len();
-        let symbol = program.stream_last_body(&mut self.bytes)?;
+        let symbol = if self.retained {
+            program.defer_last_definition()?
+        } else {
+            program.stream_last_body(&mut self.bytes)?
+        };
         self.held.push(Definition {
             bytes: start..self.bytes.len(),
             header: Some(symbol),

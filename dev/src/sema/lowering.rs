@@ -1080,11 +1080,11 @@ impl Graph {
         Ok([
             facts
                 .member_naming_path
-                .map(|path| self.lower_path_projection(path))
+                .map(|path| self.lower_member_route_projection(path))
                 .transpose()?,
             facts
                 .member_path
-                .map(|path| self.lower_path_projection(path))
+                .map(|path| self.lower_member_route_projection(path))
                 .transpose()?,
         ])
     }
@@ -1136,11 +1136,11 @@ impl Graph {
                 receiver
                     .naming_path
                     .or(receiver.path)
-                    .map(|path| self.lower_path_projection(path))
+                    .map(|path| self.lower_member_route_projection(path))
                     .transpose()?,
                 receiver
                     .member_path
-                    .map(|path| self.lower_path_projection(path))
+                    .map(|path| self.lower_member_route_projection(path))
                     .transpose()?,
             ]);
         }
@@ -1148,7 +1148,19 @@ impl Graph {
         if offsets[0].is_some() {
             Ok(offsets)
         } else {
-            Ok([self.lower_base_conversion(id)?, None])
+            let projection = self.lower_base_conversion(id)?;
+            let projection = if projection.is_some() {
+                let path = self
+                    .expression_facts
+                    .function_conversion(id)
+                    .and_then(|step| step.after_path)
+                    .or(self.expression_facts.get(id)?.base_path)
+                    .ok_or(Error::Invariant("receiver conversion without base path"))?;
+                Some(self.lower_member_route_projection(path)?)
+            } else {
+                None
+            };
+            Ok([projection, None])
         }
     }
     pub(crate) fn lower_cast_base_adjustment(

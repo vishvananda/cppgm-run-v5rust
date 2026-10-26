@@ -464,9 +464,8 @@ impl Program {
             }
         }
     }
-    pub(crate) fn defer_last_definition(&mut self) -> Result<(), Error> {
+    pub(crate) fn defer_last_definition(&mut self) -> Result<SymbolId, Error> {
         self.stream_last_function(&mut std::io::sink(), false, true)
-            .map(|_| ())
     }
     pub(crate) fn release_held_definitions(&mut self) {
         if let Some(retained) = &mut self.retained_definitions {
