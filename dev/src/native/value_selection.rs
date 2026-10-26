@@ -291,6 +291,10 @@ pub(super) fn select_for_object(
         mir.eh = std::mem::take(&mut plan.tables);
     }
     let mut selection = Selection {
+        switches: super::switch_plan::Plans {
+            next: control.next,
+            ..Default::default()
+        },
         program,
         updates,
         phis: super::control_selection::PhiInputs::default(),
@@ -484,6 +488,7 @@ pub(super) fn select_for_object(
         selection.mir.end_block();
         selection.placement.finish_block(block);
     }
+    selection.deferred_switches()?;
     selection.mir.scratch_bytes = if floating || selection.mir.scratch_bytes != 0 {
         48
     } else {

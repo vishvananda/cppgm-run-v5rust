@@ -287,6 +287,11 @@ pub(super) fn successors(function: &Function, block: usize, mut visit: impl FnMu
     for instruction in &function.instructions[function.blocks[block].range.clone()] {
         match instruction.op {
             Op::Jump(to) | Op::Branch(_, to) => visit(to.index()),
+            Op::JumpTable(table) => {
+                for &to in &function.jump_targets[table.range()] {
+                    visit(to.index());
+                }
+            }
             Op::WideCompare(c) => {
                 if let super::wide_compare::Destination::Branch { yes: a, no: b } = c.destination {
                     visit(a.index());
@@ -372,6 +377,7 @@ pub(super) fn drop_unused(function: &mut Function) -> bool {
             | Op::Move(..)
             | Op::SymbolMove(..)
             | Op::Jump(_)
+            | Op::JumpTable(_)
             | Op::Branch(..)
             | Op::Return(_)
             | Op::Trap

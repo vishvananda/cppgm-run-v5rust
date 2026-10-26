@@ -141,6 +141,7 @@ struct LabelReference {
     offset: usize,
     label: Label,
     bytes: u8,
+    base: Option<Label>,
 }
 #[derive(Default)]
 pub(super) struct Assembler {
@@ -175,9 +176,17 @@ impl Assembler {
         for reference in &self.references {
             let target = self.labels[reference.label.0 as usize]
                 .ok_or_else(|| invariant("branch out of range"))?;
+            let base = if let Some(label) = reference.base {
+                self.label_position(label)
+                    .ok_or_else(|| invariant("unbound table base"))?
+            } else {
+                reference.offset + usize::from(reference.bytes)
+            };
             let value = i64::try_from(target).map_err(|_| Error::Limit)?
-                - i64::try_from(reference.offset + usize::from(reference.bytes))
-                    .map_err(|_| Error::Limit)?;
+                - i64::try_from(base).map_err(|_| Error::Limit)?;
+            if reference.bytes == 4 && i32::try_from(value).is_err() {
+                return Err(invariant("label offset out of range"));
+            }
             if reference.bytes == 1 && i8::try_from(value).is_err() {
                 return Err(invariant("branch out of range"));
             }
@@ -186,6 +195,15 @@ impl Assembler {
         }
         self.references.clear();
         Ok(())
+    }
+    pub(super) fn label_offset32(&mut self, label: Label, base: Label) {
+        self.references.push(LabelReference {
+            offset: self.code.len(),
+            label,
+            bytes: 4,
+            base: Some(base),
+        });
+        self.imm(0, 4);
     }
     pub(super) fn byte(&mut self, byte: u8) {
         self.code.push(byte);
@@ -396,6 +414,7 @@ impl Assembler {
             offset: self.code.len(),
             label,
             bytes: 4,
+            base: None,
         });
         self.imm(0, 4);
     }
@@ -491,6 +510,7 @@ impl Assembler {
             offset: self.code.len(),
             label,
             bytes,
+            base: None,
         });
         self.imm(0, bytes);
     }

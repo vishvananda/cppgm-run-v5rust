@@ -132,6 +132,7 @@ struct Pass<'a> {
     epilogue: Label,
     terminal: Option<Label>,
     branches: Vec<Branch>,
+    tables: Vec<(Label, super::switch_plan::Table)>,
     short: &'a [bool],
     flags: Vec<bool>,
     carries: Carries,
@@ -175,6 +176,7 @@ impl<'a> Pass<'a> {
             epilogue,
             terminal,
             branches: Vec::new(),
+            tables: Vec::new(),
             short,
             flags: super::condition_mir::flags_after(&function.instructions),
             block_first: 0,
@@ -293,6 +295,18 @@ impl<'a> Pass<'a> {
                 } else {
                     0
                 });
+            }
+        }
+        if !self.tables.is_empty() {
+            while !self.assembler.code.len().is_multiple_of(4) {
+                self.assembler.byte(0xcc);
+            }
+            for &(label, table) in &self.tables {
+                self.assembler.bind(label);
+                for &target in &f.jump_targets[table.range()] {
+                    self.assembler
+                        .label_offset32(self.labels[target.index()], label);
+                }
             }
         }
         Ok(())
@@ -444,6 +458,25 @@ impl<'a> Pass<'a> {
                 &self.labels,
                 f.frame_policy.records_pushed,
             )?,
+            Op::JumpTable(table) => {
+                let label = self.assembler.label()?;
+                self.tables.push((label, table));
+                self.assembler.lea_label(R::R11, label);
+                self.assembler.load(
+                    R::R10,
+                    Rm::Memory {
+                        base: Some(R::R11),
+                        index: Some(R::R10),
+                        scale: 4,
+                        disp: 0,
+                        target: None,
+                    },
+                    4,
+                    true,
+                )?;
+                self.assembler.alu_rr(0, R::R10, Rm::Reg(R::R11), 8)?;
+                self.assembler.jump_rm(Rm::Reg(R::R10))?;
+            }
             Op::Jump(target) => self.branch(None, self.labels[target.index()]),
             Op::Branch(cond, target) => self.branch(Some(cond.code()), self.labels[target.index()]),
             Op::Move(reg, bits) => {

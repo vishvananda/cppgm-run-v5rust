@@ -42,6 +42,14 @@ fn rotate(f: &mut Function) -> usize {
     }
     count
 }
+fn reach_table(targets: &[BlockId], live: &mut [bool], work: &mut Vec<usize>) {
+    for &id in targets {
+        if !live[id.index()] {
+            live[id.index()] = true;
+            work.push(id.index());
+        }
+    }
+}
 pub(super) fn layout(
     f: &mut Function,
     program: &crate::lowir::model::Program,
@@ -110,6 +118,9 @@ pub(super) fn layout(
                 if matches!(op, Op::Nop) {
                     continue;
                 }
+                if let Op::JumpTable(table) = op {
+                    reach_table(&f.jump_targets[table.range()], &mut live, &mut work);
+                }
                 block_placement::labels(&mut op, |id| {
                     if !live[id.index()] {
                         live[id.index()] = true;
@@ -170,6 +181,9 @@ pub(super) fn layout(
         }
     }
     let frequency = Flow::new(f).map(|flow| flow.frequencies);
+    for target in &mut f.jump_targets {
+        *target = map[target.index()].unwrap_or(*target);
+    }
     for landing in &mut f.eh.landings {
         landing.pad = landing.pad.and_then(|b| map[b.index()]);
         landing.select = landing.select.and_then(|b| map[b.index()]);

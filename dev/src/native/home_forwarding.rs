@@ -314,6 +314,14 @@ impl Forwarding {
             if matches!(op, Op::Jump(_)) {
                 continue;
             }
+            if matches!(op, Op::JumpTable(_)) {
+                holds[usize::from(R::R10.code())] = Held::Nothing;
+                holds[usize::from(R::R11.code())] = Held::Nothing;
+                for (e, &h) in exits.iter_mut().zip(holds.iter()) {
+                    *e = e.meet(h);
+                }
+                continue;
+            }
             if matches!(op, Op::Call(_)) {
                 Self::caller_saved(holds);
                 self.drop_slots(holds);

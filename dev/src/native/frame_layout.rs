@@ -184,6 +184,7 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
         Op::Exception(ExceptionOp::Push { .. }) | Op::HostEh(_) => return false,
         Op::Nop
         | Op::Jump(_)
+        | Op::JumpTable(_)
         | Op::Branch(..)
         | Op::Move(..)
         | Op::SymbolMove(..)

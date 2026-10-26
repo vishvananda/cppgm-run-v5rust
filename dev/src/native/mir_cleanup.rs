@@ -171,6 +171,7 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
             Op::Return(..)
             | Op::Call(..)
             | Op::Jump(..)
+            | Op::JumpTable(_)
             | Op::Scalar(
                 ScalarOp::Binary(..)
                 | ScalarOp::MemoryBinary(..)

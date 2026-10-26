@@ -21,6 +21,7 @@ pub(super) struct Control {
     cached: Vec<Option<(BlockId, mir::BlockId)>>,
     pub(super) entry_loop: bool,
     host_selectors: Option<Vec<i64>>,
+    pub(super) next: u32,
 }
 impl Control {
     pub(super) fn new(body: &Body, facts: &super::value_facts::Facts) -> Result<Self, Error> {
@@ -39,6 +40,7 @@ impl Control {
             edge_ranges: vec![0..0; body.blocks().len()],
             cached: vec![None; body.blocks().len()],
             entry_loop,
+            next: 0,
             host_selectors: eh.as_ref().map(|plan| plan.entry_selectors.clone()),
         };
         for &block in &body.layout {
@@ -81,6 +83,7 @@ impl Control {
             }
             out.edge_ranges[block.index()].end = out.edges.len();
         }
+        out.next = next;
         Ok(out)
     }
     pub(super) fn prepare(&mut self, from: BlockId) {
@@ -88,7 +91,7 @@ impl Control {
             self.cached[to.index()] = Some((from, id));
         }
     }
-    fn target(&self, from: BlockId, to: BlockId) -> Result<mir::BlockId, Error> {
+    pub(super) fn target(&self, from: BlockId, to: BlockId) -> Result<mir::BlockId, Error> {
         self.cached[to.index()]
             .and_then(|(owner, id)| (owner == from).then_some(id))
             .or(self.targets[to.index()])
@@ -171,9 +174,6 @@ impl Selection<'_> {
                 }
             }
             I::Switch(value, fallback, cases) => {
-                if self.facts.level >= 1 {
-                    return Err(Error::NotImplemented("optimized native switch planning"));
-                }
                 let ty = if let Value::Temp(temp) = *value {
                     self.body.temp(temp).ty.ok_or(Error::Limit)?
                 } else {
@@ -219,6 +219,18 @@ impl Selection<'_> {
                 if source.register().is_none() {
                     self.load(super::x86::Register::R10, source, ty);
                     source = Operand::Register(super::x86::Register::R10);
+                }
+                if self.facts.level >= 1
+                    && self.clustered_switch(
+                        control,
+                        from,
+                        cases,
+                        source.register().ok_or(Error::Limit)?,
+                        ty,
+                        control.target(from, *fallback)?,
+                    )?
+                {
+                    return Ok(());
                 }
                 for &(value, to) in cases {
                     let mut case = if ty.float_rank() == 0 {

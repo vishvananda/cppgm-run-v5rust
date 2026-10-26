@@ -14,6 +14,7 @@ pub(super) fn terminal(op: Op) -> bool {
     matches!(
         op,
         Op::Jump(_)
+            | Op::JumpTable(_)
             | Op::Return(_)
             | Op::Trap
             | Op::TailJump(_)
@@ -89,6 +90,11 @@ impl Flow {
                     Op::Jump(t) | Op::Branch(_, t) => {
                         branches += 1;
                         out.successors[b].push(t.index());
+                    }
+                    Op::JumpTable(table) => {
+                        branches += 1;
+                        out.successors[b]
+                            .extend(f.jump_targets[table.range()].iter().map(|t| t.index()));
                     }
                     Op::WideCompare(w) => {
                         if let super::wide_compare::Destination::Branch { yes, no } = w.destination
@@ -514,6 +520,9 @@ pub(super) fn reorder(f: &mut Function, order: &[usize]) -> Result<(), Error> {
         for i in block.range.clone() {
             labels(&mut f.instructions[i].op, |id| map[id.index()]);
         }
+    }
+    for target in &mut f.jump_targets {
+        *target = map[target.index()];
     }
     for landing in &mut f.eh.landings {
         landing.pad = landing.pad.map(|b| map[b.index()]);

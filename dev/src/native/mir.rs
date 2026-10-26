@@ -98,6 +98,7 @@ impl CallSite {
 pub(super) enum Op {
     Nop,
     Jump(BlockId),
+    JumpTable(super::switch_plan::Table),
     Branch(super::condition::Condition, BlockId),
     Move(R, u128),
     SymbolMove(R, SymbolId),
@@ -158,6 +159,7 @@ impl BlockId {
 pub(super) enum BlockName {
     Named(NameId),
     Edge(NameId, NameId),
+    Switch,
 }
 pub(super) struct Block {
     pub(super) name: BlockName,
@@ -187,6 +189,8 @@ pub(super) struct Function {
     pub(super) blocks: Vec<Block>,
     pub(super) layout: Layout,
     pub(super) instructions: Vec<Instruction>,
+    pub(super) jump_targets: Vec<BlockId>,
+    pub(super) jump_tables: usize,
     pub(super) scratch_bytes: u32,
     pub(super) scratch_offset: i32,
     pub(super) stack_size: u32,
@@ -238,6 +242,8 @@ impl Function {
             }],
             layout,
             instructions: Vec::new(),
+            jump_targets: Vec::new(),
+            jump_tables: 0,
             scratch_bytes: 0,
             scratch_offset: 0,
             stack_size: 0,
@@ -348,9 +354,13 @@ impl Function {
                 binding.ty
             )?;
         }
-        for block in &self.blocks {
+        for (index, block) in self.blocks.iter().enumerate() {
             write!(out, "\n  block ")?;
-            Self::block_name(program, block.name, out)?;
+            self.label(
+                program,
+                BlockId(u32::try_from(index).map_err(std::io::Error::other)?),
+                out,
+            )?;
             writeln!(out)?;
             let end = if self.blocks.len() == 1 && block.range.end == 0 {
                 self.instructions.len()
@@ -381,6 +391,7 @@ impl Function {
     }
     fn block_name(program: &Program, name: BlockName, out: &mut impl Write) -> std::io::Result<()> {
         match name {
+            BlockName::Switch => Err(std::io::Error::other("unnumbered switch block")),
             BlockName::Named(n) => write!(out, "^{}", program.names.get(n)),
             BlockName::Edge(from, to) => write!(
                 out,
@@ -391,7 +402,11 @@ impl Function {
         }
     }
     fn label(&self, program: &Program, id: BlockId, out: &mut impl Write) -> std::io::Result<()> {
-        Self::block_name(program, self.blocks[id.index()].name, out)
+        if matches!(self.blocks[id.index()].name, BlockName::Switch) {
+            write!(out, "^switch.{}", id.index())
+        } else {
+            Self::block_name(program, self.blocks[id.index()].name, out)
+        }
     }
     fn write_instruction(
         &self,
@@ -401,6 +416,16 @@ impl Function {
     ) -> std::io::Result<()> {
         match instruction.op {
             Op::Nop => return Ok(()),
+            Op::JumpTable(table) => {
+                write!(out, "    jump_table r10, [")?;
+                for (index, &target) in self.jump_targets[table.range()].iter().enumerate() {
+                    if index != 0 {
+                        write!(out, ", ")?;
+                    }
+                    self.label(program, target, out)?;
+                }
+                write!(out, "]")?;
+            }
             Op::Jump(target) => {
                 write!(out, "    jmp ")?;
                 self.label(program, target, out)?;
