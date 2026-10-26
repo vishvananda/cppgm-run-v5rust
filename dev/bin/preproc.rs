@@ -45,8 +45,7 @@ enum CliError {
         counters: Box<cppgm_rust::preprocess::counters::PreprocessorCounters>,
     },
 }
-#[path = "source_tool/batch_status.rs"]
-mod batch_status;
+use cppgm_rust::driver::batch as batch_status;
 #[path = "source_tool/build_time.rs"]
 mod build_time;
 

@@ -1,5 +1,6 @@
 //! Command-line boundary shared by the nine compiler tools.
 
+pub mod batch;
 mod compatibility;
 pub mod debug_options;
 mod file_identity;

@@ -4,7 +4,7 @@ use lowir::Error;
 use std::os::unix::ffi::OsStrExt;
 use std::{
     ffi::OsString,
-    io::{self, BufRead, Write},
+    io::{self, Write},
     path::PathBuf,
 };
 
@@ -39,7 +39,10 @@ pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
     match execute(args, peak_rss) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(Error::NotImplemented(feature)) => {
-            eprintln!("lowiropt: Rust port is not implemented yet: {feature}");
+            let _status = writeln!(
+                io::stderr().lock(),
+                "lowiropt: Rust port is not implemented yet: {feature}"
+            );
             std::process::ExitCode::from(86)
         }
         Err(Error::PassVerification(message)) => {
@@ -47,7 +50,7 @@ pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
             std::process::ExitCode::from(3)
         }
         Err(Error::Construction(message)) => {
-            eprintln!("internal compiler error: {message}");
+            let _status = writeln!(io::stderr().lock(), "internal compiler error: {message}");
             std::process::ExitCode::from(70)
         }
         Err(error) => {
@@ -69,19 +72,12 @@ pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
 
 fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
     if args.iter().any(|arg| arg == "--batch-stdin") {
-        let mut out = io::stdout().lock();
-        for line in io::stdin().lock().split(b'\n') {
-            let _ = line.map_err(Error::Output)?;
-            writeln!(out, "EXIT_NOT_IMPLEMENTED").map_err(Error::Output)?;
-            out.flush().map_err(Error::Output)?;
-        }
+        super::batch::write(&mut io::stdin().lock(), &mut io::stdout().lock());
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        return io::stdout()
-            .lock()
-            .write_all(HELP.as_bytes())
-            .map_err(Error::Output);
+        let _ = io::stdout().lock().write_all(HELP.as_bytes());
+        return Ok(());
     }
     let invocation = parse(args)?;
     let (mut program, read) = lowir::read_files(&invocation.inputs, false)?;
@@ -110,16 +106,16 @@ fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
     lowir::write_file(&program, &invocation.output)?;
     if invocation.stats {
         let mut out = io::stderr().lock();
-        stats.write(&mut out).map_err(Error::Output)?;
-        writeln!(
-            out,
-            " parse_ms={} validate_ms={} write_ms={} peak_rss_kb={}",
-            read.parse_ms,
-            read.validate_ms,
-            start.elapsed().as_secs_f64() * 1000.0,
-            peak_rss()
-        )
-        .map_err(Error::Output)?;
+        let _status = stats.write(&mut out).and_then(|()| {
+            writeln!(
+                out,
+                " parse_ms={} validate_ms={} write_ms={} peak_rss_kb={}",
+                read.parse_ms,
+                read.validate_ms,
+                start.elapsed().as_secs_f64() * 1000.0,
+                peak_rss()
+            )
+        });
     }
     Ok(())
 }

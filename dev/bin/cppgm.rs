@@ -54,8 +54,7 @@ driver flags:
   -stdlib <name> / -stdlib=<name>
   --target <target>
 ";
-#[path = "source_tool/batch_status.rs"]
-mod batch_status;
+use cppgm_rust::driver::batch as batch_status;
 #[path = "source_tool/build_time.rs"]
 mod build_time;
 pub mod builtin_host_configuration;

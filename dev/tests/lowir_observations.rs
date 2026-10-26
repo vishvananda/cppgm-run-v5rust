@@ -6,6 +6,46 @@ impl Drop for Scratch {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
+
+#[test]
+fn failed_statistics_sink_preserves_success_and_completed_tool_bytes()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = Scratch(std::env::temp_dir().join(format!(
+        "cppgm-lowir-statistics-sink-{}",
+        std::process::id()
+    )));
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("input.lowir");
+    let output = directory.0.join("output");
+    std::fs::write(
+        &source,
+        b"function @main() -> i64 [role=entry] { block ^entry: return i64 0 }\n",
+    )?;
+    for (tool, flags) in [
+        (env!("CARGO_BIN_EXE_lowir"), &["-o"][..]),
+        (env!("CARGO_BIN_EXE_lowiropt"), &["-O0", "-o"][..]),
+        (
+            env!("CARGO_BIN_EXE_lowir2native"),
+            &["--dump-machine-ir"][..],
+        ),
+    ] {
+        let mut command = Command::new(tool);
+        command.args(flags).arg(&output).arg(&source);
+        let plain = command.output()?;
+        assert!(plain.status.success(), "{tool}: {:?}", plain.stderr);
+        assert!(plain.stdout.is_empty());
+        assert!(plain.stderr.is_empty());
+        let expected = std::fs::read(&output)?;
+        let reported = command
+            .arg("--stats")
+            .stderr(std::fs::OpenOptions::new().write(true).open("/dev/full")?)
+            .output()?;
+        assert!(reported.status.success(), "{tool}: {:?}", reported.status);
+        assert!(reported.stdout.is_empty());
+        assert_eq!(std::fs::read(&output)?, expected);
+    }
+    Ok(())
+}
 #[test]
 fn streamed_and_retained_reports_agree_without_changing_lowir()
 -> Result<(), Box<dyn std::error::Error>> {

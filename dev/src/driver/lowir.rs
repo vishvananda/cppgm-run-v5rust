@@ -2,7 +2,7 @@
 use crate::lowir::{self, Error};
 use std::{
     ffi::{OsStr, OsString},
-    io::{self, BufRead, Write},
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 
@@ -12,7 +12,7 @@ pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
     match execute(args, peak_rss) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(Error::Diagnostic(message)) => {
-            eprintln!("ERROR: {message}");
+            let _status = writeln!(io::stderr().lock(), "ERROR: {message}");
             std::process::ExitCode::FAILURE
         }
         Err(Error::ByteDiagnostic(message)) => {
@@ -28,36 +28,38 @@ pub fn run(args: &[OsString], peak_rss: fn() -> u64) -> std::process::ExitCode {
             std::process::ExitCode::from(3)
         }
         Err(Error::Construction(message)) => {
-            eprintln!("internal compiler error: invalid exercise program: {message}");
+            let _status = writeln!(
+                io::stderr().lock(),
+                "internal compiler error: invalid exercise program: {message}"
+            );
             std::process::ExitCode::from(70)
         }
         Err(Error::NotImplemented(feature)) => {
-            eprintln!("lowir: Rust port is not implemented yet: {feature}");
+            let _status = writeln!(
+                io::stderr().lock(),
+                "lowir: Rust port is not implemented yet: {feature}"
+            );
             std::process::ExitCode::from(86)
         }
         Err(Error::Limit) => {
-            eprintln!("ERROR: LowIR storage limit exceeded");
+            let _status = writeln!(io::stderr().lock(), "ERROR: LowIR storage limit exceeded");
             std::process::ExitCode::FAILURE
         }
         Err(Error::Output(error)) => {
-            eprintln!("ERROR: {error}");
+            let _status = writeln!(io::stderr().lock(), "ERROR: {error}");
             std::process::ExitCode::FAILURE
         }
     }
 }
 fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
     if args.iter().any(|a| a == "--batch-stdin") {
-        let mut out = io::stdout().lock();
-        for line in io::stdin().lock().split(b'\n') {
-            let _ = line.map_err(Error::Output)?;
-            writeln!(out, "EXIT_NOT_IMPLEMENTED").map_err(Error::Output)?;
-            out.flush().map_err(Error::Output)?;
-        }
+        super::batch::write(&mut io::stdin().lock(), &mut io::stdout().lock());
         return Ok(());
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        print!(
-            "usage: lowir -o <outfile> <lowirfile>...\n   or: lowir --exercise <sum|swap|call> -o <outfile>\n\nquery flags:\n  --help, -h\n\nrequired flags:\n  -o <outfile>\n"
+        // The frozen help stream retains success even when its sink fails.
+        let _ = io::stdout().lock().write_all(
+            b"usage: lowir -o <outfile> <lowirfile>...\n   or: lowir --exercise <sum|swap|call> -o <outfile>\n\nquery flags:\n  --help, -h\n\nrequired flags:\n  -o <outfile>\n",
         );
         return Ok(());
     }
@@ -104,9 +106,7 @@ fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
         lowir::exercise(name, Path::new(output), stats)?
     };
     if stats {
-        report
-            .write(&mut io::stderr().lock(), peak_rss())
-            .map_err(Error::Output)?;
+        let _status = report.write(&mut io::stderr().lock(), peak_rss());
     }
     Ok(())
 }

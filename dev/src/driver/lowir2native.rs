@@ -2,7 +2,7 @@
 use crate::{lowir::Error, native};
 use std::{
     ffi::{OsStr, OsString},
-    io::{self, BufRead, Write},
+    io::{self, Write},
     path::PathBuf,
 };
 
@@ -41,11 +41,14 @@ pub fn run(
     match execute(args, peak_rss, permissions) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(Error::NotImplemented(feature)) => {
-            eprintln!("lowir2native: Rust port is not implemented yet: {feature}");
+            let _status = writeln!(
+                io::stderr().lock(),
+                "lowir2native: Rust port is not implemented yet: {feature}"
+            );
             std::process::ExitCode::from(86)
         }
         Err(Error::Construction(message)) => {
-            eprintln!("internal compiler error: {message}");
+            let _status = writeln!(io::stderr().lock(), "internal compiler error: {message}");
             std::process::ExitCode::from(70)
         }
         Err(error) => {
@@ -76,28 +79,19 @@ fn execute(
     permissions: std::fs::Permissions,
 ) -> Result<(), Error> {
     if args.iter().any(|arg| arg == "--batch-stdin") {
-        let mut out = io::stdout().lock();
-        for line in io::stdin().lock().split(b'\n') {
-            let _ = line.map_err(Error::Output)?;
-            writeln!(out, "EXIT_NOT_IMPLEMENTED").map_err(Error::Output)?;
-            out.flush().map_err(Error::Output)?;
-        }
+        super::batch::write(&mut io::stdin().lock(), &mut io::stdout().lock());
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        return io::stdout()
-            .lock()
-            .write_all(HELP.as_bytes())
-            .map_err(Error::Output);
+        let _ = io::stdout().lock().write_all(HELP.as_bytes());
+        return Ok(());
     }
     let mut invocation = parse(args)?;
     invocation.options.permissions = Some(permissions);
     let (mut program, _) = crate::lowir::read_files(&invocation.sources, false)?;
     let report = native::compile(&mut program, &invocation.options)?;
     if invocation.options.stats {
-        report
-            .write(&mut io::stderr().lock(), peak_rss())
-            .map_err(Error::Output)?;
+        let _status = report.write(&mut io::stderr().lock(), peak_rss());
     }
     Ok(())
 }

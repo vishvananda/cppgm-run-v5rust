@@ -1,9 +1,9 @@
+use cppgm_rust::driver::batch as batch_status;
 use cppgm_rust::{driver::TokenToolError, preprocess::source::SourceBuffer};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsFd;
 use std::process::ExitCode;
-mod batch_status;
 
 // The frozen CLI uses iostreams with exceptions disabled: an output failure
 // sticks, but cannot stop lexing or replace a later source diagnostic. Keep
