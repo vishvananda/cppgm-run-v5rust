@@ -89,17 +89,15 @@ impl Analyzer<'_> {
             .get(node.components)
             .last()
             .ok_or(Error::Invariant("special member without name"))?;
-        let written = if matches!(last.kind, NameKind::Conversion(_)) {
-            None
+        // The special result and the declarator suffix have distinct lookup
+        // contexts in special_member; each retains its own qualified bridge.
+        let result_scope = if prefix.is_some() {
+            self.member_lookup_bridge(scope, owner)?
         } else {
-            Some(self.special_result(last.kind, class, scope, location)?)
+            scope
         };
+        let (kind, result) = self.special_result(last.kind, class, result_scope, location)?;
         let environment = self.declarator_environment(Some(declarator), scope)?;
-        let (kind, result) = if let Some(written) = written {
-            written
-        } else {
-            self.special_result(last.kind, class, environment.lookup, location)?
-        };
         let mut info = self.declarator_in(Some(declarator), result, environment)?;
         if kind == MemberKind::Conversion {
             let TypeKind::Function {

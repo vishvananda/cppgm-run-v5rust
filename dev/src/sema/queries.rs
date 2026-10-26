@@ -272,8 +272,7 @@ impl Analyzer<'_> {
         if self.evaluating_noexcept {
             return self.exception_operand_type(expr, scope);
         }
-        self.evaluate_constant(expr, scope, true)
-            .map(|value| value.ty)
+        self.integral_expression_type(expr, scope)
     }
     pub(super) fn constant_query(
         &mut self,
@@ -763,8 +762,8 @@ impl Analyzer<'_> {
                 Ok(ty)
             };
         }
-        match self.evaluate_constant(operand, scope, true) {
-            Ok(value) => Ok(value.ty),
+        match self.integral_expression_type(operand, scope) {
+            Ok(ty) => Ok(ty),
             Err(Error::NonConstant { .. }) => Err(Error::UnconditionalDiagnostic {
                 location: self.tree.expressions.get(operand).location,
                 message: "unsupported decltype operand",

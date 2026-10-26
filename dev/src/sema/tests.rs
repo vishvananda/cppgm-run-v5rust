@@ -1322,6 +1322,35 @@ fn analyze(source: &[u8], check: impl FnOnce(&mut Graph, &mut Cursor<'_>)) {
     check(&mut graph, cursor);
 }
 #[test]
+fn qualified_variable_redeclarations_retain_mutability_and_one_entity() {
+    analyze(
+        b"struct C{static int x;};mutable int C::x;extern int C::x;",
+        |graph, cursor| {
+            let class = cursor.intern_name(b"C").unwrap();
+            let class = graph.own(graph.global, class, Filter::Prefix).unwrap();
+            let home = graph.entity(graph.binding(class).entity).scope.unwrap();
+            let name = cursor.intern_name(b"x").unwrap();
+            let binding = graph.own(home, name, Filter::Ordinary).unwrap();
+            let entity = graph.binding(binding).entity;
+            assert!(graph.entity(entity).mutability == super::graph::Mutability::Mutable);
+            assert!(matches!(
+                graph.entity(entity).data_member,
+                Some(super::graph::DataMemberKind::Static)
+            ));
+            assert!(graph.entity(entity).defined);
+            assert!(
+                graph
+                    .scope(home)
+                    .bindings
+                    .iter()
+                    .filter(|&&id| graph.binding(id).name == Some(name))
+                    .all(|&id| graph.binding(id).entity == entity)
+            );
+        },
+    );
+}
+
+#[test]
 fn member_pointer_identity_keeps_owner_and_function_qualifiers_after_parameter_adjustment() {
     analyze(
         b"struct C;struct D;using Owner=C;using A=int(Owner::*)(const int)const&;using B=int(C::*)(int)const&;using OtherOwner=int(D::*)(int)const&;using OtherCv=int(C::*)(int)&;using OtherRef=int(C::*)(int)const&&;",

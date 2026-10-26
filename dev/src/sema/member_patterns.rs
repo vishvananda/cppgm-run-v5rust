@@ -392,10 +392,15 @@ impl Analyzer<'_> {
             current = parent;
         }
         let enclosing = self.enclosing_template_lists(home);
+        // The frozen Scope::lists field retains the low eight bits.
+        let lists = u8::try_from(headers.len().saturating_sub(enclosing) & usize::from(u8::MAX))
+            .map_err(|_| Error::Invariant("truncated bridge template-list count"))?;
+        self.graph.scope_mut(bridge).template_lists = u32::from(lists);
         for (level, &header) in headers.iter().enumerate() {
             let own = level + enclosing < headers.len();
             for index in 0..self.graph.scope(header).bindings.len() {
-                let binding = self.graph.binding(self.graph.scope(header).bindings[index]);
+                let id = self.graph.scope(header).bindings[index];
+                let binding = self.graph.binding(id);
                 let Some(name) = binding.name else { continue };
                 if self
                     .graph
@@ -407,7 +412,7 @@ impl Analyzer<'_> {
                 {
                     continue;
                 }
-                self.graph.add_binding(bridge, None, binding)?;
+                self.graph.bind_template_parameter(bridge, id)?;
             }
         }
         Ok(bridge)
@@ -709,5 +714,77 @@ impl Analyzer<'_> {
                     .record(target.entity, self.instantiation_depth);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn lookup_bridge_keeps_original_binding_identity_and_template_depth() {
+        let source = SourceBuffer::new(b"struct C{};template<class T>void f();".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"bridge-identity").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let class = cursor.intern_name(b"C").unwrap();
+        let function = cursor.intern_name(b"f").unwrap();
+        let parameter = cursor.intern_name(b"T").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let class = analyzer.graph.own(global, class, Filter::Prefix).unwrap();
+        let home = analyzer
+            .graph
+            .entity(analyzer.graph.binding(class).entity)
+            .scope
+            .unwrap();
+        let function = analyzer
+            .graph
+            .own(global, function, Filter::Ordinary)
+            .unwrap();
+        let head = analyzer
+            .graph
+            .entity(analyzer.graph.binding(function).entity)
+            .template_head
+            .unwrap();
+        let header = analyzer.graph.templates.parameter_scope(head);
+        let original = analyzer
+            .graph
+            .own(header, parameter, Filter::Prefix)
+            .unwrap();
+        let limit = analyzer.graph.binding_limit();
+        let bridge = analyzer.member_lookup_bridge(header, home).unwrap();
+        assert_eq!(
+            analyzer.graph.own(bridge, parameter, Filter::Prefix),
+            Some(original)
+        );
+        assert_eq!(analyzer.graph.binding_scope(original), header);
+        assert_eq!(analyzer.graph.binding_limit(), limit);
+        assert_eq!(
+            analyzer.graph.scope(bridge).template_lists,
+            analyzer.graph.scope(header).template_lists
+        );
+        assert!(analyzer.graph.scope(bridge).bindings.is_empty());
+        assert!(
+            analyzer
+                .graph
+                .bind_template_parameter(global, original)
+                .is_err()
+        );
+        assert!(
+            analyzer
+                .graph
+                .own(global, parameter, Filter::Ordinary)
+                .is_none()
+        );
     }
 }

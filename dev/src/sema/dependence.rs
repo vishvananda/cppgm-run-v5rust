@@ -81,26 +81,18 @@ impl Analyzer<'_> {
 
     pub(super) fn key_call_resolution(
         &mut self,
-        callee: ast::ExprId,
+        callee: super::name_keys::KeyCallee,
         arguments: List<ast::ExprId>,
         scope: ScopeId,
         start: usize,
         key: &mut ExpressionKey,
     ) -> Result<(), Error> {
-        let ExprKind::Id(name) = self.tree.expressions.get(callee).kind else {
-            return Ok(());
-        };
-        let node = self.tree.names.get(name);
-        let components = self.tree.name_lists.get(node.components);
-        if node.global || components.len() != 1 {
-            return Ok(());
-        }
-        let component = components[0];
+        let super::name_keys::KeyCallee {
+            binding,
+            component,
+            sole,
+        } = callee;
         let NameKind::Identifier(name) = component.kind else {
-            return Ok(());
-        };
-        let found = self.unqualified_result(scope, name.into(), Filter::Ordinary)?;
-        let Some(binding) = found.binding else {
             return Ok(());
         };
         if self.graph.binding(binding).kind != BindingKind::Function {
@@ -118,7 +110,6 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let entity = self.graph.binding(binding).entity;
-        let sole = self.semantic() && found.functions.as_slice().len() == 1;
         let class_member = self
             .graph
             .entity(entity)

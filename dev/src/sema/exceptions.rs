@@ -217,6 +217,22 @@ impl Analyzer<'_> {
                 || matches!(q.kind, QualifierKind::Noexcept(Some(expr)) if self.true_operand(expr))
         })
     }
+    fn function_exception_qualifier(&self, info: &DeclaratorInfo) -> Option<Qualifier> {
+        let mut qualifier =
+            info.qualifiers.and_then(|list| {
+                self.tree.qualifiers.get(list).iter().copied().find(|q| {
+                    matches!(q.kind, QualifierKind::Throw(_) | QualifierKind::Noexcept(_))
+                })
+            })?;
+        // NoexceptOperand excludes parenthesized literal true. It needs
+        // neither a prototype scope nor a pending constant evaluation.
+        if let QualifierKind::Noexcept(Some(operand)) = qualifier.kind
+            && self.true_operand(operand)
+        {
+            qualifier.kind = QualifierKind::Noexcept(None);
+        }
+        Some(qualifier)
+    }
     pub(super) fn record_function_exceptions(
         &mut self,
         entity: EntityId,
@@ -230,12 +246,7 @@ impl Analyzer<'_> {
         if self.graph.entity(entity).builtin.is_some() {
             return Ok(());
         }
-        let mut qualifier =
-            info.qualifiers.and_then(|list| {
-                self.tree.qualifiers.get(list).iter().copied().find(|q| {
-                    matches!(q.kind, QualifierKind::Throw(_) | QualifierKind::Noexcept(_))
-                })
-            });
+        let mut qualifier = self.function_exception_qualifier(info);
         let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
         if first {
             // Only a syntactically non-throwing first C declaration in a

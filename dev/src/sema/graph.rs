@@ -1035,7 +1035,33 @@ impl Graph {
         if let Some(print) = print {
             self.scope_mut(print).bindings.push(id);
         }
-        if visible && let Some(name) = binding.name {
+        if visible {
+            self.publish_binding_name(scope, id);
+        }
+        Ok(id)
+    }
+    // A bridge republishes a declaration; it does not introduce another
+    // binding, change its original owner/ordinal or attach another print node.
+    pub(super) fn bind_template_parameter(
+        &mut self,
+        scope: ScopeId,
+        id: BindingId,
+    ) -> Result<(), Error> {
+        if self.scope(scope).kind != ScopeKind::TemplateParameters
+            || self
+                .entity(self.binding(id).entity)
+                .template_parameter
+                .is_none()
+        {
+            return Err(Error::Invariant("invalid template bridge declaration"));
+        }
+        self.publish_binding_name(scope, id);
+        Ok(())
+    }
+    fn publish_binding_name(&mut self, scope: ScopeId, id: BindingId) {
+        let binding = self.binding(id);
+        let invisible = self.friendships.hidden(id);
+        if let Some(name) = binding.name {
             let (entry, new) = match self.scope_mut(scope).index.entry(name) {
                 std::collections::hash_map::Entry::Occupied(entry) => (entry.into_mut(), false),
                 std::collections::hash_map::Entry::Vacant(entry) => (
@@ -1067,7 +1093,6 @@ impl Graph {
             }
             self.note_lookup_declaration(scope, name.into(), new);
         }
-        Ok(id)
     }
     fn note_lookup_declaration(
         &mut self,
@@ -1156,7 +1181,11 @@ impl Graph {
         ty: TypeId,
         head: Option<super::templates::HeadId>,
     ) -> Result<FunctionSignature, Error> {
-        let ty = if head.is_some() {
+        let ty = if head.is_some()
+            || name
+                == super::function_names::ValueKey::Special(
+                    super::function_names::SpecialName::Conversion,
+                ) {
             self.types.declared_type(ty)?
         } else {
             self.types.declaration_signature(ty)?

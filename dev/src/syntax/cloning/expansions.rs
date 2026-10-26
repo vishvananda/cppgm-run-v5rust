@@ -27,8 +27,17 @@ enum Shadow {
 
 #[derive(Default)]
 struct CollectedNames {
-    names: Vec<NameId>,
+    uses: NameUses,
     seen: HashSet<NameId>,
+    distinct: bool,
+}
+
+#[derive(Default)]
+pub(crate) struct NameUses {
+    pub names: Vec<NameId>,
+    pub expansion: bool,
+    pub pack_size: bool,
+    pub this: bool,
 }
 
 pub(super) struct Expansion<'a> {
@@ -196,8 +205,8 @@ impl Cloner<'_> {
         };
         let length = state.length(name);
         if let Some(names) = state.collecting.as_mut() {
-            if length.is_some() && names.seen.insert(name) {
-                names.names.push(name);
+            if length.is_some() && (!names.distinct || names.seen.insert(name)) {
+                names.uses.names.push(name);
             }
             name
         } else {
@@ -281,14 +290,43 @@ impl Cloner<'_> {
         &mut self,
         expression: ExprId,
     ) -> Result<Vec<NameId>, ParseError> {
-        self.collect_pattern_names(Pattern::Expression(expression))
+        self.collect_pattern_names(Pattern::Expression(expression), true)
+            .map(|uses| uses.names)
     }
-    fn collect_pattern_names(&mut self, pattern: Pattern) -> Result<Vec<NameId>, ParseError> {
+    pub(crate) fn expression_name_uses(
+        &mut self,
+        expression: ExprId,
+    ) -> Result<NameUses, ParseError> {
+        self.collect_pattern_names(Pattern::Expression(expression), false)
+    }
+    pub(super) fn collect_expression_use(&mut self, kind: ExprKind) {
+        if let Some(names) = self
+            .expansion
+            .as_mut()
+            .and_then(|state| state.collecting.as_mut())
+        {
+            names.uses.expansion |=
+                matches!(kind, ExprKind::PackExpansion(_) | ExprKind::Fold { .. });
+            names.uses.pack_size |= matches!(kind, ExprKind::SizeofPack(_));
+            names.uses.this |= matches!(
+                kind,
+                ExprKind::Keyword(crate::lex::vocabulary::Keyword::This)
+            );
+        }
+    }
+    fn collect_pattern_names(
+        &mut self,
+        pattern: Pattern,
+        distinct: bool,
+    ) -> Result<NameUses, ParseError> {
         let state = self
             .expansion
             .as_mut()
             .ok_or(ParseError::Invariant("pack copy without context"))?;
-        let saved = state.collecting.replace(CollectedNames::default());
+        let saved = state.collecting.replace(CollectedNames {
+            distinct,
+            ..CollectedNames::default()
+        });
         let renames = std::mem::take(&mut state.renames);
         let shadows = state.shadow_log.len();
         let mark = self.tree.mark();
@@ -306,7 +344,7 @@ impl Cloner<'_> {
         state.renames = renames;
         state.restore_shadows(shadows);
         result?;
-        Ok(names.names)
+        Ok(names.uses)
     }
     fn pattern_packs(
         &mut self,
@@ -316,7 +354,7 @@ impl Cloner<'_> {
         if !self.expanding() {
             return Ok(None);
         }
-        let names = self.collect_pattern_names(pattern)?;
+        let names = self.collect_pattern_names(pattern, true)?.names;
         let state = self
             .expansion
             .as_ref()
@@ -475,6 +513,13 @@ impl Cloner<'_> {
             let expansion = pattern(self, item);
             if self.collecting() && expansion.is_some() {
                 // A nested expansion owns its names.
+                if let Some(names) = self
+                    .expansion
+                    .as_mut()
+                    .and_then(|state| state.collecting.as_mut())
+                {
+                    names.uses.expansion = true;
+                }
                 store(self.tree).push(item);
                 continue;
             }
@@ -756,6 +801,64 @@ mod tests {
         }
         fn element_name(&mut self, name: NameId, _: usize) -> Result<NameId, ParseError> {
             Ok(name)
+        }
+    }
+
+    #[test]
+    fn name_use_queries_retain_occurrences_and_nested_syntax_without_retaining_copies() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            support::{source::SourceBuffer, stack::StackBudget},
+            syntax::SyntaxUnit,
+        };
+        let source =
+            SourceBuffer::new(b"void f(){unknown(x,x);this;sizeof...(Ts);g<Ts...>();}".to_vec())
+                .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"name-uses").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[0])
+            .kind
+        else {
+            unreachable!()
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            unreachable!()
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            unreachable!()
+        };
+        let statements = tree.stmt_lists.get(statements).to_vec();
+        let marker = 0u8;
+        let base = std::ptr::from_ref(&marker).addr();
+        let mut packs = Packs;
+        let expressions = tree.expressions.mark();
+        let name_count = tree.names.mark();
+        for (index, statement) in statements.into_iter().enumerate() {
+            let ast::StmtKind::Expression(Some(expression)) = tree.statements.get(statement).kind
+            else {
+                unreachable!()
+            };
+            let uses = Cloner::new(tree, StackBudget::default(), base)
+                .with_expander(&mut packs)
+                .expression_name_uses(expression)
+                .unwrap();
+            assert_eq!(
+                (uses.this, uses.pack_size, uses.expansion),
+                (index == 1, index == 2, index == 3)
+            );
+            let names: Vec<_> = uses.names.iter().map(|&name| cursor.name(name)).collect();
+            if index == 0 {
+                assert_eq!(names, [b"unknown".as_slice(), b"x", b"x"]);
+            } else if index == 3 {
+                assert_eq!(names, [b"g".as_slice()]);
+            } else {
+                assert!(names.is_empty());
+            }
+            assert_eq!(tree.expressions.mark(), expressions);
+            assert_eq!(tree.names.mark(), name_count);
         }
     }
 

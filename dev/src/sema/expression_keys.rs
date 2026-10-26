@@ -168,6 +168,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         key: &mut ExpressionKey,
     ) -> Result<bool, Error> {
+        let operand_id = operand;
         let expr = *self.tree.expressions.get(operand);
         self.check_stack().map_err(|error| match error {
             Error::Limit("constructs nested too deeply") => {
@@ -177,12 +178,7 @@ impl Analyzer<'_> {
         })?;
         match expr.kind {
             ExprKind::Id(name) => {
-                if let Some(value) = self.key_bound_constant(name, scope)? {
-                    key.words.push(KeyWord::Constant(value.ty, value.bits));
-                    return Ok(true);
-                }
-                key.words.push(KeyWord::Node(KeyNode::Id));
-                return self.key_name(name, scope, true, key);
+                return self.key_name(name, scope, true, None, key);
             }
             ExprKind::ComplexPart { imaginary, operand } => {
                 key.words.push(KeyWord::Node(KeyNode::ComplexPart));
@@ -250,11 +246,22 @@ impl Analyzer<'_> {
                     KeyWord::Node(KeyNode::Call),
                     KeyWord::Count(self.tree.expr_lists.get(arguments).len()),
                 ]);
-                let start = key.words.len();
-                if !self.key_expression(callee, scope, key)? {
+                let known = if let ExprKind::Id(name) = self.tree.expressions.get(callee).kind
+                    && !self.tree.names.get(name).global
+                    && self
+                        .tree
+                        .name_lists
+                        .get(self.tree.names.get(name).components)
+                        .len()
+                        == 1
+                {
+                    self.key_name(name, scope, true, Some(arguments), key)?
+                } else {
+                    self.key_expression(callee, scope, key)?
+                };
+                if !known {
                     return Ok(false);
                 }
-                self.key_call_resolution(callee, arguments, scope, start, key)?;
                 return self.key_arguments(arguments, scope, key);
             }
             ExprKind::Subscript { base, index } => {
@@ -266,7 +273,7 @@ impl Analyzer<'_> {
                 key.words
                     .extend([KeyWord::Node(KeyNode::Member), KeyWord::Operator(op.token)]);
                 return Ok(self.key_expression(base, scope, key)?
-                    && self.key_name(member, scope, false, key)?);
+                    && self.key_name(member, scope, false, None, key)?);
             }
             ExprKind::Braced { elements, .. } => {
                 key.words.extend([
@@ -305,7 +312,7 @@ impl Analyzer<'_> {
                 };
             }
             ExprKind::Sizeof { ty, operand, .. } | ExprKind::TypeTrait { ty, operand, .. } => {
-                return self.key_size(operand, ty, scope, expr, key);
+                return self.key_size(operand, ty, scope, operand_id, expr, key);
             }
             ExprKind::Typeof { ty, operand } => return self.key_typeof(ty, operand, scope, key),
             ExprKind::TypeTransform { transform, types } => {
@@ -433,40 +440,6 @@ impl Analyzer<'_> {
             }
         }
         Ok(true)
-    }
-
-    fn key_bound_constant(
-        &self,
-        name: ast::Name,
-        scope: ScopeId,
-    ) -> Result<Option<super::constants::Constant>, Error> {
-        let name = self.tree.names.get(name);
-        let [component] = self.tree.name_lists.get(name.components) else {
-            return Ok(None);
-        };
-        let ast::NameKind::Identifier(identifier) = component.kind else {
-            return Ok(None);
-        };
-        if name.global || component.arguments.is_some() {
-            return Ok(None);
-        }
-        let found = self.unqualified_declaration_result(
-            scope,
-            identifier.into(),
-            super::lookup::Filter::Ordinary,
-        )?;
-        let Some(id) = found.binding.filter(|_| !found.ambiguous) else {
-            return Ok(None);
-        };
-        let binding = self.graph.binding(id);
-        if binding.kind == super::graph::BindingKind::Enumerator
-            && self.graph.scope(self.graph.binding_scope(id)).kind == ScopeKind::TemplateParameters
-            && let super::constants::ConstantState::Value(value) =
-                self.graph.entity(binding.entity).constant
-        {
-            return Ok(Some(value));
-        }
-        Ok(None)
     }
 
     fn key_arguments(
@@ -602,13 +575,14 @@ impl Analyzer<'_> {
         operand: Option<ast::ExprId>,
         ty: Option<ast::TypeId>,
         scope: ScopeId,
+        id: ast::ExprId,
         expr: ast::Expression,
         key: &mut ExpressionKey,
     ) -> Result<bool, Error> {
-        let (node, keyword, alignment) = if let ExprKind::TypeTrait { keyword, .. } = expr.kind {
-            (KeyNode::Trait, Some(keyword), true)
+        let (node, keyword) = if let ExprKind::TypeTrait { keyword, .. } = expr.kind {
+            (KeyNode::Trait, Some(keyword))
         } else {
-            (KeyNode::Sizeof, None, false)
+            (KeyNode::Sizeof, None)
         };
         if let Some(ty) = ty {
             key.words.extend([
@@ -620,19 +594,9 @@ impl Analyzer<'_> {
             self.key_type(ty, key)?;
             return Ok(true);
         }
-        let mut inner = ExpressionKey::default();
-        let known = if let Some(operand) = operand {
-            self.key_expression(operand, scope, &mut inner)?
-        } else {
-            inner.words.push(KeyWord::Absent);
-            true
-        };
-        if known
-            && !inner.dependent
-            && operand.is_some()
-            && keyword.is_none_or(|keyword| keyword == Keyword::Alignof)
-            && let Some(value) =
-                self.constant_value_for_key(operand, scope, alignment, expr.location)?
+        if let Some(operand) = operand
+            && !self.instantiation_dependent_operand(operand, scope)?
+            && let Some(value) = self.constant_value_for_key(id, scope)?
         {
             key.words.push(KeyWord::Constant(value.ty, value.bits));
             return Ok(true);
@@ -642,29 +606,26 @@ impl Analyzer<'_> {
             KeyWord::Keyword(keyword),
             KeyWord::Flag(false),
         ]);
-        key.dependent |= inner.dependent;
-        key.words.extend(inner.words);
-        Ok(known)
+        if let Some(operand) = operand {
+            self.key_expression(operand, scope, key)
+        } else {
+            key.words.push(KeyWord::Absent);
+            Ok(true)
+        }
     }
 
     fn constant_value_for_key(
         &mut self,
-        operand: Option<ast::ExprId>,
+        id: ast::ExprId,
         scope: ScopeId,
-        alignment: bool,
-        location: crate::support::source::SourceOffset,
     ) -> Result<Option<super::constants::Constant>, Error> {
-        // Key construction precedes expression typing: prototype Binding.ty
-        // is the source parameter type, rather than its adjusted object type.
+        // Prototype Binding.ty retains the source parameter type until
+        // expression typing adjusts its object type.
         let saved = self.evaluating_noexcept;
         self.evaluating_noexcept = false;
-        let result = self.constant_query(None, operand, scope, alignment, location);
+        let result = self.constant_value(id, scope, false);
         self.evaluating_noexcept = saved;
-        match result {
-            Ok(value) => Ok(Some(value)),
-            Err(Error::NonConstant { .. }) => Ok(None),
-            Err(error) => Err(error),
-        }
+        result
     }
 
     fn key_allocation(

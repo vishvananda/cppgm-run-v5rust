@@ -107,11 +107,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
         auto_operators: bool,
     ) -> Result<TypeId, Error> {
-        if (self.evaluating_noexcept || self.semantic())
-            && let Some(ty) = self.graph.type_fact(id)
-        {
-            return Ok(ty);
-        }
+        // A retained type fact serves consumers of this occurrence. A new
+        // analysis demand resolves the parsed type in its current declaration
+        // environment; syntax identity alone is not a complete query key.
         let node = *self.tree.types.get(id);
         let specs = self.specifiers(node.specifiers, scope, false)?;
         let mut environment = self.declarator_environment(node.declarator, scope)?;
@@ -463,6 +461,10 @@ impl Analyzer<'_> {
         if self.holds_auto(ty) {
             return Err(Error::at(location, "array of auto"));
         }
+        let count = bound
+            .map(|bound| self.array_bound(bound, scope))
+            .transpose()?
+            .unwrap_or(0);
         let failure = match self.graph.types.get(ty).kind {
             TypeKind::Reference { .. } => Some("array of references"),
             TypeKind::Function { .. } => Some("array of functions"),
@@ -478,10 +480,14 @@ impl Analyzer<'_> {
             return Err(Error::at(location, message));
         }
         self.check_abstract_object(ty, location)?;
-        let count = bound
-            .map(|bound| self.array_bound(bound, scope))
-            .transpose()?
-            .unwrap_or(0);
+        let array = self.graph.types.intern(
+            TypeKind::Array {
+                element: ty,
+                bound: count,
+                operand: None,
+            },
+            Cv::default(),
+        )?;
         let operand = if count == 0 && self.template_depth != 0 {
             bound
                 .map(|expression| self.dependent_operand(expression, scope, false))
@@ -489,6 +495,9 @@ impl Analyzer<'_> {
         } else {
             None
         };
+        if operand.is_none() {
+            return Ok(array);
+        }
         self.graph.types.intern(
             TypeKind::Array {
                 element: ty,
@@ -949,6 +958,71 @@ impl Analyzer<'_> {
             SpecifierKind::Keyword(_) | SpecifierKind::ExplicitCondition(_) => {
                 Err(Error::Invariant("keyword reached named-type dispatcher"))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::lookup::Filter;
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn parsed_type_demands_use_the_current_lookup_scope_and_retain_the_latest_fact() {
+        let source = SourceBuffer::new(
+            b"namespace A{using I=int;}namespace B{using I=long;}using Value=I;".to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"type-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declarations = tree.decl_lists.get(declarations).to_vec();
+        let a = cursor.intern_name(b"A").unwrap();
+        let b = cursor.intern_name(b"B").unwrap();
+        let crate::syntax::ast::DeclKind::Alias { ty: syntax, .. } =
+            tree.declarations.get(declarations[2]).kind
+        else {
+            unreachable!()
+        };
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        for &declaration in &declarations[..2] {
+            analyzer.declaration(declaration, global).unwrap();
+        }
+        for name in [a, b, a] {
+            let binding = analyzer.graph.own(global, name, Filter::Namespace).unwrap();
+            let scope = analyzer
+                .graph
+                .entity(analyzer.graph.binding(binding).entity)
+                .scope
+                .unwrap();
+            let ty = analyzer.type_syntax(syntax, scope).unwrap();
+            let ty = analyzer.graph.types.canonical_function(ty).unwrap();
+            let expected = analyzer
+                .graph
+                .types
+                .scalar(Scalar::Basic(if name == a {
+                    crate::types::FundamentalType::Int
+                } else {
+                    crate::types::FundamentalType::LongInt
+                }))
+                .unwrap();
+            assert_eq!(ty, expected);
+            assert_eq!(
+                analyzer
+                    .graph
+                    .types
+                    .canonical_view(analyzer.graph.type_fact(syntax).unwrap()),
+                expected
+            );
         }
     }
 }

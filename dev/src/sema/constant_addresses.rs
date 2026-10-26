@@ -249,10 +249,19 @@ impl Analyzer<'_> {
         &mut self,
         evaluate: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
+        if self.constant_evaluation.is_none() {
+            self.graph.work.totals.constant_evaluations += 1;
+        }
+        self.with_constant_storage(evaluate)
+    }
+
+    pub(super) fn with_constant_storage<T>(
+        &mut self,
+        evaluate: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         if self.constant_evaluation.is_some() {
             return evaluate(self);
         }
-        self.graph.work.totals.constant_evaluations += 1;
         self.constant_evaluation = Some(std::mem::take(&mut self.constant_scratch));
         let result = evaluate(self);
         let Some(mut evaluation) = self.constant_evaluation.take() else {

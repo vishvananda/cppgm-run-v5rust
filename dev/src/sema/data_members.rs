@@ -234,7 +234,6 @@ impl Analyzer<'_> {
                 object = element;
             }
             if !in_class
-                || info.home.is_some()
                 || specs.is_static
                 || self.graph.types.get(object).cv.0 & 1 != 0
                 || matches!(
@@ -293,7 +292,7 @@ impl Analyzer<'_> {
         initializer: Option<ast::Initializer>,
         home: ScopeId,
         location: SourceOffset,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<BindingId>, Error> {
         let name = info
             .name
             .ok_or(Error::Invariant("data declaration without name"))?;
@@ -375,8 +374,9 @@ impl Analyzer<'_> {
                     "the definition of a static data member initialized in its class repeats the initializer",
                 ));
             }
+            return Ok(Some(previous));
         }
-        Ok(())
+        Ok(None)
     }
 
     pub(super) fn check_static_member_initializer(

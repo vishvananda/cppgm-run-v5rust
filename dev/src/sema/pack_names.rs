@@ -1,7 +1,12 @@
 // Translated from template_packs.cpp::DefinitionPacks/expression_packs and
 // syntax/ast_clone.cpp's collect_packs view. See NOTICE.
 //! Read parsed operands in their definition scope; nested expansions own their names.
-use super::{Error, analyzer::Analyzer, graph::ScopeId, lookup::Filter};
+use super::{
+    Error,
+    analyzer::Analyzer,
+    graph::{BindingKind, ScopeId},
+    lookup::Filter,
+};
 use crate::syntax::{
     ParseError,
     ast::{self, ExprKind, NameKind, SpecifierKind},
@@ -33,6 +38,59 @@ enum Probe {
     Declarator(ast::DeclaratorId),
 }
 impl Analyzer<'_> {
+    pub(super) fn instantiation_dependent_operand(
+        &mut self,
+        expression: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let mut collector = DefinitionNames;
+        let uses = Cloner::new(self.tree, self.stack_budget, self.stack_base)
+            .with_expander(&mut collector)
+            .expression_name_uses(expression)
+            .map_err(|error| super::template_bodies::copy_error(&error))?;
+        // The collection performs every lookup before testing dependence.
+        // Repeated occurrences and ambiguous results remain distinct queries.
+        let mut bindings = Vec::with_capacity(uses.names.len());
+        for name in uses.names {
+            let found =
+                self.unqualified_declaration_result(scope, name.into(), Filter::Ordinary)?;
+            if let Some(binding) = found.binding {
+                bindings.push((!found.ambiguous).then_some(binding));
+            }
+        }
+        if uses.expansion || uses.pack_size || uses.this && self.dependent_class_scope(scope) {
+            return Ok(true);
+        }
+        for binding in bindings {
+            let Some(id) = binding else { return Ok(true) };
+            let binding = self.graph.binding(id);
+            let entity = self.graph.entity(binding.entity);
+            if entity.template_parameter.is_some() {
+                return Ok(true);
+            }
+            let owner = self.graph.binding_scope(id);
+            let member = self.graph.scope(owner).kind == super::graph::ScopeKind::Class
+                && self.dependent_class_scope(owner);
+            let dependent = match binding.kind {
+                BindingKind::Type | BindingKind::Alias | BindingKind::Parameter => binding
+                    .ty
+                    .is_none_or(|ty| self.exception_dependent_type(ty)),
+                BindingKind::Variable => binding.ty.is_none_or(|ty| {
+                    self.exception_dependent_type(ty)
+                        || member
+                            && (entity.data_member == Some(super::graph::DataMemberKind::Instance)
+                                || self.graph.types.get(ty).cv.0 & super::types::Cv::CONST.0 != 0)
+                }),
+                BindingKind::Namespace | BindingKind::NamespaceAlias => false,
+                _ => member,
+            };
+            if dependent {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub(super) fn expression_pack_names(
         &mut self,
         expression: ast::ExprId,

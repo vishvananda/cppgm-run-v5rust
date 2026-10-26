@@ -166,6 +166,20 @@ impl Analyzer<'_> {
             analyzer.evaluate_constant_inner(id, scope, skipping)
         })
     }
+    // ConstantEvaluator::type_of uses the unevaluated integral walk without
+    // starting a value-evaluation demand. Its query scratch is still bounded
+    // and restored even when a subexpression fails.
+    pub(super) fn integral_expression_type(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<TypeId, Error> {
+        self.with_constant_storage(|analyzer| {
+            analyzer
+                .evaluate_constant_inner(id, scope, true)
+                .map(|value| value.ty)
+        })
+    }
     #[expect(
         clippy::too_many_lines,
         reason = "One source-expression dispatch preserves constant-evaluation order and diagnostics"
@@ -195,7 +209,6 @@ impl Analyzer<'_> {
         // call frame is live. Its untyped template operands still use the
         // integral evaluator; only recorded glvalues designate frame storage.
         if self.semantic()
-            && (self.constexpr_frames.active() || matches!(expr.kind, ExprKind::Member { .. }))
             && !skipping
             && self.graph.expression_facts.known(id).is_some_and(|facts| {
                 facts.category != super::expression_facts::ValueCategory::Prvalue
@@ -1727,7 +1740,6 @@ impl Analyzer<'_> {
         }
         let value = self.constant_value(expr, scope, self.template_depth == 0)?;
         let Some(value) = value else {
-            self.expression(expr, scope)?;
             return Ok(0);
         };
         let location = self.tree.expressions.get(expr).location;

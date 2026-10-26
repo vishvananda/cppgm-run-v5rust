@@ -20,6 +20,9 @@ use crate::{
 pub(super) struct ValueScope<'info> {
     pub qualified: bool,
     pub pattern_friend: bool,
+    // A qualified variable's earlier declaration is selected once, before
+    // storage/linkage checks and publication of its new declaration.
+    pub variable_previous: Option<BindingId>,
     pub variable_object: Option<(Option<ast::Initializer>, bool)>,
     pub home: ScopeId,
     pub print: ScopeId,
@@ -869,12 +872,6 @@ impl Analyzer<'_> {
             ty = self.graph.types.qualify(ty, Cv::CONST)?;
         }
         ty = self.complete_initializer_array(ty, init.initializer)?;
-        if info.home.is_some() && self.qualified(home, name, Filter::Ordinary)?.is_none() {
-            return Err(Error::at(
-                location,
-                "qualified definition does not match a declaration",
-            ));
-        }
         self.check_mutable_variable(
             specs,
             &info,
@@ -883,7 +880,8 @@ impl Analyzer<'_> {
         )?;
         let specialization =
             self.explicit_member_variable(&info, init.initializer.is_some(), location)?;
-        self.check_data_member_declaration(specs, &info, init.initializer, home, location)?;
+        let previous =
+            self.check_data_member_declaration(specs, &info, init.initializer, home, location)?;
         let specs = self.variable_storage(specs, home, init.initializer.is_some(), location)?;
         if info.home.is_none()
             && self.graph.scope(home).kind == ScopeKind::Class
@@ -911,6 +909,7 @@ impl Analyzer<'_> {
             ValueScope {
                 qualified: info.home.is_some(),
                 pattern_friend: false,
+                variable_previous: previous,
                 variable_object: (member || definition).then_some((init.initializer, member)),
                 home,
                 print: info.home.unwrap_or(scope),
@@ -945,6 +944,9 @@ impl Analyzer<'_> {
         let member =
             self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
+        if specs.mutability == super::graph::Mutability::Mutable {
+            self.graph.entity_mut(entity).mutability = super::graph::Mutability::Mutable;
+        }
         self.declare_variable_template(binding, init, &info, scope, location, automatic)?;
         self.check_constexpr_variable(specs.constexpr, ty, location)?;
         self.check_static_member_initializer(specs, &info, init.initializer, home, location)?;
@@ -1181,6 +1183,7 @@ impl Analyzer<'_> {
         let ValueScope {
             qualified,
             pattern_friend,
+            variable_previous,
             variable_object,
             home,
             print,
@@ -1208,7 +1211,9 @@ impl Analyzer<'_> {
         let mut existing = if pattern_friend {
             None
         } else if qualified && kind == BindingKind::Variable {
-            self.qualified_key(home, name, Filter::Ordinary)?
+            Some(variable_previous.ok_or(Error::Invariant(
+                "qualified variable without its selected declaration",
+            ))?)
         } else {
             self.graph.redeclared_value(home, name)
         };

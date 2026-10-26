@@ -1,0 +1,9 @@
+global @C__x : i32 [binding=strong, object=_ZN1C1xE] = zero
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    store typed i32 3, @C__x
+    %t1 = load typed i32 @C__x
+    %t2 = binary sub nowrap i32 %t1, 3
+    return i32 %t2
+}

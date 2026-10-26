@@ -8,15 +8,30 @@ use super::{
     lookup::{Filter, Specialization},
     types::{Cv, TypeId, TypeKind},
 };
-use crate::syntax::ast::{self, NameKind, TemplateArgumentKind};
+use crate::syntax::{
+    ast::{self, NameKind, TemplateArgumentKind},
+    storage::List,
+};
+
+#[derive(Clone, Copy)]
+pub(super) struct KeyCallee {
+    pub binding: BindingId,
+    pub component: ast::NameComponent,
+    pub sole: bool,
+}
 impl Analyzer<'_> {
     pub(super) fn key_name(
         &mut self,
         name: ast::Name,
         scope: ScopeId,
         resolve: bool,
+        call: Option<List<ast::ExprId>>,
         key: &mut ExpressionKey,
     ) -> Result<bool, Error> {
+        let start = key.words.len();
+        if resolve {
+            key.words.push(KeyWord::Node(KeyNode::Id));
+        }
         let node = *self.tree.names.get(name);
         let component_count = self.tree.name_lists.get(node.components).len();
         key.words.extend([
@@ -25,6 +40,7 @@ impl Analyzer<'_> {
             KeyWord::Flag(node.global),
         ]);
         let mut last_arguments = None;
+        let mut callee = None;
         for index in 0..component_count {
             let component = self.tree.name_lists.get(node.components)[index];
             match component.kind {
@@ -40,12 +56,36 @@ impl Analyzer<'_> {
                     } else {
                         Filter::Ordinary
                     };
-                    let found = match self.unqualified(scope, name, filter) {
+                    let found = match self.unqualified_result(scope, name.into(), filter) {
                         Ok(found) => found,
                         Err(Error::Diagnostic { .. }) => return Ok(false),
                         Err(error) => return Err(error),
                     };
-                    if let Some(binding) = found {
+                    if let Some(binding) = found.binding {
+                        if call.is_some() && component_count == 1 {
+                            callee = Some(KeyCallee {
+                                binding,
+                                component,
+                                sole: self.semantic() && found.functions.as_slice().len() == 1,
+                            });
+                        }
+                        // A substituted integral argument is keyed as its
+                        // literal value, using this same ordinary lookup.
+                        if call.is_none()
+                            && component_count == 1
+                            && component.arguments.is_none()
+                            && self.graph.binding(binding).kind == BindingKind::Enumerator
+                            && self.graph.scope(self.graph.binding_scope(binding)).kind
+                                == super::graph::ScopeKind::TemplateParameters
+                            && let super::constants::ConstantState::Value(value) = self
+                                .graph
+                                .entity(self.graph.binding(binding).entity)
+                                .constant
+                        {
+                            key.words.truncate(start);
+                            key.words.push(KeyWord::Constant(value.ty, value.bits));
+                            return Ok(true);
+                        }
                         if !self.key_binding(binding, scope, key)? {
                             return Ok(false);
                         }
@@ -77,6 +117,11 @@ impl Analyzer<'_> {
         }
         if resolve && (component_count > 1 || node.global) {
             self.key_resolution(name, scope, last_arguments, key)?;
+        }
+        if let Some(callee) = callee
+            && let Some(arguments) = call
+        {
+            self.key_call_resolution(callee, arguments, scope, start, key)?;
         }
         Ok(true)
     }

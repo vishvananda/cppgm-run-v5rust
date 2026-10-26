@@ -657,6 +657,7 @@ impl Analyzer<'_> {
             super::declarations::ValueScope {
                 qualified: info.home.is_some(),
                 pattern_friend: befriending.is_some() && self.templated_class_scope(scope),
+                variable_previous: None,
                 variable_object: None,
                 home,
                 print: if befriending.is_some() {
