@@ -13,6 +13,47 @@ use std::{
     os::unix::ffi::OsStrExt,
     process::ExitCode,
 };
+// Tool interface vocabulary from support/tool_help_text.h.
+const HELP: &str = "usage: cppgm++ --emit-ast -o <outfile> <srcfile>...
+   or: cppgm++ --emit-types -o <outfile> <srcfile>...
+   or: cppgm++ --emit-semantics -o <outfile> <srcfile>...
+   or: cppgm++ --emit-lowir -o <outfile> <srcfile>...
+   or: cppgm++ -c [options] <srcfile-or-lowirfile>...
+   or: cppgm++ -E [options] <srcfile>...
+   or: cppgm++ [options] <input>...
+
+emit-mode flags (every --emit-* mode):
+  -I <dir> / -I<dir>  user include search path
+  -D <macro> / -D<macro>
+  -U <macro> / -U<macro>
+  --hosted            the host compiler's include paths and predefined macros, as -c uses
+  -O0 / -O1 / -O2 / -O3  (--emit-lowir) the LowIR optimizer
+  -g0 / -gline-tables-only  (--emit-lowir) debug locations
+
+query flags:
+  --help, -h
+  --version
+  -v
+  -dumpmachine
+  -dumpversion
+  -print-search-dirs
+
+driver flags:
+  -E                  preprocess only
+  -c                  compile only
+  -o <outfile>        explicit output path
+  -I <dir> / -I<dir>  user include search path
+  -isystem <dir>      system include search path
+  -D <macro> / -D<macro>
+  -U <macro> / -U<macro>
+  -include <file>
+  -L <dir> / -L<dir>
+  -l <name> / -l<name>
+  -O0 / -O1 / -O2 / -O3 (default: -O0)
+  -g0 / -gline-tables-only
+  -stdlib <name> / -stdlib=<name>
+  --target <target>
+";
 #[path = "source_tool/build_time.rs"]
 mod build_time;
 pub mod builtin_host_configuration;
@@ -83,7 +124,7 @@ struct Invocation<'a> {
     preprocessor: cppgm_rust::preprocess::options::DriverOptions,
     level: u8,
     hosted: bool,
-    debug_level: bool,
+    debug: cppgm_rust::driver::debug_options::DebugOptions,
 }
 fn preprocessing_option(
     args: &[OsString],
@@ -124,7 +165,7 @@ fn invocation(args: &[OsString], lowir: bool) -> Result<Invocation<'_>, CliError
     let mut preprocessor = cppgm_rust::preprocess::options::DriverOptions::default();
     let mut level = 0;
     let mut hosted = false;
-    let mut debug_level = false;
+    let mut debug = cppgm_rust::driver::debug_options::DebugOptions::default();
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
@@ -133,8 +174,7 @@ fn invocation(args: &[OsString], lowir: bool) -> Result<Invocation<'_>, CliError
             hosted = true;
             continue;
         }
-        if lowir && arg == "-g0" {
-            debug_level = true;
+        if lowir && debug.consume(arg.as_bytes()) {
             continue;
         }
         if lowir && let [b'-', b'O', value @ b'0'..=b'3'] = arg.as_bytes() {
@@ -188,11 +228,15 @@ fn invocation(args: &[OsString], lowir: bool) -> Result<Invocation<'_>, CliError
         preprocessor,
         level,
         hosted,
-        debug_level,
+        debug,
     })
 }
 fn run() -> Result<(), CliError> {
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        let _status = io::stdout().lock().write_all(HELP.as_bytes());
+        return Ok(());
+    }
     if !args.iter().any(|arg| {
         matches!(
             arg.as_bytes(),
@@ -257,7 +301,7 @@ fn run() -> Result<(), CliError> {
         preprocessor: mut preprocessor_options,
         level,
         hosted,
-        debug_level,
+        debug,
     } = invocation(&args, lowir)?;
     let values = build_time::query().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
@@ -284,7 +328,7 @@ fn run() -> Result<(), CliError> {
     };
     let failed = !lowir && file.is_none();
     let mut output = Output { file, failed };
-    let host_object = lowir && debug_level && destination.as_bytes().ends_with(b".lowir");
+    let host_object = lowir && debug.level_stated && destination.as_bytes().ends_with(b".lowir");
     let mut lowir_output = if level > 0 || validate {
         LowIrOutput::for_optimization(host_object).map_err(tool_error)?
     } else if host_object {
@@ -292,6 +336,7 @@ fn run() -> Result<(), CliError> {
     } else {
         LowIrOutput::default()
     };
+    lowir_output.set_debug_locations(debug.locations && !host_object);
     if !lowir {
         writeln!(output, "{} translation units", inputs.len()).map_err(|_| CliError::Output)?;
     }

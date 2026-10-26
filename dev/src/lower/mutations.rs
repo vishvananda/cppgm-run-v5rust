@@ -28,6 +28,14 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     pub(super) fn scalar_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
+        let location = self
+            .tree
+            .expressions
+            .get(self.without_parentheses(id))
+            .location;
+        self.with_debug_location(location, |this| this.scalar_place_located(id))
+    }
+    fn scalar_place_located(&mut self, id: ast::ExprId) -> Result<Value, Error> {
         if self.graph.lower_builtin_operand(id)
             && let Some((call, _)) = self.graph.lower_function_conversion(id)?
         {

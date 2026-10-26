@@ -1,0 +1,59 @@
+declare function @use(%arg0 : i32) -> i32 [binding=strong, object=_Z3usei]
+
+global @observed : i32 [binding=strong] = zero
+
+function @f(%x : i32) -> i32 [binding=strong, object=_Z1fi] !dbg(presumed.cpp, 52, 1) {
+  slot $x : i32
+  slot $y : i32
+  slot $i : i32
+
+  block ^entry:
+    store typed i32 %x, $x !dbg(presumed.cpp, 52, 1)
+    %t1 = load typed i32 $x !dbg(presumed.cpp, 53, 15)
+    %t2 = binary add nowrap i32 %t1, 1 !dbg(presumed.cpp, 53, 15)
+    %t3 = call i32 @use(%t2) !dbg(presumed.cpp, 53, 11)
+    store typed i32 %t3, $y !dbg(presumed.cpp, 53, 3)
+    %t4 = load typed i32 $y !dbg(presumed.cpp, 54, 14)
+    store volatile i32 %t4, @observed !dbg(presumed.cpp, 54, 3)
+    %t5 = load typed i32 $y !dbg(presumed.cpp, 55, 14)
+    %t6 = call i32 @use(%t5) !dbg(presumed.cpp, 55, 9)
+    %t7 = load typed i32 $x !dbg(presumed.cpp, 56, 7)
+    branch %t7, ^if_then_1, ^if_else_2 !dbg(presumed.cpp, 56, 3)
+
+  block ^if_then_1:
+    %t8 = load typed i32 $x !dbg(presumed.cpp, 56, 19)
+    %t9 = call i32 @use(%t8) !dbg(presumed.cpp, 56, 15)
+    %t10 = load typed i32 $y !dbg(presumed.cpp, 56, 10)
+    %t11 = binary add nowrap i32 %t10, %t9 !dbg(presumed.cpp, 56, 10)
+    store typed i32 %t11, $y !dbg(presumed.cpp, 56, 10)
+    jump ^if_end_3 !dbg(presumed.cpp, 56, 3)
+
+  block ^if_else_2:
+    jump ^if_end_3 !dbg(presumed.cpp, 56, 3)
+
+  block ^if_end_3:
+    store typed i32 0, $i !dbg(presumed.cpp, 57, 3)
+    jump ^for_cond_4 !dbg(presumed.cpp, 57, 3)
+
+  block ^for_cond_4:
+    %t12 = load typed i32 $i !dbg(presumed.cpp, 57, 19)
+    %t13 = cmp lt i32 %t12, 2 !dbg(presumed.cpp, 57, 3)
+    branch %t13, ^for_body_5, ^for_end_7 !dbg(presumed.cpp, 57, 3)
+
+  block ^for_body_5:
+    %t14 = load typed i32 $i !dbg(presumed.cpp, 57, 36)
+    %t15 = load typed i32 $y !dbg(presumed.cpp, 57, 31)
+    %t16 = binary add nowrap i32 %t15, %t14 !dbg(presumed.cpp, 57, 31)
+    store typed i32 %t16, $y !dbg(presumed.cpp, 57, 31)
+    jump ^for_iter_6 !dbg(presumed.cpp, 57, 3)
+
+  block ^for_iter_6:
+    %t17 = load typed i32 $i !dbg(presumed.cpp, 57, 26)
+    %t18 = binary add nowrap i32 %t17, 1 !dbg(presumed.cpp, 57, 26)
+    store typed i32 %t18, $i !dbg(presumed.cpp, 57, 26)
+    jump ^for_cond_4 !dbg(presumed.cpp, 57, 3)
+
+  block ^for_end_7:
+    %t19 = load typed i32 $y !dbg(presumed.cpp, 58, 10)
+    return i32 %t19 !dbg(presumed.cpp, 58, 3)
+}

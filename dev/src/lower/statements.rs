@@ -74,6 +74,10 @@ impl Function<'_, '_, '_, '_> {
         self.cleanup_return(ty, value, began, first)
     }
     pub(super) fn statement(&mut self, id: ast::StmtId) -> Result<(), Error> {
+        let location = self.tree.statements.get(id).location;
+        self.with_debug_location(location, |this| this.statement_located(id))
+    }
+    fn statement_located(&mut self, id: ast::StmtId) -> Result<(), Error> {
         self.check_stack()?;
         if self.terminated && !self.reachable_label(id)? {
             let chosen = if matches!(

@@ -201,6 +201,7 @@ pub(super) fn lower<'a>(
     } else {
         FunctionBuilder::with_parameter_ids(program, symbol, &parameters, result_boundary.ty)?
     };
+    symbols.locate_definition(&mut builder, entity.and(facts.definition))?;
     builder.metadata(metadata);
     let distinct = entity.is_some_and(|entity| graph.lower_copy_constructor(entity));
     if result_boundary.indirect {

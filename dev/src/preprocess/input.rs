@@ -723,6 +723,13 @@ impl<'a> SourceInput<'a> {
 }
 
 impl super::locations::SourcePositions for SourceInput<'_> {
+    fn source_column(&self, location: SourceOffset) -> u32 {
+        let inclusion = self.inclusion_at(location);
+        inclusion
+            .locations
+            .column_at(SourceOffset(location.0 - inclusion.base))
+    }
+
     fn in_system_header(&self, location: SourceOffset) -> bool {
         self.inclusion_at(location).system
     }

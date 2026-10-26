@@ -134,6 +134,14 @@ impl Function<'_, '_, '_, '_> {
         let id = self.without_parentheses(id);
         let value = if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
             self.call_truth_conversion(id, call)?
+        } else if matches!(self.tree.expressions.get(id).kind,
+            ExprKind::Binary { op, .. } if matches!(op.token.as_punctuator(),
+                Some(P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual | P::LogicalAnd | P::LogicalOr)))
+            && !self.graph.lower_operator_call(id)?
+        {
+            // truth_operand lowers a built-in comparison/logical directly:
+            // its operands have scopes, but the operation inherits its caller.
+            self.expression_located(id, Context::Operand)?
         } else {
             self.expression(id, Context::Operand)?
         };
@@ -566,6 +574,14 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     pub(super) fn discard(&mut self, id: ast::ExprId) -> Result<(), Error> {
+        let location = self
+            .tree
+            .expressions
+            .get(self.without_parentheses(id))
+            .location;
+        self.with_debug_location(location, |this| this.discard_located(id))
+    }
+    fn discard_located(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
         let id = self.without_parentheses(id);
         if let ExprKind::BuiltinValue {

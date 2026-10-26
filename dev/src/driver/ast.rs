@@ -61,6 +61,11 @@ impl LowIrStatistics {
     }
 }
 impl LowIrOutput {
+    /// Enable typed source locations for the course view, before lowering units.
+    pub fn set_debug_locations(&mut self, enabled: bool) {
+        self.output.set_debug_locations(enabled);
+    }
+
     /// Retain typed definitions until the optimizer consumes the completed unit.
     ///
     /// # Errors

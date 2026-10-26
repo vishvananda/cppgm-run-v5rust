@@ -17,6 +17,7 @@ pub(crate) struct FunctionBuilder<'a> {
     block: Option<BlockId>,
     slot_names: Vec<super::construction_names::SlotName>,
     publish: bool,
+    current_location: Option<super::model::DebugLocation>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Position {
@@ -33,6 +34,7 @@ pub(crate) struct SuspendedFunction {
     block: Option<BlockId>,
     slot_names: Vec<super::construction_names::SlotName>,
     publish: bool,
+    current_location: Option<super::model::DebugLocation>,
 }
 
 impl<'a> FunctionBuilder<'a> {
@@ -45,6 +47,7 @@ impl<'a> FunctionBuilder<'a> {
             block: saved.block,
             slot_names: saved.slot_names,
             publish: saved.publish,
+            current_location: saved.current_location,
         }
     }
     pub(crate) fn suspend(self) -> SuspendedFunction {
@@ -55,6 +58,7 @@ impl<'a> FunctionBuilder<'a> {
             block: self.block,
             slot_names: self.slot_names,
             publish: self.publish,
+            current_location: self.current_location,
         }
     }
     /// Move construction out while a nested initializer borrows the program.
@@ -74,6 +78,7 @@ impl<'a> FunctionBuilder<'a> {
             block: self.block.take(),
             slot_names: std::mem::take(&mut self.slot_names),
             publish: self.publish,
+            current_location: self.current_location,
         }
     }
     pub(crate) fn restore_construction(&mut self, saved: SuspendedFunction) {
@@ -83,6 +88,7 @@ impl<'a> FunctionBuilder<'a> {
         self.block = saved.block;
         self.slot_names = saved.slot_names;
         self.publish = saved.publish;
+        self.current_location = saved.current_location;
     }
     pub(crate) fn new(
         program: &'a mut Program,
@@ -185,6 +191,7 @@ impl<'a> FunctionBuilder<'a> {
             block: None,
             slot_names: Vec::new(),
             publish: true,
+            current_location: None,
         })
     }
     /// Complete a generated callable whose boundary was published at demand.
@@ -221,6 +228,7 @@ impl<'a> FunctionBuilder<'a> {
             block: None,
             slot_names: Vec::new(),
             publish: true,
+            current_location: None,
         })
     }
     pub(crate) fn complete(program: &'a mut Program, symbol: SymbolId) -> Result<Self, Error> {
@@ -247,6 +255,7 @@ impl<'a> FunctionBuilder<'a> {
             block: None,
             slot_names: Vec::new(),
             publish: false,
+            current_location: None,
         })
     }
     pub(crate) fn anonymous_block(&mut self) -> Result<BlockId, Error> {
@@ -261,6 +270,16 @@ impl<'a> FunctionBuilder<'a> {
         self.slot_names
             .push(super::construction_names::SlotName::Anonymous);
         self.body.constructed_slot(ty)
+    }
+    pub(crate) fn current_location(&self) -> Option<super::model::DebugLocation> {
+        self.current_location
+    }
+    pub(crate) fn set_current_location(&mut self, location: Option<super::model::DebugLocation>) {
+        self.current_location = location;
+    }
+    pub(crate) fn definition_location(&mut self, location: Option<super::model::DebugLocation>) {
+        self.function.location = location;
+        self.current_location = location;
     }
     pub(crate) fn metadata(&mut self, metadata: Metadata) {
         self.function.metadata = metadata;
@@ -484,9 +503,12 @@ impl<'a> FunctionBuilder<'a> {
     ) -> Result<Position, Error> {
         let before = self.body.block(position.block).instructions.len();
         for kind in kinds {
-            let _id = self
+            let id = self
                 .body
                 .append(position.block, Instruction::new(None, kind, 0))?;
+            if let Some(location) = self.current_location {
+                self.body.set_location(id, location)?;
+            }
         }
         let instructions = &mut self.body.block_mut(position.block).instructions;
         let after = instructions
@@ -602,7 +624,10 @@ impl<'a> FunctionBuilder<'a> {
         let block = self
             .block
             .ok_or_else(|| Error::Diagnostic("instruction outside constructed block".into()))?;
-        let _ = self.body.append(block, Instruction::new(result, kind, 0))?;
+        let id = self.body.append(block, Instruction::new(result, kind, 0))?;
+        if let Some(location) = self.current_location {
+            self.body.set_location(id, location)?;
+        }
         Ok(())
     }
     pub(crate) fn finish(mut self) -> Result<(), Error> {

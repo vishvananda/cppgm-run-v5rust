@@ -275,6 +275,9 @@ impl<'a> Preprocessor<'a> {
     ) -> std::rc::Rc<[u8]> {
         super::locations::SourcePositions::source_file(&self.source, location)
     }
+    pub(crate) fn source_column(&self, location: crate::support::source::SourceOffset) -> u32 {
+        super::locations::SourcePositions::source_column(&self.source, location)
+    }
     pub(crate) fn source_line(
         &self,
         location: crate::support::source::SourceOffset,

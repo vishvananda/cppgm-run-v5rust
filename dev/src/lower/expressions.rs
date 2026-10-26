@@ -18,6 +18,14 @@ use crate::{
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn operand(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
+        let location = self
+            .tree
+            .expressions
+            .get(self.without_parentheses(id))
+            .location;
+        self.with_debug_location(location, |this| this.operand_located(id, context))
+    }
+    fn operand_located(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
         if let Some((call, target)) = self.graph.lower_function_conversion(id)? {
             let value = self.call_conversion(id, call)?;
             if context != Context::Cast
@@ -89,6 +97,18 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     pub(super) fn expression(
+        &mut self,
+        id: ast::ExprId,
+        context: Context,
+    ) -> Result<RValue, Error> {
+        let location = self
+            .tree
+            .expressions
+            .get(self.without_parentheses(id))
+            .location;
+        self.with_debug_location(location, |this| this.expression_located(id, context))
+    }
+    pub(super) fn expression_located(
         &mut self,
         id: ast::ExprId,
         context: Context,

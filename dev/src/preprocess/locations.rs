@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 pub(crate) trait SourcePositions {
     fn source_file(&self, location: SourceOffset) -> Rc<[u8]>;
+    fn source_column(&self, location: SourceOffset) -> u32;
     fn source_line(&self, location: SourceOffset) -> Result<i64, PreprocessError>;
     fn in_system_header(&self, location: SourceOffset) -> bool;
 }
@@ -50,6 +51,13 @@ impl<'a> Locations<'a> {
     }
     pub(crate) fn name_at(&self, location: SourceOffset) -> Rc<[u8]> {
         self.state_at(location).name.clone()
+    }
+    pub(crate) fn column_at(&self, location: SourceOffset) -> u32 {
+        let start = self.starts()[self
+            .starts()
+            .partition_point(|&start| start <= location.0)
+            .saturating_sub(1)];
+        location.0 - start + 1
     }
     pub(crate) fn line_at(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
         Ok((self.physical_line(location)? + self.state_at(location).delta).max(1))

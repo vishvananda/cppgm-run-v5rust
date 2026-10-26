@@ -203,9 +203,9 @@ fn parse(
             }
             b"-pedantic"
             | b"-pedantic-errors"
-            | b"-g0"
             | b"-fvisibility=hidden"
             | b"-fvisibility-inlines-hidden" => {}
+            _ if bytes.starts_with(b"-g") => {}
             b"-E" => preprocess_only = true,
             b"-std" | b"-stdlib" => {
                 let role = if bytes == b"-std" {

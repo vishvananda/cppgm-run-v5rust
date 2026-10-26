@@ -135,6 +135,14 @@ pub(crate) struct Output {
     finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
+    pub(crate) fn set_debug_locations(&mut self, enabled: bool) {
+        self.symbols.debug_locations = if enabled {
+            symbols::DebugLocations::Enabled
+        } else {
+            symbols::DebugLocations::Disabled
+        };
+    }
+
     pub(crate) fn statistics(&self, semantic: sema::Work) -> Statistics {
         self.symbols.work.snapshot(&self.program, semantic)
     }

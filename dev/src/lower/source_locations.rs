@@ -15,6 +15,26 @@ use crate::{
 };
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn with_debug_location<T>(
+        &mut self,
+        location: SourceOffset,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        if !self.symbols.debug_locations() {
+            return action(self);
+        }
+        let saved = self.builder.current_location();
+        if let Some(here) = self
+            .symbols
+            .debug_location(self.builder.program(), location)?
+        {
+            self.builder.set_current_location(Some(here));
+        }
+        let result = action(self);
+        self.builder.set_current_location(saved);
+        result
+    }
+
     pub(super) fn with_source_site<T>(
         &mut self,
         site: Option<SourceOffset>,

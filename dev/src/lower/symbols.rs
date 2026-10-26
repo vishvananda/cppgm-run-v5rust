@@ -52,11 +52,18 @@ use crate::{
     types::FundamentalType as F,
 };
 use std::{collections::HashMap, fmt::Write};
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum DebugLocations {
+    #[default]
+    Disabled,
+    Enabled,
+}
 #[derive(Default)]
 pub(super) struct SymbolTable {
     pub(super) work: super::observations::Work,
     deferred_globals: std::collections::HashSet<SymbolId>,
     pub(super) object_mode: bool,
+    pub(super) debug_locations: DebugLocations,
     pub(super) host_objects: bool,
     objects: HashMap<NameId, Option<SymbolId>>,
     suffixes: HashMap<NameId, u32>,

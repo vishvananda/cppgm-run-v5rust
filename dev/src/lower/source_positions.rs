@@ -3,6 +3,52 @@ use super::{Error, Symbols};
 use crate::{sema::lowering::SourceLocation, support::source::SourceOffset};
 
 impl Symbols<'_, '_> {
+    pub(in crate::lower) fn locate_definition(
+        &self,
+        builder: &mut crate::lowir::builder::FunctionBuilder<'_>,
+        definition: Option<crate::syntax::ast::DeclId>,
+    ) -> Result<(), Error> {
+        if let Some(definition) = definition {
+            let location = self.debug_location(
+                builder.program(),
+                self.tree.declarations.get(definition).location,
+            )?;
+            builder.definition_location(location);
+        }
+        Ok(())
+    }
+
+    pub(in crate::lower) fn debug_locations(&self) -> bool {
+        self.table.debug_locations == super::DebugLocations::Enabled && !self.table.object_mode
+    }
+    pub(in crate::lower) fn debug_location(
+        &self,
+        program: &mut crate::lowir::model::Program,
+        location: SourceOffset,
+    ) -> Result<Option<crate::lowir::model::DebugLocation>, Error> {
+        if !self.debug_locations() {
+            return Ok(None);
+        }
+        let input = self.cursor.post.input();
+        let file = input.source_file(location);
+        if file.is_empty() || file.iter().any(|byte| b" \t\n\r,()".contains(byte)) {
+            return Ok(None);
+        }
+        let line = self.source_line(location)?;
+        let column = input.source_column(location);
+        let Ok(line) = u32::try_from(line) else {
+            return Ok(None);
+        };
+        if line == 0 || column == 0 {
+            return Ok(None);
+        }
+        Ok(Some(crate::lowir::model::DebugLocation {
+            file: program.names.intern_bytes(&file)?,
+            line,
+            column,
+        }))
+    }
+
     pub(in crate::lower) fn predefined_variable(
         &mut self,
         program: &mut crate::lowir::model::Program,
