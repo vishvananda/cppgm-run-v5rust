@@ -7,7 +7,7 @@ use cppgm_rust::{
 use std::{
     ffi::OsString,
     fs::File,
-    io::{self, BufRead, Read, Write},
+    io::{self, Read, Write},
     os::unix::ffi::OsStrExt,
     process::ExitCode,
 };
@@ -45,6 +45,8 @@ enum CliError {
         counters: Box<cppgm_rust::preprocess::counters::PreprocessorCounters>,
     },
 }
+#[path = "source_tool/batch_status.rs"]
+mod batch_status;
 #[path = "source_tool/build_time.rs"]
 mod build_time;
 
@@ -61,7 +63,7 @@ fn path_diagnostic(path: &std::ffi::OsStr, message: &[u8]) -> CliError {
 fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
     if args.iter().any(|arg| arg == "--batch-stdin") {
         let mut output = io::stdout().lock();
-        emit_unimplemented_batch(io::stdin().lock(), &mut output);
+        batch_status::write(&mut io::stdin().lock(), &mut output);
         return Ok(());
     }
     let stats = args.first().is_some_and(|arg| arg == "--stats");
@@ -138,15 +140,6 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
     output
         .flush()
         .map_err(|error| CliError::Message(error.to_string()))
-}
-fn emit_unimplemented_batch(input: impl BufRead, output: &mut impl Write) {
-    for line in input.split(b'\n') {
-        if line.is_err() {
-            break;
-        }
-        let _status = writeln!(output, "EXIT_NOT_IMPLEMENTED");
-        let _status = output.flush();
-    }
 }
 fn main() -> ExitCode {
     match run() {
@@ -225,13 +218,13 @@ mod tests {
     #[test]
     fn no_runner_batch_reads_request_bytes_including_an_unterminated_last_line() {
         let mut output = Vec::new();
-        emit_unimplemented_batch(&b"\xff\n\nlast\0"[..], &mut output);
+        batch_status::write(&mut &b"\xff\n\nlast\0"[..], &mut output);
         assert_eq!(
             output,
             b"EXIT_NOT_IMPLEMENTED\nEXIT_NOT_IMPLEMENTED\nEXIT_NOT_IMPLEMENTED\n"
         );
         output.clear();
-        emit_unimplemented_batch(&b""[..], &mut output);
+        batch_status::write(&mut &b""[..], &mut output);
         assert!(output.is_empty());
     }
 

@@ -1,8 +1,9 @@
 use cppgm_rust::{driver::TokenToolError, preprocess::source::SourceBuffer};
 use std::fs::File;
-use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsFd;
 use std::process::ExitCode;
+mod batch_status;
 
 // The frozen CLI uses iostreams with exceptions disabled: an output failure
 // sticks, but cannot stop lexing or replace a later source diagnostic. Keep
@@ -67,16 +68,7 @@ fn run(
         .skip(1)
         .any(|arg| arg == "--batch-stdin")
     {
-        for line in stdin.lock().split(b'\n') {
-            if line.is_err() {
-                break;
-            }
-            writeln!(output, "EXIT_NOT_IMPLEMENTED")
-                .map_err(|e| CliError::Message(e.to_string()))?;
-            output
-                .flush()
-                .map_err(|e| CliError::Message(e.to_string()))?;
-        }
+        batch_status::write(&mut stdin.lock(), &mut output);
         return Ok(());
     }
     // A safe duplicate retains stdin's current file position without owning

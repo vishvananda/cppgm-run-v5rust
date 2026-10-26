@@ -54,6 +54,8 @@ driver flags:
   -stdlib <name> / -stdlib=<name>
   --target <target>
 ";
+#[path = "source_tool/batch_status.rs"]
+mod batch_status;
 #[path = "source_tool/build_time.rs"]
 mod build_time;
 pub mod builtin_host_configuration;
@@ -240,6 +242,10 @@ fn invocation(args: &[OsString], mode: EmitMode) -> Result<Invocation<'_>, CliEr
 }
 fn run() -> Result<(), CliError> {
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.iter().any(|arg| arg == "--batch-stdin") {
+        batch_status::write(&mut io::stdin().lock(), &mut io::stdout().lock());
+        return Ok(());
+    }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         let _status = io::stdout().lock().write_all(HELP.as_bytes());
         return Ok(());
