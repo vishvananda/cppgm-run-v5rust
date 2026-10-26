@@ -2359,7 +2359,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 | B::Runtime(_)
                 | B::Invoke
                 | B::Allocation(_)
-                | B::IsConstantEvaluated => {}
+                | B::IsConstantEvaluated
+                | B::ConstantP => {}
             }
             return Ok(metadata);
         }

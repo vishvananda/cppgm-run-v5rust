@@ -343,7 +343,7 @@ impl Analyzer<'_> {
             .binding(binding)
             .ty
             .ok_or(Error::Invariant("conversion signature"))?;
-        let produced = self.call_result_view(signature)?;
+        let produced = self.call_result(signature)?;
         let target = self.decayed_type(produced.ty)?;
         let after = self
             .standard_conversion(produced, target, false)?
@@ -595,7 +595,11 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("conversion without signature"))?;
-        let produced = self.call_result_view(ty)?;
+        let produced = if usage == ConversionUse::Builtin {
+            self.call_result(ty)?
+        } else {
+            self.call_result_view(ty)?
+        };
         let after = sequence.application.ok_or(Error::Invariant(
             "conversion function without second sequence",
         ))?;

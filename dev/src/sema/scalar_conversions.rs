@@ -553,6 +553,13 @@ impl Analyzer<'_> {
         let target = self.graph.types.scalar(Scalar::Bool)?;
         self.convert_operand_scalar(id, target, true)?;
         if let Some(mut step) = self.graph.expression_facts.function_conversion(id) {
+            if step.usage == super::conversion_functions::ConversionUse::Scalar {
+                // convert_to_scalar creates the contextual operand's result
+                // facts; retain that new expression through its typed projection.
+                let projected = self.new_expression_facts(step.result, step.category)?;
+                step.result = projected.ty;
+                step.category = projected.category;
+            }
             step.usage = super::conversion_functions::ConversionUse::Contextual;
             self.graph
                 .expression_facts

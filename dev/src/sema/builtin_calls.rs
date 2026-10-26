@@ -9,12 +9,13 @@ use super::{
     types::{Cv, Scalar, TypeKind},
 };
 use crate::{
-    lex::{PostTokenKind, identifiers::NameId, vocabulary::Keyword},
+    lex::{identifiers::NameId, vocabulary::Keyword},
     syntax::{ast, storage::List},
     types::FundamentalType as F,
 };
 #[derive(Clone, Copy)]
 pub(crate) enum BuiltinFunction {
+    ConstantP,
     IsConstantEvaluated,
     MakeComplex,
     Abort,
@@ -50,6 +51,7 @@ mod tests {
     #[test]
     fn builtin_template_rejection_leaves_call_operands_undemanded() {
         for name in [
+            "__builtin_constant_p",
             "__builtin_addressof",
             "__builtin_object_size",
             "__builtin_dynamic_object_size",
@@ -361,6 +363,7 @@ impl Analyzer<'_> {
                     | BuiltinFunction::Allocation(_)
                     | BuiltinFunction::MakeComplex
                     | BuiltinFunction::IsConstantEvaluated
+                    | BuiltinFunction::ConstantP
             )
         ) {
             return Err(Error::at(
@@ -376,7 +379,9 @@ impl Analyzer<'_> {
         key: NameId,
     ) -> Result<Option<super::graph::BindingId>, Error> {
         let names = &self.builtin_names;
-        let builtin = if key == names.make_complex {
+        let builtin = if key == names.constant_p {
+            BuiltinFunction::ConstantP
+        } else if key == names.make_complex {
             BuiltinFunction::MakeComplex
         } else if key == names.is_constant_evaluated {
             BuiltinFunction::IsConstantEvaluated
@@ -469,6 +474,7 @@ impl Analyzer<'_> {
                 | BuiltinFunction::Allocation(_)
                 | BuiltinFunction::MakeComplex
                 | BuiltinFunction::IsConstantEvaluated
+                | BuiltinFunction::ConstantP
         ) {
             (self.graph.types.scalar(Scalar::Basic(F::Int))?, Vec::new())
         } else if matches!(builtin, BuiltinFunction::Expect) {
@@ -504,6 +510,7 @@ impl Analyzer<'_> {
                     BuiltinFunction::Abort
                     | BuiltinFunction::MakeComplex
                     | BuiltinFunction::IsConstantEvaluated
+                    | BuiltinFunction::ConstantP
                     | BuiltinFunction::Expect
                     | BuiltinFunction::Strlen
                     | BuiltinFunction::Unreachable
@@ -539,6 +546,7 @@ impl Analyzer<'_> {
                         | BuiltinFunction::Allocation(_)
                         | BuiltinFunction::MakeComplex
                         | BuiltinFunction::IsConstantEvaluated
+                        | BuiltinFunction::ConstantP
                 ),
                 cv: Cv::default(),
                 reference: None,
@@ -637,6 +645,9 @@ impl Analyzer<'_> {
                 .entity(self.graph.binding(binding).entity)
                 .builtin
             {
+                Some(BuiltinFunction::ConstantP) => {
+                    self.constant_p_call(id, arguments, scope).map(Some)
+                }
                 Some(BuiltinFunction::MakeComplex) => {
                     self.make_complex_builtin(id, arguments, scope).map(Some)
                 }
@@ -681,16 +692,15 @@ impl Analyzer<'_> {
                 _ => Ok(None),
             };
         }
-        let Some(ast::NameComponent {
-            kind: ast::NameKind::Identifier(key),
-            ..
-        }) = single
-        else {
-            return Ok(None);
-        };
-        if key != self.builtin_names.constant_p {
-            return Ok(None);
-        }
+        Ok(None)
+    }
+
+    fn constant_p_call(
+        &mut self,
+        id: ast::ExprId,
+        arguments: List<ast::ExprId>,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
         let arguments = self.tree.expr_lists.get(arguments);
         if arguments.len() != 1 {
             return Err(Error::at(
@@ -700,62 +710,35 @@ impl Analyzer<'_> {
         }
         let operand = arguments[0];
         self.unevaluated += 1;
-        let result = self.typed_expression(operand, scope);
+        let result = self.typed_expression(operand, scope).and_then(|facts| {
+            self.check_resolved_function(operand)?;
+            Ok(facts)
+        });
         self.unevaluated -= 1;
         let facts = result?;
-        self.check_resolved_function(operand)?;
-        let address = self.is_address_expression(operand);
-        let mut constant = if address {
-            self.address_value(operand, scope)?.is_some_and(|value| {
-                matches!(
-                    value.root,
-                    super::constant_addresses::Root::Null
-                        | super::constant_addresses::Root::Literal(_)
-                )
-            })
-        } else {
-            self.constant_value(operand, scope, false)?.is_some()
-        };
-        // Null and string-literal address constants are supported by this query.
-        let mut inner = operand;
-        while let ast::ExprKind::Paren(expr) = self.tree.expressions.get(inner).kind {
-            inner = expr;
-        }
-        constant |= matches!(
-            self.tree.expressions.get(inner).kind,
-            ast::ExprKind::Keyword(Keyword::Nullptr)
-                | ast::ExprKind::Literal(ast::Literal {
-                    kind: PostTokenKind::String { .. },
-                    ..
-                })
-        );
-        if !constant
-            && !address
-            && self.semantic()
-            && self.template_depth == 0
-            && matches!(
-                self.graph.types.get(facts.ty).kind,
-                TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0
-            )
-        {
+        // C++ first asks for an integral constant, then starts a separate
+        // interpreter demand for floating/null/literal pointer results.
+        let mut constant = self.constant_value(operand, scope, false)?.is_some();
+        let scalar_fallback = matches!(
+            self.graph.types.get(facts.ty).kind,
+            TypeKind::Pointer(_) | TypeKind::Array { .. } | TypeKind::Scalar(Scalar::Nullptr)
+        ) || matches!(self.graph.types.get(facts.ty).kind,
+                TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0);
+        if !constant && self.semantic() && self.template_depth == 0 && scalar_fallback {
+            use super::constant_addresses::{Root, TemporaryValue};
             constant = match self.scalar_value(operand, scope) {
-                Ok(value @ super::constant_addresses::TemporaryValue::Floating(_)) => {
-                    !value.indeterminate()
+                Ok(value @ TemporaryValue::Floating(_)) => !value.indeterminate(),
+                Ok(TemporaryValue::Pointer(value)) => {
+                    matches!(value.root, Root::Null | Root::Literal(_))
                 }
                 Ok(_) | Err(Error::NonConstant { .. }) => false,
                 Err(error) => return Err(error),
             };
         }
-        if matches!(
-            self.graph.types.get(facts.ty).kind,
-            TypeKind::Scalar(Scalar::Void)
-        ) {
-            constant = false;
-        }
         let ty = self.graph.types.scalar(Scalar::Basic(F::Int))?;
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
         facts.folded = Some(u64::from(constant));
-        Ok(Some(facts))
+        Ok(facts)
     }
 
     fn builtin_invoke(

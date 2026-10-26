@@ -287,17 +287,6 @@ impl Analyzer<'_> {
             )
         })
     }
-    pub(super) fn address_value(
-        &mut self,
-        id: ast::ExprId,
-        scope: ScopeId,
-    ) -> Result<Option<Address>, Error> {
-        match self.evaluate_address(id, scope) {
-            Ok(value) => Ok(Some(value)),
-            Err(Error::NonConstant { .. }) => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
     pub(super) fn evaluate_address(
         &mut self,
         id: ast::ExprId,
@@ -352,6 +341,9 @@ impl Analyzer<'_> {
                     } else {
                         facts.ty
                     };
+                // Array/function value formation demands its canonical pointer
+                // type even when an integral probe only sees a non-integral value.
+                self.graph.types.pointer(place.designated)?;
                 return Ok(place);
             }
             _ => (),

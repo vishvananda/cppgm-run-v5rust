@@ -25,6 +25,9 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.check_stack()?;
         if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
+            // braced_argument constructs a typeless semantic operand before
+            // ranking; its later initialized object facts are separate work.
+            self.graph.work.totals.expressions += 1;
             for syntax_index in 0..self.tree.expr_lists.get(elements).len() {
                 let element = self.tree.expr_lists.get(elements)[syntax_index];
                 self.type_call_argument(element, scope)?;
