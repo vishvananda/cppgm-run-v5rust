@@ -27,6 +27,16 @@ impl BaseRoutes {
         from: EntityId,
         to: EntityId,
     ) -> Result<BaseRoute, Error> {
+        // ProgramLowering keeps routes only for classes with virtual bases.
+        // Ordinary projections perform their nonvirtual search on each demand.
+        if graph.lower_virtual_bases(from).is_empty() {
+            return graph
+                .lower_nonvirtual_offset(from, to)?
+                .map(|offset| BaseRoute { via: None, offset })
+                .ok_or(Error::Invariant(
+                    "nonvirtual projection without a base route",
+                ));
+        }
         if let Some(&route) = self.selected.get(&(from, to)) {
             return Ok(route);
         }
