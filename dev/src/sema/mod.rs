@@ -2,6 +2,8 @@
 mod abi_tags;
 mod work;
 pub(crate) use work::Work;
+mod observations;
+pub(crate) use observations::Statistics;
 mod address_arguments;
 mod aggregate_initialization;
 mod alias_templates;

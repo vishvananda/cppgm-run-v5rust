@@ -133,6 +133,7 @@ impl Analyzer<'_> {
     pub(super) fn check_template_exception(
         &mut self,
         pattern: TemplateException,
+        pending: super::exceptions::PendingSpecification,
     ) -> Result<(), Error> {
         let mut own = Vec::with_capacity(32);
         let mut scope = Some(pattern.scope);
@@ -185,18 +186,22 @@ impl Analyzer<'_> {
         self.graph.lookup_limit = Some(pattern.limit);
         self.evaluating_noexcept = true;
         self.template_depth = 0;
+        let saved_body = self.body_context.take();
+        let saved_default = self.default_argument_scope.take();
+        let saved_member = self.member_initializer_class.take();
         let result = (|| {
             if !self.fixed_template_names(pattern.operand, scope)? {
                 return Ok(());
             }
-            let ty = self.exception_operand_type(pattern.operand, scope)?;
-            self.exception_bool(ty, self.tree.expressions.get(pattern.operand).location)?;
-            self.constant_value(pattern.operand, scope, true)
-                .map(|_| ())
+            self.body_context = self.specification_body(&pending)?;
+            self.noexcept_value(pattern.operand, scope).map(|_| ())
         })();
         self.graph.lookup_limit = saved_limit;
         self.evaluating_noexcept = saved_noexcept;
         self.template_depth = saved_depth;
+        self.body_context = saved_body;
+        self.default_argument_scope = saved_default;
+        self.member_initializer_class = saved_member;
         result
     }
 

@@ -464,6 +464,7 @@ fn emit_preprocessed(
     unit.set_stack_budget(stack_budget);
     let parsed = unit.parse();
     if let Some(observations) = observations.as_deref_mut() {
+        observations.view = Some(mode);
         observations.parse_ms = front_start.elapsed().as_secs_f64() * 1000.0;
         observations.syntax = Some(unit.statistics());
     }
@@ -483,6 +484,7 @@ fn emit_preprocessed(
             ),
         });
     }
+    let analyze_start = std::time::Instant::now();
     let graph = if mode == EmitMode::Ast {
         None
     } else {
@@ -527,6 +529,9 @@ fn emit_preprocessed(
             crate::sema::Error::Invariant(message) => AstToolError::Internal(message),
         })?)
     };
+    if let Some(observations) = observations.as_deref_mut() {
+        observations.analyze_ms = analyze_start.elapsed().as_secs_f64() * 1000.0;
+    }
     let front_ms = front_start.elapsed().as_secs_f64() * 1000.0;
     let output = match destination {
         Destination::Check => return Ok(()),
@@ -617,6 +622,9 @@ fn emit_preprocessed(
             graph
                 .print(tree, cursor, output)
                 .map_err(AstToolError::Output)?;
+        }
+        if let Some(observations) = observations.as_deref_mut() {
+            observations.semantic = Some(graph.statistics());
         }
     } else {
         unit.print(output).map_err(AstToolError::Output)?;

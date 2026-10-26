@@ -65,7 +65,8 @@ impl Analyzer<'_> {
         }
         let specs = self.specifiers(syntax.specifiers, scope, false)?;
         let mut environment = self.declarator_environment(syntax.declarator, scope)?;
-        environment.auto_operators = matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto);
+        environment.auto_operators =
+            matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto(_));
         let info = self.declarator_in(syntax.declarator, specs.ty, environment)?;
         if !self.holds_auto(info.ty) {
             return Err(Error::at(
@@ -87,7 +88,7 @@ impl Analyzer<'_> {
     pub(super) fn holds_auto(&self, mut ty: TypeId) -> bool {
         loop {
             match self.graph.types.get(ty).kind {
-                TypeKind::Auto => return true,
+                TypeKind::Auto(_) => return true,
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::MemberPointer { element, .. } => ty = element,
@@ -120,7 +121,7 @@ impl Analyzer<'_> {
         environment: &mut super::declarators::DeclaratorEnvironment,
     ) {
         environment.auto_operators = specs.role != DeclarationRole::Typedef
-            && matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto);
+            && matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto(_));
         if environment.auto_operators {
             let mut part = id;
             let mut own = None;
@@ -216,7 +217,7 @@ impl Analyzer<'_> {
         loop {
             let node = self.graph.types.get(declared);
             match node.kind {
-                TypeKind::Auto => break,
+                TypeKind::Auto(_) => break,
                 TypeKind::Pointer(element)
                 | TypeKind::Reference { element, .. }
                 | TypeKind::MemberPointer { element, .. } => {
@@ -277,7 +278,7 @@ impl Analyzer<'_> {
             self.expression(expression, scope)?;
             return Err(Error::DeferredBuiltin);
         }
-        let placeholder = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
+        let placeholder = self.graph.auto_type()?;
         let pattern = self.replace_auto(declared, placeholder, cv)?;
         let mut arguments = [None];
         let mut reuse = false;
@@ -286,7 +287,7 @@ impl Analyzer<'_> {
             let facts = self.typed_expression(expression, scope)?;
             if let Some(set) = facts.functions {
                 // Bare auto first resolves an ordinary singleton, like typed_value.
-                if matches!(self.graph.types.get(declared).kind, TypeKind::Auto) {
+                if matches!(self.graph.types.get(declared).kind, TypeKind::Auto(_)) {
                     self.check_resolved_function(expression)?;
                     let facts = self.graph.expression_facts.get(expression)?;
                     self.deduce_call_argument(

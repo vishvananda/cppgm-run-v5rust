@@ -437,7 +437,7 @@ impl Analyzer<'_> {
                 let specs = self.specifiers(specifiers, block, false)?;
                 if matches!(
                     self.graph.types.get(specs.ty).kind,
-                    super::types::TypeKind::Auto
+                    super::types::TypeKind::Auto(_)
                 ) {
                     return Err(Error::at(location, "exception declaration without a type"));
                 }

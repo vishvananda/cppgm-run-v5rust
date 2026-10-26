@@ -91,6 +91,16 @@ impl Analyzer<'_> {
         if self.default_argument_scope.is_some() {
             return Ok(None);
         }
+        if let Some(pointer) = self
+            .body_context
+            .as_ref()
+            .and_then(|body| body.object_pointer)
+        {
+            let TypeKind::Pointer(object) = self.graph.types.get(pointer).kind else {
+                return Err(Error::Invariant("implicit object without pointer type"));
+            };
+            return Ok(Some(object));
+        }
         if let Some(ty) = self
             .signature_object
             .filter(|_| self.body_context.is_none())

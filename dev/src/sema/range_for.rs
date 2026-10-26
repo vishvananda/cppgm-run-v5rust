@@ -351,7 +351,7 @@ impl Analyzer<'_> {
                 }
             };
         if let Some((element, category)) = element {
-            let auto = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
+            let auto = self.graph.auto_type()?;
             let pattern = self.replace_auto(info.ty, auto, specs.auto_cv)?;
             let mut arguments = [None];
             if !self.deduce_call_argument(pattern, element, category, 0, &mut arguments)?
@@ -566,7 +566,7 @@ impl Analyzer<'_> {
             ExprKind::Braced { .. }
         );
         let braced_range = if braced {
-            let auto = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
+            let auto = self.graph.auto_type()?;
             let reference = self.graph.types.reference(auto, RefKind::Rvalue)?;
             Some(self.range_variable(RangeVariable::Range, reference, source, block, location)?)
         } else {
@@ -593,7 +593,7 @@ impl Analyzer<'_> {
         } else {
             None
         };
-        let auto = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
+        let auto = self.graph.auto_type()?;
         let range = if braced_range.is_some() {
             braced_range
         } else if named.is_none() {

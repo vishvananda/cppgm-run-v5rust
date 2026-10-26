@@ -698,14 +698,7 @@ impl Analyzer<'_> {
         if kind == MemberKind::Conversion {
             self.graph.hide_imported_conversions(key)?;
         }
-        self.graph.record_member_function(key, binding);
-        if kind == MemberKind::Conversion {
-            self.graph.record_special_value(
-                owner,
-                super::function_names::SpecialName::Conversion,
-                binding,
-            )?;
-        }
+        self.graph.record_member_function(key, binding)?;
         Ok(binding)
     }
 

@@ -265,6 +265,13 @@ impl Analyzer<'_> {
         inline: bool,
         scope: ScopeId,
     ) -> Result<ScopeId, Error> {
+        let key = if let Some(name) = name {
+            name
+        } else {
+            self.identifiers
+                .intern(b"<unnamed namespace>")
+                .map_err(Error::Limit)?
+        };
         let entity = self.graph.add_entity(None, name, Keyword::Namespace)?;
         let target = self
             .graph
@@ -279,17 +286,17 @@ impl Analyzer<'_> {
             None,
             Binding {
                 kind: BindingKind::Namespace,
-                name,
+                name: Some(key),
                 entity,
                 ty: None,
                 key: Keyword::Namespace,
             },
         )?;
         if inline || name.is_none() {
-            self.graph.add_edge(scope, target, false);
+            self.graph.add_edge(scope, target, false)?;
         }
         if inline {
-            self.graph.add_edge(scope, target, true);
+            self.graph.add_edge(scope, target, true)?;
         }
         Ok(target)
     }
@@ -352,7 +359,7 @@ impl Analyzer<'_> {
                 .entity(self.graph.binding(binding).entity)
                 .scope
                 .ok_or(Error::Invariant("namespace directive without scope"))?;
-            self.graph.add_edge(scope, target, false);
+            self.graph.add_edge(scope, target, false)?;
             return Ok(());
         }
         let name = *self.tree.names.get(target);
@@ -419,17 +426,23 @@ impl Analyzer<'_> {
         if self.note_inherited_constructors(scope, prefix, target_key, target)? {
             return Ok(());
         }
-        self.prepare_assignment_lookup(prefix, target_key, false)?;
-        let mut found = self.using_lookup(prefix, target_key, location)?;
-        // analyzer.cpp::using_declaration: an explicitly global builtin is
-        // declared on first naming here, just as it is in a call or address.
-        if found.binding.is_none()
-            && name.global
-            && count == 0
-            && let ast::NameKind::Identifier(key) = last.kind
-            && let Some(builtin) = self.builtin_lookup(key)?
-        {
-            found = builtin;
+        let identifier = matches!(last.kind, ast::NameKind::Identifier(_));
+        let mut found = super::lookup::LookupResult::default();
+        if identifier {
+            self.prepare_assignment_lookup(prefix, target_key, false)?;
+            found = self.qualified_declaration_result(prefix, target_key, Filter::Ordinary)?;
+        }
+        // The second lookup follows declared-name formation and implicit-member
+        // demand. Global builtins and unscoped enumerations take their own path.
+        if found.binding.is_none() && name.global && count == 0 && identifier {
+            if let Some(key) = target_key.identifier()
+                && let Some(builtin) = self.builtin_lookup(key)?
+            {
+                found = builtin;
+            }
+        } else if self.graph.scope(prefix).kind != ScopeKind::EnumMembers {
+            self.prepare_assignment_lookup(prefix, target_key, false)?;
+            found = self.using_lookup(prefix, target_key, location)?;
         }
         let Some(target_id) = found.binding else {
             // Only an absent final name is optional. Prefix resolution,
@@ -1014,7 +1027,7 @@ impl Analyzer<'_> {
                 "an exception-specification in a typedef declaration",
             ));
         }
-        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_)) {
             return Err(Error::at(
                 self.tree.declarators.get(declarator).location,
                 "typedef of auto",
@@ -1386,7 +1399,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<Option<BindingId>, Error> {
         if self.graph.scope(home).kind == ScopeKind::Namespace {
-            let candidate = self.graph.namespace_function(home, name, ty, head)?;
+            let candidate = self.graph.indexed_function(home, name, ty, head)?;
             if let Some(candidate) = candidate
                 && self.graph.entity(self.graph.binding(candidate).entity).home != Some(home)
             {
@@ -1817,7 +1830,12 @@ impl Analyzer<'_> {
         }
         let prefix = self.prefix(name, scope)?;
         let home = prefix.unwrap_or(self.declaration_scope(scope));
-        if prefix.is_some() && self.graph.scope(home).kind == ScopeKind::Enum {
+        if prefix.is_some()
+            && matches!(
+                self.graph.scope(home).kind,
+                ScopeKind::Enum | ScopeKind::EnumMembers
+            )
+        {
             return Err(Error::at(
                 qualified_name.location,
                 "qualified class name must name a class or namespace member",

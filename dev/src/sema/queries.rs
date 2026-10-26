@@ -451,7 +451,7 @@ impl Analyzer<'_> {
                 size.checked_mul(2)
                     .ok_or(Error::Limit("target complex size"))?
             }
-            TypeKind::Auto => {
+            TypeKind::Auto(_) => {
                 return Err(Error::Invariant("layout requested before auto deduction"));
             }
             TypeKind::Scalar(Scalar::Basic(scalar)) => {

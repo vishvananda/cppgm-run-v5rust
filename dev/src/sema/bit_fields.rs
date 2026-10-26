@@ -142,7 +142,7 @@ impl Analyzer<'_> {
             return Err(Error::at(node.location, "bit-field outside a class"));
         }
         let specs = self.specifiers(specifiers, scope, false)?;
-        if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto) {
+        if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto(_)) {
             return Err(Error::at(node.location, "bit-field without a type"));
         }
         self.reject_bit_field_alignment(node.attributes, None)?;

@@ -26,7 +26,7 @@ impl Analyzer<'_> {
             .parameter_type(specifiers, declarator)
             .map_err(|error| super::template_bodies::copy_error(&error))?;
         let specs = self.specifiers(specifiers, scope, false)?;
-        if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto) {
+        if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto(_)) {
             return Err(Error::at(
                 location,
                 "non-type template parameter without a type",

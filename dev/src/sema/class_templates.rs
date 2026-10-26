@@ -142,14 +142,15 @@ impl Analyzer<'_> {
             .entity(binding.entity)
             .template_parameter
             .is_some_and(|info| info.inner.is_some());
-        if (parameter || binding.kind == BindingKind::Alias)
-            && let Some(name) = self.template_name_type(found, true)?
-        {
+        let Some(name) = self.template_name_type(found, true)? else {
+            return Ok(None);
+        };
+        if parameter || binding.kind == BindingKind::Alias {
             return self
                 .template_parameter_id(found, name, component, scope)
                 .map(Some);
         }
-        let Some(primary) = self.class_template_primary(found) else {
+        let TypeKind::Template(primary) = self.graph.types.get(name).kind else {
             return Ok(None);
         };
         let head = self

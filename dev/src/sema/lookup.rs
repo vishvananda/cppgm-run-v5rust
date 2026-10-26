@@ -11,8 +11,9 @@ use crate::{
     lex::identifiers::NameId,
     syntax::ast::{Name, NameKind},
 };
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum Filter {
     Ordinary,
     Prefix,
@@ -91,6 +92,80 @@ struct BaseLookup {
     injected_template: bool,
     shared: bool,
     virtual_base: VirtualOrigin,
+}
+
+// The graph owns name slots and completed class searches for one unit. Only
+// a declaration/removal in a complete class changes a name's epoch. Namespace
+// lookup limits do not apply to class members. Dependent-base exclusions are
+// query context and must never publish a root result in this cache.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct MemberQuery {
+    scope: ScopeId,
+    name: ValueKey,
+    filter: Filter,
+}
+#[derive(Clone, Copy)]
+struct CachedMember {
+    epoch: u32,
+    result: BaseLookup,
+}
+#[derive(Default)]
+pub(super) struct Names {
+    count: usize,
+    lookups: Cell<usize>,
+    member_hints: HashSet<ValueKey>,
+    epochs: HashMap<ValueKey, u32>,
+    members: RefCell<HashMap<MemberQuery, CachedMember>>,
+}
+impl Names {
+    pub(super) fn declared(&mut self, name: ValueKey, new: bool, class: bool, complete: bool) {
+        self.count += usize::from(new);
+        if class {
+            self.member_hints.insert(name);
+        }
+        self.invalidate(name, complete);
+    }
+    pub(super) fn invalidate(&mut self, name: ValueKey, complete: bool) {
+        if complete {
+            let epoch = self.epochs.entry(name).or_default();
+            *epoch = epoch.wrapping_add(1);
+        }
+    }
+    pub(super) fn lookup(&self) {
+        self.lookups.set(self.lookups.get() + 1);
+    }
+    pub(super) fn observations(&self) -> (usize, usize, usize) {
+        (self.count, self.lookups.get(), self.members.borrow().len())
+    }
+    fn cached(&self, scope: ScopeId, name: ValueKey, filter: Filter) -> Option<BaseLookup> {
+        let epoch = self.epochs.get(&name).copied().unwrap_or(0);
+        self.members
+            .borrow()
+            .get(&MemberQuery {
+                scope,
+                name,
+                filter,
+            })
+            .filter(|stored| stored.epoch == epoch)
+            .map(|stored| stored.result)
+    }
+    fn keep(&self, scope: ScopeId, name: ValueKey, filter: Filter, found: BaseLookup) {
+        let mut members = self.members.borrow_mut();
+        // Match the frozen admission policy, including stale slots at the cap.
+        if members.len() < self.count.saturating_mul(4).max(1 << 16) {
+            members.insert(
+                MemberQuery {
+                    scope,
+                    name,
+                    filter,
+                },
+                CachedMember {
+                    epoch: self.epochs.get(&name).copied().unwrap_or(0),
+                    result: found,
+                },
+            );
+        }
+    }
 }
 
 // The last virtual base on the paths to a declaration set. Keep absence and
@@ -293,7 +368,8 @@ impl Analyzer<'_> {
         key: ValueKey,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
-        self.class_lookup_in(scope, key, filter, false)?
+        self.graph.names.lookup();
+        self.class_lookup_in(scope, key, filter, true)?
             .checked(self.lookup_location)
     }
     fn class_lookup_in(
@@ -304,8 +380,24 @@ impl Analyzer<'_> {
         unqualified: bool,
     ) -> Result<LookupResult, Error> {
         let own = self.own_lookup(scope, key, filter);
-        if own.binding.is_some() || self.graph.scope(scope).kind != ScopeKind::Class {
+        if own.binding.is_some()
+            || self.graph.scope(scope).kind != ScopeKind::Class
+            || !self.graph.names.member_hints.contains(&key)
+        {
             return Ok(own);
+        }
+        let skips =
+            unqualified
+                && self.graph.scope(scope).owner.is_some_and(|owner| {
+                    self.graph.entity(owner).bases.iter().any(|base| {
+                        base.dependency == crate::syntax::ast::BaseDependency::Dependent
+                    })
+                });
+        if !skips
+            && self.graph.complete_lookup_class(scope)
+            && let Some(found) = self.graph.names.cached(scope, key, filter)
+        {
+            return Ok(self.base_lookup_result(found, key, filter));
         }
         // A result names its representative declaring scope. Its overload set
         // is collected only once, after the graph walk, rather than copied at
@@ -341,12 +433,19 @@ impl Analyzer<'_> {
                         scope: self.graph.own_key(base, key, filter).map(|_| base),
                         ..BaseLookup::default()
                     };
-                    if own.scope.is_none() && !self.graph.entity(edge.class).bases.is_empty() {
+                    let found = if own.scope.is_some() {
+                        Some(own)
+                    } else if self.graph.complete_lookup_class(base) {
+                        self.graph.names.cached(base, key, filter)
+                    } else {
+                        None
+                    };
+                    let Some(found) = found else {
                         work.push((base, 0, BaseLookup::default()));
                         continue;
-                    }
-                    memo.insert(base, own);
-                    own
+                    };
+                    memo.insert(base, found);
+                    found
                 };
                 let mut found = found;
                 if edge.is_virtual && found.scope.is_some() && !found.shared {
@@ -359,18 +458,24 @@ impl Analyzer<'_> {
                 let (current, _, found) = work
                     .pop()
                     .ok_or(Error::Invariant("missing class lookup frame"))?;
+                if (current != scope || !skips) && self.graph.complete_lookup_class(current) {
+                    self.graph.names.keep(current, key, filter, found);
+                }
                 if current == scope {
-                    let mut result = found.scope.map_or_else(LookupResult::default, |found| {
-                        self.own_lookup(found, key, filter)
-                    });
-                    result.ambiguous = found.ambiguous;
-                    result.injected_template = found.injected_template;
-                    return Ok(result);
+                    return Ok(self.base_lookup_result(found, key, filter));
                 }
                 memo.insert(current, found);
             }
         }
         Err(Error::Invariant("class lookup without result"))
+    }
+    fn base_lookup_result(&self, found: BaseLookup, key: ValueKey, filter: Filter) -> LookupResult {
+        let mut result = found.scope.map_or_else(LookupResult::default, |scope| {
+            self.own_lookup(scope, key, filter)
+        });
+        result.ambiguous = found.ambiguous;
+        result.injected_template = found.injected_template;
+        result
     }
     fn merge_base_lookup(
         &self,
@@ -524,6 +629,13 @@ impl Analyzer<'_> {
         name: ValueKey,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
+        if self.graph.scope(scope).kind == ScopeKind::EnumMembers {
+            return Ok(LookupResult {
+                binding: self.graph.enum_member(scope, name, filter),
+                ..LookupResult::default()
+            });
+        }
+        self.graph.names.lookup();
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
             return self.class_lookup_in(scope, name, filter, false);
         }
@@ -593,6 +705,7 @@ impl Analyzer<'_> {
         name: ValueKey,
         filter: Filter,
     ) -> Result<LookupResult, Error> {
+        self.graph.names.lookup();
         let mut visited = HashSet::new();
         let mut pending = Vec::new();
         let mut current = Some(scope);
@@ -1055,6 +1168,157 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn complete_member_queries_keep_filters_and_invalidate_only_the_changed_name() {
+        let source = SourceBuffer::new(
+            b"struct Hint{typedef int late;};struct B{typedef char item;};struct D:B{};".to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"member-cache").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let mut scopes = Vec::new();
+        for spelling in [b"Hint".as_slice(), b"B", b"D"] {
+            let name = analyzer.identifiers.intern(spelling).unwrap();
+            let binding = analyzer
+                .graph
+                .own(analyzer.graph.global, name, Filter::Prefix)
+                .unwrap();
+            scopes.push(
+                analyzer
+                    .graph
+                    .entity(analyzer.graph.binding(binding).entity)
+                    .scope
+                    .unwrap(),
+            );
+        }
+        let item = analyzer.identifiers.intern(b"item").unwrap();
+        let late = analyzer.identifiers.intern(b"late").unwrap();
+        let derived = scopes[2];
+        assert!(
+            analyzer
+                .class_lookup(derived, item.into(), Filter::Prefix)
+                .unwrap()
+                .binding
+                .is_some()
+        );
+        for filter in [Filter::Prefix, Filter::Ordinary] {
+            assert!(
+                analyzer
+                    .class_lookup(derived, late.into(), filter)
+                    .unwrap()
+                    .binding
+                    .is_none()
+            );
+            assert!(
+                analyzer
+                    .graph
+                    .names
+                    .cached(derived, late.into(), filter)
+                    .is_some()
+            );
+        }
+        let preserved = analyzer
+            .graph
+            .names
+            .cached(derived, item.into(), Filter::Prefix)
+            .unwrap();
+        let binding = analyzer
+            .graph
+            .binding(analyzer.graph.own(scopes[0], late, Filter::Prefix).unwrap());
+        let introduced = analyzer
+            .graph
+            .add_binding(scopes[1], None, binding)
+            .unwrap();
+        for filter in [Filter::Prefix, Filter::Ordinary] {
+            assert!(
+                analyzer
+                    .graph
+                    .names
+                    .cached(derived, late.into(), filter)
+                    .is_none()
+            );
+            assert_eq!(
+                analyzer
+                    .class_lookup(derived, late.into(), filter)
+                    .unwrap()
+                    .binding,
+                Some(introduced)
+            );
+        }
+        assert_eq!(
+            analyzer
+                .graph
+                .names
+                .cached(derived, item.into(), Filter::Prefix)
+                .unwrap()
+                .scope,
+            preserved.scope
+        );
+    }
+
+    #[test]
+    fn dependent_base_exclusion_does_not_reuse_a_qualified_member_result() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct Base{typedef int word;};template<class T>struct Derived:Base<T>{};Derived<int> object;".to_vec(),
+        ).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"dependent-cache").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let name = analyzer.identifiers.intern(b"object").unwrap();
+        let binding = analyzer
+            .graph
+            .own(analyzer.graph.global, name, Filter::Ordinary)
+            .unwrap();
+        let TypeKind::Class(class) = analyzer
+            .graph
+            .types
+            .get(analyzer.graph.binding(binding).ty.unwrap())
+            .kind
+        else {
+            panic!("class object");
+        };
+        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let word = analyzer.identifiers.intern(b"word").unwrap();
+        let qualified = analyzer
+            .class_lookup_in(scope, word.into(), Filter::Prefix, false)
+            .unwrap();
+        assert!(qualified.binding.is_some());
+        assert!(
+            analyzer
+                .graph
+                .names
+                .cached(scope, word.into(), Filter::Prefix)
+                .is_some()
+        );
+        let unqualified = analyzer
+            .class_lookup_in(scope, word.into(), Filter::Prefix, true)
+            .unwrap();
+        assert!(unqualified.binding.is_none());
+        assert!(
+            analyzer
+                .graph
+                .names
+                .cached(scope, word.into(), Filter::Prefix)
+                .unwrap()
+                .scope
+                .is_some()
+        );
+    }
 
     #[test]
     fn shared_member_hiding_preserves_origins_ambiguity_and_demand() {

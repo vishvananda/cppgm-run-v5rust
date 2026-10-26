@@ -313,7 +313,7 @@ impl Analyzer<'_> {
         let class = self.friend_owner(scope, location)?;
         if let TypeKind::Class(entity) = self.graph.types.get(ty).kind {
             self.graph.friendships.record(class, entity);
-        } else if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+        } else if matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_)) {
             return Err(Error::at(location, "auto in a friend declaration"));
         }
         Ok(())

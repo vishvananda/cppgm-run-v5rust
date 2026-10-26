@@ -213,7 +213,7 @@ fn invocation(args: &[OsString], mode: EmitMode) -> Result<Invocation<'_>, CliEr
         if preprocessing_option(args, &mut index, &mut preprocessor)? {
             continue;
         }
-        if arg == "--stats" && matches!(mode, EmitMode::Types | EmitMode::Semantics) {
+        if arg == "--stats" && mode == EmitMode::Semantics {
             return Err(CliError::Missing(
                 "AST statistics and hosted/preprocessing invocation options",
             ));
@@ -305,7 +305,7 @@ fn run() -> Result<(), CliError> {
             b"--emit-ast" | b"--emit-types" | b"--emit-semantics" | b"--emit-lowir"
         )
     });
-    let statistics = (lowir || ast) && consume_flag(&mut args, b"--stats");
+    let statistics = (lowir || ast || types) && consume_flag(&mut args, b"--stats");
     let validate = lowir && consume_flag(&mut args, b"--validate");
     let Invocation {
         output: destination,

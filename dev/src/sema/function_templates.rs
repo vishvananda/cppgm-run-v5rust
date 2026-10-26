@@ -944,7 +944,7 @@ impl Analyzer<'_> {
         // observes the element qualifiers, as C++ without_cv does.
         let pcv = self.graph.types.get(pattern).cv.0;
         let acv = self.graph.types.get(actual).cv.0;
-        let parameter = if matches!(self.graph.types.get(pattern).kind, TypeKind::Auto) {
+        let parameter = if matches!(self.graph.types.get(pattern).kind, TypeKind::Auto(_)) {
             Some(0)
         } else {
             self.template_parameter_index(pattern, depth)
@@ -1131,7 +1131,7 @@ impl Analyzer<'_> {
             if kind == RefKind::Rvalue
                 && self.type_cv(element).0 == 0
                 && (self.template_parameter_index(element, depth).is_some()
-                    || matches!(self.graph.types.get(element).kind, TypeKind::Auto))
+                    || matches!(self.graph.types.get(element).kind, TypeKind::Auto(_)))
                 && category == ValueCategory::Lvalue
             {
                 actual = self.graph.types.reference(actual, RefKind::Lvalue)?;

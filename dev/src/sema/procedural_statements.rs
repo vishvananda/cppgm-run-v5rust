@@ -12,6 +12,7 @@ use crate::{
     syntax::ast::{self, Condition},
 };
 pub(super) struct BodyContext {
+    pub object_pointer: Option<TypeId>,
     pub return_deduction: super::return_deduction::ReturnDeduction,
     pub placeholder: Option<TypeId>,
     pub undeduced: bool,
@@ -40,6 +41,7 @@ pub(super) enum Control {
 impl BodyContext {
     pub(super) fn new(result: TypeId, entity: super::graph::EntityId) -> Self {
         Self {
+            object_pointer: None,
             return_deduction: super::return_deduction::ReturnDeduction::Fixed,
             placeholder: None,
             undeduced: false,

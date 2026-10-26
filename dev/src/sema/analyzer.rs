@@ -167,6 +167,10 @@ impl<'tree> Analyzer<'tree> {
             .intern_name(b"__int128")
             .map_err(|_| Error::Limit("semantic identifier limit"))?;
         if fresh {
+            let auto_name = cursor
+                .intern_name(b"auto")
+                .map_err(|_| Error::Limit("semantic identifier limit"))?;
+            graph.initialize_intrinsics(auto_name)?;
             for (spelling, scalar) in [
                 (b"nullptr_t".as_slice(), Scalar::Nullptr),
                 (
@@ -353,6 +357,18 @@ impl<'tree> Analyzer<'tree> {
         } else {
             AnalysisMode::Types
         };
+    }
+    pub(super) fn with_semantics<T>(
+        &mut self,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let saved = self.mode;
+        if self.mode == AnalysisMode::Types {
+            self.mode = AnalysisMode::Semantics;
+        }
+        let result = action(self);
+        self.mode = saved;
+        result
     }
     pub(crate) fn set_lowering(&mut self) {
         self.mode = AnalysisMode::Lowering;

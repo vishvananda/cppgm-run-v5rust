@@ -28,9 +28,9 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
         self.check_stack()?;
-        if self.semantic() {
-            if let Some(ty) = self.graph.expression_type(root) {
-                return Ok(ty);
+        if self.semantic() || self.evaluating_noexcept {
+            if let Some(facts) = self.graph.expression_facts.known(root) {
+                return Ok(facts.ty);
             }
             // noexcept_value types a potentially evaluated specification.
             // Nested noexcept/sizeof operands establish their own unevaluated

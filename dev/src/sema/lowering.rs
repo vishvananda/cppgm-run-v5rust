@@ -867,7 +867,7 @@ impl Graph {
     pub(crate) fn lower_parameter_level(&self, ty: TypeId) -> Option<TemplateParameterView> {
         // The frozen analyzer represents auto by an artificial type parameter
         // with zero-initialized position and depth. Its ABI spelling is T_.
-        if matches!(self.types.get(ty).kind, TypeKind::Auto) {
+        if matches!(self.types.get(ty).kind, TypeKind::Auto(_)) {
             return Some(TemplateParameterView {
                 index: 0,
                 level: 0,
@@ -1761,7 +1761,8 @@ impl Graph {
                     FunctionName::Literal(name)
                 }
                 Some(
-                    super::function_names::SpecialName::Destructor
+                    super::function_names::SpecialName::Constructor
+                    | super::function_names::SpecialName::Destructor
                     | super::function_names::SpecialName::Conversion,
                 ) => {
                     return Err(Error::Missing("member function names"));

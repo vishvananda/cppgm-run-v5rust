@@ -1,0 +1,14 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function fractional function of () returning void
+    function compared function of () returning void
+    type Context struct Context
+    scope template-parameters
+      type T typename T
+      function fixed function of () returning void
+    scope class Context
+      function nonconst function of () returning int
+      function query function of () const returning void
+end translation unit

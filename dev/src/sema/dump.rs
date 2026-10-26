@@ -87,7 +87,7 @@ impl Graph {
             indent(output, depth)?;
             let kind = match scope.kind {
                 ScopeKind::Namespace => "namespace",
-                ScopeKind::Enum => "enum",
+                ScopeKind::Enum | ScopeKind::EnumMembers => "enum",
                 ScopeKind::Class => "class",
                 ScopeKind::Function => "function",
                 ScopeKind::Block => "block",
@@ -283,6 +283,7 @@ impl Graph {
                 ScopeKind::Namespace
                     | ScopeKind::Class
                     | ScopeKind::Enum
+                    | ScopeKind::EnumMembers
                     | ScopeKind::TemplateParameters
             ) {
                 break;
@@ -399,7 +400,12 @@ impl Graph {
                         write!(output, "{bits}")?;
                     }
                 }
-                TypeKind::Auto => output.write_all(b"typename auto")?,
+                TypeKind::Auto(entity) => {
+                    output.write_all(b"typename ")?;
+                    if let Some(name) = self.entity(*entity).name {
+                        output.write_all(cursor.name(name))?;
+                    }
+                }
                 TypeKind::Scalar(scalar) => output.write_all(scalar.name().as_bytes())?,
                 TypeKind::Class(entity) => {
                     write!(output, "{} ", class_key(self.entity(*entity).key))?;

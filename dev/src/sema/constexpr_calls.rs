@@ -130,6 +130,23 @@ impl Analyzer<'_> {
         self.check_stack()?;
         self.constexpr_frames.step(location)
     }
+    pub(super) fn converted_constant_bool(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let location = self.tree.expressions.get(id).location;
+        self.in_constant_evaluation(|analyzer| {
+            let boolean = analyzer.graph.types.scalar(Scalar::Bool)?;
+            let value = analyzer.constant_operand_value(id, boolean, scope)?;
+            let Value::Integer(value) = value else {
+                return Err(Error::Invariant("boolean constant without integer value"));
+            };
+            analyzer.check_constant_bool(value, location)?;
+            Ok(value.bits != 0)
+        })
+        .map_err(|error| error.required_expression(location))
+    }
     pub(super) fn constant_operand_value(
         &mut self,
         mut id: ast::ExprId,
@@ -142,6 +159,15 @@ impl Analyzer<'_> {
             } else {
                 return self.zero_constant_scalar(target);
             }
+        }
+        // ConstantInterpreter::operand requires a typed occurrence. Untyped
+        // template/type-view expressions belong to the integral evaluator,
+        // even while an enclosing interpreted call has an active frame.
+        if self.graph.expression_facts.get(id).is_err() {
+            return Err(nonconstant(
+                self.tree.expressions.get(id).location,
+                "an expression outside constant evaluation",
+            ));
         }
         if matches!(
             self.graph.types.get(target).kind,

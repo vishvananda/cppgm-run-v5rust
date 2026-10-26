@@ -139,7 +139,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("template type argument without type"))?
             }
         };
-        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_)) {
             return Err(Error::at(location, "auto as a template argument"));
         }
         Ok(Some(ty))

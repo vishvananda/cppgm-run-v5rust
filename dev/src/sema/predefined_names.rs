@@ -473,13 +473,13 @@ impl Printer<'_> {
             | TypeKind::Address { .. }
             | TypeKind::Pack(_)
             | TypeKind::Template(_) => out.extend(self.argument(ty)?),
-            TypeKind::TemplateParameter { entity, .. } => out.extend_from_slice(
-                self.graph
-                    .entity(*entity)
-                    .name
-                    .map_or(b"auto".as_slice(), |name| self.identifiers.bytes(name)),
-            ),
-            TypeKind::Auto => out.extend_from_slice(b"auto"),
+            TypeKind::TemplateParameter { entity, .. } | TypeKind::Auto(entity) => out
+                .extend_from_slice(
+                    self.graph
+                        .entity(*entity)
+                        .name
+                        .map_or(b"auto".as_slice(), |name| self.identifiers.bytes(name)),
+                ),
             _ => return Err(Error::Invariant("source type suffix remained")),
         }
         if !inner.is_empty() {

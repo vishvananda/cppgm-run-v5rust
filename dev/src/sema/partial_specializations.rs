@@ -590,7 +590,7 @@ impl Analyzer<'_> {
                 TypeKind::Pack(elements) => self.deducible_pattern_list(elements, true, &mut work),
                 TypeKind::Expansion(pattern) => work.push(*pattern),
                 TypeKind::BoundPack { .. }
-                | TypeKind::Auto
+                | TypeKind::Auto(_)
                 | TypeKind::Scalar(_)
                 | TypeKind::Template(_)
                 | TypeKind::Enum(_)

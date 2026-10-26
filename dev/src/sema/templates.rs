@@ -74,6 +74,7 @@ struct Head {
     syntax: ast::TemplateParameterClause,
     parameters: Vec<EntityId>,
     shape: ShapeId,
+    signature_shape: Option<TypeId>,
     defaults: Vec<Option<DefaultArgument>>,
 }
 #[derive(Default)]
@@ -145,6 +146,36 @@ impl Templates {
         );
         self.heads.push(head);
         Ok(id)
+    }
+}
+impl super::graph::Graph {
+    // Only function and alias declaration signatures demand the canonical
+    // type-pack form. Class heads and nested parameter lists retain compact
+    // structural identity without publishing an unused language type.
+    pub(super) fn template_shape(&mut self, head: HeadId) -> Result<TypeId, Error> {
+        if let Some(shape) = self.templates.head(head).signature_shape {
+            return Ok(shape);
+        }
+        let mut elements = Vec::new();
+        for index in 0..self.templates.parameters(head).len() {
+            let parameter = self.templates.parameters(head)[index];
+            let entity = self.entity(parameter);
+            let ty = entity
+                .ty
+                .ok_or(Error::Invariant("template shape without parameter type"))?;
+            let value_type = entity.template_parameter.and_then(|info| info.value_type);
+            let mut positional = self.types.canonical_function(ty)?;
+            if let Some(ty) = value_type {
+                let ty = self.types.canonical_function(ty)?;
+                positional = self
+                    .types
+                    .intern(TypeKind::Pack(vec![positional, ty]), Cv::default())?;
+            }
+            elements.push(positional);
+        }
+        let shape = self.types.intern(TypeKind::Pack(elements), Cv::default())?;
+        self.templates.head_mut(head).signature_shape = Some(shape);
+        Ok(shape)
     }
 }
 impl Analyzer<'_> {
@@ -621,6 +652,7 @@ impl Analyzer<'_> {
                 syntax,
                 parameters,
                 shape: ShapeId(0),
+                signature_shape: None,
                 defaults,
             },
             shapes,
@@ -783,6 +815,7 @@ impl Analyzer<'_> {
         let head = self
             .active_template_head(scope)
             .ok_or(Error::Invariant("alias template without head"))?;
+        let shape = self.graph.template_shape(head)?;
         if let Some(earlier) = self.graph.own(home, name, Filter::Ordinary) {
             let binding = self.graph.binding(earlier);
             let previous = self.graph.entity(binding.entity).template_head;
@@ -794,7 +827,7 @@ impl Analyzer<'_> {
                 let previous_ty = binding
                     .ty
                     .ok_or(Error::Invariant("alias template without type"))?;
-                if !self.same_template_shape(previous, head)
+                if self.graph.template_shape(previous)? != shape
                     || self.graph.types.canonical_function(previous_ty)?
                         != self.graph.types.canonical_function(ty)?
                 {

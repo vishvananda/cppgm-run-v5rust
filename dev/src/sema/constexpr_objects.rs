@@ -99,7 +99,7 @@ impl Analyzer<'_> {
         }
         if let Some(class) = self.graph.class_of(element) {
             self.complete_class(class)?;
-            if self.graph.lower_nontrivial_destructor(class)? {
+            if self.graph.has_nontrivial_destructor(class) {
                 return Err(nonconstant(
                     location,
                     "an object with a non-trivial destructor in a constant expression",

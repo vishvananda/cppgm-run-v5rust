@@ -1,0 +1,17 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type Parent struct Parent
+    type Derived struct Derived
+    type-alias First int
+    type-alias Second int
+    type-alias Number enum Number
+    variable value int
+    variable qualified int
+    scope class Parent
+      type Number enum Number
+      type-alias word int
+      enumerator late enum Number 7
+    scope class Derived
+end translation unit

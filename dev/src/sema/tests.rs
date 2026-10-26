@@ -2123,7 +2123,7 @@ fn explicit_base_cast_route_survives_conversion_of_its_result() {
 }
 
 #[test]
-fn polymorphic_size_queries_complete_while_constant_calls_remain_a_boundary() {
+fn polymorphic_queries_complete_without_typing_ordinary_function_bodies() {
     analyze(
         b"struct C{virtual void f();}; int a[sizeof(C)];",
         |graph, cursor| {
@@ -2139,14 +2139,20 @@ fn polymorphic_size_queries_complete_while_constant_calls_remain_a_boundary() {
     );
     let source = b"constexpr int f(){return 1;} void g() noexcept(f());";
     let source = SourceBuffer::new(source.to_vec()).unwrap();
-    let input = Preprocessor::with_name(&source, b"missing-query-owner").unwrap();
+    let input = Preprocessor::with_name(&source, b"constant-query-owner").unwrap();
     let mut unit = SyntaxUnit::new(input);
     unit.parse().unwrap();
     let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
     let result = Analyzer::new(tree, cursor, StackBudget::default())
         .unwrap()
         .analyze(declarations);
-    assert!(matches!(result, Err(Error::Missing(_))));
+    assert!(matches!(
+        result,
+        Err(Error::Diagnostic {
+            message: "an expression outside constant evaluation",
+            ..
+        })
+    ));
 }
 
 #[test]

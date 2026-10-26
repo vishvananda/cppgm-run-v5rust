@@ -656,7 +656,7 @@ impl Analyzer<'_> {
             .finish(start)
             .map_err(|_| Error::Limit("closure qualifier limit"))?;
         let result = if lambda.trailing.is_some() || lambda.template_parameters.is_some() {
-            self.graph.types.intern(TypeKind::Auto, Cv::default())?
+            self.graph.auto_type()?
         } else {
             self.graph.types.scalar(Scalar::Void)?
         };

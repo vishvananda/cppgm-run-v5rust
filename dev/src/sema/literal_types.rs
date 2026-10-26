@@ -72,7 +72,9 @@ impl Analyzer<'_> {
         result
     }
     fn constant_literal_class(&mut self, class: EntityId) -> Result<bool, Error> {
-        if self.graph.lower_nontrivial_destructor(class)? {
+        // literal_type observes a destructor only when class completion formed
+        // its facts. A declarations-only view has no implicit destructor.
+        if self.graph.has_nontrivial_destructor(class) {
             return Ok(false);
         }
         for index in 0..self.graph.entity(class).bases.len() {

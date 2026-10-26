@@ -22,6 +22,7 @@ use crate::{
 pub(super) enum SpecialName {
     Operator { token: SimpleToken, array: bool },
     Literal(NameId),
+    Constructor,
     Destructor,
     // Shared lookup category; each declaration's identity remains MemberKey.
     Conversion,
@@ -35,6 +36,75 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn special_lookup_domains_and_redeclarations_survive_namespace_directives() {
+        let source = SourceBuffer::new(
+            b"namespace N{} using namespace N; int first; extern int first; int later;\
+              struct C{C();C(int);~C();operator int();};"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"callable-slots").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let class_name = cursor.intern_name(b"C").unwrap();
+        let first = cursor.intern_name(b"first").unwrap();
+        let later = cursor.intern_name(b"later").unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let global = graph.global;
+        let binding = graph
+            .own(global, first, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        assert!(graph.binding_redeclared(binding));
+        let binding = graph
+            .own(global, later, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        assert!(!graph.binding_redeclared(binding));
+        let class = graph
+            .own(global, class_name, super::super::lookup::Filter::Prefix)
+            .unwrap();
+        let home = graph.entity(graph.binding(class).entity).scope.unwrap();
+        let constructors: Vec<_> = graph
+            .functions_at(home, ValueKey::Special(SpecialName::Constructor))
+            .collect();
+        assert_eq!(constructors.len(), 2);
+        for (special, kind) in [
+            (
+                SpecialName::Constructor,
+                super::super::graph::MemberKind::Constructor,
+            ),
+            (
+                SpecialName::Destructor,
+                super::super::graph::MemberKind::Destructor,
+            ),
+            (
+                SpecialName::Conversion,
+                super::super::graph::MemberKind::Conversion,
+            ),
+        ] {
+            let binding = graph
+                .value_binding(home, ValueKey::Special(special))
+                .unwrap();
+            assert_eq!(
+                graph
+                    .entity(graph.binding(binding).entity)
+                    .member_function
+                    .unwrap()
+                    .kind,
+                kind
+            );
+        }
+        // The source class name still denotes the injected type.
+        assert_eq!(
+            graph
+                .own(home, class_name, super::super::lookup::Filter::Prefix)
+                .map(|id| graph.binding(id).entity),
+            Some(graph.binding(class).entity)
+        );
+    }
 
     #[test]
     fn declaration_index_separates_template_shapes_and_keeps_default_patterns() {
@@ -76,7 +146,7 @@ mod tests {
             }
             assert_eq!(
                 graph
-                    .namespace_function(graph.global, f.into(), function.ty.unwrap(), head)
+                    .indexed_function(graph.global, f.into(), function.ty.unwrap(), head)
                     .unwrap(),
                 Some(binding)
             );
@@ -491,7 +561,7 @@ impl Analyzer<'_> {
         {
             let head = self.member_template_head(scope, Some(home));
             let candidate = if self.graph.scope(home).kind == ScopeKind::Namespace {
-                self.graph.namespace_function(home, key, info.ty, head)?
+                self.graph.indexed_function(home, key, info.ty, head)?
             } else {
                 let mut next = 0;
                 let mut candidate = None;
@@ -550,7 +620,7 @@ impl Analyzer<'_> {
         if info.home.is_some() {
             let matching = if self.graph.scope(home).kind == ScopeKind::Namespace {
                 self.graph
-                    .namespace_function(home, key, info.ty, head)?
+                    .indexed_function(home, key, info.ty, head)?
                     .is_some()
             } else {
                 let mut next = 0;

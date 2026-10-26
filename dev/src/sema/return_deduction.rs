@@ -125,7 +125,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("return deduction without body"))?
             .placeholder;
         let plain =
-            declared.is_none_or(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Auto));
+            declared.is_none_or(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_)));
         let Some(facts) = facts else {
             return if plain {
                 self.graph.types.scalar(Scalar::Void)

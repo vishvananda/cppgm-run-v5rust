@@ -419,7 +419,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
         known: &mut Option<TypeId>,
     ) -> Result<TypeId, Error> {
-        let placeholder = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
+        let placeholder = self.graph.auto_type()?;
         let mut element = None;
         for index in 0..self.tree.expr_lists.get(elements).len() {
             let item = self.tree.expr_lists.get(elements)[index];
@@ -474,7 +474,7 @@ impl Analyzer<'_> {
                 "a range-based for over an empty braced-init-list deduces no element type",
             ));
         }
-        let placeholder = self.graph.types.intern(TypeKind::Auto, Cv::default())?;
+        let placeholder = self.graph.auto_type()?;
         let mut element = None;
         let mut dependent = None;
         for index in 0..self.tree.expr_lists.get(elements).len() {

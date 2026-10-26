@@ -258,7 +258,7 @@ impl Analyzer<'_> {
                         shape: None,
                     },
                     binding,
-                );
+                )?;
                 self.record_inherited_constructor(function, source)?;
             }
         }

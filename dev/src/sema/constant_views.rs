@@ -299,7 +299,7 @@ impl Graph {
                     && facts
                         .constructor
                         .is_none_or(|id| self.lower_constructor_trivial(id))
-                    && !self.lower_nontrivial_destructor(class)?,
+                    && !self.has_nontrivial_destructor(class),
                 _ => false,
             };
         let function = self.binding(step.binding).entity;

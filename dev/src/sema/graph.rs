@@ -21,6 +21,8 @@ pub(super) struct BindingId(u32);
 pub(super) enum ScopeKind {
     Namespace,
     Enum,
+    // Prefix carrier for an unscoped enumeration; not a declared scope.
+    EnumMembers,
     Class,
     Function,
     Block,
@@ -253,11 +255,12 @@ struct FunctionSignature {
     scope: ScopeId,
     name: super::function_names::ValueKey,
     ty: TypeId,
-    shape: Option<super::templates::ShapeId>,
+    shape: Option<TypeId>,
 }
 
 pub(crate) struct Graph {
     pub(super) work: Box<super::work::Observations>,
+    pub(super) names: Box<super::lookup::Names>,
     pub(super) hosted: bool,
     pub(super) cxx14: bool,
     pub(super) exceptions_enabled: bool,
@@ -276,7 +279,10 @@ pub(crate) struct Graph {
     pub(super) virtuals: Box<super::virtual_members::Virtuals>,
     pub(super) local_classes: super::local_classes::LocalClasses,
     pub(super) bit_fields: super::bit_fields::BitFields,
-    pub(super) types: Types,
+    // The unit owns the canonical table through analysis and lowering. Moving
+    // a graph between demand epochs moves its handle, not the table's indexes.
+    pub(super) types: Box<Types>,
+    auto_placeholder: Option<TypeId>,
     pub(super) friendships: super::friendships::Friendships,
     pub(super) base_paths: Box<super::inheritance::BasePaths>,
     pub(super) dependent_members: super::dependent_members::Members,
@@ -289,6 +295,8 @@ pub(crate) struct Graph {
     entities: Vec<Entity>,
     bindings: Vec<Binding>,
     ordinals: Vec<usize>,
+    redeclarations: Vec<bool>,
+    declaration_count: usize,
     binding_scopes: Vec<ScopeId>,
     binding_access: Vec<Access>,
     member_imports: std::collections::HashSet<EntityId>,
@@ -356,15 +364,88 @@ pub(crate) struct Graph {
     member_functions: HashMap<MemberKey, BindingId>,
     prototype_parameters: HashMap<EntityId, usize>,
     parameter_objects: HashMap<EntityId, TypeId>,
-    special_values: HashMap<(ScopeId, super::function_names::SpecialName), BindingId>,
+    special_values: HashMap<(ScopeId, super::function_names::SpecialName), Option<BindingId>>,
     function_sets: HashMap<(ScopeId, super::function_names::ValueKey), Vec<BindingId>>,
     function_positions:
         HashMap<(ScopeId, super::function_names::ValueKey, EntityId), FunctionPosition>,
     visible_function_sets: HashMap<(ScopeId, super::function_names::ValueKey), Vec<BindingId>>,
-    namespace_signatures: HashMap<FunctionSignature, BindingId>,
+    function_signatures: HashMap<FunctionSignature, BindingId>,
     function_origins: HashMap<EntityId, BindingId>,
 }
 impl Graph {
+    pub(super) fn initialize_intrinsics(&mut self, name: NameId) -> Result<(), Error> {
+        self.types.initialize_fundamentals()?;
+        let placeholder = self.add_entity(None, Some(name), Keyword::Auto)?;
+        let auto = self.types.intern(
+            super::types::TypeKind::Auto(placeholder),
+            super::types::Cv::default(),
+        )?;
+        self.entity_mut(placeholder).ty = Some(auto);
+        self.auto_placeholder = Some(auto);
+        let global = self.add_entity(None, None, Keyword::Namespace)?;
+        self.entity_mut(global).scope = Some(self.global);
+        self.scope_mut(self.global).owner = Some(global);
+        Ok(())
+    }
+    pub(super) fn auto_type(&self) -> Result<TypeId, Error> {
+        self.auto_placeholder
+            .ok_or(Error::Invariant("missing auto placeholder"))
+    }
+    pub(crate) fn statistics(&self) -> super::Statistics {
+        let (names, lookups, member_cache) = self.names.observations();
+        let (types, type_bytes) = self.types.observations();
+        super::Statistics {
+            scopes: self
+                .scopes
+                .iter()
+                .filter(|scope| scope.kind != ScopeKind::EnumMembers)
+                .count(),
+            bindings: self.declaration_count,
+            entities: self.entities.len(),
+            types,
+            names,
+            lookups,
+            member_cache,
+            arena_bytes: type_bytes
+                .saturating_add(
+                    self.scopes
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<Scope>()),
+                )
+                .saturating_add(
+                    self.entities
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<Entity>()),
+                )
+                .saturating_add(
+                    self.bindings
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<Binding>()),
+                ),
+            work: self.work(),
+        }
+    }
+    // Unscoped enumerators are canonical declarations in their enclosing
+    // scope. Their qualifier checks that same current entry (not an alias
+    // binding or a second index), independently of namespace lookup limits.
+    pub(super) fn enum_member(
+        &self,
+        scope: ScopeId,
+        name: super::function_names::ValueKey,
+        filter: super::lookup::Filter,
+    ) -> Option<BindingId> {
+        if filter != super::lookup::Filter::Ordinary {
+            return None;
+        }
+        let enumeration = self.scope(scope).owner?;
+        let owner = self.entity(enumeration).enumeration?.owner;
+        let binding = self.scope(owner).index.get(&name.identifier()?)?.value?;
+        if self.binding(binding).kind != BindingKind::Enumerator {
+            return None;
+        }
+        let declaration = self.enum_declaration(binding)?;
+        (self.binding(declaration).entity == enumeration).then_some(binding)
+    }
     pub(crate) fn work(&self) -> super::Work {
         self.work.snapshot()
     }
@@ -420,7 +501,7 @@ impl Graph {
                 self.declared_name(scope, name, super::lookup::Filter::Ordinary)
             }
             super::function_names::ValueKey::Special(name) => {
-                let binding = self.special_values.get(&(scope, name)).copied()?;
+                let binding = self.special_values.get(&(scope, name)).copied().flatten()?;
                 if self.scope(scope).kind == ScopeKind::Namespace && self.lookup_limit.is_some() {
                     self.work.limited_lookup();
                 }
@@ -446,12 +527,12 @@ impl Graph {
                 entry.value.or(entry.ty)
             }
             super::function_names::ValueKey::Special(name) => {
-                self.special_values.get(&(scope, name)).copied()
+                self.special_values.get(&(scope, name)).copied().flatten()
             }
         }
     }
     pub(super) fn binding_redeclared(&self, binding: BindingId) -> bool {
-        self.ordinals[binding.0 as usize] != binding.0 as usize
+        self.redeclarations[binding.0 as usize]
     }
     pub(super) fn record_special_value(
         &mut self,
@@ -466,11 +547,17 @@ impl Graph {
                 binding,
             )?;
         }
-        if let Some(old) = self.special_values.insert((scope, name), binding)
+        let new = !self.special_values.contains_key(&(scope, name));
+        self.note_lookup_declaration(scope, super::function_names::ValueKey::Special(name), new);
+        if let Some(old) = self
+            .special_values
+            .insert((scope, name), Some(binding))
+            .flatten()
             && !self.friendships.hidden(old)
             && self.binding(old).entity == self.binding(binding).entity
         {
             self.ordinals[binding.0 as usize] = self.ordinals[old.0 as usize];
+            self.redeclarations[binding.0 as usize] = true;
         }
         Ok(())
     }
@@ -508,6 +595,7 @@ impl Graph {
     pub(super) fn new() -> Self {
         Self {
             work: Box::default(),
+            names: Box::default(),
             hosted: false,
             cxx14: false,
             exceptions_enabled: true,
@@ -526,7 +614,8 @@ impl Graph {
             virtuals: Box::default(),
             member_initializers: super::member_initializers::Initializers::default(),
             variable_instances: Box::default(),
-            types: Types::default(),
+            types: Box::default(),
+            auto_placeholder: None,
             base_paths: Box::default(),
             dependent_members: super::dependent_members::Members::default(),
             template_operands: Box::default(),
@@ -559,6 +648,8 @@ impl Graph {
             bit_fields: super::bit_fields::BitFields::default(),
             bindings: Vec::new(),
             ordinals: Vec::new(),
+            redeclarations: Vec::new(),
+            declaration_count: 0,
             binding_scopes: Vec::new(),
             binding_access: Vec::new(),
             member_imports: std::collections::HashSet::new(),
@@ -617,7 +708,7 @@ impl Graph {
             function_sets: HashMap::new(),
             function_positions: HashMap::new(),
             visible_function_sets: HashMap::new(),
-            namespace_signatures: HashMap::new(),
+            function_signatures: HashMap::new(),
             function_origins: HashMap::new(),
             friendships: super::friendships::Friendships::default(),
         }
@@ -906,7 +997,8 @@ impl Graph {
         let earlier = earlier.filter(|&id| !imported_template && !self.friendships.hidden(id));
         // A compatible redeclaration is visible since the entity's first
         // visible binding, just as C++ NameLookup::KeepOrdinal specifies.
-        let ordinal = earlier.map_or(self.bindings.len(), |id| self.ordinals[id.0 as usize]);
+        let introduced = self.next_declaration_ordinal()?;
+        let ordinal = earlier.map_or(introduced, |id| self.ordinals[id.0 as usize]);
         if self.entity(binding.entity).home.is_none() {
             self.entity_mut(binding.entity).home = Some(scope);
         }
@@ -933,6 +1025,7 @@ impl Graph {
             .push(visible && self.scope(scope).kind == ScopeKind::Block);
         self.binding_scopes.push(scope);
         self.ordinals.push(ordinal);
+        self.redeclarations.push(earlier.is_some());
         if binding.kind == BindingKind::Function {
             self.function_origins.entry(binding.entity).or_insert(id);
             if visible && let Some(name) = binding.name {
@@ -943,11 +1036,17 @@ impl Graph {
             self.scope_mut(print).bindings.push(id);
         }
         if visible && let Some(name) = binding.name {
-            let entry = self.scope_mut(scope).index.entry(name).or_insert(Entry {
-                ty: None,
-                value: None,
-                tag: None,
-            });
+            let (entry, new) = match self.scope_mut(scope).index.entry(name) {
+                std::collections::hash_map::Entry::Occupied(entry) => (entry.into_mut(), false),
+                std::collections::hash_map::Entry::Vacant(entry) => (
+                    entry.insert(Entry {
+                        ty: None,
+                        value: None,
+                        tag: None,
+                    }),
+                    true,
+                ),
+            };
             if binding.kind == BindingKind::Type && (!invisible || entry.tag.is_none()) {
                 entry.tag = Some(id);
             }
@@ -966,8 +1065,26 @@ impl Graph {
                     }
                 }
             }
+            self.note_lookup_declaration(scope, name.into(), new);
         }
         Ok(id)
+    }
+    fn note_lookup_declaration(
+        &mut self,
+        scope: ScopeId,
+        name: super::function_names::ValueKey,
+        new: bool,
+    ) {
+        let class = self.scope(scope).kind == ScopeKind::Class;
+        let complete = self.complete_lookup_class(scope);
+        self.names.declared(name, new, class, complete);
+    }
+    pub(super) fn complete_lookup_class(&self, scope: ScopeId) -> bool {
+        self.scope(scope).kind == ScopeKind::Class
+            && self
+                .scope(scope)
+                .owner
+                .is_some_and(|owner| self.entity(owner).complete)
     }
     fn record_function_binding(
         &mut self,
@@ -1005,10 +1122,7 @@ impl Graph {
         }
         self.function_positions
             .insert(position_key, FunctionPosition { declared, visible });
-        if self.scope(scope).kind == ScopeKind::Namespace
-            && (self.entity(entity).template_head.is_none()
-                || self.entity(entity).home == Some(scope))
-        {
+        if self.entity(entity).template_head.is_none() || self.entity(entity).home == Some(scope) {
             let ty = self
                 .binding(binding)
                 .ty
@@ -1016,16 +1130,16 @@ impl Graph {
             let head = self.entity(entity).template_head;
             let signature_key = self.function_signature(scope, key, ty, head)?;
             if self
-                .namespace_signatures
+                .function_signatures
                 .get(&signature_key)
                 .is_none_or(|&old| self.binding(old).entity == entity)
             {
-                self.namespace_signatures.insert(signature_key, binding);
+                self.function_signatures.insert(signature_key, binding);
             }
         }
         Ok(())
     }
-    pub(super) fn namespace_function(
+    pub(super) fn indexed_function(
         &mut self,
         scope: ScopeId,
         key: super::function_names::ValueKey,
@@ -1033,7 +1147,7 @@ impl Graph {
         head: Option<super::templates::HeadId>,
     ) -> Result<Option<BindingId>, Error> {
         let signature = self.function_signature(scope, key, ty, head)?;
-        Ok(self.namespace_signatures.get(&signature).copied())
+        Ok(self.function_signatures.get(&signature).copied())
     }
     fn function_signature(
         &mut self,
@@ -1051,7 +1165,7 @@ impl Graph {
             scope,
             name,
             ty,
-            shape: head.map(|head| self.templates.shape(head)),
+            shape: head.map(|head| self.template_shape(head)).transpose()?,
         })
     }
     // A derived declaration hides an imported base function without changing
@@ -1066,6 +1180,8 @@ impl Graph {
         if self.scope(scope).kind != ScopeKind::Class {
             return Err(Error::Invariant("removing an import outside a class"));
         }
+        self.names
+            .invalidate(key, self.complete_lookup_class(scope));
         let position = self
             .function_positions
             .remove(&(scope, key, entity))
@@ -1110,10 +1226,7 @@ impl Graph {
             }
             super::function_names::ValueKey::Special(name) => {
                 if replace_value {
-                    self.special_values.remove(&(scope, name));
-                    if let Some(binding) = replacement {
-                        self.special_values.insert((scope, name), binding);
-                    }
+                    self.special_values.insert((scope, name), replacement);
                 }
             }
         }
@@ -1558,7 +1671,14 @@ impl Graph {
             .copied()
     }
     pub(super) fn binding_limit(&self) -> usize {
-        self.bindings.len()
+        self.declaration_count
+    }
+    fn next_declaration_ordinal(&mut self) -> Result<usize, Error> {
+        let ordinal = self.declaration_count;
+        self.declaration_count = ordinal
+            .checked_add(1)
+            .ok_or(Error::Limit("semantic declaration limit"))?;
+        Ok(ordinal)
     }
     // Constructors have their own lookup category. Their printed class name
     // must never replace the injected type name in ordinary lookup.
@@ -1573,7 +1693,11 @@ impl Graph {
     pub(super) fn member_function(&self, key: MemberKey) -> Option<BindingId> {
         self.member_functions.get(&key).copied()
     }
-    pub(super) fn record_member_function(&mut self, key: MemberKey, binding: BindingId) {
+    pub(super) fn record_member_function(
+        &mut self,
+        key: MemberKey,
+        binding: BindingId,
+    ) -> Result<(), Error> {
         self.member_functions.insert(key, binding);
         self.entity_mut(self.binding(binding).entity)
             .member_function = Some(key);
@@ -1604,6 +1728,16 @@ impl Graph {
                 conversions.push(binding);
             }
         }
+        let name = match key.kind {
+            MemberKind::Constructor => super::function_names::SpecialName::Constructor,
+            MemberKind::Destructor => super::function_names::SpecialName::Destructor,
+            MemberKind::Conversion => super::function_names::SpecialName::Conversion,
+        };
+        let home = self
+            .entity(key.class)
+            .scope
+            .ok_or(Error::Invariant("member function class without scope"))?;
+        self.record_special_value(home, name, binding)
     }
     pub(super) fn resolved_name(&self, name: crate::syntax::ast::Name) -> Option<BindingId> {
         self.resolved_names.get(name.index()).copied().flatten()
@@ -1714,10 +1848,21 @@ impl Graph {
             })
             .map(|edge| edge.target)
     }
-    pub(super) fn add_edge(&mut self, scope: ScopeId, target: ScopeId, inline: bool) {
+    pub(super) fn add_edge(
+        &mut self,
+        scope: ScopeId,
+        target: ScopeId,
+        inline: bool,
+    ) -> Result<(), Error> {
         let edge = ScopeEdge {
             target,
-            introduced: self.bindings.len(),
+            introduced: if inline {
+                self.declaration_count
+                    .checked_sub(1)
+                    .ok_or(Error::Invariant("inline membership before its directive"))?
+            } else {
+                self.next_declaration_ordinal()?
+            },
         };
         let scope = self.scope_mut(scope);
         if inline {
@@ -1725,5 +1870,6 @@ impl Graph {
         } else {
             scope.directives.push(edge);
         }
+        Ok(())
     }
 }

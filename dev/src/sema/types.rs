@@ -47,7 +47,7 @@ pub(super) enum RefKind {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum TypeKind {
-    Auto,
+    Auto(EntityId),
     Scalar(Scalar),
     Complex(TypeId),
     Vector {
@@ -144,6 +144,63 @@ struct DeclarationFacts {
     classes: HashMap<EntityId, TypeId>,
 }
 impl Types {
+    pub(super) fn initialize_fundamentals(&mut self) -> Result<(), Error> {
+        use FundamentalType as F;
+        for scalar in [
+            Scalar::SignedChar,
+            Scalar::Short,
+            Scalar::Basic(F::Int),
+            Scalar::Basic(F::LongInt),
+            Scalar::Basic(F::LongLongInt),
+            Scalar::UnsignedChar,
+            Scalar::UnsignedShort,
+            Scalar::Basic(F::UnsignedInt),
+            Scalar::Basic(F::UnsignedLongInt),
+            Scalar::Basic(F::UnsignedLongLongInt),
+            Scalar::Basic(F::WcharT),
+            Scalar::Basic(F::Char),
+            Scalar::Basic(F::Char16T),
+            Scalar::Basic(F::Char32T),
+            Scalar::Bool,
+            Scalar::Basic(F::Float),
+            Scalar::Basic(F::Double),
+            Scalar::Basic(F::LongDouble),
+            Scalar::Void,
+            Scalar::Nullptr,
+            Scalar::Basic(F::Int128),
+            Scalar::Basic(F::UnsignedInt128),
+            Scalar::Basic(F::Float16),
+            Scalar::Basic(F::Float32),
+            Scalar::Basic(F::Float64),
+            Scalar::Basic(F::Float128),
+            Scalar::Basic(F::Float32x),
+            Scalar::Basic(F::Float64x),
+            Scalar::Basic(F::GnuFloat128),
+            Scalar::Basic(F::BFloat16),
+        ] {
+            self.scalar(scalar)?;
+        }
+        Ok(())
+    }
+    pub(super) fn observations(&self) -> (usize, usize) {
+        let children = self
+            .records
+            .iter()
+            .map(|ty| match &ty.kind {
+                TypeKind::Function { parameters, .. } | TypeKind::Pack(parameters) => parameters
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<TypeId>()),
+                _ => 0,
+            })
+            .sum::<usize>();
+        (
+            self.records.len(),
+            self.records
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Type>())
+                .saturating_add(children),
+        )
+    }
     /// Published before the class type escapes formation, so declaration
     /// memos never need invalidation. Substitution keeps the original identity.
     pub(super) fn record_declared_class(&mut self, entity: EntityId, ty: TypeId) {
@@ -183,6 +240,17 @@ impl Types {
             .ok_or(Error::Invariant("parameter index outside function"))
     }
     pub(super) fn intern(&mut self, kind: TypeKind, cv: Cv) -> Result<TypeId, Error> {
+        let id = self.intern_raw(kind, cv)?;
+        if cv.0 != 0 {
+            let bare = self.intern_raw(self.get(id).kind.clone(), Cv::default())?;
+            self.canonical_type(bare, false)?;
+        }
+        self.canonical_type(id, false)?;
+        Ok(id)
+    }
+    // Canonicalization publishes through the same structural index, without
+    // recursively restarting the walk of the type being completed.
+    fn intern_raw(&mut self, kind: TypeKind, cv: Cv) -> Result<TypeId, Error> {
         let ty = Type { cv, kind };
         let fingerprint = self.fingerprints.hash_one(&ty);
         let head = self.index.get(&fingerprint).copied();
@@ -368,7 +436,7 @@ impl Types {
     // signature_of in analyzer_types.cpp: return types never key ordinary overloads.
     // Both the canonical function and its signature are immutable unit-owned types.
     pub(super) fn declaration_signature(&mut self, ty: TypeId) -> Result<TypeId, Error> {
-        let ty = self.canonical_function(ty)?;
+        let ty = self.declared_type(ty)?;
         if let Some(signature) = self.signatures[ty.0 as usize] {
             return Ok(signature);
         }
@@ -477,9 +545,10 @@ impl Types {
                         work.push((*result, false));
                         work.extend(parameters.iter().map(|&p| (p, false)));
                     }
-                    TypeKind::Value { .. }
-                    | TypeKind::Address { .. }
-                    | TypeKind::Auto
+                    TypeKind::Value { ty, .. } | TypeKind::Address { ty, .. } => {
+                        work.push((*ty, false));
+                    }
+                    TypeKind::Auto(_)
                     | TypeKind::Scalar(_)
                     | TypeKind::Class(_)
                     | TypeKind::Template(_)
@@ -490,6 +559,14 @@ impl Types {
             }
             let node = self.get(id).clone();
             let kind = match node.kind {
+                TypeKind::Value { ty, bits } => TypeKind::Value {
+                    ty: self.canonical_child(ty, declaration)?,
+                    bits,
+                },
+                TypeKind::Address { ty, entity } => TypeKind::Address {
+                    ty: self.canonical_child(ty, declaration)?,
+                    entity,
+                },
                 TypeKind::Pack(elements) => TypeKind::Pack(
                     elements
                         .into_iter()
@@ -590,7 +667,7 @@ impl Types {
                 }
                 other => other,
             };
-            let canonical = self.intern(kind, node.cv)?;
+            let canonical = self.intern_raw(kind, node.cv)?;
             self.complete_type(id, canonical, declaration);
             self.complete_type(canonical, canonical, declaration);
         }
@@ -628,6 +705,59 @@ impl Types {
 #[cfg(test)]
 mod collision_tests {
     use super::*;
+    #[test]
+    fn newly_interned_types_already_own_their_canonical_and_unqualified_forms() {
+        let mut types = Types::default();
+        let int = types.scalar(Scalar::Basic(FundamentalType::Int)).unwrap();
+        let array = types
+            .intern(
+                TypeKind::Array {
+                    element: int,
+                    bound: 3,
+                    operand: None,
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        let function = types
+            .intern(
+                TypeKind::Function {
+                    result: int,
+                    parameters: vec![array],
+                    variadic: false,
+                    cv: Cv::default(),
+                    reference: None,
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        let pointer = types.pointer(int).unwrap();
+        let canonical = types.canonical_view(function);
+        assert_ne!(function, canonical);
+        assert_eq!(types.function_parameter(canonical, 0).unwrap(), pointer);
+        let qualified = types
+            .intern(TypeKind::Pointer(function), Cv::CONST)
+            .unwrap();
+        let bare = types.pointer(function).unwrap();
+        let null = types
+            .intern(TypeKind::Value { ty: bare, bits: 0 }, Cv::default())
+            .unwrap();
+        let canonical_pointer = types.canonical_view(bare);
+        let canonical_null = types
+            .intern(
+                TypeKind::Value {
+                    ty: canonical_pointer,
+                    bits: 0,
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        assert_eq!(types.canonical_view(null), canonical_null);
+        let count = types.observations().0;
+        assert_eq!(types.canonical_function(function).unwrap(), canonical);
+        assert_eq!(types.qualify(bare, Cv::CONST).unwrap(), qualified);
+        assert_eq!(types.observations().0, count);
+    }
     #[test]
     fn qualification_preserves_function_identity_and_member_qualifiers() {
         let mut types = Types::default();

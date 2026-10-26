@@ -160,7 +160,7 @@ impl Analyzer<'_> {
                 TypeKind::Pack(elements) => work.extend(elements.iter().rev().copied()),
                 TypeKind::BoundPack { .. } => packs.bound.push(ty),
                 TypeKind::Expansion(_)
-                | TypeKind::Auto
+                | TypeKind::Auto(_)
                 | TypeKind::Scalar(_)
                 | TypeKind::Template(_)
                 | TypeKind::Enum(_)

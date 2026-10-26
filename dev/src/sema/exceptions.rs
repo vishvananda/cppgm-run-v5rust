@@ -488,7 +488,7 @@ impl Analyzer<'_> {
             else {
                 return Err(Error::Invariant("missing template exception pattern"));
             };
-            self.check_template_exception(pattern)?;
+            self.check_template_exception(pattern, pending)?;
             self.specifications[id.0 as usize].done = true;
             return Ok(());
         }
@@ -505,46 +505,38 @@ impl Analyzer<'_> {
         let saved_body = self.body_context.take();
         let saved_default = self.default_argument_scope.take();
         let saved_member = self.member_initializer_class.take();
-        if self.semantic() {
-            let ty = self
-                .graph
-                .entity(pending.entity)
-                .ty
-                .ok_or(Error::Invariant(
-                    "exception specification without function type",
-                ))?;
-            let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
-                return Err(Error::Invariant("exception specification on nonfunction"));
-            };
-            self.body_context = Some(super::procedural_statements::BodyContext::new(
-                result,
-                pending.entity,
-            ));
-        }
         let saved_allocation_context = self.global_allocation_context;
         self.global_allocation_context = if matches!(pending.mode, SpecificationMode::Ordinary) {
             super::allocation::GlobalAllocationContext::Declaration
         } else {
             super::allocation::GlobalAllocationContext::Instantiation
         };
-        let result = if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
-            self.graph
-                .entity(pending.entity)
-                .member_function
-                .ok_or(Error::Invariant(
-                    "implicit destructor specification without member",
-                ))
-                .and_then(|member| self.implicit_destructor_nothrow(member.class))
-                .map(|nothrow| {
-                    if nothrow {
-                        ExceptionSet::None
-                    } else {
-                        ExceptionSet::All
-                    }
-                })
-        } else {
-            self.exception_set_context(pending.qualifier, pending.scope, true, Some(pending.entity))
-        };
+        let result = (|| {
+            self.body_context = self.specification_body(&pending)?;
+            if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
+                self.graph
+                    .entity(pending.entity)
+                    .member_function
+                    .ok_or(Error::Invariant(
+                        "implicit destructor specification without member",
+                    ))
+                    .and_then(|member| self.implicit_destructor_nothrow(member.class))
+                    .map(|nothrow| {
+                        if nothrow {
+                            ExceptionSet::None
+                        } else {
+                            ExceptionSet::All
+                        }
+                    })
+            } else {
+                self.exception_set_context(
+                    pending.qualifier,
+                    pending.scope,
+                    true,
+                    Some(pending.entity),
+                )
+            }
+        })();
         self.body_context = saved_body;
         self.default_argument_scope = saved_default;
         self.member_initializer_class = saved_member;
@@ -662,30 +654,7 @@ impl Analyzer<'_> {
             None => Ok(ExceptionSet::All),
             Some(QualifierKind::Noexcept(operand)) => {
                 let nothrow = if let Some(operand) = operand {
-                    let saved = self.evaluating_noexcept;
-                    self.evaluating_noexcept = true;
-                    let result = (|| {
-                        let ty = self.exception_operand_type(operand, scope)?;
-                        if self.semantic() {
-                            let saved = self.unevaluated;
-                            self.unevaluated = 1;
-                            let result = self.convert_bool(operand);
-                            self.unevaluated = saved;
-                            result?;
-                        } else {
-                            self.exception_bool(ty, self.tree.expressions.get(operand).location)?;
-                        }
-                        self.constant_value(operand, scope, true)
-                    })();
-                    self.evaluating_noexcept = saved;
-                    let value = result?.ok_or(Error::Invariant("missing noexcept value"))?;
-                    if self.scoped_enum(value.ty) {
-                        return Err(Error::at(
-                            self.tree.expressions.get(operand).location,
-                            "invalid implicit conversion",
-                        ));
-                    }
-                    value.bits != 0
+                    self.noexcept_value(operand, scope)?
                 } else {
                     true
                 };
@@ -700,6 +669,67 @@ impl Analyzer<'_> {
             }
             _ => Err(Error::Invariant("invalid exception qualifier")),
         }
+    }
+    pub(super) fn specification_body(
+        &mut self,
+        pending: &PendingSpecification,
+    ) -> Result<Option<super::procedural_statements::BodyContext>, Error> {
+        let operand = matches!(pending.mode, SpecificationMode::TemplateExpression)
+            || matches!(
+                pending.qualifier,
+                Some(Qualifier {
+                    kind: QualifierKind::Noexcept(Some(_)),
+                    ..
+                })
+            );
+        if !self.semantic() && !operand {
+            return Ok(None);
+        }
+        let entity = self.graph.entity(pending.entity);
+        let ty = entity.ty.ok_or(Error::Invariant(
+            "exception specification without function type",
+        ))?;
+        let cv = self.graph.types.get(ty).cv;
+        let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+            return Err(Error::Invariant("exception specification on nonfunction"));
+        };
+        let home = entity
+            .home
+            .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class);
+        let object = home
+            .and_then(|home| self.graph.scope(home).owner)
+            .filter(|_| !entity.function.is_some_and(|function| function.is_static));
+        let mut body = super::procedural_statements::BodyContext::new(result, pending.entity);
+        if operand && let Some(object) = object {
+            let object = self.graph.entity(object).ty.ok_or(Error::Invariant(
+                "exception specification class without type",
+            ))?;
+            // noexcept_value reads Type::cv, independently of function_cv.
+            let object = self.graph.types.qualify(object, cv)?;
+            body.object_pointer = Some(self.graph.types.pointer(object)?);
+        }
+        Ok(Some(body))
+    }
+    // A specification uses typed occurrences and converted constant evaluation
+    // in every view. Typing retains the view's ordinary declaration/body demand.
+    pub(super) fn noexcept_value(
+        &mut self,
+        operand: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let saved = self.evaluating_noexcept;
+        self.evaluating_noexcept = true;
+        let result = (|| {
+            self.exception_operand_type(operand, scope)?;
+            let saved = self.unevaluated;
+            self.unevaluated = 1;
+            let result = self.convert_bool(operand);
+            self.unevaluated = saved;
+            result?;
+            self.with_semantics(|analyzer| analyzer.converted_constant_bool(operand, scope))
+        })();
+        self.evaluating_noexcept = saved;
+        result
     }
     fn dynamic_exception_set(
         &mut self,

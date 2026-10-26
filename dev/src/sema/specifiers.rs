@@ -326,9 +326,7 @@ impl Analyzer<'_> {
             if ty.is_some() || !fundamental.is_empty() {
                 return Err(Error::at(location, "auto with another type specifier"));
             }
-            self.graph
-                .types
-                .intern(super::types::TypeKind::Auto, Cv::default())?
+            self.graph.auto_type()?
         } else if let Some(ty) = ty {
             ty
         } else {

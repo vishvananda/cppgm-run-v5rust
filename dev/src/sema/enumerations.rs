@@ -394,13 +394,18 @@ impl Analyzer<'_> {
             .types
             .intern(TypeKind::Enum(entity), Cv::default())?;
         let scope = self.graph.add_scope(
-            ScopeKind::Enum,
+            if info.scoped {
+                ScopeKind::Enum
+            } else {
+                ScopeKind::EnumMembers
+            },
             info.owner,
             if info.scoped { Some(print) } else { None },
             name,
         )?;
         self.graph.entity_mut(entity).ty = Some(ty);
         self.graph.entity_mut(entity).scope = Some(scope);
+        self.graph.scope_mut(scope).owner = Some(entity);
         self.graph.entity_mut(entity).enumeration = Some(info);
         let binding = self.graph.add_binding(
             info.owner,
@@ -563,10 +568,6 @@ impl Analyzer<'_> {
             };
             let id = self.graph.add_binding(lookup, Some(print), binding)?;
             self.graph.record_enum_declaration(id, declaration);
-            if !info.scoped {
-                let id = self.graph.add_binding(enum_scope, None, binding)?;
-                self.graph.record_enum_declaration(id, declaration);
-            }
             values.push(constant);
         }
         let underlying = if let Some(ty) = info.underlying {

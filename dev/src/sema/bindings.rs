@@ -63,7 +63,7 @@ impl Analyzer<'_> {
         use super::specifiers::{
             DeclarationRole, Explicitness, Friendship, InlinePreference, Virtuality,
         };
-        if !matches!(self.graph.types.get(specifiers.ty).kind, TypeKind::Auto)
+        if !matches!(self.graph.types.get(specifiers.ty).kind, TypeKind::Auto(_))
             || specifiers.role == DeclarationRole::Typedef
             || specifiers.constexpr
             || specifiers.inline == InlinePreference::Inline

@@ -119,7 +119,7 @@ impl Analyzer<'_> {
         let ty = self
             .declarator_in(node.declarator, specs.ty, environment)?
             .ty;
-        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_)) {
             return Err(Error::at(node.location, "auto in a type-id"));
         }
         super::record(&mut self.graph.type_facts, id.index(), ty);
@@ -151,7 +151,10 @@ impl Analyzer<'_> {
                     .saturating_sub(1);
                 home = match self.name_prefix(named, scope, count, false)? {
                     Some(super::lookup::Prefix::Scope(home))
-                        if self.graph.scope(home).kind != super::graph::ScopeKind::Enum =>
+                        if !matches!(
+                            self.graph.scope(home).kind,
+                            super::graph::ScopeKind::Enum | super::graph::ScopeKind::EnumMembers
+                        ) =>
                     {
                         Some(home)
                     }
@@ -265,7 +268,7 @@ impl Analyzer<'_> {
                 let pointer = &syntax_item;
                 parameters = None;
                 function_qualifiers = None;
-                if !auto_operators && matches!(self.graph.types.get(ty).kind, TypeKind::Auto) {
+                if !auto_operators && matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_)) {
                     return Err(Error::at(
                         node.location,
                         "auto with a declarator operator is not supported here",
@@ -637,7 +640,7 @@ impl Analyzer<'_> {
             let made = self.graph.template_operands.count();
             let lookup = prototype.unwrap_or(scope);
             let specs = self.specifiers(parameter.specifiers, lookup, false)?;
-            if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto) {
+            if matches!(self.graph.types.get(specs.ty).kind, TypeKind::Auto(_)) {
                 return Err(Error::at(parameter.location, "parameter without a type"));
             }
             let info = self.declarator(parameter.declarator, specs.ty, lookup)?;
@@ -681,7 +684,7 @@ impl Analyzer<'_> {
                     });
                 }
                 ast::QualifierKind::Trailing(result) => {
-                    if !matches!(self.graph.types.get(ty).kind, TypeKind::Auto)
+                    if !matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_))
                         || self.graph.types.get(ty).cv != Cv::default()
                     {
                         return Err(Error::at(location, "a trailing return type needs auto"));

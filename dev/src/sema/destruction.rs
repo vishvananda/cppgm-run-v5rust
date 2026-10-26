@@ -127,6 +127,13 @@ impl Graph {
             .map(|facts| facts.trivial)
             .ok_or(Error::Invariant("destructor properties not complete"))
     }
+    // Semantic queries observe a nullable destructor, as C++ does. Backend
+    // queries above require completion before consuming its properties.
+    pub(super) fn has_nontrivial_destructor(&self, class: EntityId) -> bool {
+        self.entity(class)
+            .destruction
+            .is_some_and(|facts| !facts.trivial)
+    }
 }
 impl Analyzer<'_> {
     pub(super) fn implicit_destructor_nothrow(&mut self, class: EntityId) -> Result<bool, Error> {

@@ -5,8 +5,11 @@ use std::io::Write;
 /// Work and resource observations from one parsed source view.
 #[derive(Default)]
 pub struct SourceObservations {
+    pub(crate) view: Option<super::ast::EmitMode>,
     pub(crate) syntax: Option<crate::syntax::observations::Statistics>,
+    pub(crate) semantic: Option<crate::sema::Statistics>,
     pub(crate) parse_ms: f64,
+    pub(crate) analyze_ms: f64,
     pub(crate) print_ms: f64,
 }
 impl SourceObservations {
@@ -17,6 +20,33 @@ impl SourceObservations {
         let Some(s) = self.syntax else {
             return Ok(());
         };
+        if self.view == Some(super::ast::EmitMode::Types) {
+            let Some(g) = self.semantic else {
+                return Ok(());
+            };
+            out.write_all(b"cppgm++ stats ")?;
+            out.write_all(path)?;
+            return writeln!(
+                out,
+                ": tokens={} scopes={} bindings={} entities={} types={} names={} lookups={} member_cache={} parser_kept_searches={} constant_evaluations={} constant_steps={} syntax_arena_bytes={} semantic_arena_bytes={} parse_ms={} analyze_ms={} print_ms={} peak_rss_kb={peak_rss}",
+                s.tokens,
+                g.scopes,
+                g.bindings,
+                g.entities,
+                g.types,
+                g.names,
+                g.lookups,
+                g.member_cache,
+                s.kept_searches,
+                g.work.constant_evaluations,
+                g.work.constant_steps,
+                s.arena_bytes,
+                g.arena_bytes,
+                self.parse_ms,
+                self.analyze_ms,
+                self.print_ms
+            );
+        }
         out.write_all(b"cppgm++ stats ")?;
         out.write_all(path)?;
         writeln!(
