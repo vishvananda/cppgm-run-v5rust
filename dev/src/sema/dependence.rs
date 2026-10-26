@@ -84,13 +84,15 @@ impl Analyzer<'_> {
         callee: super::name_keys::KeyCallee,
         arguments: List<ast::ExprId>,
         scope: ScopeId,
-        start: usize,
         key: &mut ExpressionKey,
     ) -> Result<(), Error> {
         let super::name_keys::KeyCallee {
             binding,
             component,
             sole,
+            word,
+            arguments: arguments_at,
+            implicit_object,
         } = callee;
         let NameKind::Identifier(name) = component.kind else {
             return Ok(());
@@ -106,7 +108,7 @@ impl Analyzer<'_> {
                 break;
             }
         }
-        if !matches!(key.words.get(start + 4), Some(KeyWord::Entity(_))) {
+        if !matches!(key.words.get(word), Some(KeyWord::Entity(_))) {
             return Ok(());
         }
         let entity = self.graph.binding(binding).entity;
@@ -115,28 +117,24 @@ impl Analyzer<'_> {
             .entity(entity)
             .home
             .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class);
-        let through_this = class_member
-            && self.body_context.is_some()
-            && self
-                .graph
-                .entity(entity)
-                .function
-                .is_some_and(|function| !function.is_static);
         if dependent {
             key.dependent = true;
         }
         let resolved = if sole
-            && !through_this
+            && !implicit_object
             && component.arguments.is_none()
             && self.graph.entity(entity).template_head.is_none()
             && (!dependent || class_member)
         {
             Some(entity)
-        } else if sole && !through_this && !dependent && component.arguments.is_some() {
+        } else if sole && !implicit_object && !dependent && component.arguments.is_some() {
             let mut given = Vec::new();
             // These are the canonical arguments already retained by key_name.
             // Resolve only a complete explicit head, never deduce call arguments.
-            for word in key.words.get(start + 7..).unwrap_or_default() {
+            for word in arguments_at
+                .and_then(|at| key.words.get(at..))
+                .unwrap_or_default()
+            {
                 let KeyWord::Type(ty) = word else {
                     return Err(Error::Invariant("callee key without argument type"));
                 };
@@ -147,9 +145,9 @@ impl Analyzer<'_> {
             None
         };
         if let Some(resolved) = resolved {
-            key.words[start + 4] = KeyWord::ResolvedFunction(resolved);
+            key.words[word] = KeyWord::ResolvedFunction(resolved);
         } else if dependent {
-            key.words[start + 4] = KeyWord::DependentCallee(entity, name);
+            key.words[word] = KeyWord::DependentCallee(entity, name);
         }
         Ok(())
     }

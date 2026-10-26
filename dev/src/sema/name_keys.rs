@@ -18,6 +18,9 @@ pub(super) struct KeyCallee {
     pub binding: BindingId,
     pub component: ast::NameComponent,
     pub sole: bool,
+    pub word: usize,
+    pub arguments: Option<usize>,
+    pub implicit_object: bool,
 }
 impl Analyzer<'_> {
     pub(super) fn key_name(
@@ -62,13 +65,6 @@ impl Analyzer<'_> {
                         Err(error) => return Err(error),
                     };
                     if let Some(binding) = found.binding {
-                        if call.is_some() && component_count == 1 {
-                            callee = Some(KeyCallee {
-                                binding,
-                                component,
-                                sole: self.semantic() && found.functions.as_slice().len() == 1,
-                            });
-                        }
                         // A substituted integral argument is keyed as its
                         // literal value, using this same ordinary lookup.
                         if call.is_none()
@@ -85,6 +81,17 @@ impl Analyzer<'_> {
                             key.words.truncate(start);
                             key.words.push(KeyWord::Constant(value.ty, value.bits));
                             return Ok(true);
+                        }
+                        let implicit_object = self.key_implicit_object(&found, key)?;
+                        if call.is_some() && component_count == 1 {
+                            callee = Some(KeyCallee {
+                                binding,
+                                component,
+                                sole: self.semantic() && found.functions.as_slice().len() == 1,
+                                word: key.words.len(),
+                                arguments: None,
+                                implicit_object,
+                            });
                         }
                         if !self.key_binding(binding, scope, key)? {
                             return Ok(false);
@@ -104,6 +111,9 @@ impl Analyzer<'_> {
                     KeyWord::Count(argument_count),
                 ]);
                 last_arguments = Some(key.words.len());
+                if let Some(callee) = &mut callee {
+                    callee.arguments = last_arguments;
+                }
                 for index in 0..argument_count {
                     let argument = self.tree.template_arguments.get(arguments)[index];
                     let Some(ty) =
@@ -121,9 +131,50 @@ impl Analyzer<'_> {
         if let Some(callee) = callee
             && let Some(arguments) = call
         {
-            self.key_call_resolution(callee, arguments, scope, start, key)?;
+            self.key_call_resolution(callee, arguments, scope, key)?;
         }
         Ok(true)
+    }
+
+    fn key_implicit_object(
+        &mut self,
+        found: &super::lookup::LookupResult,
+        key: &mut ExpressionKey,
+    ) -> Result<bool, Error> {
+        let Some(binding) = found.binding else {
+            return Ok(false);
+        };
+        let bound = self.graph.binding(binding);
+        let member = match bound.kind {
+            BindingKind::Variable => {
+                self.graph.entity(bound.entity).data_member
+                    == Some(super::graph::DataMemberKind::Instance)
+            }
+            BindingKind::Function => {
+                let candidates = if found.functions.as_slice().is_empty() {
+                    std::slice::from_ref(&binding)
+                } else {
+                    found.functions.as_slice()
+                };
+                candidates.iter().any(|&binding| {
+                    let entity = self.graph.entity(self.graph.binding(binding).entity);
+                    entity.function.is_some_and(|function| !function.is_static)
+                        && entity.home.is_some_and(|home| {
+                            self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                        })
+                })
+            }
+            _ => false,
+        };
+        if member && let Some(object) = self.current_object_type()? {
+            let pointer = self.graph.types.pointer(object)?;
+            let pointer = self.graph.types.canonical_function(pointer)?;
+            key.words
+                .extend([KeyWord::Node(KeyNode::This), KeyWord::Type(pointer)]);
+            key.dependent |= self.graph.dependent_type(object);
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// `name_words` tests for template names before interpreting a type-id.

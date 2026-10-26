@@ -1355,7 +1355,19 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
             let kind = self.tree.expressions.get(operand).kind;
             if self.graph.lower_value_argument(ty) {
-                Node::ExpressionArgument(expression)
+                match self.abi.get(expression) {
+                    Node::Literal { .. }
+                    | Node::UnsignedLiteral { .. }
+                    | Node::NullptrLiteral(_)
+                    | Node::FloatingLiteral { .. } => {
+                        return self.finish_abi_type(ty, expression);
+                    }
+                    Node::EntityReference(entity) => Node::EntityArgument {
+                        entity,
+                        address: false,
+                    },
+                    _ => Node::ExpressionArgument(expression),
+                }
             } else {
                 Node::Decltype {
                     expression,
@@ -1388,11 +1400,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 },
                 TypeView::Array { element, bound } => Node::Modified {
                     modifier: if let Some(operand) = self.graph.lower_array_operand(ty) {
-                        let (_, words) = self
-                            .graph
-                            .lower_template_operand(operand)
-                            .ok_or(Error::Missing("dependent array bound ABI operand"))?;
-                        Modifier::ExpressionArray(self.placeholder_expression(words)?)
+                        Modifier::ExpressionArray(self.placeholder_expression(operand)?)
                     } else if bound == 0 {
                         Modifier::UnknownArray
                     } else {

@@ -689,6 +689,12 @@ impl Graph {
             self.template_operands.words(entity).unwrap_or_default(),
         ))
     }
+    pub(crate) fn lower_operand_object(&self, ty: TypeId) -> Option<TypeId> {
+        let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
+            return None;
+        };
+        self.template_operands.pattern(entity)?.object
+    }
     pub(crate) fn lower_dependent_member(&self, ty: TypeId) -> Option<(TypeId, NameId)> {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
             return None;

@@ -25,7 +25,7 @@ pub(super) struct Pattern {
     fixed_value: Option<FixedValue>,
     pub expression: ast::ExprId,
     pub scope: ScopeId,
-    object: Option<TypeId>,
+    pub(super) object: Option<TypeId>,
     pub key_dependent: bool,
     pub pack_names: super::pack_names::PackNames,
     home: ScopeId,

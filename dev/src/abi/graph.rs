@@ -169,6 +169,7 @@ pub enum Node {
         level: u32,
     },
     ThisParam,
+    Rethrow,
     Operation(Operation),
     Call,
     ConversionList(NodeId),

@@ -794,6 +794,7 @@ impl<'a> Encoder<'a> {
                 self.put(b"_");
             }
             Node::ThisParam => self.put(b"fpT"),
+            Node::Rethrow => self.put(b"tr"),
             Node::Literal { .. }
             | Node::UnsignedLiteral { .. }
             | Node::NullptrLiteral(_)

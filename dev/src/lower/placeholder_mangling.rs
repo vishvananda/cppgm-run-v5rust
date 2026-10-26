@@ -7,11 +7,12 @@ use crate::{
     sema::lowering::{EntityId, KeyNode as N, KeyWord as W, TypeId, TypeView},
 };
 
-struct Words<'a> {
+struct OperandReader<'a> {
     words: &'a [W],
     at: usize,
+    object: Option<TypeId>,
 }
-impl<'a> Words<'a> {
+impl<'a> OperandReader<'a> {
     fn next(&mut self) -> Result<&'a W, Error> {
         let word = self.words.get(self.at).ok_or_else(missing)?;
         self.at += 1;
@@ -115,8 +116,7 @@ impl Symbols<'_, '_> {
             return Ok(None);
         }
         self.placeholders.insert(key, None);
-        let (_, words) = self.graph.lower_template_operand(ty).ok_or_else(missing)?;
-        let node = match self.placeholder_expression(words) {
+        let node = match self.placeholder_expression(ty) {
             Ok(node) => Some(node),
             // The frozen reader's unsupported production is ABI_NONE. Only
             // that result selects its concrete-specialization ABI fallback.
@@ -137,6 +137,19 @@ impl Symbols<'_, '_> {
         }
         let result = if self.graph.lower_operand_key_dependent(ty).is_some() {
             self.placeholder_node(ty)?.is_none()
+        } else if let Some(arguments) = self.graph.lower_argument_pack(ty) {
+            let mut found = false;
+            for &argument in arguments {
+                if self.unmangled_placeholder(argument)? {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        } else if let Some(pattern) = self.graph.lower_pack_expansion(ty) {
+            self.unmangled_placeholder(pattern)?
+        } else if let Some((owner, member)) = self.graph.lower_member_pointer_type(ty) {
+            self.unmangled_placeholder(owner)? || self.unmangled_placeholder(member)?
         } else {
             match self.graph.lower_type(ty)? {
                 TypeView::Array { element, .. } => {
@@ -178,15 +191,24 @@ impl Symbols<'_, '_> {
         self.unmangled.insert(ty, result);
         Ok(result)
     }
-    pub(super) fn placeholder_expression(&mut self, words: &[W]) -> Result<NodeId, Error> {
-        let mut reader = Words { words, at: 0 };
+    pub(super) fn placeholder_expression(&mut self, ty: TypeId) -> Result<NodeId, Error> {
+        let (_, words) = self.graph.lower_template_operand(ty).ok_or_else(missing)?;
+        let mut reader = OperandReader {
+            words,
+            at: 0,
+            object: self.graph.lower_operand_object(ty),
+        };
         let result = self.operand_expression(&mut reader, 0)?;
         if reader.at != words.len() {
             return Err(missing());
         }
         Ok(result)
     }
-    fn operand_expression(&mut self, words: &mut Words<'_>, depth: u8) -> Result<NodeId, Error> {
+    fn operand_expression(
+        &mut self,
+        words: &mut OperandReader<'_>,
+        depth: u8,
+    ) -> Result<NodeId, Error> {
         self.check_stack()?;
         if depth > 64 {
             return Err(missing());
@@ -196,7 +218,7 @@ impl Symbols<'_, '_> {
                 if words.count()? != 1 {
                     return Err(missing());
                 }
-                let argument = self.abi_type(words.ty()?)?;
+                let argument = self.operand_type(words.ty()?)?;
                 let name = self.abi.string(transform.spelling().as_bytes())?;
                 return self
                     .abi
@@ -313,7 +335,7 @@ impl Symbols<'_, '_> {
             W::Node(N::FunctionalCast) => {
                 let count = words.count()?;
                 let braced = words.flag()?;
-                let ty = self.abi_type(words.ty()?)?;
+                let ty = self.operand_type(words.ty()?)?;
                 if braced {
                     return self.operand_braced(words, Some(ty), depth);
                 }
@@ -390,6 +412,13 @@ impl Symbols<'_, '_> {
                     .intern(Node::Deallocation { array, global }, &[operand])
                     .map_err(Error::from);
             }
+            W::Node(N::Throw) => {
+                if words.flag()? {
+                    Node::Rethrow
+                } else {
+                    return self.operand_operation(words, O::Throw, 1, depth);
+                }
+            }
             W::Node(N::Trait) => {
                 let W::Keyword(Some(keyword)) = words.next()? else {
                     return Err(missing());
@@ -399,7 +428,7 @@ impl Symbols<'_, '_> {
                     return match keyword {
                         Keyword::Alignof => self.operand_type_query(words.ty()?, true),
                         Keyword::Typeid => {
-                            let ty = self.abi_type(words.ty()?)?;
+                            let ty = self.operand_type(words.ty()?)?;
                             self.abi
                                 .intern(Node::TypeidType(ty), &[])
                                 .map_err(Error::from)
@@ -420,13 +449,17 @@ impl Symbols<'_, '_> {
         self.abi.intern(node, &[]).map_err(Error::from)
     }
 
-    fn operand_allocation(&mut self, words: &mut Words<'_>, depth: u8) -> Result<NodeId, Error> {
+    fn operand_allocation(
+        &mut self,
+        words: &mut OperandReader<'_>,
+        depth: u8,
+    ) -> Result<NodeId, Error> {
         let placed = words.count()?;
         let global = words.flag()?;
         let array = words.flag()?;
         let form = words.count()?;
         let count = words.count()?;
-        let ty = self.abi_type(words.ty()?)?;
+        let ty = self.operand_type(words.ty()?)?;
         // The array bound is consumed in source order but not encoded.
         if array {
             self.operand_expression(words, depth + 1)?;
@@ -462,7 +495,7 @@ impl Symbols<'_, '_> {
             .map_err(Error::from)
     }
 
-    fn operand_pack_size(&mut self, words: &mut Words<'_>) -> Result<NodeId, Error> {
+    fn operand_pack_size(&mut self, words: &mut OperandReader<'_>) -> Result<NodeId, Error> {
         let node = if matches!(words.words.get(words.at), Some(W::Flag(true))) {
             words.flag()?;
             let W::Parameter { index, level } = words.next()? else {
@@ -488,6 +521,18 @@ impl Symbols<'_, '_> {
             .map_err(Error::from)
     }
 
+    fn operand_type(&mut self, ty: TypeId) -> Result<NodeId, Error> {
+        if self.graph.lower_operand_key_dependent(ty) == Some(false)
+            && self
+                .graph
+                .lower_template_operand(ty)
+                .is_some_and(|(_, words)| !words.is_empty())
+        {
+            return Err(missing());
+        }
+        self.abi_type(ty)
+    }
+
     fn operand_type_query(&mut self, mut ty: TypeId, alignment: bool) -> Result<NodeId, Error> {
         if !self.graph.lower_dependent_type(ty) && self.graph.lower_complete_object(ty)? {
             if let TypeView::Reference { element, .. } = self.graph.lower_type(ty)? {
@@ -508,7 +553,7 @@ impl Symbols<'_, '_> {
                 )
                 .map_err(Error::from);
         }
-        let ty = self.abi_type(ty)?;
+        let ty = self.operand_type(ty)?;
         self.abi
             .intern(
                 if alignment {
@@ -523,9 +568,9 @@ impl Symbols<'_, '_> {
 
     fn operand_cast_type(&mut self, written: TypeId) -> Result<NodeId, Error> {
         if let TypeView::Reference { element, .. } = self.graph.lower_type(written)? {
-            return self.abi_type(element);
+            return self.operand_type(element);
         }
-        let node = self.abi_type(written)?;
+        let node = self.operand_type(written)?;
         let mut ty = written;
         while let TypeView::Pointer(element) = self.graph.lower_type(ty)? {
             ty = element;
@@ -548,7 +593,7 @@ impl Symbols<'_, '_> {
 
     fn operand_braced(
         &mut self,
-        words: &mut Words<'_>,
+        words: &mut OperandReader<'_>,
         ty: Option<NodeId>,
         depth: u8,
     ) -> Result<NodeId, Error> {
@@ -561,7 +606,7 @@ impl Symbols<'_, '_> {
 
     fn operand_list(
         &mut self,
-        words: &mut Words<'_>,
+        words: &mut OperandReader<'_>,
         node: Node,
         count: usize,
         depth: u8,
@@ -575,7 +620,7 @@ impl Symbols<'_, '_> {
 
     fn operand_operation(
         &mut self,
-        words: &mut Words<'_>,
+        words: &mut OperandReader<'_>,
         operation: O,
         count: usize,
         depth: u8,
@@ -591,7 +636,7 @@ impl Symbols<'_, '_> {
 
     fn operand_cast_list(
         &mut self,
-        words: &mut Words<'_>,
+        words: &mut OperandReader<'_>,
         ty: NodeId,
         count: usize,
         depth: u8,
@@ -621,7 +666,7 @@ impl Symbols<'_, '_> {
 
     fn operand_name(
         &mut self,
-        words: &mut Words<'_>,
+        words: &mut OperandReader<'_>,
         call_arguments: Option<usize>,
     ) -> Result<(NodeId, Option<NodeId>), Error> {
         if !matches!(words.next()?, W::Node(N::Name)) {
@@ -629,8 +674,19 @@ impl Symbols<'_, '_> {
         }
         let count = words.count()?;
         let global = words.flag()?;
+        let implicit_object = matches!(words.words.get(words.at), Some(W::Node(N::This)));
+        if implicit_object {
+            words.next()?;
+            words.ty()?;
+        }
         if count != 1 || global {
-            return self.qualified_operand_name(words, count, global);
+            return self.qualified_operand_name(
+                words,
+                count,
+                global,
+                implicit_object,
+                call_arguments.is_some(),
+            );
         }
         let (node, cast) = match words.next()? {
             W::Operator(operator) => {
@@ -670,36 +726,31 @@ impl Symbols<'_, '_> {
                     None,
                 ));
             }
-            W::Type(ty) => {
-                let ty = self.abi_type(*ty)?;
+            W::Type(ty) if call_arguments.is_some() => {
+                let ty = self.operand_type(*ty)?;
                 return Ok((ty, Some(ty)));
             }
-            W::ResolvedFunction(entity) => (
+            W::ResolvedFunction(entity) if !implicit_object => (
                 Node::EntityReference(self.function_encoding(*entity)?),
                 None,
             ),
-            W::FreeName(name) | W::Identifier(name) | W::DependentCallee(_, name) => (
-                Node::UnresolvedName(self.abi.string(self.cursor.name(*name))?),
-                None,
-            ),
+            W::FreeName(name) | W::Identifier(name) | W::DependentCallee(_, name) => {
+                (self.operand_function_name(*name, implicit_object)?, None)
+            }
             W::Entity(entity) if self.graph.lower_operand_function(*entity) => {
                 let name = self.graph.lower_local_name(*entity).ok_or_else(missing)?;
-                (
-                    Node::UnresolvedName(self.abi.string(self.cursor.name(name))?),
-                    None,
-                )
+                (self.operand_function_name(name, implicit_object)?, None)
             }
             W::Entity(entity)
                 if self.graph.lower_is_variable(*entity)
                     && self.dependent_operand_arguments(words)? =>
             {
                 let name = self.graph.lower_local_name(*entity).ok_or_else(missing)?;
-                (
-                    Node::UnresolvedName(self.abi.string(self.cursor.name(name))?),
-                    None,
-                )
+                (self.operand_function_name(name, implicit_object)?, None)
             }
-            W::Entity(entity) => return self.operand_entity(*entity),
+            W::Entity(entity) => {
+                return self.operand_entity(*entity, words.object, call_arguments.is_some());
+            }
             _ => return Err(missing()),
         };
         let arguments = self.operand_arguments(words)?;
@@ -707,9 +758,11 @@ impl Symbols<'_, '_> {
     }
     fn qualified_operand_name(
         &mut self,
-        words: &mut Words<'_>,
+        words: &mut OperandReader<'_>,
         count: usize,
         global: bool,
+        implicit_object: bool,
+        allow_type: bool,
     ) -> Result<(NodeId, Option<NodeId>), Error> {
         if count == 0 {
             return Err(missing());
@@ -754,24 +807,34 @@ impl Symbols<'_, '_> {
             // One parameter qualifier uses the resolved dependent qualifier
             // type, including its defaults. Longer qualifiers retain the
             // parameter template-id as written, followed by member levels.
+            W::Type(ty) if implicit_object => {
+                levels.clear();
+                root = self.qualifier_levels(*ty, &mut levels)?;
+            }
             W::Type(ty) if parameter_root && count == 2 => {
-                root = Some(self.abi_type(*ty)?);
+                root = Some(self.operand_type(*ty)?);
             }
             W::Type(_) => (),
             W::Node(N::Function) => match words.next()? {
-                W::Entity(entity) => {
+                W::Entity(entity) if !implicit_object && !parameter_root => {
                     let encoding = self.function_encoding(*entity)?;
                     let node = self.abi.intern(Node::EntityReference(encoding), &[])?;
                     return Ok((node, None));
                 }
-                W::Absent => (),
+                W::Absent | W::Entity(_) => {
+                    if implicit_object || parameter_root {
+                        let member = terminal.ok_or_else(missing)?;
+                        let node = self.abi.intern(Node::UnresolvedName(member), &arguments)?;
+                        return Ok((node, None));
+                    }
+                }
                 _ => return Err(missing()),
             },
             W::Entity(entity) => {
                 if !arguments.is_empty() {
                     return Err(missing());
                 }
-                return self.operand_entity(*entity);
+                return self.operand_entity(*entity, words.object, allow_type);
             }
             _ => return Err(missing()),
         }
@@ -790,7 +853,32 @@ impl Symbols<'_, '_> {
             .map(|node| (node, None))
             .map_err(Error::from)
     }
-    fn operand_entity(&mut self, entity: EntityId) -> Result<(NodeId, Option<NodeId>), Error> {
+    fn operand_function_name(
+        &mut self,
+        name: crate::lex::identifiers::NameId,
+        implicit_object: bool,
+    ) -> Result<Node, Error> {
+        let member = self.abi.string(self.cursor.name(name))?;
+        Ok(if implicit_object {
+            let pointer = self.abi.intern(Node::ThisParam, &[])?;
+            let object = self
+                .abi
+                .intern(Node::Operation(O::Dereference), &[pointer])?;
+            Node::MemberAccess {
+                operation: O::Dot,
+                object,
+                member,
+            }
+        } else {
+            Node::UnresolvedName(member)
+        })
+    }
+    fn operand_entity(
+        &mut self,
+        entity: EntityId,
+        object: Option<TypeId>,
+        allow_type: bool,
+    ) -> Result<(NodeId, Option<NodeId>), Error> {
         if let Some(ty) = self.graph.lower_operand_expression_type(entity) {
             return self
                 .placeholder_node(ty)?
@@ -798,14 +886,22 @@ impl Symbols<'_, '_> {
                 .ok_or_else(missing);
         }
         if let Some(ty) = self.graph.lower_operand_type_name(entity) {
+            if !allow_type {
+                return Err(missing());
+            }
             let ty = self.abi_type(ty)?;
             return Ok((ty, Some(ty)));
         }
         let node = if self.graph.lower_is_variable(entity) {
             if self.graph.lower_instance_member(entity) {
-                return Err(missing());
+                if object.is_none() {
+                    return Err(missing());
+                }
+                let name = self.graph.lower_local_name(entity).ok_or_else(missing)?;
+                self.operand_function_name(name, true)?
+            } else {
+                Node::EntityReference(self.variable_abi_name(entity)?)
             }
-            Node::EntityReference(self.variable_abi_name(entity)?)
         } else if let Some((ty, bits)) = self.graph.lower_operand_constant(entity) {
             self.abi_literal(ty, bits)?
         } else {
@@ -849,7 +945,7 @@ impl Symbols<'_, '_> {
     fn parameter_qualifier_root(
         &mut self,
         ty: TypeId,
-        words: &mut Words<'_>,
+        words: &mut OperandReader<'_>,
         components: usize,
     ) -> Result<Option<NodeId>, Error> {
         let count = words.argument_count()?;
@@ -870,11 +966,11 @@ impl Symbols<'_, '_> {
         self.name_template_id(self.graph.lower_named_template_id(ty, &arguments))
             .map(Some)
     }
-    fn operand_arguments(&mut self, words: &mut Words<'_>) -> Result<Vec<NodeId>, Error> {
+    fn operand_arguments(&mut self, words: &mut OperandReader<'_>) -> Result<Vec<NodeId>, Error> {
         let count = words.argument_count()?;
-        (0..count).map(|_| self.abi_type(words.ty()?)).collect()
+        (0..count).map(|_| self.operand_type(words.ty()?)).collect()
     }
-    fn dependent_operand_arguments(&self, words: &Words<'_>) -> Result<bool, Error> {
+    fn dependent_operand_arguments(&self, words: &OperandReader<'_>) -> Result<bool, Error> {
         let Some([W::Node(N::Arguments), W::Count(count), tail @ ..]) = words.words.get(words.at..)
         else {
             return Ok(false);
