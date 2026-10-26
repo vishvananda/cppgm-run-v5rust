@@ -434,6 +434,20 @@ impl Program {
                     && seen.insert(symbol)
             })
             .collect();
+        // A pending declaration and its later definition can both publish
+        // the same symbol. Only the definition's last position belongs to the
+        // completed order; replaying the old declaration would duplicate it.
+        seen.clear();
+        let symbols = &self.symbols;
+        let functions = &self.functions;
+        self.publications.reverse();
+        self.publications.retain(|symbol| {
+            let SymbolDetail::Function(id) = symbols[symbol.index()].detail else {
+                return true;
+            };
+            functions[id.0 as usize].body.is_none() || seen.insert(*symbol)
+        });
+        self.publications.reverse();
         let definitions: Vec<_> = self
             .publications
             .iter()

@@ -1043,48 +1043,17 @@ impl Analyzer<'_> {
                 .as_ref()
                 .ok_or(Error::Invariant("lost constant copy plan"))?[index];
             let (to, from) = match action.target {
-                super::copy_construction::CopyTarget::VirtualBase(base) => {
-                    let class = self.graph.constructors.get(id).class;
-                    self.class_layout(class, location)?;
-                    let offset = super::integral::signed(
-                        self.graph
-                            .lower_virtual_base_offset(class, base)
-                            .ok_or(Error::Invariant("constant copy virtual base layout"))?,
-                    );
-                    let ty = self.bare_type(action.ty)?;
+                super::copy_construction::CopyTarget::VirtualBase(_)
+                | super::copy_construction::CopyTarget::Base(_) => {
+                    let base = self
+                        .graph
+                        .class_of(action.ty)
+                        .ok_or(Error::Invariant("constant copy base without class"))?;
+                    // copy_subobjects calls to_base for each side before
+                    // copying. Layout offsets alone would admit virtual routes.
                     (
-                        Address {
-                            offset: target.offset.wrapping_add(offset),
-                            designated: ty,
-                            ..target
-                        },
-                        Address {
-                            offset: source.offset.wrapping_add(offset),
-                            designated: ty,
-                            ..source
-                        },
-                    )
-                }
-                super::copy_construction::CopyTarget::Base(index) => {
-                    let class = self.graph.constructors.get(id).class;
-                    self.class_layout(class, location)?;
-                    let edge = self.graph.entity(class).bases[index as usize];
-                    let offset = super::integral::signed(
-                        edge.offset
-                            .ok_or(Error::Invariant("copy base without offset"))?,
-                    );
-                    let ty = self.bare_type(action.ty)?;
-                    (
-                        Address {
-                            offset: target.offset.wrapping_add(offset),
-                            designated: ty,
-                            ..target
-                        },
-                        Address {
-                            offset: source.offset.wrapping_add(offset),
-                            designated: ty,
-                            ..source
-                        },
+                        self.constant_base_subobject(target, base, location)?,
+                        self.constant_base_subobject(source, base, location)?,
                     )
                 }
                 super::copy_construction::CopyTarget::Member(member) => {

@@ -61,7 +61,14 @@ impl Analyzer<'_> {
                 scope,
                 initializer.location,
             )?;
-            analyzer.read_constant_integer(place, initializer.location)
+            // Initialization copies indeterminate arithmetic values; the owning
+            // declaration diagnoses completeness after construction.
+            let Value::Integer(value) =
+                analyzer.constant_arithmetic_value(place, initializer.location)?
+            else {
+                return Err(Error::Invariant("integral initializer holds noninteger"));
+            };
+            Ok(value)
         });
         match result {
             Ok(value) => Ok(Some(value)),

@@ -111,3 +111,43 @@ fn merged_units_publish_resolved_globals_once() -> Result<(), Box<dyn std::error
     }
     Ok(())
 }
+
+#[test]
+fn demanded_base_entries_keep_the_same_streamed_and_retained_view()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = Scratch(
+        std::env::temp_dir().join(format!("cppgm-base-observations-{}", std::process::id())),
+    );
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("input.cpp");
+    std::fs::write(&source, b"struct V { virtual int value(){return 1;} }; struct A: virtual V {}; A first; A second(first); struct D:A {}; D original; D copied(original); int main(){return second.value()+copied.value()-2;}\n")?;
+    for extension in ["lowir", "view"] {
+        for level in [0, 2] {
+            let output = directory.0.join(format!("output.{extension}"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_cppgm"));
+            command
+                .args(["--emit-lowir", "-g0", &format!("-O{level}"), "-o"])
+                .arg(&output)
+                .arg(&source);
+            let baseline = command.output()?;
+            assert!(baseline.status.success(), "{:?}", baseline.stderr);
+            let bytes = std::fs::read(&output)?;
+            let validated = command.args(["--stats", "--validate"]).output()?;
+            assert!(validated.status.success(), "{:?}", validated.stderr);
+            assert_eq!(bytes, std::fs::read(&output)?);
+            let text = std::str::from_utf8(&bytes)?;
+            let mut names = std::collections::HashSet::new();
+            for header in text
+                .lines()
+                .filter_map(|line| line.strip_prefix("function @"))
+            {
+                let name = header
+                    .split_once('(')
+                    .ok_or("missing function parameters")?
+                    .0;
+                assert!(names.insert(name), "duplicate definition: {name}");
+            }
+        }
+    }
+    Ok(())
+}

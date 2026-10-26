@@ -561,41 +561,48 @@ impl Analyzer<'_> {
     }
     pub(super) fn constant_project_path(
         &mut self,
-        mut place: Address,
+        place: Address,
         path: Option<BasePathId>,
         location: SourceOffset,
     ) -> Result<Address, Error> {
-        if let Some(path) = path {
-            if place.past_end {
-                return Err(nonconstant(
-                    location,
-                    "a base class of an object one past the end of an array",
-                ));
-            }
-            let class = self
-                .graph
-                .class_of(place.designated)
-                .ok_or(Error::Invariant("constant base path without class"))?;
-            self.class_layout(class, location)?;
-            let &(last, index) = self
-                .graph
-                .base_paths
-                .get(path)
-                .last()
-                .ok_or(Error::Invariant("empty constant base path"))?;
-            let base = self.graph.entity(last).bases[index].class;
-            let offset = self
-                .graph
-                .base_search_offset(class, base, super::base_projections::OffsetSearch::Constant)?
-                .ok_or_else(|| {
-                    nonconstant(
-                        location,
-                        "a conversion to a base class outside constant evaluation",
-                    )
-                })?;
-            place.offset = place.offset.wrapping_add(super::integral::signed(offset));
-            place.designated = self.graph.lower_entity_type(base)?;
+        let Some(path) = path else { return Ok(place) };
+        let &(last, index) = self
+            .graph
+            .base_paths
+            .get(path)
+            .last()
+            .ok_or(Error::Invariant("empty constant base path"))?;
+        let base = self.graph.entity(last).bases[index].class;
+        self.constant_base_subobject(place, base, location)
+    }
+    pub(super) fn constant_base_subobject(
+        &mut self,
+        mut place: Address,
+        base: EntityId,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
+        if place.past_end {
+            return Err(nonconstant(
+                location,
+                "a base class of an object one past the end of an array",
+            ));
         }
+        let class = self
+            .graph
+            .class_of(place.designated)
+            .ok_or(Error::Invariant("constant base path without class"))?;
+        self.class_layout(class, location)?;
+        let offset = self
+            .graph
+            .base_search_offset(class, base, super::base_projections::OffsetSearch::Constant)?
+            .ok_or_else(|| {
+                nonconstant(
+                    location,
+                    "a conversion to a base class outside constant evaluation",
+                )
+            })?;
+        place.offset = place.offset.wrapping_add(super::integral::signed(offset));
+        place.designated = self.graph.lower_entity_type(base)?;
         Ok(place)
     }
     pub(super) fn constant_base_pointer(
