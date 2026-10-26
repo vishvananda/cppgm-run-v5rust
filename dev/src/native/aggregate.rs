@@ -239,6 +239,32 @@ impl Selection<'_> {
         if layout.indirect_result {
             return Ok(());
         }
+        let ty = self.body.temp(result).ty.ok_or(Error::Limit)?;
+        if usize::try_from(abi::value_bytes(ty)?).map_err(|_| Error::Limit)?
+            == 8 * layout.result.iter().flatten().count()
+            && let Some(destination) = super::object_storage::result_destination(
+                self.body,
+                &self.facts,
+                &self.addresses,
+                result,
+                self.pos,
+            )?
+        {
+            let destination = self.address(destination, R::R10)?;
+            if destination.is_memory() {
+                for part in layout.result.iter().flatten() {
+                    self.store_transfer(
+                        destination.displaced(part.offset.cast_signed()),
+                        part.move_type(),
+                        Operand::Register(part.register.ok_or(Error::Limit)?),
+                        None,
+                        false,
+                    );
+                }
+                self.placement.mark_stored(result);
+                return Ok(());
+            }
+        }
         let home = Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?);
         for part in layout.result.iter().flatten() {
             let register = part.register.ok_or(Error::Limit)?;

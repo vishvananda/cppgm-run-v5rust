@@ -48,6 +48,7 @@ mod mir_cleanup;
 mod mir_globals;
 mod object;
 mod object_compile;
+mod object_storage;
 mod region_flow;
 mod unwind_rules;
 pub(crate) use elf_reader::read as read_object;

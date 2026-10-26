@@ -240,34 +240,12 @@ fn parse(
                 let define = value(args, &mut index, "-D")?
                     .ok_or(AstToolError::Internal("definition argument"))?
                     .as_bytes();
-                let at = define.iter().position(|&b| b == b'=');
-                let (name, replacement) = at.map_or((define, b"1".as_slice()), |at| {
-                    (&define[..at], &define[at + 1..])
-                });
-                invocation
-                    .preprocessor
-                    .command_line
-                    .extend_from_slice(b"#define ");
-                invocation.preprocessor.command_line.extend_from_slice(name);
-                invocation.preprocessor.command_line.push(b' ');
-                invocation
-                    .preprocessor
-                    .command_line
-                    .extend_from_slice(replacement);
-                invocation.preprocessor.command_line.push(b'\n');
+                invocation.preprocessor.define(define);
             }
             _ if bytes.starts_with(b"-U") => {
                 let name = value(args, &mut index, "-U")?
                     .ok_or(AstToolError::Internal("undefinition argument"))?;
-                invocation
-                    .preprocessor
-                    .command_line
-                    .extend_from_slice(b"#undef ");
-                invocation
-                    .preprocessor
-                    .command_line
-                    .extend_from_slice(name.as_bytes());
-                invocation.preprocessor.command_line.push(b'\n');
+                invocation.preprocessor.undefine(name.as_bytes());
             }
             _ if bytes.starts_with(b"-L") => {
                 let path = value(args, &mut index, "-L")?

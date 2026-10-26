@@ -323,6 +323,11 @@ impl Selection<'_> {
         source: Option<crate::lowir::model::Value>,
         destination: crate::lowir::model::Value,
     ) -> Result<(), Error> {
+        if source.is_some_and(|source| {
+            matches!(self.facts.resolve(self.body, source), super::value_facts::Alias::Temporary(t) if self.placement.stored(t))
+        }) {
+            return Ok(());
+        }
         let source = source
             .map(|source| self.address(source, R::R11).map(bulk_address))
             .transpose()?;

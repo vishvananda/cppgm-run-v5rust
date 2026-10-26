@@ -46,6 +46,28 @@ pub struct DriverOptions {
     pub include_paths: Vec<Vec<u8>>,
     pub system_include_paths: Vec<Vec<u8>>,
 }
+impl DriverOptions {
+    /// Append one ordered command-line macro definition, splitting its first `=`.
+    pub fn define(&mut self, definition: &[u8]) {
+        let (name, replacement) = definition
+            .iter()
+            .position(|&byte| byte == b'=')
+            .map_or((definition, b"1".as_slice()), |at| {
+                (&definition[..at], &definition[at + 1..])
+            });
+        self.command_line.extend_from_slice(b"#define ");
+        self.command_line.extend_from_slice(name);
+        self.command_line.push(b' ');
+        self.command_line.extend_from_slice(replacement);
+        self.command_line.push(b'\n');
+    }
+    /// Append one ordered command-line macro undefinition.
+    pub fn undefine(&mut self, name: &[u8]) {
+        self.command_line.extend_from_slice(b"#undef ");
+        self.command_line.extend_from_slice(name);
+        self.command_line.push(b'\n');
+    }
+}
 
 /// Language guarantees used by hosted preprocessing probes.
 #[derive(Clone, Copy)]

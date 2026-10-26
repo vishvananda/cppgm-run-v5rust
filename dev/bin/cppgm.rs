@@ -64,6 +64,39 @@ struct Invocation<'a> {
     output: &'a std::ffi::OsStr,
     inputs: Vec<&'a std::ffi::OsStr>,
     limits: cppgm_rust::opt::Limits,
+    preprocessor: cppgm_rust::preprocess::options::DriverOptions,
+}
+fn preprocessing_option(
+    args: &[OsString],
+    index: &mut usize,
+    options: &mut cppgm_rust::preprocess::options::DriverOptions,
+) -> Result<bool, CliError> {
+    let bytes = args[*index - 1].as_bytes();
+    let Some((&option, rest)) = bytes.strip_prefix(b"-").and_then(|s| s.split_first()) else {
+        return Ok(false);
+    };
+    let expected = match option {
+        b'I' => "path",
+        b'D' => "macro definition",
+        b'U' => "macro name",
+        _ => return Ok(false),
+    };
+    let value = if rest.is_empty() {
+        let value = args.get(*index).ok_or_else(|| {
+            CliError::Message(format!("missing {expected} after -{}", char::from(option)))
+        })?;
+        *index += 1;
+        value.as_bytes()
+    } else {
+        rest
+    };
+    match option {
+        b'I' => options.include_paths.push(value.to_vec()),
+        b'D' => options.define(value),
+        b'U' => options.undefine(value),
+        _ => return Err(CliError::Internal("preprocessing option")),
+    }
+    Ok(true)
 }
 fn invocation(args: &[OsString]) -> Result<Invocation<'_>, CliError> {
     if !args.iter().any(|arg| {
@@ -78,6 +111,7 @@ fn invocation(args: &[OsString]) -> Result<Invocation<'_>, CliError> {
     let mut output = None;
     let mut inputs = Vec::new();
     let mut limits = cppgm_rust::opt::Limits::default();
+    let mut preprocessor = cppgm_rust::preprocess::options::DriverOptions::default();
     let mut index = 0;
     while index < args.len() {
         let arg = &args[index];
@@ -112,11 +146,10 @@ fn invocation(args: &[OsString]) -> Result<Invocation<'_>, CliError> {
             index += 1;
             continue;
         }
-        if arg == "--stats"
-            || arg.as_bytes().starts_with(b"-I")
-            || arg.as_bytes().starts_with(b"-D")
-            || arg.as_bytes().starts_with(b"-U")
-        {
+        if preprocessing_option(args, &mut index, &mut preprocessor)? {
+            continue;
+        }
+        if arg == "--stats" {
             return Err(CliError::Missing(
                 "AST statistics and hosted/preprocessing invocation options",
             ));
@@ -137,6 +170,7 @@ fn invocation(args: &[OsString]) -> Result<Invocation<'_>, CliError> {
         output,
         inputs,
         limits,
+        preprocessor,
     })
 }
 fn run() -> Result<(), CliError> {
@@ -191,11 +225,11 @@ fn run() -> Result<(), CliError> {
         output: destination,
         inputs,
         limits,
+        preprocessor: mut preprocessor_options,
     } = invocation(&args)?;
     let values = build_time::query().map_err(CliError::Message)?;
     let stack_budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
         .map_err(CliError::Internal)?;
-    let mut preprocessor_options = cppgm_rust::preprocess::options::DriverOptions::default();
     let level = if lowir {
         args.iter()
             .rev()

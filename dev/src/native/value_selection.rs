@@ -249,9 +249,13 @@ pub(super) fn select_for_object(
         location: None,
         pos: 0,
     };
-    selection
-        .placement
-        .layout_slots(body, &slots, &mut selection.mir)?;
+    selection.placement.layout_slots(
+        body,
+        &slots,
+        &selection.facts,
+        &selection.addresses,
+        &mut selection.mir,
+    )?;
     selection.mir.lazy_addresses = selection.addresses.lazy_count;
     selection.mir.folded_loads = selection.addresses.folded_count;
     selection.mir.fused_compares = selection.facts.fused.iter().filter(|&&v| v).count();

@@ -38,6 +38,7 @@ struct Location {
     reg: Option<R>,
     home: Option<i32>,
     homed: bool,
+    stored: bool,
 }
 pub(super) struct Placement {
     pub(super) host_parameters: Vec<bool>,
@@ -275,9 +276,19 @@ impl Placement {
         &mut self,
         body: &Body,
         states: &[super::slot_analysis::Slot],
+        facts: &Facts,
+        addresses: &super::address_facts::Addresses,
         mir: &mut Function,
     ) -> Result<(), Error> {
         use super::slot_analysis::Slot;
+        let owners = super::object_storage::shared_slots(body, facts, states);
+        let sharing = |index: usize| {
+            owners
+                .get(index)
+                .copied()
+                .flatten()
+                .filter(|owner| owner.index() != index)
+        };
         for (slot, state) in body.slots().iter().zip(states) {
             if matches!(state, Slot::Memory) && matches!(slot.ty, Type::Object { .. }) {
                 mir.aligned_base = mir.aligned_base.max(abi::value_align(slot.ty)?);
@@ -288,7 +299,10 @@ impl Placement {
         }
         let mut area = 0_u64;
         for (i, (slot, state)) in body.slots().iter().zip(states).enumerate() {
-            if !matches!(state, Slot::Memory) || abi::value_align(slot.ty)? <= 16 {
+            if !matches!(state, Slot::Memory)
+                || abi::value_align(slot.ty)? <= 16
+                || sharing(i).is_some()
+            {
                 continue;
             }
             let align = u64::from(abi::value_align(slot.ty)?);
@@ -316,7 +330,9 @@ impl Placement {
             if matches!(ty, Type::Object { .. }) {
                 align = align.max(8);
             }
-            let offset = if mir.aligned_base != 0 && align > 16 {
+            let offset = if let Some(owner) = sharing(i) {
+                self.slot(owner)?
+            } else if mir.aligned_base != 0 && align > 16 {
                 self.slots[i]
                     .ok_or(Error::Limit)?
                     .wrapping_add(mir.aligned_disp)
@@ -331,7 +347,31 @@ impl Placement {
                 kind: BindingKind::Slot,
             });
         }
+        for index in 0..body.parameter_count {
+            if self.locations[index].home.is_some() {
+                continue;
+            }
+            let parameter = body.temp_id(index).ok_or(Error::Limit)?;
+            if let Some(slot) =
+                super::object_storage::parameter_home(body, facts, addresses, states, parameter)?
+            {
+                let offset = self.slot(slot)?;
+                self.locations[index].home = Some(offset);
+                mir.bindings.push(Binding {
+                    name: Some(body.temp(parameter).name),
+                    ty: body.temp(parameter).ty.ok_or(Error::Limit)?,
+                    offset,
+                    kind: BindingKind::Parameter,
+                });
+            }
+        }
         Ok(())
+    }
+    pub(super) fn stored(&self, temp: TempId) -> bool {
+        self.locations[temp.index()].stored
+    }
+    pub(super) fn mark_stored(&mut self, temp: TempId) {
+        self.locations[temp.index()].stored = true;
     }
     pub(super) fn home(
         &mut self,
