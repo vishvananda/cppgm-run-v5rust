@@ -2018,6 +2018,11 @@ impl Graph {
     pub(crate) fn lower_signed_integral(&self, ty: TypeId) -> bool {
         self.integral_kind(ty).is_some_and(|kind| kind.signed)
     }
+    pub(crate) fn lower_unsigned_integral_width(&self, ty: TypeId) -> Option<u32> {
+        self.integral_kind(ty)
+            .filter(|kind| !kind.signed)
+            .map(|kind| kind.bits)
+    }
     pub(crate) fn lower_cv(&self, id: TypeId) -> u8 {
         let mut id = id;
         while let TypeKind::Array { element, .. } = self.types.get(id).kind {

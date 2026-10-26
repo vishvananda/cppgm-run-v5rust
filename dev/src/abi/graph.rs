@@ -189,6 +189,7 @@ pub enum Node {
         increment: bool,
     },
     AlignofType(NodeId),
+    TypeidType(NodeId),
     Cast {
         operation: Operation,
         ty: NodeId,
@@ -217,6 +218,11 @@ pub enum Node {
         ty: NodeId,
         bits: u64,
     },
+    UnsignedLiteral {
+        ty: NodeId,
+        bits: u64,
+    },
+    NullptrLiteral(NodeId),
     FloatingLiteral {
         ty: NodeId,
         bits: u64,

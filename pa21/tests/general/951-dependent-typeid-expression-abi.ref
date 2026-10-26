@@ -1,0 +1,24 @@
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=weak, object=_ZTIi] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call ptr @reflect(1)
+    return i32 0
+}
+function @reflect(%value : i32) -> ptr [binding=weak, object=_Z7reflectIiEDTtefp_ET_] {
+  slot $value : i32
+
+  block ^entry:
+    store typed i32 %value, $value
+    %t1 = addr @__rtti_int
+    return ptr %t1
+}

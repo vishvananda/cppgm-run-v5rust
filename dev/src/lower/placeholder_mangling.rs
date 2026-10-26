@@ -207,11 +207,8 @@ impl Symbols<'_, '_> {
                 ty: self.abi_type(*ty)?,
                 bits: *bits,
             },
-            W::Constant(ty, bits) => Node::Literal {
-                ty: self.abi_type(*ty)?,
-                bits: *bits,
-            },
-            W::Node(N::Id) => return self.operand_name(words).map(|(node, _)| node),
+            W::Constant(ty, bits) => self.abi_literal(*ty, *bits)?,
+            W::Node(N::Id) => return self.operand_name(words, None).map(|(node, _)| node),
             W::Node(N::Keyword) => {
                 let W::Keyword(Some(keyword)) = words.next()? else {
                     return Err(missing());
@@ -223,6 +220,12 @@ impl Symbols<'_, '_> {
                         }
                         words.next()?;
                         Node::ThisParam
+                    }
+                    Keyword::Nullptr => {
+                        let ty = self
+                            .abi
+                            .intern(Node::Builtin(crate::abi::vocabulary::Builtin::Nullptr), &[])?;
+                        Node::NullptrLiteral(ty)
                     }
                     _ => return Err(missing()),
                 }
@@ -288,7 +291,7 @@ impl Symbols<'_, '_> {
                 }
                 let (callee, cast) = if matches!(words.words.get(words.at), Some(W::Node(N::Id))) {
                     words.next()?;
-                    self.operand_name(words)?
+                    self.operand_name(words, Some(count))?
                 } else {
                     (self.operand_expression(words, depth + 1)?, None)
                 };
@@ -393,14 +396,21 @@ impl Symbols<'_, '_> {
                 };
                 let of_type = words.flag()?;
                 if of_type {
-                    if *keyword != Keyword::Alignof {
-                        return Err(missing());
-                    }
-                    return self.operand_type_query(words.ty()?, true);
+                    return match keyword {
+                        Keyword::Alignof => self.operand_type_query(words.ty()?, true),
+                        Keyword::Typeid => {
+                            let ty = self.abi_type(words.ty()?)?;
+                            self.abi
+                                .intern(Node::TypeidType(ty), &[])
+                                .map_err(Error::from)
+                        }
+                        _ => Err(missing()),
+                    };
                 }
                 let operation = match keyword {
                     Keyword::Alignof => O::AlignofExpression,
                     Keyword::Noexcept => O::Noexcept,
+                    Keyword::Typeid => O::TypeidExpression,
                     _ => return Err(missing()),
                 };
                 return self.operand_operation(words, operation, 1, depth);
@@ -609,7 +619,11 @@ impl Symbols<'_, '_> {
             .map_err(Error::from)
     }
 
-    fn operand_name(&mut self, words: &mut Words<'_>) -> Result<(NodeId, Option<NodeId>), Error> {
+    fn operand_name(
+        &mut self,
+        words: &mut Words<'_>,
+        call_arguments: Option<usize>,
+    ) -> Result<(NodeId, Option<NodeId>), Error> {
         if !matches!(words.next()?, W::Node(N::Name)) {
             return Err(missing());
         }
@@ -619,6 +633,15 @@ impl Symbols<'_, '_> {
             return self.qualified_operand_name(words, count, global);
         }
         let (node, cast) = match words.next()? {
+            W::Operator(operator) => {
+                let array = words.flag()?;
+                let terminal = self.abi_operator_terminal(
+                    *operator,
+                    array,
+                    call_arguments.ok_or_else(missing)?,
+                )?;
+                (Node::UnresolvedName(terminal), None)
+            }
             W::Parameter { index, level } => {
                 words.ty()?;
                 (
@@ -784,10 +807,7 @@ impl Symbols<'_, '_> {
             }
             Node::EntityReference(self.variable_abi_name(entity)?)
         } else if let Some((ty, bits)) = self.graph.lower_operand_constant(entity) {
-            Node::Literal {
-                ty: self.abi_type(ty)?,
-                bits,
-            }
+            self.abi_literal(ty, bits)?
         } else {
             return Err(missing());
         };

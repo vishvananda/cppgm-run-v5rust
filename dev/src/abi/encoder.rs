@@ -666,14 +666,21 @@ impl<'a> Encoder<'a> {
                 self.expression(expression)?;
                 self.put(b"E");
             }
-            Node::Literal { ty, bits } => {
+            Node::Literal { ty, bits } | Node::UnsignedLiteral { ty, bits } => {
                 self.put(b"L");
                 self.encode_type(ty)?;
-                if matches!(self.graph.get(ty), Node::Builtin(b) if b.entry().2) {
+                if matches!(self.graph.get(id), Node::UnsignedLiteral { .. })
+                    || matches!(self.graph.get(ty), Node::Builtin(b) if b.entry().2)
+                {
                     self.number(bits);
                 } else {
                     self.signed(i64::from_ne_bytes(bits.to_ne_bytes()));
                 }
+                self.put(b"E");
+            }
+            Node::NullptrLiteral(ty) => {
+                self.put(b"L");
+                self.encode_type(ty)?;
                 self.put(b"E");
             }
             Node::FloatingLiteral { ty, bits } => {
@@ -751,7 +758,16 @@ impl<'a> Encoder<'a> {
             self.encode_type(root)?;
         }
         for &level in levels {
-            self.expression(level)?;
+            let Node::UnresolvedName(name) = self.graph.get(level) else {
+                return Err(Error::diagnostic("invalid ABI unresolved qualifier level"));
+            };
+            if self.graph.get(name) != Node::Text {
+                return Err(Error::diagnostic("invalid ABI unresolved qualifier level"));
+            }
+            self.source_name(name);
+            if !self.graph.items(level).is_empty() {
+                self.template_args(level)?;
+            }
         }
         if root.is_none() || !levels.is_empty() {
             self.put(b"E");
@@ -778,7 +794,10 @@ impl<'a> Encoder<'a> {
                 self.put(b"_");
             }
             Node::ThisParam => self.put(b"fpT"),
-            Node::Literal { .. } | Node::FloatingLiteral { .. } => self.argument(id)?,
+            Node::Literal { .. }
+            | Node::UnsignedLiteral { .. }
+            | Node::NullptrLiteral(_)
+            | Node::FloatingLiteral { .. } => self.argument(id)?,
             Node::Operation(operation) => {
                 self.put(operation.code());
                 for item in self.graph.items(id) {
@@ -855,6 +874,10 @@ impl<'a> Encoder<'a> {
                 self.put(b"at");
                 self.encode_type(ty)?;
             }
+            Node::TypeidType(ty) => {
+                self.put(b"ti");
+                self.encode_type(ty)?;
+            }
             Node::ConversionList(ty) => {
                 self.put(b"cv");
                 self.encode_type(ty)?;
@@ -874,7 +897,12 @@ impl<'a> Encoder<'a> {
                 self.expression(operand)?;
             }
             Node::UnresolvedName(name) => {
-                self.source_name(name);
+                if let Node::Terminal { kind, .. } = self.graph.get(name) {
+                    self.put(b"on");
+                    self.put(kind.code());
+                } else {
+                    self.source_name(name);
+                }
                 if !self.graph.items(id).is_empty() {
                     self.template_args(id)?;
                 }
@@ -901,9 +929,9 @@ impl<'a> Encoder<'a> {
                 } else {
                     self.put(b"sr");
                     self.encode_type(owner)?;
-                }
-                if close_qualifier {
-                    self.put(b"E");
+                    if close_qualifier {
+                        self.put(b"E");
+                    }
                 }
                 self.source_name(member);
                 if !self.graph.items(id).is_empty() {

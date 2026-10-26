@@ -509,3 +509,164 @@ fn reference_temporary_sequences_cover_base36_boundaries() {
         assert_eq!(bytes, format!("_ZGR1r{suffix}_").as_bytes());
     }
 }
+
+#[test]
+fn compiler_literal_forms_retain_unsigned_and_nullptr_identity() {
+    let mut graph = Graph::default();
+    let name = graph.string(b"E").unwrap();
+    let enumeration = graph.name(None, name, &[]).unwrap();
+    let null = graph.intern(Node::Builtin(Builtin::Nullptr), &[]).unwrap();
+    let signed = graph
+        .intern(
+            Node::Literal {
+                ty: enumeration,
+                bits: u64::MAX,
+            },
+            &[],
+        )
+        .unwrap();
+    let unsigned = graph
+        .intern(
+            Node::UnsignedLiteral {
+                ty: enumeration,
+                bits: u64::MAX,
+            },
+            &[],
+        )
+        .unwrap();
+    let keyword = graph.intern(Node::NullptrLiteral(null), &[]).unwrap();
+    let typed_null = graph
+        .intern(Node::Literal { ty: null, bits: 0 }, &[])
+        .unwrap();
+    assert_ne!(signed, unsigned);
+    assert_ne!(keyword, typed_null);
+    for (expression, expected) in [
+        (signed, &b"DTL1En1EE"[..]),
+        (unsigned, &b"DTL1E18446744073709551615EE"[..]),
+        (keyword, &b"DTLDnEE"[..]),
+        (typed_null, &b"DTLDn0EE"[..]),
+    ] {
+        let ty = graph
+            .intern(
+                Node::Decltype {
+                    expression,
+                    id_expression: false,
+                },
+                &[],
+            )
+            .unwrap();
+        let mut output = Vec::new();
+        Encoder::encode(
+            &graph,
+            Target::Type(ty),
+            &mut output,
+            StackBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(output, expected);
+    }
+}
+
+#[test]
+fn compiler_unresolved_names_and_type_queries_use_expression_grammar() {
+    use super::vocabulary::Terminal;
+    let mut graph = Graph::default();
+    let int = graph.intern(Node::Builtin(Builtin::Int), &[]).unwrap();
+    let query = graph.intern(Node::TypeidType(int), &[]).unwrap();
+    let plus = graph
+        .intern(
+            Node::Terminal {
+                kind: Terminal::BinaryPlus,
+                inherited: None,
+            },
+            &[],
+        )
+        .unwrap();
+    let operator = graph.intern(Node::UnresolvedName(plus), &[]).unwrap();
+    let name = graph.string(b"ns").unwrap();
+    let level = graph.intern(Node::UnresolvedName(name), &[]).unwrap();
+    let prefix = graph
+        .intern(
+            Node::UnresolvedPrefix {
+                root: None,
+                global: false,
+            },
+            &[level],
+        )
+        .unwrap();
+    let member = graph.string(b"value").unwrap();
+    let scoped = graph
+        .intern(
+            Node::ScopedMember {
+                owner: prefix,
+                member,
+                close_qualifier: true,
+            },
+            &[],
+        )
+        .unwrap();
+    for (expression, expected) in [
+        (query, &b"DTtiiE"[..]),
+        (operator, &b"DTonplE"[..]),
+        (scoped, &b"DTsr2nsE5valueE"[..]),
+    ] {
+        let ty = graph
+            .intern(
+                Node::Decltype {
+                    expression,
+                    id_expression: false,
+                },
+                &[],
+            )
+            .unwrap();
+        let mut output = Vec::new();
+        Encoder::encode(
+            &graph,
+            Target::Type(ty),
+            &mut output,
+            StackBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(output, expected);
+    }
+    for invalid in [int, operator] {
+        let prefix = graph
+            .intern(
+                Node::UnresolvedPrefix {
+                    root: None,
+                    global: false,
+                },
+                &[invalid],
+            )
+            .unwrap();
+        let expression = graph
+            .intern(
+                Node::ScopedMember {
+                    owner: prefix,
+                    member,
+                    close_qualifier: false,
+                },
+                &[],
+            )
+            .unwrap();
+        let ty = graph
+            .intern(
+                Node::Decltype {
+                    expression,
+                    id_expression: false,
+                },
+                &[],
+            )
+            .unwrap();
+        let error = Encoder::encode(
+            &graph,
+            Target::Type(ty),
+            &mut Vec::new(),
+            StackBudget::default(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, super::Error::Diagnostic(message) if message == b"invalid ABI unresolved qualifier level")
+        );
+    }
+}

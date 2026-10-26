@@ -851,80 +851,113 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 Node::LiteralOperator(self.abi.string(self.cursor.name(suffix))?)
             }
             FunctionName::Operator { token, array } => {
-                use crate::{
-                    abi::vocabulary::Terminal as T,
-                    lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K},
-                };
-                let terminal = match (token.as_keyword(), token.as_punctuator()) {
-                    (Some(K::New), _) => {
-                        if array {
-                            T::NewArray
-                        } else {
-                            T::New
-                        }
-                    }
-                    (Some(K::Delete), _) => {
-                        if array {
-                            T::DeleteArray
-                        } else {
-                            T::Delete
-                        }
-                    }
-                    (_, Some(op)) => match op {
-                        P::Add => T::Plus,
-                        P::Subtract => T::Minus,
-                        P::Multiply => T::Multiply,
-                        P::Divide => T::Divide,
-                        P::Remainder => T::Remainder,
-                        P::BitAnd => T::BitAnd,
-                        P::BitOr => T::BitOr,
-                        P::Xor => T::BitXor,
-                        P::Complement => T::Complement,
-                        P::Assign => T::Assign,
-                        P::AddAssign => T::PlusAssign,
-                        P::SubtractAssign => T::MinusAssign,
-                        P::MultiplyAssign => T::MultiplyAssign,
-                        P::DivideAssign => T::DivideAssign,
-                        P::RemainderAssign => T::RemainderAssign,
-                        P::AndAssign => T::AndAssign,
-                        P::OrAssign => T::OrAssign,
-                        P::XorAssign => T::XorAssign,
-                        P::ShiftLeft => T::LeftShift,
-                        P::ShiftRight => T::RightShift,
-                        P::ShiftLeftAssign => T::LeftShiftAssign,
-                        P::ShiftRightAssign => T::RightShiftAssign,
-                        P::Equal => T::Equal,
-                        P::NotEqual => T::NotEqual,
-                        P::Less => T::Less,
-                        P::Greater => T::Greater,
-                        P::LessEqual => T::LessEqual,
-                        P::GreaterEqual => T::GreaterEqual,
-                        P::LogicalNot => T::LogicalNot,
-                        P::LogicalAnd => T::LogicalAnd,
-                        P::LogicalOr => T::LogicalOr,
-                        P::Increment => T::Increment,
-                        P::Decrement => T::Decrement,
-                        P::Comma => T::Comma,
-                        P::ArrowStar => T::MemberPointer,
-                        P::Arrow => T::Arrow,
-                        P::LeftParen => T::Call,
-                        P::LeftBracket => T::Index,
-                        _ => return Err(Error::Missing("operator function ABI terminal")),
-                    },
-                    _ => return Err(Error::Missing("operator function ABI terminal")),
-                };
                 let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
                     return Err(Error::Semantic(crate::sema::Error::Invariant(
                         "operator without function type",
                     )));
                 };
-                Node::Terminal {
-                    kind: terminal.for_operands(parameters.len() + usize::from(member)),
-                    inherited: None,
-                }
+                return self.abi_operator_terminal(
+                    token,
+                    array,
+                    parameters.len() + usize::from(member),
+                );
             }
         };
         Ok(self.abi.intern(node, &[])?)
+    }
+    pub(super) fn abi_operator_terminal(
+        &mut self,
+        token: crate::lex::vocabulary::SimpleToken,
+        array: bool,
+        operands: usize,
+    ) -> Result<NodeId, Error> {
+        use crate::{
+            abi::vocabulary::Terminal as T,
+            lex::{pp_lexer::Punctuator as P, vocabulary::Keyword as K},
+        };
+        let terminal = match (token.as_keyword(), token.as_punctuator()) {
+            (Some(K::New), _) => {
+                if array {
+                    T::NewArray
+                } else {
+                    T::New
+                }
+            }
+            (Some(K::Delete), _) => {
+                if array {
+                    T::DeleteArray
+                } else {
+                    T::Delete
+                }
+            }
+            (_, Some(op)) => match op {
+                P::Add => T::Plus,
+                P::Subtract => T::Minus,
+                P::Multiply => T::Multiply,
+                P::Divide => T::Divide,
+                P::Remainder => T::Remainder,
+                P::BitAnd => T::BitAnd,
+                P::BitOr => T::BitOr,
+                P::Xor => T::BitXor,
+                P::Complement => T::Complement,
+                P::Assign => T::Assign,
+                P::AddAssign => T::PlusAssign,
+                P::SubtractAssign => T::MinusAssign,
+                P::MultiplyAssign => T::MultiplyAssign,
+                P::DivideAssign => T::DivideAssign,
+                P::RemainderAssign => T::RemainderAssign,
+                P::AndAssign => T::AndAssign,
+                P::OrAssign => T::OrAssign,
+                P::XorAssign => T::XorAssign,
+                P::ShiftLeft => T::LeftShift,
+                P::ShiftRight => T::RightShift,
+                P::ShiftLeftAssign => T::LeftShiftAssign,
+                P::ShiftRightAssign => T::RightShiftAssign,
+                P::Equal => T::Equal,
+                P::NotEqual => T::NotEqual,
+                P::Less => T::Less,
+                P::Greater => T::Greater,
+                P::LessEqual => T::LessEqual,
+                P::GreaterEqual => T::GreaterEqual,
+                P::LogicalNot => T::LogicalNot,
+                P::LogicalAnd => T::LogicalAnd,
+                P::LogicalOr => T::LogicalOr,
+                P::Increment => T::Increment,
+                P::Decrement => T::Decrement,
+                P::Comma => T::Comma,
+                P::ArrowStar => T::MemberPointer,
+                P::Arrow => T::Arrow,
+                P::LeftParen => T::Call,
+                P::LeftBracket => T::Index,
+                _ => return Err(Error::Missing("operator function ABI terminal")),
+            },
+            _ => return Err(Error::Missing("operator function ABI terminal")),
+        };
+        Ok(self.abi.intern(
+            Node::Terminal {
+                kind: terminal.for_operands(operands),
+                inherited: None,
+            },
+            &[],
+        )?)
+    }
+    pub(super) fn abi_literal(&mut self, ty: TypeId, bits: u64) -> Result<Node, Error> {
+        let unsigned_width = if matches!(self.graph.lower_type(ty)?, TypeView::Enum(_)) {
+            self.graph.lower_unsigned_integral_width(ty)
+        } else {
+            None
+        };
+        let ty = self.abi_type(ty)?;
+        Ok(if let Some(width) = unsigned_width {
+            let bits = if width < 64 {
+                bits & ((1_u64 << width) - 1)
+            } else {
+                bits
+            };
+            Node::UnsignedLiteral { ty, bits }
+        } else {
+            Node::Literal { ty, bits }
+        })
     }
     pub(super) fn reference_temporary_symbol(
         &mut self,
@@ -1335,10 +1368,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             match self.graph.lower_type(ty)? {
                 TypeView::Address { ty, entity } => self.abi_address_argument(ty, entity)?,
-                TypeView::Value { ty, bits } => Node::Literal {
-                    ty: self.abi_type(ty)?,
-                    bits,
-                },
+                TypeView::Value { ty, bits } => self.abi_literal(ty, bits)?,
                 TypeView::Vector { element, bound } => Node::Modified {
                     modifier: Modifier::Vector(bound),
                     operand: self.abi_type(element)?,

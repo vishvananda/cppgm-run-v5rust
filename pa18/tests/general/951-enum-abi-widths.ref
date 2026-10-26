@@ -1,0 +1,22 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @a()
+    %t2 = call i32 @b()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call i32 @c()
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = binary sub nowrap i32 %t5, 6
+    return i32 %t6
+}
+function @a() -> i32 [binding=weak, object=_Z1aIL5Small255EEiv] {
+  block ^entry:
+    return i32 1
+}
+function @b() -> i32 [binding=weak, object=_Z1bIL6Signedn1EEiv] {
+  block ^entry:
+    return i32 2
+}
+function @c() -> i32 [binding=weak, object=_Z1cIL4Wide18446744073709551615EEiv] {
+  block ^entry:
+    return i32 3
+}

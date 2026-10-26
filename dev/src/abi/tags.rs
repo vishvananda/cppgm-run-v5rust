@@ -169,11 +169,14 @@ impl Graph {
                 expression: node, ..
             }
             | Node::Literal { ty: node, .. }
+            | Node::UnsignedLiteral { ty: node, .. }
+            | Node::NullptrLiteral(node)
             | Node::FloatingLiteral { ty: node, .. }
             | Node::ExpressionArgument(node)
             | Node::EntityArgument { entity: node, .. }
             | Node::EntityReference(node)
             | Node::AlignofType(node)
+            | Node::TypeidType(node)
             | Node::SizeofType(node) => {
                 children.push(node);
                 false
