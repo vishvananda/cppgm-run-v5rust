@@ -95,12 +95,28 @@ impl Analyzer<'_> {
         let declarator = match self.tree.declarations.get(declaration).kind {
             ast::DeclKind::Function { declarator, .. }
             | ast::DeclKind::SpecialMember { declarator, .. } => Some(declarator),
-            ast::DeclKind::Simple { declarators, .. } => self
-                .tree
-                .init_declarators
-                .get(declarators)
-                .first()
-                .map(|node| node.declarator),
+            ast::DeclKind::Simple {
+                specifiers,
+                declarators,
+                ..
+            } => {
+                if let Some(node) = self.tree.init_declarators.get(declarators).first() {
+                    Some(node.declarator)
+                } else {
+                    return self
+                        .tree
+                        .specs
+                        .get(specifiers)
+                        .iter()
+                        .find_map(|specifier| {
+                            if let ast::SpecifierKind::Class(class) = specifier.kind {
+                                self.tree.classes.get(class).name
+                            } else {
+                                None
+                            }
+                        });
+                }
+            }
             ast::DeclKind::Class(specifier) => {
                 return match specifier.kind {
                     ast::SpecifierKind::Class(class) => self.tree.classes.get(class).name,

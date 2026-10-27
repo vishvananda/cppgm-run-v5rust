@@ -56,6 +56,7 @@ pub(crate) fn write_posttoken(
             data,
             multicharacter,
             suffix_begin,
+            ..
         } => {
             if multicharacter {
                 write_source(output, b"invalid ", token.source)
@@ -74,6 +75,7 @@ pub(crate) fn write_posttoken(
             ty,
             elements,
             suffix,
+            ..
         } => write_text_prefix(
             output,
             token.source,

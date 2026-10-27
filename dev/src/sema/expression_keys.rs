@@ -534,6 +534,7 @@ impl Analyzer<'_> {
                 data,
                 multicharacter: false,
                 suffix_begin: None,
+                ..
             } => Some((ty, data)),
             _ => None,
         };

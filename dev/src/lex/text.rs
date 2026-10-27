@@ -165,6 +165,7 @@ pub struct CharacterValue {
     pub ty: FundamentalType,
     pub code_point: u32,
     pub multicharacter: bool,
+    pub initializer_bound: u32,
     pub suffix_begin: usize,
 }
 
@@ -189,17 +190,20 @@ pub fn evaluate_character(text: &[u8]) -> Option<CharacterValue> {
             return None;
         }
         let mut value = u32::try_from(c).ok()?;
+        let mut initializer_bound = 2u32;
         while pos != body_end {
             let next = u32::try_from(decode_character(body, &mut pos)?.value()).ok()?;
             if next > 255 {
                 return None;
             }
             value = value.wrapping_shl(8) | next;
+            initializer_bound = initializer_bound.checked_add(1)?;
         }
         return Some(CharacterValue {
             ty: FundamentalType::Int,
             code_point: value,
             multicharacter: true,
+            initializer_bound,
             suffix_begin,
         });
     }
@@ -220,6 +224,7 @@ pub fn evaluate_character(text: &[u8]) -> Option<CharacterValue> {
         ty,
         code_point,
         multicharacter: false,
+        initializer_bound: 2,
         suffix_begin,
     })
 }
@@ -234,6 +239,7 @@ mod tests {
         assert!(value.multicharacter);
         assert_eq!(value.ty, FundamentalType::Int);
         assert_eq!(value.code_point, 0x4243_4445);
+        assert_eq!(value.initializer_bound, 6);
         for text in [
             b"'AB'_x".as_slice(),
             b"u'AB'",

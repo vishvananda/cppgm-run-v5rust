@@ -16,7 +16,6 @@ enum NameMode {
     Type,
     Member,
     Declarator,
-    DeclaredType,
 }
 
 impl Parser<'_> {
@@ -80,12 +79,17 @@ impl Parser<'_> {
         if self.keyword()? == Some(K::Typename) {
             return self.fail();
         }
-        self.name_in_context(NameMode::DeclaredType)
+        let saved = self.type_name_context;
+        self.type_name_context = super::parser::TypeNameContext::Declared;
+        let result = self.name_in_context(NameMode::Type);
+        self.type_name_context = saved;
+        result
     }
     fn name_in_context(&mut self, mode: NameMode) -> Result<(Name, Option<Binding>), ParseError> {
-        let type_context = matches!(mode, NameMode::Type | NameMode::DeclaredType);
+        let type_context = matches!(mode, NameMode::Type);
         let member_context = matches!(mode, NameMode::Member);
-        let declared = matches!(mode, NameMode::Declarator | NameMode::DeclaredType);
+        let declared = matches!(mode, NameMode::Declarator)
+            || self.type_name_context == super::parser::TypeNameContext::Declared;
         let mentions = self.template_mentions;
         let typename_keyword =
             matches!(mode, NameMode::Expression) && self.accept_keyword(K::Typename)?;

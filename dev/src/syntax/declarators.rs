@@ -428,9 +428,11 @@ impl Parser<'_> {
                 break;
             }
             let parameter_location = self.location()?;
+            let leading = self.collect_attributes(false)?;
             let enclosing_pack_start = self.parameter_pack_start;
             self.parameter_pack_start = self.pack_mentions;
-            let specifiers = self.specifier_sequence(definite, false)?;
+            let specifiers =
+                self.specifier_sequence_with_leading(definite, false, leading, None)?;
             definite = true;
             let declarator = if let Some(declarator) =
                 self.attempt(|parser| parser.declarator(Mode::Parameter))?

@@ -1076,16 +1076,26 @@ impl Analyzer<'_> {
                     && self.integral_element(element)
                     && let ast::ExprKind::Literal(literal) =
                         self.tree.expressions.get(elements[0]).kind
-                    && let crate::lex::PostTokenKind::String { elements, .. } = literal.kind
+                    && let crate::lex::PostTokenKind::String {
+                        initializer_bound, ..
+                    } = literal.kind
                 {
-                    bound = u64::from(elements);
+                    bound = initializer_bound;
                 }
             }
-            ast::ExprKind::Literal(literal) => {
-                if let crate::lex::PostTokenKind::String { elements, .. } = literal.kind {
-                    bound = u64::from(elements);
+            ast::ExprKind::Literal(literal) => match literal.kind {
+                crate::lex::PostTokenKind::String {
+                    initializer_bound, ..
+                } => {
+                    bound = initializer_bound;
                 }
-            }
+                crate::lex::PostTokenKind::Character {
+                    initializer_bound, ..
+                } => {
+                    bound = u64::from(initializer_bound);
+                }
+                _ => (),
+            },
             _ => (),
         }
         if bound == 0 {
@@ -1682,6 +1692,15 @@ impl Analyzer<'_> {
             return self.elaborated_enum(name, scope);
         }
         let node = *self.tree.names.get(name);
+        let last = self
+            .tree
+            .name_lists
+            .get(node.components)
+            .last()
+            .ok_or(Error::Invariant("empty class name"))?;
+        if !matches!(last.kind, ast::NameKind::Identifier(_)) {
+            return Err(Error::at(node.location, "invalid class name"));
+        }
         if self
             .tree
             .name_lists
@@ -1833,6 +1852,21 @@ impl Analyzer<'_> {
         {
             return self.class_partial_definition(id, name, scope);
         }
+        let last = self
+            .tree
+            .name_lists
+            .get(qualified_name.components)
+            .last()
+            .ok_or(Error::Invariant("empty class name"))?;
+        if last.arguments.is_some() {
+            return Err(Error::at(
+                qualified_name.location,
+                "a class template-id named outside a class template specialization's declaration",
+            ));
+        }
+        let ast::NameKind::Identifier(key_name) = last.kind else {
+            return Err(Error::at(qualified_name.location, "invalid class name"));
+        };
         let prefix = self.prefix(name, scope)?;
         let home = prefix.unwrap_or(self.declaration_scope(scope));
         if prefix.is_some()
@@ -1852,7 +1886,6 @@ impl Analyzer<'_> {
                 "class definition in a scope that does not enclose it",
             ));
         }
-        let key_name = self.declarator_class_name(name)?;
         if prefix.is_none() {
             self.check_template_parameter_name(scope, key_name, qualified_name.location)?;
         }
@@ -2023,18 +2056,5 @@ impl Analyzer<'_> {
             self.finish_class_nesting()?;
         }
         Ok(ty)
-    }
-    fn declarator_class_name(&self, name: Name) -> Result<NameId, Error> {
-        let node = self.tree.names.get(name);
-        let last = self
-            .tree
-            .name_lists
-            .get(node.components)
-            .last()
-            .ok_or(Error::Invariant("empty class name"))?;
-        if last.arguments.is_some() {
-            return Err(Error::Missing("class template specializations"));
-        }
-        Self::component_name(last.kind)
     }
 }

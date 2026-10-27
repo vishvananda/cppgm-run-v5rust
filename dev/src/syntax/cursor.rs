@@ -174,7 +174,7 @@ impl<'a> Cursor<'a> {
                 }
             }
             PostTokenKind::Invalid => {
-                return Err(ParseError::Syntax {
+                return Err(ParseError::CommittedSyntax {
                     location: post.begin,
                     message: "invalid token",
                 });

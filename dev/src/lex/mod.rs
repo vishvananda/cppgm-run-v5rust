@@ -60,11 +60,14 @@ pub enum PostTokenKind {
         ty: FundamentalType,
         data: ScalarBytes,
         multicharacter: bool,
+        initializer_bound: u32,
         suffix_begin: Option<usize>,
     },
     String {
         ty: FundamentalType,
         elements: u32,
+        /// Frozen declaration array deduction counts source characters, or raw bytes.
+        initializer_bound: u64,
         suffix: Option<(usize, usize)>,
     },
     EndOfFile,
@@ -245,6 +248,7 @@ impl<I: PostTokenInput> PostTokenizer<I> {
                         ty: value.ty,
                         data: ScalarBytes::integer(value.ty, u64::from(value.code_point)),
                         multicharacter: value.multicharacter,
+                        initializer_bound: value.initializer_bound,
                         suffix_begin: (value.suffix_begin != pp.spelling.len())
                             .then_some(value.suffix_begin),
                     }
@@ -330,6 +334,7 @@ impl<I: PostTokenInput> PostTokenizer<I> {
             .map_or(PostTokenKind::Invalid, |value| PostTokenKind::String {
                 ty: value.ty,
                 elements: value.elements,
+                initializer_bound: value.initializer_bound,
                 suffix: value.suffix.map(|range| (range.start, range.end)),
             });
         let suffix = match kind {
@@ -418,6 +423,7 @@ mod tests {
             PostTokenKind::String {
                 ty: FundamentalType::Char16T,
                 elements: 4,
+                initializer_bound: 3,
                 suffix: Some(_),
             }
         ));

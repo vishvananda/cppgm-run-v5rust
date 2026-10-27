@@ -158,7 +158,7 @@ impl Graph {
         }
         loop {
             let node = self.entity(class);
-            if node.name.is_none() && self.closure_call(class).is_none()
+            if !self.type_has_source_name(class) && self.closure_call(class).is_none()
                 || node.template_head.is_some()
             {
                 return Ok(true);
@@ -222,12 +222,12 @@ impl Graph {
         loop {
             let node = self.entity(class);
             let numbered = object_mode
-                && node.name.is_none()
+                && !self.type_has_source_name(class)
                 && node.home.is_some_and(|home| {
                     self.scope(home).kind == ScopeKind::Class
                         || self.unnamed_local_ordinal(class).is_some()
                 });
-            if node.name.is_none() && self.closure_call(class).is_none() && !numbered
+            if !self.type_has_source_name(class) && self.closure_call(class).is_none() && !numbered
                 || node.template_head.is_some()
             {
                 return Ok(false);
@@ -410,7 +410,7 @@ impl Graph {
                 return true;
             }
             if scope.kind != ScopeKind::Class {
-                return entity.name.is_none()
+                return !self.type_has_source_name(class)
                     || matches!(scope.kind, ScopeKind::Block | ScopeKind::Function);
             }
             let Some(owner) = scope.owner else {

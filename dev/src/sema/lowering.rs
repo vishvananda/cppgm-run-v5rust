@@ -1327,7 +1327,7 @@ impl Graph {
                     if matches!(scope.kind, ScopeKind::Block | ScopeKind::Function) {
                         !object_mode || !self.lower_shared_local_in_mode(entity, true)?
                     } else {
-                        node.name.is_none() || self.lower_anonymous_namespace(owner)
+                        !self.type_has_source_name(entity) || self.lower_anonymous_namespace(owner)
                     },
                 );
             }

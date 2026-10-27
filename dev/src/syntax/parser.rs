@@ -25,6 +25,11 @@ pub(super) enum ParameterContext {
     SpecialMember,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TypeNameContext {
+    Ordinary,
+    Declared,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Environment {
     Course,
     Hosted,
@@ -40,6 +45,7 @@ pub(super) struct Parser<'a> {
     pub parameter_scope: Option<ScopeId>,
     pub declarator_context: DeclaratorContext,
     pub parameter_context: ParameterContext,
+    pub type_name_context: TypeNameContext,
     pub template_mentions: u32,
     pub pack_mentions: u32,
     pub parameter_pack_start: u32,
@@ -118,6 +124,7 @@ impl<'a> Parser<'a> {
             parameter_scope: None,
             declarator_context: DeclaratorContext::Ordinary,
             parameter_context: ParameterContext::Ordinary,
+            type_name_context: TypeNameContext::Ordinary,
             template_mentions: 0,
             pack_mentions: 0,
             parameter_pack_start: 0,

@@ -77,6 +77,16 @@ impl Analyzer<'_> {
         declarator: Option<crate::syntax::ast::DeclaratorId>,
         lone: bool,
     ) -> Result<super::specifiers::Specifiers, Error> {
+        self.in_declaration_specifiers(scope, declarator, |analyzer| {
+            analyzer.specifiers(specifiers, scope, lone)
+        })
+    }
+    pub(super) fn in_declaration_specifiers<T>(
+        &mut self,
+        scope: ScopeId,
+        declarator: Option<crate::syntax::ast::DeclaratorId>,
+        analyze: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         let saved = self.declaration_access.class;
         let saved_owner = self.declaration_access.before_owner_declarator;
         self.declaration_access.before_owner_declarator =
@@ -103,7 +113,7 @@ impl Analyzer<'_> {
                     .home
                     .filter(|&home| self.graph.scope(home).kind == ScopeKind::Class);
             }
-            self.specifiers(specifiers, scope, lone)
+            analyze(self)
         })();
         self.declaration_access.class = saved;
         self.declaration_access.before_owner_declarator = saved_owner;

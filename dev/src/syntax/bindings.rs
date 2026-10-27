@@ -21,7 +21,10 @@ impl Parser<'_> {
         location: SourceOffset,
     ) -> Result<(ast::DeclaratorId, Vec<ast::DeclaratorId>), ParseError> {
         let reference = if matches!(self.punctuator()?, Some(P::BitAnd | P::LogicalAnd)) {
-            Some(self.operator()?)
+            let mut op = self.operator()?;
+            // The hidden object's reference is synthesized, not a written operator.
+            op.alternative = false;
+            Some(op)
         } else {
             None
         };

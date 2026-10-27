@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    variable raw array of 5 char16_t
+    variable ordinary array of 2 char16_t
+    variable narrow array of 2 char
+    variable concatenated array of 3 char16_t
+    variable character array of 4 int
+end translation unit

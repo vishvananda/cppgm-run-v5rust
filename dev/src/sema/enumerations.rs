@@ -15,8 +15,14 @@ use crate::{
     syntax::ast::{self, DeclKind},
     types::FundamentalType as F,
 };
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum EnumHead {
+    Ordinary,
+    TypeOperator,
+}
 #[derive(Clone, Copy)]
 pub(super) struct EnumInfo {
+    pub head: EnumHead,
     pub scoped: bool,
     pub fixed: bool,
     pub negative: bool,
@@ -32,7 +38,28 @@ const CANDIDATES: [F; 6] = [
     F::LongLongInt,
     F::UnsignedLongLongInt,
 ];
+impl super::graph::Graph {
+    pub(super) fn type_has_source_name(&self, entity: EntityId) -> bool {
+        let entity = self.entity(entity);
+        entity.name.is_some()
+            || entity
+                .enumeration
+                .is_some_and(|info| info.head == EnumHead::TypeOperator)
+    }
+}
 impl Analyzer<'_> {
+    fn enum_head_identifier(&self, name: ast::Name) -> Option<crate::lex::identifiers::NameId> {
+        let last = self
+            .tree
+            .name_lists
+            .get(self.tree.names.get(name).components)
+            .last()?;
+        if let ast::NameKind::Identifier(identifier) = last.kind {
+            Some(identifier)
+        } else {
+            None
+        }
+    }
     pub(super) fn name_unnamed_enum(
         &mut self,
         ty: TypeId,
@@ -46,7 +73,7 @@ impl Analyzer<'_> {
             .entity(entity)
             .enumeration
             .ok_or(Error::Invariant("unnamed enum metadata"))?;
-        if self.graph.entity(entity).name.is_some() || info.anonymous_ordinal.is_some() {
+        if self.graph.type_has_source_name(entity) || info.anonymous_ordinal.is_some() {
             return Ok(());
         }
         if let Some(name) = name {
@@ -69,6 +96,12 @@ impl Analyzer<'_> {
         name: ast::Name,
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
+        if self.enum_head_identifier(name).is_none() {
+            return Err(Error::at(
+                self.tree.names.get(name).location,
+                "operator and special member names are not supported here",
+            ));
+        }
         let found = self.lookup(name, scope, Filter::Elaborated)?;
         let binding = self.graph.binding(found);
         let ty = binding
@@ -98,12 +131,10 @@ impl Analyzer<'_> {
             let node = self.tree.names.get(name);
             if !node.global && self.tree.name_lists.get(node.components).len() == 1 && introduces {
                 let last = self.tree.name_lists.get(node.components)[0];
-                if last.arguments.is_none() {
-                    self.check_template_parameter_name(
-                        scope,
-                        Self::component_name(last.kind)?,
-                        node.location,
-                    )?;
+                if last.arguments.is_none()
+                    && let ast::NameKind::Identifier(identifier) = last.kind
+                {
+                    self.check_template_parameter_name(scope, identifier, node.location)?;
                 }
             }
         }
@@ -137,7 +168,6 @@ impl Analyzer<'_> {
             "noreturn attribute on an enumeration",
         )?;
         let location = declaration.location;
-        self.check_enum_parameter_names(name, has_body || lone, enumerators, scope)?;
         let scoped = key.is_some();
         let underlying = underlying
             .map(|id| self.type_syntax(id, scope))
@@ -159,35 +189,24 @@ impl Analyzer<'_> {
                 "enumeration underlying type is not integral",
             ));
         }
-        let Some(name) = name else {
-            if !has_body || scoped {
-                return Err(Error::at(
-                    location,
-                    "an enumeration without a name needs a body and cannot be scoped",
-                ));
-            }
-            let (entity, binding) = self.new_enum(
-                None,
-                EnumInfo {
-                    scoped: false,
-                    negative: false,
-                    fixed: underlying.is_some(),
-                    underlying,
-                    owner: scope,
-                    anonymous_ordinal: None,
-                },
-                scope,
-            )?;
-            let ty = self
-                .graph
-                .entity(entity)
-                .ty
-                .ok_or(Error::Invariant("anonymous enum type"))?;
-            self.class_abi_tags(entity, declaration.attributes, false, false, location)?;
-            self.enumerators(entity, enumerators, scope, binding, None)?;
-            return Ok(ty);
-        };
-        if !has_body && !lone {
+        if let Some(name) = name
+            && self
+                .tree
+                .name_lists
+                .get(self.tree.names.get(name).components)
+                .last()
+                .is_some_and(|last| last.arguments.is_some())
+        {
+            return Err(Error::at(
+                self.tree.names.get(name).location,
+                "template-ids are not supported here",
+            ));
+        }
+        self.check_enum_parameter_names(name, has_body || lone, enumerators, scope)?;
+        if let Some(name) = name
+            && !has_body
+            && !lone
+        {
             if scoped || underlying.is_some() {
                 return Err(Error::at(
                     location,
@@ -196,6 +215,22 @@ impl Analyzer<'_> {
             }
             return self.elaborated_enum(name, scope);
         }
+        // A GNU type operator supplies a source head without an identifier.
+        // Retain its naming role without reading the C++ union as a pointer.
+        let has_head = name.is_some();
+        let name = name.filter(|&name| self.enum_head_identifier(name).is_some());
+        let Some(name) = name else {
+            return self.enum_without_identifier(
+                id,
+                scope,
+                underlying,
+                if has_head {
+                    EnumHead::TypeOperator
+                } else {
+                    EnumHead::Ordinary
+                },
+            );
+        };
         let components = self
             .tree
             .name_lists
@@ -203,12 +238,6 @@ impl Analyzer<'_> {
         let last = components
             .last()
             .ok_or(Error::Invariant("empty enum name"))?;
-        if last.arguments.is_some() {
-            return Err(Error::at(
-                self.tree.names.get(name).location,
-                "template-ids are not supported here",
-            ));
-        }
         let identifier = Self::component_name(last.kind)?;
         let prefix = self.prefix(name, scope)?;
         let home = prefix.unwrap_or(scope);
@@ -270,6 +299,7 @@ impl Analyzer<'_> {
             self.new_enum(
                 Some(identifier),
                 EnumInfo {
+                    head: EnumHead::Ordinary,
                     scoped,
                     negative: false,
                     fixed: scoped || underlying.is_some(),
@@ -352,6 +382,75 @@ impl Analyzer<'_> {
         Ok(ty)
     }
 
+    fn enum_without_identifier(
+        &mut self,
+        id: ast::DeclId,
+        scope: ScopeId,
+        underlying: Option<TypeId>,
+        head: EnumHead,
+    ) -> Result<TypeId, Error> {
+        let declaration = *self.tree.declarations.get(id);
+        let DeclKind::Enum {
+            key,
+            has_body,
+            enumerators,
+            ..
+        } = declaration.kind
+        else {
+            return Err(Error::Invariant("enum syntax mismatch"));
+        };
+        let location = declaration.location;
+        let scoped = key.is_some();
+        let has_head = head == EnumHead::TypeOperator;
+        if !has_head && (!has_body || scoped) {
+            return Err(Error::at(
+                location,
+                "an enumeration without a name needs a body and cannot be scoped",
+            ));
+        }
+        if has_head && !has_body && !scoped && underlying.is_none() {
+            return Err(Error::at(
+                location,
+                "an opaque unscoped enumeration needs an underlying type",
+            ));
+        }
+        let underlying = match underlying {
+            None if scoped => Some(self.graph.types.scalar(Scalar::Basic(F::Int))?),
+            underlying => underlying,
+        };
+        let (entity, binding) = self.new_enum(
+            None,
+            EnumInfo {
+                head,
+                scoped,
+                negative: false,
+                fixed: scoped || underlying.is_some(),
+                underlying,
+                owner: self.declaration_scope(scope),
+                anonymous_ordinal: None,
+            },
+            scope,
+        )?;
+        let ty = self
+            .graph
+            .entity(entity)
+            .ty
+            .ok_or(Error::Invariant("anonymous enum type"))?;
+        self.class_abi_tags(entity, declaration.attributes, false, false, location)?;
+        if has_body {
+            let print = if scoped {
+                self.graph
+                    .entity(entity)
+                    .scope
+                    .ok_or(Error::Invariant("scoped enumeration without scope"))?
+            } else {
+                scope
+            };
+            self.enumerators(entity, enumerators, print, binding, None)?;
+        }
+        Ok(ty)
+    }
+
     // analyzer_classes.cpp::redeclared_enum: agreement is on canonical
     // underlying identity, including renamed dependent template parameters.
     fn redeclared_enum(
@@ -388,7 +487,9 @@ impl Analyzer<'_> {
         print: ScopeId,
     ) -> Result<(EntityId, BindingId), Error> {
         let entity = self.graph.add_entity(None, name, Keyword::Enum)?;
-        self.record_unnamed_local_type(entity, info.owner)?;
+        if info.head == EnumHead::Ordinary {
+            self.record_unnamed_local_type(entity, info.owner)?;
+        }
         let ty = self
             .graph
             .types

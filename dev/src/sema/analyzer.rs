@@ -566,7 +566,9 @@ impl<'tree> Analyzer<'tree> {
                 ..
             } => self.simple_declaration(id, specifiers, declarators, scope),
             ast::DeclKind::Class(specifier) => {
-                let ty = self.specifier_type(specifier, scope, true)?;
+                let ty = self.in_declaration_specifiers(scope, None, |analyzer| {
+                    analyzer.specifier_type(specifier, scope, true)
+                })?;
                 let storage = self.anonymous_union(
                     super::specifiers::Specifiers {
                         dependent_uses: self.dependent_uses.get(),
@@ -619,7 +621,9 @@ impl<'tree> Analyzer<'tree> {
                 result
             }
             ast::DeclKind::Enum { .. } => {
-                let ty = self.enum_type(id, scope, true)?;
+                let ty = self.in_declaration_specifiers(scope, None, |analyzer| {
+                    analyzer.enum_type(id, scope, true)
+                })?;
                 self.name_unnamed_enum(ty, None)
             }
             ast::DeclKind::StaticAssert { condition, message } => {

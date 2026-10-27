@@ -163,6 +163,9 @@ impl Analyzer<'_> {
         let mut data = text.to_vec();
         data.push(0);
         let elements = u32::try_from(data.len()).map_err(|_| Error::Limit("source text length"))?;
+        let initializer_bound = text.iter().fold(1u64, |count, &byte| {
+            count.wrapping_add(u64::from(byte & 0xc0 != 0x80))
+        });
         let spelling = self
             .literal_bytes
             .add(&spelling)
@@ -180,6 +183,7 @@ impl Analyzer<'_> {
                     kind: PostTokenKind::String {
                         ty: F::Char,
                         elements,
+                        initializer_bound,
                         suffix: None,
                     },
                     spelling,

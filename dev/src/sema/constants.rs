@@ -989,6 +989,7 @@ impl Analyzer<'_> {
             ty,
             elements,
             suffix: None,
+            ..
         } = literal.kind
         else {
             return Err(not_constant(

@@ -27,6 +27,7 @@ pub(crate) struct StringSequence {
 pub(crate) struct StringValue {
     pub ty: FundamentalType,
     pub elements: u32,
+    pub initializer_bound: u64,
     pub suffix: Option<Range<usize>>,
 }
 
@@ -86,20 +87,24 @@ impl StringSequence {
         let Some((prefix, suffix)) = self.combine(dialect) else {
             return Ok(None);
         };
+        let mut initializer_bound = 1u64;
         for piece in &self.pieces {
             let Some(parts) = piece.parts else {
                 return Ok(None);
             };
             let offset = usize::try_from(piece.offset).map_err(|_| TextError::HostSize)?;
             let length = usize::try_from(piece.length).map_err(|_| TextError::HostSize)?;
+            let mut piece_bound = 0;
             if !encode_body(
                 &mut self.units,
                 &self.source[offset..offset + length],
                 parts,
                 prefix,
+                &mut piece_bound,
             ) {
                 return Ok(None);
             }
+            initializer_bound = initializer_bound.wrapping_add(piece_bound);
         }
         append_unit(&mut self.units, 0, prefix.width());
         let bytes =
@@ -108,6 +113,7 @@ impl StringSequence {
         Ok(Some(StringValue {
             ty: prefix.element_type(),
             elements: bytes / width,
+            initializer_bound,
             suffix,
         }))
     }
@@ -152,7 +158,13 @@ fn target_length(length: usize) -> usize {
     length & u32::MAX as usize
 }
 
-fn encode_body(units: &mut Vec<u8>, text: &[u8], parts: TextParts, prefix: EncodingPrefix) -> bool {
+fn encode_body(
+    units: &mut Vec<u8>,
+    text: &[u8],
+    parts: TextParts,
+    prefix: EncodingPrefix,
+    initializer_bound: &mut u64,
+) -> bool {
     let width = prefix.width();
     let (Ok(body_begin), Ok(body_end)) = (
         usize::try_from(parts.body_begin),
@@ -162,6 +174,9 @@ fn encode_body(units: &mut Vec<u8>, text: &[u8], parts: TextParts, prefix: Encod
     };
     let text = &text[..body_end];
     let mut pos = body_begin;
+    if parts.raw {
+        *initializer_bound = u64::from(parts.body_end - parts.body_begin);
+    }
     if width == 1 && parts.raw {
         units.extend_from_slice(&text[pos..]);
         return true;
@@ -173,7 +188,11 @@ fn encode_body(units: &mut Vec<u8>, text: &[u8], parts: TextParts, prefix: Encod
                     .iter()
                     .position(|&c| c == b'\\')
                     .unwrap_or(text.len() - pos);
-            units.extend_from_slice(&text[pos..end]);
+            let run = &text[pos..end];
+            *initializer_bound = run.iter().fold(*initializer_bound, |count, &byte| {
+                count.wrapping_add(u64::from(byte & 0xc0 != 0x80))
+            });
+            units.extend_from_slice(run);
             pos = end;
             continue;
         }
@@ -189,6 +208,9 @@ fn encode_body(units: &mut Vec<u8>, text: &[u8], parts: TextParts, prefix: Encod
             };
             c
         };
+        if !parts.raw {
+            *initializer_bound = initializer_bound.wrapping_add(1);
+        }
         match c {
             LiteralCharacter::Numeric(value) => {
                 let maximum = match width {
@@ -229,6 +251,29 @@ fn append_scalar(units: &mut Vec<u8>, c: char, width: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initializer_bounds_and_encoded_units_retain_distinct_source_rules() {
+        for (source, elements, initializer_bound) in [
+            ("u\"🙂\"", 3, 2),
+            ("uR\"(🙂)\"", 3, 5),
+            ("u8\"π\"", 3, 2),
+            ("u8R\"(π)\"", 3, 3),
+            ("u\"\\xD800\"", 2, 2),
+        ] {
+            let mut strings = StringSequence::default();
+            strings.add(source.as_bytes()).unwrap();
+            let value = strings.concatenate(NumberDialect::Cxx11).unwrap().unwrap();
+            assert_eq!(value.elements, elements);
+            assert_eq!(value.initializer_bound, initializer_bound);
+        }
+        let mut strings = StringSequence::default();
+        strings.add(b"u\"a\"").unwrap();
+        strings.add("\"🙂\"".as_bytes()).unwrap();
+        let value = strings.concatenate(NumberDialect::Cxx11).unwrap().unwrap();
+        assert_eq!(value.elements, 4);
+        assert_eq!(value.initializer_bound, 3);
+    }
 
     #[test]
     fn sequence_reset_releases_contents_and_keeps_only_capacity() {

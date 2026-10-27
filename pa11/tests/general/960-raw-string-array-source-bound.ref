@@ -1,0 +1,15 @@
+global @value [binding=strong] = {
+  u16 55357
+  u16 56898
+  u16 0
+  u16 0
+  u16 0
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = const i64 10
+    %t2 = binary sub i64 %t1, 10
+    %t3 = convert trunc i32 i64 %t2
+    return i32 %t3
+}

@@ -424,7 +424,7 @@ impl Parser<'_> {
     ) -> Result<List<Specifier>, ParseError> {
         self.specifier_sequence_with_leading(definite, type_only, List::default(), None)
     }
-    fn specifier_sequence_with_leading(
+    pub(super) fn specifier_sequence_with_leading(
         &mut self,
         definite: bool,
         type_only: bool,
