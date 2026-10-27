@@ -165,7 +165,7 @@ impl Parser<'_> {
             None
         };
         let head = self.lexer.token;
-        if head.kind != Kind::Word {
+        if head.kind != Kind::Word || std::str::from_utf8(head.text).is_err() {
             return Err(self.fail_token(
                 if result.is_some() {
                     "unknown rvalue instruction: "

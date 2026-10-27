@@ -462,7 +462,9 @@ fn run() -> Result<(), CliError> {
             .map_err(tool_error)?;
         output.file = File::create(destination).ok().map(io::BufWriter::new);
         output.failed = output.file.is_none();
-        observations = Some(view.write(&mut output).map_err(|_| CliError::Output)?);
+        observations = Some(view.write(&mut output).map_err(|_| {
+            CliError::Diagnostic([b"cannot write ".as_slice(), destination.as_bytes()].concat())
+        })?);
     }
     output.flush().map_err(|_| CliError::Output)?;
     if output.failed {

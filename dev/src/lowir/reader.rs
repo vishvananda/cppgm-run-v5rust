@@ -91,7 +91,7 @@ impl<'a> Parser<'a> {
         if !self.at(kind) {
             return Err(self.fail_token(&format!("expected {what}, got '"), "'"));
         }
-        let name = self.program.names.intern(self.lexer.token.word())?;
+        let name = self.program.names.intern_bytes(self.lexer.token.text)?;
         self.advance()?;
         Ok(name)
     }
@@ -103,13 +103,13 @@ impl<'a> Parser<'a> {
                 return Ok(ty);
             }
             if let Some(object) = token
-                .word()
-                .strip_prefix("obj<")
-                .and_then(|t| t.strip_suffix('>'))
-                && let Some((bytes, align)) = object.split_once('x')
+                .text
+                .strip_prefix(b"obj<")
+                .and_then(|t| t.strip_suffix(b">"))
+                && let Some(cross) = object.iter().position(|&c| c == b'x')
             {
-                let bytes = self.positive(bytes)?;
-                let align = self.positive(align)?;
+                let bytes = self.positive(&object[..cross])?;
+                let align = self.positive(&object[cross + 1..])?;
                 if !align.is_power_of_two() {
                     return Err(self.fail("object alignment is not a power of two"));
                 }
@@ -126,10 +126,11 @@ impl<'a> Parser<'a> {
         }
         Err(self.fail_token("unknown LowIR type: ", ""))
     }
-    pub(super) fn positive(&self, text: &str) -> Result<u64, Error> {
+    pub(super) fn positive(&self, text: impl AsRef<[u8]>) -> Result<u64, Error> {
+        let text = text.as_ref();
         let mut value = 0_u64;
-        let mut valid = !text.is_empty() && !text.starts_with('0');
-        for digit in text.bytes() {
+        let mut valid = !text.is_empty() && !text.starts_with(b"0");
+        for &digit in text {
             if !digit.is_ascii_digit() || value > (u64::MAX - 9) / 10 {
                 valid = false;
                 break;
@@ -139,7 +140,9 @@ impl<'a> Parser<'a> {
         if valid {
             Ok(value)
         } else {
-            Err(self.fail(format!("invalid positive integer: {text}")))
+            let mut message = b"invalid positive integer: ".to_vec();
+            message.extend_from_slice(text);
+            Err(Error::at_path(message, self.source, self.lexer.token.line))
         }
     }
     pub(super) fn parse(&mut self) -> Result<(), Error> {
@@ -393,7 +396,7 @@ impl<'a> Parser<'a> {
                         | "tls_for"
                         | "result_classes"
                 ) {
-                    return Err(self.fail(format!("unknown symbol metadata: {key}")));
+                    return Err(self.fail_token("unknown symbol metadata: ", ""));
                 }
                 self.advance()?;
                 self.expect(Kind::Equals, "=")?;
@@ -536,12 +539,9 @@ impl<'a> Parser<'a> {
                 }
             }
             "object" => {
-                let value = if self.at(Kind::Global) {
-                    format!("@{value}")
-                } else {
-                    value.into()
-                };
-                metadata.object = Some(self.program.names.intern(&value)?);
+                let mut spelling = Vec::new();
+                self.lexer.token.append_spelling(&mut spelling);
+                metadata.object = Some(self.program.names.intern_bytes(&spelling)?);
             }
             "storage" => {
                 metadata.storage = Storage::parse(value);
@@ -550,9 +550,12 @@ impl<'a> Parser<'a> {
                 }
             }
             "section" => {
-                if !value
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.'))
+                if !self
+                    .lexer
+                    .token
+                    .text
+                    .iter()
+                    .all(|&c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.'))
                 {
                     return Err(self.fail("invalid global section name"));
                 }

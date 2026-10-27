@@ -15,6 +15,7 @@ pub(crate) mod model;
 mod reader;
 mod runtime;
 mod statistics;
+pub(crate) mod text_storage;
 #[cfg(feature = "telemetry")]
 pub(crate) use statistics::Construction;
 pub use statistics::Statistics;

@@ -7,6 +7,7 @@ pub mod file_identity;
 pub mod optimization_options;
 pub mod pptoken;
 mod source_observations;
+mod temporary_file;
 
 pub mod posttoken;
 pub mod ppexpr;

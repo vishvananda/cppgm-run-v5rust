@@ -25,13 +25,16 @@ struct Definition {
 #[derive(Default)]
 pub(crate) struct Definitions {
     retained: bool,
-    bytes: Vec<u8>,
+    bytes: crate::lowir::text_storage::DefinitionBytes,
     spans: Vec<Definition>,
     held: Vec<Definition>,
     external: HashMap<(FamilyKind, NameId), FamilyId>,
     next_family: u32,
 }
 impl Definitions {
+    pub(crate) fn set_spill_factory(&mut self, factory: fn() -> io::Result<std::fs::File>) {
+        self.bytes.set_spill_factory(factory);
+    }
     pub(super) fn retain(&mut self) {
         self.retained = true;
     }
@@ -101,7 +104,10 @@ impl Definitions {
             .into());
         }
         let start = self.bytes.len();
-        self.bytes.append(bytes);
+        self.bytes
+            .write_all(bytes)
+            .map_err(crate::lowir::Error::Output)?;
+        bytes.clear();
         self.spans.push(Definition {
             bytes: start..self.bytes.len(),
             header: None,
@@ -167,7 +173,7 @@ impl Definitions {
                     .ok_or_else(|| io::Error::other("deferred function header without identity"))?;
                 crate::lowir::writer::write_definition_header(program, function, output)?;
             }
-            output.write_all(&self.bytes[span.bytes.clone()])?;
+            self.bytes.copy_range(span.bytes.clone(), output)?;
         }
         Ok(())
     }

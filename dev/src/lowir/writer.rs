@@ -50,10 +50,11 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
 }
 pub(crate) fn write_aliases(program: &Program, out: &mut impl Write) -> io::Result<()> {
     for alias in program.aliases() {
+        out.write_all(b"alias object ")?;
+        out.write_all(c_string(program.names.bytes(alias.object)))?;
         writeln!(
             out,
-            "alias object {} = @{}",
-            program.names.get(alias.object),
+            " = @{}",
             program.names.get(program.symbol(alias.target).name)
         )?;
     }
@@ -282,15 +283,17 @@ fn write_location(
     if let Some(location) = location {
         write!(out, " !dbg(")?;
         // C++'s location writer uses a C string, even though the interner keeps its full bytes.
-        let file = program.names.bytes(location.file);
-        let end = file
-            .iter()
-            .position(|&byte| byte == 0)
-            .unwrap_or(file.len());
-        out.write_all(&file[..end])?;
+        out.write_all(c_string(program.names.bytes(location.file)))?;
         write!(out, ", {}, {})", location.line, location.column)?;
     }
     Ok(())
+}
+fn c_string(bytes: &[u8]) -> &[u8] {
+    let end = bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len());
+    &bytes[..end]
 }
 fn local_error(error: super::Error) -> io::Error {
     match error {
@@ -356,52 +359,57 @@ fn metadata(
     signature: Option<&Signature>,
     out: &mut impl Write,
 ) -> io::Result<()> {
-    let mut fields = Vec::new();
+    let mut fields: Vec<Vec<u8>> = Vec::new();
     if let Some(signature) = signature {
         let m = &signature.boundary;
         if m.arity == Arity::Variadic {
-            fields.push("arity=variadic".into());
+            fields.push(b"arity=variadic".to_vec());
         }
         if let Some(effects) = m.effects {
-            fields.push(format!("effects={}", effects.spelling()));
+            fields.push(format!("effects={}", effects.spelling()).into_bytes());
         }
         if m.unwind == Unwind::No {
-            fields.push("unwind=no".into());
+            fields.push(b"unwind=no".to_vec());
         }
         if m.returns == Returns::NoReturn {
-            fields.push("return=noreturn".into());
+            fields.push(b"return=noreturn".to_vec());
         }
         if let Some(classes) = m.result_classes {
-            fields.push(format!("result_classes={classes}"));
+            fields.push(format!("result_classes={classes}").into_bytes());
         }
     }
     if let Some(m) = symbol {
         if let Some(storage) = m.storage {
-            fields.push(format!("storage={}", storage.spelling()));
+            fields.push(format!("storage={}", storage.spelling()).into_bytes());
         }
         if let Some(section) = m.section {
-            fields.push(format!("section={}", program.names.get(section)));
+            fields.push(format!("section={}", program.names.get(section)).into_bytes());
         }
         if let Some(role) = m.role {
-            fields.push(format!("role={}", role.spelling()));
+            fields.push(format!("role={}", role.spelling()).into_bytes());
         }
         if m.linkage == Linkage::C {
-            fields.push("linkage=c".into());
+            fields.push(b"linkage=c".to_vec());
         }
         if let Some(binding) = m.binding {
-            fields.push(format!("binding={}", binding.spelling()));
+            fields.push(format!("binding={}", binding.spelling()).into_bytes());
         }
         if m.flags & 64 != 0 {
-            fields.push("replaceable=yes".into());
+            fields.push(b"replaceable=yes".to_vec());
         }
         if let Some(object) = m.object {
-            fields.push(format!("object={}", program.names.get(object)));
+            let mut field = b"object=".to_vec();
+            field.extend_from_slice(c_string(program.names.bytes(object)));
+            fields.push(field);
         }
         if let Some(target) = m.tls_for {
-            fields.push(format!(
-                "tls_for=@{}",
-                program.names.get(program.symbol(target).name)
-            ));
+            fields.push(
+                format!(
+                    "tls_for=@{}",
+                    program.names.get(program.symbol(target).name)
+                )
+                .into_bytes(),
+            );
         }
         for (i, name) in [
             "keep_alias",
@@ -415,12 +423,19 @@ fn metadata(
         .enumerate()
         {
             if m.flags & (1 << i) != 0 {
-                fields.push(format!("{name}=yes"));
+                fields.push(format!("{name}=yes").into_bytes());
             }
         }
     }
     if !fields.is_empty() {
-        write!(out, " [{}]", fields.join(", "))?;
+        out.write_all(b" [")?;
+        for (i, field) in fields.iter().enumerate() {
+            if i != 0 {
+                out.write_all(b", ")?;
+            }
+            out.write_all(field)?;
+        }
+        out.write_all(b"]")?;
     }
     Ok(())
 }
@@ -604,7 +619,7 @@ impl<W: Write> InstructionWriter<'_, '_, W> {
                 write!(self.out, "load ")?;
                 self.memory_facts(*f)?;
                 write!(self.out, "{t} ")?;
-                self.value(*v, Type::Void)
+                self.value(*v, Type::Ptr)
             }
             I::Store(f, t, a, b) => {
                 write!(self.out, "store ")?;
@@ -612,7 +627,7 @@ impl<W: Write> InstructionWriter<'_, '_, W> {
                 write!(self.out, "{t} ")?;
                 self.value(*a, *t)?;
                 self.comma()?;
-                self.value(*b, Type::Void)
+                self.value(*b, Type::Ptr)
             }
             I::Index(t, projection, a, b) => {
                 write!(self.out, "index {t}")?;
@@ -819,6 +834,47 @@ fn integer_text(mut bits: u128, ty: Type) -> String {
 mod tests {
     use super::*;
     use crate::lowir::model::{Boundary, Parameter};
+
+    #[test]
+    fn object_spellings_preserve_bytes_and_distinct_alias_identity() {
+        let source = b"declare global @g [object=obj<\xff>]\n\
+            alias object obj<\xff> = @g\nalias object obj<\xfe> = @g\n";
+        let program = crate::lowir::test_program(source).unwrap();
+        let aliases = program.aliases();
+        assert_ne!(aliases[0].object, aliases[1].object);
+        let mut output = Vec::new();
+        write(&program, &mut output).unwrap();
+        for spelling in [
+            b"object=obj<\xff>".as_slice(),
+            b"object obj<\xff>",
+            b"object obj<\xfe>",
+        ] {
+            assert!(
+                output
+                    .windows(spelling.len())
+                    .any(|window| window == spelling)
+            );
+        }
+        let reread = crate::lowir::test_program(&output).unwrap();
+        let mut repeated = Vec::new();
+        write(&reread, &mut repeated).unwrap();
+        assert_eq!(output, repeated);
+    }
+
+    #[test]
+    fn c_string_object_views_keep_full_owned_identity() {
+        let program = crate::lowir::test_program(
+            b"declare global @g [object=obj<abc\x00def>]\n\
+            alias object obj<abc\x00def> = @g\nalias object obj<abc\x00ghi> = @g\n",
+        )
+        .unwrap();
+        let aliases = program.aliases();
+        assert_ne!(aliases[0].object, aliases[1].object);
+        assert_eq!(program.names.bytes(aliases[0].object), b"obj<abc\x00def>");
+        let mut output = Vec::new();
+        write(&program, &mut output).unwrap();
+        assert_eq!(output, b"declare global @g [object=obj<abc]\nalias object obj<abc = @g\nalias object obj<abc = @g\n");
+    }
 
     #[test]
     fn host_numeric_classes_round_trip_canonical_and_unstated_flags() {

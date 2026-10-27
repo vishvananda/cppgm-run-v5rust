@@ -1,0 +1,6 @@
+function @f() -> i64 {
+  block ^entry:
+    store i64 -1, 18446744073709551614
+    %value = load i64 18446744073709551615
+    return i64 %value
+}

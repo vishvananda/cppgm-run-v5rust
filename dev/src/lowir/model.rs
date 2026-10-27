@@ -116,7 +116,8 @@ impl Names {
         Ok(id)
     }
     pub(crate) fn get(&self, id: NameId) -> &str {
-        // Grammar names are ASCII; only debug file tokens use the byte view.
+        // Vocabulary and sigil names are ASCII. Object spellings and debug-file
+        // tokens retain arbitrary bytes and must use the byte view instead.
         std::str::from_utf8(self.bytes(id)).unwrap_or("")
     }
     #[cfg(feature = "telemetry")]

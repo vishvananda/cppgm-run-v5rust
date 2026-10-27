@@ -1,0 +1,3 @@
+declare global @g [object=obj<abc]
+alias object obj<abc = @g
+alias object obj<abc = @g

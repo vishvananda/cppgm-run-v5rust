@@ -22,7 +22,6 @@ pub enum EmitMode {
     Semantics,
     LowIr,
 }
-#[derive(Default)]
 pub struct LowIrOutput {
     output: crate::lower::Output,
     object: Option<(
@@ -34,6 +33,21 @@ pub struct LowIrOutput {
     pub(crate) work: crate::sema::Work,
     pub(crate) front_ms: crate::support::telemetry::Counter<f64>,
     lower_ms: crate::support::telemetry::Counter<f64>,
+}
+impl Default for LowIrOutput {
+    fn default() -> Self {
+        let mut output = crate::lower::Output::default();
+        output
+            .definitions
+            .set_spill_factory(super::temporary_file::anonymous);
+        Self {
+            output,
+            object: None,
+            work: crate::sema::Work::default(),
+            front_ms: crate::support::telemetry::counter(0.0),
+            lower_ms: crate::support::telemetry::counter(0.0),
+        }
+    }
 }
 /// Owned reports from a completed source-to-LowIR view.
 pub struct LowIrStatistics {
