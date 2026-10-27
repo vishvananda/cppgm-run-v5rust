@@ -173,6 +173,12 @@ impl Analyzer<'_> {
                 .constructors
                 .record_object_pointer(constructor, pointer);
         }
+        let plan = self.graph.constructors.get(constructor);
+        if plan.binding.is_none()
+            && let Some(function) = plan.declaration
+        {
+            self.graph.bind_implicit_constructor(function)?;
+        }
         if let Some(binding) = self.graph.constructors.get(constructor).binding {
             // Reached storage construction (including arrays) demands
             // the selected definition, separately from its signature.

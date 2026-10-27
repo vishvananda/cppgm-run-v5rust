@@ -522,6 +522,11 @@ impl Analyzer<'_> {
         &self,
         constructor: ConstructorId,
     ) -> Result<bool, Error> {
+        // Generated default and anonymous-member plans have no written body.
+        // Their real function declaration is independent of source bindings.
+        if self.graph.constructors.get(constructor).binding.is_none() {
+            return Ok(true);
+        }
         let Some(entity) = self.graph.lower_constructor_entity(constructor) else {
             return Ok(true);
         };

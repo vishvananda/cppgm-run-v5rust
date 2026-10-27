@@ -526,10 +526,7 @@ impl Graph {
         self.entity(entity).constructor
     }
     pub(crate) fn lower_constructor_entity(&self, id: ConstructorId) -> Option<EntityId> {
-        self.constructors
-            .get(id)
-            .binding
-            .map(|binding| self.binding(binding).entity)
+        self.constructors.get(id).declaration
     }
     // An argument's odr-use schedules definitions only. A declaration is emitted
     // when generated code actually refers to the function (C++ demand_entry).

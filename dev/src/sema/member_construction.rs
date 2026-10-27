@@ -255,6 +255,7 @@ impl Analyzer<'_> {
             copy_transfer: super::construction::CopyTransfer::Call,
             class,
             binding: None,
+            declaration: None,
             object_pointer: None,
             callable_type,
             nothrow,

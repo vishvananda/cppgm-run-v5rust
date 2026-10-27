@@ -507,7 +507,7 @@ impl Analyzer<'_> {
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
             if let Some(child) = self.default_member_dependency(member)? {
-                self.default_constructor(child, SourceOffset(0))?;
+                self.default_member_constructor(child, SourceOffset(0))?;
             }
         }
         let id = self.scalar_constructor_facts(class, Some(binding))?;

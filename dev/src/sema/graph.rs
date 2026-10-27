@@ -1507,6 +1507,56 @@ impl Graph {
             )
         })
     }
+    pub(super) fn add_implicit_constructor(
+        &mut self,
+        class: EntityId,
+        signature: TypeId,
+    ) -> Result<EntityId, Error> {
+        let home = self
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("implicit constructor class scope"))?;
+        let function = self.add_entity(Some(signature), None, Keyword::Int)?;
+        let entity = self.entity_mut(function);
+        entity.home = Some(home);
+        entity.defined = true;
+        entity.inline = super::specifiers::InlinePreference::Inline;
+        entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
+        entity.member_function = Some(MemberKey {
+            class,
+            kind: MemberKind::Constructor,
+            signature,
+            shape: None,
+        });
+        entity.function = Some(FunctionProperties {
+            effects: FunctionEffect::Default,
+            no_inline: false,
+            returns: FunctionReturn::MayReturn,
+            internal_linkage: false,
+            language: super::linkage::Language::Cpp,
+            denotes: None,
+            is_static: false,
+            special: None,
+            allocation: None,
+        });
+        Ok(function)
+    }
+    pub(super) fn bind_implicit_constructor(
+        &mut self,
+        function: EntityId,
+    ) -> Result<BindingId, Error> {
+        if let Some(&binding) = self.function_origins.get(&function) {
+            return Ok(binding);
+        }
+        let entity = self.entity(function);
+        let home = entity
+            .home
+            .ok_or(Error::Invariant("implicit constructor home"))?;
+        let signature = entity
+            .ty
+            .ok_or(Error::Invariant("implicit constructor signature"))?;
+        self.callable_binding(home, function, signature)
+    }
     pub(super) fn add_implicit_copy_binding(
         &mut self,
         home: ScopeId,

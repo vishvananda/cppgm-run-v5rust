@@ -69,6 +69,7 @@ pub(crate) struct Delegation {
 pub(super) struct Constructor {
     pub class: EntityId,
     pub binding: Option<BindingId>,
+    pub declaration: Option<EntityId>,
     pub object_pointer: Option<TypeId>,
     pub callable_type: TypeId,
     pub nothrow: bool,
@@ -115,6 +116,7 @@ impl Constructor {
 #[derive(Default)]
 pub(super) struct Constructors {
     records: Vec<Constructor>,
+    implicit_functions: std::collections::HashMap<EntityId, EntityId>,
     // A successful default query keeps the declared function's identity, even
     // when it belongs to an inherited template. Plans and emission are separate.
     defaults: std::collections::HashMap<EntityId, DefaultSelection>,
@@ -123,6 +125,11 @@ pub(super) struct Constructors {
 enum DefaultSelection {
     InProgress,
     Ready(BindingId),
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DefaultDemand {
+    Callable,
+    MemberActions,
 }
 impl Constructors {
     pub(super) fn add(&mut self, constructor: Constructor) -> Result<ConstructorId, Error> {
@@ -144,6 +151,9 @@ impl Constructors {
     }
     pub(super) fn record_object_pointer(&mut self, id: ConstructorId, pointer: TypeId) {
         self.records[id.0 as usize].object_pointer = Some(pointer);
+    }
+    fn record_declaration(&mut self, id: ConstructorId, declaration: EntityId) {
+        self.records[id.0 as usize].declaration = Some(declaration);
     }
 }
 impl Analyzer<'_> {
@@ -290,6 +300,24 @@ impl Analyzer<'_> {
         class: EntityId,
         location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
+        self.default_constructor_plan(class, location, DefaultDemand::Callable)
+    }
+    pub(super) fn default_member_constructor(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<ConstructorId, Error> {
+        if self.graph.anonymous_member_storage(class).is_none() {
+            return self.default_constructor(class, location);
+        }
+        self.default_constructor_plan(class, location, DefaultDemand::MemberActions)
+    }
+    fn default_constructor_plan(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+        demand: DefaultDemand,
+    ) -> Result<ConstructorId, Error> {
         // Ordinary nonvirtual bases are completed bottom-up on demand. A deep
         // hierarchy must not consume one native Rust frame per base.
         let mut work = vec![(class, 0usize, None)];
@@ -304,6 +332,15 @@ impl Analyzer<'_> {
                 self.graph.entity(*current).default_construction,
                 ConstructorState::Ready(_)
             ) {
+                if *current == class
+                    && demand == DefaultDemand::Callable
+                    && let ConstructorState::Ready(id) =
+                        self.graph.entity(*current).default_construction
+                    && self.graph.constructors.get(id).declaration.is_none()
+                {
+                    // A direct query may follow an anonymous-member expansion.
+                    self.implicit_default_declaration(*current)?;
+                }
                 active.remove(current);
                 work.pop();
             } else if *next == 0 {
@@ -313,6 +350,13 @@ impl Analyzer<'_> {
                         plan_location,
                         "no default constructor for the class",
                     ));
+                }
+                if selected.is_none()
+                    && self.graph.entity(*current).complete
+                    && (self.graph.anonymous_member_storage(*current).is_none()
+                        || *current == class && demand == DefaultDemand::Callable)
+                {
+                    self.implicit_default_declaration(*current)?;
                 }
                 *next = 1;
                 if selected.is_some_and(|binding| {
@@ -522,7 +566,7 @@ impl Analyzer<'_> {
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
             if let Some(child) = self.default_member_dependency(member)? {
-                self.default_constructor(child, SourceOffset(0))?;
+                self.default_member_constructor(child, SourceOffset(0))?;
             }
         }
         Ok(())
@@ -533,6 +577,19 @@ impl Analyzer<'_> {
         class: EntityId,
         binding: Option<BindingId>,
     ) -> Result<ConstructorId, Error> {
+        let declaration = if let Some(binding) = binding {
+            Some(self.graph.binding(binding).entity)
+        } else if self.graph.anonymous_member_storage(class).is_some() {
+            // Anonymous members expand into their enclosing plan; they have
+            // no function declaration unless one was separately queried.
+            self.graph
+                .constructors
+                .implicit_functions
+                .get(&class)
+                .copied()
+        } else {
+            Some(self.implicit_default_declaration(class)?)
+        };
         let union = self.graph.entity(class).key == Keyword::Union;
         let mut deleted = self.graph.closure_call(class).is_some();
         let mut base_plans = self.default_base_plans(class, binding)?;
@@ -688,6 +745,7 @@ impl Analyzer<'_> {
         let record = Constructor {
             class,
             binding,
+            declaration,
             object_pointer: None,
             callable_type,
             nothrow,
@@ -711,7 +769,21 @@ impl Analyzer<'_> {
             copy_transfer: CopyTransfer::Call,
             triviality: Triviality::Trivial,
         };
-        self.publish_constructor(record)
+        let id = self.publish_constructor(record)?;
+        if binding.is_none()
+            && let Some(declaration) = declaration
+        {
+            let entity = self.graph.entity_mut(declaration);
+            entity.exceptions = super::exceptions::ExceptionState::Value(if nothrow {
+                super::exceptions::ExceptionSet::None
+            } else {
+                super::exceptions::ExceptionSet::All
+            });
+            if deleted {
+                entity.availability = super::graph::FunctionAvailability::Deleted;
+            }
+        }
+        Ok(id)
     }
 
     fn default_base_plans(
@@ -856,6 +928,41 @@ impl Analyzer<'_> {
         Ok(child.nothrow)
     }
 
+    fn implicit_default_declaration(&mut self, class: EntityId) -> Result<EntityId, Error> {
+        let function =
+            if let Some(&function) = self.graph.constructors.implicit_functions.get(&class) {
+                function
+            } else {
+                let signature = self.constructor_signature(None)?;
+                let function = self.graph.add_implicit_constructor(class, signature)?;
+                self.graph.entity_mut(function).exceptions =
+                    super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::All);
+                self.graph
+                    .constructors
+                    .implicit_functions
+                    .insert(class, function);
+                function
+            };
+        if let ConstructorState::Ready(id) = self.graph.entity(class).default_construction
+            && self.graph.constructors.get(id).declaration.is_none()
+        {
+            let plan = self.graph.constructors.get(id);
+            let nothrow = plan.nothrow;
+            let deleted = plan.deleted;
+            self.graph.constructors.record_declaration(id, function);
+            let entity = self.graph.entity_mut(function);
+            entity.constructor = Some(id);
+            entity.exceptions = super::exceptions::ExceptionState::Value(if nothrow {
+                super::exceptions::ExceptionSet::None
+            } else {
+                super::exceptions::ExceptionSet::All
+            });
+            if deleted {
+                entity.availability = super::graph::FunctionAvailability::Deleted;
+            }
+        }
+        Ok(function)
+    }
     pub(super) fn constructor_signature(
         &mut self,
         binding: Option<BindingId>,
@@ -911,9 +1018,7 @@ impl Analyzer<'_> {
         } else {
             CopyTransfer::Call
         };
-        let function = record
-            .binding
-            .map(|binding| self.graph.binding(binding).entity);
+        let function = record.declaration;
         if let Some(id) = function.and_then(|entity| self.graph.entity(entity).constructor) {
             self.graph.constructors.replace(id, record);
             return Ok(id);
@@ -982,6 +1087,7 @@ impl Analyzer<'_> {
         self.publish_constructor(Constructor {
             class,
             binding: Some(binding),
+            declaration: Some(entity),
             object_pointer: None,
             callable_type: signature,
             nothrow: false,
@@ -1594,6 +1700,13 @@ mod tests {
         let binding = analyzer.graph.constructors.get(first).binding.unwrap();
         assert_eq!(analyzer.graph.constructors.get(first).class, classes[0]);
         for &class in &classes[1..4] {
+            assert!(
+                !analyzer
+                    .graph
+                    .constructors
+                    .implicit_functions
+                    .contains_key(&class)
+            );
             assert_eq!(
                 analyzer
                     .default_constructor(class, crate::support::source::SourceOffset(0))
@@ -1696,6 +1809,22 @@ mod tests {
                 .default_constructor(class, SourceOffset(0))
                 .unwrap()
         });
+        let default_functions =
+            plans.map(|plan| analyzer.graph.lower_constructor_entity(plan).unwrap());
+        let before = analyzer.graph.statistics();
+        for ((class, plan), declaration) in classes.into_iter().zip(plans).zip(default_functions) {
+            assert_eq!(
+                analyzer
+                    .default_constructor(class, SourceOffset(0))
+                    .unwrap(),
+                plan
+            );
+            assert_eq!(analyzer.graph.entity(declaration).constructor, Some(plan));
+            assert!(analyzer.graph.entity(declaration).scope.is_none());
+            assert!(analyzer.graph.function_origin(declaration).is_err());
+        }
+        assert_eq!(analyzer.graph.statistics().entities, before.entities);
+        assert_eq!(analyzer.graph.statistics().bindings, before.bindings);
         for plan in plans {
             assert!(
                 analyzer
@@ -1729,6 +1858,13 @@ mod tests {
         analyzer.set_lowering();
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         analyzer.finish_lowering_boundaries().unwrap();
+        assert!(analyzer.graph.function_origin(default_functions[0]).is_ok());
+        assert!(
+            analyzer
+                .graph
+                .function_origin(default_functions[1])
+                .is_err()
+        );
         assert!(
             analyzer
                 .graph
@@ -1746,6 +1882,50 @@ mod tests {
         let completed = analyzer.graph.statistics().types;
         analyzer.finish_lowering_boundaries().unwrap();
         assert_eq!(analyzer.graph.statistics().types, completed);
+    }
+
+    #[test]
+    fn anonymous_member_expansion_and_direct_query_share_one_plan() {
+        let source =
+            SourceBuffer::new(b"struct Holder{union{int n;};};void f(){Holder h;}".to_vec())
+                .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"anonymous-default").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"Holder").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let class = analyzer
+            .graph
+            .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+            .entity;
+        let member = analyzer.graph.entity(class).members[0];
+        let child = analyzer
+            .graph
+            .class_of(analyzer.graph.lower_entity_type(member).unwrap())
+            .unwrap();
+        let super::ConstructorState::Ready(plan) =
+            analyzer.graph.entity(child).default_construction
+        else {
+            panic!("anonymous member plan was required");
+        };
+        assert!(analyzer.graph.lower_constructor_entity(plan).is_none());
+        let demands = analyzer.graph.root_demands.as_slice().len();
+        assert_eq!(
+            analyzer
+                .default_constructor(child, SourceOffset(0))
+                .unwrap(),
+            plan
+        );
+        let declaration = analyzer.graph.lower_constructor_entity(plan).unwrap();
+        assert_eq!(analyzer.graph.entity(declaration).constructor, Some(plan));
+        assert!(analyzer.graph.function_origin(declaration).is_err());
+        assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
     }
 
     #[test]

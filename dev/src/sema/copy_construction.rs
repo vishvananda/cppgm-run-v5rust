@@ -7,10 +7,10 @@ use super::{
     construction::{Constructor, ConstructorId, ConstructorState, Triviality},
     copy_initialization::{CopyOrigin, CopySelection},
     copy_properties::CopyPropertiesId,
-    graph::{BindingId, EntityId, MemberKey, MemberKind},
+    graph::{BindingId, EntityId},
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
-use crate::{lex::vocabulary::Keyword, support::source::SourceOffset};
+use crate::support::source::SourceOffset;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Origin {
@@ -319,6 +319,7 @@ impl Analyzer<'_> {
         let record = Constructor {
             class,
             binding: Some(binding),
+            declaration: Some(self.graph.binding(binding).entity),
             object_pointer: None,
             callable_type,
             nothrow: facts.nothrow,
@@ -387,15 +388,9 @@ impl Analyzer<'_> {
             },
             Cv::default(),
         )?;
-        let home = self
-            .graph
-            .entity(class)
-            .scope
-            .ok_or(Error::Invariant("implicit copy home"))?;
-        let function = self.graph.add_entity(Some(signature), None, Keyword::Int)?;
+        let function = self.graph.add_implicit_constructor(class, signature)?;
         let nothrow = self.graph.copy_properties.get(properties).nothrow;
         let entity = self.graph.entity_mut(function);
-        entity.home = Some(home);
         entity.copy_origin = Origin::Implicit;
         entity.copy_kind = Some(kind);
         entity.copy_properties = Some(properties);
@@ -404,30 +399,10 @@ impl Analyzer<'_> {
                 super::graph::FunctionAvailability::Deleted;
         }
         let entity = self.graph.entity_mut(function);
-        entity.defined = true;
-        entity.inline = super::specifiers::InlinePreference::Inline;
-        entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
         entity.exceptions = super::exceptions::ExceptionState::Value(if nothrow {
             super::exceptions::ExceptionSet::None
         } else {
             super::exceptions::ExceptionSet::All
-        });
-        entity.member_function = Some(MemberKey {
-            class,
-            kind: MemberKind::Constructor,
-            signature,
-            shape: None,
-        });
-        entity.function = Some(super::graph::FunctionProperties {
-            effects: super::graph::FunctionEffect::Default,
-            no_inline: false,
-            returns: super::graph::FunctionReturn::MayReturn,
-            internal_linkage: false,
-            language: super::linkage::Language::Cpp,
-            denotes: None,
-            is_static: false,
-            special: None,
-            allocation: None,
         });
         self.graph.copy_properties.get_mut(properties).declaration = Some(function);
         Ok(function)

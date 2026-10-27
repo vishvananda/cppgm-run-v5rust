@@ -167,6 +167,17 @@ impl Analyzer<'_> {
             self.template_depth = saved_depth;
             return result;
         }
+        // A concrete member initializer has the constructor's object context
+        // even when its expression never spells `this`.
+        let member = self
+            .graph
+            .entity(self.graph.binding(pending.binding).entity);
+        let class = member
+            .home
+            .and_then(|home| self.graph.scope(home).owner)
+            .ok_or(Error::Invariant("member initializer without class"))?;
+        let object = self.graph.lower_entity_type(class)?;
+        self.graph.types.pointer(object)?;
         let ty = self.initialize_variable(
             pending.binding,
             initializer,
@@ -200,9 +211,25 @@ mod tests {
             SyntaxUnit::new(Preprocessor::with_name(&source, b"member-queries").unwrap());
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let complete_name = cursor.intern_name(b"Complete").unwrap();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let graph = analyzer.analyze(declarations).unwrap();
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        let class = graph
+            .binding(
+                graph
+                    .own(
+                        graph.global,
+                        complete_name,
+                        super::super::lookup::Filter::Prefix,
+                    )
+                    .unwrap(),
+            )
+            .entity;
+        let object = graph.lower_entity_type(class).unwrap();
+        let before = graph.statistics().types;
+        graph.types.pointer(object).unwrap();
+        assert_eq!(graph.statistics().types, before);
         let pending: Vec<_> = graph
             .member_initializers
             .0
