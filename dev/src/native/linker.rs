@@ -19,6 +19,7 @@ impl ObjectId {
         self.0 as usize
     }
 }
+
 #[derive(Clone, Copy)]
 struct GlobalId(u32);
 impl GlobalId {
@@ -139,21 +140,7 @@ pub(crate) fn link(
     permissions: Option<&std::fs::Permissions>,
 ) -> Result<super::link_statistics::Statistics, Error> {
     let start = crate::support::telemetry::Clock::now();
-    let mut linker = Linker {
-        statistics: super::link_statistics::Statistics::default(),
-        objects,
-        names: HashMap::new(),
-        groups: HashSet::new(),
-        globals: Vec::new(),
-        global_of: Vec::new(),
-        kept: Vec::new(),
-        locations: Vec::new(),
-        image: Image::new(0),
-        array_bounds: [0; 4],
-        got: 0,
-        local_got: HashMap::new(),
-        align: [1; 4],
-    };
+    let mut linker = Linker::new(objects);
     for index in 0..linker.objects.len() {
         linker.add_object(ObjectId(u32::try_from(index).map_err(|_| Error::Limit)?))?;
     }
@@ -183,6 +170,23 @@ pub(crate) fn link(
     Ok(linker.statistics)
 }
 impl Linker {
+    fn new(objects: Vec<Object>) -> Self {
+        Self {
+            statistics: super::link_statistics::Statistics::default(),
+            objects,
+            names: HashMap::new(),
+            groups: HashSet::new(),
+            globals: Vec::new(),
+            global_of: Vec::new(),
+            kept: Vec::new(),
+            locations: Vec::new(),
+            image: Image::new(0),
+            array_bounds: [0; 4],
+            got: 0,
+            local_got: HashMap::new(),
+            align: [1; 4],
+        }
+    }
     fn add_object(&mut self, object: ObjectId) -> Result<(), Error> {
         let at = object.index();
         self.global_of.resize_with(self.objects.len(), Vec::new);
@@ -520,8 +524,11 @@ impl Linker {
                 continue;
             }
             let align = global.common_align.max(1);
+            if align > MAX_ALIGN {
+                return Err(error(&[b"common symbol ", &global.name, b" is too large"]));
+            }
             let offset = align_up(self.image.bss, align)?;
-            if align > MAX_ALIGN || global.common_size > MAX_SEGMENT.saturating_sub(offset) {
+            if global.common_size > MAX_SEGMENT.wrapping_sub(offset) {
                 return Err(error(&[b"common symbol ", &global.name, b" is too large"]));
             }
             self.align[Segment::Bss.index()] = self.align[Segment::Bss.index()].max(align);
@@ -732,6 +739,7 @@ impl Linker {
                     let Some((stored, bytes, fits)) =
                         self.relocation_value(oid, relocation, place, layout)?
                     else {
+                        self.statistics.relocations += 1;
                         continue;
                     };
                     if bytes > size - relocation.offset {
@@ -762,6 +770,67 @@ impl Linker {
                         .copy_from_slice(&stored.to_le_bytes()[..bytes]);
                     self.statistics.relocations += 1;
                 }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::object::{Relocation, RelocationKind, Symbol, SymbolKind};
+
+    #[test]
+    fn no_op_relocations_are_counted_without_writing_the_field() -> Result<(), Error> {
+        let mut object = Object::new(b"no-op".to_vec());
+        let data = object.add_section(b".data", SectionKind::Data, 8)?;
+        let null = object.symbol_id(0)?;
+        let section = object.section_mut(data);
+        section.size = 8;
+        section.bytes = vec![0x55; 8];
+        section.relocations.push(Relocation {
+            offset: 0,
+            kind: RelocationKind::Other(0),
+            symbol: null,
+            addend: 7,
+        });
+        #[cfg(feature = "telemetry")]
+        let count = section.relocations.len();
+        let mut linker = Linker::new(vec![object]);
+        linker.add_object(ObjectId(0))?;
+        linker.layout()?;
+        let layout = executable::Layout::with_alignment(&linker.image, linker.align)?;
+        linker.relocate(&layout)?;
+        assert_eq!(linker.image.data, [0x55; 8]);
+        #[cfg(feature = "telemetry")]
+        assert_eq!(linker.statistics.relocations, count);
+        Ok(())
+    }
+
+    #[test]
+    fn common_alignment_diagnostic_precedes_address_arithmetic() -> Result<(), Error> {
+        for align in [3, MAX_ALIGN, MAX_ALIGN + 1, u64::MAX] {
+            let mut object = Object::new(b"common-input".to_vec());
+            let name = object.add_name(b"common")?;
+            let _ = object.add_symbol(Symbol {
+                name,
+                kind: SymbolKind::Object,
+                binding: Binding::Global,
+                definition: Definition::Common,
+                value: align,
+                size: 8,
+            })?;
+            let mut linker = Linker::new(vec![object]);
+            linker.add_object(ObjectId(0))?;
+            linker.image.bss = 8;
+            let result = linker.place_common();
+            if align <= MAX_ALIGN {
+                result?;
+                assert_eq!(linker.image.bss, ((8 + align - 1) & !(align - 1)) + 8);
+            } else {
+                assert!(matches!(result, Err(Error::ByteDiagnostic(bytes))
+                    if bytes == b"common symbol common is too large"));
             }
         }
         Ok(())

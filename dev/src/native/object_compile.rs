@@ -430,9 +430,14 @@ impl ObjectBuilder {
         Ok(())
     }
     fn comdat(program: &Program, symbol: SymbolId) -> bool {
-        program
-            .symbol_metadata(program.symbol(symbol))
-            .is_some_and(|m| m.binding == Some(SourceBinding::Weak) && m.flags & 64 == 0)
+        let defined = program.function_defined(symbol)
+            || program
+                .global(program.symbol(symbol))
+                .is_some_and(|global| !matches!(global.init, GlobalInit::Declaration));
+        defined
+            && program
+                .symbol_metadata(program.symbol(symbol))
+                .is_some_and(|m| m.binding == Some(SourceBinding::Weak) && m.flags & 64 == 0)
     }
     fn section(
         &mut self,
@@ -1156,6 +1161,37 @@ mod tests {
         model::{InstructionKind as I, Metadata},
         vocabulary::Type,
     };
+
+    #[test]
+    fn weak_declared_tls_wrapper_uses_shared_text() -> Result<(), Error> {
+        let source = b"global @g : i64 [storage=thread_local] = 9\n\
+            declare function @wrapper() -> ptr [binding=weak,tls_for=@g]\n\
+            function @main() -> i64 [role=entry] {block ^entry:\n\
+            %p = call ptr @wrapper()\n%x = load i64 %p\nreturn i64 %x}\n";
+        for model in [ObjectModel::Course, ObjectModel::Host] {
+            let mut program = crate::lowir::test_program(source)?;
+            program.set_definition_sink(Box::new(ObjectBuilder::with_model(0, model)?))?;
+            let object = compile(&mut program, Vec::new(), 0)?;
+            assert!(object.groups().is_empty());
+            let sections: Vec<_> = object
+                .sections()
+                .filter(|(_, section)| section.kind == SectionKind::Text)
+                .collect();
+            assert_eq!(sections.len(), 1);
+            let wrapper = (1..object.symbol_count())
+                .map(|index| object.symbol_id(index))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .find(|&symbol| object.symbol_name(symbol) == b"@wrapper")
+                .ok_or(Error::Limit)?;
+            assert_eq!(object.symbol(wrapper).binding, Binding::Local);
+            assert_eq!(
+                object.symbol(wrapper).definition,
+                Definition::Section(sections[0].0)
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn streamed_data_addresses_relax_only_for_final_direct_definitions() -> Result<(), Error> {

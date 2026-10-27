@@ -319,7 +319,7 @@ impl<'a> Decoder<'a> {
             if self.out.section(id).kind == SectionKind::Null {
                 continue;
             }
-            if Some(h.link as usize) != self.symbols {
+            if h.link as usize != self.symbols.unwrap_or(0) {
                 return Err(self.fail("relocation table names another symbol table"));
             }
             let bytes = self.bytes(h)?;
@@ -391,6 +391,58 @@ fn decode(image: &[u8], path: Vec<u8>) -> Result<Object, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn absent_symbol_table_retains_null_link_and_symbol() -> Result<(), Error> {
+        let mut object = Object::new(Vec::new());
+        let data = object.add_section(b".data", SectionKind::Data, 8)?;
+        let null = object.symbol_id(0)?;
+        let section = object.section_mut(data);
+        section.bytes = vec![0; 8];
+        section.size = 8;
+        section.relocations.push(Relocation {
+            offset: 0,
+            kind: RelocationKind::Absolute,
+            symbol: null,
+            addend: 7,
+        });
+        let mut image = super::super::elf_writer::bytes(&object)?;
+        let table = usize::try_from(word(&image, 40, 8)).map_err(|_| Error::Limit)?;
+        let count = usize::try_from(word(&image, 60, 2)).map_err(|_| Error::Limit)?;
+        let mut relocation = None;
+        let mut strings = 0;
+        for i in 1..count {
+            let header = table + i * 64;
+            match word(&image, header + 4, 4) {
+                2 => image[header + 4..header + 8].copy_from_slice(&3_u32.to_le_bytes()),
+                3 => strings = i,
+                4 => {
+                    image[header + 40..header + 44].fill(0);
+                    relocation = Some(header);
+                }
+                _ => {}
+            }
+        }
+        let decoded = decode(&image, b"no-symbol-table".to_vec())?;
+        assert_eq!(decoded.symbol_count(), 1);
+        let section = decoded.section(decoded.section_id(1)?);
+        assert_eq!(section.relocations.len(), 1);
+        assert_eq!(section.relocations[0].symbol.index(), 0);
+        assert_eq!(section.relocations[0].addend, 7);
+        let relocation = relocation.ok_or(Error::Limit)?;
+        image[relocation + 32..relocation + 40].fill(0);
+        let decoded = decode(&image, b"empty-relocations".to_vec())?;
+        assert!(
+            decoded
+                .section(decoded.section_id(1)?)
+                .relocations
+                .is_empty()
+        );
+        let strings = u32::try_from(strings).map_err(|_| Error::Limit)?;
+        image[relocation + 40..relocation + 44].copy_from_slice(&strings.to_le_bytes());
+        assert!(matches!(decode(&image, b"bad-link".to_vec()),
+            Err(Error::ByteDiagnostic(bytes)) if bytes == b"bad-link: relocation table names another symbol table"));
+        Ok(())
+    }
     #[test]
     fn malformed_sizes_and_extended_indexes_return_diagnostics() {
         for length in 0..65 {

@@ -1,0 +1,9 @@
+global @g : i64 [storage=thread_local] = 9
+declare function @wrapper() -> ptr [binding=weak, tls_for=@g]
+function @main() -> i64 [role=entry] {
+  block ^entry:
+    %p = call ptr @wrapper()
+    %x = load i64 %p
+    %result = binary sub i64 %x, 9
+    return i64 %result
+}
