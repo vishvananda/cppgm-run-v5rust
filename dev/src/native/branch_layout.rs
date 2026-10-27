@@ -50,6 +50,24 @@ fn reach_table(targets: &[BlockId], live: &mut [bool], work: &mut Vec<usize>) {
         }
     }
 }
+fn layout_falls_through(op: Op) -> bool {
+    // The frozen host layout retains following blocks after floating returns,
+    // wide branches and noreturn calls. Its retention policy is distinct from
+    // the full terminator predicate used for placement and frequency analysis.
+    !matches!(
+        op,
+        Op::Jump(_)
+            | Op::Return(_)
+            | Op::FramelessReturn(_)
+            | Op::TailJump(_)
+            | Op::JumpTable(_)
+            | Op::Trap
+            | Op::Exception(
+                super::exception::ExceptionOp::Throw(_) | super::exception::ExceptionOp::Resume
+            )
+            | Op::HostEh(super::landing_pad::Effect::Resume)
+    )
+}
 pub(super) fn layout(
     f: &mut Function,
     program: &crate::lowir::model::Program,
@@ -136,7 +154,7 @@ pub(super) fn layout(
                 });
                 last = op;
             }
-            if !block_placement::terminal(last) && b + 1 < n && !live[b + 1] {
+            if layout_falls_through(last) && b + 1 < n && !live[b + 1] {
                 live[b + 1] = true;
                 work.push(b + 1);
             }

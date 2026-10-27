@@ -1,9 +1,14 @@
 //! Frozen standalone string and memory routines, encoded directly. See NOTICE.
 use super::x86::{Assembler, Register as R, Rm};
 use crate::lowir::Error;
+// C++ strcmp against fixed vocabulary stops at its first mismatch. Preserve
+// its first-NUL boundary without scanning an arbitrary owned object name.
+pub(super) fn named(name: &[u8], expected: &[u8]) -> bool {
+    name.starts_with(expected) && name.get(expected.len()).is_none_or(|&byte| byte == 0)
+}
 pub(super) fn emit(a: &mut Assembler, name: &[u8]) -> Result<bool, Error> {
     match name {
-        b"cppgm_builtin_strlen" => {
+        name if named(name, b"cppgm_builtin_strlen") => {
             let chunk = R::xmm(1)?;
             let zero = R::xmm(0)?;
             let next = a.label()?;
@@ -70,14 +75,14 @@ pub(super) fn emit(a: &mut Assembler, name: &[u8]) -> Result<bool, Error> {
             )?;
             a.ret();
         }
-        b"cppgm_builtin_memcpy" => {
+        name if named(name, b"cppgm_builtin_memcpy") => {
             a.mov_rr(R::RAX, R::RDI)?;
             a.mov_rr(R::RCX, R::RDX)?;
             a.byte(0xf3);
             a.byte(0xa4);
             a.ret();
         }
-        b"cppgm_builtin_memmove" => {
+        name if named(name, b"cppgm_builtin_memmove") => {
             let forward = a.label()?;
             a.mov_rr(R::RAX, R::RDI)?;
             a.mov_rr(R::RCX, R::RDX)?;
@@ -98,7 +103,7 @@ pub(super) fn emit(a: &mut Assembler, name: &[u8]) -> Result<bool, Error> {
             a.byte(0xa4);
             a.ret();
         }
-        b"cppgm_builtin_memset" => {
+        name if named(name, b"cppgm_builtin_memset") => {
             let large = a.label()?;
             let next = a.label()?;
             let done = a.label()?;
@@ -123,7 +128,7 @@ pub(super) fn emit(a: &mut Assembler, name: &[u8]) -> Result<bool, Error> {
             a.mov_rr(R::RAX, R::R11)?;
             a.ret();
         }
-        b"cppgm_builtin_memcmp" => {
+        name if named(name, b"cppgm_builtin_memcmp") => {
             let next = a.label()?;
             let differ = a.label()?;
             let equal = a.label()?;
@@ -148,4 +153,28 @@ pub(super) fn emit(a: &mut Assembler, name: &[u8]) -> Result<bool, Error> {
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn c_string_builtin_names_emit_identical_runtime_code() -> Result<(), Error> {
+        for builtin in ["strlen", "memcpy", "memmove", "memset", "memcmp"] {
+            let name = format!("cppgm_builtin_{builtin}").into_bytes();
+            let extended = [name.as_slice(), b"\0retained"].concat();
+            let mut plain = Assembler::default();
+            let mut terminated = Assembler::default();
+            assert!(emit(&mut plain, &name)?);
+            assert!(emit(&mut terminated, &extended)?);
+            plain.resolve()?;
+            terminated.resolve()?;
+            assert_eq!(plain.code, terminated.code);
+        }
+        let mut unknown = Assembler::default();
+        assert!(!emit(&mut unknown, b"unknown\0cppgm_builtin_strlen")?);
+        assert!(unknown.code.is_empty());
+        Ok(())
+    }
 }

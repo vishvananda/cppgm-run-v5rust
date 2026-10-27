@@ -148,12 +148,8 @@ impl CallPlan {
     }
 }
 
-// C++ strcmp against fixed builtin vocabulary stops at its first mismatch.
-// Preserve its first-NUL boundary without scanning an arbitrary object name.
 fn named(object: Option<&[u8]>, expected: &[u8]) -> bool {
-    object.is_some_and(|name| {
-        name.starts_with(expected) && name.get(expected.len()).is_none_or(|&byte| byte == 0)
-    })
+    object.is_some_and(|name| super::builtins::named(name, expected))
 }
 #[cfg(test)]
 mod tests {

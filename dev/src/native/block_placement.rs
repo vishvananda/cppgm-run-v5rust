@@ -23,7 +23,13 @@ pub(super) fn terminal(op: Op) -> bool {
             | Op::HostEh(super::landing_pad::Effect::Resume)
     ) || matches!(op,Op::WideCompare(w) if matches!(w.destination,super::wide_compare::Destination::Branch{..}))
         || matches!(op,Op::Call(c) if c.no_return)
-        || matches!(op, Op::Floating(super::floating_mir::FloatingOp::Return(_)))
+        || matches!(
+            op,
+            Op::Floating(
+                super::floating_mir::FloatingOp::Return(_)
+                    | super::floating_mir::FloatingOp::ReturnPair(..)
+            )
+        )
 }
 pub(super) fn labels(op: &mut Op, mut map: impl FnMut(BlockId) -> BlockId) {
     match op {
@@ -529,4 +535,81 @@ pub(super) fn reorder(f: &mut Function, order: &[usize]) -> Result<(), Error> {
         landing.select = landing.select.map(|b| map[b.index()]);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::{
+        floating_mir::FloatingOp,
+        mir::{BlockName, Instruction},
+        object_compile::ObjectModel,
+    };
+
+    fn function(
+        program: &crate::lowir::model::Program,
+        blocks: impl IntoIterator<Item = Vec<Op>>,
+    ) -> Result<Function, Error> {
+        let symbol = program.publications()[0];
+        let mut function = super::super::value_selection::select_for_object(
+            program,
+            symbol,
+            program
+                .function(program.symbol(symbol))
+                .ok_or(Error::Limit)?,
+            0,
+            ObjectModel::Host,
+        )?;
+        function.instructions.clear();
+        function.blocks.clear();
+        for ops in blocks {
+            let _ = function.begin_block(BlockName::Switch)?;
+            function
+                .instructions
+                .extend(ops.into_iter().map(|op| Instruction {
+                    op,
+                    volatile: false,
+                    location: None,
+                }));
+            function.end_block();
+        }
+        Ok(function)
+    }
+
+    #[test]
+    fn pair_return_keeps_placement_frequency_analysis_available() -> Result<(), Error> {
+        let program =
+            crate::lowir::test_program(b"function @f() -> i64 {block ^entry: return i64 0}")?;
+        let function = function(
+            &program,
+            [
+                vec![Op::Branch(C::Equal, BlockId(1)), Op::Jump(BlockId(2))],
+                vec![Op::Floating(FloatingOp::ReturnPair(
+                    Operand::Frame(-32),
+                    Operand::Frame(-16),
+                ))],
+                vec![Op::Trap],
+            ],
+        )?;
+        let flow = Flow::new(&function).ok_or(Error::Limit)?;
+        assert!(flow.frequencies[1] > flow.frequencies[2]);
+        assert_eq!(flow.post.len(), function.blocks.len());
+        Ok(())
+    }
+
+    #[test]
+    fn host_layout_retains_frozen_floating_return_successor() -> Result<(), Error> {
+        let program =
+            crate::lowir::test_program(b"function @f() -> i64 {block ^entry: return i64 0}")?;
+        let mut function = function(
+            &program,
+            [
+                vec![Op::Floating(FloatingOp::Return(Operand::Frame(-16)))],
+                vec![Op::Return(None)],
+            ],
+        )?;
+        super::super::branch_layout::layout(&mut function, &program)?;
+        assert_eq!(function.blocks.len(), 2);
+        Ok(())
+    }
 }
