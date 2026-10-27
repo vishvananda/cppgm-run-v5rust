@@ -12,6 +12,7 @@ pub(super) struct Carries {
 }
 fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
     Some(match *op {
+        Op::Nop => [None, None],
         Op::Move(r, v) => [Some(Operand::Register(r)), Some(Operand::Immediate(v))],
         Op::Scalar(op) => match op {
             ScalarOp::Condition(
@@ -21,8 +22,13 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
                 | super::condition_mir::FlagOp::BitTest(..),
             ) => return None,
             ScalarOp::Condition(op) => op.operands(),
-            ScalarOp::Move(r, s) | ScalarOp::Lea(r, s) | ScalarOp::Binary(_, _, r, s) => {
-                [Some(Operand::Register(r)), Some(s)]
+            ScalarOp::Move(r, s)
+            | ScalarOp::Lea(r, s)
+            | ScalarOp::Lea32(r, s)
+            | ScalarOp::Binary(_, _, r, s)
+            | ScalarOp::Shift(_, _, r, s) => [Some(Operand::Register(r)), Some(s)],
+            ScalarOp::ExtendMove(_, r, s) => {
+                [Some(Operand::Register(r)), Some(Operand::Register(s))]
             }
             ScalarOp::Load(r, _, d) => [Some(Operand::Register(r)), Some(d)],
             ScalarOp::Store(d, _, r) | ScalarOp::MemoryBinary(_, _, d, r) => [Some(d), Some(r)],
@@ -34,7 +40,6 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
                 [Some(Operand::Register(r)), None]
             }
             ScalarOp::CompareZero(_, s) => [Some(s), None],
-            ScalarOp::Shift(_, _, r, s) => [Some(Operand::Register(r)), Some(s)],
             _ => return None,
         },
         _ => return None,
@@ -162,6 +167,46 @@ impl Carries {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn carry_survives_address_and_extension_moves_but_respects_the_scratch_use() {
+        for destination in [R::R8, R::R11] {
+            let instructions = [
+                Op::Scalar(ScalarOp::Store(
+                    Operand::Frame(-8),
+                    Type::I64,
+                    Operand::Register(R::RAX),
+                )),
+                Op::Nop,
+                Op::Scalar(ScalarOp::Lea32(
+                    R::RAX,
+                    Operand::Memory(super::super::memory::Memory::new(
+                        super::super::memory::Base::Register(R::RDI),
+                        4,
+                    )),
+                )),
+                Op::Scalar(ScalarOp::ExtendMove(Type::I8, destination, R::R9)),
+                Op::Scalar(ScalarOp::Load(R::RDX, Type::I64, Operand::Frame(-8))),
+            ]
+            .map(|op| Instruction {
+                volatile: false,
+                op,
+                location: None,
+            });
+            let mut carries = Carries {
+                values: Vec::new(),
+                homes: vec![-8],
+            };
+            let saved = destination != R::R11;
+            assert_eq!(carries.track(&instructions, 0), saved.then_some(R::RAX));
+            for index in 1..4 {
+                assert_eq!(carries.track(&instructions, index), None);
+            }
+            assert_eq!(
+                carries.replacement(&instructions[4].op),
+                saved.then_some((R::RDX, R::R11))
+            );
+        }
+    }
     #[test]
     fn materialized_condition_test_ends_home_carry_search() {
         let instructions = [

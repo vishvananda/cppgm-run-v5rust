@@ -73,11 +73,18 @@ impl ObjectArgument {
             }
             for index in 0..eightbytes {
                 let class = self.class(index);
-                if class == Class::None {
+                if matches!(class, Class::None | Class::SseUp) {
                     continue;
                 }
                 let field = if class == Class::Sse { 4 } else { 0 };
-                let part = (self.bytes - 8 * index).min(8);
+                let part = if class == Class::Sse
+                    && index + 1 < eightbytes
+                    && self.class(index + 1) == Class::SseUp
+                {
+                    self.bytes - 8 * index
+                } else {
+                    (self.bytes - 8 * index).min(8)
+                };
                 a.load(R::R10, Rm::mem(R::R11, field), 4, false)?;
                 a.alu_rr(0, R::R10, Rm::mem(R::R11, 16), 8)?;
                 a.alu_ri(

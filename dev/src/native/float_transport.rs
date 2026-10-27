@@ -87,8 +87,10 @@ impl FloatCopy {
                     a.sse(0, 0x28, destination, Rm::Reg(source))?;
                 }
             } else if let Operand::Immediate(bits) = self.source {
-                if bits & u128::from(u64::MAX) == 0 {
+                if bits & u128::from(u64::MAX) == 0 && (self.ty != Type::I128 || bits >> 64 == 0) {
                     a.sse(0, 0x57, destination, Rm::Reg(destination))?;
+                } else if self.ty == Type::I128 {
+                    return Err(Error::Construction("a 128-bit floating constant".into()));
                 } else {
                     let kind = FloatKind::from_type(self.ty).ok_or(Error::Limit)?;
                     let source = super::emission::constant(image, kind, bits)?;
@@ -102,6 +104,11 @@ impl FloatCopy {
         let to = self.destination.rm()?;
         if let Some(source) = self.source.register().filter(|r| r.code() >= 16) {
             return a.sse(prefix, 0x11, source, to);
+        }
+        if self.ty == Type::I128 {
+            return Err(Error::Construction(
+                "a 128-bit floating move without an XMM register".into(),
+            ));
         }
         let width = if self.ty == Type::F32 { 4 } else { 8 };
         let scratch = [R::R11, R::R10]

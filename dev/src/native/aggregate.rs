@@ -221,7 +221,17 @@ impl Selection<'_> {
             } else if matches!(source, Operand::Immediate(_)) {
                 self.load(register, source, Type::I64);
             } else {
-                self.emit(ScalarOp::Load(register, Type::I64, source));
+                // emit_return loads a final partial INTEGER eightbyte through
+                // u32 at O1+, including padding above its remaining bytes.
+                let ty = if self.facts.level >= 1
+                    && self.mir.layout.classified_result
+                    && bytes.wrapping_sub(part.offset) <= 4
+                {
+                    Type::U32
+                } else {
+                    Type::I64
+                };
+                self.emit(ScalarOp::Load(register, ty, source));
             }
         }
         self.mir.instructions.push(Instruction {

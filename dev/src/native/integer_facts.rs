@@ -54,7 +54,13 @@ pub(super) fn analyze(body: &Body, facts: &Facts) -> Vec<u32> {
         let Some(result) = inst.result else {
             continue;
         };
-        let ty = inst.kind.result_type();
+        // find_aliases uses the instruction's stated type here: an index
+        // carries its element type, and a compare carries its operand type.
+        // These frozen numeric facts do not change either result's actual type.
+        let ty = match inst.kind {
+            I::Index(ty, ..) | I::Compare(_, ty, ..) => ty,
+            _ => inst.kind.result_type(),
+        };
         if !facts.active[pos] || ty.bits() == 0 || ty == Type::I128 {
             continue;
         }

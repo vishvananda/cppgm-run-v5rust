@@ -254,7 +254,9 @@ pub(super) fn flags_after(instructions: &[Instruction]) -> Vec<bool> {
             Op::Nop
             | Op::Move(..)
             | Op::SymbolMove(..)
-            | Op::Scalar(ScalarOp::Move(..) | ScalarOp::Load(..) | ScalarOp::Lea(..)) => next,
+            | Op::Scalar(
+                ScalarOp::Move(..) | ScalarOp::Load(..) | ScalarOp::Lea(..) | ScalarOp::Lea32(..),
+            ) => next,
             Op::Branch(..)
             | Op::Scalar(
                 ScalarOp::SetEqual(..) | ScalarOp::Condition(FlagOp::Set(..) | FlagOp::Move(..)),
@@ -287,6 +289,17 @@ mod tests {
             },
             Instruction {
                 volatile: false,
+                op: Op::Scalar(ScalarOp::Lea32(
+                    R::R8,
+                    Operand::Memory(super::super::memory::Memory::new(
+                        super::super::memory::Base::Register(R::RDI),
+                        4,
+                    )),
+                )),
+                location: None,
+            },
+            Instruction {
+                volatile: false,
                 op: Op::Scalar(ScalarOp::Condition(ops[1])),
                 location: None,
             },
@@ -302,10 +315,10 @@ mod tests {
             },
         ];
         let flags = flags_after(&instructions);
-        assert_eq!(flags, [true, true, false, false, false]);
+        assert_eq!(flags, [true, true, true, false, false, false]);
         let mut a = Assembler::default();
         a.mov_ri_flags(R::RAX, 0, flags[1])?;
-        a.mov_ri_flags(R::R8, 0, flags[3])?;
+        a.mov_ri_flags(R::R8, 0, flags[4])?;
         assert_eq!(a.code, [0xb8, 0, 0, 0, 0, 0x45, 0x33, 0xc0]);
         Ok(())
     }

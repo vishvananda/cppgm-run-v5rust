@@ -54,7 +54,10 @@ fn floating_scratch(
         }
         floating |= matches!(inst.kind, I::Call(_)) && function.metadata.flags & 1 != 0;
         floating |= match inst.kind {
-            I::Store(_, ty, _, _) | I::Compare(_, ty, _, _) => ty,
+            I::Store(_, ty, _, _)
+            | I::Compare(_, ty, _, _)
+            | I::Index(ty, ..)
+            | I::Return(ty, _) => ty,
             _ => inst.kind.result_type(),
         }
         .float_rank()
