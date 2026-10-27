@@ -3,7 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    constant_addresses::{TemporaryValue as Value, nonconstant},
+    constant_addresses::{Address, TemporaryValue as Value, nonconstant},
     constexpr_calls::Returned,
     graph::{BindingKind, EntityId},
     specifiers::{StaticSpecifier, ThreadStorage},
@@ -330,6 +330,13 @@ impl Analyzer<'_> {
                     .constexpr_frames
                     .local(entity)
                     .ok_or(Error::Invariant("condition local missing"))?;
+                if self.type_cv(place.designated).0 & 2 != 0 {
+                    return Err(nonconstant(location, "a read of a volatile glvalue"));
+                }
+                let place = Address {
+                    designated: self.bare_type(place.designated)?,
+                    ..place
+                };
                 match self.constexpr_frames.read(
                     &self.graph.constant_member_spans,
                     place,

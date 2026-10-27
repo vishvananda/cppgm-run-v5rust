@@ -22,7 +22,7 @@ impl Analyzer<'_> {
     pub(super) fn materialize_constant_object(
         &mut self,
         id: ast::ExprId,
-        mut target: Address,
+        target: Address,
         scope: ScopeId,
     ) -> Result<(), Error> {
         self.check_stack()?;
@@ -30,7 +30,6 @@ impl Analyzer<'_> {
         let id = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
-        target.designated = self.bare_type(target.designated)?;
         if self.vector_shape(target.designated).is_some() {
             return self.initialize_constant_vector(id, target, scope);
         }
@@ -46,7 +45,7 @@ impl Analyzer<'_> {
         if facts.constructor.is_none()
             && self.graph.expression_facts.initializer_array(id).is_some()
         {
-            return self.constant_list_object(id, target, scope, location);
+            return self.construct_class_prvalue(id, target, scope, location);
         }
         if facts.literal_call.is_some()
             || facts.call_form == super::expression_facts::CallForm::Operator
@@ -54,85 +53,58 @@ impl Analyzer<'_> {
             self.constant_call_into(id, scope, Some(target))?;
             return Ok(());
         }
-        let initializer = match facts.class_initialization {
-            Some(
-                ClassInitialization::Aggregate(elements)
-                | ClassInitialization::FlexibleAggregate(elements),
-            ) => {
-                let arguments = Arguments::new(self.tree.expr_lists.get(elements));
-                return self.constant_aggregate(
-                    target,
-                    arguments.as_slice(),
-                    &mut 0,
-                    scope,
-                    location,
-                    self.graph.lower_aggregate_union_member(elements),
-                );
-            }
-            Some(ClassInitialization::FromExpression(expr)) => {
-                return self.initialize_constant_class_from(expr, target, scope);
-            }
-            Some(ClassInitialization::Constructed(arguments)) => {
-                let args = self.constant_constructor_arguments(arguments);
+        if facts.class_initialization.is_some() {
+            return self.construct_class_prvalue(id, target, scope, location);
+        }
+        let initializer = match self.tree.expressions.get(id).kind {
+            ExprKind::FunctionalCast {
+                arguments, braced, ..
+            } => braced.map_or(
+                InitializerKind::Parenthesized(arguments),
+                InitializerKind::Braced,
+            ),
+            ExprKind::Braced { .. } => InitializerKind::Braced(id),
+            ExprKind::Cast { operand, .. } => {
                 return self.constant_class_initialize(
                     target,
                     facts.constructor,
-                    args.as_slice(),
-                    args.as_slice().is_empty(),
+                    &[operand],
+                    false,
                     scope,
                     location,
                 );
             }
-            None => match self.tree.expressions.get(id).kind {
-                ExprKind::FunctionalCast {
-                    arguments, braced, ..
-                } => braced.map_or(
-                    InitializerKind::Parenthesized(arguments),
-                    InitializerKind::Braced,
-                ),
-                ExprKind::Braced { .. } => InitializerKind::Braced(id),
-                ExprKind::Cast { operand, .. } => {
-                    return self.constant_class_initialize(
-                        target,
-                        facts.constructor,
-                        &[operand],
-                        false,
-                        scope,
-                        location,
-                    );
-                }
-                ExprKind::Call { arguments, .. } if facts.functional_call => {
-                    InitializerKind::Parenthesized(arguments)
-                }
-                ExprKind::Call { .. } => {
-                    self.constant_call_into(id, scope, Some(target))?;
-                    return Ok(());
-                }
-                ExprKind::Conditional {
-                    condition,
-                    then_expr,
-                    else_expr,
-                } => {
-                    let selected = if self.constant_truth(condition, scope, false)? {
-                        then_expr
-                    } else {
-                        else_expr
-                    };
-                    return self.initialize_constant_class_from(selected, target, scope);
-                }
-                ExprKind::Binary {
-                    op, left, right, ..
-                } if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma) => {
-                    self.discard_constant(left, scope)?;
-                    return self.materialize_constant_object(right, target, scope);
-                }
-                _ => {
-                    return Err(nonconstant(
-                        location,
-                        "a class prvalue outside constant evaluation",
-                    ));
-                }
-            },
+            ExprKind::Call { arguments, .. } if facts.functional_call => {
+                InitializerKind::Parenthesized(arguments)
+            }
+            ExprKind::Call { .. } => {
+                self.constant_call_into(id, scope, Some(target))?;
+                return Ok(());
+            }
+            ExprKind::Conditional {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                let selected = if self.constant_truth(condition, scope, false)? {
+                    then_expr
+                } else {
+                    else_expr
+                };
+                return self.initialize_constant_class_from(selected, target, scope);
+            }
+            ExprKind::Binary {
+                op, left, right, ..
+            } if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Comma) => {
+                self.discard_constant(left, scope)?;
+                return self.materialize_constant_object(right, target, scope);
+            }
+            _ => {
+                return Err(nonconstant(
+                    location,
+                    "a class prvalue outside constant evaluation",
+                ));
+            }
         };
         self.construct_constant_object(
             target,
@@ -144,6 +116,54 @@ impl Analyzer<'_> {
             scope,
             location,
         )
+    }
+    // materialize's T(...), T{...}, cast and typed list forms enter
+    // construct before consuming their already recorded initialization plan.
+    fn construct_class_prvalue(
+        &mut self,
+        id: ast::ExprId,
+        target: Address,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.check_stack()?;
+        self.constant_step(location)?;
+        let facts = self.graph.expression_facts.get(id)?;
+        if facts.constructor.is_none()
+            && self.graph.expression_facts.initializer_array(id).is_some()
+        {
+            return self.constant_list_object(id, target, scope, location);
+        }
+        match facts.class_initialization.ok_or(Error::Invariant(
+            "class construction without initialization facts",
+        ))? {
+            ClassInitialization::Aggregate(elements)
+            | ClassInitialization::FlexibleAggregate(elements) => {
+                let arguments = Arguments::new(self.tree.expr_lists.get(elements));
+                self.constant_aggregate(
+                    target,
+                    arguments.as_slice(),
+                    &mut 0,
+                    scope,
+                    location,
+                    self.graph.lower_aggregate_union_member(elements),
+                )
+            }
+            ClassInitialization::FromExpression(expr) => {
+                self.initialize_constant_class_from(expr, target, scope)
+            }
+            ClassInitialization::Constructed(arguments) => {
+                let args = self.constant_constructor_arguments(arguments);
+                self.constant_class_initialize(
+                    target,
+                    facts.constructor,
+                    args.as_slice(),
+                    args.as_slice().is_empty(),
+                    scope,
+                    location,
+                )
+            }
+        }
     }
     pub(super) fn initialize_constant_class_from(
         &mut self,
@@ -540,10 +560,9 @@ impl Analyzer<'_> {
         match self.graph.types.get(target.designated).kind {
             TypeKind::Array { element, bound, .. } => {
                 let size = self.type_size(element, location)?.0;
-                let ty = self.bare_type(element)?;
                 for index in 0..bound {
                     let place = Address {
-                        designated: ty,
+                        designated: element,
                         offset: target
                             .offset
                             .wrapping_add(super::integral::signed(index.wrapping_mul(size))),
@@ -569,11 +588,6 @@ impl Analyzer<'_> {
                         continue;
                     }
                     let place = self.constant_member_slot(target, member, location)?;
-                    self.constexpr_frames.activate(
-                        &self.graph.constant_member_spans,
-                        place,
-                        location,
-                    )?;
                     self.constant_aggregate_element(place, values, next, scope, location)?;
                     if self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union {
                         break;
@@ -620,8 +634,16 @@ impl Analyzer<'_> {
                     }
                 } else {
                     let constructor = self.default_constructor(class, location)?;
-                    return self.constant_value_initialize(target, constructor, scope, location);
+                    return self.constant_value_initialize(
+                        target,
+                        Some(constructor),
+                        scope,
+                        location,
+                    );
                 }
+            }
+            if self.graph.class_of(element).is_none() {
+                return self.constant_value_initialize(target, None, scope, location);
             }
             return self.constant_zero_object(target, location);
         };
@@ -675,7 +697,7 @@ impl Analyzer<'_> {
     fn constant_value_initialize(
         &mut self,
         target: Address,
-        constructor: ConstructorId,
+        constructor: Option<ConstructorId>,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
@@ -683,7 +705,6 @@ impl Analyzer<'_> {
         if let TypeKind::Array { element, bound, .. } = self.graph.types.get(target.designated).kind
         {
             let size = self.type_size(element, location)?.0;
-            let element = self.bare_type(element)?;
             for index in 0..bound {
                 let place = Address {
                     designated: element,
@@ -696,7 +717,11 @@ impl Analyzer<'_> {
             }
             return Ok(());
         }
-        self.constant_class_initialize(target, Some(constructor), &[], true, scope, location)
+        if self.graph.class_of(target.designated).is_some() {
+            self.constant_class_initialize(target, constructor, &[], true, scope, location)
+        } else {
+            self.constant_zero_object(target, location)
+        }
     }
     pub(super) fn run_constant_constructor(
         &mut self,
@@ -936,7 +961,10 @@ impl Analyzer<'_> {
                 })?;
             let place = Address {
                 offset: target.offset.wrapping_add(super::integral::signed(offset)),
-                designated: self.graph.lower_entity_type(base.class)?,
+                designated: self.graph.types.qualify(
+                    self.graph.lower_entity_type(base.class)?,
+                    self.type_cv(target.designated),
+                )?,
                 ..target
             };
             if base.forwards {
@@ -990,11 +1018,7 @@ impl Analyzer<'_> {
             if anonymous {
                 if let Some(child) = constructor {
                     if place.variant().is_some() && self.constant_plan_initializes(child) {
-                        self.constexpr_frames.activate(
-                            &self.graph.constant_member_spans,
-                            place,
-                            location,
-                        )?;
+                        self.activate_constant_place(place, location)?;
                     }
                     self.constant_constructor_subobjects(place, child, location)?;
                 }
@@ -1011,11 +1035,7 @@ impl Analyzer<'_> {
                     TypeKind::Reference { .. }
                 )
             {
-                self.constexpr_frames.activate(
-                    &self.graph.constant_member_spans,
-                    place,
-                    location,
-                )?;
+                self.activate_constant_place(place, location)?;
             }
             let written = self.graph.constructors.get(id).written_members[index];
             let function = self.graph.lower_constructor_entity(id);

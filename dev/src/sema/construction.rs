@@ -26,6 +26,11 @@ struct BasePlans {
     const_default: bool,
     deleted: bool,
 }
+enum InitializerLookup {
+    Class,
+    Unqualified,
+    General,
+}
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum ConstructorExceptionSource {
@@ -1473,22 +1478,50 @@ impl Analyzer<'_> {
     ) -> Result<EntityId, Error> {
         let name = self.tree.names.get(initializer.name);
         let parts = self.tree.name_lists.get(name.components);
-        let own = if !name.global && parts.len() == 1 {
-            if let ast::NameKind::Identifier(key) = parts[0].kind {
-                self.graph.own(owner, key, super::lookup::Filter::Ordinary)
+        let simple = if !name.global && parts.len() == 1 {
+            if let ast::NameKind::Identifier(key) = parts[0].kind
+                && parts[0].arguments.is_none()
+            {
+                Some(key)
             } else {
                 None
             }
         } else {
             None
         };
-        let binding = if let Some(binding) = own {
-            Some(binding)
+        let (found, lookup) = if let Some(key) = simple {
+            let found = self.qualified_declaration_result(
+                owner,
+                key.into(),
+                super::lookup::Filter::Ordinary,
+            )?;
+            if found.binding.is_some() || found.ambiguous {
+                (found, InitializerLookup::Class)
+            } else {
+                (
+                    self.unqualified_identifier_result(
+                        scope,
+                        key,
+                        super::lookup::Filter::Ordinary,
+                    )?,
+                    InitializerLookup::Unqualified,
+                )
+            }
         } else {
-            self.lookup_result(initializer.name, scope, super::lookup::Filter::Ordinary)?
-                .binding
+            (
+                self.lookup_result(initializer.name, scope, super::lookup::Filter::Ordinary)?,
+                InitializerLookup::General,
+            )
+        };
+        if found.ambiguous {
+            return Err(Error::at(
+                initializer.location,
+                "the mem-initializer name is ambiguous",
+            ));
         }
-        .ok_or_else(|| Error::at(initializer.location, "the mem-initializer names nothing"))?;
+        let binding = found
+            .binding
+            .ok_or_else(|| Error::at(initializer.location, "the mem-initializer names nothing"))?;
         let node = self.graph.binding(binding);
         let member = self.graph.entity(node.entity);
         if node.kind == super::graph::BindingKind::Variable {
@@ -1516,7 +1549,19 @@ impl Analyzer<'_> {
                 "the mem-initializer does not name a member or base",
             ));
         }
-        self.check_direct_member_access(binding, scope, initializer.location)?;
+        match lookup {
+            InitializerLookup::Class => self.check_declaration_member_access(
+                binding,
+                class,
+                None,
+                scope,
+                initializer.location,
+            )?,
+            InitializerLookup::Unqualified => {
+                self.check_declaration_direct_access(binding, scope, initializer.location)?;
+            }
+            InitializerLookup::General => (),
+        }
         if node.ty.is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Class(entity) if entity == class)) {
             return Ok(class);
         }

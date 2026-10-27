@@ -596,7 +596,7 @@ impl Frames {
         spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
-    ) -> Result<Vec<usize>, Error> {
+    ) -> Result<Vec<CellId>, Error> {
         let root = self.activate(spans, place, location)?;
         let mut work = vec![root.0 as usize];
         let mut leaves = Vec::new();
@@ -612,7 +612,9 @@ impl Frames {
                 continue;
             }
             if child == self.cells[index].end {
-                leaves.push(index);
+                leaves.push(CellId(
+                    u32::try_from(index).map_err(|_| Error::Limit("constant cell limit"))?,
+                ));
             }
             while child < self.cells[index].end {
                 work.push(child);
@@ -626,16 +628,16 @@ impl Frames {
         spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
-    ) -> Result<Vec<usize>, Error> {
+    ) -> Result<Vec<CellId>, Error> {
         let range = self.cells(spans, place, location)?;
         range
             .filter_map(|i| match u32::try_from(i) {
-                Ok(id) => accessible(&self.cells, CellId(id), 0).then_some(Ok(i)),
+                Ok(id) => accessible(&self.cells, CellId(id), 0).then_some(Ok(CellId(id))),
                 Err(_) => Some(Err(Error::Limit("constant cell limit"))),
             })
             .collect()
     }
-    pub(super) fn cells(
+    fn cells(
         &self,
         spans: &MemberSpans,
         place: Address,
@@ -644,14 +646,19 @@ impl Frames {
         let id = self.locate(spans, place, location)?.0 as usize;
         Ok(id..self.cells[id].end)
     }
-    pub(super) fn cell_place(&self, root: Address, index: usize) -> Address {
-        let cell = self.cells[index];
+    pub(super) fn cell_place(&self, root: Address, index: CellId) -> Address {
+        let cell = self.cells[index.0 as usize];
         Address {
             offset: cell.offset,
             designated: cell.ty,
             selection: cell.field.map_or(Selection::None, Selection::BitField),
             ..root
         }
+    }
+    // zero_into traverses the already selected object, as copying does. It
+    // does not resolve each leaf address again through overlapping members.
+    pub(super) fn zero_value(&mut self, cell: CellId, value: TemporaryValue) {
+        self.cells[cell.0 as usize].value = Some(value);
     }
     pub(super) fn read(
         &self,

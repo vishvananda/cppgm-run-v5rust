@@ -1,0 +1,48 @@
+global @original [storage=readonly, binding=internal, object=_ZL8original] = {
+  i32 3
+  i32 1
+  zero 4
+  i32 2
+}
+global @copied [storage=readonly, binding=internal, object=_ZL6copied] = {
+  i32 3
+  i32 1
+  zero 4
+  i32 2
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @copied
+    %t2 = index i8 [projection=field] %t1, 12
+    %t3 = load typed i32 %t2
+    %t4 = binary sub nowrap i32 %t3, 2
+    return i32 %t4
+}
+function @Value__Value(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN5ValueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 4
+    store typed i32 1, %t4
+    %t5 = load typed ptr $this
+    %t6 = index i8 [projection=field] %t5, 12
+    store typed i32 2, %t6
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4BaseC2Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 3, %t2
+    return void
+}
+alias object _ZN5ValueC2Ev = @Value__Value

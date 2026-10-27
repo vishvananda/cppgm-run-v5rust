@@ -143,7 +143,10 @@ impl Analyzer<'_> {
             self.constexpr_frames
                 .locate(&self.graph.constant_member_spans, place, location)?;
         self.populate_constant_skeleton(place, root, location, origin)?;
-        Ok(place)
+        Ok(Address {
+            designated: ty,
+            ..place
+        })
     }
     fn constant_object_leaves(
         &mut self,
@@ -286,7 +289,8 @@ impl Analyzer<'_> {
                     if self.graph.unnamed_bit_field(member) {
                         continue;
                     }
-                    let child = self.constant_member_slot(place, member, location)?;
+                    let mut child = self.constant_member_slot(place, member, location)?;
+                    child.designated = self.bare_type(child.designated)?;
                     let child_cell =
                         self.constexpr_frames
                             .add_child(cell, child, Some(member), location)?;
@@ -365,7 +369,20 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("constant member without layout"))?
         };
         let field = entity.bit_field.map(|_| member);
-        let ty = self.bare_type(self.graph.lower_entity_type(member)?)?;
+        let declared = self.graph.lower_entity_type(member)?;
+        let ty = if matches!(
+            self.graph.types.get(declared).kind,
+            TypeKind::Reference { .. }
+        ) {
+            declared
+        } else {
+            let cv = if self.graph.lower_mutable_member(member) {
+                super::types::Cv::default()
+            } else {
+                self.type_cv(place.designated)
+            };
+            self.graph.types.qualify(declared, cv)?
+        };
         Ok(Address {
             designated: ty,
             offset: place.offset.wrapping_add(super::integral::signed(offset)),
@@ -477,8 +494,18 @@ impl Analyzer<'_> {
             } else {
                 self.zero_constant_scalar(child.designated)?
             };
-            self.store_constant_value(child, value, location)?;
+            self.constexpr_frames.zero_value(index, value);
         }
+        Ok(())
+    }
+    pub(super) fn activate_constant_place(
+        &mut self,
+        mut place: Address,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        place.designated = self.bare_type(place.designated)?;
+        self.constexpr_frames
+            .activate(&self.graph.constant_member_spans, place, location)?;
         Ok(())
     }
     pub(super) fn constant_object_place(
@@ -609,7 +636,10 @@ impl Analyzer<'_> {
                 )
             })?;
         place.offset = place.offset.wrapping_add(super::integral::signed(offset));
-        place.designated = self.graph.lower_entity_type(base)?;
+        place.designated = self.graph.types.qualify(
+            self.graph.lower_entity_type(base)?,
+            self.type_cv(place.designated),
+        )?;
         Ok(place)
     }
     pub(super) fn constant_base_pointer(
@@ -821,6 +851,39 @@ impl Analyzer<'_> {
             work.push((ty, offset.wrapping_sub(start)));
         }
         Ok(())
+    }
+    // A recorded conversion function is the operand's value directly.
+    // Rvalue queries own a separate source-expression visit; operand queries
+    // do not enter that operation before locating the conversion's receiver.
+    pub(super) fn constant_conversion_value(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Value, Error> {
+        let step = self
+            .graph
+            .expression_facts
+            .function_conversion(id)
+            .ok_or(Error::Invariant("constant conversion without selection"))?;
+        let location = self.tree.expressions.get(id).location;
+        let returned = self.constant_conversion_result(id, scope)?;
+        let mut value = self.returned_scalar(returned, location)?;
+        if let Value::Pointer(pointer) = value
+            && let Some(path) = step.after_path
+            && let TypeKind::Pointer(element) = self.graph.types.get(step.after.result).kind
+        {
+            value = Value::Pointer(self.constant_base_pointer(pointer, element, path, location)?);
+        }
+        if let Value::MemberPointer(member) = value
+            && matches!(
+                self.graph.types.get(step.after.result).kind,
+                TypeKind::MemberPointer { .. }
+            )
+        {
+            value =
+                Value::MemberPointer(self.adjusted_member(member, step.after.result, location)?);
+        }
+        self.convert_constant_scalar(value, step.after.result, location)
     }
     pub(super) fn constant_conversion_result(
         &mut self,

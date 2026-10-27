@@ -94,31 +94,14 @@ impl Analyzer<'_> {
     }
     fn scalar_value_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Value, Error> {
         self.check_deferred_constant(id)?;
-        if let Some(step) = self.graph.expression_facts.function_conversion(id) {
-            let location = self.tree.expressions.get(id).location;
-            self.constant_step(location)?;
-            let returned = self.constant_conversion_result(id, scope)?;
-            let mut value = self.returned_scalar(returned, location)?;
-            if let Value::Pointer(pointer) = value
-                && let Some(path) = step.after_path
-                && let TypeKind::Pointer(element) = self.graph.types.get(step.after.result).kind
-            {
-                value =
-                    Value::Pointer(self.constant_base_pointer(pointer, element, path, location)?);
-            }
-            if let Value::MemberPointer(member) = value
-                && matches!(
-                    self.graph.types.get(step.after.result).kind,
-                    TypeKind::MemberPointer { .. }
-                )
-            {
-                value = Value::MemberPointer(self.adjusted_member(
-                    member,
-                    step.after.result,
-                    location,
-                )?);
-            }
-            return self.convert_constant_scalar(value, step.after.result, location);
+        if self
+            .graph
+            .expression_facts
+            .function_conversion(id)
+            .is_some()
+        {
+            self.constant_step(self.tree.expressions.get(id).location)?;
+            return self.constant_conversion_value(id, scope);
         }
         if self.member_pointer_expression(id) {
             return self

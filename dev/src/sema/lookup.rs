@@ -699,6 +699,24 @@ impl Analyzer<'_> {
         self.unqualified_declaration_result(scope, name, filter)?
             .checked(self.lookup_location)
     }
+    // Analyzer::unqualified's source identifier policy, before the caller's
+    // context-specific ambiguity and access diagnostics.
+    pub(super) fn unqualified_identifier_result(
+        &mut self,
+        scope: ScopeId,
+        name: NameId,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        let found = self.unqualified_declaration_result(scope, name.into(), filter)?;
+        let found = self.predefined_lookup(scope, name.into(), filter, found)?;
+        if filter == Filter::Ordinary
+            && found.binding.is_none()
+            && let Some(builtin) = self.builtin_lookup(name)?
+        {
+            return Ok(builtin);
+        }
+        Ok(found)
+    }
     pub(super) fn unqualified_declaration_result(
         &self,
         scope: ScopeId,

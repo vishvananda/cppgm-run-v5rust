@@ -364,7 +364,11 @@ impl Analyzer<'_> {
         }
         let constructor = self.graph.lower_construction(entity);
         self.construct_constant_object(place, initializer, constructor, scope, location)?;
-        let value = self.constexpr_frames.freeze(&self.graph.constant_member_spans, place, location, |value| {
+        let storage = Address {
+            designated: self.bare_type(place.designated)?,
+            ..place
+        };
+        let value = self.constexpr_frames.freeze(&self.graph.constant_member_spans, storage, location, |value| {
             let Value::Pointer(mut pointer) = value else {
                 return Ok(value);
             };

@@ -169,6 +169,19 @@ impl Analyzer<'_> {
                 "an expression outside constant evaluation",
             ));
         }
+        if self
+            .graph
+            .expression_facts
+            .function_conversion(id)
+            .is_some()
+        {
+            let value = self.constant_conversion_value(id, scope)?;
+            return self.convert_constant_scalar(
+                value,
+                target,
+                self.tree.expressions.get(id).location,
+            );
+        }
         if matches!(
             self.graph.types.get(target).kind,
             TypeKind::Scalar(Scalar::Bool)

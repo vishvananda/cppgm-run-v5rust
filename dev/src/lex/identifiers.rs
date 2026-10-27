@@ -32,7 +32,12 @@ impl Identifiers {
         if let Some(&id) = self.index.get(text) {
             return Ok(id);
         }
-        let id = NameId(u32::try_from(self.spellings.len()).map_err(|_| "too many identifiers")?);
+        let id = NameId(
+            u32::try_from(self.spellings.len())
+                .ok()
+                .filter(|&id| id < 0x7fff_ffff)
+                .ok_or("too many identifiers in one translation unit")?,
+        );
         let spelling: Rc<[u8]> = text.into();
         self.index.insert(spelling.clone(), id);
         self.spellings.push(spelling);

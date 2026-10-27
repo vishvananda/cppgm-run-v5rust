@@ -374,6 +374,10 @@ impl Analyzer<'_> {
                 scope,
                 initializer.location,
             )?;
+            let place = super::constant_addresses::Address {
+                designated: analyzer.bare_type(place.designated)?,
+                ..place
+            };
             for cell in analyzer.constexpr_frames.active_cells(
                 &analyzer.graph.constant_member_spans,
                 place,
