@@ -10,6 +10,8 @@ pub enum NumberDialect {
     Cxx11,
     /// Source compiler extensions: binary integers and hexadecimal floating numbers.
     Gnu,
+    /// Preprocessor text view: GNU numeric forms with course suffix rules.
+    GnuStream,
 }
 
 #[derive(Clone, Copy)]
@@ -42,8 +44,8 @@ pub(crate) fn user_defined_suffix(text: &[u8]) -> bool {
             .is_ok_and(|suffix| suffix.chars().all(|c| identifier_continue(u32::from(c))))
 }
 
-fn numeric_suffix(text: &[u8], dialect: NumberDialect) -> bool {
-    if dialect == NumberDialect::Cxx11 {
+pub(crate) fn literal_suffix(text: &[u8], dialect: NumberDialect) -> bool {
+    if dialect != NumberDialect::Gnu {
         return user_defined_suffix(text);
     }
     text.first()
@@ -76,7 +78,7 @@ pub(crate) fn user_integer_value(digits: &[u8]) -> Option<u64> {
 }
 
 fn classify(text: &[u8], dialect: NumberDialect) -> NumberLiteral {
-    if dialect == NumberDialect::Gnu && (text.starts_with(b"0b") || text.starts_with(b"0B")) {
+    if dialect != NumberDialect::Cxx11 && (text.starts_with(b"0b") || text.starts_with(b"0B")) {
         let mut end = 2;
         while matches!(text.get(end), Some(b'0' | b'1')) {
             end += 1;
@@ -101,7 +103,7 @@ fn classify(text: &[u8], dialect: NumberDialect) -> NumberLiteral {
             }
         }
         let has_digits = integer_end > 2 || point && end > integer_end + 1;
-        if dialect == NumberDialect::Gnu && has_digits {
+        if dialect != NumberDialect::Cxx11 && has_digits {
             let exponent = exponent_end(text, end, *b"pP");
             if exponent != end {
                 return classify_floating(text, exponent, dialect);
@@ -166,9 +168,9 @@ fn classify_floating(text: &[u8], value_end: usize, dialect: NumberDialect) -> N
         b"" => FundamentalType::Double,
         b"f" | b"F" => FundamentalType::Float,
         b"l" | b"L" => FundamentalType::LongDouble,
-        b"q" | b"Q" if dialect == NumberDialect::Gnu => FundamentalType::GnuFloat128,
+        b"q" | b"Q" if dialect != NumberDialect::Cxx11 => FundamentalType::GnuFloat128,
         [b'f' | b'F', rest @ ..]
-            if dialect == NumberDialect::Gnu
+            if dialect != NumberDialect::Cxx11
                 && matches!(rest, b"16" | b"32" | b"64" | b"128" | b"32x" | b"64x") =>
         {
             match rest {
@@ -180,7 +182,7 @@ fn classify_floating(text: &[u8], value_end: usize, dialect: NumberDialect) -> N
                 _ => FundamentalType::Float64x,
             }
         }
-        suffix if numeric_suffix(suffix, dialect) => {
+        suffix if literal_suffix(suffix, dialect) => {
             return NumberLiteral::UserDefined {
                 floating: true,
                 suffix_begin: value_end,
@@ -257,7 +259,7 @@ fn classify_integer(
 ) -> NumberLiteral {
     let Some(suffix) = integer_suffix(&text[end..]) else {
         // A literal operator, demanded later, owns ud-integer range checks.
-        return if numeric_suffix(&text[end..], dialect) {
+        return if literal_suffix(&text[end..], dialect) {
             NumberLiteral::UserDefined {
                 floating: false,
                 suffix_begin: end,

@@ -317,6 +317,7 @@ impl Analyzer<'_> {
         let callable_type = self.constructor_signature(Some(binding))?;
         let facts = self.graph.copy_properties.get(properties);
         let record = Constructor {
+            facts: super::construction::ConstructorFacts::Complete,
             class,
             binding: Some(binding),
             declaration: Some(self.graph.binding(binding).entity),

@@ -1,6 +1,6 @@
 // Translated from lex/string_concatenation.cpp. See NOTICE.
 //! One maximal phase-6 sequence, with reusable spelling and code-unit storage.
-use super::number::user_defined_suffix;
+use super::number::{NumberDialect, literal_suffix};
 use super::text::{EncodingPrefix, LiteralCharacter, TextParts, decode_character, split_text};
 use crate::support::unicode::{append_utf8, decode_utf8};
 use crate::types::FundamentalType;
@@ -78,9 +78,12 @@ impl StringSequence {
         Ok(())
     }
 
-    pub fn concatenate(&mut self) -> Result<Option<StringValue>, TextError> {
+    pub fn concatenate(
+        &mut self,
+        dialect: NumberDialect,
+    ) -> Result<Option<StringValue>, TextError> {
         self.units.clear();
-        let Some((prefix, suffix)) = self.combine() else {
+        let Some((prefix, suffix)) = self.combine(dialect) else {
             return Ok(None);
         };
         for piece in &self.pieces {
@@ -109,7 +112,7 @@ impl StringSequence {
         }))
     }
 
-    fn combine(&self) -> Option<(EncodingPrefix, Option<Range<usize>>)> {
+    fn combine(&self, dialect: NumberDialect) -> Option<(EncodingPrefix, Option<Range<usize>>)> {
         let mut prefix = EncodingPrefix::None;
         let mut suffix: Option<Range<usize>> = None;
         for piece in &self.pieces {
@@ -129,7 +132,7 @@ impl StringSequence {
             if range.is_empty() {
                 continue;
             }
-            if !user_defined_suffix(&self.source[range.clone()]) {
+            if !literal_suffix(&self.source[range.clone()], dialect) {
                 return None;
             }
             if let Some(prior) = &suffix {
@@ -232,7 +235,7 @@ mod tests {
         let mut strings = StringSequence::default();
         strings.add(b"u\"abc\"_x").unwrap();
         strings.add(b"U\"def\"_y").unwrap();
-        assert!(strings.concatenate().unwrap().is_none());
+        assert!(strings.concatenate(NumberDialect::Cxx11).unwrap().is_none());
         let capacity = strings.source.capacity();
         strings.clear();
         assert!(strings.source().is_empty());
@@ -240,7 +243,7 @@ mod tests {
         assert!(strings.data().is_empty());
         assert_eq!(strings.source.capacity(), capacity);
         strings.add(b"\"\\xff\"").unwrap();
-        let value = strings.concatenate().unwrap().unwrap();
+        let value = strings.concatenate(NumberDialect::Cxx11).unwrap().unwrap();
         assert_eq!(value.ty, FundamentalType::Char);
         assert!(value.suffix.is_none());
         assert_eq!(value.elements, 2);

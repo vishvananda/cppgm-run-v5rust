@@ -23,6 +23,129 @@ pub(super) enum LiteralState {
     Complete(bool),
 }
 impl Analyzer<'_> {
+    pub(super) fn record_defaulted_constexpr(
+        &mut self,
+        function: EntityId,
+        first: bool,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if !self.semantic() || self.template_depth != 0 || !self.graph.entity(function).constexpr {
+            return Ok(());
+        }
+        if first {
+            if let Some(home) = self.graph.entity(function).home
+                && self.graph.scope(home).kind == super::graph::ScopeKind::Class
+                && !self.graph.instance_class(home)
+            {
+                self.defaulted_constexpr.push((function, location));
+            }
+            Ok(())
+        } else {
+            self.check_defaulted_constexpr(function, location)
+        }
+    }
+    pub(super) fn finish_defaulted_constexpr(&mut self) -> Result<(), Error> {
+        for (function, location) in std::mem::take(&mut self.defaulted_constexpr) {
+            self.check_defaulted_constexpr(function, location)?;
+        }
+        Ok(())
+    }
+    fn check_defaulted_constexpr(
+        &mut self,
+        function: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let entity = self.graph.entity(function);
+        if !entity.constexpr || entity.availability == FunctionAvailability::Deleted {
+            return Ok(());
+        }
+        let eligible = if entity
+            .member_function
+            .is_some_and(|member| member.kind == super::graph::MemberKind::Constructor)
+        {
+            let id = self.defaulted_constexpr_constructor_plan(function)?;
+            self.constant_implicit_constructor_eligible(id, &mut HashMap::new(), 0)?
+        } else if entity.member_function.is_none() {
+            self.constant_assignment_eligible(function, &mut HashMap::new(), 0)?
+        } else {
+            false
+        };
+        if !eligible {
+            return Err(Error::at(
+                location,
+                "an explicitly defaulted function declared constexpr whose implicit declaration would not be",
+            ));
+        }
+        Ok(())
+    }
+    fn constant_assignment_eligible(
+        &mut self,
+        function: EntityId,
+        known: &mut HashMap<EntityId, bool>,
+        depth: u32,
+    ) -> Result<bool, Error> {
+        self.check_stack()?;
+        if let Some(&eligible) = known.get(&function) {
+            return Ok(eligible);
+        }
+        if !self.graph.cxx14
+            || self.graph.entity(function).availability == FunctionAvailability::Deleted
+            || depth > super::template_context::MAX_INSTANTIATION_DEPTH
+        {
+            return Ok(false);
+        }
+        known.insert(function, false);
+        let binding = self.graph.function_origin(function)?;
+        self.prepare_default_assignment(binding)?;
+        let home = self.graph.binding_scope(binding);
+        let class = self
+            .graph
+            .scope(home)
+            .owner
+            .ok_or(Error::Invariant("constant assignment without class"))?;
+        if !self.constant_literal_type(self.graph.lower_entity_type(class)?)? {
+            return Ok(false);
+        }
+        let actions = self
+            .graph
+            .entity(function)
+            .assignment
+            .as_ref()
+            .ok_or(Error::Invariant("constant assignment without plan"))?
+            .actions
+            .len();
+        for index in 0..actions {
+            let selected = self
+                .graph
+                .entity(function)
+                .assignment
+                .as_ref()
+                .ok_or(Error::Invariant("lost constant assignment plan"))?
+                .actions[index]
+                .function;
+            let Some(selected) = selected else {
+                continue;
+            };
+            let entity = self.graph.entity(selected);
+            let implicit = entity.assignment_origin == super::assignment::Origin::Implicit
+                || !entity.constexpr
+                    && matches!(
+                        entity.special_definition,
+                        Some(SpecialDefinition::Defaulted { first: true, .. })
+                    );
+            let eligible = if implicit {
+                entity.assignment.as_ref().is_some_and(|plan| plan.trivial)
+                    || self.constant_assignment_eligible(selected, known, depth + 1)?
+            } else {
+                entity.constexpr
+            };
+            if !eligible {
+                return Ok(false);
+            }
+        }
+        known.insert(function, true);
+        Ok(true)
+    }
     pub(super) fn check_constexpr_variable(
         &mut self,
         is_constexpr: bool,
@@ -138,20 +261,15 @@ impl Analyzer<'_> {
         id: ConstructorId,
         known: &mut HashMap<ConstructorId, bool>,
     ) -> Result<bool, Error> {
-        self.check_stack()?;
-        if let Some(&value) = known.get(&id) {
-            return Ok(value);
-        }
-        known.insert(id, false);
-        let result = self.constant_constructor_eligible_plan(id, known)?;
-        known.insert(id, result);
-        Ok(result)
+        self.constant_constructor_eligible_at(id, known, 0)
     }
-    fn constant_constructor_eligible_plan(
+    fn constant_constructor_eligible_at(
         &mut self,
         id: ConstructorId,
         known: &mut HashMap<ConstructorId, bool>,
+        depth: u32,
     ) -> Result<bool, Error> {
+        self.check_stack()?;
         let plan = self.graph.constructors.get(id);
         if plan.deleted {
             return Ok(false);
@@ -171,6 +289,35 @@ impl Analyzer<'_> {
             {
                 return Ok(function.constexpr);
             }
+        }
+        self.constant_implicit_constructor_eligible(id, known, depth)
+    }
+    fn constant_implicit_constructor_eligible(
+        &mut self,
+        id: ConstructorId,
+        known: &mut HashMap<ConstructorId, bool>,
+        depth: u32,
+    ) -> Result<bool, Error> {
+        self.check_stack()?;
+        if let Some(&value) = known.get(&id) {
+            return Ok(value);
+        }
+        known.insert(id, false);
+        let result = self.constant_constructor_eligible_plan(id, known, depth, false)?;
+        known.insert(id, result);
+        Ok(result)
+    }
+    fn constant_constructor_eligible_plan(
+        &mut self,
+        id: ConstructorId,
+        known: &mut HashMap<ConstructorId, bool>,
+        depth: u32,
+        variant: bool,
+    ) -> Result<bool, Error> {
+        self.check_stack()?;
+        let plan = self.graph.constructors.get(id);
+        if plan.deleted || depth > super::template_context::MAX_INSTANTIATION_DEPTH {
+            return Ok(false);
         }
         let class = plan.class;
         if self
@@ -193,7 +340,7 @@ impl Analyzer<'_> {
                     .as_ref()
                     .ok_or(Error::Invariant("lost constant copy plan"))?[index]
                     .constructor
-                    && !self.constant_constructor_eligible(child, known)?
+                    && !self.constant_constructor_eligible_at(child, known, depth + 1)?
                 {
                     return Ok(false);
                 }
@@ -202,7 +349,7 @@ impl Analyzer<'_> {
         }
         for index in 0..self.graph.constructors.get(id).bases.len() {
             if let Some(base) = self.graph.constructors.get(id).bases[index].constructor
-                && !self.constant_constructor_eligible(base, known)?
+                && !self.constant_constructor_eligible_at(base, known, depth + 1)?
             {
                 return Ok(false);
             }
@@ -233,12 +380,19 @@ impl Analyzer<'_> {
             let selected = initializer.is_some()
                 || anonymous && child.is_some_and(|child| self.constant_plan_initializes(child));
             selected_count += usize::from(selected);
-            if union && !selected {
+            if (union || variant) && !selected {
                 continue;
             }
             if anonymous {
                 if let Some(child) = child
-                    && !self.constant_constructor_eligible(child, known)?
+                    // Anonymous member plans expand inside this function's
+                    // query. Their variant context is not a function-cache key.
+                    && !self.constant_constructor_eligible_plan(
+                        child,
+                        known,
+                        depth,
+                        union || variant,
+                    )?
                 {
                     return Ok(false);
                 }
@@ -258,7 +412,7 @@ impl Analyzer<'_> {
                 Some(child) => child,
                 None => self.default_constructor(class, SourceOffset(0))?,
             };
-            if !self.constant_constructor_eligible(child, known)? {
+            if !self.constant_constructor_eligible_at(child, known, depth + 1)? {
                 return Ok(false);
             }
         }
@@ -277,7 +431,7 @@ impl Analyzer<'_> {
                     .is_some()
             })
         {
-            return self.constant_inherited_member_initializers(id, known);
+            return self.constant_inherited_member_initializers(id, known, depth);
         }
         Ok(true)
     }
@@ -313,11 +467,12 @@ impl Analyzer<'_> {
         &mut self,
         id: ConstructorId,
         known: &mut HashMap<ConstructorId, bool>,
+        depth: u32,
     ) -> Result<bool, Error> {
         for index in 0..self.graph.constructors.get(id).subobjects.len() {
             let child = self.graph.constructors.get(id).subobjects[index].constructor;
             if self.graph.constructors.get(child).nontrivial()
-                && !self.constant_constructor_eligible(child, known)?
+                && !self.constant_constructor_eligible_at(child, known, depth + 1)?
             {
                 return Ok(false);
             }

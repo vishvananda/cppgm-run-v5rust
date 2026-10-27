@@ -1,0 +1,33 @@
+global @original [storage=readonly, binding=internal, object=_ZL8original] = {
+  i32 7
+}
+global @copied [storage=readonly, binding=internal, object=_ZL6copied] = {
+  i32 7
+}
+global @ordinary : obj<4x4> [binding=strong] = {
+  zero 4
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = addr @copied
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    %t4 = binary sub nowrap i32 %t3, 7
+    return i32 %t4
+}
+function @Value__Value(%this : ptr [object_bytes=4]) -> void [unwind=no, binding=weak, object=_ZN5ValueC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    store typed i32 7, %t2
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}
+alias object _ZN5ValueC2Ev = @Value__Value

@@ -60,7 +60,7 @@ impl Analyzer<'_> {
                 let key = self
                     .identifiers
                     .intern(b"__builtin_va_list")
-                    .map_err(|_| Error::Limit("semantic identifier limit"))?;
+                    .map_err(Error::Limit)?;
                 // builtin_signature uses the declared global alias, independent
                 // of an instantiation's source visibility limit. Restore the
                 // query context before any fallible work or early return.

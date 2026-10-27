@@ -1,0 +1,13 @@
+global @first : i64 [storage=readonly, binding=internal, object=_ZL5first] = 3
+global @joined : i64 [storage=readonly, binding=internal, object=_ZL6joined] = 3
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = load typed i64 @first
+    %t2 = load typed i64 @joined
+    %t3 = binary add i64 %t1, %t2
+    %t4 = convert sext i64 i32 6
+    %t5 = binary sub i64 %t3, %t4
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}

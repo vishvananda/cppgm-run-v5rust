@@ -72,7 +72,7 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, RuntimeIntri
         let (name, kind) = entry?;
         let name = cursor
             .intern_name(name)
-            .map_err(|_| Error::Limit("semantic identifier limit"))?;
+            .map_err(Error::identifier_interning)?;
         Ok((name, kind))
     })
     .collect()

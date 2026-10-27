@@ -251,6 +251,7 @@ impl Analyzer<'_> {
         }
         let callable_type = self.constructor_signature(None)?;
         let constructor = self.publish_constructor(Constructor {
+            facts: super::construction::ConstructorFacts::Complete,
             copy: None,
             copy_transfer: super::construction::CopyTransfer::Call,
             class,

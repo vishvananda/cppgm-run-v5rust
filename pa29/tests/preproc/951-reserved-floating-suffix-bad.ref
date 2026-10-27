@@ -1,0 +1,2 @@
+preproc 1
+sof tests/preproc/951-reserved-floating-suffix-bad.t

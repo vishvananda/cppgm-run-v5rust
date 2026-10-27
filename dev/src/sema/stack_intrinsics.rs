@@ -30,7 +30,7 @@ impl StackNames {
         let mut name = |text: &[u8]| {
             cursor
                 .intern_name(text)
-                .map_err(|_| Error::Limit("semantic identifier limit"))
+                .map_err(Error::identifier_interning)
         };
         Ok(Self {
             operations: [

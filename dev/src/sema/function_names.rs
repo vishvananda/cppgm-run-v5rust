@@ -995,6 +995,7 @@ impl Analyzer<'_> {
             if self.lowering() && self.template_depth == 0 && !first {
                 self.graph.boundary_roots.push(entity);
             }
+            self.record_defaulted_constexpr(entity, first, location)?;
         }
         self.graph.entity_mut(entity).defined |= deleted || defaulted;
         super::record(

@@ -49,6 +49,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) lookup_location: SourceOffset,
     pub(super) deferred: Vec<DeferredMember>,
     pub(super) deferred_constexpr: std::collections::HashMap<super::graph::EntityId, DeferredBody>,
+    pub(super) defaulted_constexpr: Vec<(super::graph::EntityId, SourceOffset)>,
     pub(super) class_depth: usize,
     pub(super) flexible_initialization:
         Option<super::aggregate_initialization::FlexibleInitialization>,
@@ -164,11 +165,11 @@ impl<'tree> Analyzer<'tree> {
         let mut graph = previous.unwrap_or_else(Graph::new);
         let int128_name = cursor
             .intern_name(b"__int128")
-            .map_err(|_| Error::Limit("semantic identifier limit"))?;
+            .map_err(Error::identifier_interning)?;
         if fresh {
             let auto_name = cursor
                 .intern_name(b"auto")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?;
+                .map_err(Error::identifier_interning)?;
             graph.initialize_intrinsics(auto_name)?;
             for (spelling, scalar) in [
                 (b"nullptr_t".as_slice(), Scalar::Nullptr),
@@ -219,7 +220,7 @@ impl<'tree> Analyzer<'tree> {
             ] {
                 let name = cursor
                     .intern_name(spelling)
-                    .map_err(|_| Error::Limit("semantic identifier limit"))?;
+                    .map_err(Error::identifier_interning)?;
                 let ty = graph.types.scalar(scalar)?;
                 let entity = graph.add_entity(Some(ty), Some(name), Keyword::Typedef)?;
                 graph.add_binding(
@@ -243,17 +244,17 @@ impl<'tree> Analyzer<'tree> {
         .map(|name| {
             cursor
                 .intern_name(name)
-                .map_err(|_| Error::Limit("semantic identifier limit"))
+                .map_err(Error::identifier_interning)
         });
         let [func, function, pretty] = predefined_names;
         let predefined_names = [func?, function?, pretty?];
         let builtin_names = super::builtin_calls::BuiltinNames::new(cursor)?;
         let decltype_name = cursor
             .intern_name(b"decltype(...)")
-            .map_err(|_| Error::Limit("semantic identifier limit"))?;
+            .map_err(Error::identifier_interning)?;
         let override_name = cursor
             .intern_name(b"override")
-            .map_err(|_| Error::Limit("semantic identifier limit"))?;
+            .map_err(Error::identifier_interning)?;
         let (identifiers, positions) = cursor.post.input_mut().semantic_context();
         let mut analyzer = Self {
             library_nans: [None; 3],
@@ -277,6 +278,7 @@ impl<'tree> Analyzer<'tree> {
             lookup_location: SourceOffset(0),
             deferred: Vec::new(),
             deferred_constexpr: std::collections::HashMap::new(),
+            defaulted_constexpr: Vec::new(),
             class_depth: 0,
             member_initializer_class: None,
             flexible_initialization: None,
@@ -397,6 +399,7 @@ impl<'tree> Analyzer<'tree> {
         self.finish_analysis(boundaries)
     }
     pub(super) fn finish_analysis(mut self, boundaries: bool) -> Result<Graph, Error> {
+        self.finish_defaulted_constexpr()?;
         self.finish_unit_exceptions()?;
         if !self.deferred.is_empty() {
             return Err(Error::Invariant("uncompleted member bodies"));

@@ -76,7 +76,7 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, FloatingOper
         Ok((
             cursor
                 .intern_name(name.as_bytes())
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             FloatingOperation::Classification(kind),
         ))
     })
@@ -375,7 +375,7 @@ fn add_constant_names(
         for (suffix, ty) in [("", F::Double), ("f", F::Float), ("l", F::LongDouble)] {
             let key = cursor
                 .intern_name(format!("{stem}{suffix}").as_bytes())
-                .map_err(|_| Error::Limit("semantic identifier limit"))?;
+                .map_err(Error::identifier_interning)?;
             names.push((key, FloatingOperation::Constant(kind, ty)));
         }
     }

@@ -1,0 +1,2 @@
+preproc 1
+sof tests/preproc/950-reserved-integer-suffix-bad.t

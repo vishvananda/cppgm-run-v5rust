@@ -256,7 +256,7 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<AtomicBuiltins, Error> {
             let name = format!("{prefix}{suffix}");
             let name = cursor
                 .intern_name(name.as_bytes())
-                .map_err(|_| Error::Limit("semantic identifier limit"))?;
+                .map_err(Error::identifier_interning)?;
             result.push((name, id));
         }
     }

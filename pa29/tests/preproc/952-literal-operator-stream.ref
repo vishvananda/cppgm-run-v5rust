@@ -1,0 +1,9 @@
+preproc 1
+sof tests/preproc/952-literal-operator-stream.t
+simple operator KW_OPERATOR
+user-defined-literal ""_suffix _suffix string array of 1 char 00
+literal 0b101ULL unsigned long long int 0500000000000000
+literal 0x1.fp+2q __float128 00000000000000000000000000F00140
+literal 1.0f16 _Float16 003C
+literal 1.0f128 _Float128 0000000000000000000000000000FF3F
+eof

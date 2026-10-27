@@ -246,49 +246,49 @@ impl BuiltinNames {
         Ok(Self {
             make_complex: cursor
                 .intern_name(b"__builtin_complex")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             is_constant_evaluated: cursor
                 .intern_name(b"__builtin_is_constant_evaluated")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             abort: cursor
                 .intern_name(b"__builtin_abort")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             expect: cursor
                 .intern_name(b"__builtin_expect")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             constant_p: cursor
                 .intern_name(b"__builtin_constant_p")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             invoke: cursor
                 .intern_name(b"__builtin_invoke")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             operator_new: cursor
                 .intern_name(b"__builtin_operator_new")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             operator_delete: cursor
                 .intern_name(b"__builtin_operator_delete")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             memcpy: cursor
                 .intern_name(b"__builtin_memcpy")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             memmove: cursor
                 .intern_name(b"__builtin_memmove")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             memcmp: cursor
                 .intern_name(b"__builtin_memcmp")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             memset: cursor
                 .intern_name(b"__builtin_memset")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             strlen: cursor
                 .intern_name(b"__builtin_strlen")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             unreachable: cursor
                 .intern_name(b"__builtin_unreachable")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             trap: cursor
                 .intern_name(b"__builtin_trap")
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             runtime: super::runtime_intrinsics::names(cursor)?,
             source_locations: super::source_locations::names(cursor)?,
             stack: super::stack_intrinsics::StackNames::new(cursor)?,

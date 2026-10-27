@@ -330,6 +330,7 @@ impl Analyzer<'_> {
                     self.graph.boundary_roots.push(function);
                 }
             }
+            self.record_defaulted_constexpr(function, first, location)?;
         }
         if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Delete)) {
             self.graph.entity_mut(function).availability =

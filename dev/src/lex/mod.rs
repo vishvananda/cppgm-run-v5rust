@@ -325,7 +325,7 @@ impl<I: PostTokenInput> PostTokenizer<I> {
         }
         let kind = self
             .strings
-            .concatenate()
+            .concatenate(self.dialect)
             .map_err(PostTokenError::Text)?
             .map_or(PostTokenKind::Invalid, |value| PostTokenKind::String {
                 ty: value.ty,

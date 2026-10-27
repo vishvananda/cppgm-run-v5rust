@@ -55,6 +55,11 @@ pub(super) enum Triviality {
     Nontrivial,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ConstructorFacts {
+    Declaration,
+    Complete,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum CopyTransfer {
     Call,
     Storage,
@@ -72,6 +77,7 @@ pub(crate) struct Delegation {
     pub initializer: ast::Initializer,
 }
 pub(super) struct Constructor {
+    pub facts: ConstructorFacts,
     pub class: EntityId,
     pub binding: Option<BindingId>,
     pub declaration: Option<EntityId>,
@@ -748,6 +754,7 @@ impl Analyzer<'_> {
             }
         }
         let record = Constructor {
+            facts: ConstructorFacts::Complete,
             class,
             binding,
             declaration,
@@ -1090,6 +1097,7 @@ impl Analyzer<'_> {
         let signature = self.constructor_signature(Some(binding))?;
         let entity = self.graph.binding(binding).entity;
         self.publish_constructor(Constructor {
+            facts: ConstructorFacts::Declaration,
             class,
             binding: Some(binding),
             declaration: Some(entity),
@@ -1168,6 +1176,33 @@ impl Analyzer<'_> {
             ));
         }
         Ok(())
+    }
+
+    pub(super) fn defaulted_constexpr_constructor_plan(
+        &mut self,
+        function: EntityId,
+    ) -> Result<ConstructorId, Error> {
+        let binding = self.graph.function_origin(function)?;
+        let entity = self.graph.entity(function);
+        let class = entity
+            .member_function
+            .ok_or(Error::Invariant("defaulted constructor without owner"))?
+            .class;
+        if self.graph.types.function_parameter_count(
+            entity
+                .ty
+                .ok_or(Error::Invariant("constructor without type"))?,
+        )? != 0
+        {
+            return self.declared_constructor_plan(binding);
+        }
+        if let Some(id) = entity.constructor
+            && self.graph.constructors.get(id).facts == ConstructorFacts::Complete
+        {
+            return Ok(id);
+        }
+        self.prepare_defaulted_subobjects(class)?;
+        self.scalar_constructor_facts(class, Some(binding))
     }
 
     pub(super) fn variable_destruction(

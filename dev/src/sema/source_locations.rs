@@ -36,7 +36,7 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, SourceLocati
         Ok((
             cursor
                 .intern_name(name.as_bytes())
-                .map_err(|_| Error::Limit("semantic identifier limit"))?,
+                .map_err(Error::identifier_interning)?,
             kind,
         ))
     })

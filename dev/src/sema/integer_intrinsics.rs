@@ -52,7 +52,7 @@ pub(super) fn names(cursor: &mut Cursor<'_>) -> Result<Vec<(NameId, IntegerBuilt
         {
             let name = cursor
                 .intern_name(format!("{stem}{suffix}").as_bytes())
-                .map_err(|_| Error::Limit("semantic identifier limit"))?;
+                .map_err(Error::identifier_interning)?;
             names.push((name, IntegerBuiltin { operation, operand }));
         }
     }

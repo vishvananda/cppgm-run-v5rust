@@ -70,7 +70,7 @@ pub(super) fn emit_hosted(
         binary_exponents: true,
     });
     write_tokens(
-        &mut PostTokenizer::from_input(input, NumberDialect::Gnu),
+        &mut PostTokenizer::from_input(input, NumberDialect::GnuStream),
         output,
     )
 }

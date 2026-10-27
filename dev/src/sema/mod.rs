@@ -237,6 +237,19 @@ pub(crate) enum Error {
     Invariant(&'static str),
 }
 impl Error {
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Result::map_err transfers the owned interning failure to this phase adapter"
+    )]
+    pub(super) fn identifier_interning(error: crate::syntax::ParseError) -> Self {
+        match error {
+            crate::syntax::ParseError::Preprocess(
+                crate::preprocess::error::PreprocessError::Limit(message),
+            )
+            | crate::syntax::ParseError::Limit(message) => Self::Limit(message),
+            _ => Self::Invariant("unexpected identifier interning error"),
+        }
+    }
     pub(super) fn required_expression(self, location: SourceOffset) -> Self {
         match self {
             Self::NonConstant {

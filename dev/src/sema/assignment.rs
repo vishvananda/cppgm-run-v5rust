@@ -277,6 +277,7 @@ pub(super) fn key() -> Result<ValueKey, Error> {
 }
 #[derive(Default)]
 pub(super) struct Scratch {
+    offered: Vec<BindingId>,
     candidates: Vec<Candidate>,
     seen: HashSet<EntityId>,
 }
@@ -812,6 +813,7 @@ impl Analyzer<'_> {
         };
         let mut scratch = std::mem::take(&mut self.assignment_scratch);
         let result = self.resolve_subobject_assignment(home, object, source, &mut scratch);
+        scratch.offered.clear();
         scratch.candidates.clear();
         scratch.seen.clear();
         self.assignment_scratch = scratch;
@@ -824,9 +826,23 @@ impl Analyzer<'_> {
         source: ExprFacts,
         scratch: &mut Scratch,
     ) -> Result<Option<BindingId>, Error> {
+        // subobject_copy forms the complete assignment set before resolve
+        // filters viability or skips deduction after a perfect ordinary match.
+        for binding in self.graph.functions_at(home, key()?) {
+            let function = self.graph.binding(binding).entity;
+            if self.member_function_owner(binding).is_some() && scratch.seen.insert(function) {
+                scratch.offered.push(binding);
+            }
+        }
+        scratch.seen.clear();
+        if scratch.offered.is_empty() {
+            return Ok(None);
+        }
+        self.graph.work.totals.resolutions += 1;
+        self.graph.work.totals.candidates += scratch.offered.len();
         // analyzer_calls.cpp::resolve tries ordinary declarations first. Only
         // its last viable ordinary candidate decides whether deduction is moot.
-        self.assignment_candidates(home, object, source, false, scratch)?;
+        self.assignment_candidates(object, source, false, scratch)?;
         if !scratch.candidates.last().is_some_and(|candidate| {
             let sequence = ArgumentSequence {
                 conversion: candidate.object,
@@ -837,7 +853,7 @@ impl Analyzer<'_> {
             self.perfect_sequence(Some(sequence), object.ty, object.category, false)
                 && self.perfect_sequence(Some(candidate.source), source.ty, source.category, false)
         }) {
-            self.assignment_candidates(home, object, source, true, scratch)?;
+            self.assignment_candidates(object, source, true, scratch)?;
         }
         let candidates = &scratch.candidates;
         let mut best = 0;
@@ -872,14 +888,13 @@ impl Analyzer<'_> {
     }
     fn assignment_candidates(
         &mut self,
-        home: ScopeId,
         object: ObjectArgument,
         source: ExprFacts,
         templated: bool,
         scratch: &mut Scratch,
     ) -> Result<(), Error> {
-        let mut next = 0;
-        while let Some(binding) = self.graph.next_function(home, key()?, &mut next) {
+        for index in 0..scratch.offered.len() {
+            let binding = scratch.offered[index];
             let function = self.graph.binding(binding).entity;
             let entity = self.graph.entity(function);
             if entity.function.is_some_and(|p| p.is_static)

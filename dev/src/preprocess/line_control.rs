@@ -76,7 +76,7 @@ pub(crate) fn decode_ordinary_string(
         .add(token.spelling.bytes())
         .map_err(|_| PreprocessError::Limit("text literal implementation limit"))?;
     if sequence
-        .concatenate()
+        .concatenate(crate::lex::number::NumberDialect::Cxx11)
         .map_err(|_| PreprocessError::Limit("text literal implementation limit"))?
         .is_none()
     {

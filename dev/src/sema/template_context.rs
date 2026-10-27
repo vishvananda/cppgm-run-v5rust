@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 // analyzer.h::kInstantiationDepthLimit. This logical limit is independent of
 // the genuine native stack-byte budget (Annex B requires at least 1024).
-const MAX_INSTANTIATION_DEPTH: u32 = 2048;
+pub(super) const MAX_INSTANTIATION_DEPTH: u32 = 2048;
 
 #[derive(Default)]
 pub(super) struct Levels(HashMap<EntityId, u32>);
