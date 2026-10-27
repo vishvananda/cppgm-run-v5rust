@@ -254,10 +254,17 @@ fn resolve(
         };
         // A remaining simple memory destination is an indirect store.
         if let Op::Scalar(ScalarOp::Store(to, _, _) | ScalarOp::MemoryBinary(_, _, to, _)) = op {
-            if frame_based(to) {
+            if let Some(offset) = fixed_frame(to) {
+                let end = offset.wrapping_add(simple_width(op).cast_signed());
+                let past = a.wrapping_add(i32::try_from(width).ok()?);
+                if offset < past && a < end {
+                    break;
+                }
+            } else if frame_based(to) {
                 break;
+            } else {
+                memory_written = true;
             }
-            memory_written = true;
         }
         if let SimpleWrite::Register(r) = simple {
             clobbered |= 1 << r.code();

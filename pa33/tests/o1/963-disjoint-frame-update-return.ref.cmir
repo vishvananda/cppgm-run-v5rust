@@ -1,0 +1,46 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @f
+  abi
+    param %input -> rdi : i64
+    return obj<16x8> -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $value -> [rbp-<off0>] : obj<16x8>
+
+  block ^entry
+    store.i64 [rbp-<off1>], 7
+    add [rbp-<off1>], 1
+    mov rax, rdi
+    load.i64 rdx, [rbp-<off1>]
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    temp %pair -> [rbp-<off0>] : obj<16x8>
+
+  block ^entry
+    mov rdi, 11
+    call @f [args=(rdi)]
+    cmp.i64 rax, 11
+    setne r8
+    movzx r8, r8
+    cmp.i64 rdx, 8
+    setne r9
+    movzx r9, r9
+    or r8, r9
+    ret r8

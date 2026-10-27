@@ -29,8 +29,10 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
             ScalarOp::Extend(_, r)
             | ScalarOp::SetEqual(r)
             | ScalarOp::Movzx(r)
-            | ScalarOp::Rotate(_, _, r, _) => [Some(Operand::Register(r)), None],
-            ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, r) => [Some(Operand::Register(r)), None],
+            | ScalarOp::Rotate(_, _, r, _)
+            | ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, r) => {
+                [Some(Operand::Register(r)), None]
+            }
             ScalarOp::CompareZero(_, s) => [Some(s), None],
             ScalarOp::Shift(_, _, r, s) => [Some(Operand::Register(r)), Some(s)],
             _ => return None,
