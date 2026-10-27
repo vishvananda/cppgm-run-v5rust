@@ -143,6 +143,7 @@ fn write_global(
             floating,
             *constant,
             global.ty.unwrap_or(Type::Void),
+            program.object_facts,
             false,
         )?,
         GlobalInit::Address(target, addend) => write_address(program, *target, *addend, out)?,
@@ -154,7 +155,7 @@ fn write_global(
                     DataItem::Zero(amount) => write!(out, "zero {amount}")?,
                     DataItem::Constant(ty, constant) => {
                         write!(out, "{ty} ")?;
-                        write_constant(out, floating, *constant, *ty, false)?;
+                        write_constant(out, floating, *constant, *ty, program.object_facts, false)?;
                     }
                     DataItem::Address(ty, target, addend) => {
                         write!(out, "{ty} ")?;
@@ -453,6 +454,7 @@ impl<W: Write> InstructionWriter<'_, '_, W> {
                 self.floating,
                 Constant::Integer(self.body.literal(id)),
                 ty,
+                self.program.object_facts,
                 false,
             ),
             Value::Float(id, kind) => write_constant(
@@ -460,6 +462,7 @@ impl<W: Write> InstructionWriter<'_, '_, W> {
                 self.floating,
                 Constant::Float(kind, self.body.literal(id)),
                 ty,
+                self.program.object_facts,
                 false,
             ),
         }
@@ -502,6 +505,7 @@ impl<W: Write> InstructionWriter<'_, '_, W> {
                     self.floating,
                     Constant::Integer(self.body.literal(id)),
                     kind.ty(),
+                    self.program.object_facts,
                     true,
                 )?;
             } else {
@@ -775,19 +779,20 @@ fn write_constant(
     scanner: &mut FloatingScanner,
     constant: Constant,
     context: Type,
+    exact: bool,
     marked: bool,
 ) -> io::Result<()> {
     let text = match constant {
         Constant::Integer(bits) => {
             if let Some(kind) = FloatKind::from_type(context) {
                 literals::integer_as_float(scanner, bits, kind, false)
-                    .and_then(|bits| literals::text(scanner, kind, bits, marked))
+                    .and_then(|bits| literals::text(scanner, kind, bits, exact, marked))
             } else {
                 Ok(integer_text(bits, context))
             }
         }
         Constant::Float(kind, bits) => {
-            literals::text(scanner, kind, bits, context.float_rank() == 0)
+            literals::text(scanner, kind, bits, exact, context.float_rank() == 0)
         }
     }
     .map_err(|_| io::Error::other("floating literal storage limit"))?;

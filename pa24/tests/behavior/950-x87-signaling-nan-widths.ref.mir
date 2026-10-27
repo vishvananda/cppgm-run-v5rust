@@ -1,0 +1,82 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @bits32
+  abi
+    param %value -> xmm0 : f32
+    param %expected -> rdi : i32
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    slot $cell -> [rbp-8] : i32
+    param-slot %value -> [rbp-16] : f32
+
+  block ^entry
+    fmov.f32 [rbp-16], xmm0
+    fmov.f32 [rbp-8], [rbp-16]
+    cmp.i32 [rbp-8], rdi
+    sete rdi
+    movzx rdi, rdi
+    ret rdi
+
+function @bits64
+  abi
+    param %value -> xmm0 : f64
+    param %expected -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    slot $cell -> [rbp-8] : i64
+    param-slot %value -> [rbp-16] : f64
+
+  block ^entry
+    fmov.f64 [rbp-16], xmm0
+    fmov.f64 [rbp-8], [rbp-16]
+    cmp.i64 [rbp-8], rdi
+    sete rdi
+    movzx rdi, rdi
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 80
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+
+  block ^entry
+    mov rdi, 2141192192
+    fmov.f32 xmm0, nan
+    call @bits32 [args=(rdi,xmm0)]
+    mov rbx, rax
+    mov rdi, -6291456
+    fmov.f32 xmm0, -nan
+    call @bits32 [args=(rdi,xmm0)]
+    mov r12, rax
+    mov rdi, 9219994337134247936
+    fmov.f64 xmm0, nan
+    call @bits64 [args=(rdi,xmm0)]
+    mov r13, rax
+    mov rdi, -3377699720527872
+    fmov.f64 xmm0, -nan
+    call @bits64 [args=(rdi,xmm0)]
+    add rbx, r12
+    add r13, rax
+    add rbx, r13
+    cmp.i64 rbx, 4
+    setne rbx
+    movzx rbx, rbx
+    ret rbx

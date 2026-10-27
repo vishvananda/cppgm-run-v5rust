@@ -87,7 +87,19 @@ impl Parser<'_> {
                 if context.bits() != 0 || context == Type::Ptr {
                     return Err(self.fail("invalid floating literal"));
                 }
-                return Ok(literals::special(text, context, negative));
+                let mut constant = literals::special(text, context, negative);
+                if self.program.object_facts && constant.is_nan() && self.accept(Kind::LParen)? {
+                    let payload = self.lexer.token;
+                    constant = (payload.kind == Kind::Number
+                        && !literals::floating_spelling(payload.word()))
+                    .then(|| literals::scan_integer(payload.word(), false))
+                    .flatten()
+                    .and_then(|payload| constant.with_nan_payload(payload))
+                    .ok_or_else(|| self.fail("invalid NaN payload"))?;
+                    self.advance()?;
+                    self.expect(Kind::RParen, ")")?;
+                }
+                return Ok(constant);
             }
             return Err(self.fail("expected literal"));
         }
@@ -100,32 +112,8 @@ impl Parser<'_> {
             self.advance()?;
             return Ok(result);
         }
-        let hex = text.starts_with("0x") || text.starts_with("0X");
-        let (base, digits) = if hex {
-            (16_u128, &text[2..])
-        } else if text.len() > 1 && text.starts_with('0') {
-            (8, &text[1..])
-        } else {
-            (10, text)
-        };
-        let mut value = 0_u128;
-        let mut valid = !digits.is_empty();
-        for c in digits.bytes() {
-            let digit = match c {
-                b'0'..=b'9' => u128::from(c - b'0'),
-                b'a'..=b'f' => u128::from(c - b'a' + 10),
-                b'A'..=b'F' => u128::from(c - b'A' + 10),
-                _ => 99,
-            };
-            valid &= digit < base;
-            value = value.wrapping_mul(base).wrapping_add(digit);
-        }
-        if !valid {
-            return Err(self.fail_token("invalid integer literal: ", ""));
-        }
-        if negative {
-            value = value.wrapping_neg();
-        }
+        let mut value = literals::scan_integer(text, negative)
+            .ok_or_else(|| self.fail_token("invalid integer literal: ", ""))?;
         let result = if let Some(kind) = FloatKind::from_type(context) {
             let bits = literals::integer_as_float(&mut self.floating, value, kind, negative)?;
             Constant::Float(kind, bits)

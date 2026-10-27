@@ -58,6 +58,60 @@ pub(crate) enum Constant {
     Integer(u128),
     Float(FloatKind, u128),
 }
+impl Constant {
+    pub(crate) fn is_nan(self) -> bool {
+        let Self::Float(kind, bits) = self else {
+            return false;
+        };
+        let (fraction, exponent, _) = kind.layout();
+        let shift = if kind == FloatKind::F80 { 64 } else { fraction };
+        bits >> shift & ((1 << exponent) - 1) == (1 << exponent) - 1
+            && bits & ((1 << fraction) - 1) != 0
+    }
+    pub(crate) fn with_nan_payload(self, payload: u128) -> Option<Self> {
+        let Self::Float(kind, bits) = self else {
+            return None;
+        };
+        let quiet = 1_u128 << (kind.layout().0 - 1);
+        if !self.is_nan() || payload >= quiet || bits & quiet == 0 && payload == 0 {
+            return None;
+        }
+        Some(Self::Float(kind, (bits & !(quiet - 1)) | payload))
+    }
+}
+/// One integer token's magnitude and optional negation, modulo the target 128 bits.
+/// Narrow-context sign extension belongs to the consuming literal boundary.
+pub(crate) fn scan_integer(text: &str, negative: bool) -> Option<u128> {
+    let hex = text.starts_with("0x") || text.starts_with("0X");
+    let (base, digits) = if hex {
+        (16_u128, &text[2..])
+    } else if text.len() > 1 && text.starts_with('0') {
+        (8, &text[1..])
+    } else {
+        (10, text)
+    };
+    if digits.is_empty() {
+        return None;
+    }
+    let mut value = 0_u128;
+    for byte in digits.bytes() {
+        let digit = match byte {
+            b'0'..=b'9' => u128::from(byte - b'0'),
+            b'a'..=b'f' => u128::from(byte - b'a' + 10),
+            b'A'..=b'F' => u128::from(byte - b'A' + 10),
+            _ => return None,
+        };
+        if digit >= base {
+            return None;
+        }
+        value = value.wrapping_mul(base).wrapping_add(digit);
+    }
+    Some(if negative {
+        value.wrapping_neg()
+    } else {
+        value
+    })
+}
 pub(crate) fn floating_spelling(text: &str) -> bool {
     let hex = text.starts_with("0x") || text.starts_with("0X");
     text.contains('.')
@@ -253,7 +307,15 @@ pub(crate) fn native_float(
             } else {
                 payload >> (fraction - to_fraction)
             };
-            infinity | payload | (1 << (to_fraction - 1))
+            // An f32/f64 load converts through x87 and quiets a signaling
+            // NaN. An f80's fraction is extracted directly; only loss of all
+            // target fraction bits requires substituting a quiet NaN.
+            let quiet = if kind != FloatKind::F80 || payload == 0 {
+                1 << (to_fraction - 1)
+            } else {
+                0
+            };
+            infinity | payload | quiet
         }
     } else {
         let (significand, exponent, _) = finite(kind, bits)?;
@@ -321,6 +383,7 @@ pub(crate) fn text(
     scanner: &mut FloatingScanner,
     kind: FloatKind,
     bits: u128,
+    exact: bool,
     marked: bool,
 ) -> Result<String, Error> {
     let (fraction, exponent_bits, _) = kind.layout();
@@ -340,11 +403,21 @@ pub(crate) fn text(
         } else {
             "snan"
         };
-        return Ok(if mantissa == 0 {
+        let mut out = if mantissa == 0 {
             format!("{sign}{name}")
         } else {
             format!("{sign}{name}{}", kind.suffix())
-        });
+        };
+        if exact && mantissa != 0 {
+            let quiet = 1_u128 << (fraction - 1);
+            let payload = bits & (quiet - 1);
+            let default = if mantissa & quiet != 0 { 0 } else { quiet >> 1 };
+            if payload != default {
+                use std::fmt::Write as _;
+                write!(out, "(0x{payload:x})").map_err(|_| Error::Limit)?;
+            }
+        }
+        return Ok(out);
     }
     let (significand, exponent, subnormal) = finite(kind, bits)?;
     let mut out = if significand == 0 {
@@ -561,8 +634,76 @@ mod tests {
                 "snanL",
             ),
         ] {
-            assert_eq!(text(&mut scratch, kind, bits, true)?, spelling);
+            assert_eq!(text(&mut scratch, kind, bits, false, true)?, spelling);
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod object_literal_tests {
+    use super::*;
+    #[test]
+    fn object_payloads_roundtrip_and_reject_at_the_payload_token() -> Result<(), Error> {
+        let source = b"global @value : f64 = nan(0x55)\nfunction @f() -> f32 {block ^entry:return f32 -snanf(0x2)}\nfunction @g() -> f80 {block ^entry:return f80 snanL(0x1)}\n";
+        let program = crate::lowir::test_program_dialect(source, true)?;
+        let mut output = Vec::new();
+        crate::lowir::writer::write(&program, &mut output).map_err(Error::Output)?;
+        let text = std::str::from_utf8(&output).map_err(|_| Error::Limit)?;
+        for spelling in ["nan(0x55)", "-snanf(0x2)", "snanL(0x1)"] {
+            assert!(text.contains(spelling), "{text}");
+        }
+        let again = crate::lowir::test_program_dialect(&output, true)?;
+        let mut repeated = Vec::new();
+        crate::lowir::writer::write(&again, &mut repeated).map_err(Error::Output)?;
+        assert_eq!(output, repeated);
+        assert!(crate::lowir::test_program(source).is_err());
+        for payload in ["0x8000000000000", "-1", "1e2", "0x10000000000000000"] {
+            let source =
+                format!("function @f()->f64 {{\nblock ^entry:return f64 nan(\n{payload}\n)\n}}\n");
+            let error = crate::lowir::test_program_dialect(source.as_bytes(), true);
+            assert!(matches!(error, Err(Error::ByteDiagnostic(message))
+                if message == b"invalid NaN payload at optimizer-test:3"));
+        }
+        Ok(())
+    }
+    #[test]
+    fn signaling_conversion_follows_the_source_representation() -> Result<(), Error> {
+        let mut scanner = FloatingScanner::default();
+        let extended = (0x7fff_u128 << 64) | 0xa000_0000_0000_0000;
+        for (source, target, expected) in [
+            (
+                Constant::Float(FloatKind::F80, extended),
+                FloatKind::F32,
+                0x7fa0_0000,
+            ),
+            (
+                Constant::Float(FloatKind::F80, extended | (1 << 79)),
+                FloatKind::F64,
+                0xfff4_0000_0000_0000,
+            ),
+            (
+                Constant::Float(FloatKind::F80, (0x7fff_u128 << 64) | (1 << 63) | 1),
+                FloatKind::F32,
+                0x7fc0_0000,
+            ),
+            (
+                Constant::Float(FloatKind::F32, 0x7fa0_0000),
+                FloatKind::F64,
+                0x7ffc_0000_0000_0000,
+            ),
+            (
+                Constant::Float(FloatKind::F64, 0x7ff4_0000_0000_0000),
+                FloatKind::F80,
+                (0x7fff_u128 << 64) | 0xe000_0000_0000_0000,
+            ),
+        ] {
+            assert_eq!(native_float(&mut scanner, source, target)?, expected);
+        }
+        assert_eq!(
+            scan_integer("0x100000000000000000000000000000055", false),
+            Some(0x55)
+        );
         Ok(())
     }
 }
