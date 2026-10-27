@@ -656,18 +656,26 @@ impl Analyzer<'_> {
             types.push(info.ty);
             placed = self.graph.template_operands.count() != made;
         }
-        if types.len() == 1
-            && !clause.ellipsis
-            && self
-                .declarator_name(self.tree.parameters.get(clause.parameters)[0].declarator)?
-                .is_none()
-            && matches!(
-                self.graph.types.get(types[0]).kind,
-                TypeKind::Scalar(Scalar::Void)
-            )
-            && self.graph.types.get(types[0]).cv.0 == 0
-        {
-            types.clear();
+        if types.len() == 1 && !clause.ellipsis {
+            let mut parameter = self.tree.parameters.get(clause.parameters)[0];
+            if parameter.default.is_none() && self.declarator_name(parameter.declarator)?.is_none()
+            {
+                if self.template_depth != 0 && self.graph.dependent_type(types[0]) {
+                    parameter.dependent_sole = true;
+                    self.tree
+                        .parameters
+                        .replace(clause.parameters, 0, parameter);
+                }
+                if !parameter.dependent_sole
+                    && matches!(
+                        self.graph.types.get(types[0]).kind,
+                        TypeKind::Scalar(Scalar::Void)
+                    )
+                    && self.graph.types.get(types[0]).cv.0 == 0
+                {
+                    types.clear();
+                }
+            }
         }
         if types.iter().any(|&ty| {
             matches!(

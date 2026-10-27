@@ -62,6 +62,15 @@ impl IntegralKind {
             (negative || bits <= self.maximum().cast_unsigned()) && signed(bits) >= self.minimum()
         }
     }
+    pub(super) fn holds_u64_constant(self, bits: u64, from: Self) -> bool {
+        let negative = from.signed && signed(bits) < 0;
+        self.bits <= 64
+            || if self.signed {
+                negative || bits >> 63 == 0
+            } else {
+                !negative
+            }
+    }
     pub(super) fn operation(self, op: P, a: u64, b: u64) -> Option<(u64, bool)> {
         let a = self.convert(a);
         let b = self.convert(b);

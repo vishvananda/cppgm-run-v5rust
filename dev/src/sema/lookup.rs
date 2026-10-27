@@ -79,6 +79,7 @@ pub(super) struct LookupResult {
     // The qualifier belongs to this query, so nested decltype lookups cannot
     // overwrite the named-type caller's class context.
     pub qualifier: Option<ScopeId>,
+    pub dependent_prefix: Option<TypeId>,
     pub ambiguous: bool,
     pub injected_template: bool,
 }
@@ -360,6 +361,7 @@ impl Analyzer<'_> {
             binding,
             functions,
             qualifier: None,
+            dependent_prefix: None,
             ambiguous: false,
             injected_template: false,
         }
@@ -1099,6 +1101,7 @@ impl Analyzer<'_> {
                 };
                 return Ok(LookupResult {
                     binding,
+                    dependent_prefix: Some(qualifier),
                     ..LookupResult::default()
                 });
             }

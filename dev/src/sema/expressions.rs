@@ -385,6 +385,11 @@ impl Analyzer<'_> {
         let found = self
             .lookup_result_in(name, scope, Filter::Ordinary, specialization)
             .and_then(|found| {
+                if found.dependent_prefix.is_some() {
+                    let mut node = *self.tree.names.get(name);
+                    node.provenance = ast::NameProvenance::DependentQualifier;
+                    self.tree.names.replace(name, node);
+                }
                 found
                     .binding
                     .ok_or_else(|| Error::at(node.location, "undeclared name"))

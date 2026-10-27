@@ -103,10 +103,18 @@ pub(crate) struct Attribute {
     pub ty: Option<TypeId>,
 }
 #[derive(Clone, Copy, Debug)]
+pub(crate) enum NameProvenance {
+    Ordinary,
+    DependentQualifier,
+}
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct QualifiedName {
     pub location: SourceOffset,
     pub global: bool,
     pub typename_keyword: bool,
+    /// A definition resolved this expression's qualifier dependently, so its
+    /// copies cannot reinterpret the name as a type without `typename`.
+    pub provenance: NameProvenance,
     pub components: List<NameComponent>,
     pub(super) prefix_scope: Option<ScopeId>,
     pub prefix_state: PrefixState,
@@ -257,6 +265,9 @@ pub(crate) struct ParameterClause {
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Parameter {
+    /// This unique parameter was the sole unnamed dependent parameter of a
+    /// definition. Its copies remain parameters when substitution gives void.
+    pub dependent_sole: bool,
     pub location: SourceOffset,
     pub specifiers: List<Specifier>,
     pub declarator: Option<DeclaratorId>,
@@ -851,6 +862,7 @@ impl Tree {
             location,
             global: false,
             typename_keyword: false,
+            provenance: NameProvenance::Ordinary,
             components,
             prefix_scope: None,
             prefix_state: PrefixState::Unqualified,

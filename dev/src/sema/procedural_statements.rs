@@ -322,6 +322,12 @@ impl Analyzer<'_> {
                 "case value narrowed by conversion to the switch condition's type",
             ));
         }
+        if !kind.holds_u64_constant(constant.bits, from) {
+            return Err(Error::at(
+                self.tree.expressions.get(value).location,
+                "a 128-bit case value beyond the 64-bit constants evaluated",
+            ));
+        }
         let bits = kind.convert(constant.bits);
         super::record(&mut self.graph.case_values, id.index(), bits);
         self.body_context

@@ -142,6 +142,15 @@ impl Analyzer<'_> {
                         binding.kind,
                         super::graph::BindingKind::Type | super::graph::BindingKind::Alias
                     ) {
+                        if matches!(
+                            syntax_name.provenance,
+                            ast::NameProvenance::DependentQualifier
+                        ) {
+                            return Err(Error::at(
+                                self.tree.expressions.get(named).location,
+                                "a dependent qualified name names a type only with typename",
+                            ));
+                        }
                         let target = binding
                             .ty
                             .ok_or(Error::Invariant("cast name without type"))?;

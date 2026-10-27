@@ -231,6 +231,7 @@ impl Parser<'_> {
             location,
             global,
             typename_keyword,
+            provenance: super::ast::NameProvenance::Ordinary,
             components,
             prefix_scope: prefix.scope,
             prefix_state: prefix.state,
@@ -387,7 +388,9 @@ impl Parser<'_> {
             }
             self.type_id_in_mode(true, super::declarators::Mode::Conversion)
         })();
-        self.scopes.current = enclosing;
+        if member.is_some() {
+            self.scopes.current = enclosing;
+        }
         Ok(NameKind::Conversion(result?))
     }
     pub(super) fn decltype_operand(&mut self) -> Result<ExprId, ParseError> {
@@ -414,6 +417,7 @@ impl Parser<'_> {
             location,
             global: false,
             typename_keyword: false,
+            provenance: super::ast::NameProvenance::Ordinary,
             components,
             prefix_scope: None,
             prefix_state: PrefixState::Unqualified,

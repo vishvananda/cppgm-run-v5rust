@@ -74,6 +74,7 @@ impl Parser<'_> {
             location,
             global: false,
             typename_keyword: false,
+            provenance: super::ast::NameProvenance::Ordinary,
             components,
             prefix_scope: None,
             prefix_state: PrefixState::Unqualified,

@@ -117,7 +117,7 @@ impl Parser<'_> {
             })
         });
         let names_directly = name.is_some() || nested.is_some_and(|id| self.names_directly(id));
-        let suffixes = self.declarator_suffixes(mode, name, names_directly, member, false)?;
+        let suffixes = self.declarator_suffixes(mode, name, names_directly, member)?;
         let attributes = self.tree.attributes.finish(attribute_start)?;
         self.tree.declarators.add(Declarator {
             member_scope: member,
@@ -139,7 +139,6 @@ impl Parser<'_> {
         name: Option<super::ast::Name>,
         names_directly: bool,
         member: Option<super::scopes::ScopeId>,
-        special: bool,
     ) -> Result<List<Suffix>, ParseError> {
         let mut bound_scope = None;
         let suffix_start = self.tree.suffixes.begin();
@@ -158,7 +157,9 @@ impl Parser<'_> {
                         self.scopes.current = Some(scope);
                     }
                     let result = self.without_angle(Self::expression);
-                    self.scopes.current = enclosing;
+                    if member.is_some() {
+                        self.scopes.current = enclosing;
+                    }
                     Some(result?)
                 };
                 self.expect(P::RightBracket)?;
@@ -171,7 +172,7 @@ impl Parser<'_> {
                 break;
             }
             let definite = mode != Mode::Named
-                || special
+                || self.parameter_context == super::parser::ParameterContext::SpecialMember
                 || name.is_some_and(|name| {
                     self.tree
                         .name_lists
@@ -199,7 +200,9 @@ impl Parser<'_> {
                 self.scopes.current = Some(parameter_scope);
             }
             let result = self.function_qualifiers_with_attributes(mode == Mode::Named);
-            self.scopes.current = saved;
+            if lookup_member.is_some() {
+                self.scopes.current = saved;
+            }
             let qualifiers = result?;
             self.tree.suffixes.push(Suffix::Function {
                 parameters,
@@ -454,6 +457,7 @@ impl Parser<'_> {
                 self.declare_value_declarator(declarator, false, false)?;
             }
             self.tree.parameters.push(Parameter {
+                dependent_sole: false,
                 location: parameter_location,
                 specifiers,
                 declarator,

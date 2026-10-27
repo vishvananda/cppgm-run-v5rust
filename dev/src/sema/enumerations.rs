@@ -498,14 +498,7 @@ impl Analyzer<'_> {
                     }
                     // HeldAsWideConstant: enumerators still use the frozen
                     // integral evaluator's u64 constant representation.
-                    let negative = from.signed && integral::signed(value.bits) < 0;
-                    if kind.bits > 64
-                        && if kind.signed {
-                            !negative && value.bits >> 63 != 0
-                        } else {
-                            negative
-                        }
-                    {
+                    if !kind.holds_u64_constant(value.bits, from) {
                         return Err(Error::at(
                             self.tree.expressions.get(expr).location,
                             "a 128-bit enumerator value beyond the 64-bit constants evaluated",

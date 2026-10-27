@@ -305,6 +305,12 @@ impl Analyzer<'_> {
                     .integral_kind(source)
                     .ok_or(Error::Invariant("nonintegral value argument"))?;
                 if kind.represents(bits, from) {
+                    if !kind.holds_u64_constant(bits, from) {
+                        return Err(Error::at(
+                            location,
+                            "a 128-bit template argument beyond the 64-bit constants evaluated",
+                        ));
+                    }
                     return self.graph.types.intern(
                         TypeKind::Value {
                             ty: target,

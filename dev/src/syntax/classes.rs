@@ -523,7 +523,10 @@ impl Parser<'_> {
         self.function_scope = None;
         let member = self.special_member_scope(name);
         let attribute_start = self.tree.attributes.begin();
-        let suffixes = self.declarator_suffixes(Mode::Named, Some(name), true, member, true)?;
+        self.parameter_context = super::parser::ParameterContext::SpecialMember;
+        let suffixes = self.declarator_suffixes(Mode::Named, Some(name), true, member);
+        self.parameter_context = super::parser::ParameterContext::Ordinary;
+        let suffixes = suffixes?;
         if !matches!(
             self.tree.suffixes.get(suffixes).first(),
             Some(Suffix::Function { .. })

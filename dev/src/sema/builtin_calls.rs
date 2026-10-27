@@ -598,6 +598,7 @@ impl Analyzer<'_> {
             binding: Some(binding),
             functions,
             qualifier: None,
+            dependent_prefix: None,
             ambiguous: false,
         }))
     }

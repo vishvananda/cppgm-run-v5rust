@@ -20,6 +20,11 @@ pub(super) enum DeclaratorContext {
     Friend,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ParameterContext {
+    Ordinary,
+    SpecialMember,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Environment {
     Course,
     Hosted,
@@ -34,6 +39,7 @@ pub(super) struct Parser<'a> {
     pub function_scope: Option<ScopeId>,
     pub parameter_scope: Option<ScopeId>,
     pub declarator_context: DeclaratorContext,
+    pub parameter_context: ParameterContext,
     pub template_mentions: u32,
     pub pack_mentions: u32,
     pub parameter_pack_start: u32,
@@ -82,6 +88,7 @@ struct Checkpoint {
     function_scope: Option<ScopeId>,
     parameter_scope: Option<ScopeId>,
     declarator_context: DeclaratorContext,
+    parameter_context: ParameterContext,
     template_mentions: u32,
     pack_mentions: u32,
     parameter_pack_start: u32,
@@ -110,6 +117,7 @@ impl<'a> Parser<'a> {
             function_scope: None,
             parameter_scope: None,
             declarator_context: DeclaratorContext::Ordinary,
+            parameter_context: ParameterContext::Ordinary,
             template_mentions: 0,
             pack_mentions: 0,
             parameter_pack_start: 0,
@@ -467,6 +475,7 @@ impl<'a> Parser<'a> {
             function_scope: self.function_scope,
             parameter_scope: self.parameter_scope,
             declarator_context: self.declarator_context,
+            parameter_context: self.parameter_context,
             template_mentions: self.template_mentions,
             pack_mentions: self.pack_mentions,
             parameter_pack_start: self.parameter_pack_start,
@@ -499,6 +508,7 @@ impl<'a> Parser<'a> {
         self.function_scope = mark.function_scope;
         self.parameter_scope = mark.parameter_scope;
         self.declarator_context = mark.declarator_context;
+        self.parameter_context = mark.parameter_context;
         self.template_mentions = mark.template_mentions;
         self.pack_mentions = mark.pack_mentions;
         self.parameter_pack_start = mark.parameter_pack_start;

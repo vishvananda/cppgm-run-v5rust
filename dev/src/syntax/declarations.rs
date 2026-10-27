@@ -877,15 +877,18 @@ impl Parser<'_> {
                 Some(P::Assign | P::LeftBrace | P::LeftParen)
             ) {
                 let enclosing = self.scopes.current;
+                let member = self.tree.declarators.get(declarator).member_scope;
                 let pending_template = self.pending_template;
                 self.pending_template = false;
                 let result = (|| {
-                    if let Some(scope) = self.tree.declarators.get(declarator).member_scope {
+                    if let Some(scope) = member {
                         self.scopes.member_context(scope)?;
                     }
                     self.initializer()
                 })();
-                self.scopes.current = enclosing;
+                if member.is_some() {
+                    self.scopes.current = enclosing;
+                }
                 self.pending_template = pending_template;
                 Some(result?)
             } else {
@@ -923,7 +926,9 @@ impl Parser<'_> {
     }
     fn initializer_kind(&mut self) -> Result<InitializerKind, ParseError> {
         if self.accept(P::Assign)? {
-            if self.at_ahead(P::Semicolon, 1)? || self.at_ahead(P::Comma, 1)? {
+            if matches!(self.keyword()?, Some(K::Default | K::Delete))
+                && (self.at_ahead(P::Semicolon, 1)? || self.at_ahead(P::Comma, 1)?)
+            {
                 if self.accept_keyword(K::Default)? {
                     return Ok(InitializerKind::Default);
                 }

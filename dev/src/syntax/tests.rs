@@ -1896,6 +1896,37 @@ fn abandoned_parameter_names_do_not_shadow_the_following_type_declaration() {
 }
 
 #[test]
+fn ordinary_initializer_leaves_compaction_before_the_following_token() {
+    let boundary = 4096;
+    let mut bytes = vec![b';'; boundary - 2];
+    bytes.extend_from_slice(b"=0;");
+    let source = SourceBuffer::new(bytes).unwrap();
+    let input = Preprocessor::with_name(&source, b"initializer-window").unwrap();
+    let mut parser = Parser::new(Cursor::new(PostTokenizer::from_input(
+        input,
+        NumberDialect::Cxx11,
+    )));
+    for _ in 0..boundary - 2 {
+        let _token = parser.cursor.peek(0).unwrap();
+        parser.cursor.advance().unwrap();
+    }
+    assert!(matches!(
+        parser.initializer().unwrap().kind,
+        InitializerKind::Assign(_)
+    ));
+    assert_eq!(
+        parser.cursor.absolute_position().unwrap(),
+        u64::try_from(boundary).unwrap()
+    );
+    assert_eq!(parser.cursor.peak_window, boundary);
+    assert!(
+        parser
+            .at(crate::lex::pp_lexer::Punctuator::Semicolon)
+            .unwrap()
+    );
+}
+
+#[test]
 fn token_compaction_preserves_absolute_diagnostic_order_and_bounds_the_window() {
     let mut bytes = Vec::new();
     for _ in 0..6000 {

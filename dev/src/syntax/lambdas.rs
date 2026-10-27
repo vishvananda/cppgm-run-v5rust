@@ -21,6 +21,7 @@ pub(super) struct DeferredLambda {
     end: usize,
     scope: Option<ScopeId>,
     log: usize,
+    parameters: super::parser::ParameterContext,
 }
 impl Parser<'_> {
     pub(super) fn lambda(&mut self) -> Result<ExprId, ParseError> {
@@ -56,13 +57,18 @@ impl Parser<'_> {
         self.expect(P::RightBracket)?;
         let captures = self.tree.captures.finish(start)?;
         let pending = self.pending_template;
-        let function = self.function_scope;
         self.pending_template = false;
         let enclosing = self.scopes.current;
         let result = self.lambda_after_captures(capture_default, captures);
-        self.scopes.current = enclosing;
+        // A deferred generic lambda keeps its template scope current until
+        // the surrounding parse region ends, as the frozen early return does.
+        if !result
+            .as_ref()
+            .is_ok_and(|id| matches!(self.tree.lambdas.get(*id).body, LambdaBody::Deferred))
+        {
+            self.scopes.current = enclosing;
+        }
         self.pending_template = pending;
-        self.function_scope = function;
         let lambda = result?;
         self.tree.expressions.add(Expression {
             location,
@@ -154,6 +160,7 @@ impl Parser<'_> {
                 end: self.cursor.position,
                 scope,
                 log,
+                parameters: self.parameter_context,
             });
             Ok(target)
         } else {
@@ -192,6 +199,7 @@ impl Parser<'_> {
         let enclosing = self.scopes.current;
         let function = self.function_scope;
         let parameter = self.parameter_scope;
+        let parameters = self.parameter_context;
         let pending = self.pending_template;
         let region = self.shared_lambdas.region.take();
         let base = self.lambdas[first].log;
@@ -210,6 +218,7 @@ impl Parser<'_> {
                 } else {
                     self.cursor.position = deferred.begin;
                     self.deferred_lambdas += 1;
+                    self.parameter_context = deferred.parameters;
                     let body =
                         self.speculation_boundary(|parser| parser.lambda_body(deferred.scope))?;
                     if self.cursor.position != deferred.end {
@@ -235,6 +244,7 @@ impl Parser<'_> {
         self.scopes.current = enclosing;
         self.function_scope = function;
         self.parameter_scope = parameter;
+        self.parameter_context = parameters;
         self.pending_template = pending;
         self.shared_lambdas.region = region;
         match result {

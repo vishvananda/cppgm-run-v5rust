@@ -110,7 +110,10 @@ impl Analyzer<'_> {
                 let ExprKind::Id(name) = self.tree.expressions.get(expression).kind else {
                     return Ok(None);
                 };
-                let found = self.lookup(name, scope, Filter::Ordinary)?;
+                let result = self.lookup_result(name, scope, Filter::Ordinary)?;
+                let found = result.binding.ok_or_else(|| {
+                    Error::at(self.tree.names.get(name).location, "undeclared name")
+                })?;
                 let binding = self.graph.binding(found);
                 if binding.kind == BindingKind::TemplateValue
                     && self
@@ -126,11 +129,23 @@ impl Analyzer<'_> {
                         .map(Some)
                         .ok_or(Error::Invariant("value parameter without placeholder"));
                 }
-                let node = self.tree.names.get(name);
+                let mut node = *self.tree.names.get(name);
                 let components = self.tree.name_lists.get(node.components);
                 let dependent = (node.global || components.len() > 1)
                     && components.last().is_some_and(|last| !last.template_keyword)
-                    && self.graph.dependent_members.get(binding.entity).is_some();
+                    && (result.dependent_prefix.is_some()
+                        || self.graph.dependent_members.get(binding.entity).is_some());
+                if dependent {
+                    node.provenance = ast::NameProvenance::DependentQualifier;
+                    self.tree.names.replace(name, node);
+                } else if matches!(node.provenance, ast::NameProvenance::DependentQualifier)
+                    && matches!(binding.kind, BindingKind::Type | BindingKind::Alias)
+                {
+                    return Err(Error::at(
+                        node.location,
+                        "a dependent qualified name names a type only with typename",
+                    ));
+                }
                 if dependent || !matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
                     return Ok(None);
                 }

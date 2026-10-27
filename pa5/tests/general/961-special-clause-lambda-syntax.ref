@@ -1,0 +1,183 @@
+1 translation units
+start translation unit 1
+translation-unit
+  class-specifier Defaults
+    class-key KW_STRUCT:struct
+    special-member-declaration Defaults
+      declarator
+        identifier Defaults
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            default-argument
+              initializer
+                call-expression
+                  lambda-expression
+                    lambda-introducer []
+                    compound-statement
+                      simple-declaration
+                        decl-specifier-seq
+                          decl-specifier KW_INT:int
+                        init-declarator-list
+                          init-declarator
+                            declarator
+                              identifier f
+                              parameter-clause
+                                parameter-declaration
+                                  decl-specifier-seq
+                                    decl-specifier TT_IDENTIFIER:Unknown
+                      return-statement
+                        literal 0
+                  argument-list
+  class-specifier Exception
+    class-key KW_STRUCT:struct
+    special-member-declaration Exception
+      declarator
+        identifier Exception
+        parameter-clause
+        function-qualifier noexcept(noexcept([]{intf(Unknown);return0;}()))
+          type-trait-expression KW_NOEXCEPT:noexcept
+            call-expression
+              lambda-expression
+                lambda-introducer []
+                compound-statement
+                  simple-declaration
+                    decl-specifier-seq
+                      decl-specifier KW_INT:int
+                    init-declarator-list
+                      init-declarator
+                        declarator
+                          identifier f
+                          parameter-clause
+                            parameter-declaration
+                              decl-specifier-seq
+                                decl-specifier TT_IDENTIFIER:Unknown
+                  return-statement
+                    literal 0
+              argument-list
+  class-specifier Bound
+    class-key KW_STRUCT:struct
+    special-member-declaration Bound
+      declarator
+        identifier Bound
+        parameter-clause
+          parameter-declaration
+            decl-specifier-seq
+              decl-specifier KW_INT:int
+            declarator
+              nested-declarator
+                declarator
+                  ptr-operator OP_STAR:*
+              array-suffix
+                parenthesized-expression
+                  call-expression
+                    lambda-expression
+                      lambda-introducer []
+                      compound-statement
+                        simple-declaration
+                          decl-specifier-seq
+                            decl-specifier KW_INT:int
+                          init-declarator-list
+                            init-declarator
+                              declarator
+                                identifier f
+                                parameter-clause
+                                  parameter-declaration
+                                    decl-specifier-seq
+                                      decl-specifier TT_IDENTIFIER:Unknown
+                        return-statement
+                          literal 1
+                    argument-list
+  template-declaration
+    template-parameter-clause
+      template-parameter-list
+        type-parameter
+          parameter-key KW_CLASS:class
+          identifier T
+    class-specifier Pattern
+      class-key KW_STRUCT:struct
+      special-member-declaration Pattern
+        declarator
+          identifier Pattern
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              default-argument
+                initializer
+                  call-expression
+                    lambda-expression
+                      lambda-introducer []
+                      compound-statement
+                        simple-declaration
+                          decl-specifier-seq
+                            decl-specifier KW_INT:int
+                          init-declarator-list
+                            init-declarator
+                              declarator
+                                identifier f
+                                parameter-clause
+                                  parameter-declaration
+                                    decl-specifier-seq
+                                      decl-specifier TT_IDENTIFIER:Unknown
+                        return-statement
+                          literal 0
+                    argument-list
+  class-specifier Conversion
+    class-key KW_STRUCT:struct
+    special-member-declaration operatorint
+      declarator
+        identifier operatorint
+        parameter-clause
+        function-qualifier noexcept(noexcept([]{intf(Unknown);return0;}()))
+          type-trait-expression KW_NOEXCEPT:noexcept
+            call-expression
+              lambda-expression
+                lambda-introducer []
+                compound-statement
+                  simple-declaration
+                    decl-specifier-seq
+                      decl-specifier KW_INT:int
+                    init-declarator-list
+                      init-declarator
+                        declarator
+                          identifier f
+                          parameter-clause
+                            parameter-declaration
+                              decl-specifier-seq
+                                decl-specifier TT_IDENTIFIER:Unknown
+                  return-statement
+                    literal 0
+              argument-list
+  simple-declaration
+    decl-specifier-seq
+      decl-specifier KW_VOID:void
+    init-declarator-list
+      init-declarator
+        declarator
+          identifier ordinary
+          parameter-clause
+            parameter-declaration
+              decl-specifier-seq
+                decl-specifier KW_INT:int
+              default-argument
+                initializer
+                  call-expression
+                    lambda-expression
+                      lambda-introducer []
+                      compound-statement
+                        simple-declaration
+                          decl-specifier-seq
+                            decl-specifier KW_INT:int
+                          init-declarator-list
+                            init-declarator
+                              declarator
+                                identifier value
+                              initializer
+                                paren-initializer
+                                  id-expression Unknown
+                        return-statement
+                          literal 0
+                    argument-list
+end translation unit
