@@ -144,15 +144,12 @@ impl Analyzer<'_> {
             .implicit_copies
             .ok_or(Error::Invariant("copy declarations without properties"))?;
         let mut bindings = [None; 2];
-        for (index, (kind, properties)) in [
-            (RefKind::Lvalue, copies.copy_properties),
-            (RefKind::Rvalue, copies.move_properties),
-        ]
-        .into_iter()
-        .enumerate()
+        for (index, properties) in [copies.copy_properties, copies.move_properties]
+            .into_iter()
+            .enumerate()
         {
             if let Some(properties) = properties {
-                bindings[index] = Some(self.implicit_copy_binding(class, kind, properties)?);
+                bindings[index] = Some(self.implicit_copy_binding(properties)?);
             }
         }
         Ok(bindings)
@@ -279,9 +276,7 @@ impl Analyzer<'_> {
     ) -> Result<ConstructorId, Error> {
         let binding = match origin {
             CopyOrigin::Declared(binding) => binding,
-            CopyOrigin::Implicit { kind, .. } => {
-                self.implicit_copy_binding(class, kind, properties)?
-            }
+            CopyOrigin::Implicit { .. } => self.implicit_copy_binding(properties)?,
         };
         let targets = self.graph.copy_targets(class)?;
         let mut actions = Vec::with_capacity(targets.len());
@@ -351,26 +346,38 @@ impl Analyzer<'_> {
         self.graph.copy_properties.get_mut(properties).plan = ConstructorState::Ready(id);
         Ok(id)
     }
-    fn implicit_copy_binding(
-        &mut self,
-        class: EntityId,
-        kind: RefKind,
-        properties: CopyPropertiesId,
-    ) -> Result<BindingId, Error> {
+    fn implicit_copy_binding(&mut self, properties: CopyPropertiesId) -> Result<BindingId, Error> {
         if let Some(binding) = self.graph.copy_properties.get(properties).callable {
             return Ok(binding);
         }
-        let copies = self
+        let function = self
             .graph
-            .entity(class)
-            .implicit_copies
-            .ok_or(Error::Invariant("implicit copy signature"))?;
-        let parameter = if kind == RefKind::Lvalue {
-            copies.copy.map(|(ty, _)| ty)
-        } else {
-            copies.moving
+            .copy_properties
+            .get(properties)
+            .declaration
+            .ok_or(Error::Invariant("implicit copy declaration absent"))?;
+        let signature = self.graph.lower_entity_type(function)?;
+        let home = self
+            .graph
+            .entity(function)
+            .home
+            .ok_or(Error::Invariant("implicit copy home"))?;
+        let binding = self
+            .graph
+            .add_implicit_copy_binding(home, function, signature)?;
+        self.graph.copy_properties.get_mut(properties).callable = Some(binding);
+        Ok(binding)
+    }
+    pub(super) fn declare_implicit_copy(
+        &mut self,
+        class: EntityId,
+        kind: RefKind,
+        parameter: TypeId,
+        properties: CopyPropertiesId,
+    ) -> Result<EntityId, Error> {
+        if let Some(function) = self.graph.copy_properties.get(properties).declaration {
+            return Ok(function);
         }
-        .ok_or(Error::Invariant("implicit copy parameter"))?;
         let void = self.graph.types.scalar(Scalar::Void)?;
         let signature = self.graph.types.intern(
             TypeKind::Function {
@@ -390,6 +397,7 @@ impl Analyzer<'_> {
         let function = self.graph.add_entity(Some(signature), None, Keyword::Int)?;
         let nothrow = self.graph.copy_properties.get(properties).nothrow;
         let entity = self.graph.entity_mut(function);
+        entity.home = Some(home);
         entity.copy_origin = Origin::Implicit;
         entity.copy_kind = Some(kind);
         entity.copy_properties = Some(properties);
@@ -423,11 +431,8 @@ impl Analyzer<'_> {
             special: None,
             allocation: None,
         });
-        let binding = self
-            .graph
-            .add_implicit_copy_binding(home, function, signature)?;
-        self.graph.copy_properties.get_mut(properties).callable = Some(binding);
-        Ok(binding)
+        self.graph.copy_properties.get_mut(properties).declaration = Some(function);
+        Ok(function)
     }
 }
 
@@ -588,10 +593,27 @@ mod tests {
                 )
                 .entity
         });
+        analyzer.prepare_copy_properties(class).unwrap();
+        let copies = analyzer.graph.entity(class).implicit_copies.unwrap();
+        let declarations = [copies.copy_properties, copies.move_properties].map(|id| {
+            let properties = analyzer.graph.copy_properties.get(id.unwrap());
+            assert!(properties.callable.is_none());
+            let declaration = properties.declaration.unwrap();
+            let function = analyzer.graph.entity(declaration);
+            assert!(function.scope.is_none() && function.constructor.is_none());
+            declaration
+        });
+        let before = analyzer.graph.statistics();
         let first = analyzer.implicit_copy_bindings(class).unwrap();
         let second = analyzer.implicit_copy_bindings(class).unwrap();
         assert_eq!(first, second);
-        for binding in first.into_iter().flatten() {
+        let after = analyzer.graph.statistics();
+        assert_eq!(before.entities, after.entities);
+        assert_eq!(before.bindings, after.bindings);
+        assert_eq!(before.types, after.types);
+        for (binding, declaration) in first.into_iter().zip(declarations) {
+            let binding = binding.unwrap();
+            assert_eq!(analyzer.graph.binding(binding).entity, declaration);
             let function = analyzer
                 .graph
                 .entity(analyzer.graph.binding(binding).entity);

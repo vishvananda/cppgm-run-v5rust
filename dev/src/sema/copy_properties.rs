@@ -40,6 +40,7 @@ pub(super) struct CopyProperties {
     pub trivial: bool,
     pub nothrow: bool,
     pub plan: super::construction::ConstructorState,
+    pub declaration: Option<EntityId>,
     pub callable: Option<BindingId>,
     pub subobjects: Vec<(Option<EntityId>, EntityId, Option<CopySelection>)>,
 }
@@ -281,6 +282,7 @@ impl Analyzer<'_> {
                     trivial: false,
                     nothrow: false,
                     plan: super::construction::ConstructorState::NotStarted,
+                    declaration: None,
                     callable: None,
                     subobjects: Vec::new(),
                 }
@@ -288,7 +290,9 @@ impl Analyzer<'_> {
                 self.defaulted_copy_properties(class, RefKind::Lvalue, cv)?
             };
             copy = Some((parameter, facts.deleted));
-            copy_properties = Some(self.graph.copy_properties.add(facts)?);
+            let properties = self.graph.copy_properties.add(facts)?;
+            self.declare_implicit_copy(class, RefKind::Lvalue, parameter, properties)?;
+            copy_properties = Some(properties);
         }
         // analyzer_copy.cpp treats a closure's deleted copy assignment as
         // declared: its rvalue sources use the copy constructor, with no
@@ -300,9 +304,13 @@ impl Analyzer<'_> {
         let mut move_parameter = None;
         if moving {
             let facts = self.defaulted_copy_properties(class, RefKind::Rvalue, Cv::default())?;
-            if !facts.deleted {
-                move_properties = Some(self.graph.copy_properties.add(facts)?);
-                move_parameter = Some(self.graph.types.reference(ty, RefKind::Rvalue)?);
+            let deleted = facts.deleted;
+            let properties = self.graph.copy_properties.add(facts)?;
+            let parameter = self.graph.types.reference(ty, RefKind::Rvalue)?;
+            self.declare_implicit_copy(class, RefKind::Rvalue, parameter, properties)?;
+            if !deleted {
+                move_properties = Some(properties);
+                move_parameter = Some(parameter);
             }
         }
         self.graph.entity_mut(class).implicit_copies = Some(ImplicitCopies {
@@ -353,6 +361,7 @@ impl Analyzer<'_> {
             == super::construction::ConstructorExceptionSource::SubobjectPlan;
         let explicitly_deleted = entity.availability == FunctionAvailability::Deleted;
         let mut facts = self.defaulted_copy_properties(class, kind, cv)?;
+        facts.declaration = Some(function);
         facts.deleted |= explicitly_deleted;
         facts.trivial &= first;
         if inferred {
@@ -411,6 +420,7 @@ impl Analyzer<'_> {
                     .any(|edge| edge.is_virtual),
             nothrow: true,
             plan: super::construction::ConstructorState::NotStarted,
+            declaration: None,
             callable: None,
             subobjects: Vec::new(),
         };
