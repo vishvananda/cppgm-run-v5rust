@@ -13,6 +13,7 @@ pub(crate) use super::constexpr_values::TemporaryId;
 pub(crate) use super::constructor_initialization::ConstructorArguments;
 pub(crate) use super::copy_construction::{CopyTarget, SubobjectCopy};
 pub(crate) use super::copy_initialization::CopyAction;
+pub(crate) use super::data_member_pointers::ObjectExtent;
 pub(crate) use super::dynamic_casts::RuntimeCast;
 pub(crate) use super::expression_facts::ClassInitialization;
 pub(crate) use super::expression_facts::ExpressionOrigin;
@@ -468,6 +469,19 @@ impl Graph {
         } else {
             Err(Error::Invariant("subobject span without completed layout"))
         }
+    }
+    pub(crate) fn lower_nonvirtual_alignment(&self, class: EntityId) -> Result<u8, Error> {
+        let super::layout::LayoutState::Value {
+            non_virtual_alignment,
+            ..
+        } = self.entity(class).layout
+        else {
+            return Err(Error::Invariant(
+                "subobject alignment without completed layout",
+            ));
+        };
+        u8::try_from(non_virtual_alignment.trailing_zeros())
+            .map_err(|_| Error::Limit("subobject alignment"))
     }
     pub(crate) fn lower_implicit_copy(&self, entity: EntityId) -> bool {
         self.entity(entity).copy_origin == super::copy_construction::Origin::Implicit

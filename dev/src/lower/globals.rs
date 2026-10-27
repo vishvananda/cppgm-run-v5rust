@@ -497,7 +497,14 @@ fn define_storage(
         }
     };
     if let GlobalInit::Data(items) = &mut init {
-        super::null_initialization::static_nulls(&*cx.graph, facts.ty, items)?;
+        let budget = cx.symbols.view(&*cx.graph, &*cx.tree, cx.cursor).budget();
+        super::null_initialization::static_nulls(
+            &mut cx.symbols.data.nulls,
+            &*cx.graph,
+            facts.ty,
+            items,
+            budget,
+        )?;
         data::preserve_static_offsets(items)?;
     } else if matches!(init, GlobalInit::Zero)
         && cx.graph.lower_member_pointer_type(facts.ty).is_some()

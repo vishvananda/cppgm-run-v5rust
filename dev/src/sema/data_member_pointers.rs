@@ -9,6 +9,18 @@ use super::{
 };
 use crate::{lex::pp_lexer::Punctuator as P, syntax::ast};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ObjectExtent {
+    Complete,
+    Base,
+}
+#[derive(Clone, Copy)]
+pub(crate) struct NullSubobject {
+    pub ty: super::types::TypeId,
+    pub offset: u64,
+    pub extent: ObjectExtent,
+}
+
 impl Analyzer<'_> {
     pub(super) fn check_member_pointer_call(
         &self,
@@ -331,9 +343,13 @@ impl super::graph::Graph {
     pub(crate) fn lower_null_subobjects(
         &self,
         class: super::graph::EntityId,
-    ) -> impl Iterator<Item = Result<(super::types::TypeId, u64), Error>> + '_ {
+        extent: ObjectExtent,
+    ) -> impl Iterator<Item = Result<NullSubobject, Error>> + '_ {
         let bases = self.entity(class).bases.iter().filter_map(|edge| {
             (|| -> Result<_, Error> {
+                if edge.is_virtual {
+                    return Ok(None);
+                }
                 let ty = self.lower_entity_type(edge.class)?;
                 if !self.lower_holds_data_member_pointer(ty)? {
                     return Ok(None);
@@ -341,7 +357,11 @@ impl super::graph::Graph {
                 let offset = edge
                     .offset
                     .ok_or(Error::Invariant("null base without layout"))?;
-                Ok(Some((ty, offset)))
+                Ok(Some(NullSubobject {
+                    ty,
+                    offset,
+                    extent: ObjectExtent::Base,
+                }))
             })()
             .transpose()
         });
@@ -363,11 +383,34 @@ impl super::graph::Graph {
                     {
                         return Ok(None);
                     }
-                    Ok(Some((ty, self.lower_member_offset(member)?)))
+                    Ok(Some(NullSubobject {
+                        ty,
+                        offset: self.lower_member_offset(member)?,
+                        extent: ObjectExtent::Complete,
+                    }))
                 })()
                 .transpose()
             });
-        bases.chain(members)
+        let shared = self
+            .lower_virtual_bases(class)
+            .iter()
+            .filter_map(move |&(base, offset)| {
+                (|| -> Result<_, Error> {
+                    if extent != ObjectExtent::Complete {
+                        return Ok(None);
+                    }
+                    let ty = self.lower_entity_type(base)?;
+                    Ok(self
+                        .lower_holds_data_member_pointer(ty)?
+                        .then_some(NullSubobject {
+                            ty,
+                            offset,
+                            extent: ObjectExtent::Base,
+                        }))
+                })()
+                .transpose()
+            });
+        bases.chain(members).chain(shared)
     }
 
     pub(crate) fn lower_bound_member_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {

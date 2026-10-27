@@ -19,6 +19,7 @@ use crate::{
 pub(super) enum CopyCall {
     Expression,
     Direct,
+    ProjectedExpression(crate::sema::lowering::BaseProjection),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -177,7 +178,7 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         input: ConstructorInput,
     ) -> Result<(), Error> {
-        self.call_constructor_with_elision(id, variant, object, input, false, true)
+        self.call_constructor_with_elision(id, variant, object, input, false, CopyCall::Direct)
     }
     pub(super) fn call_constructor_from_expression(
         &mut self,
@@ -200,7 +201,7 @@ impl Function<'_, '_, '_, '_> {
                 location,
             },
             elision,
-            call == CopyCall::Direct,
+            call,
         )
     }
     fn call_constructor_with_elision(
@@ -210,8 +211,9 @@ impl Function<'_, '_, '_, '_> {
         object: Value,
         input: ConstructorInput,
         copy_elision: bool,
-        publish_table: bool,
+        call: CopyCall,
     ) -> Result<(), Error> {
+        let publish_table = call == CopyCall::Direct;
         let ConstructorInput {
             arguments,
             location,
@@ -323,6 +325,22 @@ impl Function<'_, '_, '_, '_> {
                         } else {
                             slot
                         }
+                    } else if index == 0
+                        && let CopyCall::ProjectedExpression(projection) = call
+                    {
+                        // initialize_result supplies the whole glvalue's
+                        // binding. Evaluate its selected address inside this
+                        // call's region, before the default arguments.
+                        let TypeView::Reference { element, .. } =
+                            lowering.graph.lower_type(parameter)?
+                        else {
+                            return Err(crate::sema::Error::Invariant(
+                                "projected constructor argument without reference",
+                            )
+                            .into());
+                        };
+                        let source = lowering.address(default)?;
+                        lowering.base_projection(source, element, projection)?
                     } else if matches!(
                         lowering.graph.lower_type(parameter)?,
                         TypeView::Reference { .. }
@@ -528,7 +546,12 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // Preliminary value-initialization covers the complete storage span,
         // including padding. Volatile scalar member writes remain distinct.
-        let (size, alignment) = super::types::layout(&*self.graph, ty)?;
+        let (size, mut alignment) = super::types::layout(&*self.graph, ty)?;
+        if span.is_some()
+            && let TypeView::Class(class) = self.graph.lower_type(ty)?
+        {
+            alignment = self.graph.lower_nonvirtual_alignment(class)?;
+        }
         if self.empty_storage == super::member_initialization::EmptyStorage::Overlapping
             && let TypeView::Class(class) = self.graph.lower_type(ty)?
             && self.graph.lower_class_empty(class)?
@@ -536,7 +559,16 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         self.effect(I::ZeroInit(span.unwrap_or(size), alignment, object))?;
-        self.null_data_members(ty, object, 0)
+        self.null_data_members(
+            ty,
+            object,
+            0,
+            if span.is_some() {
+                crate::sema::lowering::ObjectExtent::Base
+            } else {
+                crate::sema::lowering::ObjectExtent::Complete
+            },
+        )
     }
     pub(super) fn initialize_class_member(
         &mut self,

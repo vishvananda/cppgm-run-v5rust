@@ -1,0 +1,245 @@
+global @live : i32 [binding=strong] = zero
+
+function @flat(%ret : ptr [pass=indirect_result, object_bytes=1], %which : u8) -> void [binding=strong, object=_Z4flatb] {
+  slot $which : u8
+  slot $left : obj<1x1>
+  slot $right : obj<1x1>
+
+  block ^entry:
+    store u8 %which, $which
+    %t1 = addr $left
+    call void @Derived__Derived(%t1)
+    %t2 = addr $right
+    eh_try ^cleanup_action_2
+    call void @Derived__Derived(%t2)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t3 = addr $left
+    call void @Derived___Derived(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t4 = load u8 $which
+    branch %t4, ^condobj_then_4, ^condobj_else_5
+
+  block ^condobj_then_4:
+    eh_try ^cleanup_action_7
+    %t5 = addr $left
+    %t6 = index i8 %t5, 0
+    call void @Base__Base__ov2(%ret, %t6)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_action_7:
+    %t7 = addr $right
+    call void @Derived___Derived(%t7)
+    jump ^cleanup_action_2
+
+  block ^call_unwind_end_8:
+    jump ^condobj_end_6
+
+  block ^condobj_else_5:
+    eh_try ^cleanup_action_7
+    %t8 = addr $right
+    %t9 = index i8 %t8, 0
+    call void @Base__Base__ov2(%ret, %t9)
+    eh_end
+    jump ^condobj_end_6
+
+  block ^condobj_end_6:
+    %t10 = addr $right
+    call void @Derived___Derived(%t10)
+    %t11 = addr $left
+    call void @Derived___Derived(%t11)
+    return void
+}
+function @nested(%ret : ptr [pass=indirect_result, object_bytes=1], %outer : u8, %inner : u8) -> void [binding=strong, object=_Z6nestedbb] {
+  slot $outer : u8
+  slot $inner : u8
+  slot $left : obj<1x1>
+  slot $right : obj<1x1>
+  slot $condaddr__1 : ptr
+
+  block ^entry:
+    store u8 %outer, $outer
+    store u8 %inner, $inner
+    %t1 = addr $left
+    call void @Derived__Derived(%t1)
+    %t2 = addr $right
+    eh_try ^cleanup_action_2
+    call void @Derived__Derived(%t2)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t3 = addr $left
+    call void @Derived___Derived(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t4 = load u8 $outer
+    branch %t4, ^condobj_then_4, ^condobj_else_5
+
+  block ^condobj_then_4:
+    eh_try ^cleanup_action_10
+    %t5 = load u8 $inner
+    eh_end
+    jump ^call_unwind_end_11
+
+  block ^cleanup_action_10:
+    %t6 = addr $right
+    call void @Derived___Derived(%t6)
+    jump ^cleanup_action_2
+
+  block ^call_unwind_end_11:
+    branch %t5, ^condaddr_then_7, ^condaddr_else_8
+
+  block ^condaddr_then_7:
+    %t7 = addr $left
+    store typed ptr %t7, $condaddr__1
+    jump ^condaddr_end_9
+
+  block ^condaddr_else_8:
+    %t8 = addr $right
+    store typed ptr %t8, $condaddr__1
+    jump ^condaddr_end_9
+
+  block ^condaddr_end_9:
+    %t9 = load typed ptr $condaddr__1
+    %t10 = index i8 %t9, 0
+    eh_try ^cleanup_action_10
+    call void @Base__Base__ov2(%ret, %t10)
+    eh_end
+    jump ^condobj_end_6
+
+  block ^condobj_else_5:
+    eh_try ^cleanup_action_10
+    %t11 = addr $right
+    %t12 = index i8 %t11, 0
+    call void @Base__Base__ov2(%ret, %t12)
+    eh_end
+    jump ^condobj_end_6
+
+  block ^condobj_end_6:
+    %t13 = addr $right
+    call void @Derived___Derived(%t13)
+    %t14 = addr $left
+    call void @Derived___Derived(%t14)
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $first : obj<1x1>
+  slot $second : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $first
+    call void @flat(%t1, 1)
+    %t2 = addr $second
+    eh_try ^cleanup_action_2
+    call void @nested(%t2, 1, 0)
+    eh_end
+    jump ^call_unwind_end_3
+
+  block ^cleanup_resume_1:
+    resume
+
+  block ^cleanup_action_2:
+    %t3 = addr $first
+    call void @Base___Base(%t3)
+    jump ^cleanup_resume_1
+
+  block ^call_unwind_end_3:
+    %t4 = load typed i32 @live
+    %t5 = cmp ne i32 %t4, 2
+    %t6 = convert trunc i32 i64 %t5
+    %t7 = addr $second
+    call void @Base___Base(%t7)
+    %t8 = addr $first
+    call void @Base___Base(%t8)
+    return i32 %t6
+}
+function @Derived__Derived(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN7DerivedC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base__Base__base_entry(%t2)
+    eh_cleanup ^constructor_cleanup_1
+    eh_end
+    return void
+
+  block ^constructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    call void @Base___Base(%t4)
+    eh_end
+    resume
+}
+function @Derived___Derived(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN7DerivedD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @Base___Base(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 %t3, 0
+    call void @Base___Base(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @Base__Base__ov2(%this : ptr [alias=noalias, object_bytes=1], %__param1 : ptr [pass=by_address, alias=noalias, object_bytes=1]) -> void [binding=weak, object=_ZN4BaseC1ERKS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $__param1 : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %__param1, $__param1
+    %t1 = load typed i32 @live
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @Base___Base(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN4BaseD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @Base__Base__base_entry(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN4BaseC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+alias object _ZN7DerivedC2Ev = @Derived__Derived
+alias object _ZN7DerivedD2Ev = @Derived___Derived
+alias object _ZN4BaseC2ERKS_ = @Base__Base__ov2
+alias object _ZN4BaseD2Ev = @Base___Base

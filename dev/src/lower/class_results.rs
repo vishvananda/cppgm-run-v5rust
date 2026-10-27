@@ -408,6 +408,26 @@ impl Function<'_, '_, '_, '_> {
                 );
                 if throwing {
                     self.discard(operand)?;
+                } else if facts.is_place
+                    && let Some(crate::sema::lowering::CopyAction::Constructor {
+                        constructor, ..
+                    }) = own
+                {
+                    // C++ call_constructor consumes a selected operand as
+                    // one argument, even when that operand is another choice.
+                    // Its address selection must not become another pair of
+                    // result constructions.
+                    self.call_constructor_from_expression(
+                        constructor,
+                        object,
+                        operand,
+                        false,
+                        projection.map_or(
+                            super::construction::CopyCall::Expression,
+                            super::construction::CopyCall::ProjectedExpression,
+                        ),
+                        self.tree.expressions.get(id).location,
+                    )?;
                 } else {
                     self.initialize_class_result(operand, result, object, own, projection)?;
                 }
@@ -441,17 +461,18 @@ impl Function<'_, '_, '_, '_> {
         offset: crate::sema::lowering::BaseProjection,
     ) -> Result<(), Error> {
         use crate::sema::lowering::CopyAction;
-        let source = self.address(id)?;
-        let source = self.base_projection(source, ty, offset)?;
         match action {
-            CopyAction::Constructor { constructor, .. } => self.call_copy_constructor(
+            CopyAction::Constructor { constructor, .. } => self.call_constructor_from_expression(
                 constructor,
-                super::construction::Variant::Complete,
                 object,
-                source,
+                id,
+                false,
+                super::construction::CopyCall::ProjectedExpression(offset),
                 self.tree.expressions.get(id).location,
             ),
             CopyAction::Storage { .. } => {
+                let source = self.address(id)?;
+                let source = self.base_projection(source, ty, offset)?;
                 let TypeView::Class(class) = self.graph.lower_type(ty)? else {
                     return Err(
                         crate::sema::Error::Invariant("projected copy without class").into(),

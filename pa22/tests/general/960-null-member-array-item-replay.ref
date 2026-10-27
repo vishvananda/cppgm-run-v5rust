@@ -1,0 +1,12 @@
+global @image [binding=strong] = {
+  i32 7
+  zero 12
+  i64 -1
+  i64 -1
+  i64 -1
+}
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

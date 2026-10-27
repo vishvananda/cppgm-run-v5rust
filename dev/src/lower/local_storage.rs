@@ -516,7 +516,17 @@ impl Function<'_, '_, '_, '_> {
             GlobalInit::Zero
         };
         if let GlobalInit::Data(items) = &mut init {
-            super::null_initialization::static_nulls(&*self.graph, facts.ty, items)?;
+            let budget = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .budget();
+            super::null_initialization::static_nulls(
+                &mut self.symbols.data.nulls,
+                &*self.graph,
+                facts.ty,
+                items,
+                budget,
+            )?;
         } else if matches!(init, GlobalInit::Zero)
             && self.graph.lower_member_pointer_type(facts.ty).is_some()
             && self.graph.lower_holds_data_member_pointer(facts.ty)?

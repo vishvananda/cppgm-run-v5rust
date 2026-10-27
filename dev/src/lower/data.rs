@@ -38,6 +38,7 @@ impl Output for Program {
 }
 #[derive(Default)]
 pub(super) struct Objects {
+    pub(super) nulls: super::null_initialization::Layouts,
     strings: HashMap<(crate::lowir::vocabulary::Type, Vec<u64>), SymbolId>,
     string_units: Vec<u64>,
     images: HashMap<Vec<DataItem>, SymbolId>,
