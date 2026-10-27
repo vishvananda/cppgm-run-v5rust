@@ -774,7 +774,7 @@ mod tests {
             let changed = context.run(Pass::SimplifyValues).unwrap();
             (changed, context.folded, context.reused)
         };
-        body.compact(&mut program.names).unwrap();
+        body.compact().unwrap();
         program.restore_body(symbol, body).unwrap();
         let mut text = Vec::new();
         crate::lowir::writer::write(&program, &mut text).unwrap();

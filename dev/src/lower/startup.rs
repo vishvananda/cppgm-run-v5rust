@@ -50,7 +50,6 @@ pub(super) struct InitializationOutput<'a> {
 #[derive(Default)]
 pub(super) struct Startup {
     body: Option<SuspendedFunction>,
-    next_block: u32,
     terminated: bool,
     selector: u32,
 }
@@ -96,7 +95,6 @@ impl Startup {
                 )))?;
         let builder = self.builder(program, symbol)?;
         let mut function = Function::new(graph, tree, builder, symbols, None, None, budget);
-        function.next_block = self.next_block;
         function.terminated = self.terminated;
         function.handlers.next_selector = self.selector;
         function.persistent_references = true;
@@ -122,7 +120,6 @@ impl Startup {
         function.symbols.replace_temporary_owner(saved);
         result?;
         finished?;
-        self.next_block = function.next_block;
         self.terminated = function.terminated;
         self.selector = function.handlers.next_selector;
         self.body = Some(function.builder.suspend());
@@ -155,7 +152,6 @@ impl<'a, 'source> Function<'a, 'source, '_, '_> {
         let inline = output.startup.is_none();
         let mut current = Startup {
             body: Some(self.builder.take_construction()),
-            next_block: self.next_block,
             terminated: self.terminated,
             selector: self.handlers.next_selector,
         };
@@ -173,7 +169,6 @@ impl<'a, 'source> Function<'a, 'source, '_, '_> {
         if let Some(body) = current.body {
             self.builder.restore_construction(body);
             if inline {
-                self.next_block = current.next_block;
                 self.terminated = current.terminated;
                 self.handlers.next_selector = current.selector;
             }

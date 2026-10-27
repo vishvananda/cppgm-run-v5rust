@@ -5,6 +5,7 @@ use std::{
 };
 pub(crate) mod builder;
 mod construction_names;
+pub(crate) use construction_names::LocalNames;
 mod exercises;
 mod globals;
 mod instructions;

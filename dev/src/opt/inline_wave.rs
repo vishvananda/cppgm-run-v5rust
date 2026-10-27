@@ -798,7 +798,7 @@ mod tests {
         .unwrap();
         for symbol in program.publications().to_vec() {
             if let Some(mut body) = program.take_body(symbol).unwrap() {
-                body.compact(&mut program.names).unwrap();
+                body.compact().unwrap();
                 program.restore_body(symbol, body).unwrap();
             }
         }

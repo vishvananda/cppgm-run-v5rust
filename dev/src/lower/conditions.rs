@@ -456,9 +456,13 @@ impl Function<'_, '_, '_, '_> {
             let local = self.branch_local(node);
             let prefix = if conjunction { "land" } else { "lor" };
             let slot = self.generated_slot(prefix, Type::I64)?;
-            let rhs = self.new_block(&format!("{prefix}_rhs"))?;
-            let shortcut = self.new_block(&format!("{prefix}_short"))?;
-            let end = self.new_block(&format!("{prefix}_end"))?;
+            let rhs = self.new_block(if conjunction { "land_rhs" } else { "lor_rhs" })?;
+            let shortcut = self.new_block(if conjunction {
+                "land_short"
+            } else {
+                "lor_short"
+            })?;
+            let end = self.new_block(if conjunction { "land_end" } else { "lor_end" })?;
             let value = if let Some(value) = result {
                 value
             } else {

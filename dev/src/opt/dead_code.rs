@@ -107,7 +107,7 @@ mod tests {
             assert_eq!(changed, context.dead != 0);
             context.dead
         };
-        body.compact(&mut program.names).unwrap();
+        body.compact().unwrap();
         program.restore_body(symbol, body).unwrap();
         crate::lowir::validate_test_program(&program).unwrap();
         (program, dead)

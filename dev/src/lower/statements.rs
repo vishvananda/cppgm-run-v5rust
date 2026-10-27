@@ -14,9 +14,8 @@ pub(super) struct JumpTargets {
     pub context_depth: usize,
 }
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn new_block(&mut self, prefix: &str) -> Result<BlockId, Error> {
-        let name = self.block_name(prefix)?;
-        Ok(self.builder.generated_block(&name, prefix)?)
+    pub(super) fn new_block(&mut self, prefix: &'static str) -> Result<BlockId, Error> {
+        Ok(self.builder.generated_block(prefix)?)
     }
     pub(super) fn place(&mut self, block: BlockId) -> Result<(), Error> {
         if self.terminated {

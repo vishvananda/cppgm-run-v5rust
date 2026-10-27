@@ -1128,9 +1128,8 @@ impl Symbols<'_, '_> {
                 let mut value =
                     returned.ok_or(crate::sema::Error::Invariant("void covariant thunk"))?;
                 if !adjustment.reference {
-                    let null_block = builder.generated_block("return_null_1", "return_null")?;
-                    let adjust_block =
-                        builder.generated_block("adjust_return_2", "adjust_return")?;
+                    let null_block = builder.generated_block("return_null")?;
+                    let adjust_block = builder.generated_block("adjust_return")?;
                     let zero = builder.integer(0)?;
                     let is_null = builder.generated(I::Compare(
                         crate::lowir::vocabulary::Compare::Eq,

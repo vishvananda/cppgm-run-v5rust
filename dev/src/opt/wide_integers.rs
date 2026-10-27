@@ -671,7 +671,7 @@ mod tests {
         }
         let mut context = super::Context::new(&mut program, symbol, &mut body, 2, &[], &[]);
         assert!(context.run(Pass::ExpandWide).unwrap());
-        body.compact(&mut program.names).unwrap();
+        body.compact().unwrap();
         program.restore_body(symbol, body).unwrap();
         crate::lowir::validate_test_program(&program).unwrap();
         let mut out = Vec::new();

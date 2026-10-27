@@ -231,13 +231,7 @@ fn finish_function(
         observations.collect(&context);
         result
     }
-    .and_then(|changed| {
-        if changed {
-            body.compact(&mut program.names)
-        } else {
-            Ok(())
-        }
-    });
+    .and_then(|changed| if changed { body.compact() } else { Ok(()) });
     program.restore_body(symbol, body)?;
     result
 }
@@ -265,7 +259,7 @@ fn simplify_function(
     .and_then(|proven| {
         nounwind.resize(program.symbols().len(), false);
         nounwind[symbol.index()] = proven;
-        body.compact(&mut program.names)
+        body.compact()
     });
     program.restore_body(symbol, body)?;
     result
@@ -296,7 +290,7 @@ fn pass_view(source: &str, level: u8, pass: pass_context::Pass) -> (String, (boo
             context.phis_inserted,
         )
     };
-    body.compact(&mut program.names).unwrap();
+    body.compact().unwrap();
     program.restore_body(symbol, body).unwrap();
     let mut output = Vec::new();
     crate::lowir::writer::write(&program, &mut output).unwrap();

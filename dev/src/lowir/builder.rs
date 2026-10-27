@@ -355,15 +355,12 @@ impl<'a> FunctionBuilder<'a> {
         let name = self.program.names.intern(name)?;
         self.body.use_block(name, 0)
     }
-    pub(crate) fn block_origin(&mut self, block: BlockId, stem: &str) -> Result<(), Error> {
-        let stem = self.program.names.intern_view(stem)?;
+    pub(crate) fn block_origin(&mut self, block: BlockId, stem: &'static str) {
         self.body.generated_block_origin(block, stem);
-        Ok(())
     }
-    pub(crate) fn generated_block(&mut self, name: &str, stem: &str) -> Result<BlockId, Error> {
-        let name = self.program.names.intern_view(name)?;
-        let block = self.body.use_block(name, 0)?;
-        self.block_origin(block, stem)?;
+    pub(crate) fn generated_block(&mut self, stem: &'static str) -> Result<BlockId, Error> {
+        let block = self.body.generated_block()?;
+        self.block_origin(block, stem);
         Ok(block)
     }
     pub(crate) fn signature(
@@ -632,34 +629,7 @@ impl<'a> FunctionBuilder<'a> {
     }
     pub(crate) fn finish(mut self) -> Result<(), Error> {
         super::construction_names::record_shadows(&mut self.slot_names);
-        let positional: std::collections::HashSet<_> = self
-            .slot_names
-            .iter()
-            .filter_map(|label| {
-                if let super::construction_names::SlotName::Parameter(index) = label {
-                    Some(*index)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let parameters: Vec<_> = self
-            .program
-            .signature(self.function.signature)
-            .parameters
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !positional.contains(index))
-            .map(|(_, p)| p.name)
-            .collect();
-        let names = super::construction_names::slots(
-            &mut self.program.names,
-            &self.slot_names,
-            &parameters,
-        )?;
-        self.body.name_constructed_slots(&names)?;
-        self.body.retain_slot_names(self.slot_names);
-        self.body.name_blocks(&mut self.program.names)?;
+        self.body.retain_slot_names(self.slot_names)?;
         self.program.construction.record(&self.body);
         if !self.publish {
             return self.program.complete_body(self.symbol, self.body);

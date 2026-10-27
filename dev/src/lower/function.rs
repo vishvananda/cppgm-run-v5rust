@@ -84,7 +84,6 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub initialization_context: super::class_results::InitializationContext,
     pub reference_lifetimes: super::reference_lifetimes::Extensions,
     pub next_static: u32,
-    pub next_block: u32,
     pub jumps: Vec<super::statements::JumpTargets>,
     pub switch_blocks: HashMap<ast::StmtId, crate::lowir::model::BlockId>,
     pub label_memo: HashMap<ast::StmtId, bool>,
@@ -440,7 +439,6 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             initialization_context: super::class_results::InitializationContext::Ordinary,
             reference_lifetimes: super::reference_lifetimes::Extensions::default(),
             next_static: 0,
-            next_block: 0,
             jumps: Vec::new(),
             switch_blocks: HashMap::new(),
             label_memo: HashMap::new(),
@@ -699,13 +697,6 @@ impl Function<'_, '_, '_, '_> {
             literal: false,
             bits: Some(bits),
         })
-    }
-    pub(super) fn block_name(&mut self, prefix: &str) -> Result<String, Error> {
-        self.next_block = self
-            .next_block
-            .checked_add(1)
-            .ok_or(crate::lowir::Error::Limit)?;
-        Ok(format!("{prefix}_{}", self.next_block))
     }
     pub(super) fn declaration(&mut self, id: ast::DeclId) -> Result<(), Error> {
         if let Some(entity) = self.graph.lower_declaration_storage(id) {

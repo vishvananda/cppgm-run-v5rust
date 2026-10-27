@@ -152,7 +152,7 @@ impl Specializer<'_> {
         let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
         let result = body
             .retain_parameters(removed)
-            .and_then(|()| body.compact(&mut program.names));
+            .and_then(|()| body.compact());
         program.restore_body(symbol, body)?;
         result?;
         for site in &self.sites[f] {

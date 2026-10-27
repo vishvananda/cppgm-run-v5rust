@@ -20,22 +20,7 @@ pub(super) fn materialize(program: &mut Program) -> Result<(), Error> {
         // A failed edit still returns its body to the owning program. No later
         // phase observes the partial edit because the error leaves the pipeline.
         program.restore_body(symbol, body)?;
-        if result? {
-            let signature = program
-                .function(program.symbol(symbol))
-                .ok_or(Error::Limit)?
-                .signature;
-            let parameters = program
-                .signature(signature)
-                .parameters
-                .iter()
-                .map(|parameter| parameter.name)
-                .collect::<Vec<_>>();
-            let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
-            let result = body.name_optimizer_slots(&mut program.names, &parameters);
-            program.restore_body(symbol, body)?;
-            result?;
-        }
+        result?;
     }
     Ok(())
 }
@@ -127,10 +112,10 @@ function @f(%p : ptr, %object : obj<8x8>) -> void {
             .unwrap();
         let body = function.body.as_ref().unwrap();
         assert_eq!(body.slots().len(), 3);
-        let names = body
-            .slots()
-            .iter()
-            .map(|slot| program.names.get(slot.name))
+        assert!(program.names.find("refarg__3").is_none());
+        let mut view = crate::lowir::LocalNames::new(&program.names, body).unwrap();
+        let names = (0..body.slots().len())
+            .map(|index| view.slot(index).unwrap().to_owned())
             .collect::<Vec<_>>();
         assert_eq!(names, ["refarg__1", "refarg__3", "refarg__4"]);
         let instructions = &body.block(body.layout[0]).instructions;

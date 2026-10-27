@@ -678,7 +678,7 @@ mod tests {
                 [c.branches_folded, c.blocks_removed, c.blocks_merged],
             )
         };
-        body.compact(&mut p.names).unwrap();
+        body.compact().unwrap();
         p.restore_body(symbol, body).unwrap();
         crate::lowir::validate_test_program(&p).unwrap();
         (p, changed, stats)

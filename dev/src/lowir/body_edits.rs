@@ -1,6 +1,6 @@
 //! Function-store rewrites and compaction from `opt/function_ir.cpp`. See NOTICE.
 use super::{
-    Arguments, Block, BlockId, BlockName, Body, Error, InstructionKind, LiteralId, NameId, Names,
+    Arguments, Block, BlockId, BlockName, Body, Error, InstructionKind, LiteralId, NameId,
     RuntimeInstruction, Slot, SlotId, TempId, Type, Value,
 };
 use crate::lowir::construction_names::SlotName;
@@ -383,7 +383,10 @@ impl Body {
         temp.generated = true;
         Ok(())
     }
-    pub(crate) fn generated_block_origin(&mut self, block: BlockId, stem: NameId) {
+    pub(crate) fn generated_block_origin(&mut self, block: BlockId, stem: &'static str) {
+        let name = self.blocks[block.index()].name;
+        self.block_index.remove(&name);
+        self.blocks[block.index()].name = NameId(0);
         self.blocks[block.index()].origin = BlockName::Generated(stem);
     }
     pub(crate) fn explicit_value_names(&self) -> impl Iterator<Item = NameId> + '_ {
@@ -443,8 +446,8 @@ impl Body {
         Ok(changed)
     }
     /// Dense storage is built separately; a bad linked reference leaves this body intact.
-    pub(crate) fn compact(&mut self, names: &mut Names) -> Result<(), Error> {
-        let out = Compactor::run(self, names)?;
+    pub(crate) fn compact(&mut self) -> Result<(), Error> {
+        let out = Compactor::run(self)?;
         *self = out;
         Ok(())
     }
@@ -509,7 +512,7 @@ struct Compactor<'a> {
     literals: Vec<Option<LiteralId>>,
 }
 impl<'a> Compactor<'a> {
-    fn run(input: &'a Body, names: &mut Names) -> Result<Body, Error> {
+    fn run(input: &'a Body) -> Result<Body, Error> {
         let mut map = Self {
             input,
             out: Body::new(input.source, input.parameter_count),
@@ -523,7 +526,7 @@ impl<'a> Compactor<'a> {
         // The frozen implementation retains the full location pool, including
         // locations of unlinked instructions; individual LocationIds stay valid.
         map.out.locations.clone_from(&input.locations);
-        map.out.unique_names(names)?;
+        map.out.unique_names()?;
         Ok(map.out)
     }
     fn definitions(&mut self) -> Result<(), Error> {
@@ -646,7 +649,7 @@ impl Remap for Compactor<'_> {
     }
 }
 impl Body {
-    fn unique_names(&mut self, names: &mut Names) -> Result<(), Error> {
+    fn unique_names(&mut self) -> Result<(), Error> {
         let mut seen = HashSet::new();
         self.temp_index.clear();
         for (index, temp) in self.temps.iter_mut().enumerate() {
@@ -670,7 +673,8 @@ impl Body {
                 *label = SlotName::Anonymous;
             }
         }
-        self.name_optimizer_slots(names, &[])?;
+        let labels = std::mem::take(&mut self.slot_names);
+        self.retain_slot_names(labels)?;
         seen.clear();
         for block in &mut self.blocks {
             if let BlockName::Source(name) = block.origin
@@ -679,40 +683,17 @@ impl Body {
                 block.origin = BlockName::Anonymous;
             }
         }
-        self.name_blocks(names)
-    }
-    pub(in crate::lowir) fn name_blocks(&mut self, names: &mut Names) -> Result<(), Error> {
-        let taken: HashSet<_> = self
-            .blocks
-            .iter()
-            .filter_map(|block| {
-                if let BlockName::Source(name) = block.origin {
-                    Some(name)
-                } else {
-                    None
-                }
-            })
-            .collect();
         self.block_index.clear();
         for (index, block) in self.blocks.iter_mut().enumerate() {
+            block.name = match block.origin {
+                BlockName::Source(name) | BlockName::CopiedSource(name) => name,
+                _ => NameId(0),
+            };
             if let BlockName::Source(name) = block.origin {
-                block.name = name;
-            } else {
-                let mut text = match block.origin {
-                    BlockName::Generated(stem) | BlockName::CopiedSource(stem) => {
-                        format!("{}_{index}", names.get(stem))
-                    }
-                    BlockName::Optimizer(kind) => format!("{}_{index}", kind.spelling()),
-                    _ => index.to_string(),
-                };
-                while taken.contains(&names.intern_view(&text)?) {
-                    text.push('_');
-                }
-                block.name = names.intern_view(&text)?;
+                self.block_index
+                    .entry(name)
+                    .or_insert(BlockId(u32::try_from(index).map_err(|_| Error::Limit)?));
             }
-            self.block_index
-                .entry(block.name)
-                .or_insert(BlockId(u32::try_from(index).map_err(|_| Error::Limit)?));
         }
         Ok(())
     }
@@ -865,7 +846,7 @@ mod tests {
     fn compact(program: &mut Program) {
         let id = symbol(program);
         let mut body = program.take_body(id).unwrap().unwrap();
-        body.compact(&mut program.names).unwrap();
+        body.compact().unwrap();
         program.restore_body(id, body).unwrap();
         crate::lowir::validate_test_program(program).unwrap();
     }
@@ -904,7 +885,7 @@ function @f(%p : i64) -> i64 {
         let locations = body.locations.len();
         assert_eq!(locations, 2);
         assert!(!body.layout.contains(&dead));
-        body.compact(&mut program.names).unwrap();
+        body.compact().unwrap();
         assert_eq!(
             body.layout.iter().map(|id| id.index()).collect::<Vec<_>>(),
             [0, 1, 2]
@@ -976,7 +957,7 @@ function @f(%keep : i64) -> i64 {
         let entry = builder.block_id("entry").unwrap();
         let _dead = builder.block_id("discard_1").unwrap();
         let finish = builder.block_id("if_end_2").unwrap();
-        builder.block_origin(finish, "if_end").unwrap();
+        builder.block_origin(finish, "if_end");
         let value = builder.parameter(0).unwrap();
         builder
             .effect(InstructionKind::Store(
@@ -1058,10 +1039,7 @@ function @f() -> void {
         let mut live = vec![true; before];
         live[0] = false;
         body.retain_instructions(&live).unwrap();
-        assert!(matches!(
-            body.compact(&mut program.names),
-            Err(Error::Construction(_))
-        ));
+        assert!(matches!(body.compact(), Err(Error::Construction(_))));
         assert_eq!(body.instructions.len(), before);
         assert_eq!(body.blocks[0].instructions.len(), 1);
     }
@@ -1144,15 +1122,11 @@ mod optimizer_name_tests {
         let tail = *body.block(entry).instructions.last().unwrap();
         body.redirect_successors(tail, exit, block);
         body.layout.insert(1, block);
-        body.compact(&mut program.names).unwrap();
-        assert_eq!(
-            program.names.get(body.block(body.layout[1]).name),
-            "thread_1_"
-        );
-        assert_eq!(
-            program.names.get(body.block(body.layout[2]).name),
-            "thread_1"
-        );
+        body.compact().unwrap();
+        assert!(program.names.find("thread_1_").is_none());
+        let mut names = crate::lowir::LocalNames::new(&program.names, &body).unwrap();
+        assert_eq!(names.block(body.layout[1]).unwrap(), "thread_1_");
+        assert_eq!(names.block(body.layout[2]).unwrap(), "thread_1");
     }
 }
 

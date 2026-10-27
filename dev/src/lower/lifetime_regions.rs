@@ -740,7 +740,10 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn close_lifetime_region(&mut self) -> Result<(), Error> {
         self.close_lifetime_region_to("call_unwind_end")
     }
-    pub(super) fn close_lifetime_region_to(&mut self, continuation: &str) -> Result<(), Error> {
+    pub(super) fn close_lifetime_region_to(
+        &mut self,
+        continuation: &'static str,
+    ) -> Result<(), Error> {
         self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
         if !self.lifetime.region {
             return Ok(());

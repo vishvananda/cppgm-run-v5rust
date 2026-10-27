@@ -588,7 +588,7 @@ mod tests {
                 .unwrap();
             (changed, context.loads_reused, context.stores_removed)
         };
-        body.compact(&mut program.names).unwrap();
+        body.compact().unwrap();
         program.restore_body(symbol, body).unwrap();
         let mut text = Vec::new();
         crate::lowir::writer::write(&program, &mut text).unwrap();
@@ -726,7 +726,7 @@ mod tests {
             .unwrap()
             .copy_memory_facts();
         assert!(flags.typed());
-        body.compact(&mut program.names).unwrap();
+        body.compact().unwrap();
         assert!(
             body.instructions()
                 .iter()

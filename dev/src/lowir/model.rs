@@ -40,6 +40,11 @@ identity!(
     SourceId,
     GlobalId
 );
+impl NameId {
+    pub(crate) fn empty() -> Self {
+        Self(0)
+    }
+}
 impl TempId {
     pub(crate) fn index(self) -> usize {
         self.0 as usize
@@ -939,9 +944,9 @@ impl Block {
     }
 }
 #[derive(Clone, Copy)]
-enum BlockName {
+pub(super) enum BlockName {
     Source(NameId),
-    Generated(NameId),
+    Generated(&'static str),
     CopiedSource(NameId),
     Anonymous,
     Optimizer(OptimizerBlock),
@@ -1285,8 +1290,32 @@ impl Body {
         });
         Ok(Value::Slot(id))
     }
-    pub(super) fn retain_slot_names(&mut self, names: Vec<super::construction_names::SlotName>) {
+    pub(super) fn retain_slot_names(
+        &mut self,
+        names: Vec<super::construction_names::SlotName>,
+    ) -> Result<(), Error> {
+        if names.len() != self.slots.len() {
+            return Err(Error::Construction(
+                "slot origins do not match storage".into(),
+            ));
+        }
         self.slot_names = names;
+        self.slot_index.clear();
+        for (index, slot) in self.slots.iter_mut().enumerate() {
+            use super::construction_names::SlotName;
+            slot.name = match self.slot_names[index] {
+                SlotName::Source(name)
+                | SlotName::Shadow(name)
+                | SlotName::RangeFor(name)
+                | SlotName::GeneratedName(name) => name,
+                _ => NameId(0),
+            };
+            if let SlotName::Source(name) = self.slot_names[index] {
+                let index = u32::try_from(index).map_err(|_| Error::Limit)?;
+                self.slot_index.entry(name).or_insert(SlotId(index));
+            }
+        }
+        Ok(())
     }
     pub(crate) fn refarg_slot(&mut self, ty: Type) -> Result<Value, Error> {
         if self.slot_names.is_empty() {
@@ -1301,58 +1330,18 @@ impl Body {
             .push(super::construction_names::SlotName::Generated("refarg"));
         Ok(slot)
     }
-    pub(crate) fn name_optimizer_slots(
-        &mut self,
-        names: &mut Names,
-        parameters: &[NameId],
-    ) -> Result<(), Error> {
-        let positional: HashSet<_> = self
-            .slot_names
-            .iter()
-            .filter_map(|label| {
-                if let super::construction_names::SlotName::Parameter(index) = label {
-                    Some(*index)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let mut explicit: Vec<_> = parameters
-            .iter()
-            .enumerate()
-            .filter_map(|(index, &name)| {
-                (!positional.contains(&index)
-                    && self.temps.get(index).is_none_or(|temp| !temp.generated))
-                .then_some(name)
-            })
-            .collect();
-        explicit.extend(
-            self.temps
-                .iter()
-                .enumerate()
-                .filter(|(index, temp)| !temp.generated && !positional.contains(index))
-                .map(|(_, temp)| temp.name),
-        );
-        let labels = super::construction_names::slots(names, &self.slot_names, &explicit)?;
-        self.name_constructed_slots(&labels)
-    }
-    pub(crate) fn name_constructed_slots(&mut self, names: &[NameId]) -> Result<(), Error> {
-        if self.slots.len() != names.len() {
-            return Err(Error::Construction(
-                "slot names do not match storage".into(),
-            ));
-        }
-        self.slot_index.clear();
-        for (index, (slot, &name)) in self.slots.iter_mut().zip(names).enumerate() {
-            slot.name = name;
-            let id = SlotId(u32::try_from(index).map_err(|_| Error::Limit)?);
-            if self.slot_index.insert(name, id).is_some() {
-                return Err(Error::Construction(
-                    "duplicate constructed slot name".into(),
-                ));
+    pub(super) fn slot_name(&self, index: usize) -> super::construction_names::SlotName {
+        self.slot_names.get(index).copied().unwrap_or_else(|| {
+            let name = self.slots[index].name;
+            if name == NameId(0) {
+                super::construction_names::SlotName::Anonymous
+            } else {
+                super::construction_names::SlotName::Source(name)
             }
-        }
-        Ok(())
+        })
+    }
+    pub(super) fn block_name(&self, id: BlockId) -> BlockName {
+        self.block(id).origin
     }
     pub(crate) fn append(
         &mut self,

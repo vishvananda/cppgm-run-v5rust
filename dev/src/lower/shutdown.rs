@@ -87,19 +87,18 @@ fn finish_body(
         });
     }
     builder.block("entry")?;
-    let mut next_block = 0_u32;
     for finalizer in finalizers.iter().rev() {
         let skip = if let Some(flag) = finalizer.constructed {
-            let destroy = block(&mut builder, "ref_destroy", &mut next_block)?;
-            let skip = block(&mut builder, "ref_destroy_done", &mut next_block)?;
+            let destroy = block(&mut builder, "ref_destroy")?;
+            let skip = block(&mut builder, "ref_destroy_done")?;
             let ready =
                 builder.generated(I::Load(Facts::default(), Type::I8, Value::Symbol(flag)))?;
             builder.effect(I::Branch(ready, destroy, skip))?;
             builder.place_block(destroy)?;
             Some(skip)
         } else if let Some(guard) = finalizer.guard {
-            let destroy = block(&mut builder, "local_static_destroy", &mut next_block)?;
-            let skip = block(&mut builder, "local_static_fini_next", &mut next_block)?;
+            let destroy = block(&mut builder, "local_static_destroy")?;
+            let skip = block(&mut builder, "local_static_fini_next")?;
             let address = builder.generated(I::Addr(Value::Symbol(guard)))?;
             let loaded =
                 builder.generated(I::Load(Facts::memory(false, true), Type::I64, address))?;
@@ -112,7 +111,7 @@ fn finish_body(
             None
         };
         if finalizer.count > 8 {
-            array_loop(&mut builder, finalizer, &mut next_block)?;
+            array_loop(&mut builder, finalizer)?;
         } else {
             let base = if finalizer.reference_temporary && finalizer.array {
                 Some(builder.generated(I::Addr(Value::Symbol(finalizer.global)))?)
@@ -169,12 +168,9 @@ fn finish_body(
 }
 fn block(
     builder: &mut FunctionBuilder<'_>,
-    prefix: &str,
-    next: &mut u32,
+    prefix: &'static str,
 ) -> Result<crate::lowir::model::BlockId, Error> {
-    *next = next.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
-    let name = format!("{prefix}_{next}");
-    Ok(builder.generated_block(&name, prefix)?)
+    Ok(builder.generated_block(prefix)?)
 }
 fn call(builder: &mut FunctionBuilder<'_>, callee: SymbolId, object: Value) -> Result<(), Error> {
     let arguments = builder.arguments(&[object])?;
@@ -188,18 +184,14 @@ fn call(builder: &mut FunctionBuilder<'_>, callee: SymbolId, object: Value) -> R
     }))?;
     Ok(())
 }
-fn array_loop(
-    builder: &mut FunctionBuilder<'_>,
-    finalizer: &Finalizer,
-    next: &mut u32,
-) -> Result<(), Error> {
+fn array_loop(builder: &mut FunctionBuilder<'_>, finalizer: &Finalizer) -> Result<(), Error> {
     let base = builder.generated(I::Addr(Value::Symbol(finalizer.global)))?;
     let slot = builder.generated_slot("destructor_array_index", Type::I64)?;
     let count = builder.integer(u128::from(finalizer.count))?;
     builder.effect(I::Store(Facts::memory(false, true), Type::I64, count, slot))?;
-    let test = block(builder, "destructor_array_cond", next)?;
-    let body = block(builder, "destructor_array_body", next)?;
-    let end = block(builder, "destructor_array_end", next)?;
+    let test = block(builder, "destructor_array_cond")?;
+    let body = block(builder, "destructor_array_body")?;
+    let end = block(builder, "destructor_array_end")?;
     builder.effect(I::Jump(test))?;
     builder.place_block(test)?;
     let current = builder.generated(I::Load(Facts::memory(false, true), Type::I64, slot))?;

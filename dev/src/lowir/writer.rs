@@ -1,4 +1,5 @@
 //! Bounded streaming serializer over typed `LowIR` facts. See NOTICE.
+use super::LocalNames;
 use super::{
     literals::{self, Constant, FloatKind},
     model::{
@@ -204,12 +205,12 @@ fn write_function_header(
         program.names.get(f.name)
     )?;
     let signature = program.signature(f.signature);
-    let local_names = f
+    let mut local_names = f
         .body
         .as_ref()
-        .map(|body| temporary_names(program, body))
+        .map(|body| LocalNames::new(&program.names, body).map_err(local_error))
         .transpose()?;
-    parameters(program, signature, local_names.as_deref(), out)?;
+    parameters(program, signature, local_names.as_mut(), out)?;
     metadata(program, Some(&f.metadata), Some(signature), out)?;
     if !defined {
         return writeln!(out);
@@ -234,12 +235,12 @@ fn write_function_body(
     floating: &mut FloatingScanner,
     out: &mut impl Write,
 ) -> io::Result<()> {
-    let names = temporary_names(program, body)?;
-    for slot in body.slots() {
+    let mut names = LocalNames::new(&program.names, body).map_err(local_error)?;
+    for (index, slot) in body.slots().iter().enumerate() {
         writeln!(
             out,
             "  slot ${} : {}",
-            program.names.get(slot.name),
+            names.slot(index).map_err(local_error)?,
             slot.ty
         )?;
     }
@@ -250,20 +251,20 @@ fn write_function_body(
         writeln!(
             out,
             "  block ^{}:",
-            program.names.get(body.block(block).name)
+            names.block(block).map_err(local_error)?
         )?;
         for &id in &body.block(block).instructions {
             let inst = body.instruction(id);
             write!(out, "    ")?;
             if let Some(t) = inst.result {
-                write!(out, "%{} = ", names[t.index()])?;
+                write!(out, "%{} = ", names.temp(t.index()).map_err(local_error)?)?;
             }
             let mut writer = InstructionWriter {
                 program,
                 body,
                 out,
                 floating,
-                temporaries: &names,
+                locals: &mut names,
             };
             writer.instruction(&inst.kind)?;
             write_location(program, body.location(inst), out)?;
@@ -290,51 +291,17 @@ fn write_location(
     }
     Ok(())
 }
-// Explicit local spellings are collected before numbering generated temporaries,
-// including slots declared after a temporary's first use (lowir/local_names.cpp).
-fn temporary_names(program: &Program, body: &Body) -> io::Result<Vec<String>> {
-    let taken: std::collections::HashSet<_> = body
-        .explicit_value_names()
-        .map(|name| program.names.get(name))
-        .collect();
-    let mut ordinal = 0_u32;
-    let mut names = Vec::with_capacity(body.temps().len());
-    for (index, temp) in body.temps().iter().enumerate() {
-        if index >= body.parameter_count {
-            loop {
-                ordinal = ordinal
-                    .checked_add(1)
-                    .ok_or_else(|| io::Error::other("temporary numbering limit"))?;
-                let name = format!("t{ordinal}");
-                if !taken.contains(name.as_str()) {
-                    break;
-                }
-            }
-        }
-        names.push(if !temp.generated {
-            program.names.get(temp.name).to_owned()
-        } else if index < body.parameter_count {
-            let mut name = format!("__param{index}");
-            while taken.contains(name.as_str()) {
-                name.push('_');
-            }
-            name
-        } else if !program.names.bytes(temp.name).is_empty() {
-            let mut name = format!("{}_{ordinal}", program.names.get(temp.name));
-            while taken.contains(name.as_str()) {
-                name.push('_');
-            }
-            name
-        } else {
-            format!("t{ordinal}")
-        });
+fn local_error(error: super::Error) -> io::Error {
+    match error {
+        super::Error::Output(error) => error,
+        super::Error::Limit => io::Error::other("local naming limit"),
+        error => io::Error::other(format!("{error:?}")),
     }
-    Ok(names)
 }
 fn parameters(
     program: &Program,
     signature: &Signature,
-    locals: Option<&[String]>,
+    mut locals: Option<&mut LocalNames<'_>>,
     out: &mut impl Write,
 ) -> io::Result<()> {
     write!(out, "(")?;
@@ -342,7 +309,11 @@ fn parameters(
         if i != 0 {
             write!(out, ", ")?;
         }
-        let name = locals.map_or_else(|| program.names.get(p.name), |names| names[i].as_str());
+        let name = if let Some(names) = &mut locals {
+            names.temp(i).map_err(local_error)?
+        } else {
+            program.names.get(p.name)
+        };
         write!(out, "%")?;
         if name.is_empty() {
             let mut name = format!("arg{i}");
@@ -452,21 +423,25 @@ fn metadata(
     }
     Ok(())
 }
-struct InstructionWriter<'a, W> {
+struct InstructionWriter<'a, 'b, W> {
     program: &'a Program,
     body: &'a Body,
-    out: &'a mut W,
-    floating: &'a mut FloatingScanner,
-    temporaries: &'a [String],
+    out: &'b mut W,
+    floating: &'b mut FloatingScanner,
+    locals: &'b mut LocalNames<'a>,
 }
-impl<W: Write> InstructionWriter<'_, W> {
+impl<W: Write> InstructionWriter<'_, '_, W> {
     fn value(&mut self, value: Value, ty: Type) -> io::Result<()> {
         match value {
-            Value::Temp(t) => write!(self.out, "%{}", self.temporaries[t.index()]),
+            Value::Temp(t) => write!(
+                self.out,
+                "%{}",
+                self.locals.temp(t.index()).map_err(local_error)?
+            ),
             Value::Slot(s) => write!(
                 self.out,
                 "${}",
-                self.program.names.get(self.body.slot(s).name)
+                self.locals.slot(s.index()).map_err(local_error)?
             ),
             Value::Symbol(id) => write!(
                 self.out,
@@ -493,7 +468,7 @@ impl<W: Write> InstructionWriter<'_, W> {
         write!(
             self.out,
             "^{}",
-            self.program.names.get(self.body.block(block).name)
+            self.locals.block(block).map_err(local_error)?
         )
     }
     fn comma(&mut self) -> io::Result<()> {
