@@ -372,18 +372,15 @@ fn nonvirtual_base_queries_follow_each_runtime_conversion() -> Result<(), Box<dy
 #[test]
 fn return_eligibility_and_constructor_filtering_have_distinct_query_work()
 -> Result<(), Box<dyn std::error::Error>> {
-    let directory = Scratch(
-        std::env::temp_dir().join(format!("cppgm-copy-query-work-{}", std::process::id())),
-    );
+    let directory =
+        Scratch(std::env::temp_dir().join(format!("cppgm-copy-query-work-{}", std::process::id())));
     std::fs::create_dir_all(&directory.0)?;
     let source = directory.0.join("input.cpp");
     let object = directory.0.join("input.o");
     let report = |operand: &str, extra: &str| -> Result<(u64, u64), Box<dyn std::error::Error>> {
         std::fs::write(
             &source,
-            format!(
-                "struct X{{X(const X&){{}}X(X&&){{}}{extra}}};X f(X x){{return {operand};}}\n"
-            ),
+            format!("struct X{{X(const X&){{}}X(X&&){{}}{extra}}};X f(X x){{return {operand};}}\n"),
         )?;
         let result = Command::new(env!("CARGO_BIN_EXE_cppgm"))
             .args(["--stats", "-O0", "-c", "-o"])
@@ -399,8 +396,14 @@ fn return_eligibility_and_constructor_filtering_have_distinct_query_work()
             .ok_or("missing compile observations")?;
         let fields = counters(line);
         Ok((
-            fields.get("resolutions").ok_or("missing resolutions")?.parse()?,
-            fields.get("candidates").ok_or("missing candidates")?.parse()?,
+            fields
+                .get("resolutions")
+                .ok_or("missing resolutions")?
+                .parse()?,
+            fields
+                .get("candidates")
+                .ok_or("missing candidates")?
+                .parse()?,
         ))
     };
     let implicit = report("x", "")?;
@@ -409,6 +412,9 @@ fn return_eligibility_and_constructor_filtering_have_distinct_query_work()
     assert_eq!(implicit.1, explicit.1 * 2);
     // An explicitly excluded constructor changes neither offered set.
     assert_eq!(report("x", "explicit X(int){}")?, implicit);
-    assert_eq!(report("static_cast<X&&>(x)", "explicit X(int){}")?, explicit);
+    assert_eq!(
+        report("static_cast<X&&>(x)", "explicit X(int){}")?,
+        explicit
+    );
     Ok(())
 }
