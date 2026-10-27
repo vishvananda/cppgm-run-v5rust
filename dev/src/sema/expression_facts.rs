@@ -674,23 +674,6 @@ impl ExpressionFacts {
             .get(&self.root(id))
             .map(|record| (record.constructor, record.arguments))
     }
-    pub(super) fn set_class_conversion(
-        &mut self,
-        id: ast::ExprId,
-        selected: (
-            super::construction::ConstructorId,
-            super::constructor_initialization::ConstructorArguments,
-        ),
-    ) {
-        self.class_conversions.insert(
-            self.root(id),
-            ClassConversion {
-                constructor: selected.0,
-                arguments: selected.1,
-                outer: None,
-            },
-        );
-    }
     pub(super) fn user_conversion(&self, id: ast::ExprId) -> Option<Conversion> {
         self.class_conversions
             .get(&self.root(id))

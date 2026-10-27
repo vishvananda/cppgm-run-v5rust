@@ -522,25 +522,19 @@ impl Analyzer<'_> {
                 self.aggregate_members(elements, next, class, scope, location, None)?;
             } else {
                 *next += 1;
-                let selected = self.initialize_class_arguments(
+                let sequence = self.class_initializer_conversion(
+                    id,
                     target,
-                    super::constructor_initialization::ClassInput {
-                        selected: None,
-                        arguments: super::constructor_initialization::ConstructorArguments::Single(
-                            id,
-                        ),
-                        list: None,
-                        converting: true,
-                        copy_list: false,
-                        context: super::constructor_initialization::ClassContext::AggregateMember,
-                    },
-                    scope,
+                    super::constructor_initialization::ClassContext::AggregateMember,
                     self.tree.expressions.get(id).location,
                 )?;
-                if let Some(selected) = selected {
-                    self.graph
-                        .expression_facts
-                        .set_class_conversion(id, selected);
+                if !self.apply_user_sequence(
+                    id,
+                    sequence,
+                    scope,
+                    super::user_conversions::ConversionSite::AggregateElement,
+                )? {
+                    return Err(Error::Invariant("class element without user conversion"));
                 }
             }
         } else {

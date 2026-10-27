@@ -1,0 +1,7 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $values : obj<12x4>
+  slot $reference : ptr
+
+  block ^entry:
+    return i32 0
+}

@@ -433,6 +433,11 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
+        // check_final_copy accepts an implicit nondeleted move without
+        // ranking another constructor set or odr-using the move.
+        if self.implicit_copy_candidates(class)?.moving.is_some() {
+            return Ok(());
+        }
         let resolution = self.resolve_class_constructor(
             class,
             facts,

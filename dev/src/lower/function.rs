@@ -824,7 +824,7 @@ impl Function<'_, '_, '_, '_> {
         initializer: Option<ast::Initializer>,
         tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
-        if !self.graph.lower_automatic(entity) {
+        if !self.graph.lower_automatic(entity) || self.terminated {
             return self.initialize_local_variable(entity, initializer, tokens);
         }
         let reachable = !self.terminated;

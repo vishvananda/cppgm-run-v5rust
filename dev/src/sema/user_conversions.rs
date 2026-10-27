@@ -21,6 +21,7 @@ pub(super) enum ConversionSite {
     Call,
     Operator,
     Conditional,
+    AggregateElement,
     Cast(crate::support::source::SourceOffset),
 }
 #[derive(Clone, Copy)]

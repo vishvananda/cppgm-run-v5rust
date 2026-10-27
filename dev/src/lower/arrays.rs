@@ -219,12 +219,11 @@ impl Function<'_, '_, '_, '_> {
                 "local array without type",
             )));
         };
-        if (self.graph.lower_constexpr(entity)
-            || !matches!(
-                self.graph.lower_type(element)?,
-                TypeView::Array { .. } | TypeView::Class(_)
-            ))
-            && self.graph.lower_cv(element) & 6 == 0
+        let mut leaf = element;
+        while let TypeView::Array { element: child, .. } = self.graph.lower_type(leaf)? {
+            leaf = child;
+        }
+        if self.graph.lower_array_image_eligible(entity)?
             && let Some(image) = self.graph.lower_array_image(entity)
         {
             let expr = match initializer.kind {
@@ -250,20 +249,23 @@ impl Function<'_, '_, '_, '_> {
                 destination.value,
             ));
         }
-        let (ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr)) =
-            initializer.kind
-        else {
-            return Err(Error::Missing("array parenthesized initialization"));
+        let expr = match initializer.kind {
+            ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) => expr,
+            ast::InitializerKind::Parenthesized(arguments) => {
+                let [expr] = self.tree.expr_lists.get(arguments) else {
+                    return Err(Error::Semantic(crate::sema::Error::Invariant(
+                        "array initializer without one expression",
+                    )));
+                };
+                *expr
+            }
+            _ => return Err(Error::Missing("special array initialization")),
         };
         let base = if matches!(slot, Value::Slot(_) | Value::Symbol(_)) {
             self.emit(I::Addr(slot), ty)?.value
         } else {
             slot
         };
-        let mut leaf = element;
-        while let TypeView::Array { element: child, .. } = self.graph.lower_type(leaf)? {
-            leaf = child;
-        }
         if let TypeView::Class(class) = self.graph.lower_type(leaf)? {
             let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind else {
                 return Err(Error::Missing("class array non-list initialization"));

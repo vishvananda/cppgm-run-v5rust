@@ -72,6 +72,7 @@ impl Symbols<'_, '_> {
             &mut bytes,
             self.budget,
         )?;
+        self.table.work.mangled_names += 1;
         let object = program.names.intern_bytes(&bytes)?;
         let internal =
             self.graph.lower_variable(entity)?.locality == crate::sema::lowering::Locality::Unit;
@@ -237,6 +238,7 @@ impl Symbols<'_, '_> {
             &mut bytes,
             self.budget,
         )?;
+        self.table.work.mangled_names += 1;
         let object = program.names.intern_bytes(&bytes)?;
         let spelling = format!(
             "__cppgm_tls_init__{}",

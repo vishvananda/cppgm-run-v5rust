@@ -1,0 +1,6 @@
+typedef int Pair __attribute__((vector_size(8)));
+int selected(int index) {
+    Pair values[2] = {{1, 2}, {3, 4}};
+    return values[index][0];
+}
+int main() { return selected(1) - 3; }
