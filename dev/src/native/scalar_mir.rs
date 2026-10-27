@@ -539,6 +539,10 @@ fn binary(a: &mut Assembler, op: Binary, ty: Type, r: R, src: Operand) -> Result
                     return Ok(());
                 }
             }
+            // emitter.cpp::multiply: the 32-bit shift also zero-extends.
+            if v > 1 && width == 4 && v < (1_i64 << 32) && v.cast_unsigned().is_power_of_two() {
+                return shift_immediate(a, 4, r, i64::from(v.trailing_zeros()), 4);
+            }
             let small = i8::try_from(v).is_ok();
             a.op(
                 0,
