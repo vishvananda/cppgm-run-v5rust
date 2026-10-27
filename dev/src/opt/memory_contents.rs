@@ -2,7 +2,7 @@
 //! See NOTICE.
 use crate::lowir::{
     literals::Constant,
-    model::{DataItem, Global, GlobalInit, Linkage, Program, SymbolId},
+    model::{DataItem, Global, GlobalInit, Program, SymbolId},
     vocabulary::{Storage, Type},
 };
 
@@ -28,23 +28,13 @@ pub(super) fn library(program: &Program, symbol: SymbolId, kind: LibraryCall) ->
     if kind == LibraryCall::Strlen {
         return program.strlen_function(symbol);
     }
-    let Some(function) = program.function(program.symbol(symbol)) else {
-        return false;
-    };
-    let name = program.names.get(
-        function
-            .metadata
-            .object
-            .filter(|&id| !program.names.bytes(id).is_empty())
-            .unwrap_or(function.name),
-    );
     let (builtin, plain) = match kind {
-        LibraryCall::Strlen => ("cppgm_builtin_strlen", "strlen"),
-        LibraryCall::Memset => ("cppgm_builtin_memset", "memset"),
-        LibraryCall::Memcpy => ("cppgm_builtin_memcpy", "memcpy"),
-        LibraryCall::Memcmp => ("cppgm_builtin_memcmp", "memcmp"),
+        LibraryCall::Strlen => (b"cppgm_builtin_strlen".as_slice(), b"strlen".as_slice()),
+        LibraryCall::Memset => (b"cppgm_builtin_memset".as_slice(), b"memset".as_slice()),
+        LibraryCall::Memcpy => (b"cppgm_builtin_memcpy".as_slice(), b"memcpy".as_slice()),
+        LibraryCall::Memcmp => (b"cppgm_builtin_memcmp".as_slice(), b"memcmp".as_slice()),
     };
-    name == builtin || function.metadata.linkage == Linkage::C && name == plain
+    program.library_function(symbol, builtin, plain)
 }
 pub(super) fn contents<'a>(
     program: &'a Program,
@@ -177,4 +167,54 @@ pub(super) fn integer(
         at = stop;
     }
     (covered == size).then(|| u128::from_le_bytes(out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowir::{
+        Error,
+        model::{Boundary, Function, Linkage, Metadata, Signature},
+    };
+    use std::path::Path;
+
+    #[test]
+    fn library_identity_uses_object_bytes_and_c_linkage() -> Result<(), Error> {
+        for (object, linkage, expected) in [
+            (b"cppgm_builtin_memcpy".as_slice(), Linkage::Default, true),
+            (b"cppgm_builtin_memcpy\0tail", Linkage::Default, true),
+            (b"cppgm_builtin_memcpy\0\xff", Linkage::Default, true),
+            (b"cppgm_builtin_memcpy_tail", Linkage::Default, false),
+            (b"memcpy", Linkage::C, true),
+            (b"memcpy\0tail", Linkage::C, true),
+            (b"memcpy", Linkage::Default, false),
+        ] {
+            let mut program = Program::default();
+            let source = program.add_source(Path::new("library-identity"))?;
+            let name = program.names.intern("callable")?;
+            let symbol = program.reference(name, source, 1)?;
+            let object = program.names.intern_bytes(object)?;
+            let signature = program.add_signature(Signature {
+                parameters: Vec::new(),
+                result: Type::Ptr,
+                boundary: Boundary::default(),
+            })?;
+            program.add(
+                symbol,
+                Function {
+                    name,
+                    signature,
+                    metadata: Metadata {
+                        object: Some(object),
+                        linkage,
+                        ..Metadata::default()
+                    },
+                    body: None,
+                    location: None,
+                },
+            )?;
+            assert_eq!(library(&program, symbol, LibraryCall::Memcpy,), expected);
+        }
+        Ok(())
+    }
 }

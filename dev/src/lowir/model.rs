@@ -401,6 +401,9 @@ impl Program {
         let Value::Symbol(symbol) = value else {
             return None;
         };
+        if !matches!(self.symbol(symbol).detail, SymbolDetail::Unresolved) {
+            return None;
+        }
         self.forward_boundaries
             .get(symbol.index())
             .and_then(Option::as_ref)
@@ -413,7 +416,9 @@ impl Program {
         self.callee_function(call.callee)
             .map(|f| f.signature)
             .or_else(|| {
-                if let Value::Symbol(symbol) = call.callee {
+                if let Value::Symbol(symbol) = call.callee
+                    && matches!(self.symbol(symbol).detail, SymbolDetail::Unresolved)
+                {
                     self.forward_boundary(symbol)
                 } else {
                     None
@@ -705,6 +710,9 @@ impl Program {
     }
     // program.cpp::strlen_function observes published function metadata only.
     pub(crate) fn strlen_function(&self, symbol: SymbolId) -> bool {
+        self.library_function(symbol, b"cppgm_builtin_strlen", b"strlen")
+    }
+    pub(crate) fn library_function(&self, symbol: SymbolId, builtin: &[u8], plain: &[u8]) -> bool {
         let Some(function) = self.function(self.symbol(symbol)) else {
             return false;
         };
@@ -718,8 +726,7 @@ impl Program {
         let named = |expected: &[u8]| {
             name.starts_with(expected) && name.get(expected.len()).is_none_or(|&byte| byte == 0)
         };
-        named(b"cppgm_builtin_strlen")
-            || function.metadata.linkage == Linkage::C && named(b"strlen")
+        named(builtin) || function.metadata.linkage == Linkage::C && named(plain)
     }
     pub(crate) fn take_body(&mut self, symbol: SymbolId) -> Result<Option<Body>, Error> {
         let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
@@ -1675,5 +1682,90 @@ impl BlockId {
 impl SymbolId {
     pub(crate) fn index(self) -> usize {
         self.0 as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forward_call_facts_expire_when_a_symbol_is_resolved() -> Result<(), Error> {
+        for function in [false, true] {
+            let mut program = Program::default();
+            let source = program.add_source(Path::new("forward-call-facts"))?;
+            let name = program.names.intern("callee")?;
+            let symbol = program.reference(name, source, 1)?;
+            let mut body = Body::default();
+            let mut call = Call {
+                result: Type::I64,
+                callee: Value::Symbol(symbol),
+                arguments: body.add_arguments(&[])?,
+                copy_elision: false,
+                argument_classes: Vec::new(),
+                signature: None,
+            };
+            assert!(program.call_boundary(&call).is_none());
+            let signature = program.add_signature(Signature {
+                parameters: Vec::new(),
+                result: Type::I64,
+                boundary: Boundary::default(),
+            })?;
+            program.set_forward_boundary(
+                symbol,
+                signature,
+                Metadata {
+                    binding: Some(Binding::Weak),
+                    ..Metadata::default()
+                },
+            );
+            assert!(program.call_boundary(&call).is_some());
+            assert!(
+                program
+                    .callee_metadata(call.callee)
+                    .is_some_and(|metadata| metadata.binding == Some(Binding::Weak))
+            );
+            let metadata = Metadata {
+                binding: Some(Binding::Strong),
+                ..Metadata::default()
+            };
+            if function {
+                program.add(
+                    symbol,
+                    Function {
+                        name,
+                        signature,
+                        metadata,
+                        body: None,
+                        location: None,
+                    },
+                )?;
+            } else {
+                program.add_global(
+                    symbol,
+                    Global {
+                        name,
+                        ty: Some(Type::I64),
+                        metadata,
+                        init: GlobalInit::Zero,
+                    },
+                )?;
+            }
+            // The raw producer memo remains; call consumers must respect the
+            // symbol's current kind and published facts instead of that memo.
+            assert_eq!(program.forward_boundary(symbol), Some(signature));
+            assert_eq!(program.call_boundary(&call).is_some(), function);
+            assert_eq!(program.callee_metadata(call.callee).is_some(), function);
+            if function {
+                assert!(
+                    program
+                        .callee_metadata(call.callee)
+                        .is_some_and(|metadata| metadata.binding == Some(Binding::Strong))
+                );
+            }
+            call.signature = Some(signature);
+            assert!(program.call_boundary(&call).is_some());
+        }
+        Ok(())
     }
 }
