@@ -185,6 +185,7 @@ pub(super) fn select_for_object(
     let mut addresses = super::address_facts::Addresses::analyze(program, body, &mut facts, model)?;
     super::branch_tests::fold(body, &mut facts, &addresses);
     let updates = super::memory_updates::Updates::analyze(body, &mut facts, &mut addresses);
+    super::rotations::analyze(body, &mut facts, &addresses);
     super::branch_tests::bytes_only(
         program,
         body,

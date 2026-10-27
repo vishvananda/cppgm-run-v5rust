@@ -126,6 +126,11 @@ impl Operand {
     }
 }
 #[derive(Clone, Copy)]
+pub(super) enum Rotation {
+    Left,
+    Right,
+}
+#[derive(Clone, Copy)]
 pub(super) enum ScalarOp {
     SignDividend,
     MultiplyWide { unsigned: bool, source: R },
@@ -146,6 +151,7 @@ pub(super) enum ScalarOp {
     SetEqual(R),
     Movzx(R),
     Shift(Binary, Type, R, Operand),
+    Rotate(Rotation, Type, R, u8),
 }
 pub(super) fn signed(ty: Type) -> bool {
     matches!(
@@ -289,6 +295,18 @@ impl ScalarOp {
             }
             Self::SetEqual(r) => write!(out, "sete {}", r.spelling())?,
             Self::Movzx(r) => write!(out, "movzx {}, {}", r.spelling(), r.spelling())?,
+            Self::Rotate(direction, ty, r, count) => {
+                write!(
+                    out,
+                    "{}{} {}, {count}",
+                    match direction {
+                        Rotation::Left => "rol",
+                        Rotation::Right => "ror",
+                    },
+                    if ty == Type::U32 { ".u32" } else { "" },
+                    r.spelling()
+                )?;
+            }
             Self::Shift(op, ty, r, count) => {
                 write!(
                     out,
@@ -451,6 +469,16 @@ impl ScalarOp {
             }
             Self::SetEqual(r) => a.op(0, false, 0x0f94, 2, 0, Rm::Reg(r), true, 0),
             Self::Movzx(r) => a.op(0, false, 0x0fb6, 2, r.code(), Rm::Reg(r), true, 0),
+            Self::Rotate(direction, ty, r, count) => shift_immediate(
+                a,
+                match direction {
+                    Rotation::Left => 0,
+                    Rotation::Right => 1,
+                },
+                r,
+                i64::from(count),
+                bytes(ty),
+            ),
             Self::Shift(op, ty, r, count) => {
                 let digit = match op {
                     Binary::Shl => 4,

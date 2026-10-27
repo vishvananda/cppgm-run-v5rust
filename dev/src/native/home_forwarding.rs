@@ -192,6 +192,7 @@ fn reads(op: &mut Op, mut visit: impl FnMut(&mut Operand)) {
         Op::Scalar(
             ScalarOp::Binary(_, _, r, _)
             | ScalarOp::Shift(_, _, r, _)
+            | ScalarOp::Rotate(_, _, r, _)
             | ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, r)
             | ScalarOp::Extend(_, r)
             | ScalarOp::Movzx(r)

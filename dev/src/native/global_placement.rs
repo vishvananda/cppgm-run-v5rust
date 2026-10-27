@@ -152,6 +152,7 @@ impl Globals {
                 || facts.fused[index]
                 || facts.tested[index]
                 || facts.updates[index]
+                || facts.rotated[index]
             {
                 continue;
             }

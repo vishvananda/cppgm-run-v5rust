@@ -162,6 +162,7 @@ fn track(op: Op, known: u32) -> u32 {
             | ScalarOp::Binary(..)
             | ScalarOp::Unary(Unary::Neg | Unary::BitNot, ..)
             | ScalarOp::Shift(..)
+            | ScalarOp::Rotate(..)
             | ScalarOp::Movzx(..)
             | ScalarOp::Extend(..)
             | ScalarOp::ExtendMove(..)

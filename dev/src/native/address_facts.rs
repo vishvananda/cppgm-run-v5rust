@@ -376,7 +376,14 @@ impl Addresses {
             };
             let left = matches!(facts.resolve(body,a),Alias::Temporary(t) if t==temp);
             let right = matches!(facts.resolve(body,b),Alias::Temporary(t) if t==temp);
-            if user_ty != ty || !matches!(consumer.kind, I::Branch(..)) && left == right || !allowed
+            let retyped = facts.level >= 1
+                && matches!(
+                    (user_ty, ty),
+                    (Type::I64, Type::Ptr) | (Type::Ptr, Type::I64)
+                );
+            if user_ty != ty && !retyped
+                || !matches!(consumer.kind, I::Branch(..)) && left == right
+                || !allowed
             {
                 continue;
             }

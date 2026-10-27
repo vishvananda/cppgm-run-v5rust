@@ -41,6 +41,8 @@ pub(super) struct Facts {
     pub(super) fused: Vec<bool>,
     pub(super) tested: Vec<bool>,
     pub(super) updates: Vec<bool>,
+    pub(super) rotated: Vec<bool>,
+    pub(super) rotations: Vec<Option<super::rotations::Plan>>,
     pub(super) byte_only: Vec<bool>,
     pub(super) active: Vec<bool>,
     pub(super) intervals: Vec<Interval>,
@@ -152,6 +154,8 @@ impl Facts {
             fused: vec![false; body.temps().len()],
             tested: vec![false; body.temps().len()],
             updates: vec![false; body.temps().len()],
+            rotated: vec![false; body.temps().len()],
+            rotations: vec![None; if level >= 1 { body.temps().len() } else { 0 }],
             byte_only: vec![false; body.temps().len()],
             intervals: vec![Interval::default(); body.temps().len()],
         };

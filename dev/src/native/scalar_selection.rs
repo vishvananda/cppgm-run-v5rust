@@ -240,6 +240,9 @@ impl Selection<'_> {
         ) {
             return Err(unsupported());
         }
+        if self.rotate(temp, ty)? {
+            return Ok(());
+        }
         let mut a = self.operand(left, ty, R::R10)?;
         let mut b = self.operand(right, ty, R::R11)?;
         if op == Binary::Mul && self.facts.scales[temp.index()] != 0 {

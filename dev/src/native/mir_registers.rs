@@ -38,6 +38,7 @@ pub(super) fn map(op: &mut Op, mut reg: impl FnMut(R) -> R) {
             | ScalarOp::SetEqual(r)
             | ScalarOp::Movzx(r)
             | ScalarOp::Shift(_, _, r, _)
+            | ScalarOp::Rotate(_, _, r, _)
             | ScalarOp::Condition(
                 FlagOp::Test(_, r)
                 | FlagOp::Set(_, r)
@@ -78,6 +79,7 @@ pub(super) fn written(op: Op) -> Option<R> {
             | ScalarOp::SetEqual(r)
             | ScalarOp::Movzx(r)
             | ScalarOp::Shift(_, _, r, _)
+            | ScalarOp::Rotate(_, _, r, _)
             | ScalarOp::Condition(FlagOp::Set(_, r) | FlagOp::Move(_, r, _)),
         ) => Some(r),
         _ => None,
@@ -103,6 +105,7 @@ pub(super) fn frameless(op: Op) -> bool {
             | ScalarOp::SetEqual(..)
             | ScalarOp::Movzx(..)
             | ScalarOp::Shift(..)
+            | ScalarOp::Rotate(..)
             | ScalarOp::Scan(..) => true,
             ScalarOp::Binary(b, ..) | ScalarOp::MemoryBinary(b, ..) => matches!(
                 b,

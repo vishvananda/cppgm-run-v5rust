@@ -86,7 +86,8 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
             | ScalarOp::Extend(..)
             | ScalarOp::ExtendMove(..)
             | ScalarOp::SetEqual(..)
-            | ScalarOp::Movzx(..) => {}
+            | ScalarOp::Movzx(..)
+            | ScalarOp::Rotate(..) => {}
         },
         Op::FloatCopy(copy) => {
             visit(&mut copy.destination, access_bytes(copy.ty));

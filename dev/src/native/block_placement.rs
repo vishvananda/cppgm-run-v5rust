@@ -478,6 +478,7 @@ pub(super) fn copyable(f: &Function, b: usize, cap: usize, sets: bool) -> bool {
                 | ScalarOp::ExtendMove(..)
                 | ScalarOp::Movzx(..)
                 | ScalarOp::Shift(..)
+                | ScalarOp::Rotate(..)
                 | ScalarOp::CompareZero(..)
                 | ScalarOp::Binary(
                     Binary::Add | Binary::Sub | Binary::And | Binary::Or | Binary::Xor,

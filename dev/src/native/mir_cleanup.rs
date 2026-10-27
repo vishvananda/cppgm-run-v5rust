@@ -58,7 +58,8 @@ pub(super) fn simple_write(op: Op) -> Option<SimpleWrite> {
             | ScalarOp::MemoryBinary(_, _, destination, source) => {
                 (None, [Some(destination), Some(source)])
             }
-            ScalarOp::Extend(_, r)
+            ScalarOp::Rotate(_, _, r, _)
+            | ScalarOp::Extend(_, r)
             | ScalarOp::Movzx(r)
             | ScalarOp::SetEqual(r)
             | ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, r) => {
@@ -153,7 +154,8 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
                 | ScalarOp::Movzx(..)
                 | ScalarOp::Extend(..)
                 | ScalarOp::ExtendMove(..)
-                | ScalarOp::Shift(..),
+                | ScalarOp::Shift(..)
+                | ScalarOp::Rotate(..),
             ) => {}
             Op::Return(..)
             | Op::Call(..)
@@ -429,7 +431,8 @@ pub(super) fn touches(op: Op, r: R) -> bool {
             ScalarOp::Condition(FlagOp::BitTest(_, r, b)) => [Some(Operand::Register(r)), Some(b)],
             ScalarOp::Condition(FlagOp::CompareFloatLiteral(_, a, _))
             | ScalarOp::CompareZero(_, a) => [Some(a), None],
-            ScalarOp::Extend(_, to)
+            ScalarOp::Rotate(_, _, to, _)
+            | ScalarOp::Extend(_, to)
             | ScalarOp::Movzx(to)
             | ScalarOp::Unary(Unary::Neg | Unary::BitNot, _, to) => {
                 [Some(Operand::Register(to)), None]

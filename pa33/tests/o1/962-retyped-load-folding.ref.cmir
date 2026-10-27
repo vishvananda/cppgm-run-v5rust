@@ -1,0 +1,65 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @pointer
+  storage scalar ptr
+  init ptr 0
+
+global @word
+  storage scalar i64
+  init i64 0
+
+function @read_pointer
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    load.i64 r8, @pointer
+    add r8, 1
+    ret r8
+
+function @read_word
+  abi
+    return ptr -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    load.ptr r8, @word
+    add r8, 2
+    ret r8
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0>
+
+  block ^entry
+    call @read_pointer [args=()]
+    mov <gpr0>, rax
+    call @read_word [args=()]
+    cmp.i64 <gpr0>, 1
+    setne <gpr0>
+    movzx <gpr0>, <gpr0>
+    cmp.ptr rax, 2
+    setne rax
+    movzx rax, rax
+    or <gpr0>, rax
+    ret <gpr0>

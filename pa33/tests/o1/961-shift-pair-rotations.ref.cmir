@@ -1,0 +1,223 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @left
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    rol rdi, 13
+    ret rdi
+
+function @right
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ror rdi, 13
+    ret rdi
+
+function @tie
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    rol rdi, 32
+    ret rdi
+
+function @u32left
+  abi
+    param %x -> rdi : u32
+    return u32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    rol.u32 rdi, 7
+    ret rdi
+
+function @u32right
+  abi
+    param %x -> rdi : u32
+    return u32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    ror.u32 rdi, 7
+    ret rdi
+
+function @one
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    rol rdi, 1
+    ret rdi
+
+function @shared
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov r8, rdi
+    shl r8, 13
+    shr rdi, 51
+    or rdi, r8
+    add rdi, r8
+    ret rdi
+
+function @signed32
+  abi
+    param %x -> rdi : i32
+    return i32 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov r8, rdi
+    shl r8, 7
+    sext.i32 r8
+    zext.i32 rdi
+    shr rdi, 25
+    sext.i32 rdi
+    or r8, rdi
+    ret r8
+
+function @separate
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov r9, rdi
+    shl r9, 13
+    mov r8, rdi
+    shr r8, 51
+
+  block ^next
+    or r9, r8
+    ret r9
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve <gpr0> <gpr1> <gpr2> <gpr3> <gpr4>
+    temp %badone -> [rbp-<off0>] : i64
+    temp %badshared -> [rbp-<off1>] : i64
+    temp %badsigned32 -> [rbp-<off2>] : i64
+
+  block ^entry
+    mov rdi, 1
+    call @left [args=(rdi)]
+    cmp.i64 rax, 8192
+    setne <gpr0>
+    movzx <gpr0>, <gpr0>
+    mov rdi, 1
+    call @right [args=(rdi)]
+    cmp.i64 rax, 2251799813685248
+    setne <gpr1>
+    movzx <gpr1>, <gpr1>
+    mov rdi, 1
+    call @tie [args=(rdi)]
+    cmp.i64 rax, 4294967296
+    setne <gpr2>
+    movzx <gpr2>, <gpr2>
+    mov rdi, 1
+    call @u32left [args=(rdi)]
+    cmp.u32 rax, 128
+    setne <gpr3>
+    movzx <gpr3>, <gpr3>
+    mov rdi, 1
+    call @u32right [args=(rdi)]
+    cmp.u32 rax, 33554432
+    setne <gpr4>
+    movzx <gpr4>, <gpr4>
+    mov rdi, 1
+    call @one [args=(rdi)]
+    cmp.i64 rax, 2
+    setne <gpr5>
+    movzx <gpr5>, <gpr5>
+    store.i64 [rbp-<off0>], <gpr5>
+    mov rdi, 1
+    call @shared [args=(rdi)]
+    cmp.i64 rax, 16384
+    setne <gpr5>
+    movzx <gpr5>, <gpr5>
+    store.i64 [rbp-<off1>], <gpr5>
+    mov rdi, 1
+    call @signed32 [args=(rdi)]
+    cmp.i32 rax, 128
+    setne <gpr5>
+    movzx <gpr5>, <gpr5>
+    store.i64 [rbp-<off2>], <gpr5>
+    mov rdi, 1
+    call @separate [args=(rdi)]
+    cmp.i64 rax, 8192
+    setne rax
+    movzx rax, rax
+    or <gpr0>, <gpr1>
+    or <gpr0>, <gpr2>
+    or <gpr0>, <gpr3>
+    or <gpr0>, <gpr4>
+    load.i64 <gpr6>, [rbp-<off0>]
+    or <gpr0>, <gpr6>
+    load.i64 <gpr6>, [rbp-<off1>]
+    or <gpr0>, <gpr6>
+    load.i64 <gpr6>, [rbp-<off2>]
+    or <gpr0>, <gpr6>
+    or <gpr0>, rax
+    ret <gpr0>

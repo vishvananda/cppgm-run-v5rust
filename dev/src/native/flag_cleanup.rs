@@ -34,7 +34,7 @@ pub(super) fn zeroes(op: Op, known: u32) -> bool {
         Op::Scalar(ScalarOp::Shift(Binary::UShr, ty, _, source)) => {
             ty == Type::U32 || matches!(source,Operand::Immediate(bits) if bits&63>=32)
         }
-        Op::Scalar(ScalarOp::Shift(_, ty, _, _)) => ty == Type::U32,
+        Op::Scalar(ScalarOp::Shift(_, ty, _, _) | ScalarOp::Rotate(_, ty, _, _)) => ty == Type::U32,
         Op::Scalar(ScalarOp::Extend(ty, _) | ScalarOp::ExtendMove(ty, _, _)) => {
             matches!(ty, Type::I1 | Type::U8 | Type::U16 | Type::U32)
         }

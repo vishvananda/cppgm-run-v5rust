@@ -67,6 +67,7 @@ mod object_storage;
 pub(crate) use compilation_observations::{ObservationOptions, Observations};
 mod region_flow;
 mod register_allocation;
+mod rotations;
 mod shrink_region;
 mod shrink_wrap;
 mod split_placement;
