@@ -211,7 +211,12 @@ impl Analyzer<'_> {
         if let Some(binding) = plan.binding {
             work.push(self.graph.binding(binding).entity);
         }
-        constructors.extend(plan.bases.iter().filter_map(|base| base.constructor));
+        constructors.extend(
+            plan.bases
+                .iter()
+                .chain(&plan.indirect_bases)
+                .filter_map(|base| base.constructor),
+        );
         constructors.extend(plan.subobjects.iter().map(|child| child.constructor));
         constructors.extend(
             plan.copy

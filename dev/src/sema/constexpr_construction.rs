@@ -30,7 +30,6 @@ impl Analyzer<'_> {
         let id = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
-        self.constant_step(location)?;
         target.designated = self.bare_type(target.designated)?;
         if self.vector_shape(target.designated).is_some() {
             return self.initialize_constant_vector(id, target, scope);
@@ -38,6 +37,7 @@ impl Analyzer<'_> {
         if self.complex_part_type(target.designated).is_some() {
             return self.initialize_constant_complex(id, target, scope);
         }
+        self.constant_step(location)?;
         if facts.category != ValueCategory::Prvalue {
             let mut source = self.constant_place(id, scope)?;
             source.designated = self.bare_type(source.designated)?;

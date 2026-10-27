@@ -221,6 +221,9 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("constant complex conversion type"))?;
         let facts = self.graph.expression_facts.get(id)?;
         let source = facts.ty;
+        if self.complex_part_type(source).is_some() {
+            self.constant_step(location)?;
+        }
         let value = if self.complex_part_type(source).is_none() {
             let value = self.scalar_value(id, scope)?;
             if value.indeterminate() {

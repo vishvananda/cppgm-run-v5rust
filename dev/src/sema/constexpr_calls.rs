@@ -655,10 +655,7 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("constant function without function type"));
         };
-        let destination = if self.graph.class_of(returns).is_some()
-            || self.complex_part_type(returns).is_some()
-            || self.vector_shape(returns).is_some()
-        {
+        let destination = if self.graph.class_of(returns).is_some() {
             Some(if let Some(destination) = destination {
                 destination
             } else {
@@ -669,10 +666,21 @@ impl Analyzer<'_> {
         };
         let bound =
             self.bind_constant_inputs(function, ty, (arguments, postfix), scope, location)?;
+        // Scalar aggregate results retain their components in the caller after
+        // the parameter values have been bound. This is held value storage,
+        // rather than construction of another class result object.
+        let destination =
+            if self.complex_part_type(returns).is_some() || self.vector_shape(returns).is_some() {
+                Some(self.allocate_constant_value_storage(returns, location)?)
+            } else {
+                destination
+            };
         let mut parameters = Vec::new();
         for (index, &value) in bound.iter().enumerate() {
             let parameter = self.graph.types.function_parameter(ty, index)?;
-            if (self.graph.class_of(parameter).is_some() || self.vector_shape(parameter).is_some())
+            if (self.graph.class_of(parameter).is_some()
+                || self.complex_part_type(parameter).is_some()
+                || self.vector_shape(parameter).is_some())
                 && let Returned::Place(place) = value
             {
                 parameters.push(place);
