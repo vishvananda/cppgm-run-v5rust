@@ -1,16 +1,12 @@
-# Current clone baseline — PA29 repair
+# Current clone baseline — owner audit refresh
 
-Reference `b43173ec8d98b27eecf02bccabf973a4083a389f`; matching assignments `22e677f46ffa27a8e003c0b53331c9188d151071`.
-Extended PR #83 passed the complete CI matrix and was fast-forwarded to main.
-The oracle was rebuilt locally from that exact commit. This update includes all
-intervening course changes; all previous anchors and candidate regressions remain.
-Host capture uses reviewed protected Rust build inputs and data-only imports.
-Ralph examples commit: 0beabba. Prior baseline history remains in Git.
+C++ oracle: `22cd2cd17f660b765c8118e9675fab676daec714` (extended main).
+Matching published assignment export: `829dd5d2c7e5abba72ce5e58985e15e6bb6576c2`.
+Previous oracle: `b43173ec8d98b27eecf02bccabf973a4083a389f`; preserved PA33 checkpoint: `b506a9b47e4565addfa3e2c5f3e5e8ba09ffb698`.
+The complete upstream course delta is installed; Rust implementation/spec and
+protected comparison policy are preserved. New failures remain required work.
+Changed C++ source owners are pending review in `source-map.tsv`; final PA34
+audit must include current release/debug checks; PA33 remains open. Old bootstrap copies and saved
+generations are archived before fresh proof. Original goals and history remain.
 
-## PA32 statistics adapter — 2026-10-26
-
-Owner installed Ralph `f098bca`: recognize `pa32_opt_stats` under the existing
-runtime-measurement rule. Deterministic counters, diagnostics and output files
-remain exact; receipts retain raw statistics. Oracle self-comparison passes at
-O0–O3; installed harness, preflight, prior-through and quality checks pass.
-Evidence: `/home/vishvananda/work/maintenance/v5rust-pa32-stats-adapter-20261026`. The frozen oracle and fixtures are unchanged.
+Plan, old tool/config snapshots, validation and restart status: `/home/vishvananda/work/maintenance/v5rust-audit-refresh-20261027T231931Z`.

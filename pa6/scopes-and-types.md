@@ -28,11 +28,12 @@ a scope to an entity or type. Reopening a namespace extends its existing scope;
 a namespace alias supplies another way to name that scope. A type alias names
 a type without creating a distinct underlying type.
 
-A name is not a sufficient entity identity: different namespaces can both
-contain `x`, and multiple declarations can denote one object. Give records
-stable identity, using indices, stable objects, or another suitable ownership
-scheme. Interning structurally equal types is useful but is not a requirement
-to reproduce the reference compiler's physical layout.
+A spelling is not an entity identity: different namespaces can contain `x`,
+while several declarations can denote one object. Give records stable
+identities. Analyze declarators into reusable semantic types, so consumers
+do not rebuild them from syntax. Keep source locations for diagnostics.
+Equivalent types should share canonical identity; no particular arena or
+physical layout is required.
 
 Process translation units independently for lexical lookup. A declaration
 in one file cannot make a name visible in another file simply because both

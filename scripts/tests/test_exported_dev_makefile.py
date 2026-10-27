@@ -161,12 +161,17 @@ class ExportedDevMakefileTests(unittest.TestCase):
                 # a correct sanitizer does nothing for an omitted assignment.
                 default = next(line for line in source.splitlines()
                                if line.startswith("test:"))
+                # Other course lanes the default names (PA33's kernels) are
+                # silent stand-ins here; the course lane is what prints.
+                others = [name for name in default.split()[1:]
+                          if name not in ("test-course", "test-regression")]
                 directory = root / f"pa{pa}"
                 directory.mkdir()
                 (directory / "Makefile").write_text(
                     default + "\n"
                     "test-course:\n\t@echo course\n"
                     "test-regression:\n\t@echo regression\n"
+                    + "".join(f"{name}:\n\t@true\n" for name in others)
                 )
             subprocess.run(
                 ["bash", "-c", sanitize + '\ndest="$1"\n' + selection,

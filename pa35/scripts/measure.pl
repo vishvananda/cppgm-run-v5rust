@@ -10,6 +10,8 @@
 #   <level>-mix.txt             dynamic instruction mix of each binary's own code
 #   <level>-calls.txt           callees by executed-call excess (B - A)
 #   <level>-functions.txt       functions by own-instruction excess (B - A)
+#   <level>-owners.txt          the same for functions whose call counts match,
+#                               each with its excess by instruction class
 #
 # --counter callgrind (default) gives exact counts and the attribution files.
 # --counter perf uses user-mode hardware counters (mean of three runs): near
@@ -108,7 +110,8 @@ for my $level (@levels) {
 	push @rows, join("\t", $level, 'identical', $same ? 1 : 0, $same ? 1 : 0, 1);
 	next if $kind eq 'perf';
 
-	my %mix = map { $_ => PA35::instruction_mix($p{$_}, "$cache{$level}{$_}/bin") } qw(seed self);
+	my %dis = map { $_ => PA35::disassemble("$cache{$level}{$_}/bin") } qw(seed self);
+	my %mix = map { $_ => PA35::instruction_mix($p{$_}, "$cache{$level}{$_}/bin", $dis{$_}) } qw(seed self);
 	my %classes = map { $_ => 1 } (keys %{ $mix{seed} }, keys %{ $mix{self} });
 	my $excess = sub { ($mix{self}{ $_[0] } // 0) - ($mix{seed}{ $_[0] } // 0) };
 	my $m = sprintf("%-20s %12s %12s %12s\n", 'class (own code)', $LA, $LB, 'excess');
@@ -132,11 +135,51 @@ for my $level (@levels) {
 		}
 		PA35::spit("$out/$level-$file.txt", $r);
 	}
+
+	# Each function's excess by instruction class, for the functions whose
+	# executed call counts match in both binaries: when they differ, inlining
+	# has moved cost between functions and their own costs are not comparable.
+	# Callgrind's recursion levels (name'2) are merged into the function.
+	my (%owner, %own, %calls);
+	for my $side (qw(seed self)) {
+		$owner{$side} = PA35::owner_mix($p{$side}, "$cache{$level}{$side}/bin", $dis{$side});
+		for my $k (qw(fn calls)) {
+			while (my ($name, $n) = each %{ $p{$side}{$k} }) {
+				(my $base = $name) =~ s/'\d+$//;
+				($k eq 'fn' ? $own{$side}{$base} : $calls{$side}{$base}) += $n;
+			}
+		}
+	}
+	my @matched;
+	my ($kept, $moved, $moved_n) = (0, 0, 0);
+	for my $name (keys %{ { %{ $own{seed} }, %{ $own{self} } } }) {
+		my $d = ($own{self}{$name} // 0) - ($own{seed}{$name} // 0);
+		if (($calls{seed}{$name} // 0) != ($calls{self}{$name} // 0)) { $moved += $d; $moved_n++; next; }
+		push @matched, [$name, $d];
+		$kept += $d;
+	}
+	my $matched_n = @matched;
+	@matched = sort { $b->[1] <=> $a->[1] } @matched;
+	splice(@matched, $a{top}) if @matched > $a{top};
+	my $signed = sub { ($_[0] < 0 ? '' : '+') . PA35::fmt_m($_[0]) };
+	my $w = sprintf("%14s %14s %14s %10s  %s\n", "$LA own Ir", "$LB own Ir", 'excess', 'calls', 'function, then its excess by class');
+	for my $m (@matched) {
+		my ($name, $d) = @$m;
+		$w .= sprintf("%14d %14d %14d %10d  %s\n", $own{seed}{$name} // 0, $own{self}{$name} // 0, $d, $calls{seed}{$name} // 0, $name);
+		my %cls = map { $_ => 1 } (keys %{ $owner{seed}{$name} // {} }, keys %{ $owner{self}{$name} // {} });
+		my @by = sort { abs($b->[1]) <=> abs($a->[1]) }
+			map { [$_, ($owner{self}{$name}{$_} // 0) - ($owner{seed}{$name}{$_} // 0)] } keys %cls;
+		splice(@by, 6) if @by > 6;
+		$w .= '    ' . join(', ', map { "$_->[0] " . $signed->($_->[1]) } @by) . "\n";
+	}
+	$w .= sprintf("\nnet excess %s in %d functions with matching call counts (above, by excess); %s in %d whose call counts differ"
+		. " (inlining moved cost between them; see $level-functions.txt)\n", $signed->($kept), $matched_n, $signed->($moved), $moved_n);
+	PA35::spit("$out/$level-owners.txt", $w);
 }
 PA35::spit("$out/summary.txt", $text);
 PA35::spit("$out/summary.tsv", join("\n", "level\tmetric\tseed\tself\tratio", @rows) . "\n");
 print $text;
-print "\nwrote $out/summary.txt" . ($kind eq 'perf' ? '' : " and <level>-{mix,calls,functions}.txt") . "\n";
+print "\nwrote $out/summary.txt" . ($kind eq 'perf' ? '' : " and <level>-{mix,calls,functions,owners}.txt") . "\n";
 for my $level (@levels) {
 	die "objects differ at -$level: the two compilers must produce identical output\n"
 		if compare("$out/$level-seed.o", "$out/$level-self.o") != 0;

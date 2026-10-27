@@ -273,12 +273,13 @@ sub callgrind_command {
 #   objects => {object path => Ir}, own => Ir of $binary,
 #   own_events => {event => count} for $binary,
 #   addr => {address => Ir} for $binary (with --dump-instr=yes),
+#   addr_fn => {address => function} for $binary (with --dump-instr=yes),
 #   fn => {function => self Ir} for $binary,
 #   calls => {callee => calls executed} (callees in $binary).
 sub parse_callgrind {
 	my ($path, $binary) = @_;
 	$binary = abs_path($binary) if defined $binary;
-	my %r = (events => [], totals => {}, objects => {}, own => 0, own_events => {}, addr => {}, fn => {}, calls => {});
+	my %r = (events => [], totals => {}, objects => {}, own => 0, own_events => {}, addr => {}, addr_fn => {}, fn => {}, calls => {});
 	my (%obname, %fnname);
 	my ($ob, $fn, $cob, $cfn) = ('', '', '', '');
 	my @positions = ('line');
@@ -307,6 +308,7 @@ sub parse_callgrind {
 				$r{own} += $ir;
 				$r{fn}{$fn} += $ir;
 				$r{addr}{ $last[$instr_index] } += $ir if $instr_index >= 0;
+				$r{addr_fn}{ $last[$instr_index] } //= $fn if $instr_index >= 0;
 				for my $e (0 .. $#costs) { $r{own_events}{ $r{events}[$e] } += $costs[$e]; }
 			}
 			next;
@@ -459,9 +461,10 @@ sub classify {
 }
 
 # Dynamic instruction mix of $binary's own code from a parsed callgrind run.
+# $dis is the binary's disassembly (disassemble), when the caller has it.
 sub instruction_mix {
-	my ($parsed, $binary) = @_;
-	my $dis = disassemble($binary);
+	my ($parsed, $binary, $dis) = @_;
+	$dis //= disassemble($binary);
 	my %mix;
 	my $unknown = 0;
 	while (my ($a, $n) = each %{ $parsed->{addr} }) {
@@ -470,6 +473,20 @@ sub instruction_mix {
 		$mix{ classify($t) } += $n;
 	}
 	$mix{'(unknown address)'} = $unknown if $unknown;
+	return \%mix;
+}
+
+# The same mix for each function of $binary's own code: {function => {class => Ir}}.
+# Callgrind's recursion levels (name'2, name'3) are merged into the function.
+sub owner_mix {
+	my ($parsed, $binary, $dis) = @_;
+	$dis //= disassemble($binary);
+	my %mix;
+	while (my ($a, $n) = each %{ $parsed->{addr} }) {
+		my $t = $dis->{$a};
+		(my $fn = $parsed->{addr_fn}{$a} // '?') =~ s/'\d+$//;
+		$mix{$fn}{ defined $t ? classify($t) : '(unknown address)' } += $n;
+	}
 	return \%mix;
 }
 

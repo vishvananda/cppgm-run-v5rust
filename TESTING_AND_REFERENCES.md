@@ -94,7 +94,9 @@ particular output shapes. Maintainer `make test` runs both `test-course` and
 `test-regression`; student-export `make test` runs the course contract only.
 PA33's export omits its regression fixtures and `maintainer/` tooling entirely.
 The source-only `pa33/maintainer/Makefile` retains census and Cachegrind
-targets; these are not PA33 student requirements.
+targets, which are not student requirements; the course lane
+`make -C pa33 test-kernels` (PA35's kernels under Cachegrind, at PA33's
+limit) is one, so `make test-report` needs valgrind.
 Keep solution-specific expectations out of graded course fixtures.
 
 ## Reference policy

@@ -6,7 +6,7 @@
 # counts both builds on the frozen workload. Both builds run the same
 # source, so they do the same work and must write identical objects; any
 # difference is the generated code. Prints NEW / OLD per level (with
-# callgrind also the instruction-class mix, calls and functions in DIR;
+# callgrind also the instruction-class mix, calls, functions and owners in DIR;
 # --sim selects callgrind with cache and branch simulation and adds the
 # cycle proxy; --no-cache measures again even when a cached result exists).
 #

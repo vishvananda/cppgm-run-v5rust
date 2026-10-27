@@ -214,12 +214,14 @@ So PA19 should leave behind:
 
 ### Design Notes (Non-Normative)
 
-The useful shape for PA19 is not another special-case layer. The same typed
-template declarations, template arguments, substitution results, deduction
-bindings, and deferred-instantiation records from PA14-PA18 should be threaded
-through the combined cases.
+Compose the typed declarations, arguments, substitution results, deduction
+bindings and deferred demands from PA14-PA18. Preserve dependent owners,
+argument validity checks and substitution-failure state across their boundaries.
 
-When a PA19 test fails, first look for data that was lost between those
-subsystems: an alias expansion that discarded a dependent owner, a pack binding
-that became text-only, a substitution failure promoted into a hard diagnostic,
-or an instantiation record forced before the template arguments were known.
+Check reuse as well as correctness and growth: repeated requests for one
+specialization should reuse completed facts; distinct specializations should
+reuse results independent of their arguments and context. Vary demanded
+specializations and shared pattern size separately to expose repeated fixed
+work. A declaration query should not analyze an unused body. Count the work
+your implementation performs; linear growth alone does not show that it is
+necessary. Small supported examples suffice for these investigations.

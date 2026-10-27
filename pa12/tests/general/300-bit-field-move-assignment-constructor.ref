@@ -1,0 +1,97 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $source : obj<4x4>
+  slot $target : obj<4x4>
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr $source
+    call void @Bits__Bits(%t1)
+    %t2 = addr $target
+    call void @Bits__Bits(%t2)
+    %t3 = addr $source
+    %t4 = index i8 [projection=field] %t3, 0
+    %t5 = binary and u8 0, 1
+    %t6 = convert zext u32 u8 %t5
+    %t7 = load u8 %t4
+    %t8 = binary and u8 %t7, 254
+    %t9 = binary or u8 %t8, %t5
+    store u8 %t9, %t4
+    %t10 = addr $source
+    %t11 = index i8 [projection=field] %t10, 0
+    %t12 = binary and u8 3, 3
+    %t13 = convert zext u32 u8 %t12
+    %t14 = binary shl u8 %t12, 1
+    %t15 = load u8 %t11
+    %t16 = binary and u8 %t15, 249
+    %t17 = binary or u8 %t16, %t14
+    store u8 %t17, %t11
+    %t18 = addr $target
+    %t19 = addr $source
+    %t20 = call ptr @Bits__operator___ov2(%t18, %t19)
+    %t21 = addr $target
+    %t22 = index i8 [projection=field] %t21, 0
+    %t23 = load u8 %t22
+    %t24 = binary and u8 %t23, 1
+    %t25 = convert zext u32 u8 %t24
+    %t26 = copy i32 %t25
+    %t27 = cmp ne i32 %t26, 0
+    branch %t27, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t28 = addr $target
+    %t29 = index i8 [projection=field] %t28, 0
+    %t30 = load u8 %t29
+    %t31 = binary ushr u8 %t30, 1
+    %t32 = binary and u8 %t31, 3
+    %t33 = convert zext u32 u8 %t32
+    %t34 = copy i32 %t33
+    %t35 = cmp ne i32 %t34, 3
+    %t36 = cmp ne i64 %t35, 0
+    store typed i64 %t36, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t37 = load typed i64 $lor__1
+    %t38 = convert trunc i32 i64 %t37
+    return i32 %t38
+}
+function @Bits__Bits(%this : ptr [object_bytes=4]) -> void [binding=weak, object=_ZN4BitsC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = binary and u8 1, 1
+    store u8 %t3, %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = binary and u8 3, 2
+    %t7 = binary shl u8 %t6, 1
+    %t8 = load u8 %t5
+    %t9 = binary and u8 %t8, 249
+    %t10 = binary or u8 %t9, %t7
+    store u8 %t10, %t5
+    return void
+}
+function @Bits__operator___ov2(%this : ptr [object_bytes=4], %other : ptr [pass=by_address, object_bytes=4]) -> ptr [unwind=no, binding=weak, object=_ZN4BitsaSEOS_, inline_hint=yes] {
+  slot $this : ptr
+  slot $other : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %other, $other
+    %t1 = load typed ptr $other
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load u8 %t2
+    %t4 = load typed ptr $this
+    %t5 = index i8 [projection=field] %t4, 0
+    store u8 %t3, %t5
+    %t6 = load typed ptr $this
+    return ptr %t6
+}
+alias object _ZN4BitsC2Ev = @Bits__Bits

@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# kernels.pl [--compiler C] [--host g++] [--out DIR] [--scale N]
+# kernels.pl [--compiler C] [--host g++] [--out DIR] [--scale N] | --list
 #
 # Generated-code kernels: each kernel in pa35/kernels is compiled by C (and
 # by the host GCC as the yardstick) at its level, linked against the same
@@ -19,10 +19,9 @@ use Getopt::Long;
 use PA35;
 
 my %a = (compiler => "$PA35::ROOT/dev/cppgm++", host => 'g++', out => "$PA35::PA35/obj/kernels", scale => 1);
-GetOptions(\%a, 'compiler=s', 'host=s', 'out=s', 'scale=i') && $a{scale} >= 1
-	or die "usage: kernels.pl [--compiler C] [--host g++] [--out DIR] [--scale N]\n";
+GetOptions(\%a, 'compiler=s', 'host=s', 'out=s', 'scale=i', 'list') && $a{scale} >= 1
+	or die "usage: kernels.pl [--compiler C] [--host g++] [--out DIR] [--scale N] | --list\n";
 my $K = "$PA35::PA35/kernels";
-my $compiler = abs_path($a{compiler}) // die "no compiler $a{compiler}\n";
 
 # name, driver case, source, level, accessor depth, iterations, alias flag
 my @CASES = (
@@ -31,6 +30,10 @@ my @CASES = (
 	['lookup', 2, 'lookup.cpp', 3, 0, 1 << 25, 0],
 	['exceptions', 3, 'exception.cpp', 3, 0, 1 << 23, 0],
 );
+# --list prints the kernel names, so a check that counts them (pa33's) knows
+# the total before anything is measured.
+if ($a{list}) { print "$_->[0]\n" for @CASES; exit 0; }
+my $compiler = abs_path($a{compiler}) // die "no compiler $a{compiler}\n";
 my @EDGES = (0, 1, 3, 4, 15, 16, 17, 18, 257, 1023, 1024, 1025);
 
 # Generated programs that loop forever must fail, not hang the check.

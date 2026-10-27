@@ -250,17 +250,14 @@ So PA17 should leave behind:
 
 ### Design Notes (Non-Normative)
 
-The useful shape for PA17 is a canonical template-entity graph. Alias templates,
-variable templates, primary class templates, partial specializations, explicit
-instantiations, and PA15 explicit specializations should refer to the same
-semantic entities instead of being tracked as unrelated source-text forms.
+Extend the existing semantic template model for aliases, variable templates,
+partial specializations and higher-order arguments. Substitute through semantic
+types, values, dependent expressions and entity identities, retaining checks
+whose validity depends on supplied arguments. An already known result type
+does not prove that substitution is valid, including when an alias discards
+an argument from its result.
 
-Useful intermediate representations include:
-
-- canonical specialization keys built from typed template arguments
-- explicit template-template parameter bindings that point at template entities,
-  not source text
-- an ordered partial-specialization candidate set with deterministic selection
-- explicit ownership links from constructor/member-template specializations back
-  to the class or namespace entity that owns the generated declaration
-- reuse of PA16 constant values for value-dependent specialization keys
+Use canonical argument keys, PA16 constant values and template-entity bindings.
+Keep specialization selection separate from the demanded declaration,
+initializer or body. Retain deterministic partial-specialization selection and
+explicit links to the class or namespace owning each generated entity.

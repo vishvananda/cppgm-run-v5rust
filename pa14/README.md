@@ -361,20 +361,17 @@ Useful intermediate representations include:
   - deducing or resolving template arguments
   - instantiating ordinary specialized declarations
 
-Instantiation decides much of the front end's speed on real code, where one
-header instantiates thousands of specializations. Cloning a demanded
-dependent body and checking the clone is a sound way to instantiate; so is
-sharing the non-dependent parts between instantiations, provided a shared
-node costs the same to read as an ordinary one. What does not scale is
-re-parsing or replaying source text per instantiation, or reaching every
-shared node through an extra lookup on each read.
+Instantiation reuses a checked pattern, supplying arguments to its dependent
+types, expressions and declarations without reparsing tokens. Preserve
+definition-time bindings and results independent of arguments and instantiation
+context. Substituting a type or declaration should consume typed semantic
+structure rather than copy syntax to resolve it again. Analyzing a demanded
+body may need distinct nodes and facts for each specialization; preserve
+specialization-specific identities and every argument-dependent check.
 
-Find a specialization through a table keyed by its template and its
-canonical argument list, with each argument an interned type or constant,
-so that asking for `vector<int>` again is one probe. Scanning a template's
-specializations and comparing their arguments one by one grows with the
-number of instantiations, which is what a standard library header has most
-of. If expressions carry their analyzed facts on the nodes, as PA5
-suggests, each instantiation needs its own copy of the dependent body; that
-is a sound trade, but it puts the copy on the front end's hottest path, so
-keep it a plain walk over the nodes.
+Index specializations by template identity and canonical arguments, so a
+repeated request reuses the result without scanning earlier specializations.
+Keep declaration, layout and body demands separate: requiring a type must not
+instantiate unrelated bodies. Where body copies are needed, share immutable
+structure when useful and keep instance facts directly accessible. Check both
+growth and reuse; proportional work can still repeat avoidable analysis.

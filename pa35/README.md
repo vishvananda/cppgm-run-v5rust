@@ -184,7 +184,7 @@ scripts build). Each starts with a usage comment.
 | Command | Purpose |
 |---|---|
 | `make -C pa35 freeze LABEL=L` | freeze `pa35/obj/bin/{seed,self}-L` from the current tree |
-| `make -C pa35 measure LABEL=L [SIM=1]` | callgrind on seed-L and self-L at `-O0` and `-O3`: own-binary instructions, mix by instruction class, call and function excess, in `pa35/obj/results/L` (`L-sim` with `SIM=1`) |
+| `make -C pa35 measure LABEL=L [SIM=1]` | callgrind on seed-L and self-L at `-O0` and `-O3`: own-binary instructions, mix by instruction class, call and function excess, and each matched function's excess by class (`<level>-owners.txt`), in `pa35/obj/results/L` (`L-sim` with `SIM=1`) |
 | `make -C pa35 abba LABEL=L [LEVEL=-O3]` | paired timing of seed-L and self-L |
 | `perl pa35/scripts/build_with.pl --compiler C --out DIR` | build `cppgm++` from this source with any compiler |
 | `make -C pa35 identity OLD=A NEW=B` | whether two compilers generate identical code for every `cppgm++` object and the workload, and their compiler work |
@@ -285,7 +285,9 @@ saves at callee-saved policy and shrink-wrapping, register moves at
 coalescing, jumps and compares at block placement and switch lowering,
 extensions at narrow-value handling, calls at inlining. Compare functions one
 by one only when their call counts match in seed and self; otherwise inlining
-has moved cost between them.
+has moved cost between them. `measure` writes that comparison as
+`<level>-owners.txt`: each matched function's excess with its classes, so the
+mechanism and its owner are read together.
 
 Incremental work depends on a few foundations. Check them first:
 

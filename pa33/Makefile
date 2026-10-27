@@ -44,6 +44,9 @@ BEHAVIOR_O1_TEST_ROOT ?= $(BEHAVIOR_TEST_ROOT)/o1
 BEHAVIOR_O2_TEST_ROOT ?= $(BEHAVIOR_TEST_ROOT)/o2
 BEHAVIOR_O3_TEST_ROOT ?= $(BEHAVIOR_TEST_ROOT)/o3
 DRIVER_TEST_ROOT ?= tests/driver
+# PA35's generated-code kernels at PA33's limit (scripts/check_kernels.pl).
+KERNEL_LIMIT ?= 1.50
+KERNEL_SCALE ?= 16
 
 all: dev-shared-target
 
@@ -75,7 +78,7 @@ define run_native_bucket_ref
 	fi
 endef
 
-test: test-course
+test: test-course test-kernels
 
 test-course: $(TEST_DEPS)
 	$(call run_native_bucket,$(O1_TEST_ROOT),-O1)
@@ -85,6 +88,9 @@ test-course: $(TEST_DEPS)
 	$(call run_native_bucket,$(BEHAVIOR_O2_TEST_ROOT),-O2)
 	$(call run_native_bucket,$(BEHAVIOR_O3_TEST_ROOT),-O3)
 	@perl ../scripts/check_cppgm_native_programs.pl $(CPPGM_DRIVER_APP) "$(DRIVER_TEST_ROOT)" $(LOWIR2NATIVE_APP)
+
+test-kernels: $(TEST_DEPS)
+	perl scripts/check_kernels.pl --compiler $(CPPGM_DRIVER_APP) --limit $(KERNEL_LIMIT) --scale $(KERNEL_SCALE)
 
 test-debuginfo: $(TEST_DEPS)
 	$(call run_native_bucket,$(DEBUGINFO_O1_TEST_ROOT),-O1)
@@ -130,7 +136,7 @@ CHECK_COMPARE = perl ../scripts/run_routed_test_spec.pl "$(TEST)" \
 	'$(O1_TEST_ROOT)/*|$(DEBUGINFO_O1_TEST_ROOT)/*|$(BEHAVIOR_O1_TEST_ROOT)/*|$(O2_TEST_ROOT)/*|$(DEBUGINFO_O2_TEST_ROOT)/*|$(BEHAVIOR_O2_TEST_ROOT)/*|$(O3_TEST_ROOT)/*|$(DEBUGINFO_O3_TEST_ROOT)/*|$(BEHAVIOR_O3_TEST_ROOT)/*::scripts/compare_results.pl ref check {tests}'
 include ../scripts/pa_run_check_targets.mk
 
-.PHONY: dev-shared-target ref-test ref-test-debuginfo test-debuginfo
+.PHONY: dev-shared-target ref-test ref-test-debuginfo test-debuginfo test-kernels
 ../dev/$(TARGET):
 	$(MAKE) -C ../dev $(TARGET) CXX=$(CXX) CPPGM_HOST_CXX=$(CPPGM_HOST_CXX)
 
@@ -139,5 +145,6 @@ dev-shared-target:
 
 clean:
 	-rm -f $(TARGET) $(TARGET)-debug
+	-rm -rf obj
 
 -include maintainer/Makefile

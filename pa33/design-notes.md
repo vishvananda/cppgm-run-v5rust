@@ -57,12 +57,15 @@ The course solution meets the bounds with a liveness-based allocator of this
 kind for values that cross blocks. It is computed before instruction
 selection. Values used inside one block get registers as they are selected,
 and the selector keeps two general and two vector registers back as scratch.
-Under its course-model runtime, a function with exception regions keeps its
-cross-block values in memory, because that runtime's handler records restore
-callee-saved registers to their values at the push. Those are limits of one
-design, not advice. Selecting into virtual registers and assigning them
-afterwards, with a coloring or linear-scan allocator, meets the same bounds,
-and later work has found it easier to extend.
+A function with exception regions is not a reason to keep its cross-block
+values in memory. A value needs a home a handler can find only where that
+handler reads it, and only across the calls that can reach the handler;
+model what the runtime does to registers at a throw as what those calls
+clobber, and let the allocator price each value's home from that. Every
+other value keeps its register as in any function. The exceptions kernel of
+`make test-kernels` measures this directly. Selecting into virtual registers
+and assigning them afterwards, with a coloring or linear-scan allocator,
+meets the same bounds, and later work has found it easier to extend.
 
 Keep each improvement small enough to validate with an existing fixture.
 Compare your own O0 and optimized dumps to understand the redundant work, then

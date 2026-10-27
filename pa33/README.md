@@ -30,7 +30,8 @@ including entry-role and other explicit metadata.
 - **O1:** meet the bounds for local cleanup, such as redundant copies,
   argument setup, address calculations and unnecessary jumps.
 - **O2:** also meet the bounds for values live across blocks and calls,
-  loop register use and frame size.
+  loop register use and frame size, in functions with and without
+  exception regions.
 - **O3:** handle PA32's O3 output through the optimized native backend.
   A separate O3 machine pass is not required if your O2 backend meets the bar.
 
@@ -70,12 +71,17 @@ The predicates count mnemonics as the PA24 dump spells them (`load.*` and
 implicit prologue; see PA24's machine-IR text).
 The `.ref.mir` and `.ref.cmir` files are examples, not optimized-output oracles.
 
-These bounds provide a deterministic, lightweight code-quality bar. They are
-not measurements of execution time: fewer static instructions do not always
-mean faster code. No timing threshold, Cachegrind installation or allocator
-statistics are required to complete PA33. Execution time is still what the
-bar stands for: PA34 builds the compiler with itself, so the code this backend
-generates becomes the compiler's own speed.
+These bounds are a deterministic, lightweight code-quality bar; fewer static
+instructions do not always mean faster code. `make test-kernels` adds a
+dynamic bar: the four kernels in `../pa35/kernels/`, compiled by `cppgm++`
+at their levels and by GCC and linked against one GCC-built driver, each
+execute at most 1.50 times GCC's instructions, counted with Cachegrind
+(which this check requires). They exercise an accessor chain around a call
+in a loop, a hash lookup, and loop state carried across calls and a `try`
+region, so the optimizer's inlining and the allocator's register use,
+inside exception regions included, are measured here rather than deferred.
+PA34 builds the compiler with itself, so this code becomes the compiler's
+own speed; PA35 tightens the same kernels to 1.30.
 
 For a failed expectation, inspect the reported predicate or run:
 
@@ -100,8 +106,8 @@ make test-debuginfo
 make check TEST='tests/o1/100-return-copy-coalesce.t'
 ```
 
-`make test` runs the O1, O2 and O3 MIR and behavior buckets and the
-self-checking C++ programs under `tests/driver/`.
+`make test` runs the O1, O2 and O3 MIR and behavior buckets, the
+self-checking C++ programs under `tests/driver/` and `make test-kernels`.
 The driver programs must exit zero and write no stdout at all three levels,
 when built directly, through PA25 compiler objects (`.obj`), and through PA26
 native objects (`.o`) linked with `CPPGM_HOST_CXX`, and through the compiler's
@@ -123,9 +129,9 @@ cases and applies bounds only where an expectation is supplied.
 
 PA33 does not require a new LowIR optimizer, source-language changes,
 interprocedural machine optimization, instruction scheduling or vectorization.
-What it requires is meeting the supplied predicates while preserving earlier
-contracts. The predicates reward keeping values in registers over their whole
-live ranges, across calls (in callee-saved registers) and around loops, more
-than local rewrites of a conservative frame form; a liveness-based allocator
-over the PA24 machine IR is the direct way to meet them, and the one later
-work keeps improving.
+What it requires is meeting the supplied predicates and kernel limits while
+preserving earlier contracts. They reward keeping values in registers over
+their whole live ranges, across calls (in callee-saved registers), around
+loops and through exception regions, more than local rewrites of a
+conservative frame form; a liveness-based allocator over the PA24 machine IR
+is the direct way to meet them, and the one later work keeps improving.
