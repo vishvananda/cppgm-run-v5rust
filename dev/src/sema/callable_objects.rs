@@ -105,15 +105,16 @@ impl Analyzer<'_> {
                     let produced = self.convert_class_operand(callee, binding, scope)?;
                     return self.indirect_call(id, callee, arguments, produced.ty, scope);
                 }
-                let selected = match selected {
-                    Some(selected) => selected,
-                    None => self.select_call(
-                        location,
-                        self.tree.expr_lists.get(arguments).len(),
-                        1,
-                        &scratch,
-                    )?,
-                };
+                // The first resolution only decides whether to consider a
+                // surrogate. The ordinary member-call resolution then runs
+                // independently, retaining its own argument sequences.
+                let selected = self.resolve_call(
+                    location,
+                    Candidates::Functions(set),
+                    argument_buffer.as_slice(),
+                    Some(object),
+                    &mut scratch,
+                )?;
                 self.finish_selected_call(id, designation, scope, selected, &scratch)
             } else if let Some(binding) = self.surrogate_call(id, class, &mut scratch.surrogates)? {
                 let produced = self.convert_class_operand(callee, binding, scope)?;

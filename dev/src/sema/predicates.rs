@@ -292,6 +292,9 @@ impl Analyzer<'_> {
             T::IsConvertible | T::IsConvertibleTo | T::IsNothrowConvertible => {
                 return Err(Error::Invariant("conversion predicate without a result"));
             }
+            T::IsInvocable | T::IsNothrowInvocable => {
+                return Err(Error::Invariant("invocation predicate without a result"));
+            }
             T::IsConstructible
             | T::IsNothrowConstructible
             | T::IsTriviallyConstructible

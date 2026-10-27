@@ -166,6 +166,76 @@ mod tests {
     }
 
     #[test]
+    fn invocation_queries_preserve_demand_and_cache_without_emitting_call_bodies() {
+        let source = SourceBuffer::new(
+            br#"
+            struct C { int field; int call(int) noexcept; };
+            struct Wrapper { C& operator*() const noexcept; };
+            struct F { int operator()(int) const noexcept; };
+            struct Hidden { private: int operator()(int) const; };
+            struct Dormant { template<class T> int operator()(T) const noexcept { T::missing(); } };
+            struct Incomplete;
+            typedef int (*Fn)(int);
+            static_assert(__is_invocable(Fn,int), "function");
+            static_assert(__is_nothrow_invocable(F,int), "functor");
+            static_assert(__is_nothrow_invocable(Dormant,int), "signature only");
+            static_assert(__is_invocable(int C::*,C&), "member");
+            static_assert(__is_nothrow_invocable(int C::*,Wrapper), "indirection");
+            static_assert(!__is_invocable(Hidden,int), "access");
+            static_assert(!__is_invocable(int C::*,Incomplete,int), "arity before object demand");
+            static_assert(!__is_invocable(void,int), "void callable");
+        "#
+            .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"invocation-query").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let bodies = tree.bodies.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let expressions = analyzer.tree.expressions.mark();
+        let keys: Vec<_> = analyzer
+            .graph
+            .expression_predicates
+            .expressions
+            .keys()
+            .cloned()
+            .collect();
+        assert!(!keys.is_empty());
+        for key in &keys {
+            let ast::ExprKind::TypePredicate { predicate, types } =
+                analyzer.tree.expressions.get(key.expression).kind
+            else {
+                panic!("retained query");
+            };
+            analyzer
+                .predicate_constant(key.expression, predicate, types, key.scope, SourceOffset(0))
+                .unwrap();
+        }
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert_eq!(analyzer.tree.bodies.mark(), bodies);
+        assert!(analyzer.graph.expression_predicates.operands.is_empty());
+        assert!(
+            analyzer
+                .graph
+                .expression_predicates
+                .operand_order
+                .is_empty()
+        );
+        assert!(analyzer.graph.root_demands.as_slice().is_empty());
+        assert!(analyzer.body_context.is_none());
+        assert!(analyzer.pretyped_callable.is_none());
+        assert!(analyzer.pretyped_object.is_none());
+        assert_eq!(analyzer.unevaluated, 0);
+    }
+
+    #[test]
     fn construction_queries_retain_expanded_types_and_reuse_undemanded_selections() {
         let source = SourceBuffer::new(
             br#"
@@ -250,9 +320,101 @@ pub(super) struct Queries {
     // the instantiated bindings. Query results do not depend on later body
     // or emission demand. Hard failures remove their active entries.
     expressions: HashMap<Key, Answer>,
+    operands: HashMap<ast::ExprId, (TypeId, ValueCategory)>,
+    operand_order: Vec<ast::ExprId>,
+}
+impl Queries {
+    fn finish_operands(&mut self, mark: usize) {
+        for id in self.operand_order.drain(mark..) {
+            self.operands.remove(&id);
+        }
+    }
 }
 
 impl Analyzer<'_> {
+    fn invocation_query(
+        &mut self,
+        types: &[TypeId],
+        location: SourceOffset,
+        scope: ScopeId,
+    ) -> Result<Properties, Error> {
+        for (index, &ty) in types.iter().enumerate() {
+            if matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Scalar(Scalar::Void)
+            ) || index != 0 && matches!(self.graph.types.get(ty).kind, TypeKind::Function { .. })
+            {
+                return Ok(Properties::default());
+            }
+        }
+        let first = types[0];
+        if matches!(self.graph.types.get(first).kind, TypeKind::Function { cv, reference, .. } if cv.0 != 0 || reference.is_some())
+        {
+            return Ok(Properties::default());
+        }
+        if let TypeKind::Class(class) = self.graph.types.get(first).kind
+            && !self.complete_class(class)?
+        {
+            return Err(Error::at(
+                location,
+                "a type trait of an incomplete class type",
+            ));
+        }
+        let mark = self.graph.expression_predicates.operand_order.len();
+        let result = self.invocation_call_query(types, location, scope);
+        self.graph.expression_predicates.finish_operands(mark);
+        result
+    }
+
+    fn invocation_call_query(
+        &mut self,
+        types: &[TypeId],
+        location: SourceOffset,
+        scope: ScopeId,
+    ) -> Result<Properties, Error> {
+        let start = self.tree.expr_lists.begin();
+        for &ty in types {
+            let operand = self.defer_trait_declval(ty, location)?;
+            self.tree.expr_lists.push(operand);
+        }
+        let arguments = self
+            .tree
+            .expr_lists
+            .finish(start)
+            .map_err(|_| Error::Limit("invocation query argument limit"))?;
+        let callable = self.tree.expr_lists.get(arguments)[0];
+        let call = self
+            .tree
+            .expressions
+            .add(ast::Expression {
+                location,
+                // builtin_invoke replaces this placeholder callee before typing it.
+                kind: ast::ExprKind::Call {
+                    callee: callable,
+                    arguments,
+                },
+            })
+            .map_err(|_| Error::Limit("invocation query syntax limit"))?;
+        // Call facts own temporary/throwing information by ExprId, so this
+        // unevaluated query needs no synthetic function or body identity.
+        let facts = match self.builtin_invoke(call, arguments, scope) {
+            Ok(facts) => facts,
+            Err(Error::Diagnostic { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(Properties::default());
+            }
+            Err(error) => return Err(error),
+        };
+        self.graph.expression_facts.set(call, facts);
+        super::record(&mut self.graph.expression_types, call.index(), facts.ty);
+        super::record(&mut self.graph.expression_scopes, call.index(), scope);
+        Ok(Properties {
+            viable: true,
+            nothrow: !self.expression_may_throw(call)?,
+            trivial: false,
+        })
+    }
+
     fn construction_query(
         &mut self,
         mut target: TypeId,
@@ -538,7 +700,9 @@ impl Analyzer<'_> {
                 let operands = types.as_slice();
                 let first = operands[0];
                 let result = (|| {
-                    if predicate.is_construction() {
+                    if predicate.is_invocation() {
+                        self.invocation_query(operands, location, scope)
+                    } else if predicate.is_construction() {
                         self.construction_query(first, &operands[1..], location, scope)
                     } else {
                         let second = operands
@@ -572,9 +736,10 @@ impl Analyzer<'_> {
         };
         Ok(properties.viable
             && match predicate {
-                T::IsNothrowAssignable | T::IsNothrowConvertible | T::IsNothrowConstructible => {
-                    properties.nothrow
-                }
+                T::IsNothrowAssignable
+                | T::IsNothrowConvertible
+                | T::IsNothrowConstructible
+                | T::IsNothrowInvocable => properties.nothrow,
                 T::IsTriviallyAssignable | T::IsTriviallyConstructible => properties.trivial,
                 _ => true,
             })
@@ -732,13 +897,7 @@ impl Analyzer<'_> {
         self.trait_operand(ty, location, scope, false)
     }
 
-    fn trait_operand(
-        &mut self,
-        ty: TypeId,
-        location: SourceOffset,
-        scope: ScopeId,
-        prvalue: bool,
-    ) -> Result<ast::ExprId, Error> {
+    fn trait_operand_shape(&self, ty: TypeId, prvalue: bool) -> (TypeId, ValueCategory) {
         let category = match self.graph.types.get(ty).kind {
             TypeKind::Reference {
                 kind: RefKind::Lvalue,
@@ -761,6 +920,10 @@ impl Analyzer<'_> {
         } else {
             ty
         };
+        (ty, category)
+    }
+
+    fn trait_operand_syntax(&mut self, location: SourceOffset) -> Result<ast::ExprId, Error> {
         let label = self
             .identifiers
             .intern(b"<trait declval>")
@@ -769,19 +932,64 @@ impl Analyzer<'_> {
             .tree
             .implicit_name(label, location)
             .map_err(|_| Error::Limit("assignment query name limit"))?;
-        let id = self
-            .tree
+        self.tree
             .expressions
             .add(ast::Expression {
                 location,
                 kind: ast::ExprKind::Id(name),
             })
-            .map_err(|_| Error::Limit("assignment query syntax limit"))?;
+            .map_err(|_| Error::Limit("assignment query syntax limit"))
+    }
+
+    fn publish_trait_operand(
+        &mut self,
+        id: ast::ExprId,
+        ty: TypeId,
+        category: ValueCategory,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
         let mut facts = self.new_expression_facts(ty, category)?;
         facts.origin = ExpressionOrigin::Implicit;
         self.graph.expression_facts.set(id, facts);
         super::record(&mut self.graph.expression_types, id.index(), ty);
         super::record(&mut self.graph.expression_scopes, id.index(), scope);
+        Ok(())
+    }
+
+    fn defer_trait_declval(
+        &mut self,
+        ty: TypeId,
+        location: SourceOffset,
+    ) -> Result<ast::ExprId, Error> {
+        let shape = self.trait_operand_shape(ty, false);
+        let id = self.trait_operand_syntax(location)?;
+        self.graph.expression_predicates.operands.insert(id, shape);
+        self.graph.expression_predicates.operand_order.push(id);
+        Ok(id)
+    }
+
+    pub(super) fn demand_trait_operand(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let Some((ty, category)) = self.graph.expression_predicates.operands.remove(&id) else {
+            return Ok(false);
+        };
+        self.publish_trait_operand(id, ty, category, scope)?;
+        Ok(true)
+    }
+
+    fn trait_operand(
+        &mut self,
+        ty: TypeId,
+        location: SourceOffset,
+        scope: ScopeId,
+        prvalue: bool,
+    ) -> Result<ast::ExprId, Error> {
+        let (ty, category) = self.trait_operand_shape(ty, prvalue);
+        let id = self.trait_operand_syntax(location)?;
+        self.publish_trait_operand(id, ty, category, scope)?;
         Ok(id)
     }
 }

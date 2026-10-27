@@ -741,7 +741,7 @@ impl Analyzer<'_> {
         Ok(facts)
     }
 
-    fn builtin_invoke(
+    pub(super) fn builtin_invoke(
         &mut self,
         id: ast::ExprId,
         arguments: List<ast::ExprId>,

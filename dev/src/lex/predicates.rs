@@ -67,10 +67,12 @@ pub(crate) enum TypePredicate {
     ReferenceBindsToTemporary,
     ReferenceConstructsFromTemporary,
     ReferenceConvertsFromTemporary,
+    IsInvocable,
+    IsNothrowInvocable,
 }
 
 impl TypePredicate {
-    const SPELLINGS: [(Self, &'static str); 65] = [
+    const SPELLINGS: [(Self, &'static str); 67] = [
         (Self::IsClass, "__is_class"),
         (Self::IsEnum, "__is_enum"),
         (Self::IsUnion, "__is_union"),
@@ -151,6 +153,8 @@ impl TypePredicate {
             Self::ReferenceConvertsFromTemporary,
             "__reference_converts_from_temporary",
         ),
+        (Self::IsInvocable, "__is_invocable"),
+        (Self::IsNothrowInvocable, "__is_nothrow_invocable"),
     ];
 
     pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
@@ -179,13 +183,17 @@ impl TypePredicate {
     }
 
     pub(crate) fn arity(self) -> usize {
-        if self.is_construction() {
+        if self.is_construction() || self.is_invocation() {
             0
         } else if matches!(self, Self::IsSame | Self::IsBaseOf) || self.is_expression() {
             2
         } else {
             1
         }
+    }
+
+    pub(crate) fn is_invocation(self) -> bool {
+        matches!(self, Self::IsInvocable | Self::IsNothrowInvocable)
     }
 
     pub(crate) fn is_construction(self) -> bool {

@@ -60,7 +60,10 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(id, facts);
         Ok(facts)
     }
-    fn expression_already_typed(&mut self, id: ast::ExprId) -> Result<bool, Error> {
+    fn expression_already_typed(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<bool, Error> {
+        if self.demand_trait_operand(id, scope)? {
+            return Ok(true);
+        }
         if let Some(facts) = self.graph.expression_facts.known(id)
             && facts.origin == super::expression_facts::ExpressionOrigin::Implicit
         {
@@ -86,7 +89,7 @@ impl Analyzer<'_> {
         reason = "One semantic source-expression dispatch retains parse-once facts"
     )]
     fn typed_expression_form(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
-        if self.expression_already_typed(id)? {
+        if self.expression_already_typed(id, scope)? {
             return Ok(());
         }
         super::record(&mut self.graph.expression_scopes, id.index(), scope);
