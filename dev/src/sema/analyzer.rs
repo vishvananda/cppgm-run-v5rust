@@ -885,8 +885,8 @@ impl<'tree> Analyzer<'tree> {
         self.template_depth = body.template_depth;
         self.class_depth = 0;
         let saved_context = self.body_context.take();
-        if let Some(context) = &saved_context {
-            self.enclosing_bodies.push(context.entity);
+        if let Some(function) = saved_context.as_ref().and_then(|context| context.function) {
+            self.enclosing_bodies.push(function);
         }
         if self.semantic() {
             let super::types::TypeKind::Function { result, .. } =
@@ -894,7 +894,8 @@ impl<'tree> Analyzer<'tree> {
             else {
                 return Err(Error::Invariant("body without function type"));
             };
-            let mut context = super::procedural_statements::BodyContext::new(result, body.entity);
+            let mut context =
+                super::procedural_statements::BodyContext::new(result, Some(body.entity));
             if body.template_depth == 0
                 && (self.graph.entity(body.entity).definition_emission
                     == super::function_demands::DefinitionEmission::Demanded
@@ -953,7 +954,10 @@ impl<'tree> Analyzer<'tree> {
         if has_frame {
             let _frame = self.capture_frames.pop()?;
         }
-        if saved_context.is_some() {
+        if saved_context
+            .as_ref()
+            .is_some_and(|context| context.function.is_some())
+        {
             self.enclosing_bodies.pop();
         }
         self.body_context = saved_context;

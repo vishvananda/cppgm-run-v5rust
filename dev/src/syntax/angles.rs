@@ -21,7 +21,7 @@ struct Fence {
 struct TemplateListKey {
     position: u64,
     environment: u64,
-    scope: ScopeId,
+    scope: Option<ScopeId>,
     category: Option<Category>,
     alternatives_active: bool,
     call_follows: bool,

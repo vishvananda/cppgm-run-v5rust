@@ -211,7 +211,7 @@ impl Analyzer<'_> {
         }
         if !dynamic && self.unevaluated == 0 {
             self.prepare_type_information(target)?;
-            let owner = self.body_context.as_ref().map(|body| body.entity);
+            let owner = self.body_context.as_ref().and_then(|body| body.function);
             if self.type_queries.requests.insert((owner, target)) {
                 self.graph.storage_layouts.push((
                     owner,
@@ -226,7 +226,7 @@ impl Analyzer<'_> {
         {
             self.graph
                 .class_information_uses
-                .push((self.body_context.as_ref().map(|b| b.entity), class));
+                .push((self.body_context.as_ref().and_then(|b| b.function), class));
         }
         Ok(())
     }

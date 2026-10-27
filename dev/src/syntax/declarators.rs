@@ -155,7 +155,7 @@ impl Parser<'_> {
                     let enclosing = self.scopes.current;
                     if let Some(member) = member {
                         let scope = self.bound_lookup_scope(member, &mut bound_scope)?;
-                        self.scopes.current = scope;
+                        self.scopes.current = Some(scope);
                     }
                     let result = self.without_angle(Self::expression);
                     self.scopes.current = enclosing;
@@ -196,7 +196,7 @@ impl Parser<'_> {
             }
             let saved = self.scopes.current;
             if lookup_member.is_some() {
-                self.scopes.current = parameter_scope;
+                self.scopes.current = Some(parameter_scope);
             }
             let result = self.function_qualifiers_with_attributes(mode == Mode::Named);
             self.scopes.current = saved;
@@ -451,7 +451,7 @@ impl Parser<'_> {
                 None
             };
             if let Some(declarator) = declarator {
-                self.declare_value_declarator(declarator, false, false);
+                self.declare_value_declarator(declarator, false, false)?;
             }
             self.tree.parameters.push(Parameter {
                 location: parameter_location,

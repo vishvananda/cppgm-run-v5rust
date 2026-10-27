@@ -74,7 +74,7 @@ impl Parser<'_> {
             initializer,
         });
         for &declarator in names {
-            self.declare_from_specifiers(declarator, specifiers);
+            self.declare_from_specifiers(declarator, specifiers)?;
             self.tree.init_declarators.push(InitDeclarator {
                 tokens: ast::TokenSpan::default(),
                 declarator,

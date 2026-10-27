@@ -1432,7 +1432,7 @@ fn qualified_member_definitions_complete_the_specializations_forward_identity() 
             .scope,
         Some(forward)
     );
-    parser.scopes.current = forward;
+    parser.scopes.current = Some(forward);
     assert!(parser.scopes.current_instantiation(primary));
 }
 
@@ -1631,10 +1631,10 @@ fn parameter_base_facts_and_alias_records_survive_commit_and_rewind_together() {
             .category,
         Category::Type
     );
-    parser.scopes.current = scope;
+    parser.scopes.current = Some(scope);
     // Unqualified lookup in the template never substitutes its base.
     assert!(parser.scopes.lookup(word).is_none());
-    parser.scopes.current = Scopes::global();
+    parser.scopes.current = Some(Scopes::global());
     let mut later = Vec::new();
     parser.scopes.detach(0, &mut later);
     assert!(parser.scopes.parameter_bases(scope).is_empty());
@@ -1711,7 +1711,7 @@ fn forward_scope_parent_is_restored_when_its_definition_is_abandoned() {
     parser.declaration().unwrap();
     let x = parser.cursor.intern_name(b"X").unwrap();
     let word = parser.cursor.intern_name(b"word").unwrap();
-    let global = parser.scopes.current;
+    let global = parser.scopes.require_current().unwrap();
     let scope = parser.scopes.lookup(x).unwrap().scope.unwrap();
     let outcome: Option<()> = parser
         .attempt(|parser| {
@@ -1721,11 +1721,11 @@ fn forward_scope_parent_is_restored_when_its_definition_is_abandoned() {
         .unwrap();
     assert!(outcome.is_none());
     assert!(!parser.scopes.complete(scope));
-    parser.scopes.current = scope;
+    parser.scopes.current = Some(scope);
     assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
-    parser.scopes.current = global;
+    parser.scopes.current = Some(global);
     parser.declaration().unwrap();
-    parser.scopes.current = scope;
+    parser.scopes.current = Some(scope);
     assert!(parser.scopes.lookup(word).is_none());
 }
 
@@ -1741,40 +1741,46 @@ fn deep_category_search_uses_reusable_work_storage_and_stops_at_cycles() {
     let word = parser.cursor.intern_name(b"word").unwrap();
     let missing = parser.cursor.intern_name(b"missing").unwrap();
     let first = parser.scopes.push_kind(ScopeKind::AnonymousClass).unwrap();
-    parser.scopes.declare(
-        word,
-        Binding {
-            pack: false,
-            alternatives: super::scopes::Categories::default(),
-            guesses: super::scopes::Guesses::default(),
-            specialization: 0,
-            parameter: false,
-            category: Category::Type,
-            scope: None,
-        },
-    );
+    parser
+        .scopes
+        .declare(
+            word,
+            Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+                specialization: 0,
+                parameter: false,
+                category: Category::Type,
+                scope: None,
+            },
+        )
+        .unwrap();
     let mut previous = first;
     for _ in 0..10_000 {
-        parser.scopes.current = Scopes::global();
+        parser.scopes.current = Some(Scopes::global());
         let scope = parser.scopes.push_kind(ScopeKind::AnonymousClass).unwrap();
-        parser.scopes.add_edge(previous);
+        parser.scopes.add_edge(previous).unwrap();
         previous = scope;
     }
     assert_eq!(parser.scopes.lookup(word).unwrap().category, Category::Type);
-    parser.scopes.declare(
-        missing,
-        Binding {
-            pack: false,
-            alternatives: super::scopes::Categories::default(),
-            guesses: super::scopes::Guesses::default(),
-            specialization: 0,
-            parameter: false,
-            category: Category::Value,
-            scope: None,
-        },
-    );
-    parser.scopes.current = first;
-    parser.scopes.add_edge(previous);
+    parser
+        .scopes
+        .declare(
+            missing,
+            Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+                specialization: 0,
+                parameter: false,
+                category: Category::Value,
+                scope: None,
+            },
+        )
+        .unwrap();
+    parser.scopes.current = Some(first);
+    parser.scopes.add_edge(previous).unwrap();
     assert_eq!(
         parser.scopes.lookup(missing).unwrap().category,
         Category::Value
@@ -2305,18 +2311,21 @@ fn failed_angle_query_is_reused_only_in_its_name_environment() {
     )));
     parser.token().unwrap();
     let word = parser.cursor.intern_name(b"word").unwrap();
-    parser.scopes.declare(
-        word,
-        Binding {
-            pack: false,
-            alternatives: super::scopes::Categories::default(),
-            guesses: super::scopes::Guesses::default(),
-            specialization: 0,
-            category: Category::Value,
-            scope: None,
-            parameter: false,
-        },
-    );
+    parser
+        .scopes
+        .declare(
+            word,
+            Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+                specialization: 0,
+                category: Category::Value,
+                scope: None,
+                parameter: false,
+            },
+        )
+        .unwrap();
     let before = parser.scopes.environment();
     let outcome: Option<()> = parser
         .attempt(|parser| {
@@ -2327,18 +2336,21 @@ fn failed_angle_query_is_reused_only_in_its_name_environment() {
         .unwrap();
     assert!(outcome.is_none());
     assert_eq!(parser.scopes.environment(), before);
-    parser.scopes.declare(
-        word,
-        Binding {
-            pack: false,
-            alternatives: super::scopes::Categories::default(),
-            guesses: super::scopes::Guesses::default(),
-            specialization: 0,
-            category: Category::Type,
-            scope: None,
-            parameter: false,
-        },
-    );
+    parser
+        .scopes
+        .declare(
+            word,
+            Binding {
+                pack: false,
+                alternatives: super::scopes::Categories::default(),
+                guesses: super::scopes::Guesses::default(),
+                specialization: 0,
+                category: Category::Type,
+                scope: None,
+                parameter: false,
+            },
+        )
+        .unwrap();
     assert_ne!(parser.scopes.environment(), before);
     let (name, _) = parser.name().unwrap();
     let last = parser
@@ -2658,24 +2670,27 @@ fn deferred_lambda_bodies_see_only_their_source_position_bindings() {
         parameter: false,
         scope: None,
     };
-    parser.scopes.declare(c, type_binding);
+    parser.scopes.declare(c, type_binding).unwrap();
     let (first, second) = parser
         .attempt(|parser| {
             let first = parser.assignment_expression()?;
             parser.expect(crate::lex::pp_lexer::Punctuator::Comma)?;
-            parser.scopes.declare(
-                c,
-                Binding {
-                    pack: false,
-                    alternatives: super::scopes::Categories::default(),
-                    guesses: super::scopes::Guesses::default(),
-                    specialization: 0,
-                    category: Category::Value,
-                    ..type_binding
-                },
-            );
+            parser
+                .scopes
+                .declare(
+                    c,
+                    Binding {
+                        pack: false,
+                        alternatives: super::scopes::Categories::default(),
+                        guesses: super::scopes::Guesses::default(),
+                        specialization: 0,
+                        category: Category::Value,
+                        ..type_binding
+                    },
+                )
+                .unwrap();
             let second = parser.assignment_expression()?;
-            parser.scopes.declare(c, type_binding);
+            parser.scopes.declare(c, type_binding).unwrap();
             Ok((first, second))
         })
         .unwrap()

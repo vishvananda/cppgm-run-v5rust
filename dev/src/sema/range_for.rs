@@ -381,7 +381,7 @@ impl Analyzer<'_> {
         block: ScopeId,
         location: SourceOffset,
     ) -> Result<Option<ast::ExprId>, Error> {
-        let Some(function) = self.body_context.as_ref().map(|body| body.entity) else {
+        let Some(function) = self.body_context.as_ref().and_then(|body| body.function) else {
             return Ok(None);
         };
         let function = self.graph.entity(function);

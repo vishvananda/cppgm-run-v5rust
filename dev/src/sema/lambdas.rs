@@ -370,7 +370,7 @@ impl Analyzer<'_> {
         self.template_depth = saved_depth;
         self.template_head = saved_head;
         let (call, ty) = declared?;
-        let enclosing = self.body_context.as_ref().map(|body| body.entity);
+        let enclosing = self.body_context.as_ref().and_then(|body| body.function);
         let context = self.closure_context(home);
         let naming_context = self.closure_naming_context(home);
         let (course_number, object_number) =

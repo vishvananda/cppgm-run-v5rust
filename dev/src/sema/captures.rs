@@ -427,7 +427,7 @@ impl Analyzer<'_> {
         for function in self
             .body_context
             .iter()
-            .map(|body| body.entity)
+            .filter_map(|body| body.function)
             .chain(self.enclosing_bodies.iter().rev().copied())
         {
             if self
@@ -495,7 +495,7 @@ impl Analyzer<'_> {
         for function in self
             .body_context
             .iter()
-            .map(|body| body.entity)
+            .filter_map(|body| body.function)
             .chain(self.enclosing_bodies.iter().rev().copied())
         {
             let Some(frame) = self.capture_frames.get_mut(function) else {
@@ -634,7 +634,7 @@ impl Analyzer<'_> {
         for function in self
             .body_context
             .iter()
-            .map(|body| body.entity)
+            .filter_map(|body| body.function)
             .chain(self.enclosing_bodies.iter().rev().copied())
         {
             let Some(frame) = self.capture_frames.get(function) else {

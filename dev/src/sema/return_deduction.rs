@@ -187,7 +187,9 @@ impl Analyzer<'_> {
         if matches!(body.return_deduction, ReturnDeduction::Pending) {
             body.return_deduction = ReturnDeduction::Ready(ty);
             body.result = ty;
-            let function = body.entity;
+            let function = body
+                .function
+                .ok_or(Error::Invariant("return deduction without body function"))?;
             self.graph.set_function_result(function, ty)?;
         }
         Ok(())

@@ -126,13 +126,14 @@ impl Analyzer<'_> {
         if self.unevaluated != 0 || self.template_depth != 0 {
             return;
         }
-        let context = if let Some(body) = &self.body_context {
-            ArgumentContext::Function(body.entity)
-        } else if let Some(owner) = self.initializer_demand_owner {
-            ArgumentContext::Initializer(owner)
-        } else {
-            ArgumentContext::Unit
-        };
+        let context =
+            if let Some(function) = self.body_context.as_ref().and_then(|body| body.function) {
+                ArgumentContext::Function(function)
+            } else if let Some(owner) = self.initializer_demand_owner {
+                ArgumentContext::Initializer(owner)
+            } else {
+                ArgumentContext::Unit
+            };
         self.graph
             .constant_addresses
             .note_argument_function(context, function);

@@ -180,8 +180,8 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn mark_reserved_body(&mut self) {
-        if let Some(body) = &self.body_context {
-            self.graph.reserved_deferrals.note_body(body.entity);
+        if let Some(function) = self.body_context.as_ref().and_then(|body| body.function) {
+            self.graph.reserved_deferrals.note_body(function);
         }
     }
 

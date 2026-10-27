@@ -18,7 +18,7 @@ pub(super) struct BodyContext {
     pub placeholder: Option<TypeId>,
     pub undeduced: bool,
     pub reserved_pending: bool,
-    pub entity: super::graph::EntityId,
+    pub function: Option<super::graph::EntityId>,
     pub result: TypeId,
     pub loops: usize,
     pub switches: Vec<SwitchContext>,
@@ -40,7 +40,7 @@ pub(super) enum Control {
     Switch(Option<TypeId>),
 }
 impl BodyContext {
-    pub(super) fn new(result: TypeId, entity: super::graph::EntityId) -> Self {
+    pub(super) fn new(result: TypeId, function: Option<super::graph::EntityId>) -> Self {
         Self {
             demand_epoch: None,
             object_pointer: None,
@@ -48,7 +48,7 @@ impl BodyContext {
             placeholder: None,
             undeduced: false,
             reserved_pending: false,
-            entity,
+            function,
             result,
             loops: 0,
             switches: Vec::new(),
@@ -206,8 +206,8 @@ impl Analyzer<'_> {
         let function = self
             .body_context
             .as_ref()
-            .ok_or(Error::Invariant("return eligibility without body context"))?
-            .entity;
+            .and_then(|body| body.function)
+            .ok_or(Error::Invariant("return eligibility without body function"))?;
         let Some(function_scope) = self.graph.entity(function).scope else {
             return Err(Error::Invariant(
                 "return eligibility without function scope",

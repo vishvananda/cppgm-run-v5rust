@@ -126,7 +126,7 @@ impl Analyzer<'_> {
         let owner = self
             .body_context
             .as_ref()
-            .map(|body| body.entity)
+            .and_then(|body| body.function)
             .filter(|&entity| {
                 self.graph.entity(entity).definition_emission
                     == super::function_demands::DefinitionEmission::Demanded

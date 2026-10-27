@@ -145,7 +145,7 @@ impl Analyzer<'_> {
                 .entity(entity)
                 .home
                 .is_some_and(|home| self.graph.scope(home).kind == super::graph::ScopeKind::Block)
-            && let Some(function) = self.body_context.as_ref().map(|body| body.entity)
+            && let Some(function) = self.body_context.as_ref().and_then(|body| body.function)
             && let Some(name) = self.graph.entity(entity).name
         {
             let count = self

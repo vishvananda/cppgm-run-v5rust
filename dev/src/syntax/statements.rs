@@ -493,7 +493,11 @@ impl Parser<'_> {
         } else {
             super::storage::List::default()
         };
-        let compound = self.compound_in_scope(true)?;
+        let pending = self.pending_template;
+        self.pending_template = false;
+        let compound = self.compound_in_scope(true);
+        self.pending_template = pending;
+        let compound = compound?;
         let handlers = if try_block {
             Some(self.handlers()?)
         } else {
@@ -536,7 +540,7 @@ impl Parser<'_> {
             };
             let declarator = (!self.declarator_empty(declarator)).then_some(declarator);
             if let Some(declarator) = declarator {
-                self.declare_from_specifiers(declarator, specifiers);
+                self.declare_from_specifiers(declarator, specifiers)?;
             }
             ExceptionDeclaration::Typed {
                 specifiers,
@@ -567,7 +571,7 @@ impl Parser<'_> {
         if !matches!(self.punctuator()?, Some(P::Assign | P::LeftBrace)) {
             return self.decline_operand();
         }
-        self.declare_from_specifiers(declarator, specifiers);
+        self.declare_from_specifiers(declarator, specifiers)?;
         let initializer = self.initializer()?;
         Ok(Condition::Declaration {
             specifiers,
@@ -606,7 +610,7 @@ impl Parser<'_> {
                         message: "syntax error",
                     });
                 }
-                parser.declare_from_specifiers(declarator, specifiers);
+                parser.declare_from_specifiers(declarator, specifiers)?;
                 let bindings = bindings
                     .map(|names| {
                         let object = parser

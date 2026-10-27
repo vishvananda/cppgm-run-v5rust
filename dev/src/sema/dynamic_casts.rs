@@ -205,7 +205,7 @@ impl Analyzer<'_> {
             RuntimeCast::Class { from, to, .. } => (from, Some(to)),
             RuntimeCast::VoidPointer { from, .. } => (from, None),
         };
-        let owner = self.body_context.as_ref().map(|body| body.entity);
+        let owner = self.body_context.as_ref().and_then(|body| body.function);
         self.graph.class_information_uses.push((owner, from));
         if let Some(to) = to {
             self.graph.class_information_uses.push((owner, to));

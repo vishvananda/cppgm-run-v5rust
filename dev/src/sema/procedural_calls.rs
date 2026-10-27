@@ -377,9 +377,10 @@ impl Analyzer<'_> {
                 && self.graph.lower_dynamic(class)
                 && self.graph.lower_virtual_class(class)?.has_virtual_bases
             {
-                self.graph
-                    .class_information_uses
-                    .push((self.body_context.as_ref().map(|body| body.entity), class));
+                self.graph.class_information_uses.push((
+                    self.body_context.as_ref().and_then(|body| body.function),
+                    class,
+                ));
             }
         }
         self.graph.record_call_binding(id, binding);
@@ -638,7 +639,7 @@ impl Analyzer<'_> {
                 self.graph.types.prepare_block_invocation(function)?;
             }
             self.graph.storage_layouts.push((
-                self.body_context.as_ref().map(|body| body.entity),
+                self.body_context.as_ref().and_then(|body| body.function),
                 super::layout::StorageDemand::CallBoundary(function),
                 self.tree.expressions.get(id).location,
             ));
@@ -1550,7 +1551,7 @@ impl Analyzer<'_> {
             // The ellipsis has no declared parameter whose call boundary
             // would request this storage. Defer layout with the owning body.
             self.graph.storage_layouts.push((
-                self.body_context.as_ref().map(|body| body.entity),
+                self.body_context.as_ref().and_then(|body| body.function),
                 super::layout::StorageDemand::VariadicClass(ty),
                 crate::support::source::SourceOffset(0),
             ));

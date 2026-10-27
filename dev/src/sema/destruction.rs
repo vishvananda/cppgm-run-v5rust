@@ -397,7 +397,7 @@ impl Analyzer<'_> {
             && let Some(binding) = self.destructor_callable(class)?
         {
             self.graph.storage_destructions.push((
-                self.body_context.as_ref().map(|body| body.entity),
+                self.body_context.as_ref().and_then(|body| body.function),
                 self.graph.binding(binding).entity,
             ));
         }

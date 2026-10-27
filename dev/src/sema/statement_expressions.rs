@@ -23,12 +23,16 @@ impl Analyzer<'_> {
         if !self.semantic() {
             return self.compound_region(items, scope, false, true);
         }
-        let context = self.body_context.as_mut().ok_or_else(|| {
-            Error::at(
-                self.tree.expressions.get(id).location,
-                "a statement expression outside a function body",
-            )
-        })?;
+        let context = self
+            .body_context
+            .as_mut()
+            .filter(|context| context.function.is_some())
+            .ok_or_else(|| {
+                Error::at(
+                    self.tree.expressions.get(id).location,
+                    "a statement expression outside a function body",
+                )
+            })?;
         context.handled += 1;
         let result = self.compound_region(items, scope, false, true);
         if let Some(context) = &mut self.body_context {
@@ -45,11 +49,17 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         self.statement_block(id, body, scope)?;
         let value = self.graph.statement_expression_value(self.tree, body)?;
-        let Some(value) = value else {
+        // The types view only walks block names. Like the frozen analyzer,
+        // an absent last-expression type gives this expression the void type.
+        let Some((value, facts)) = value.and_then(|value| {
+            self.graph
+                .expression_facts
+                .known(value)
+                .map(|facts| (value, facts))
+        }) else {
             let ty = self.graph.types.scalar(Scalar::Void)?;
             return self.new_expression_facts(ty, ValueCategory::Prvalue);
         };
-        let facts = self.graph.expression_facts.get(value)?;
         let ty = self.decayed_type(facts.ty)?;
         if !matches!(
             self.graph.types.get(ty).kind,

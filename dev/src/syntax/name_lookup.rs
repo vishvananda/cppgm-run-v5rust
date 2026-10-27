@@ -251,8 +251,7 @@ impl Parser<'_> {
                 && definite
                 && !(node.prefix_state != PrefixState::Unqualified && node.mentions_parameters)
                 && self.last_identifier(name).is_some())
-            || (self.scopes.kind(self.scopes.declaration_scope())
-                == super::scopes::ScopeKind::Namespace
+            || (self.scopes.declaration_kind() == Some(super::scopes::ScopeKind::Namespace)
                 && self.tree.names.get(name).prefix_state == PrefixState::Known
                 && binding.is_some_and(|binding| binding.category == Category::Value)
                 && self.scopes.has_category_conflicts()

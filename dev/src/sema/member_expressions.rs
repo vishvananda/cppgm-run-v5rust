@@ -110,7 +110,7 @@ impl Analyzer<'_> {
         if let Some(class) = self.member_initializer_class {
             return Ok(Some(self.graph.lower_entity_type(class)?));
         }
-        let Some(function) = self.body_context.as_ref().map(|body| body.entity) else {
+        let Some(function) = self.body_context.as_ref().and_then(|body| body.function) else {
             return Ok(None);
         };
         self.function_object_type(function)

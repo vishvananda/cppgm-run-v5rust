@@ -188,7 +188,7 @@ impl Parser<'_> {
             None
         };
         if let Some(declarator) = declarator {
-            self.declare_value_declarator(declarator, pack, true);
+            self.declare_value_declarator(declarator, pack, true)?;
         }
         Ok(TemplateParameter {
             location,
@@ -241,7 +241,7 @@ impl Parser<'_> {
                     },
                     scope: None,
                 },
-            );
+            )?;
         }
         Ok(TemplateParameter {
             location,

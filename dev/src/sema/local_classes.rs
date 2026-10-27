@@ -29,7 +29,7 @@ impl Analyzer<'_> {
         ) {
             return Ok(());
         }
-        let Some(function) = self.body_context.as_ref().map(|body| body.entity) else {
+        let Some(function) = self.body_context.as_ref().and_then(|body| body.function) else {
             return Ok(());
         };
         self.record_unnamed_local_type(class, home)?;
@@ -65,7 +65,7 @@ impl Analyzer<'_> {
                 self.graph.scope(home).kind,
                 ScopeKind::Block | ScopeKind::Function
             )
-            && let Some(function) = self.body_context.as_ref().map(|body| body.entity)
+            && let Some(function) = self.body_context.as_ref().and_then(|body| body.function)
         {
             let count = self
                 .graph

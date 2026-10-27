@@ -20,14 +20,14 @@ use crate::support::source::SourceOffset;
 pub(super) struct DeferredBody {
     target: BodyId,
     tokens: TokenRun,
-    scope: ScopeId,
+    scope: Option<ScopeId>,
     constructor: bool,
 }
 impl Parser<'_> {
     pub(super) fn in_class(&self) -> bool {
         matches!(
-            self.scopes.kind(self.scopes.declaration_scope()),
-            ScopeKind::Class(_) | ScopeKind::AnonymousClass
+            self.scopes.declaration_kind(),
+            Some(ScopeKind::Class(_) | ScopeKind::AnonymousClass)
         )
     }
     pub(super) fn class_specifier(
@@ -85,7 +85,9 @@ impl Parser<'_> {
             name.global || self.tree.name_lists.get(name.components).len() > 1
         });
         let member_of = name.and_then(|name| self.tree.names.get(name).prefix_scope);
-        let mut home = member_of.unwrap_or(self.scopes.declaration_scope());
+        let mut home = member_of
+            .or(self.scopes.declaration_scope())
+            .ok_or(ParseError::Invariant("class without declaration scope"))?;
         if let Some(identifier) = identifier
             && name.is_some_and(|name| self.tree.names.get(name).prefix_scope.is_some())
         {
@@ -108,7 +110,12 @@ impl Parser<'_> {
             })
             .and_then(|binding| binding.scope)
         {
-            self.scopes.reopen(scope, enclosing)?;
+            self.scopes.reopen(
+                scope,
+                enclosing.ok_or(ParseError::Invariant(
+                    "class definition without enclosing scope",
+                ))?,
+            )?;
             if is_template {
                 self.scopes.note_late_primary(scope);
             }
@@ -145,7 +152,7 @@ impl Parser<'_> {
                     self.link_specialization(identifier, primary, scope)?;
                 }
             } else if !qualified {
-                self.declare_class(identifier, is_template, scope);
+                self.declare_class(identifier, is_template, scope)?;
             } else if let Some(previous) = existing.filter(|previous| {
                 matches!(previous.category, Category::Type | Category::TypeTemplate)
                     && (previous.scope.is_none() || self.class_defined_later(*previous, identifier))
@@ -172,7 +179,7 @@ impl Parser<'_> {
             List::default()
         };
         self.expect(P::LeftBrace)?;
-        self.scopes.current = scope;
+        self.scopes.current = Some(scope);
         self.class_depth += 1;
         let first_deferred = self.deferred.len();
         let runs = self.cursor.runs_mark();
@@ -242,15 +249,15 @@ impl Parser<'_> {
         identifier: crate::lex::identifiers::NameId,
         is_template: bool,
         scope: ScopeId,
-    ) {
-        let home = self.scopes.declaration_scope();
+    ) -> Result<(), ParseError> {
+        let home = self.scopes.require_declaration_scope()?;
         if let Some(previous) = self.scopes.own(home, identifier)
             && matches!(previous.category, Category::Type | Category::TypeTemplate)
             && let Some(previous) = previous.scope.filter(|previous| *previous != scope)
         {
             let enclosing = self.scopes.current;
-            self.scopes.current = scope;
-            self.scopes.add_edge(previous);
+            self.scopes.current = Some(scope);
+            self.scopes.add_edge(previous)?;
             self.scopes.current = enclosing;
         }
         self.scopes.declare_in(
@@ -270,6 +277,7 @@ impl Parser<'_> {
                 guesses: super::scopes::Guesses::default(),
             },
         );
+        Ok(())
     }
     fn link_specialization(
         &mut self,
@@ -284,7 +292,7 @@ impl Parser<'_> {
             let target = self.scopes.push_kind(ScopeKind::Class(identifier))?;
             self.scopes.current = enclosing;
             self.scopes.declare_in(
-                self.scopes.declaration_scope(),
+                self.scopes.require_declaration_scope()?,
                 identifier,
                 Binding {
                     pack: false,
@@ -298,7 +306,7 @@ impl Parser<'_> {
             );
             target
         };
-        self.scopes.add_specialization(target, specialization);
+        self.scopes.add_specialization(target, specialization)?;
         Ok(())
     }
     fn elaborated_class(
@@ -316,7 +324,8 @@ impl Parser<'_> {
         {
             let standalone = !is_template && first && self.at(P::Semicolon)?;
             let existing = if standalone || (is_template && !friend) {
-                self.scopes.own(self.scopes.declaration_scope(), identifier)
+                self.scopes
+                    .own(self.scopes.require_declaration_scope()?, identifier)
             } else {
                 self.scopes.lookup_name(identifier, true)
             };
@@ -344,13 +353,20 @@ impl Parser<'_> {
                 scope,
             };
             if is_template {
-                self.scopes
-                    .declare_in(self.scopes.declaration_scope(), identifier, binding);
+                self.scopes.declare_in(
+                    self.scopes.require_declaration_scope()?,
+                    identifier,
+                    binding,
+                );
             } else if existing.is_none() && !friend {
                 let where_declared = if standalone {
-                    self.scopes.declaration_scope()
+                    self.scopes.require_declaration_scope()?
                 } else {
-                    self.scopes.enclosing_declaration_scope()
+                    self.scopes
+                        .enclosing_declaration_scope()
+                        .ok_or(ParseError::Invariant(
+                            "class declaration without enclosing scope",
+                        ))?
                 };
                 self.scopes.declare_in(where_declared, identifier, binding);
             }
@@ -385,9 +401,9 @@ impl Parser<'_> {
             }
             if let Some(base) = binding.and_then(|binding| binding.scope) {
                 let enclosing = self.scopes.current;
-                self.scopes.current = class;
+                self.scopes.current = Some(class);
                 self.scopes
-                    .add_base(base, self.tree.names.get(name).mentions_parameters);
+                    .add_base(base, self.tree.names.get(name).mentions_parameters)?;
                 self.scopes.note_specialization_base(class);
                 self.scopes.current = enclosing;
             } else if primary
@@ -446,11 +462,8 @@ impl Parser<'_> {
                 message: "syntax error",
             });
         }
-        let constructor = match (
-            self.scopes.kind(self.scopes.declaration_scope()),
-            self.token()?.kind,
-        ) {
-            (ScopeKind::Class(owner), TokenKind::Identifier(name)) => {
+        let constructor = match (self.scopes.declaration_kind(), self.token()?.kind) {
+            (Some(ScopeKind::Class(owner)), TokenKind::Identifier(name)) => {
                 owner == name && self.at_ahead(P::LeftParen, 1)?
             }
             _ => false,
@@ -486,8 +499,8 @@ impl Parser<'_> {
             matches!(
                 last.kind,
                 NameKind::Destructor(_) | NameKind::DestructorDecltype(_) | NameKind::Conversion(_)
-            ) || matches!((self.scopes.kind(self.scopes.declaration_scope()), last.kind),
-                    (ScopeKind::Class(owner), NameKind::Identifier(last)) if owner == last)
+            ) || matches!((self.scopes.declaration_kind(), last.kind),
+                    (Some(ScopeKind::Class(owner)), NameKind::Identifier(last)) if owner == last)
         } else {
             false
         };
@@ -597,7 +610,7 @@ impl Parser<'_> {
         let mut declarator = first;
         loop {
             if let Some(declarator) = declarator {
-                self.declare_value_declarator(declarator, false, false);
+                self.declare_value_declarator(declarator, false, false)?;
             }
             self.expect(P::Colon)?;
             let width = self.assignment_expression()?;
@@ -627,9 +640,7 @@ impl Parser<'_> {
         defer: bool,
         constructor: bool,
     ) -> Result<BodyId, ParseError> {
-        let scope = self
-            .function_scope
-            .ok_or(ParseError::Invariant("missing function parameter scope"))?;
+        let scope = self.function_scope;
         if defer {
             let begin = self.cursor.position;
             let absolute = self.cursor.absolute_position()?;

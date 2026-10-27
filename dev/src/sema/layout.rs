@@ -80,7 +80,7 @@ impl Analyzer<'_> {
     }
     pub(super) fn request_union_storage(&mut self, entity: EntityId, location: SourceOffset) {
         self.graph.storage_layouts.push((
-            self.body_context.as_ref().map(|body| body.entity),
+            self.body_context.as_ref().and_then(|body| body.function),
             StorageDemand::AnonymousUnion(entity),
             location,
         ));
@@ -102,7 +102,7 @@ impl Analyzer<'_> {
         self.request_object_layout_for(
             ty,
             location,
-            self.body_context.as_ref().map(|body| body.entity),
+            self.body_context.as_ref().and_then(|body| body.function),
         );
     }
     pub(super) fn request_object_layout_for(

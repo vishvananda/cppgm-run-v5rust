@@ -130,11 +130,10 @@ impl Analyzer<'_> {
             match super::asm_templates::lift(&text, &operands, self.identifiers) {
                 Ok(instructions) => (instructions, None),
                 Err(message) => {
-                    let function = self
-                        .body_context
-                        .as_ref()
-                        .ok_or(Error::Invariant("asm body context"))?
-                        .entity;
+                    let Some(function) = self.body_context.as_ref().and_then(|body| body.function)
+                    else {
+                        return Err(Error::at(location, message));
+                    };
                     let entity = self.graph.entity(function);
                     if entity.inline != InlinePreference::Inline
                         && !entity.function.is_some_and(|f| {

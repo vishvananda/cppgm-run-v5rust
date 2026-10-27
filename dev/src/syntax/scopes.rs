@@ -126,7 +126,7 @@ pub(super) enum Change {
 pub(super) struct ScopeMark {
     scopes: usize,
     changes: usize,
-    current: ScopeId,
+    current: Option<ScopeId>,
     environment: u64,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -163,7 +163,7 @@ pub(super) struct Scopes {
     invalidation_seen: HashSet<ScopeId>,
     unnamed_name: Option<NameId>,
     changes: Vec<Change>,
-    pub current: ScopeId,
+    pub current: Option<ScopeId>,
     environment: u64,
     epoch: u64,
     visited: HashSet<ScopeId>,
@@ -204,7 +204,7 @@ impl Default for Scopes {
             invalidation_seen: HashSet::new(),
             unnamed_name: None,
             changes: Vec::new(),
-            current: ScopeId(0),
+            current: Some(ScopeId(0)),
             environment: 0,
             epoch: 0,
             visited: HashSet::new(),
@@ -361,15 +361,21 @@ impl Scopes {
     pub(super) fn specialization(&self, scope: ScopeId) -> bool {
         self.records[scope.0 as usize].specialization
     }
-    pub(super) fn add_specialization(&mut self, primary: ScopeId, specialization: ScopeId) {
+    pub(super) fn add_specialization(
+        &mut self,
+        primary: ScopeId,
+        specialization: ScopeId,
+    ) -> Result<(), ParseError> {
         let saved = self.current;
-        self.current = primary;
-        self.add_edge(specialization);
+        self.current = Some(primary);
+        let result = self.add_edge(specialization);
         self.current = saved;
+        result?;
         let old = self.records[specialization.0 as usize].specialization;
         self.changes
             .push(Change::Specialization(specialization, old));
         self.records[specialization.0 as usize].specialization = true;
+        Ok(())
     }
     pub(super) fn note_late_primary(&mut self, scope: ScopeId) {
         if let ScopeKind::Class(name) = self.kind(scope)
@@ -388,7 +394,7 @@ impl Scopes {
         }
     }
     pub(super) fn current_instantiation(&self, template: ScopeId) -> bool {
-        let mut scope = Some(self.current);
+        let mut scope = self.current;
         while let Some(current) = scope {
             if current == template {
                 return true;
@@ -412,7 +418,7 @@ impl Scopes {
         false
     }
     pub(super) fn in_template_definition(&self) -> bool {
-        let mut scope = Some(self.current);
+        let mut scope = self.current;
         while let Some(current) = scope {
             if self.kind(current) == ScopeKind::Template {
                 return true;
@@ -539,6 +545,14 @@ impl Scopes {
             u32::try_from(self.records.len())
                 .map_err(|_| ParseError::Limit("parser scope limit"))?,
         );
+        let depth = if let Some(parent) = self.current {
+            self.records[parent.0 as usize]
+                .depth
+                .checked_add(1)
+                .ok_or(ParseError::Limit("parser scope depth limit"))?
+        } else {
+            0
+        };
         let identity = ScopeIdentity(self.next_identity);
         self.next_identity = self
             .next_identity
@@ -551,16 +565,13 @@ impl Scopes {
             graph_revision: 0,
             kind,
             complete: false,
-            parent: Some(self.current),
+            parent: self.current,
             member_of: None,
-            depth: self.records[self.current.0 as usize]
-                .depth
-                .checked_add(1)
-                .ok_or(ParseError::Limit("parser scope depth limit"))?,
+            depth,
             edges: Vec::new(),
             parameter_bases: Vec::new(),
         });
-        self.current = id;
+        self.current = Some(id);
         self.changed();
         Ok(id)
     }
@@ -605,25 +616,32 @@ impl Scopes {
         );
     }
 
-    pub(super) fn enclosing_declaration_scope(&self) -> ScopeId {
-        let mut scope = self.current;
+    pub(super) fn enclosing_declaration_scope(&self) -> Option<ScopeId> {
+        let mut scope = self.current?;
         while !matches!(self.kind(scope), ScopeKind::Namespace | ScopeKind::Block) {
             let Some(parent) = self.records[scope.0 as usize].parent else {
                 break;
             };
             scope = parent;
         }
-        scope
+        Some(scope)
     }
-    pub(super) fn declaration_scope(&self) -> ScopeId {
-        let mut scope = self.current;
+    pub(super) fn declaration_scope(&self) -> Option<ScopeId> {
+        let mut scope = self.current?;
         while self.kind(scope) == ScopeKind::Template {
             let Some(parent) = self.records[scope.0 as usize].parent else {
                 break;
             };
             scope = parent;
         }
-        scope
+        Some(scope)
+    }
+    pub(super) fn declaration_kind(&self) -> Option<ScopeKind> {
+        self.declaration_scope().map(|scope| self.kind(scope))
+    }
+    pub(super) fn require_declaration_scope(&self) -> Result<ScopeId, ParseError> {
+        self.declaration_scope()
+            .ok_or(ParseError::Invariant("missing lexical declaration scope"))
     }
     pub(super) fn ever_template(&self, name: NameId) -> bool {
         self.name_marks
@@ -636,8 +654,13 @@ impl Scopes {
             .copied()
             .flatten()
     }
-    pub(super) fn declare(&mut self, name: NameId, binding: Binding) {
-        self.declare_in(self.current, name, binding);
+    pub(super) fn require_current(&self) -> Result<ScopeId, ParseError> {
+        self.current
+            .ok_or(ParseError::Invariant("missing lexical declaration scope"))
+    }
+    pub(super) fn declare(&mut self, name: NameId, binding: Binding) -> Result<(), ParseError> {
+        self.declare_in(self.require_current()?, name, binding);
+        Ok(())
     }
     pub(super) fn declare_in(&mut self, scope: ScopeId, name: NameId, binding: Binding) {
         let category = binding.category;
@@ -713,38 +736,59 @@ impl Scopes {
             self.record_member_category(scope, name, category);
         }
     }
-    pub(super) fn add_edge(&mut self, scope: ScopeId) {
-        self.add_edge_at(scope, None, false);
+    pub(super) fn add_edge(&mut self, scope: ScopeId) -> Result<(), ParseError> {
+        self.add_edge_at(scope, None, false)
     }
-    pub(super) fn add_base(&mut self, scope: ScopeId, dependent: bool) {
-        self.add_edge_at(scope, None, dependent);
+    pub(super) fn add_base(&mut self, scope: ScopeId, dependent: bool) -> Result<(), ParseError> {
+        self.add_edge_at(scope, None, dependent)
     }
-    pub(super) fn add_using_directive(&mut self, nominated: ScopeId) {
-        let mut at = self.current;
+    pub(super) fn add_using_directive(&mut self, nominated: ScopeId) -> Result<(), ParseError> {
+        let mut at = self.require_current()?;
         let mut other = nominated;
         while self.records[at.0 as usize].depth > self.records[other.0 as usize].depth {
-            at = self.records[at.0 as usize].parent.unwrap_or(Self::global());
+            at = self.records[at.0 as usize]
+                .parent
+                .ok_or(ParseError::Invariant(
+                    "using-directive without enclosing namespace",
+                ))?;
         }
         while self.records[other.0 as usize].depth > self.records[at.0 as usize].depth {
             other = self.records[other.0 as usize]
                 .parent
-                .unwrap_or(Self::global());
+                .ok_or(ParseError::Invariant(
+                    "using-directive without enclosing namespace",
+                ))?;
         }
         while at != other {
-            at = self.records[at.0 as usize].parent.unwrap_or(Self::global());
+            at = self.records[at.0 as usize]
+                .parent
+                .ok_or(ParseError::Invariant(
+                    "using-directive without enclosing namespace",
+                ))?;
             other = self.records[other.0 as usize]
                 .parent
-                .unwrap_or(Self::global());
+                .ok_or(ParseError::Invariant(
+                    "using-directive without enclosing namespace",
+                ))?;
         }
         while self.kind(at) != ScopeKind::Namespace {
-            at = self.records[at.0 as usize].parent.unwrap_or(Self::global());
+            at = self.records[at.0 as usize]
+                .parent
+                .ok_or(ParseError::Invariant(
+                    "using-directive without enclosing namespace",
+                ))?;
         }
-        self.add_edge_at(nominated, Some(at), false);
+        self.add_edge_at(nominated, Some(at), false)
     }
-    fn add_edge_at(&mut self, scope: ScopeId, at: Option<ScopeId>, dependent: bool) {
-        let current = self.current;
+    fn add_edge_at(
+        &mut self,
+        scope: ScopeId,
+        at: Option<ScopeId>,
+        dependent: bool,
+    ) -> Result<(), ParseError> {
+        let current = self.require_current()?;
         if dependent && self.edge_targets.contains(&(current, scope, false)) {
-            return;
+            return Ok(());
         }
         if self.edge_targets.insert((current, scope, dependent)) {
             self.records[current.0 as usize].edges.push(Edge {
@@ -757,6 +801,7 @@ impl Scopes {
             self.changes.push(Change::Edge(current, None));
             self.changed();
         }
+        Ok(())
     }
     pub(super) fn lookup(&mut self, name: NameId) -> Option<Binding> {
         self.lookup_name(name, false)
@@ -772,7 +817,7 @@ impl Scopes {
         }
         self.visited.clear();
         self.pending.clear();
-        let mut current = Some(self.current);
+        let mut current = self.current;
         let mut home: Option<ScopeId> = None;
         while let Some(scope) = current {
             if self.kind(scope) == ScopeKind::Namespace
@@ -824,9 +869,7 @@ impl Scopes {
     ) -> Option<Binding> {
         let mut outer = inner;
         while self.records[outer.0 as usize].depth > self.records[scope.0 as usize].depth {
-            outer = self.records[outer.0 as usize]
-                .parent
-                .unwrap_or(Self::global());
+            outer = self.records[outer.0 as usize].parent?;
         }
         if outer != scope {
             return None;
@@ -835,9 +878,7 @@ impl Scopes {
             if let Some(binding) = self.search_level(inner, name, prefix_only) {
                 return Some(binding);
             }
-            inner = self.records[inner.0 as usize]
-                .parent
-                .unwrap_or(Self::global());
+            inner = self.records[inner.0 as usize].parent?;
         }
         None
     }
@@ -1226,10 +1267,10 @@ mod tests {
         }
     }
     fn class(scopes: &mut Scopes, name: NameId, base: Option<ScopeId>) -> ScopeId {
-        scopes.current = Scopes::global();
+        scopes.current = Some(Scopes::global());
         let scope = scopes.push_kind(ScopeKind::Class(name)).unwrap();
         if let Some(base) = base {
-            scopes.add_base(base, false);
+            scopes.add_base(base, false).unwrap();
         }
         scopes.complete_class(scope, false);
         scope
@@ -1243,10 +1284,10 @@ mod tests {
         let mut scopes = Scopes::default();
         let base = class(&mut scopes, base_name, None);
         scopes.declare_in(base, word, binding(Category::Type, None));
-        scopes.current = Scopes::global();
+        scopes.current = Some(Scopes::global());
         let owner = scopes.push_kind(ScopeKind::Class(self_name)).unwrap();
-        scopes.add_base(base, false);
-        scopes.add_base(owner, false);
+        scopes.add_base(base, false).unwrap();
+        scopes.add_base(owner, false).unwrap();
         scopes.complete_class(owner, false);
         assert_eq!(
             scopes
@@ -1277,11 +1318,11 @@ mod tests {
         scopes.declare_in(Scopes::global(), word, binding(Category::Value, None));
         let owner = class(&mut scopes, owner_name, None);
         scopes.declare_in(owner, word, binding(Category::Type, None));
-        scopes.current = Scopes::global();
+        scopes.current = Some(Scopes::global());
         let function = scopes.push().unwrap();
         scopes.set_member(function, owner);
         let local = scopes.push_kind(ScopeKind::Class(local_name)).unwrap();
-        scopes.current = Scopes::global();
+        scopes.current = Some(Scopes::global());
         scopes.member_context(local).unwrap();
         assert_eq!(scopes.lookup(word).unwrap().category, Category::Value);
     }
@@ -1354,8 +1395,8 @@ mod tests {
                 .lookup_specialization(root, word, true, false)
                 .is_none()
         );
-        scopes.current = child;
-        scopes.add_base(other, true);
+        scopes.current = Some(child);
+        scopes.add_base(other, true).unwrap();
         assert!(
             scopes
                 .lookup_specialization(root, word, true, false)
@@ -1401,8 +1442,8 @@ mod tests {
                 .scope,
             Some(temporary)
         );
-        scopes.current = root;
-        scopes.add_base(temporary, false);
+        scopes.current = Some(root);
+        scopes.add_base(temporary, false).unwrap();
         scopes.rewind(mark);
         let recycled = class(&mut scopes, class_name, None);
         assert_eq!(temporary, recycled);
@@ -1453,5 +1494,54 @@ mod tests {
             );
         }
         assert_eq!(scopes.searches.len(), 1 << 16);
+    }
+}
+
+#[cfg(test)]
+mod detached_scope_tests {
+    use super::*;
+    #[test]
+    fn absent_current_pushes_a_real_parentless_block_and_rewinds_to_its_owner()
+    -> Result<(), ParseError> {
+        let mut names = crate::lex::identifiers::Identifiers::default();
+        let name = names.intern(b"outer").map_err(ParseError::Limit)?;
+        let mut scopes = Scopes::default();
+        let binding = Binding {
+            pack: false,
+            category: Category::Type,
+            parameter: false,
+            scope: None,
+            specialization: 0,
+            alternatives: Categories::default(),
+            guesses: Guesses::default(),
+        };
+        scopes.declare(name, binding)?;
+        let mark = scopes.mark();
+        scopes.current = None;
+        assert!(scopes.lookup(name).is_none());
+        let block = scopes.push_kind(ScopeKind::Block)?;
+        assert_eq!(scopes.records[block.0 as usize].parent, None);
+        assert_eq!(scopes.records[block.0 as usize].depth, 0);
+        assert!(scopes.lookup(name).is_none());
+        scopes.declare(
+            name,
+            Binding {
+                category: Category::Value,
+                ..binding
+            },
+        )?;
+        assert!(
+            scopes
+                .lookup(name)
+                .is_some_and(|b| b.category == Category::Value)
+        );
+        scopes.rewind(mark);
+        assert_eq!(scopes.current, Some(Scopes::global()));
+        assert!(
+            scopes
+                .lookup(name)
+                .is_some_and(|b| b.category == Category::Type)
+        );
+        Ok(())
     }
 }

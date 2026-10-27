@@ -19,7 +19,7 @@ pub(super) struct DeferredLambda {
     begin: usize,
     absolute: u64,
     end: usize,
-    scope: ScopeId,
+    scope: Option<ScopeId>,
     log: usize,
 }
 impl Parser<'_> {
@@ -98,9 +98,10 @@ impl Parser<'_> {
         let mut scope = self.scopes.current;
         if self.at(P::LeftParen)? {
             lambda.parameters = Some(self.parameter_clause_member(true, None)?);
-            scope = self
-                .parameter_scope
-                .ok_or(ParseError::Invariant("missing lambda parameter scope"))?;
+            scope = Some(
+                self.parameter_scope
+                    .ok_or(ParseError::Invariant("missing lambda parameter scope"))?,
+            );
             let before = self.collect_attributes(false)?;
             lambda.is_mutable = self.accept_keyword(K::Mutable)?;
             let location = self.location()?;
@@ -160,7 +161,7 @@ impl Parser<'_> {
             self.tree.lambdas.add(lambda)
         }
     }
-    fn lambda_body(&mut self, scope: ScopeId) -> Result<StmtId, ParseError> {
+    fn lambda_body(&mut self, scope: Option<ScopeId>) -> Result<StmtId, ParseError> {
         let enclosing = self.scopes.current;
         let pending = self.pending_template;
         self.scopes.current = scope;

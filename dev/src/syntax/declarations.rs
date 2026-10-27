@@ -111,19 +111,23 @@ impl Parser<'_> {
             }
             _ => {
                 if matches!(
-                    self.scopes.kind(self.scopes.declaration_scope()),
-                    super::scopes::ScopeKind::Namespace
-                        | super::scopes::ScopeKind::Class(_)
-                        | super::scopes::ScopeKind::AnonymousClass
+                    self.scopes.declaration_kind(),
+                    Some(
+                        super::scopes::ScopeKind::Namespace
+                            | super::scopes::ScopeKind::Class(_)
+                            | super::scopes::ScopeKind::AnonymousClass
+                    )
                 ) && self.at_deduction_guide()?
                 {
                     return self.deduction_guide(location);
                 }
                 if matches!(
-                    self.scopes.kind(self.scopes.declaration_scope()),
-                    super::scopes::ScopeKind::Namespace
-                        | super::scopes::ScopeKind::Class(_)
-                        | super::scopes::ScopeKind::AnonymousClass
+                    self.scopes.declaration_kind(),
+                    Some(
+                        super::scopes::ScopeKind::Namespace
+                            | super::scopes::ScopeKind::Class(_)
+                            | super::scopes::ScopeKind::AnonymousClass
+                    )
                 ) && let Some(declaration) = self.attempt(|parser| {
                     let (specifiers, name) = parser.special_member_head()?;
                     parser.special_member(location, specifiers, name)
@@ -151,7 +155,7 @@ impl Parser<'_> {
         self.tree.attributes.extend(trailing);
         let attributes = self.tree.attributes.finish(start)?;
         self.expect(P::LeftBrace)?;
-        let enclosing = self.scopes.current;
+        let enclosing = self.scopes.require_current()?;
         let existing = name
             .and_then(|name| self.scopes.own(enclosing, name))
             .filter(|binding| binding.category == Category::Namespace)
@@ -166,7 +170,7 @@ impl Parser<'_> {
         } else {
             self.scopes.push_kind(super::scopes::ScopeKind::Namespace)?
         };
-        self.scopes.current = enclosing;
+        self.scopes.current = Some(enclosing);
         if let Some(name) = name.filter(|_| existing.is_none()) {
             self.scopes.declare(
                 name,
@@ -179,21 +183,21 @@ impl Parser<'_> {
                     category: Category::Namespace,
                     scope: Some(scope),
                 },
-            );
+            )?;
         }
         if name.is_none() && existing.is_none() {
             let name = self.cursor.intern_name(b" unnamed")?;
             self.scopes.set_unnamed(enclosing, scope, name);
         }
         if name.is_none() || inline {
-            self.scopes.add_edge(scope);
+            self.scopes.add_edge(scope)?;
         }
-        self.scopes.current = scope;
+        self.scopes.current = Some(scope);
         let result = self.declarations(true).and_then(|declarations| {
             self.expect(P::RightBrace)?;
             Ok(declarations)
         });
-        self.scopes.current = enclosing;
+        self.scopes.current = Some(enclosing);
         let declarations = result?;
         self.tree.declarations.add(Declaration {
             attributes,
@@ -224,7 +228,7 @@ impl Parser<'_> {
                 category: Category::Namespace,
                 scope: binding.and_then(|binding| binding.scope),
             },
-        );
+        )?;
         self.tree.declarations.add(Declaration {
             attributes: List::default(),
             location,
@@ -294,7 +298,7 @@ impl Parser<'_> {
             }) { binding.scope = None; }
             self.note_type_guesses(&mut binding, type_node.specifiers, is_template);
             self.scopes
-                .declare_in(self.scopes.declaration_scope(), name, binding);
+                .declare_in(self.scopes.require_declaration_scope()?, name, binding);
             return self.tree.declarations.add(Declaration {
                 attributes,
                 location,
@@ -318,7 +322,7 @@ impl Parser<'_> {
                 if let Some(scope) = binding.scope
                     && binding.category == Category::Namespace
                 {
-                    self.scopes.add_using_directive(scope);
+                    self.scopes.add_using_directive(scope)?;
                 }
             } else if let Some(name) = self.last_identifier(target) {
                 self.scopes.declare(
@@ -332,7 +336,7 @@ impl Parser<'_> {
                         alternatives: super::scopes::Categories::default(),
                         guesses: super::scopes::Guesses::default(),
                     },
-                );
+                )?;
             }
         } else if !directive
             && typename_keyword
@@ -349,7 +353,7 @@ impl Parser<'_> {
                     category: Category::Type,
                     scope: None,
                 },
-            );
+            )?;
         }
         self.tree.declarations.add(Declaration {
             attributes,
@@ -674,7 +678,7 @@ impl Parser<'_> {
             return self.fail();
         }
         let enclosing = self.scopes.current;
-        let members = self.scopes.declaration_scope();
+        let members = self.scopes.require_declaration_scope()?;
         let scope = if has_body {
             let scope = self.scopes.push_kind(super::scopes::ScopeKind::Enum)?;
             self.scopes.current = enclosing;
@@ -849,7 +853,7 @@ impl Parser<'_> {
                 typedef,
                 self.specifier_scope(specifiers),
                 specifiers,
-            );
+            )?;
             if self.is_function(declarator)
                 && (self.at(P::LeftBrace)? || self.keyword()? == Some(K::Try))
             {

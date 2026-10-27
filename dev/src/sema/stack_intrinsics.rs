@@ -92,14 +92,18 @@ impl Analyzer<'_> {
             ));
         }
         if operation == StackIntrinsic::VaStart
-            && !self.body_context.as_ref().is_some_and(|body| {
-                self.graph.entity(body.entity).ty.is_some_and(|ty| {
-                    matches!(
-                        self.graph.types.get(ty).kind,
-                        TypeKind::Function { variadic: true, .. }
-                    )
+            && !self
+                .body_context
+                .as_ref()
+                .and_then(|body| body.function)
+                .is_some_and(|function| {
+                    self.graph.entity(function).ty.is_some_and(|ty| {
+                        matches!(
+                            self.graph.types.get(ty).kind,
+                            TypeKind::Function { variadic: true, .. }
+                        )
+                    })
                 })
-            })
         {
             return Err(Error::at(
                 location,

@@ -64,7 +64,7 @@ impl Analyzer<'_> {
                 for function in self
                     .body_context
                     .iter()
-                    .map(|body| body.entity)
+                    .filter_map(|body| body.function)
                     .chain(self.enclosing_bodies.iter().rev().copied())
                 {
                     if self

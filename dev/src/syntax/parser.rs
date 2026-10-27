@@ -554,7 +554,7 @@ impl<'a> Parser<'a> {
         declarator: DeclaratorId,
         pack: bool,
         parameter: bool,
-    ) {
+    ) -> Result<(), ParseError> {
         if let Some(name) = self.declarator_name(declarator)
             && self.simple_name(name).is_some()
             && let Some(identifier) = self.last_identifier(name)
@@ -570,14 +570,15 @@ impl<'a> Parser<'a> {
                     alternatives: super::scopes::Categories::default(),
                     guesses: super::scopes::Guesses::default(),
                 },
-            );
+            )?;
         }
+        Ok(())
     }
     pub(super) fn declare_from_specifiers(
         &mut self,
         declarator: DeclaratorId,
         specifiers: List<super::ast::Specifier>,
-    ) {
+    ) -> Result<(), ParseError> {
         let typedef = self.tree.specs.get(specifiers).iter().any(|specifier| {
             matches!(
                 specifier.kind,
@@ -589,7 +590,8 @@ impl<'a> Parser<'a> {
             typedef,
             self.specifier_scope(specifiers),
             specifiers,
-        );
+        )?;
+        Ok(())
     }
     pub(super) fn declare_declarator(
         &mut self,
@@ -597,7 +599,7 @@ impl<'a> Parser<'a> {
         typedef: bool,
         type_scope: Option<ScopeId>,
         specifiers: List<super::ast::Specifier>,
-    ) {
+    ) -> Result<(), ParseError> {
         if let Some(name) = self
             .declarator_name(declarator)
             .filter(|name| !self.name_has_arguments(*name))
@@ -631,8 +633,9 @@ impl<'a> Parser<'a> {
                 self.note_type_guesses(&mut binding, specifiers, false);
             }
             self.scopes
-                .declare_in(self.scopes.declaration_scope(), name, binding);
+                .declare_in(self.scopes.require_declaration_scope()?, name, binding);
         }
+        Ok(())
     }
     pub(super) fn specifier_scope(
         &self,

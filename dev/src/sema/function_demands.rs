@@ -128,7 +128,7 @@ impl Analyzer<'_> {
         let active = self
             .body_context
             .as_ref()
-            .and_then(|body| body.demand_epoch.map(|epoch| (body.entity, epoch)));
+            .and_then(|body| body.function.zip(body.demand_epoch));
         let (owner, epoch) = active.map_or((None, DemandEpoch::ROOT), |(owner, epoch)| {
             (Some(owner), epoch)
         });

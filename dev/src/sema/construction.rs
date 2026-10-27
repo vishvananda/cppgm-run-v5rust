@@ -277,7 +277,7 @@ impl Analyzer<'_> {
                     != Some(super::graph::DataMemberKind::Instance)
             {
                 self.graph.constructor_boundaries.push((
-                    self.body_context.as_ref().map(|body| body.entity),
+                    self.body_context.as_ref().and_then(|body| body.function),
                     constructor,
                 ));
             }
@@ -1244,7 +1244,7 @@ impl Analyzer<'_> {
             // analysis-time emission root. Its body's storage boundaries must
             // nevertheless be ready when that owner is reached by lowering.
             self.graph.storage_destructions.push((
-                self.body_context.as_ref().map(|body| body.entity),
+                self.body_context.as_ref().and_then(|body| body.function),
                 self.graph.binding(destructor).entity,
             ));
         }

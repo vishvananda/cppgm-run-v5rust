@@ -710,7 +710,7 @@ impl Analyzer<'_> {
         let object = home
             .and_then(|home| self.graph.scope(home).owner)
             .filter(|_| !entity.function.is_some_and(|function| function.is_static));
-        let mut body = super::procedural_statements::BodyContext::new(result, pending.entity);
+        let mut body = super::procedural_statements::BodyContext::new(result, None);
         if operand && let Some(object) = object {
             let object = self.graph.entity(object).ty.ok_or(Error::Invariant(
                 "exception specification class without type",

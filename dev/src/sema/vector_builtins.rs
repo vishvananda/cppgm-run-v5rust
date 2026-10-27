@@ -129,15 +129,20 @@ impl Analyzer<'_> {
                         .map_err(|_| Error::Invariant("vector selector width"))?,
                 );
             } else if self.template_depth == 0 {
-                if !self.body_context.as_ref().is_some_and(|body| {
-                    // The frozen semantic concession reads the body's own
-                    // declaration flag, not emission's inherited policy.
-                    self.graph
-                        .function_templates
-                        .instantiations
-                        .policy(body.entity)
-                        .always_inline
-                }) {
+                if !self
+                    .body_context
+                    .as_ref()
+                    .and_then(|body| body.function)
+                    .is_some_and(|function| {
+                        // The frozen semantic concession reads the body's own
+                        // declaration flag, not emission's inherited policy.
+                        self.graph
+                            .function_templates
+                            .instantiations
+                            .policy(function)
+                            .always_inline
+                    })
+                {
                     return Err(Error::UnconditionalDiagnostic {
                         location,
                         message: "a vector lane selector that is no integral constant expression",

@@ -105,7 +105,7 @@ impl Analyzer<'_> {
                     } else {
                         self.body_context
                             .as_ref()
-                            .map(|context| SourceFunction::Function(context.entity))
+                            .and_then(|context| context.function.map(SourceFunction::Function))
                     };
                     function
                         .map(|function| {

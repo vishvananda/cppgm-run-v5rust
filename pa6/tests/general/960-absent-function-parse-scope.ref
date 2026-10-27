@@ -1,0 +1,23 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    function ordinary function of () returning void
+    function following function of (int) returning void
+    type Example struct Example
+    scope function ordinary
+      scope block
+        variable local int
+    scope function following
+      parameter parameter int
+      scope block
+        variable local int
+    scope class Example
+      variable value int
+      function Example function of () returning void
+      function read function of () returning int
+      scope function Example
+        scope block
+      scope function read
+        scope block
+end translation unit

@@ -420,7 +420,7 @@ impl Analyzer<'_> {
         {
             return;
         }
-        let owner = self.body_context.as_ref().map(|body| body.entity);
+        let owner = self.body_context.as_ref().and_then(|body| body.function);
         if let Some(initializing) = self.initializing {
             self.graph
                 .variable_instances
