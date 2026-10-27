@@ -621,7 +621,7 @@ impl Function<'_, '_, '_, '_> {
             {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
             }
-            let object = self.object_pointer(plan.object_pointer)?.value;
+            let object = self.object_pointer(plan.object_pointer()?)?.value;
             if !self.delegate_copy_storage(
                 delegation.constructor,
                 object,
@@ -678,8 +678,8 @@ impl Function<'_, '_, '_, '_> {
         if self.virtual_context.vtt.is_none() {
             self.virtual_context.this_values.clear();
         }
-        self.store_vptr(plan.class, plan.object_pointer)?;
-        self.initialize_member_plan(id, plan.object_pointer, location)
+        self.store_vptr(plan.class, plan.object_pointer()?)?;
+        self.initialize_member_plan(id, plan.object_pointer()?, location)
             .map(|_| ())
     }
 }

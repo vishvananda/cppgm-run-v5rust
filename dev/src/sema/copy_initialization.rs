@@ -171,17 +171,17 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    fn classify_copy_kind(
+    pub(super) fn constructor_copy_kind(
         &self,
-        binding: BindingId,
+        function_id: EntityId,
         class: EntityId,
     ) -> Result<Option<RefKind>, Error> {
-        let function = self.graph.entity(self.graph.binding(binding).entity);
+        let function = self.graph.entity(function_id);
         if function.template_head.is_some()
             || self
                 .graph
                 .inherited_constructors
-                .source(self.graph.binding(binding).entity)
+                .source(function_id)
                 .is_some()
         {
             return Ok(None);
@@ -205,8 +205,8 @@ impl Analyzer<'_> {
     pub(super) fn classify_class_copies(&mut self, class: EntityId) -> Result<(), Error> {
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
-            let kind = self.classify_copy_kind(binding, class)?;
             let function = self.graph.binding(binding).entity;
+            let kind = self.constructor_copy_kind(function, class)?;
             self.graph.entity_mut(function).copy_kind = kind;
         }
         self.classify_assignments(class)?;

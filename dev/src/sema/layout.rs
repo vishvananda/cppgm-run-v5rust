@@ -159,6 +159,20 @@ impl Analyzer<'_> {
         work: &mut Vec<EntityId>,
         constructors: &mut Vec<super::construction::ConstructorId>,
     ) -> Result<(), Error> {
+        if self
+            .graph
+            .constructors
+            .get(constructor)
+            .object_pointer
+            .is_none()
+        {
+            let class = self.graph.constructors.get(constructor).class;
+            let object = self.graph.lower_entity_type(class)?;
+            let pointer = self.graph.types.pointer(object)?;
+            self.graph
+                .constructors
+                .record_object_pointer(constructor, pointer);
+        }
         if let Some(binding) = self.graph.constructors.get(constructor).binding {
             // Reached storage construction (including arrays) demands
             // the selected definition, separately from its signature.

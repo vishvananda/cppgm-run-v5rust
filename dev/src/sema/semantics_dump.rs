@@ -4,7 +4,7 @@ use super::{
     expression_facts::{LvalueTransform as L, ValueCategory as V, ValueConversion as C},
     function_resolution::CallTarget,
     graph::{BindingId, BindingKind, Graph, ScopeKind},
-    types::{TypeId, TypeKind},
+    types::{Cv, TypeId, TypeKind},
 };
 use crate::{
     lex::{
@@ -754,6 +754,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let Some((object, cv)) = self.function_object(id) else {
             return self.ty(ty);
         };
+        self.function_type_with_object(ty, object, cv)
+    }
+    fn function_type_with_object(&mut self, ty: TypeId, object: TypeId, cv: Cv) -> io::Result<()> {
         let TypeKind::Function {
             result,
             parameters,
@@ -1024,7 +1027,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.output.write_all(b"callee ")?;
         self.constructor_name(id, false)?;
         self.output.write_all(b" ")?;
-        self.ty(self.graph.constructors.get(id).presentation_type)?;
+        self.constructor_type(id)?;
         writeln!(self.output)?;
         self.indent(depth + 2)?;
         self.output
@@ -1042,13 +1045,27 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.output.write_all(b"function-definition ")?;
         self.constructor_name(id, true)?;
         self.output.write_all(b" ")?;
-        self.ty(self.graph.constructors.get(id).presentation_type)?;
+        self.constructor_type(id)?;
         writeln!(self.output)?;
         self.indent(depth + 1)?;
         self.output.write_all(b"parameter this ")?;
-        self.ty(self.graph.constructors.get(id).object_pointer)?;
+        let object = self
+            .graph
+            .entity(self.graph.constructors.get(id).class)
+            .ty
+            .ok_or_else(|| io::Error::other("constructor class without type"))?;
+        self.object_pointer(object, Cv::default())?;
         writeln!(self.output)?;
         self.line("compound-statement", depth + 1)
+    }
+    fn constructor_type(&mut self, id: super::construction::ConstructorId) -> io::Result<()> {
+        let plan = self.graph.constructors.get(id);
+        let object = self
+            .graph
+            .entity(plan.class)
+            .ty
+            .ok_or_else(|| io::Error::other("constructor class without type"))?;
+        self.function_type_with_object(plan.callable_type, object, Cv::default())
     }
     fn string_initializer(
         &mut self,

@@ -772,13 +772,8 @@ impl Analyzer<'_> {
             {
                 true
             }
-            MemberKind::Constructor if count == 1 => {
-                let parameter = self.graph.types.function_parameter(info.ty, 0)?;
-                matches!(self.graph.types.get(parameter).kind,
-                    TypeKind::Reference { element, .. }
-                    if matches!(self.graph.types.get(element).kind, TypeKind::Class(entity) if entity == class))
-            }
-            MemberKind::Constructor | MemberKind::Conversion => false,
+            MemberKind::Constructor => self.constructor_copy_kind(function, class)?.is_some(),
+            MemberKind::Conversion => false,
         };
         if !special {
             return Err(Error::at(

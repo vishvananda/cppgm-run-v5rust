@@ -249,15 +249,13 @@ impl Analyzer<'_> {
         for child in &subobjects {
             nothrow &= self.graph.constructors.get(child.constructor).nothrow;
         }
-        let (object_pointer, presentation_type, callable_type) =
-            self.constructor_types(class, None)?;
+        let callable_type = self.constructor_signature(None)?;
         let constructor = self.publish_constructor(Constructor {
             copy: None,
             copy_transfer: super::construction::CopyTransfer::Call,
             class,
             binding: None,
-            object_pointer,
-            presentation_type,
+            object_pointer: None,
             callable_type,
             nothrow,
             deleted: false,

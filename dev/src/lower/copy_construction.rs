@@ -227,7 +227,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.copying.active = false;
         self.copy_truncate(0);
-        self.store_vptr(class, plan.object_pointer)?;
+        self.store_vptr(class, plan.object_pointer()?)?;
         Ok(())
     }
     fn note_copied_member(

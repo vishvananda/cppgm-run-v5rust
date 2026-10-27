@@ -314,14 +314,12 @@ impl Analyzer<'_> {
                 constructor,
             });
         }
-        let (object_pointer, presentation_type, callable_type) =
-            self.constructor_types(class, Some(binding))?;
+        let callable_type = self.constructor_signature(Some(binding))?;
         let facts = self.graph.copy_properties.get(properties);
         let record = Constructor {
             class,
             binding: Some(binding),
-            object_pointer,
-            presentation_type,
+            object_pointer: None,
             callable_type,
             nothrow: facts.nothrow,
             deleted: facts.deleted,

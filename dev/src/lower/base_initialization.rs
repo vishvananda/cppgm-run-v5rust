@@ -159,7 +159,7 @@ impl Function<'_, '_, '_, '_> {
                 .wrapping_mul(8),
         );
         if base.forwards {
-            let object = self.object_pointer(plan.object_pointer)?.value;
+            let object = self.object_pointer(plan.object_pointer()?)?.value;
             let object = self.base_projection(object, ty, offset)?;
             self.forward_constructor(
                 base.constructor.ok_or(crate::sema::Error::Invariant(
@@ -213,7 +213,7 @@ impl Function<'_, '_, '_, '_> {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
             }
         }
-        let object = self.object_pointer(plan.object_pointer)?.value;
+        let object = self.object_pointer(plan.object_pointer()?)?.value;
         let object = self.base_projection(object, ty, offset)?;
         if let Some(constructor) = base.constructor {
             if value && !empty && self.graph.lower_constructor(constructor).zero_before_value {

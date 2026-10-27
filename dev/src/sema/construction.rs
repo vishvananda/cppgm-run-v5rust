@@ -69,9 +69,7 @@ pub(crate) struct Delegation {
 pub(super) struct Constructor {
     pub class: EntityId,
     pub binding: Option<BindingId>,
-    pub object_pointer: TypeId,
-    // The dump's function type includes its implicit object parameter.
-    pub presentation_type: TypeId,
+    pub object_pointer: Option<TypeId>,
     pub callable_type: TypeId,
     pub nothrow: bool,
     pub(super) deleted: bool,
@@ -138,8 +136,14 @@ impl Constructors {
     pub(super) fn get(&self, id: ConstructorId) -> &Constructor {
         &self.records[id.0 as usize]
     }
-    fn replace(&mut self, id: ConstructorId, record: Constructor) {
+    fn replace(&mut self, id: ConstructorId, mut record: Constructor) {
+        record.object_pointer = record
+            .object_pointer
+            .or(self.records[id.0 as usize].object_pointer);
         self.records[id.0 as usize] = record;
+    }
+    pub(super) fn record_object_pointer(&mut self, id: ConstructorId, pointer: TypeId) {
+        self.records[id.0 as usize].object_pointer = Some(pointer);
     }
 }
 impl Analyzer<'_> {
@@ -642,8 +646,7 @@ impl Analyzer<'_> {
                 } else {
                     initialized + const_members == members
                 });
-        let (object_pointer, presentation_type, callable_type) =
-            self.constructor_types(class, binding)?;
+        let callable_type = self.constructor_signature(binding)?;
         if let Some(binding) = binding {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             deleted |= entity.availability == super::graph::FunctionAvailability::Deleted;
@@ -685,8 +688,7 @@ impl Analyzer<'_> {
         let record = Constructor {
             class,
             binding,
-            object_pointer,
-            presentation_type,
+            object_pointer: None,
             callable_type,
             nothrow,
             deleted,
@@ -854,20 +856,10 @@ impl Analyzer<'_> {
         Ok(child.nothrow)
     }
 
-    pub(super) fn constructor_types(
+    pub(super) fn constructor_signature(
         &mut self,
-        class: EntityId,
         binding: Option<BindingId>,
-    ) -> Result<(TypeId, TypeId, TypeId), Error> {
-        let ty = self
-            .graph
-            .entity(class)
-            .ty
-            .ok_or(Error::Invariant("constructor class without type"))?;
-        let object_pointer = self
-            .graph
-            .types
-            .intern(TypeKind::Pointer(ty), Cv::default())?;
+    ) -> Result<TypeId, Error> {
         let void = self.graph.types.scalar(Scalar::Void)?;
         let callable_type = if let Some(binding) = binding {
             self.graph
@@ -886,28 +878,7 @@ impl Analyzer<'_> {
                 Cv::default(),
             )?
         };
-        let TypeKind::Function {
-            result,
-            ref parameters,
-            variadic,
-            ..
-        } = self.graph.types.get(callable_type).kind
-        else {
-            return Err(Error::Invariant("constructor without function type"));
-        };
-        let mut parameters = parameters.clone();
-        parameters.insert(0, object_pointer);
-        let presentation_type = self.graph.types.intern(
-            TypeKind::Function {
-                result,
-                parameters,
-                variadic,
-                cv: Cv::default(),
-                reference: None,
-            },
-            Cv::default(),
-        )?;
-        Ok((object_pointer, presentation_type, callable_type))
+        Ok(callable_type)
     }
     pub(super) fn publish_constructor(
         &mut self,
@@ -1006,14 +977,12 @@ impl Analyzer<'_> {
         binding: BindingId,
         class: EntityId,
     ) -> Result<ConstructorId, Error> {
-        let (object_pointer, presentation_type, signature) =
-            self.constructor_types(class, Some(binding))?;
+        let signature = self.constructor_signature(Some(binding))?;
         let entity = self.graph.binding(binding).entity;
         self.publish_constructor(Constructor {
             class,
             binding: Some(binding),
-            object_pointer,
-            presentation_type,
+            object_pointer: None,
             callable_type: signature,
             nothrow: false,
             deleted: self.graph.entity(entity).availability
@@ -1475,7 +1444,10 @@ mod tests {
     use crate::{
         preprocess::unit::Preprocessor,
         sema::{Analyzer, lookup::Filter},
-        support::{source::SourceBuffer, stack::StackBudget},
+        support::{
+            source::{SourceBuffer, SourceOffset},
+            stack::StackBudget,
+        },
         syntax::SyntaxUnit,
     };
 
@@ -1698,6 +1670,84 @@ mod tests {
             assert_eq!(analyzer.constexpr_frames.depth(), 0);
         }
     }
+    #[test]
+    fn constructor_views_leave_pointer_demand_to_reached_lowering_boundaries() {
+        let source = SourceBuffer::new(
+            b"struct Leaf{Leaf();};struct X{Leaf m;};void f(){X x;}struct Unused{};".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-views").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"X".as_slice(), b"Unused"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let classes = names.map(|name| {
+            let binding = analyzer.graph.own(global, name, Filter::Prefix).unwrap();
+            analyzer.graph.binding(binding).entity
+        });
+        let plans = classes.map(|class| {
+            analyzer
+                .default_constructor(class, SourceOffset(0))
+                .unwrap()
+        });
+        for plan in plans {
+            assert!(
+                analyzer
+                    .graph
+                    .constructors
+                    .get(plan)
+                    .object_pointer
+                    .is_none()
+            );
+            assert!(
+                analyzer
+                    .graph
+                    .lower_constructor(plan)
+                    .object_pointer()
+                    .is_err()
+            );
+        }
+        let graph = analyzer.graph;
+        let before = graph.statistics().types;
+        let mut view = Vec::new();
+        graph
+            .print_semantics(tree, cursor, declarations, &mut view)
+            .unwrap();
+        assert_eq!(graph.statistics().types, before);
+        assert!(
+            view.windows(b"parameter this pointer to struct X".len())
+                .any(|part| part == b"parameter this pointer to struct X")
+        );
+        let mut analyzer =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+        analyzer.set_lowering();
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert!(
+            analyzer
+                .graph
+                .lower_constructor(plans[0])
+                .object_pointer()
+                .is_ok()
+        );
+        assert!(
+            analyzer
+                .graph
+                .lower_constructor(plans[1])
+                .object_pointer()
+                .is_err()
+        );
+        let completed = analyzer.graph.statistics().types;
+        analyzer.finish_lowering_boundaries().unwrap();
+        assert_eq!(analyzer.graph.statistics().types, completed);
+    }
+
     #[test]
     fn array_constructor_boundaries_prepare_only_demanded_parameter_facts() {
         let source = SourceBuffer::new(b"struct P{int n;P(int);};struct Q{Q(P=P(7));};struct R{Q a[2];};void f(){R r;}struct U{};struct Unused{Unused(U=U());};".to_vec()).unwrap();

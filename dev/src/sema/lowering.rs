@@ -67,7 +67,7 @@ pub(crate) enum TemplateDeclaration {
 }
 
 pub(crate) struct ConstructorView<'a> {
-    pub object_pointer: TypeId,
+    object_pointer: Option<TypeId>,
     pub union: bool,
     pub zero_before_value: bool,
     pub members: &'a [(EntityId, Option<ast::Initializer>)],
@@ -78,6 +78,12 @@ pub(crate) struct ConstructorView<'a> {
     pub subobjects: &'a [super::construction::MemberConstruction],
     pub delegation: Option<super::construction::Delegation>,
     pub copy: Option<&'a [SubobjectCopy]>,
+}
+impl ConstructorView<'_> {
+    pub(crate) fn object_pointer(&self) -> Result<TypeId, Error> {
+        self.object_pointer
+            .ok_or(Error::Invariant("constructor object pointer not demanded"))
+    }
 }
 pub(crate) use super::allocation::ArrayAllocation;
 pub(crate) struct AllocationView {
