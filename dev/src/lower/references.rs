@@ -251,10 +251,12 @@ impl Function<'_, '_, '_, '_> {
         {
             return self.bind_reference(operand, reference, Context::Cast);
         }
-        if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)?
-            && (!delta.is_zero() || project_zero)
-        {
-            let address = self.address(operand)?;
+        if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)? {
+            let place = self.scalar_place(operand)?;
+            if !project_zero && self.resolve_base_projection(delta)?.is_zero() {
+                return Ok(place);
+            }
+            let address = self.storage_address(place, self.graph.lower_expression(operand)?.ty)?;
             return self.project_base_access(
                 address,
                 facts.ty,

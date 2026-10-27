@@ -13,7 +13,7 @@ use crate::{
     },
     sema::{
         Graph,
-        lowering::{EntityId, TypeId},
+        lowering::{BaseProjection, EntityId, TypeId},
     },
     syntax::ast::{self, ExprKind},
 };
@@ -82,28 +82,15 @@ impl Function<'_, '_, '_, '_> {
         };
         Ok((callee, signature))
     }
-    pub(super) fn converted_member_address(
+    pub(super) fn converted_member_operand(
         &mut self,
         id: ast::ExprId,
+        context: Context,
     ) -> Result<Option<RValue>, Error> {
         let Some(adjustment) = self.graph.lower_member_pointer_conversion(id)? else {
             return Ok(None);
         };
-        if let Some(function) = self.graph.lower_member_function_address(id)? {
-            let source =
-                self.graph
-                    .lower_expression(id)?
-                    .target
-                    .ok_or(crate::sema::Error::Invariant(
-                        "member address conversion target",
-                    ))?;
-            return self
-                .member_function_word(function, source, adjustment)
-                .map(Some);
-        }
-        let Some(offset) = self.graph.lower_data_member_address(id)? else {
-            return Ok(None);
-        };
+        let adjustment = self.member_adjustment_offset(adjustment)?;
         let target =
             self.graph
                 .lower_expression(id)?
@@ -111,12 +98,74 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(crate::sema::Error::Invariant(
                     "member address conversion target",
                 ))?;
+        if let Some(function) = self.graph.lower_member_function_address(id)? {
+            return self
+                .member_function_word(function, target, adjustment)
+                .map(Some);
+        }
+        let Some(offset) = self.graph.lower_data_member_address(id)? else {
+            let value = self.expression(id, context)?;
+            return self
+                .convert_member_pointer_at_offset(value, target, adjustment)
+                .map(Some);
+        };
         let offset = self
             .builder
             .integer(u128::from(offset.wrapping_add(adjustment)))?;
         self.emit(I::Const(Type::I64, offset), target).map(Some)
     }
     pub(super) fn convert_member_pointer(
+        &mut self,
+        value: RValue,
+        target: TypeId,
+        projection: BaseProjection,
+    ) -> Result<RValue, Error> {
+        let adjustment = self.member_adjustment_offset(projection)?;
+        self.convert_member_pointer_at_offset(value, target, adjustment)
+    }
+    pub(super) fn member_cast_adjustment(
+        &self,
+        id: ast::ExprId,
+        operand: ast::ExprId,
+    ) -> Result<Option<u64>, Error> {
+        // A selected implicit conversion owns its query before evaluating the
+        // operand. Only an explicit inverse cast queries here instead.
+        if self
+            .graph
+            .lower_member_pointer_conversion(operand)?
+            .is_some()
+        {
+            return Ok(None);
+        }
+        self.graph
+            .lower_member_pointer_cast(id)?
+            .map(|projection| self.member_adjustment_offset(projection))
+            .transpose()
+    }
+    pub(super) fn member_adjustment_offset(
+        &self,
+        projection: BaseProjection,
+    ) -> Result<u64, Error> {
+        match projection {
+            BaseProjection::Fixed(offset) => Ok(offset),
+            BaseProjection::Nonvirtual {
+                from, to, reverse, ..
+            } => {
+                let offset = self.graph.lower_nonvirtual_offset(from, to)?.ok_or(
+                    crate::sema::Error::Invariant("member adjustment without a nonvirtual offset"),
+                )?;
+                Ok(if reverse {
+                    offset.wrapping_neg()
+                } else {
+                    offset
+                })
+            }
+            BaseProjection::Route { .. } => {
+                Err(crate::sema::Error::Invariant("virtual member-pointer adjustment").into())
+            }
+        }
+    }
+    pub(super) fn convert_member_pointer_at_offset(
         &mut self,
         value: RValue,
         target: TypeId,
@@ -197,10 +246,11 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.address(left)?
         };
-        if let Some(offset) = self.graph.lower_member_pointer_projection(id)?
-            && !offset.is_zero()
-        {
-            object = self.base_projection(object, source, offset)?;
+        if let Some(offset) = self.graph.lower_member_pointer_projection(id)? {
+            let offset = self.resolve_base_projection(offset)?;
+            if !offset.is_zero() {
+                object = self.base_projection(object, source, offset)?;
+            }
         }
         Ok(object)
     }

@@ -1,0 +1,59 @@
+function @up(%pointer : ptr) -> ptr [binding=strong, object=_Z2upP7Derived] {
+  slot $pointer : ptr
+
+  block ^entry:
+    store typed ptr %pointer, $pointer
+    %t1 = load typed ptr $pointer
+    %t2 = index i8 %t1, 0
+    return ptr %t2
+}
+function @down(%pointer : ptr) -> ptr [binding=strong, object=_Z4downP4Base] {
+  slot $pointer : ptr
+
+  block ^entry:
+    store typed ptr %pointer, $pointer
+    %t1 = load typed ptr $pointer
+    return ptr %t1
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<4x4>
+  slot $first : ptr
+  slot $second : ptr
+  slot $reference : ptr
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $object
+    %t3 = index i8 %t2, 0
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = addr $object
+    %t6 = index i8 %t5, 0
+    store typed ptr %t6, $first
+    %t7 = addr $object
+    %t8 = index i8 %t7, 0
+    store typed ptr %t8, $second
+    %t9 = addr $object
+    %t10 = index i8 %t9, 0
+    store typed ptr %t10, $reference
+    %t11 = load typed ptr $first
+    %t12 = index i8 [projection=field] %t11, 0
+    %t13 = load typed i32 %t12
+    %t14 = load typed ptr $second
+    %t15 = index i8 [projection=field] %t14, 0
+    %t16 = load typed i32 %t15
+    %t17 = binary add nowrap i32 %t13, %t16
+    %t18 = load typed ptr $reference
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = load typed i32 %t19
+    %t21 = binary add nowrap i32 %t17, %t20
+    %t22 = addr $object
+    %t23 = call ptr @up(%t22)
+    %t24 = call ptr @down(%t23)
+    %t25 = index i8 %t24, 0
+    %t26 = index i8 [projection=field] %t25, 0
+    %t27 = load typed i32 %t26
+    %t28 = binary add nowrap i32 %t21, %t27
+    %t29 = binary sub nowrap i32 %t28, 28
+    return i32 %t29
+}

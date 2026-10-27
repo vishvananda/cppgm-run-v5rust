@@ -2064,15 +2064,48 @@ fn explicit_base_cast_route_survives_conversion_of_its_result() {
     ));
     let facts = graph.expression_facts.get(cast).unwrap();
     assert_ne!(facts.base_cast.unwrap().path, facts.base_path.unwrap());
+    let observed = graph.work().base_steps;
+    let explicit = graph.lower_cast_base_adjustment(cast).unwrap();
+    let implicit = graph.lower_base_conversion(cast).unwrap();
+    match (explicit, implicit) {
+        (
+            Some((
+                super::lowering::BaseProjection::Nonvirtual {
+                    from,
+                    to,
+                    reverse: true,
+                    ..
+                },
+                false,
+            )),
+            Some(super::lowering::BaseProjection::Nonvirtual {
+                from: result_from,
+                to: result_to,
+                reverse: false,
+                ..
+            }),
+        ) => {
+            assert_eq!(from, result_from);
+            assert_ne!(to, result_to);
+        }
+        _ => panic!("separate typed nonvirtual query identities"),
+    }
     assert_eq!(
-        graph.lower_cast_base_adjustment(cast).unwrap(),
-        Some((crate::sema::lowering::BaseProjection::Fixed(0), false))
+        graph
+            .lower_cast_base_adjustment(cast)
+            .unwrap()
+            .map(|(projection, zero)| (projection.known_offset(), zero)),
+        Some((Some(0), false))
     );
     assert_eq!(
-        graph.lower_base_conversion(cast).unwrap(),
-        Some(crate::sema::lowering::BaseProjection::Fixed(4))
+        graph
+            .lower_base_conversion(cast)
+            .unwrap()
+            .and_then(crate::sema::lowering::BaseProjection::known_offset),
+        Some(4)
     );
     assert_ne!(facts.ty, facts.conversion.unwrap().result);
+    assert_eq!(graph.work().base_steps, observed);
 }
 
 #[test]

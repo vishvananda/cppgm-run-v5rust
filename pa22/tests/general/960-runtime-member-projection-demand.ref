@@ -1,0 +1,191 @@
+function @up(%pointer : i64) -> i64 [binding=strong, object=_Z2upM4Basei] {
+  slot $pointer : i64
+
+  block ^entry:
+    store typed i64 %pointer, $pointer
+    %t1 = load typed i64 $pointer
+    %t2 = cmp ne i64 %t1, -1
+    %t3 = binary mul i64 %t2, 4
+    %t4 = binary add i64 %t1, %t3
+    return i64 %t4
+}
+function @down(%pointer : i64) -> i64 [binding=strong, object=_Z4downM7Derivedi] {
+  slot $pointer : i64
+
+  block ^entry:
+    store typed i64 %pointer, $pointer
+    %t1 = load typed i64 $pointer
+    %t2 = cmp ne i64 %t1, -1
+    %t3 = binary mul i64 %t2, -4
+    %t4 = binary add i64 %t1, %t3
+    return i64 %t4
+}
+function @up_function(%pointer : i128) -> i128 [binding=strong, object=_Z11up_functionM4BaseFivE] {
+  slot $pointer : i128
+
+  block ^entry:
+    store typed i128 %pointer, $pointer
+    %t1 = load typed i128 $pointer
+    %t2 = convert trunc i64 i128 %t1
+    %t3 = cmp ne i64 %t2, 0
+    %t4 = binary mul i64 %t3, 4
+    %t5 = convert sext i128 i64 %t4
+    %t6 = binary shl i128 %t5, 64
+    %t7 = binary add i128 %t1, %t6
+    return i128 %t7
+}
+function @down_function(%pointer : i128) -> i128 [binding=strong, object=_Z13down_functionM7DerivedFivE] {
+  slot $pointer : i128
+
+  block ^entry:
+    store typed i128 %pointer, $pointer
+    %t1 = load typed i128 $pointer
+    %t2 = convert trunc i64 i128 %t1
+    %t3 = cmp ne i64 %t2, 0
+    %t4 = binary mul i64 %t3, -4
+    %t5 = convert sext i128 i64 %t4
+    %t6 = binary shl i128 %t5, 64
+    %t7 = binary add i128 %t1, %t6
+    return i128 %t7
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $object : obj<8x4>
+  slot $data : i64
+  slot $function : i128
+  slot $null_data : i64
+  slot $null_function : i128
+  slot $converted_data : i64
+  slot $converted_function : i128
+  slot $member_pointer_callee__1 : ptr
+  slot $member_pointer_callee__2 : ptr
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $object
+    %t3 = index i8 %t2, 4
+    %t4 = index i8 [projection=field] %t3, 0
+    store typed i32 7, %t4
+    %t5 = const i64 0
+    store typed i64 %t5, $data
+    %t6 = addr @Base__get
+    %t7 = copy i64 %t6
+    %t8 = convert zext i128 i64 %t7
+    store typed i128 %t8, $function
+    %t9 = call i64 @up(-1)
+    store typed i64 %t9, $null_data
+    %t10 = call i128 @up_function(0)
+    store typed i128 %t10, $null_function
+    %t11 = load typed i64 $null_data
+    %t12 = binary add i64 %t11, 1
+    branch %t12, ^if_then_1, ^lor_rhs_5
+
+  block ^lor_rhs_5:
+    %t13 = load typed i128 $null_function
+    %t14 = convert trunc i64 i128 %t13
+    branch %t14, ^if_then_1, ^lor_rhs_4
+
+  block ^lor_rhs_4:
+    %t15 = load typed i64 $null_data
+    %t16 = call i64 @down(%t15)
+    %t17 = binary add i64 %t16, 1
+    branch %t17, ^if_then_1, ^lor_rhs_3
+
+  block ^lor_rhs_3:
+    %t18 = load typed i128 $null_function
+    %t19 = call i128 @down_function(%t18)
+    %t20 = convert trunc i64 i128 %t19
+    branch %t20, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t21 = load typed i64 $data
+    %t22 = call i64 @up(%t21)
+    store typed i64 %t22, $converted_data
+    %t23 = load typed i128 $function
+    %t24 = call i128 @up_function(%t23)
+    store typed i128 %t24, $converted_function
+    %t25 = addr $object
+    %t26 = load typed i64 $converted_data
+    %t27 = index i8 [projection=field] %t25, %t26
+    %t28 = load typed i32 %t27
+    %t29 = addr $object
+    %t30 = load typed i128 $converted_function
+    %t31 = binary shr i128 %t30, 64
+    %t32 = convert trunc i64 i128 %t31
+    %t33 = convert trunc i64 i128 %t30
+    %t34 = binary and i64 %t33, 1
+    %t35 = cmp ne i64 %t34, 0
+    %t36 = index i8 %t29, %t32
+    branch %t35, ^member_pointer_virtual_7, ^member_pointer_direct_8
+
+  block ^member_pointer_virtual_7:
+    %t37 = load typed ptr %t36
+    %t38 = binary sub i64 %t33, 1
+    %t39 = index i8 %t37, %t38
+    %t40 = load typed ptr %t39
+    store typed ptr %t40, $member_pointer_callee__1
+    jump ^member_pointer_end_9
+
+  block ^member_pointer_direct_8:
+    %t41 = copy ptr %t33
+    store typed ptr %t41, $member_pointer_callee__1
+    jump ^member_pointer_end_9
+
+  block ^member_pointer_end_9:
+    %t42 = load typed ptr $member_pointer_callee__1
+    %t43 = call i32 %t42(%t36) as (%arg0 : ptr) -> i32
+    %t44 = binary add nowrap i32 %t28, %t43
+    %t45 = addr $object
+    %t46 = index i8 %t45, 4
+    %t47 = load typed i64 $converted_data
+    %t48 = call i64 @down(%t47)
+    %t49 = index i8 [projection=field] %t46, %t48
+    %t50 = load typed i32 %t49
+    %t51 = binary add nowrap i32 %t44, %t50
+    %t52 = addr $object
+    %t53 = index i8 %t52, 4
+    %t54 = load typed i128 $converted_function
+    %t55 = call i128 @down_function(%t54)
+    %t56 = binary shr i128 %t55, 64
+    %t57 = convert trunc i64 i128 %t56
+    %t58 = convert trunc i64 i128 %t55
+    %t59 = binary and i64 %t58, 1
+    %t60 = cmp ne i64 %t59, 0
+    %t61 = index i8 %t53, %t57
+    branch %t60, ^member_pointer_virtual_10, ^member_pointer_direct_11
+
+  block ^member_pointer_virtual_10:
+    %t62 = load typed ptr %t61
+    %t63 = binary sub i64 %t58, 1
+    %t64 = index i8 %t62, %t63
+    %t65 = load typed ptr %t64
+    store typed ptr %t65, $member_pointer_callee__2
+    jump ^member_pointer_end_12
+
+  block ^member_pointer_direct_11:
+    %t66 = copy ptr %t58
+    store typed ptr %t66, $member_pointer_callee__2
+    jump ^member_pointer_end_12
+
+  block ^member_pointer_end_12:
+    %t67 = load typed ptr $member_pointer_callee__2
+    %t68 = call i32 %t67(%t61) as (%arg0 : ptr [object_bytes=4]) -> i32
+    %t69 = binary add nowrap i32 %t51, %t68
+    %t70 = binary sub nowrap i32 %t69, 28
+    return i32 %t70
+}
+function @Base__get(%this : ptr [object_bytes=4]) -> i32 [binding=weak, object=_ZN4Base3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load typed i32 %t2
+    return i32 %t3
+}

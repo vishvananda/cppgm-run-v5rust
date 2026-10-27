@@ -387,8 +387,11 @@ mod tests {
             super::super::expression_facts::ValueConversion::DerivedToBase
         );
         assert_eq!(
-            graph.lower_base_conversion(left).unwrap(),
-            Some(crate::sema::lowering::BaseProjection::Fixed(0))
+            graph
+                .lower_base_conversion(left)
+                .unwrap()
+                .and_then(crate::sema::lowering::BaseProjection::known_offset),
+            Some(0)
         );
     }
 

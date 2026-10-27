@@ -96,15 +96,48 @@ pub(crate) struct CovariantResult {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BaseProjection {
     Fixed(u64),
-    Route { from: EntityId, to: EntityId },
+    Nonvirtual {
+        from: EntityId,
+        to: EntityId,
+        offset: u64,
+        reverse: bool,
+    },
+    Route {
+        from: EntityId,
+        to: EntityId,
+    },
 }
 impl BaseProjection {
+    pub(crate) fn known_offset(self) -> Option<u64> {
+        match self {
+            Self::Fixed(offset) => Some(offset),
+            Self::Nonvirtual {
+                offset, reverse, ..
+            } => Some(if reverse {
+                offset.wrapping_neg()
+            } else {
+                offset
+            }),
+            Self::Route { .. } => None,
+        }
+    }
     pub(crate) fn is_zero(self) -> bool {
-        matches!(self, Self::Fixed(0))
+        self.known_offset() == Some(0)
     }
     pub(super) fn negated(self) -> Result<Self, Error> {
         match self {
             Self::Fixed(offset) => Ok(Self::Fixed(offset.wrapping_neg())),
+            Self::Nonvirtual {
+                from,
+                to,
+                offset,
+                reverse,
+            } => Ok(Self::Nonvirtual {
+                from,
+                to,
+                offset,
+                reverse: !reverse,
+            }),
             Self::Route { .. } => Err(Error::Invariant("downcast through a virtual base")),
         }
     }
@@ -136,7 +169,16 @@ impl Graph {
                 to: self.entity(owner).bases[index].class,
             })
         } else {
-            self.lower_path_offset(path).map(BaseProjection::Fixed)
+            let Some(&(from, _)) = edges.first() else {
+                return Ok(BaseProjection::Fixed(0));
+            };
+            let &(owner, index) = edges.last().ok_or(Error::Invariant("nonempty base path"))?;
+            Ok(BaseProjection::Nonvirtual {
+                from,
+                to: self.entity(owner).bases[index].class,
+                offset: self.lower_path_offset(path)?,
+                reverse: false,
+            })
         }
     }
     /// Member access performs `ProgramLowering::base_route` even for a fixed,

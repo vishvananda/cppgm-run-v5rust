@@ -35,7 +35,7 @@ impl Function<'_, '_, '_, '_> {
             }
             return self.convert(value, target, context);
         }
-        if let Some(value) = self.converted_member_address(id)? {
+        if let Some(value) = self.converted_member_operand(id, context)? {
             return Ok(value);
         }
         let value = self.expression(id, context)?;
@@ -456,19 +456,21 @@ impl Function<'_, '_, '_, '_> {
                     self.discard_to_void(operand)?;
                     return self.zero(source);
                 }
+                let member_adjustment = self.member_cast_adjustment(id, operand)?;
                 let value = self.operand(operand, Context::Cast)?;
-                if let Some(adjustment) = self.graph.lower_member_pointer_cast(id)? {
-                    return self.convert_member_pointer(value, source, adjustment);
+                if let Some(adjustment) = member_adjustment {
+                    return self.convert_member_pointer_at_offset(value, source, adjustment);
                 }
-                if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)?
-                    && (!delta.is_zero() || project_zero)
-                {
-                    return self.convert_base_pointer(
-                        value,
-                        source,
-                        delta,
-                        !delta.is_zero() && !self.nonnull_pointer(operand),
-                    );
+                if let Some((delta, project_zero)) = self.graph.lower_cast_base_adjustment(id)? {
+                    let delta = self.resolve_base_projection(delta)?;
+                    if !delta.is_zero() || project_zero {
+                        return self.convert_base_pointer(
+                            value,
+                            source,
+                            delta,
+                            !delta.is_zero() && !self.nonnull_pointer(operand),
+                        );
+                    }
                 }
                 let value = self.convert(value, source, Context::Cast)?;
                 self.fit(value, source)

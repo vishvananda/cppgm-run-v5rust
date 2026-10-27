@@ -20,6 +20,33 @@ pub(super) enum BaseAccess {
     Nullable,
 }
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn resolve_base_projection(
+        &mut self,
+        projection: BaseProjection,
+    ) -> Result<BaseProjection, Error> {
+        let BaseProjection::Nonvirtual {
+            from, to, reverse, ..
+        } = projection
+        else {
+            return Ok(projection);
+        };
+        if reverse {
+            let offset = self.graph.lower_nonvirtual_offset(from, to)?.ok_or(
+                crate::sema::Error::Invariant("downcast without a nonvirtual base offset"),
+            )?;
+            return Ok(BaseProjection::Fixed(offset.wrapping_neg()));
+        }
+        let route = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .base_route(from, to)?;
+        if route.via.is_some() {
+            return Err(
+                crate::sema::Error::Invariant("nonvirtual path selected a virtual route").into(),
+            );
+        }
+        Ok(BaseProjection::Fixed(route.offset))
+    }
     pub(super) fn nonnull_pointer(&self, id: ast::ExprId) -> bool {
         match self.tree.expressions.get(self.without_parentheses(id)).kind {
             ExprKind::Keyword(Keyword::This) => true,
@@ -87,8 +114,14 @@ impl Function<'_, '_, '_, '_> {
         projection: BaseProjection,
         access: BaseAccess,
     ) -> Result<Value, Error> {
+        let projection = self.resolve_base_projection(projection)?;
         let offset = match projection {
             BaseProjection::Fixed(offset) => offset,
+            BaseProjection::Nonvirtual { .. } => {
+                return Err(
+                    crate::sema::Error::Invariant("unresolved nonvirtual projection").into(),
+                );
+            }
             BaseProjection::Route { from, to } => {
                 let route = self
                     .symbols
@@ -162,6 +195,7 @@ impl Function<'_, '_, '_, '_> {
         delta: BaseProjection,
         null_test: bool,
     ) -> Result<RValue, Error> {
+        let delta = self.resolve_base_projection(delta)?;
         if null_test && matches!(delta, BaseProjection::Route { .. }) {
             // pointer_to_base reserves its ordinary conversion slot before
             // the virtual route allocates its own null-tested result.

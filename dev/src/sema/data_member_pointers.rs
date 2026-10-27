@@ -393,7 +393,7 @@ impl super::graph::Graph {
     pub(crate) fn lower_member_pointer_conversion(
         &self,
         id: ast::ExprId,
-    ) -> Result<Option<u64>, Error> {
+    ) -> Result<Option<super::base_projections::BaseProjection>, Error> {
         let facts = self.expression_facts.get(id)?;
         if !facts
             .conversion
@@ -404,17 +404,20 @@ impl super::graph::Graph {
         let path = facts
             .base_path
             .ok_or(Error::Invariant("member conversion without route"))?;
-        self.lower_path_offset(path).map(Some)
+        self.lower_path_projection(path).map(Some)
     }
 
-    pub(crate) fn lower_member_pointer_cast(&self, id: ast::ExprId) -> Result<Option<u64>, Error> {
+    pub(crate) fn lower_member_pointer_cast(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<super::base_projections::BaseProjection>, Error> {
         let facts = self.expression_facts.get(id)?;
         if self.lower_member_pointer_type(facts.ty).is_none() {
             return Ok(None);
         }
         facts
             .base_cast
-            .map(|cast| self.lower_path_offset(cast.path).map(u64::wrapping_neg))
+            .map(|cast| self.lower_path_projection(cast.path)?.negated())
             .transpose()
     }
     pub(crate) fn lower_data_member_address(&self, id: ast::ExprId) -> Result<Option<u64>, Error> {

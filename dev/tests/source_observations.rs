@@ -313,3 +313,58 @@ fn semantic_reports_follow_success_and_do_not_change_the_view()
     );
     Ok(())
 }
+
+#[test]
+fn nonvirtual_base_queries_follow_each_runtime_conversion() -> Result<(), Box<dyn std::error::Error>>
+{
+    let directory =
+        Scratch(std::env::temp_dir().join(format!("cppgm-base-query-{}", std::process::id())));
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("input.cpp");
+    let output = directory.0.join("view.lowir");
+    for bodies in [
+        [
+            "int main(){D d;D*p=&d;return 0;}",
+            "int main(){D d;B*p=&d;return 0;}",
+            "int main(){D d;B*p=&d;B*q=&d;return 0;}",
+        ],
+        [
+            "int B::*f(int B::*p){return p;}int main(){return 0;}",
+            "int D::*f(int B::*p){return p;}int main(){return 0;}",
+            "int D::*f(int B::*p){int D::*q=p;return p;}int main(){return 0;}",
+        ],
+        [
+            "int B::*f(int B::*p){return p;}int main(){return 0;}",
+            "int B::*f(int D::*p){return static_cast<int B::*>(p);}int main(){return 0;}",
+            "int B::*f(int D::*p){int B::*q=static_cast<int B::*>(p);return static_cast<int B::*>(p);}int main(){return 0;}",
+        ],
+    ] {
+        let mut work = Vec::new();
+        for body in bodies {
+            std::fs::write(
+                &source,
+                format!("struct B{{int n;}};struct D:B{{}};{body}\n"),
+            )?;
+            let result = Command::new(env!("CARGO_BIN_EXE_cppgm"))
+                .args(["--emit-lowir", "-O0", "--stats", "-o"])
+                .arg(&output)
+                .arg(&source)
+                .output()?;
+            assert!(result.status.success(), "{:?}", result.stderr);
+            let stderr = String::from_utf8(result.stderr)?;
+            let line = stderr
+                .lines()
+                .find(|line| line.starts_with("cppgm++ lowir stats:"))
+                .ok_or("missing lowering observations")?;
+            work.push(
+                counters(line)
+                    .get("base_steps")
+                    .ok_or("missing base query work")?
+                    .parse::<u64>()?,
+            );
+        }
+        assert!(work[1] > work[0]);
+        assert_eq!(work[2] - work[0], 2 * (work[1] - work[0]));
+    }
+    Ok(())
+}
