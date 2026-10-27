@@ -126,30 +126,33 @@ impl Selection<'_> {
         from: Type,
         value: Value,
     ) -> Result<(), Error> {
-        if from.float_rank() != 0 || to.float_rank() != 0 {
+        if !matches!(
+            op,
+            Convert::SignExtend | Convert::ZeroExtend | Convert::Truncate
+        ) {
             return self.float_convert(temp, op, to, from, value);
         }
         if from == Type::I128 || to == Type::I128 {
             return self.wide_convert(temp, op, to, from, value);
         }
-        super::memory::scalar(to)?;
-        super::memory::scalar(from)?;
-        if !matches!(
-            op,
-            Convert::SignExtend | Convert::ZeroExtend | Convert::Truncate
-        ) {
-            return Err(unsupported());
-        }
         let src = self.operand(value, from, R::R10)?;
         let r = self.result(temp, [self.original_dying(value), None], 0);
         if src.is_memory() && op == Convert::Truncate {
-            self.load(r, src, to);
+            self.emit(ScalarOp::Load(r, to, src));
             if to == Type::I1 {
                 self.normalize(r, to);
             }
             return self.finish(temp, r);
         }
-        self.load(r, src, if src.is_memory() { from } else { Type::I64 });
+        if src.is_memory() {
+            self.emit(ScalarOp::Load(r, from, src));
+        } else if from.float_rank() != 0 && matches!(src, Operand::Immediate(_)) {
+            // Equal-type conversions admit every opcode. Their floating
+            // literal retains its own kind in load_into's FImm transfer.
+            self.float_copy(from, Operand::Register(r), src);
+        } else {
+            self.load(r, src, Type::I64);
+        }
         match op {
             Convert::SignExtend => {
                 if from == Type::I1 {

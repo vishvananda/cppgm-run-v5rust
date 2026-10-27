@@ -44,10 +44,9 @@ impl Start {
 }
 impl Argument {
     pub(super) fn map_list(&mut self, mut visit: impl FnMut(&mut Operand, u32)) {
-        let bytes = self.object.map_or_else(
-            || u32::from(super::scalar_mir::bytes(self.ty)),
-            |object| object.bytes,
-        );
+        // Frame admission uses the MIR type's footprint. Object VA_ARG carries
+        // its full copy size separately; the frozen Obj operand width is eight.
+        let bytes = u32::from(super::scalar_mir::bytes(self.ty));
         visit(&mut self.destination, bytes);
         visit(&mut self.list, bytes);
     }

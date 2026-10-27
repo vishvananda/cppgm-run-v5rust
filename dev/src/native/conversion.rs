@@ -147,8 +147,7 @@ impl Conversion {
             + match floating {
                 Type::F32 => 0,
                 Type::F64 => 1,
-                Type::F80 => 2,
-                _ => return Err(Error::Limit),
+                _ => 2,
             };
         let call = runtime.float_conversion[routine];
         if to_float {
@@ -158,7 +157,9 @@ impl Conversion {
             if self.to == Type::F80 {
                 a.x87(0xdb, 7, self.destination.rm()?)?;
             } else {
-                let dst = self.destination.register().ok_or(Error::Limit)?;
+                // Equal-type opcode admission can leave this destination in
+                // a frame home. The frozen encoder uses its raw kFrame field.
+                let dst = self.destination.register().unwrap_or(R::xmm(0xfd & 15)?);
                 let result = R::xmm(0)?;
                 if dst != result {
                     a.sse(0, 0x28, dst, Rm::Reg(result))?;

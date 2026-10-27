@@ -1,5 +1,5 @@
 //! Nonnegative bit capacities for the frozen optimized alias pass. See NOTICE.
-use super::{scalar_mir::signed, value_facts::Facts};
+use super::value_facts::Facts;
 use crate::lowir::{
     model::{Body, InstructionKind as I, Value},
     vocabulary::{Binary, Convert, Type, Unary},
@@ -9,11 +9,17 @@ pub(super) fn width(ty: Type) -> u32 {
     if ty == Type::Ptr { 64 } else { ty.bits() }
 }
 pub(super) fn capacity(ty: Type) -> u32 {
-    let bits = width(ty);
-    if signed(ty) {
-        bits.saturating_sub(1)
-    } else {
-        bits
+    match ty {
+        Type::I1 => 1,
+        Type::I8 => 7,
+        Type::U8 => 8,
+        Type::I16 => 15,
+        Type::U16 => 16,
+        Type::I32 => 31,
+        Type::U32 => 32,
+        Type::I64 => 63,
+        // Pointers and wide/memory values have no canonical integer fact.
+        _ => 0,
     }
 }
 fn unsigned_narrow(ty: Type) -> bool {

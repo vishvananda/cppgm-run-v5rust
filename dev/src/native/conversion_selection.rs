@@ -67,17 +67,22 @@ impl Selection<'_> {
             Convert::UnsignedToFloat => Kind::UnsignedToFloat,
             Convert::FloatToSigned => Kind::FloatToSigned,
             Convert::FloatToUnsigned => Kind::FloatToUnsigned,
+            Convert::FloatExtend => Kind::Extend,
+            Convert::FloatTruncate => Kind::Truncate,
             _ => return Err(unsupported()),
         };
-        let source = if from == Type::I128 {
-            self.wide_operand(value, R::R10)?
-        } else {
-            self.float_operand(value, from)?
+        let source = self.operand(value, from, R::R10)?;
+        let memory_result = match operation {
+            Convert::SignedToFloat
+            | Convert::UnsignedToFloat
+            | Convert::FloatExtend
+            | Convert::FloatTruncate => to == Type::F80,
+            _ => to == Type::I128,
         };
-        let destination = if to == Type::I128 {
+        let destination = if memory_result {
             Operand::Frame(self.placement.home(self.body, result, &mut self.mir)?)
         } else {
-            self.float_destination(result, to, [None, None])?
+            Operand::Register(self.result(result, [None, None], 0))
         };
         self.conversion(kind, from, to, destination, source);
         if let Some(reg) = destination.register() {
@@ -98,18 +103,21 @@ impl Selection<'_> {
         }
         match operation {
             Convert::SignedToFloat | Convert::UnsignedToFloat => {
-                super::memory::scalar(from)?;
                 let mut source = self.operand(value, from, R::R11)?;
                 let adjust = operation == Convert::SignedToFloat
                     && matches!(from, Type::U8 | Type::U16 | Type::U32)
                     || operation == Convert::UnsignedToFloat
                         && matches!(from, Type::I8 | Type::I16 | Type::I32);
                 if source.register().is_none() || adjust {
-                    self.load(
-                        R::R11,
-                        source,
-                        if source.is_memory() { from } else { Type::I64 },
-                    );
+                    if from.float_rank() != 0 && matches!(source, Operand::Immediate(_)) {
+                        self.float_copy(from, Operand::Register(R::R11), source);
+                    } else {
+                        self.load(
+                            R::R11,
+                            source,
+                            if source.is_memory() { from } else { Type::I64 },
+                        );
+                    }
                     if adjust {
                         self.normalize(R::R11, flip_sign(from));
                     }
@@ -127,8 +135,7 @@ impl Selection<'_> {
                 }
             }
             Convert::FloatToSigned | Convert::FloatToUnsigned => {
-                super::memory::scalar(to)?;
-                let source = self.float_operand(value, from)?;
+                let source = self.operand(value, from, R::R10)?;
                 let destination = self.result(result, [None, None], 0);
                 let kind = if operation == Convert::FloatToUnsigned && bits(to) == 64 {
                     Kind::FloatToUnsigned
@@ -140,7 +147,7 @@ impl Selection<'_> {
                 self.finish(result, destination)?;
             }
             Convert::FloatExtend | Convert::FloatTruncate => {
-                let source = self.float_operand(value, from)?;
+                let source = self.operand(value, from, R::R10)?;
                 let prefer = if from == Type::F80 {
                     None
                 } else {

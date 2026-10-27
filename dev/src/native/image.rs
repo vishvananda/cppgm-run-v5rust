@@ -124,9 +124,11 @@ impl Image {
         Ok(size)
     }
     pub(super) fn append(&mut self, assembly: Assembler) -> Result<(), Error> {
-        let base = u32::try_from(self.text.len()).map_err(|_| Error::Limit)?;
+        // CodeFixup offsets are target uint32_t values, even when the owned
+        // text buffer has a larger host-sized extent.
+        let base = u32::try_from(self.text.len() & u32::MAX as usize).map_err(|_| Error::Limit)?;
         for mut fixup in assembly.fixups {
-            fixup.offset = fixup.offset.checked_add(base).ok_or(Error::Limit)?;
+            fixup.offset = fixup.offset.wrapping_add(base);
             self.fixups.push(fixup);
         }
         self.text.extend(assembly.code);

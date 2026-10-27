@@ -74,7 +74,7 @@ impl FloatCopy {
             Type::I128 => 0,
             _ => 0xf2,
         };
-        if let Some(destination) = self.destination.register() {
+        if let Some(destination) = self.destination.register().filter(|r| r.code() >= 16) {
             if let Some(source) = self.source.register() {
                 if source.code() < 16 {
                     return if self.ty == Type::F32 {

@@ -139,10 +139,10 @@ impl Object {
         if name.is_empty() {
             return Ok(Name(0));
         }
-        let at = u32::try_from(self.names.len()).map_err(|_| Error::Limit)?;
+        // String offsets are target uint32_t values; table allocation still
+        // uses the full checked host size.
+        let at = u32::try_from(self.names.len() & u32::MAX as usize).map_err(|_| Error::Limit)?;
         let bytes = name.len().checked_add(1).ok_or(Error::Limit)?;
-        u32::try_from(self.names.len().checked_add(bytes).ok_or(Error::Limit)?)
-            .map_err(|_| Error::Limit)?;
         self.names.try_reserve(bytes).map_err(|_| Error::Limit)?;
         self.names.extend_from_slice(name);
         self.names.push(0);

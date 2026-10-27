@@ -1,0 +1,166 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @integer_to_float
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    sitofp.i64.i64 rax, rdi
+    ret rax
+
+function @float_to_integer
+  abi
+    param %value -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    fptosi.i64.i64 rax, rdi
+    ret rax
+
+function @floating_integer_extension
+  abi
+    param %value -> xmm0 : f64
+    return f64 -> xmm0
+  frame
+    stack_size 64
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+    param-slot %value -> [rbp-8] : f64
+
+  block ^entry
+    fmov.f64 [rbp-8], xmm0
+    load.f64 xmm0, [rbp-8]
+    ret xmm0
+
+function @floating_literal_extension
+  abi
+    return f64 -> xmm0
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    fmov.f64 xmm0, 1.25
+    ret xmm0
+
+function @floating_literal_to_float
+  abi
+    return f64 -> xmm0
+  frame
+    stack_size 48
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    fmov.f64 r11, 1.25
+    sitofp.f64.f64 xmm0, r11
+    ret xmm0
+
+function @wide_to_float
+  abi
+    param %value -> rdi : i64
+    param %value -> rsi : i64
+    return i128 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %value -> [rbp-16] : i128
+    temp %converted -> [rbp-32] : i128
+
+  block ^entry
+    store.i64 [rbp-16], rdi
+    store.i64 [rbp-8], rsi
+    sitofp.i128.i128 r10, [rbp-16]
+    store.i128 [rbp-32], r10
+    load.i64 rax, [rbp-32]
+    load.i64 rdx, [rbp-24]
+    ret
+
+function @wide_from_float
+  abi
+    param %value -> rdi : i64
+    param %value -> rsi : i64
+    return i128 -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    param-slot %value -> [rbp-16] : i128
+    temp %converted -> [rbp-32] : i128
+
+  block ^entry
+    store.i64 [rbp-16], rdi
+    store.i64 [rbp-8], rsi
+    fptosi.i128.i128 [rbp-32], [rbp-16]
+    load.i64 rax, [rbp-32]
+    load.i64 rdx, [rbp-24]
+    ret
+
+function @pointer_across_call
+  abi
+    param %pointer -> rdi : ptr
+    param %condition -> rsi : i1
+    return ptr -> rax
+  frame
+    stack_size 32
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+    preserve rbx r12 r13
+
+  block ^entry
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rbx
+    call @clobber [args=()]
+    test.i1 r12, r12
+    cmovne rbx, r13
+    ret rbx
+
+function @clobber
+  abi
+    return void -> void
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues shared
+
+  block ^entry
+    mov rax, 0
+    ret rax
