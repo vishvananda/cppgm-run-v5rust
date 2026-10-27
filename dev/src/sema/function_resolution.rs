@@ -90,6 +90,11 @@ impl Analyzer<'_> {
         let prefix = self
             .prefix(name, scope)?
             .ok_or(Error::Invariant("qualified address without prefix"))?;
+        // Only a class-qualified operand has the pointer-to-member form.
+        // Other prefixes belong to the ordinary operand's single lookup.
+        if self.graph.scope(prefix).kind != ScopeKind::Class {
+            return Ok(None);
+        }
         self.lookup_location = location;
         let mut found = if let ast::NameKind::Conversion(target) = last.kind {
             self.conversion_name_lookup(name, target, scope)?

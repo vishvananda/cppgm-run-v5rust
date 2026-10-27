@@ -1638,10 +1638,10 @@ impl Analyzer<'_> {
                     .insert(entity, value);
                 return Ok(Address::new(Root::Temporary(entity), facts.ty));
             }
-            let mut value = if let Some(expr) = expr {
-                analyzer.address_operand(expr, scope)?
-            } else {
-                Address::new(Root::Null, ty)
+            let TemporaryValue::Pointer(mut value) =
+                analyzer.initialized_scalar_value(ty, initializer, scope)?
+            else {
+                return Err(Error::Invariant("pointer initializer holds nonpointer"));
             };
             if let TypeKind::Pointer(element) = analyzer.graph.types.get(ty).kind {
                 value.designated = element;

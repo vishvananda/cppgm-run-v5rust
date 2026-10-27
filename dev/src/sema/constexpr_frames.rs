@@ -870,6 +870,94 @@ mod tests {
     };
 
     #[test]
+    fn scalar_initialization_releases_success_and_failure_regions_inside_an_evaluation() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            sema::analyzer::Analyzer,
+            support::{source::SourceBuffer, stack::StackBudget},
+            syntax::{SyntaxUnit, ast},
+        };
+        let source = SourceBuffer::new(b"constexpr int*p=0;constexpr double d=1.5;struct C{int member;};constexpr int C::*m=&C::member;int*unknown();int*bad=unknown();".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"scalar-regions").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let mut initializers = Vec::new();
+        for &declaration in analyzer.tree.decl_lists.get(declarations) {
+            if let ast::DeclKind::Simple { declarators, .. } =
+                analyzer.tree.declarations.get(declaration).kind
+            {
+                for declarator in analyzer.tree.init_declarators.get(declarators) {
+                    if let Some(initializer) = declarator.initializer {
+                        let expression = analyzer.single_initializer(initializer).unwrap();
+                        let source = analyzer.graph.expression_facts.get(expression).unwrap().ty;
+                        initializers.push((source, initializer));
+                    }
+                }
+            }
+        }
+        // The first initializer's integer zero initializes a pointer declaration.
+        let pointer = analyzer.graph.types.pointer(initializers[0].0).unwrap();
+        initializers[0].0 = pointer;
+        let integer = initializers[0].1;
+        let integer_type = analyzer
+            .graph
+            .expression_facts
+            .get(analyzer.single_initializer(integer).unwrap())
+            .unwrap()
+            .ty;
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer
+            .in_constant_evaluation(|analyzer| {
+                let outer = analyzer.allocate_constant_storage(
+                    integer_type,
+                    Some(TemporaryValue::Integer(Constant {
+                        state: super::super::constant_addresses::ScalarState::Value,
+                        ty: integer_type,
+                        bits: 123,
+                        high: 0,
+                    })),
+                    integer.location,
+                )?;
+                let objects = analyzer.constexpr_frames.objects.len();
+                let cells = analyzer.constexpr_frames.cells.len();
+                for (index, &(ty, initializer)) in initializers.iter().enumerate() {
+                    let result = analyzer.initialized_scalar_value(ty, initializer, scope);
+                    if index + 1 == initializers.len() {
+                        assert!(matches!(result, Err(Error::NonConstant { .. })));
+                    } else {
+                        match result.unwrap() {
+                            TemporaryValue::Pointer(value) => assert_eq!(value.root, Root::Null),
+                            TemporaryValue::Floating(value) => assert_eq!(
+                                value.value.bits(crate::types::float_value::Format::Double),
+                                Some(0x3ff8_0000_0000_0000)
+                            ),
+                            TemporaryValue::MemberPointer(value) => assert!(value.member.is_some()),
+                            TemporaryValue::Integer(_) => panic!("scalar declaration type"),
+                        }
+                    }
+                    assert_eq!(analyzer.constexpr_frames.objects.len(), objects);
+                    assert_eq!(analyzer.constexpr_frames.cells.len(), cells);
+                    assert!(matches!(
+                        analyzer.constexpr_frames.read(outer, integer.location)?,
+                        TemporaryValue::Integer(Constant { bits: 123, .. })
+                    ));
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert!(analyzer.constexpr_frames.objects.is_empty());
+        assert!(analyzer.constexpr_frames.index.is_empty());
+    }
+
+    #[test]
     fn union_cells_retain_variant_identity_across_publication_copy_and_release() {
         let mut graph = Graph::new();
         let ty = graph

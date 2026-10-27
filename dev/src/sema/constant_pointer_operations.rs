@@ -3,7 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    constant_addresses::{Address, Root, nonconstant},
+    constant_addresses::{Address, Root, TemporaryValue as Value, nonconstant},
     constants::Constant,
     expression_facts::ValueCategory,
     graph::{EntityId, ScopeId},
@@ -254,14 +254,12 @@ impl Analyzer<'_> {
                         left || self.constant_truth(right, scope, false)?
                     })
                 } else {
-                    let left = self.address_operand(left, scope)?;
-                    let right = self.address_operand(right, scope)?;
-                    if op == P::Subtract {
-                        self.address_difference(left, right, node.location)?
-                            .cast_unsigned()
-                    } else {
-                        u64::from(self.address_comparison(op, left, right, node.location)?)
-                    }
+                    let Value::Integer(value) = self.constant_scalar_chain(id, scope)? else {
+                        return Err(Error::Invariant(
+                            "integral pointer operation returned another scalar",
+                        ));
+                    };
+                    return Ok(Some(value));
                 }
             }
             ExprKind::Unary { op, .. } if op.token.as_punctuator() == Some(P::Multiply) => {
@@ -344,39 +342,78 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Address, Error> {
-        let node = *self.tree.expressions.get(id);
-        let ExprKind::Binary {
-            left, right, op, ..
-        } = node.kind
-        else {
-            return Err(Error::Invariant("pointer arithmetic without binary syntax"));
+        let Value::Pointer(value) = self.constant_scalar_chain(id, scope)? else {
+            return Err(Error::Invariant("pointer arithmetic returned a nonpointer"));
         };
-        // Rvalues are obtained in source order, even when the index precedes the pointer.
-        let (mut pointer, count) = if self.is_address_expression(left) {
-            let pointer = self.evaluate_address(left, scope)?;
-            let count = self.evaluate_constant(right, scope, false)?;
-            let count = self.constant_integer_operand(count, right)?;
-            (pointer, count)
-        } else {
-            let count = self.evaluate_constant(left, scope, false)?;
-            let count = self.constant_integer_operand(count, left)?;
-            let pointer = self.evaluate_address(right, scope)?;
-            (pointer, count)
+        Ok(value)
+    }
+    pub(super) fn constant_pointer_operation(
+        &mut self,
+        id: ast::ExprId,
+        op: Option<P>,
+        mut left: Value,
+        mut right: Value,
+    ) -> Result<Value, Error> {
+        let location = self.tree.expressions.get(id).location;
+        let op = op.ok_or(Error::Invariant("pointer operation token"))?;
+        if matches!(
+            op,
+            P::Equal | P::NotEqual | P::Less | P::Greater | P::LessEqual | P::GreaterEqual
+        ) {
+            if let (Value::Integer(value), Value::Pointer(pointer)) = (left, right)
+                && !value.indeterminate()
+                && !value.truth()
+            {
+                left = Value::Pointer(Address::new(Root::Null, pointer.designated));
+            }
+            if let (Value::Pointer(pointer), Value::Integer(value)) = (left, right)
+                && !value.indeterminate()
+                && !value.truth()
+            {
+                right = Value::Pointer(Address::new(Root::Null, pointer.designated));
+            }
+            let (Value::Pointer(left), Value::Pointer(right)) = (left, right) else {
+                return Err(nonconstant(
+                    location,
+                    "a comparison of a pointer with a non-pointer",
+                ));
+            };
+            let truth = self.address_comparison(op, left, right, location)?;
+            return Ok(Value::Integer(self.integral_value(
+                self.graph.expression_facts.get(id)?.ty,
+                u64::from(truth),
+            )));
+        }
+        if let (Value::Pointer(left), Value::Pointer(right)) = (left, right) {
+            let bits = self
+                .address_difference(left, right, location)?
+                .cast_unsigned();
+            return Ok(Value::Integer(
+                self.integral_value(self.graph.expression_facts.get(id)?.ty, bits),
+            ));
+        }
+        let ((Value::Pointer(mut pointer), Value::Integer(count))
+        | (Value::Integer(count), Value::Pointer(mut pointer))) = (left, right)
+        else {
+            return Err(nonconstant(
+                location,
+                "pointer arithmetic outside constant evaluation",
+            ));
         };
         if count.indeterminate() {
             return Err(nonconstant(
-                node.location,
+                location,
                 "pointer arithmetic outside constant evaluation",
             ));
         }
         let steps = integral::signed(count.bits);
-        let steps = if op.token.as_punctuator() == Some(P::Subtract) {
+        let steps = if op == P::Subtract {
             steps.wrapping_neg()
         } else {
             steps
         };
-        self.advance_address(&mut pointer, steps, node.location)?;
-        Ok(pointer)
+        self.advance_address(&mut pointer, steps, location)?;
+        Ok(Value::Pointer(pointer))
     }
     pub(super) fn address_root_type(
         &self,

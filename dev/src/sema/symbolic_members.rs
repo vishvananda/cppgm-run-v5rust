@@ -498,11 +498,14 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
         let result = self.in_constant_evaluation(|a| {
             let ty = a.graph.lower_entity_type(entity)?;
-            if let Some(expr) = a.single_initializer(initializer) {
-                a.member_pointer_operand(expr, ty, scope)
-            } else {
-                Ok(MemberPointer::null(a.bare_type(ty)?))
-            }
+            let super::constant_addresses::TemporaryValue::MemberPointer(value) =
+                a.initialized_scalar_value(ty, initializer, scope)?
+            else {
+                return Err(Error::Invariant(
+                    "member pointer initializer holds another scalar",
+                ));
+            };
+            Ok(value)
         });
         self.graph.entity_mut(entity).constant = ConstantState::None;
         match result {

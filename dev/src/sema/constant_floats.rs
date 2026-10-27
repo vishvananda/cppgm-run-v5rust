@@ -493,7 +493,7 @@ impl Analyzer<'_> {
                 self.discard_constant(left, scope)?;
                 self.scalar_value(right, scope)?
             }
-            ExprKind::Binary { .. } => self.floating_chain(id, scope)?,
+            ExprKind::Binary { .. } => self.constant_scalar_chain(id, scope)?,
             ExprKind::Unary { op, operand } | ExprKind::Postfix { op, operand } => {
                 match op.token.as_punctuator() {
                     Some(P::Increment | P::Decrement) => {
@@ -605,82 +605,13 @@ impl Analyzer<'_> {
                 bits: u64::from(truth),
             });
         }
-        let Value::Integer(value) = self.floating_chain(id, scope)? else {
+        let Value::Integer(value) = self.constant_scalar_chain(id, scope)? else {
             return Err(nonconstant(
                 node.location,
                 "not an integral constant expression",
             ));
         };
         Ok(value)
-    }
-    pub(super) fn floating_chain(
-        &mut self,
-        root: ast::ExprId,
-        scope: ScopeId,
-    ) -> Result<Value, Error> {
-        let base = self.constant_spine.len();
-        let mut next = root;
-        while let ExprKind::Binary {
-            left,
-            op,
-            assignment: false,
-            ..
-        } = self.tree.expressions.get(next).kind
-        {
-            if self.consumes_address(next)
-                || self.consumes_member_pointer(next)
-                || matches!(
-                    op.token.as_punctuator(),
-                    Some(P::Comma | P::LogicalAnd | P::LogicalOr)
-                )
-            {
-                break;
-            }
-            if next != root {
-                self.constant_step(self.tree.expressions.get(next).location)?;
-            }
-            self.constant_spine.push(next);
-            next = left;
-        }
-        let result = (|| {
-            let mut value = self.scalar_value(next, scope)?;
-            for index in (base..self.constant_spine.len()).rev() {
-                let id = self.constant_spine[index];
-                let ExprKind::Binary {
-                    left, right, op, ..
-                } = self.tree.expressions.get(id).kind
-                else {
-                    return Err(Error::Invariant("floating spine node"));
-                };
-                let left_type = self
-                    .graph
-                    .expression_facts
-                    .get(left)?
-                    .conversion
-                    .map_or(self.graph.expression_facts.get(left)?.ty, |conversion| {
-                        conversion.result
-                    });
-                value = self.convert_constant_scalar(
-                    value,
-                    left_type,
-                    self.tree.expressions.get(left).location,
-                )?;
-                let right_type = self
-                    .graph
-                    .expression_facts
-                    .get(right)?
-                    .conversion
-                    .map_or(self.graph.expression_facts.get(right)?.ty, |conversion| {
-                        conversion.result
-                    });
-                let right = self.constant_operand_value(right, right_type, scope)?;
-                value =
-                    self.constant_numeric_operation(id, op.token.as_punctuator(), value, right)?;
-            }
-            Ok(value)
-        })();
-        self.constant_spine.truncate(base);
-        result
     }
     pub(super) fn constant_numeric_operation(
         &mut self,
@@ -893,11 +824,9 @@ impl Analyzer<'_> {
         let ty = self.graph.lower_entity_type(entity)?;
         self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
         let result = (|| {
-            let value = if let Some(expr) = self.single_initializer(initializer) {
-                self.constant_operand_value(expr, ty, scope)?
-            } else {
-                self.zero_constant_scalar(ty)?
-            };
+            let value = self.in_constant_evaluation(|analyzer| {
+                analyzer.initialized_scalar_value(ty, initializer, scope)
+            })?;
             let Value::Floating(value) = value else {
                 return Err(Error::Invariant("floating initializer type"));
             };

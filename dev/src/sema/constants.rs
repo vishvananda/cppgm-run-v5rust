@@ -3,6 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
+    constant_addresses::TemporaryValue as Value,
     graph::{BindingKind, EntityId, ScopeId},
     integral::{self, IntegralKind},
     lookup::Filter,
@@ -217,7 +218,7 @@ impl Analyzer<'_> {
         {
             let place = self.constant_place(id, scope)?;
             return match self.read_constant_scalar(place, location)? {
-                super::constant_addresses::TemporaryValue::Integer(value) => Ok(value),
+                Value::Integer(value) => Ok(value),
                 _ => Err(not_constant(
                     location,
                     "not an integral constant expression",
@@ -347,10 +348,24 @@ impl Analyzer<'_> {
                 }
                 self.evaluate_constant(right, scope, skipping)?
             }
+            ExprKind::Binary { op, .. }
+                if self.semantic()
+                    && !skipping
+                    && self.graph.expression_facts.get(id).is_ok()
+                    && !matches!(op.token.as_punctuator(), Some(P::LogicalAnd | P::LogicalOr)) =>
+            {
+                let Value::Integer(value) = self.constant_scalar_chain(id, scope)? else {
+                    return Err(not_constant(
+                        location,
+                        "not an integral constant expression",
+                    ));
+                };
+                value
+            }
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
             ExprKind::ComplexPart { imaginary, operand } => {
                 let value = self.constant_component(id, operand, imaginary, scope)?;
-                let super::constant_addresses::TemporaryValue::Integer(value) = value else {
+                let Value::Integer(value) = value else {
                     return Err(Error::Invariant("integral complex component"));
                 };
                 value
@@ -429,7 +444,7 @@ impl Analyzer<'_> {
                     if skipping {
                         self.integral_value(self.graph.expression_facts.get(id)?.ty, 0)
                     } else {
-                        let super::constant_addresses::TemporaryValue::Integer(value) =
+                        let Value::Integer(value) =
                             self.constant_vector_lane_value(id, base, index, scope)?
                         else {
                             return Err(not_constant(
@@ -543,7 +558,7 @@ impl Analyzer<'_> {
             let value = self.returned_scalar(returned, location)?;
             let value = self.convert_constant_scalar(value, step.after.result, location)?;
             return match value {
-                super::constant_addresses::TemporaryValue::Integer(value) => Ok(Some(value)),
+                Value::Integer(value) => Ok(Some(value)),
                 _ => Err(not_constant(
                     location,
                     "not an integral constant expression",
@@ -696,9 +711,7 @@ impl Analyzer<'_> {
         }
         if let Some(kind) = self.graph.expression_facts.source_location(id) {
             return match self.constant_source_location(id, kind)? {
-                super::constexpr_calls::Returned::Value(
-                    super::constant_addresses::TemporaryValue::Integer(value),
-                ) => Ok(value),
+                super::constexpr_calls::Returned::Value(Value::Integer(value)) => Ok(value),
                 _ => Err(not_constant(
                     self.tree.expressions.get(id).location,
                     "not an integral constant expression",
@@ -745,7 +758,7 @@ impl Analyzer<'_> {
             };
             let value = self.constant_operand_value(value, facts.ty, scope)?;
             self.constant_operand_value(expected, facts.ty, scope)?;
-            let super::constant_addresses::TemporaryValue::Integer(value) = value else {
+            let Value::Integer(value) = value else {
                 return Err(Error::Invariant("expect builtin without integer result"));
             };
             return Ok(value);
@@ -1003,6 +1016,108 @@ impl Analyzer<'_> {
         let kind =
             IntegralKind::of(scalar).ok_or(Error::Invariant("nonintegral character type"))?;
         self.scalar_constant(kind.convert(u64::from_le_bytes(bytes)), scalar)
+    }
+    // ConstantInterpreter::binary visits the whole left spine once, including
+    // through parentheses. Keep owned scalar results between its operations.
+    pub(super) fn constant_scalar_chain(
+        &mut self,
+        root: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Value, Error> {
+        let base = self.constant_spine.len();
+        let result = (|| {
+            let mut next = self.graph.expression_facts.root(root);
+            while let ExprKind::Binary {
+                left,
+                op,
+                assignment: false,
+                ..
+            } = self.tree.expressions.get(next).kind
+            {
+                if self.consumes_member_pointer(next)
+                    || self.graph.expression_facts.get(next)?.call_form
+                        == super::expression_facts::CallForm::Operator
+                    || self
+                        .graph
+                        .expression_facts
+                        .function_conversion(next)
+                        .is_some()
+                    || matches!(
+                        op.token.as_punctuator(),
+                        Some(P::Comma | P::LogicalAnd | P::LogicalOr)
+                    )
+                {
+                    break;
+                }
+                self.constant_spine.push(next);
+                next = self.graph.expression_facts.root(left);
+            }
+            let mut value = self.scalar_value(next, scope)?;
+            for index in (base..self.constant_spine.len()).rev() {
+                let id = self.constant_spine[index];
+                let ExprKind::Binary {
+                    left, right, op, ..
+                } = self.tree.expressions.get(id).kind
+                else {
+                    return Err(Error::Invariant("scalar spine node"));
+                };
+                let left_type = self
+                    .graph
+                    .expression_facts
+                    .get(left)?
+                    .conversion
+                    .map_or(self.graph.expression_facts.get(left)?.ty, |conversion| {
+                        conversion.result
+                    });
+                let facts = self.graph.expression_facts.get(left)?;
+                if let Value::Pointer(pointer) = value
+                    && facts.conversion.is_some_and(|conversion| {
+                        conversion.second == super::expression_facts::ValueConversion::DerivedToBase
+                    })
+                    && self
+                        .graph
+                        .expression_facts
+                        .function_conversion(left)
+                        .is_none()
+                {
+                    let TypeKind::Pointer(element) = self.graph.types.get(left_type).kind else {
+                        return Err(Error::Invariant("base address conversion without pointer"));
+                    };
+                    let path = facts
+                        .base_path
+                        .ok_or(Error::Invariant("base address conversion without route"))?;
+                    value = Value::Pointer(self.constant_base_pointer(
+                        pointer,
+                        element,
+                        path,
+                        self.tree.expressions.get(left).location,
+                    )?);
+                }
+                value = self.convert_constant_scalar(
+                    value,
+                    left_type,
+                    self.tree.expressions.get(left).location,
+                )?;
+                let right_type = self
+                    .graph
+                    .expression_facts
+                    .get(right)?
+                    .conversion
+                    .map_or(self.graph.expression_facts.get(right)?.ty, |conversion| {
+                        conversion.result
+                    });
+                let right = self.constant_operand_value(right, right_type, scope)?;
+                value = if matches!(value, Value::Pointer(_)) || matches!(right, Value::Pointer(_))
+                {
+                    self.constant_pointer_operation(id, op.token.as_punctuator(), value, right)?
+                } else {
+                    self.constant_numeric_operation(id, op.token.as_punctuator(), value, right)?
+                };
+            }
+            Ok(value)
+        })();
+        self.constant_spine.truncate(base);
+        result
     }
     fn constant_chain(
         &mut self,
@@ -1292,10 +1407,8 @@ impl Analyzer<'_> {
                 self.constant_increment_values(id, operand, op == Some(P::Decrement), scope)?;
             return if matches!(self.tree.expressions.get(id).kind, ExprKind::Postfix { .. }) {
                 match old {
-                    super::constant_addresses::TemporaryValue::Integer(old) => Ok(old),
-                    super::constant_addresses::TemporaryValue::Pointer(_)
-                    | super::constant_addresses::TemporaryValue::Floating(_)
-                    | super::constant_addresses::TemporaryValue::MemberPointer(_) => {
+                    Value::Integer(old) => Ok(old),
+                    Value::Pointer(_) | Value::Floating(_) | Value::MemberPointer(_) => {
                         Err(Error::Invariant("integer increment with pointer value"))
                     }
                 }
@@ -1405,7 +1518,7 @@ impl Analyzer<'_> {
             if skipping {
                 return Ok(self.integral_value(ty, 0));
             }
-            let super::constant_addresses::TemporaryValue::Integer(value) =
+            let Value::Integer(value) =
                 self.constant_vector_scalar_cast(operand, ty, scope, location)?
             else {
                 return Err(Error::Invariant("integral vector cast"));
@@ -1444,9 +1557,7 @@ impl Analyzer<'_> {
                 operand.ok_or(Error::Invariant("floating cast operand"))?,
                 scope,
             )?;
-            let super::constant_addresses::TemporaryValue::Integer(value) =
-                self.convert_constant_scalar(value, ty, location)?
-            else {
+            let Value::Integer(value) = self.convert_constant_scalar(value, ty, location)? else {
                 return Err(not_constant(
                     location,
                     "cast to a type that is not integral",
@@ -1607,7 +1718,7 @@ impl Analyzer<'_> {
             let result = self.constant_operand_value(expr, object, scope);
             self.graph.entity_mut(entity).constant = ConstantState::None;
             match result {
-                Ok(super::constant_addresses::TemporaryValue::Integer(value)) => Some(value),
+                Ok(Value::Integer(value)) => Some(value),
                 Ok(_) => return Err(Error::Invariant("nonintegral converted initializer")),
                 Err(error @ Error::NonConstant { .. }) if self.graph.entity(entity).constexpr => {
                     return Err(error.constant_initializer(initializer.location));

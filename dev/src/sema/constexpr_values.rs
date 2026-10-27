@@ -44,6 +44,51 @@ impl Values {
     }
 }
 impl Analyzer<'_> {
+    pub(super) fn initialized_scalar_value(
+        &mut self,
+        ty: TypeId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+    ) -> Result<Value, Error> {
+        let region = self.constexpr_frames.region();
+        let result = (|| {
+            let place = self.allocate_constant_storage(ty, None, initializer.location)?;
+            self.constexpr_frames.initialize_declaration(place)?;
+            self.construct_constant_object(
+                place,
+                Some(initializer),
+                None,
+                scope,
+                initializer.location,
+            )?;
+            // Publication observes the completed storage, rather than reading
+            // a cv-qualified source glvalue. Indeterminate arithmetic values
+            // remain available for the declaration's completeness check.
+            let place = Address {
+                designated: self.bare_type(ty)?,
+                ..place
+            };
+            if matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::Pointer(_)
+                    | TypeKind::MemberPointer { .. }
+                    | TypeKind::Scalar(super::types::Scalar::Nullptr)
+            ) {
+                self.constexpr_frames
+                    .read_value(place, initializer.location)?
+                    .ok_or_else(|| {
+                        nonconstant(
+                            initializer.location,
+                            "a constexpr object leaves a subobject uninitialized",
+                        )
+                    })
+            } else {
+                self.constant_arithmetic_value(place, initializer.location)
+            }
+        })();
+        self.constexpr_frames.release(region);
+        result
+    }
     pub(super) fn integral_initializer_value(
         &mut self,
         entity: EntityId,
@@ -52,19 +97,10 @@ impl Analyzer<'_> {
     ) -> Result<Option<super::constants::Constant>, Error> {
         let ty = self.graph.lower_entity_type(entity)?;
         let result = self.in_constant_evaluation(|analyzer| {
-            let place = analyzer.allocate_constant_storage(ty, None, initializer.location)?;
-            analyzer.constexpr_frames.initialize_declaration(place)?;
-            analyzer.construct_constant_object(
-                place,
-                Some(initializer),
-                None,
-                scope,
-                initializer.location,
-            )?;
             // Initialization copies indeterminate arithmetic values; the owning
             // declaration diagnoses completeness after construction.
             let Value::Integer(value) =
-                analyzer.constant_arithmetic_value(place, initializer.location)?
+                analyzer.initialized_scalar_value(ty, initializer, scope)?
             else {
                 return Err(Error::Invariant("integral initializer holds noninteger"));
             };

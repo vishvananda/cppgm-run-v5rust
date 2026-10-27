@@ -269,10 +269,26 @@ impl Analyzer<'_> {
         // initialization_value consumes the already evaluated variable before
         // asking for another constant probe. Its initializer may be a call or
         // size query whose expression has no scalar fold fact of its own.
-        let value = if let super::constants::ConstantState::Value(value) =
-            self.graph.entity(entity).constant
-        {
-            Some(self.static_integer_value(value))
+        let recorded = match self.graph.entity(entity).constant {
+            super::constants::ConstantState::Value(value) => {
+                Some(super::constant_addresses::TemporaryValue::Integer(value))
+            }
+            super::constants::ConstantState::Floating(id) => {
+                Some(super::constant_addresses::TemporaryValue::Floating(
+                    self.graph.floating_constants.get(id),
+                ))
+            }
+            super::constants::ConstantState::MemberPointer(value) => Some(
+                super::constant_addresses::TemporaryValue::MemberPointer(value),
+            ),
+            _ => self
+                .graph
+                .constant_addresses
+                .value(entity)
+                .map(super::constant_addresses::TemporaryValue::Pointer),
+        };
+        let value = if let Some(value) = recorded {
+            self.static_held_scalar(value)?
         } else if let Some(expr) = self.single_initializer(initializer) {
             self.static_scalar(expr, target, scope)?
         } else if matches!(
