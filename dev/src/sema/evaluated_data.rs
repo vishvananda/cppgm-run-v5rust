@@ -241,7 +241,7 @@ impl Analyzer<'_> {
                 }
                 Some(TemporaryValue::Pointer(pointer)) => match pointer.root {
                     Root::Null => Item::Zero(size),
-                    Root::Variable(root) | Root::Temporary(root) | Root::Function(root) => {
+                    Root::Variable(root) | Root::Function(root) => {
                         let value = Value::Address(root, pointer.offset);
                         if !self.static_storage_value(value) {
                             return Ok(None);
@@ -259,7 +259,7 @@ impl Analyzer<'_> {
                     Root::TypeInformation(target) => {
                         Item::Scalar(ty, Value::TypeInformation(target, pointer.offset))
                     }
-                    _ => return Ok(None),
+                    Root::Object(_) => return Ok(None),
                 },
                 None => Item::Zero(size),
             };

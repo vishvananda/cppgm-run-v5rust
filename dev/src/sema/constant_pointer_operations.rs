@@ -427,19 +427,7 @@ impl Analyzer<'_> {
                 .entity(entity)
                 .ty
                 .ok_or(Error::Invariant("address variable without type")),
-            Root::Temporary(entity) => {
-                let ty = self
-                    .graph
-                    .entity(entity)
-                    .ty
-                    .ok_or(Error::Invariant("extended temporary without owner type"))?;
-                match self.graph.types.get(ty).kind {
-                    TypeKind::Reference { element, .. } => Ok(element),
-                    _ => Err(Error::Invariant("temporary owner is not a reference")),
-                }
-            }
             Root::Published(id) => Ok(self.graph.aggregate_constants.temporary(id).ty),
-            Root::Ephemeral(expr) => Ok(self.graph.expression_facts.get(expr)?.ty),
             Root::Literal(id) => self.graph.lower_literal_storage(id),
             Root::TypeInformation(_) => Err(nonconstant(
                 location,

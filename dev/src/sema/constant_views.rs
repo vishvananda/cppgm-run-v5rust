@@ -20,6 +20,16 @@ fn without_parentheses(tree: &ast::Tree, mut id: ast::ExprId) -> ast::ExprId {
 }
 
 impl Graph {
+    pub(crate) fn lower_extended_temporary(
+        &self,
+        entity: super::graph::EntityId,
+    ) -> Option<super::constexpr_values::TemporaryId> {
+        let address = self.constant_addresses.value(entity)?;
+        match address.root {
+            Root::Published(id) if address.offset == 0 => Some(id),
+            _ => None,
+        }
+    }
     pub(crate) fn lower_evaluated_reference_temporary(
         &self,
         entity: super::graph::EntityId,
@@ -194,7 +204,7 @@ impl Graph {
             .constant_addresses
             .value(entity)
             .and_then(|address| match address.root {
-                Root::Variable(root) | Root::Temporary(root) | Root::Function(root) => {
+                Root::Variable(root) | Root::Function(root) => {
                     Some(Value::Address(root, address.offset))
                 }
                 Root::Published(root) => self.static_temporary_value(root, address.offset),
@@ -254,9 +264,6 @@ impl Graph {
             Root::Literal(root) => Some(Value::Literal(root, address.offset)),
             Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, address.offset)),
             Root::Function(root) => Some(Value::Address(root, address.offset)),
-            Root::Temporary(root) if self.entity(root).reference_temporary.is_some() => {
-                Some(Value::Address(root, address.offset))
-            }
             Root::Variable(root)
                 if self.entity(root).home.is_some_and(|scope| {
                     matches!(

@@ -334,7 +334,6 @@ impl Analyzer<'_> {
                 _ => Err(Error::Invariant("published member-pointer scalar type")),
             };
         }
-        let constant = self.type_cv(place.designated).0 == 1;
         place.designated = self.bare_type(place.designated)?;
         let value = match place.root {
             Root::Object(_) => self.constexpr_frames.read(place, location)?,
@@ -368,17 +367,7 @@ impl Analyzer<'_> {
                     }
                 }
             }
-            Root::Ephemeral(id) => self
-                .expression_temporary_value(id)
-                .ok_or(Error::Invariant("member-pointer temporary without value"))?,
-            Root::Temporary(entity) if constant => self
-                .graph
-                .constant_addresses
-                .temporary_scalar(entity)
-                .ok_or(Error::Invariant(
-                    "member-pointer reference temporary without value",
-                ))?,
-            Root::Temporary(_) | Root::Published(_) => {
+            Root::Published(_) => {
                 return Err(nonconstant(
                     location,
                     "an access to a temporary that is not const, bound outside the evaluation",

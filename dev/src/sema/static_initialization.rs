@@ -178,46 +178,38 @@ impl Analyzer<'_> {
                 .constant_addresses
                 .set_reference_evaluated(entity, false);
             if facts.conversion.is_some_and(|c| c.temporary) {
-                if let Some(address) = self.graph.constant_addresses.value(entity)
-                    && let Root::Published(id) = address.root
-                {
-                    self.graph.entity_mut(entity).static_initializer =
-                        self.graph.static_temporary_value(id, address.offset);
-                    return Ok(());
-                }
                 let object = facts.conversion.map_or(element, |c| c.result);
-                let value = if matches!(
-                    self.graph.types.get(object).kind,
-                    TypeKind::MemberPointer { .. }
-                ) {
+                let value = if self.graph.class_of(object).is_some()
+                    || matches!(
+                        self.graph.types.get(object).kind,
+                        TypeKind::MemberPointer { .. }
+                    ) {
                     None
                 } else {
                     self.static_scalar_query(expr, object, scope, StaticScalarDemand::Syntax)?
                 };
-                let value = if value.is_none()
-                    && self.graph.constant_addresses.value(entity).is_some_and(
-                        |place| matches!(place.root, Root::Temporary(root) if root == entity),
-                    )
-                    && let Some(held) = self.graph.constant_addresses.temporary_scalar(entity)
-                    && !matches!(
-                        held,
-                        super::constant_addresses::TemporaryValue::MemberPointer(_)
-                    ) {
-                    let value = self.static_held_scalar(held)?;
-                    self.graph
-                        .constant_addresses
-                        .set_reference_evaluated(entity, value.is_some());
-                    value
-                } else {
-                    value
-                };
+                // define_reference first tries its syntax-shaped scalar. A
+                // failed view falls back to the already published core value.
+                if value.is_none()
+                    && let Some(id) = self.graph.lower_extended_temporary(entity)
+                    && let Some(value) = self.graph.static_temporary_value(id, 0)
+                {
+                    let variable = self.graph.entity_mut(entity);
+                    variable.static_initializer = Some(value);
+                    variable.reference_temporary = None;
+                    return Ok(());
+                }
                 let value_type = self.bare_type(object)?;
+                let entity_id = entity;
                 let entity = self.graph.entity_mut(entity);
                 entity.reference_temporary = Some(ReferenceTemporary {
                     binding: object,
                     value: value_type,
                 });
                 entity.static_initializer = value;
+                if value.is_some() {
+                    self.record_static_reference_storage(entity_id, object);
+                }
             } else {
                 let address = self.static_binding(entity, expr, scope);
                 let value = match address {
@@ -231,9 +223,7 @@ impl Analyzer<'_> {
                         {
                             Some(Value::Address(root, address.offset))
                         }
-                        Root::Temporary(root) | Root::Function(root) => {
-                            Some(Value::Address(root, address.offset))
-                        }
+                        Root::Function(root) => Some(Value::Address(root, address.offset)),
                         Root::Published(root) => {
                             self.graph.static_temporary_value(root, address.offset)
                         }
@@ -287,10 +277,23 @@ impl Analyzer<'_> {
                 .value(entity)
                 .map(super::constant_addresses::TemporaryValue::Pointer),
         };
-        let value = if let Some(value) = recorded {
-            self.static_held_scalar(value)?
+        let held = recorded
+            .map(|value| self.static_held_scalar(value))
+            .transpose()?
+            .flatten();
+        let value = if held.is_some() {
+            held
         } else if let Some(expr) = self.single_initializer(initializer) {
-            self.static_scalar(expr, target, scope)?
+            self.static_scalar_query(
+                expr,
+                target,
+                scope,
+                if recorded.is_some() {
+                    StaticScalarDemand::Syntax
+                } else {
+                    StaticScalarDemand::Initialization
+                },
+            )?
         } else if matches!(
             self.graph.types.get(target).kind,
             TypeKind::MemberPointer { .. }
@@ -498,9 +501,7 @@ impl Analyzer<'_> {
                 {
                     Some(Value::Address(entity, value.offset))
                 }
-                Root::Temporary(entity) | Root::Function(entity) => {
-                    Some(Value::Address(entity, value.offset))
-                }
+                Root::Function(entity) => Some(Value::Address(entity, value.offset)),
                 Root::Published(id) => self.graph.static_temporary_value(id, value.offset),
                 Root::Literal(expr) => Some(Value::Literal(expr, value.offset)),
                 Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, value.offset)),
@@ -609,9 +610,7 @@ impl Analyzer<'_> {
                     {
                         Some(Value::Address(entity, address.offset))
                     }
-                    Root::Temporary(entity) | Root::Function(entity) => {
-                        Some(Value::Address(entity, address.offset))
-                    }
+                    Root::Function(entity) => Some(Value::Address(entity, address.offset)),
                     Root::Published(id) => self.graph.static_temporary_value(id, address.offset),
                     Root::Literal(expr) => Some(Value::Literal(expr, address.offset)),
                     Root::TypeInformation(ty) => Some(Value::TypeInformation(ty, address.offset)),
@@ -1053,13 +1052,24 @@ mod tests {
                     graph.lower_cv(temporary.reference_temporary.unwrap().value),
                     0
                 );
-                assert!(
-                    matches!(graph.entity(entity(b"indirect")).static_initializer,
-                    Some(Value::Address(root, 0)) if root == entity(b"later"))
+                let Some(Value::Temporary(indirect, 0)) =
+                    graph.entity(entity(b"indirect")).static_initializer
+                else {
+                    panic!("evaluated forward reference backing");
+                };
+                assert_eq!(
+                    Some(indirect),
+                    graph.lower_extended_temporary(entity(b"indirect"))
                 );
+                let (_, image) = graph.lower_constant_temporary(indirect).unwrap();
                 assert!(
-                    matches!(same.static_initializer, Some(Value::Address(root, 0)) if root == temporary_id)
+                    matches!(image, [super::super::static_arrays::Item::Scalar(_, Value::Temporary(id, 0))]
+                    if Some(*id) == graph.lower_extended_temporary(entity(b"later")))
                 );
+                let Some(Value::Temporary(id, 0)) = same.static_initializer else {
+                    panic!("shared published temporary");
+                };
+                assert_eq!(Some(id), graph.lower_extended_temporary(temporary_id));
                 assert!(same.reference_temporary.is_none());
             } else {
                 assert!(reference.static_initializer.is_none());

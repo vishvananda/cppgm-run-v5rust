@@ -298,6 +298,17 @@ impl Analyzer<'_> {
             )?;
             return Ok(place);
         }
+        if self.complex_part_type(element).is_some()
+            && self.complex_part_type(facts.ty).is_none()
+            && (facts.category == ValueCategory::Prvalue
+                || facts
+                    .conversion
+                    .is_some_and(|conversion| conversion.temporary))
+        {
+            let place = self.allocate_constant_object(element, None, location)?;
+            self.initialize_constant_complex(id, place, scope)?;
+            return Ok(place);
+        }
         if self.graph.class_of(element).is_some()
             || self.complex_part_type(element).is_some()
             || self.vector_shape(element).is_some()
@@ -936,18 +947,9 @@ impl Analyzer<'_> {
         frame: Frame,
         execute: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let saved = self
-            .constant_evaluation
-            .as_mut()
-            .ok_or(Error::Invariant("call without evaluation"))?
-            .suspend_temporaries();
         self.constexpr_frames.push(frame);
         let result = execute(self);
         self.constexpr_frames.pop();
-        self.constant_evaluation
-            .as_mut()
-            .ok_or(Error::Invariant("call lost evaluation"))?
-            .resume_temporaries(saved);
         result
     }
 }

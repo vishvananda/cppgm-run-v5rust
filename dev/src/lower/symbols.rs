@@ -940,6 +940,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             Node::Literal { ty, bits }
         })
     }
+    pub(super) fn note_source_reference_storage(&mut self, symbol: SymbolId) {
+        // define_reference publishes its source-shaped backing outside the
+        // counted global-definition path; constant_temporary counts its own.
+        self.table.work.source_reference_storage.insert(symbol);
+    }
     pub(super) fn reference_temporary_symbol(
         &mut self,
         program: &mut Program,

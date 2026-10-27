@@ -223,10 +223,18 @@ impl Analyzer<'_> {
                 "a temporary bound to a reference leaves a subobject uninitialized",
             ));
         }
-        // constant_temporary uses constant_global for vectors, whose scalar
-        // item cannot encode their lane array. Keep the semantic value while
-        // reference backing storage retains its runtime initialization.
-        let image = if self.vector_shape(ty).is_some() {
+        // constant_temporary uses constant_global for every non-class/array
+        // object. Its scalar item cannot state vectors, complex values, member
+        // pointers or binary16/128 values. Keep the core value and runtime path.
+        let image = if self.vector_shape(ty).is_some()
+            || self.complex_part_type(ty).is_some()
+            || matches!(
+                self.graph.types.get(ty).kind,
+                TypeKind::MemberPointer { .. }
+            )
+            || matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(super::types::Scalar::Basic(kind))
+                if matches!(kind.floating_representation(), crate::types::FundamentalType::Float16 | crate::types::FundamentalType::Float128))
+        {
             None
         } else {
             self.completed_image(ty, &value)?
@@ -354,7 +362,7 @@ impl Analyzer<'_> {
             if pointer.root == place.root {
                 pointer.root = Root::Variable(entity);
             }
-            if matches!(pointer.root, Root::Object(_) | Root::Ephemeral(_))
+            if matches!(pointer.root, Root::Object(_))
                 || matches!(pointer.root, Root::Variable(root) if self.graph.lower_automatic(root)
                     || self.graph.lower_variable(root).is_ok_and(|v| v.thread_local))
             {
@@ -496,6 +504,154 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn constant_addresses_keep_root_identity_views_offsets_and_extended_storage() {
+        use crate::sema::{
+            constant_addresses::Root,
+            constants::{Constant, ConstantState},
+        };
+        use crate::{sema::types::Scalar, types::FundamentalType};
+        let source = SourceBuffer::new(b"int a[3];constexpr int*p=a+3;int*const&r=p;constexpr long distance=p-a;constexpr const char*t=\"abc\";constexpr bool equal=t+1==\"abc\"+1;const int&temporary=7;constexpr int read=temporary;int f(int);constexpr bool callable=f;".to_vec()).unwrap();
+        let input = Preprocessor::with_name(&source, b"address-ownership").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let graph = analyzer.analyze(declarations).unwrap();
+        let mut entity = |spelling: &[u8]| {
+            let name = cursor.intern_name(spelling).unwrap();
+            graph
+                .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+                .entity
+        };
+        let array = entity(b"a");
+        let pointer = entity(b"p");
+        let reference = entity(b"r");
+        let value = graph.constant_addresses.value(pointer).unwrap();
+        assert_eq!(value.root, Root::Variable(array));
+        assert_eq!(value.offset, 12);
+        assert!(value.past_end);
+        assert!(matches!(
+            graph.types.get(value.designated).kind,
+            TypeKind::Scalar(Scalar::Basic(FundamentalType::Int))
+        ));
+        let view = graph.constant_addresses.value(reference).unwrap();
+        assert_eq!(view.root, Root::Variable(pointer));
+        assert_eq!(view.offset, 0);
+        assert!(!view.past_end);
+        assert!(matches!(
+            graph.types.get(view.designated).kind,
+            TypeKind::Pointer(_)
+        ));
+        assert_ne!(view.designated, value.designated);
+        for (spelling, expected) in [
+            (b"distance".as_slice(), 3),
+            (b"equal", 1),
+            (b"read", 7),
+            (b"callable", 1),
+        ] {
+            let ConstantState::Value(constant) = graph.entity(entity(spelling)).constant else {
+                panic!("published integer expected");
+            };
+            assert_eq!(constant.bits, expected);
+        }
+        let temporary = entity(b"temporary");
+        let Root::Published(id) = graph.constant_addresses.value(temporary).unwrap().root else {
+            panic!("published temporary expected");
+        };
+        assert!(graph.aggregate_constants.temporary(id).value.values().any(
+            |(_, _, _, value)| matches!(
+                value,
+                Some(crate::sema::constant_addresses::TemporaryValue::Integer(
+                    Constant { bits: 7, .. }
+                ))
+            )
+        ));
+        let text = graph.constant_addresses.value(entity(b"t")).unwrap();
+        let Root::Literal(literal) = text.root else {
+            panic!("retained literal root expected");
+        };
+        assert!(matches!(
+            tree.expressions.get(literal).kind,
+            crate::syntax::ast::ExprKind::Literal(_)
+        ));
+        // Pointer/reference values have their own typed store; integral facts never
+        // stand in for an address, and string objects need no per-character graph.
+        assert!(matches!(
+            graph.entity(pointer).constant,
+            ConstantState::None
+        ));
+        assert!(matches!(
+            graph.entity(reference).constant,
+            ConstantState::None
+        ));
+    }
+
+    #[test]
+    fn repeated_reference_cast_occurrences_create_distinct_evaluation_objects() {
+        let source =
+            SourceBuffer::new(b"constexpr int value=static_cast<const int&>(3);".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"reference-occurrences").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let ast::DeclKind::Simple { declarators, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[0])
+            .kind
+        else {
+            panic!("scalar declaration");
+        };
+        let initializer = tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let expr = analyzer.single_initializer(initializer).unwrap();
+        let expressions = analyzer.tree.expressions.mark();
+        analyzer
+            .in_constant_evaluation(|analyzer| {
+                let mut first = analyzer.constant_place(expr, scope)?;
+                let second = analyzer.constant_place(expr, scope)?;
+                assert!(matches!(first.root, Root::Object(_)));
+                assert!(matches!(second.root, Root::Object(_)));
+                assert_ne!(first.root, second.root);
+                first.designated = analyzer.bare_type(first.designated)?;
+                analyzer.write_constant_value(
+                    first,
+                    Value::Integer(super::super::constants::Constant {
+                        state: super::super::constant_addresses::ScalarState::Value,
+                        ty: first.designated,
+                        bits: 9,
+                        high: 0,
+                    }),
+                    initializer.location,
+                )?;
+                assert_eq!(
+                    analyzer
+                        .read_constant_integer(first, initializer.location)?
+                        .bits,
+                    9
+                );
+                assert_eq!(
+                    analyzer
+                        .read_constant_integer(second, initializer.location)?
+                        .bits,
+                    3
+                );
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        assert!(!analyzer.constexpr_frames.active());
+        assert!(analyzer.constant_evaluation.is_none());
+    }
 
     #[test]
     fn extended_storage_keeps_identity_and_offsets_after_query_release() {

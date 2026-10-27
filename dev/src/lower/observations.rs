@@ -11,6 +11,7 @@ pub(super) struct Work {
     pub(super) mangled_names: usize,
     pub(super) vtables: usize,
     pub(super) lifetime_declarations: HashSet<SymbolId>,
+    pub(super) source_reference_storage: HashSet<SymbolId>,
 }
 pub(crate) struct Statistics {
     units: usize,
@@ -38,7 +39,10 @@ impl Work {
             if let Some(global) = program.global(symbol) {
                 if matches!(global.init, GlobalInit::Declaration) {
                     declarations += 1;
-                } else {
+                } else if !program
+                    .symbol_id(index)
+                    .is_some_and(|id| self.source_reference_storage.contains(&id))
+                {
                     globals += 1;
                 }
             } else if program.function(symbol).is_some()

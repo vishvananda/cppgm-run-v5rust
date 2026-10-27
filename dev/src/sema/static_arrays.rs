@@ -341,9 +341,7 @@ impl Analyzer<'_> {
                 Root::Variable(entity) if !self.graph.lower_automatic(entity) => {
                     Value::Address(entity, address.offset)
                 }
-                Root::Temporary(entity) | Root::Function(entity) => {
-                    Value::Address(entity, address.offset)
-                }
+                Root::Function(entity) => Value::Address(entity, address.offset),
                 Root::Published(id) => {
                     let Some(value) = self.graph.static_temporary_value(id, address.offset) else {
                         return Ok(false);

@@ -22,9 +22,7 @@ pub(super) enum Root {
     Function(EntityId),
     TypeInformation(TypeId),
     Literal(ast::ExprId),
-    Temporary(EntityId),
     Published(super::constexpr_values::TemporaryId),
-    Ephemeral(ast::ExprId),
     Object(super::constexpr_frames::ObjectId),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -133,17 +131,7 @@ impl TemporaryValue {
 }
 #[derive(Default)]
 pub(super) struct Evaluation {
-    values: HashMap<ast::ExprId, TemporaryValue>,
     pub(super) projections: Option<Box<super::constexpr_objects::ProjectionQuery>>,
-}
-pub(super) struct Temporaries(HashMap<ast::ExprId, TemporaryValue>);
-impl Evaluation {
-    pub(super) fn suspend_temporaries(&mut self) -> Temporaries {
-        Temporaries(std::mem::take(&mut self.values))
-    }
-    pub(super) fn resume_temporaries(&mut self, saved: Temporaries) {
-        self.values = saved.0;
-    }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum ArgumentContext {
@@ -157,7 +145,6 @@ pub(super) struct Addresses {
     argument_functions: HashMap<ArgumentContext, Vec<EntityId>>,
     argument_function_set: std::collections::HashSet<(ArgumentContext, EntityId)>,
     values: HashMap<EntityId, State>,
-    temporaries: HashMap<EntityId, TemporaryValue>,
     stored_references: std::collections::HashSet<EntityId>,
     evaluated_references: std::collections::HashSet<EntityId>,
 }
@@ -195,9 +182,6 @@ impl Addresses {
     pub(super) fn reference_evaluated(&self, entity: EntityId) -> bool {
         self.evaluated_references.contains(&entity)
     }
-    pub(super) fn temporary_scalar(&self, entity: EntityId) -> Option<TemporaryValue> {
-        self.temporaries.get(&entity).copied()
-    }
     fn evaluating(&self, entity: EntityId) -> bool {
         matches!(self.values.get(&entity), Some(State::Evaluating))
     }
@@ -214,18 +198,6 @@ impl Addresses {
     pub(super) fn value(&self, entity: EntityId) -> Option<Address> {
         match self.values.get(&entity) {
             Some(State::Value(value)) => Some(*value),
-            _ => None,
-        }
-    }
-    pub(super) fn temporary(&self, entity: EntityId) -> Option<Constant> {
-        match self.temporaries.get(&entity) {
-            Some(TemporaryValue::Integer(value)) => Some(*value),
-            _ => None,
-        }
-    }
-    fn temporary_pointer(&self, entity: EntityId) -> Option<Address> {
-        match self.temporaries.get(&entity) {
-            Some(TemporaryValue::Pointer(value)) => Some(*value),
             _ => None,
         }
     }
@@ -264,18 +236,14 @@ impl Analyzer<'_> {
         }
         self.constant_evaluation = Some(std::mem::take(&mut self.constant_scratch));
         let result = evaluate(self);
-        let Some(mut evaluation) = self.constant_evaluation.take() else {
+        let Some(evaluation) = self.constant_evaluation.take() else {
             return Err(Error::Invariant("constant evaluation lost its storage"));
         };
-        evaluation.values.clear();
         self.constexpr_frames.clear();
         self.constant_scratch = evaluation;
         result
     }
 
-    pub(super) fn expression_temporary_value(&self, id: ast::ExprId) -> Option<TemporaryValue> {
-        self.constant_evaluation.as_ref()?.values.get(&id).copied()
-    }
     pub(super) fn is_address_expression(&self, id: ast::ExprId) -> bool {
         self.graph.expression_facts.get(id).is_ok_and(|facts| {
             matches!(
@@ -1068,7 +1036,10 @@ impl Analyzer<'_> {
             ));
         }
         let source = self.graph.expression_facts.get(operand)?;
-        if self.graph.class_of(facts.ty).is_some() || self.vector_shape(facts.ty).is_some() {
+        if self.graph.class_of(facts.ty).is_some()
+            || self.vector_shape(facts.ty).is_some()
+            || self.complex_part_type(facts.ty).is_some()
+        {
             if let Some(cast) = facts.base_cast {
                 let place = self.constant_object_place(operand, scope)?;
                 return self.constant_cast_subobject(place, facts.ty, cast, location);
@@ -1080,32 +1051,8 @@ impl Analyzer<'_> {
                 .conversion
                 .is_some_and(|conversion| conversion.temporary)
         {
-            if self.constexpr_frames.active() {
-                let value = self.constant_operand_value(operand, facts.ty, scope)?;
-                return self.allocate_constant_object(facts.ty, Some(value), location);
-            }
-            if self.expression_temporary_value(id).is_none() {
-                let value = if self.is_address_expression(id) {
-                    TemporaryValue::Pointer(self.address_operand(operand, scope)?)
-                } else if self.float_format(facts.ty).is_some()
-                    || self.floating_expression(operand)
-                    || self.member_pointer_expression(operand)
-                {
-                    self.constant_operand_value(operand, facts.ty, scope)?
-                } else {
-                    let value = self.evaluate_constant(operand, scope, false)?;
-                    let target = self.bare_type(facts.ty)?;
-                    TemporaryValue::Integer(
-                        self.converted_constant_integer(value, target, location)?,
-                    )
-                };
-                self.constant_evaluation
-                    .as_mut()
-                    .ok_or(Error::Invariant("temporary outside constant evaluation"))?
-                    .values
-                    .insert(id, value);
-            }
-            return Ok(Address::new(Root::Ephemeral(id), facts.ty));
+            let value = self.constant_operand_value(operand, facts.ty, scope)?;
+            return self.allocate_constant_object(facts.ty, Some(value), location);
         }
         let mut place = self.constant_place(operand, scope)?;
         place.designated = facts.ty;
@@ -1166,25 +1113,6 @@ impl Analyzer<'_> {
                 )
             });
         }
-        if let Root::Temporary(entity) = place.root {
-            if self.graph.types.get(place.designated).cv != super::types::Cv::CONST {
-                return Err(nonconstant(
-                    location,
-                    "an access to a temporary that is not const, bound outside the evaluation",
-                ));
-            }
-            return self
-                .graph
-                .constant_addresses
-                .temporary_pointer(entity)
-                .ok_or(Error::Missing("constant temporary pointer storage"));
-        }
-        if let Root::Ephemeral(expr) = place.root {
-            return match self.expression_temporary_value(expr) {
-                Some(TemporaryValue::Pointer(value)) => Ok(value),
-                _ => Err(Error::Invariant("cast pointer temporary without value")),
-            };
-        }
         Err(Error::Missing("constant pointer place storage"))
     }
     pub(super) fn write_constant_value(
@@ -1217,40 +1145,12 @@ impl Analyzer<'_> {
                 "a modification of an object whose lifetime began outside the evaluation"
             }
             Root::Literal(_) => "a modification of a string literal",
-            Root::Temporary(_) | Root::Published(_) => {
+            Root::Published(_) => {
                 "an access to a temporary that is not const, bound outside the evaluation"
             }
             Root::TypeInformation(_) => "an access to a std::type_info object",
             Root::Function(_) => "a function is not an object",
             Root::Null => "an indirection through a null pointer",
-            Root::Ephemeral(id) => {
-                let old = self
-                    .expression_temporary_value(id)
-                    .ok_or(Error::Invariant("write to an uncreated constant temporary"))?;
-                let matches = match old {
-                    TemporaryValue::MemberPointer(old) => {
-                        self.bare_type(place.designated)? == old.ty
-                    }
-                    TemporaryValue::Integer(old) => self.bare_type(place.designated)? == old.ty,
-                    TemporaryValue::Floating(old) => self.bare_type(place.designated)? == old.ty,
-                    TemporaryValue::Pointer(_) => matches!(
-                        self.graph.types.get(place.designated).kind,
-                        TypeKind::Pointer(_)
-                    ),
-                };
-                if place.offset != 0 || !matches {
-                    return Err(nonconstant(
-                        location,
-                        "an access outside the designated object or to an inactive union member",
-                    ));
-                }
-                self.constant_evaluation
-                    .as_mut()
-                    .ok_or(Error::Invariant("write outside constant evaluation"))?
-                    .values
-                    .insert(id, value);
-                return Ok(());
-            }
         };
         Err(nonconstant(location, message))
     }
@@ -1339,26 +1239,6 @@ impl Analyzer<'_> {
                 }
             }
             Root::Published(_) => Err(Error::Invariant("published integer read bypassed storage")),
-            Root::Temporary(entity) => {
-                if self.type_cv(place.designated) != super::types::Cv::CONST {
-                    return Err(nonconstant(
-                        location,
-                        "an access to a temporary that is not const, bound outside the evaluation",
-                    ));
-                }
-                self.graph
-                    .constant_addresses
-                    .temporary(entity)
-                    .ok_or(Error::Missing("constant temporary scalar storage"))
-            }
-            Root::Ephemeral(expr) => match self.expression_temporary_value(expr) {
-                Some(TemporaryValue::Integer(value)) if !value.indeterminate() => Ok(value),
-                Some(value) if value.indeterminate() => Err(nonconstant(
-                    location,
-                    "a read of an object that is not initialized",
-                )),
-                _ => Err(Error::Invariant("cast temporary without value")),
-            },
             Root::Literal(id) => {
                 let ExprKind::Literal(literal) = self.tree.expressions.get(id).kind else {
                     return Err(Error::Invariant("literal place without literal syntax"));
@@ -1560,83 +1440,15 @@ impl Analyzer<'_> {
                 let expr = expr.ok_or_else(|| {
                     nonconstant(initializer.location, "a reference without an initializer")
                 })?;
-                let facts = analyzer.graph.expression_facts.get(expr)?;
-                let converted = analyzer
-                    .graph
-                    .expression_facts
-                    .function_conversion(expr)
-                    .is_some();
-                if !converted
-                    && (facts.category != ValueCategory::Prvalue
-                        && !facts.conversion.is_some_and(|c| c.temporary)
-                        || matches!(
-                            analyzer.graph.types.get(facts.ty).kind,
-                            TypeKind::Function { .. }
-                        ))
-                {
-                    let place = analyzer.constant_place(expr, scope)?;
-                    let place = analyzer.constant_project_path(
-                        place,
-                        facts
-                            .conversion
-                            .filter(|conversion| {
-                                conversion.second
-                                    == super::expression_facts::ValueConversion::DerivedToBase
-                            })
-                            .and(facts.base_path),
-                        analyzer.tree.expressions.get(expr).location,
-                    )?;
-                    return if analyzer.constant_binds_temporary(expr)? {
-                        analyzer.extend_constant_temporary(place, initializer.location)
-                    } else {
-                        Ok(place)
-                    };
-                }
                 let TypeKind::Reference { element, .. } = analyzer.graph.types.get(ty).kind else {
-                    return Err(Error::Invariant("reference temporary type"));
+                    return Err(Error::Invariant("reference initializer type"));
                 };
-                if analyzer.graph.class_of(element).is_some()
-                    || analyzer.vector_shape(element).is_some()
-                    || converted
-                {
-                    // A converting constructor creates class storage. Its
-                    // scalar source is never the reference's backing value.
-                    let place = analyzer.bind_constant_reference(expr, element, scope)?;
-                    return if analyzer.constant_binds_temporary(expr)? {
-                        analyzer.extend_constant_temporary(place, initializer.location)
-                    } else {
-                        Ok(place)
-                    };
-                }
-                if analyzer.is_address_expression(expr) {
-                    let value = analyzer.evaluate_address(expr, scope)?;
-                    analyzer
-                        .graph
-                        .constant_addresses
-                        .temporaries
-                        .insert(entity, TemporaryValue::Pointer(value));
-                    return Ok(Address::new(Root::Temporary(entity), facts.ty));
-                }
-                let value = if analyzer.float_format(element).is_some()
-                    || analyzer.floating_expression(expr)
-                    || analyzer.member_pointer_expression(expr)
-                {
-                    analyzer.constant_operand_value(expr, element, scope)?
+                let place = analyzer.bind_constant_reference(expr, element, scope)?;
+                return if analyzer.constant_binds_temporary(expr)? {
+                    analyzer.extend_constant_temporary(place, initializer.location)
                 } else {
-                    TemporaryValue::Integer(analyzer.evaluate_constant(expr, scope, false)?)
+                    Ok(place)
                 };
-                if value.indeterminate() {
-                    return Err(nonconstant(
-                        initializer.location,
-                        "a temporary bound to a reference leaves a subobject uninitialized",
-                    ));
-                }
-                analyzer
-                    .graph
-                    .constant_addresses
-                    .temporaries
-                    .insert(entity, value);
-                return Ok(Address::new(Root::Temporary(entity), facts.ty));
             }
             let TemporaryValue::Pointer(mut value) =
                 analyzer.initialized_scalar_value(ty, initializer, scope)?
@@ -1682,7 +1494,7 @@ impl Analyzer<'_> {
     }
     pub(super) fn address_publishable(&self, address: Address) -> bool {
         match address.root {
-            Root::Ephemeral(_) | Root::Object(_) => false,
+            Root::Object(_) => false,
             Root::Variable(entity) => {
                 self.graph
                     .entity(entity)

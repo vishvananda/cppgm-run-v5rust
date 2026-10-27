@@ -161,6 +161,12 @@ fn constant_temporary<'a>(
     preserve_static_offsets(&mut data)?;
     let storage = if aggregate {
         super::globals::structured_type(graph, ty, &data, symbols.object_mode())?
+    } else if matches!(graph.lower_type(ty)?, crate::sema::lowering::TypeView::Scalar(
+        crate::sema::lowering::Scalar::Basic(kind)) if crate::types::interchange::soft(kind))
+        && let [DataItem::Constant(stored, _)] = data.as_slice()
+    {
+        // constant_global states a held soft value using its encoded item type.
+        Some(*stored)
     } else {
         Some(types::storage(graph, ty)?)
     };
@@ -489,6 +495,13 @@ pub(super) fn reference_temporary<'a>(
     if let Some(&symbol) = symbols.data.reference_temporaries.get(&entity) {
         return Ok(symbol);
     }
+    let extended = graph.lower_extended_temporary(entity);
+    if let Some(id) = extended
+        && let Some(&symbol) = symbols.data.constant_temporaries.get(&id)
+    {
+        symbols.data.reference_temporaries.insert(entity, symbol);
+        return Ok(symbol);
+    }
     let facts = graph.lower_variable(entity)?;
     let temporary =
         facts
@@ -580,6 +593,12 @@ pub(super) fn reference_temporary<'a>(
             init,
         },
     )?;
+    if !evaluated {
+        symbols.note_source_reference_storage(symbol);
+    }
+    if let Some(id) = extended {
+        symbols.data.constant_temporaries.insert(id, symbol);
+    }
     symbols.data.reference_temporaries.insert(entity, symbol);
     Ok(symbol)
 }

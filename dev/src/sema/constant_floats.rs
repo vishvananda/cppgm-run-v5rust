@@ -95,8 +95,9 @@ impl Analyzer<'_> {
     fn scalar_value_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Value, Error> {
         self.check_deferred_constant(id)?;
         if let Some(step) = self.graph.expression_facts.function_conversion(id) {
-            let returned = self.constant_conversion_result(id, scope)?;
             let location = self.tree.expressions.get(id).location;
+            self.constant_step(location)?;
+            let returned = self.constant_conversion_result(id, scope)?;
             let mut value = self.returned_scalar(returned, location)?;
             if let Value::Pointer(pointer) = value
                 && let Some(path) = step.after_path
@@ -454,7 +455,7 @@ impl Analyzer<'_> {
                     self.scalar_value(argument, scope)?
                 } else {
                     Value::Floating(Floating {
-                        state: crate::sema::constant_addresses::ScalarState::Zeroed,
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         ty: facts.ty,
                         value: BinaryFloat::zero(),
                     })
@@ -542,7 +543,7 @@ impl Analyzer<'_> {
                     self.constant_operand_value(argument, facts.ty, scope)?
                 } else {
                     Value::Floating(Floating {
-                        state: crate::sema::constant_addresses::ScalarState::Zeroed,
+                        state: crate::sema::constant_addresses::ScalarState::Value,
                         ty: facts.ty,
                         value: BinaryFloat::zero(),
                     })
@@ -720,7 +721,6 @@ impl Analyzer<'_> {
                 _ => Err(Error::Invariant("published scalar read as floating")),
             };
         }
-        let const_temporary = self.type_cv(place.designated).0 == 1;
         place.designated = self.bare_type(place.designated)?;
         let value = match place.root {
             Root::Object(_) => self.constexpr_frames.read(place, location)?,
@@ -761,23 +761,6 @@ impl Analyzer<'_> {
                         "a variable is not usable in a constant expression",
                     )),
                 };
-            }
-            Root::Ephemeral(id) => self
-                .expression_temporary_value(id)
-                .ok_or(Error::Invariant("floating temporary without storage"))?,
-            Root::Temporary(entity) => {
-                if !const_temporary {
-                    return Err(nonconstant(
-                        location,
-                        "an access to a temporary that is not const, bound outside the evaluation",
-                    ));
-                }
-                self.graph
-                    .constant_addresses
-                    .temporary_scalar(entity)
-                    .ok_or(Error::Invariant(
-                        "floating reference temporary without value",
-                    ))?
             }
             Root::Published(_) => {
                 return Err(Error::Invariant("published float read bypassed storage"));
@@ -869,6 +852,56 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn declaration_zeroing_and_zero_prvalues_keep_distinct_provenance() {
+        let source = SourceBuffer::new(b"constexpr double object{};constexpr double copy=double{};const double&reference=double{};".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"zero-provenance").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names: Vec<_> = [b"object".as_slice(), b"copy", b"reference"]
+            .into_iter()
+            .map(|name| cursor.intern_name(name).unwrap())
+            .collect();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let entities: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let binding = analyzer
+                    .graph
+                    .own(scope, name, super::super::lookup::Filter::Ordinary)
+                    .unwrap();
+                analyzer.graph.binding(binding).entity
+            })
+            .collect();
+        for (entity, expected) in [
+            (
+                entities[0],
+                super::super::constant_addresses::ScalarState::Zeroed,
+            ),
+            (
+                entities[1],
+                super::super::constant_addresses::ScalarState::Value,
+            ),
+        ] {
+            let ConstantState::Floating(id) = analyzer.graph.entity(entity).constant else {
+                panic!("stored floating declaration");
+            };
+            assert_eq!(analyzer.graph.floating_constants.get(id).state, expected);
+        }
+        let id = analyzer
+            .graph
+            .lower_extended_temporary(entities[2])
+            .unwrap();
+        assert!(analyzer.graph.aggregate_constants.temporary(id).value.values().any(|(_, _, _, value)|
+            matches!(value, Some(Value::Floating(value)) if value.state == super::super::constant_addresses::ScalarState::Value)));
+    }
 
     #[test]
     fn floating_invocations_reuse_facts_and_release_local_storage() {

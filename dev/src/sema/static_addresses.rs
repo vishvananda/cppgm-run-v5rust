@@ -167,6 +167,12 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(id).location,
             );
         }
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
+            return Err(nonconstant(
+                self.tree.expressions.get(id).location,
+                "a reference is not usable in a constant expression",
+            ));
+        }
         // A static lvalue's symbol is already a typed fact. C++ static_lvalue
         // uses it directly; references and other evaluated designations still
         // ask the interpreter for their stored referent.
@@ -356,6 +362,18 @@ impl Analyzer<'_> {
                 .kind,
             ExprKind::Member { .. }
         )
+    }
+    pub(super) fn record_static_reference_storage(
+        &mut self,
+        entity: EntityId,
+        designated: crate::sema::types::TypeId,
+    ) {
+        // The source-shaped backing has this declaration's symbol. Its core
+        // published identity is linked to that same symbol by lowering.
+        self.static_addresses.references.insert(
+            entity,
+            StaticAddress::evaluated(Address::new(Root::Variable(entity), designated)),
+        );
     }
     pub(super) fn static_binding(
         &mut self,
