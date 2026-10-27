@@ -1,32 +1,38 @@
 //! Pipeline work counters from `opt/optimizer.h` and `optimizer.cpp`. See NOTICE.
 use super::pass_context::Context;
+#[cfg(feature = "telemetry")]
 use crate::lowir::{Error, model::Program};
 
 #[derive(Default)]
 pub(crate) struct Statistics {
-    pub(super) functions: u64,
-    pub(super) instructions_in: u64,
-    pub(super) instructions_out: u64,
-    pub(super) blocks_in: u64,
-    pub(super) blocks_out: u64,
-    folded: u64,
-    propagated: u64,
-    reused: u64,
-    dead: u64,
-    branches_folded: u64,
-    blocks_removed: u64,
-    blocks_merged: u64,
-    slots_promoted: u64,
-    phis_inserted: u64,
-    pub(super) calls_inlined: u64,
-    pub(super) inlined_instructions: u64,
-    pub(super) functions_pruned: u64,
-    loads_reused: u64,
-    stores_removed: u64,
-    loops_removed: u64,
-    loops_unrolled: u64,
-    pub(super) specialized: u64,
-    optimize_ms: f64,
+    pub(super) functions: crate::support::telemetry::Counter<u64>,
+    #[cfg(feature = "telemetry")]
+    pub(super) instructions_in: crate::support::telemetry::Counter<u64>,
+    #[cfg(feature = "telemetry")]
+    pub(super) instructions_out: crate::support::telemetry::Counter<u64>,
+    #[cfg(feature = "telemetry")]
+    pub(super) blocks_in: crate::support::telemetry::Counter<u64>,
+    #[cfg(feature = "telemetry")]
+    pub(super) blocks_out: crate::support::telemetry::Counter<u64>,
+    folded: crate::support::telemetry::Counter<u64>,
+    propagated: crate::support::telemetry::Counter<u64>,
+    reused: crate::support::telemetry::Counter<u64>,
+    dead: crate::support::telemetry::Counter<u64>,
+    branches_folded: crate::support::telemetry::Counter<u64>,
+    blocks_removed: crate::support::telemetry::Counter<u64>,
+    blocks_merged: crate::support::telemetry::Counter<u64>,
+    slots_promoted: crate::support::telemetry::Counter<u64>,
+    phis_inserted: crate::support::telemetry::Counter<u64>,
+    pub(super) calls_inlined: crate::support::telemetry::Counter<u64>,
+    pub(super) inlined_instructions: crate::support::telemetry::Counter<u64>,
+    pub(super) functions_pruned: crate::support::telemetry::Counter<u64>,
+    loads_reused: crate::support::telemetry::Counter<u64>,
+    stores_removed: crate::support::telemetry::Counter<u64>,
+    loops_removed: crate::support::telemetry::Counter<u64>,
+    loops_unrolled: crate::support::telemetry::Counter<u64>,
+    pub(super) specialized: crate::support::telemetry::Counter<u64>,
+    #[cfg(feature = "telemetry")]
+    optimize_ms: crate::support::telemetry::Counter<f64>,
 }
 impl Statistics {
     pub(super) fn collect(&mut self, context: &Context<'_>) {
@@ -45,16 +51,23 @@ impl Statistics {
         self.loops_unrolled += context.loops_unrolled;
     }
 
+    #[cfg(feature = "telemetry")]
     pub(super) fn finish(
         &mut self,
         program: &Program,
-        start: std::time::Instant,
+        start: crate::support::telemetry::Clock,
     ) -> Result<(), Error> {
-        (self.instructions_out, self.blocks_out) = size(program)?;
-        self.optimize_ms = start.elapsed().as_secs_f64() * 1000.0;
+        #[cfg(feature = "telemetry")]
+        {
+            (self.instructions_out, self.blocks_out) = size(program)?;
+        }
+
+        self.optimize_ms =
+            crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
         Ok(())
     }
 
+    #[cfg(feature = "telemetry")]
     pub(crate) fn write(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
         write!(
             out,
@@ -86,6 +99,7 @@ impl Statistics {
     }
 }
 
+#[cfg(feature = "telemetry")]
 pub(super) fn size(program: &Program) -> Result<(u64, u64), Error> {
     let mut instructions = 0_u64;
     let mut blocks = 0_u64;

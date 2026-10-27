@@ -132,6 +132,7 @@ pub(crate) struct Output {
     pub initializer: Option<crate::lowir::model::SymbolId>,
     pub finalizer: Option<crate::lowir::model::SymbolId>,
     symbols: symbols::SymbolTable,
+    fixed_names_interned: bool,
     startup: startup::Startup,
     finalizers: Vec<shutdown::Finalizer>,
 }
@@ -250,7 +251,7 @@ pub(crate) fn lower_unit(
     declarations: List<ast::DeclId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
-    if output.symbols.work.units == 0 {
+    if !output.fixed_names_interned {
         // ProgramLowering's fixed names belong to the model even when no
         // definition uses them. Presentation-only names remain separate.
         for name in [
@@ -259,6 +260,7 @@ pub(crate) fn lower_unit(
             output.program.names.intern(name)?;
         }
     }
+    output.fixed_names_interned = true;
     output.symbols.work.units += 1;
     let mut symbol_state = symbols::State::new(graph, budget, std::mem::take(&mut output.symbols));
     let mut cx = unit_frontend::Context {

@@ -111,7 +111,14 @@ fn parse(args: &[OsString]) -> Result<Invocation, Error> {
             continue;
         }
         match argument.to_str().unwrap_or("") {
-            "--stats" => invocation.options.stats = true,
+            "--stats" => {
+                if !crate::support::telemetry::ENABLED {
+                    return Err(Error::Diagnostic(
+                        crate::support::telemetry::UNAVAILABLE.into(),
+                    ));
+                }
+                invocation.options.stats = true;
+            }
             "--target" => {
                 let value = arguments
                     .next()

@@ -788,6 +788,7 @@ pub(crate) struct TreeMark {
     attributes: ListMark,
 }
 impl Tree {
+    #[cfg(feature = "telemetry")]
     pub(crate) fn reserved_bytes(&self) -> usize {
         [
             self.lambdas.reserved_bytes(),

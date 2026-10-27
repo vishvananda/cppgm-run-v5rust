@@ -15,8 +15,8 @@ use crate::lowir::{
 };
 #[derive(Default)]
 pub(super) struct Stats {
-    pub(super) calls: u64,
-    pub(super) instructions: u64,
+    pub(super) calls: crate::support::telemetry::Counter<u64>,
+    pub(super) instructions: crate::support::telemetry::Counter<u64>,
 }
 pub(super) type Simplifier<'a> =
     dyn FnMut(&mut Program, SymbolId, &mut Vec<bool>) -> Result<(), Error> + 'a;

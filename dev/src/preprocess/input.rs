@@ -62,9 +62,9 @@ pub(crate) struct SourceInput<'a> {
     predefined: Option<FileId>,
     command_line: std::ops::Range<u32>,
     host_predefines: std::ops::Range<u32>,
-    tokens_read: u64,
-    includes: u64,
-    guarded_skips: u64,
+    tokens_read: crate::support::telemetry::Counter<u64>,
+    includes: crate::support::telemetry::Counter<u64>,
+    guarded_skips: crate::support::telemetry::Counter<u64>,
     binary_exponents: bool,
     pub(crate) hosted: bool,
     include_paths: Vec<Vec<u8>>,
@@ -149,9 +149,9 @@ impl<'a> SourceInput<'a> {
             predefined: None,
             command_line: 0..0,
             host_predefines: 0..0,
-            tokens_read: 0,
-            includes: 0,
-            guarded_skips: 0,
+            tokens_read: crate::support::telemetry::counter(0),
+            includes: crate::support::telemetry::counter(0),
+            guarded_skips: crate::support::telemetry::counter(0),
             binary_exponents: false,
             hosted: false,
             include_paths: Vec::new(),
@@ -663,6 +663,7 @@ impl<'a> SourceInput<'a> {
     pub(crate) fn in_predefined(&self) -> bool {
         self.predefined == Some(self.frame.file)
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn counters(&self) -> super::counters::PreprocessorCounters {
         let (files, source_bytes) = self.files.counts();
         super::counters::PreprocessorCounters {
@@ -674,6 +675,7 @@ impl<'a> SourceInput<'a> {
             ..super::counters::PreprocessorCounters::default()
         }
     }
+
     fn enter(
         &mut self,
         file: FileId,

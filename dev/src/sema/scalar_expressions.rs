@@ -352,7 +352,9 @@ impl Analyzer<'_> {
             .ok_or_else(|| Error::at(location, "`this` outside a non-static member function"))?;
         let pointer = self.graph.types.pointer(object)?;
         self.capture_this(location)?;
-        self.new_expression_facts(pointer, V::Prvalue)
+        // Analyzer::this_expression constructs a view of the body's prepared
+        // pointer type, outside new_facts' typed-expression observations.
+        Ok(ExprFacts::new(pointer, V::Prvalue))
     }
     fn sizeof_pack_expression(
         &mut self,

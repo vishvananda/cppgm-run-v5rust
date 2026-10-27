@@ -54,15 +54,16 @@ pub(super) fn layout(
     f: &mut Function,
     program: &crate::lowir::model::Program,
 ) -> Result<(), Error> {
-    f.rotated_loops += rotate(f);
+    let rotated = rotate(f);
+    f.rotated_loops += rotated;
     super::decided_tests::thread(f, program);
     if let Some(flow) = Flow::new(f) {
         flow.place(f)?;
     }
-    if super::shrink_wrap::run(f)? || f.rotated_loops != 0 {
+    if super::shrink_wrap::run(f)? || rotated != 0 {
         super::home_forwarding::forward(f);
     }
-    if f.rotated_loops != 0 {
+    if rotated != 0 {
         super::flag_cleanup::drop_tests(f);
     }
     let n = f.blocks.len();

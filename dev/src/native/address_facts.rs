@@ -40,8 +40,8 @@ pub(super) struct Addresses {
     pub(super) expressions: Vec<Option<Expression>>,
     pub(super) lazy: Vec<bool>,
     pub(super) folded: Vec<Option<Value>>,
-    pub(super) lazy_count: usize,
-    pub(super) folded_count: usize,
+    pub(super) lazy_count: crate::support::telemetry::Counter<usize>,
+    pub(super) folded_count: crate::support::telemetry::Counter<usize>,
 }
 fn record_value_uses(
     body: &Body,
@@ -171,7 +171,7 @@ impl Addresses {
         loop {
             self.expressions.fill(None);
             self.lazy.fill(false);
-            self.lazy_count = 0;
+            self.lazy_count = crate::support::telemetry::counter(0);
             let mut again = false;
             for (pos, &id) in facts.flow.instructions.iter().enumerate() {
                 let inst = body.instruction(id);
@@ -247,8 +247,8 @@ impl Addresses {
             expressions: vec![None; count],
             lazy: vec![false; count],
             folded: vec![None; count],
-            lazy_count: 0,
-            folded_count: 0,
+            lazy_count: crate::support::telemetry::counter(0),
+            folded_count: crate::support::telemetry::counter(0),
         };
         let mut uses = vec![0_u32; count];
         let mut consumers = vec![None; count];

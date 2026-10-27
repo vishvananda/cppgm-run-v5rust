@@ -732,10 +732,14 @@ pub(super) fn emit_with_frame(
         pass.run(image, &order)?;
     }
     pass.assembler.resolve()?;
-    pass.stats.short_branches = short.iter().filter(|&&value| value).count();
-    pass.stats.long_branches = short.len() - pass.stats.short_branches;
-    pass.stats.code_bytes = pass.assembler.code.len();
-    pass.stats.fixups = pass.assembler.fixups.len();
+    #[cfg(feature = "telemetry")]
+    {
+        let short_count = short.iter().filter(|&&value| value).count();
+        pass.stats.short_branches = short_count;
+        pass.stats.long_branches = short.len() - short_count;
+    }
+    pass.stats.code_bytes = crate::support::telemetry::counter(pass.assembler.code.len());
+    pass.stats.fixups = crate::support::telemetry::counter(pass.assembler.fixups.len());
     let stats = pass.stats;
     if let Some(frame) = frame {
         *frame = pass.frame;

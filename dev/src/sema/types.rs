@@ -182,6 +182,7 @@ impl Types {
         }
         Ok(())
     }
+    #[cfg(feature = "telemetry")]
     pub(super) fn observations(&self) -> (usize, usize) {
         let children = self
             .records

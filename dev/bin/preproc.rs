@@ -39,6 +39,7 @@ enum CliError {
     Diagnostic(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
+    #[cfg(feature = "telemetry")]
     Statistics {
         error: Box<Self>,
         path: Vec<u8>,
@@ -66,6 +67,11 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
         return Ok(());
     }
     let stats = args.first().is_some_and(|arg| arg == "--stats");
+    if stats && !cppgm_rust::support::telemetry::ENABLED {
+        return Err(CliError::Message(
+            cppgm_rust::support::telemetry::UNAVAILABLE.to_owned(),
+        ));
+    }
     let args = if stats { &args[1..] } else { args };
     if args.len() < 3 || args[0] != "-o" {
         return Err(CliError::Message("invalid usage".to_owned()));
@@ -124,6 +130,7 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
             PreprocToolError::InvalidToken => path_diagnostic(path, b"invalid phase-7 token"),
             PreprocToolError::Output(error) => CliError::Message(error.to_string()),
         });
+        #[cfg(feature = "telemetry")]
         if stats && let Some(counters) = counters {
             if let Err(error) = result {
                 return Err(CliError::Statistics {
@@ -136,6 +143,8 @@ fn run_with_args(args: &[OsString]) -> Result<(), CliError> {
         } else {
             result?;
         }
+        #[cfg(not(feature = "telemetry"))]
+        result?;
     }
     output
         .flush()
@@ -171,6 +180,7 @@ fn report_error(error: CliError) -> ExitCode {
             let _status = stderr.write_all(b"\n");
             ExitCode::FAILURE
         }
+        #[cfg(feature = "telemetry")]
         CliError::Statistics {
             error,
             path,
@@ -182,6 +192,7 @@ fn report_error(error: CliError) -> ExitCode {
         }
     }
 }
+#[cfg(feature = "telemetry")]
 fn report_counters(path: &[u8], counters: &cppgm_rust::preprocess::counters::PreprocessorCounters) {
     let mut stderr = io::stderr().lock();
     let _status = stderr.write_all(b"preproc stats ");

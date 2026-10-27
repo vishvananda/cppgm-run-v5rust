@@ -5,7 +5,6 @@ use std::{
     fs::File,
     io::{self, BufWriter, Write},
     path::PathBuf,
-    time::Instant,
 };
 
 #[must_use]
@@ -65,6 +64,9 @@ fn execute(
             }
             output = next;
         } else if argument == "--stats" {
+            if !crate::support::telemetry::ENABLED {
+                return Err(Error::diagnostic(crate::support::telemetry::UNAVAILABLE));
+            }
             stats = true;
         } else if argument.as_encoded_bytes().len() > 1 && argument.as_encoded_bytes()[0] == b'-' {
             return Err(Error::word(
@@ -79,7 +81,7 @@ fn execute(
     if output.is_empty() || paths.is_empty() {
         return Err(Error::diagnostic("invalid usage"));
     }
-    let start = Instant::now();
+    let start = crate::support::telemetry::Clock::now();
     let file = File::create(output).map_err(|_| {
         Error::word(
             "unable to open output file '",

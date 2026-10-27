@@ -150,7 +150,7 @@ struct SearchFrame {
     remaining: usize,
 }
 pub(super) struct Scopes {
-    lookups: u64,
+    lookups: crate::support::telemetry::Counter<u64>,
     records: Vec<Scope>,
     // Tombstones retain the oracle binding census; identities never recycle.
     bindings: HashMap<(ScopeIdentity, NameId), Option<Binding>>,
@@ -182,7 +182,7 @@ pub(super) struct Scopes {
 impl Default for Scopes {
     fn default() -> Self {
         Self {
-            lookups: 0,
+            lookups: crate::support::telemetry::counter(0),
             records: vec![Scope {
                 identity: ScopeIdentity(0),
                 specialization: false,
@@ -223,7 +223,8 @@ impl Default for Scopes {
     }
 }
 impl Scopes {
-    pub(super) fn observations(&self) -> (u64, usize, usize) {
+    #[cfg(feature = "telemetry")]
+    pub(super) fn observations(&self) -> (crate::support::telemetry::Counter<u64>, usize, usize) {
         (self.lookups, self.bindings.len(), self.searches.len())
     }
 

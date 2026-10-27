@@ -8,14 +8,15 @@ pub struct SourceObservations {
     pub(crate) view: Option<super::ast::EmitMode>,
     pub(crate) syntax: Option<crate::syntax::observations::Statistics>,
     pub(crate) semantic: Option<crate::sema::Statistics>,
-    pub(crate) parse_ms: f64,
-    pub(crate) analyze_ms: f64,
-    pub(crate) print_ms: f64,
+    pub(crate) parse_ms: crate::support::telemetry::Counter<f64>,
+    pub(crate) analyze_ms: crate::support::telemetry::Counter<f64>,
+    pub(crate) print_ms: crate::support::telemetry::Counter<f64>,
 }
 impl SourceObservations {
     /// Write the source view's collected observations without retaining its tree.
     /// # Errors
     /// Returns a diagnostic-sink failure.
+    #[cfg(feature = "telemetry")]
     pub fn write(&self, out: &mut impl Write, path: &[u8], peak_rss: u64) -> std::io::Result<()> {
         let Some(s) = self.syntax else {
             return Ok(());
@@ -103,5 +104,14 @@ impl SourceObservations {
             self.parse_ms,
             self.print_ms
         )
+    }
+    /// # Errors
+    /// Returns the unavailable-statistics diagnostic.
+    #[cfg(not(feature = "telemetry"))]
+    pub fn write(&self, out: &mut impl Write, path: &[u8], peak_rss: u64) -> std::io::Result<()> {
+        let _ = (self, out, path, peak_rss);
+        Err(std::io::Error::other(
+            crate::support::telemetry::UNAVAILABLE,
+        ))
     }
 }

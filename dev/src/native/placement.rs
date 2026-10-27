@@ -959,7 +959,8 @@ impl Placement {
     }
     pub(super) fn optimize_frame(&self, mir: &mut Function) -> Result<(), Error> {
         super::frame_lifetimes::forward_copies(mir, &self.frame_objects);
-        mir.dead_frame_stores += super::frame_lifetimes::drop_stores(mir, &self.frame_objects)?;
+        let dropped = super::frame_lifetimes::drop_stores(mir, &self.frame_objects)?;
+        mir.dead_frame_stores += dropped;
         super::frame_lifetimes::drop_unused(mir);
         super::frame_layout::order(mir, &self.frame_objects);
         Ok(())

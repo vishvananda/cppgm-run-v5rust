@@ -115,10 +115,15 @@ pub(crate) fn optimize_observed(
     inline_thunk_targets: bool,
     verification: Verification<'_>,
 ) -> Result<Statistics, Error> {
-    let start = std::time::Instant::now();
+    #[cfg(feature = "telemetry")]
+    let start = crate::support::telemetry::Clock::now();
     let mut observations = Statistics::default();
-    (observations.instructions_in, observations.blocks_in) = statistics::size(program)?;
+    #[cfg(feature = "telemetry")]
+    {
+        (observations.instructions_in, observations.blocks_in) = statistics::size(program)?;
+    }
     if level == 0 {
+        #[cfg(feature = "telemetry")]
         observations.finish(program, start)?;
         return Ok(observations);
     }
@@ -183,7 +188,7 @@ pub(crate) fn optimize_observed(
                 verification,
             )
         })?;
-        observations.specialized = specialized;
+        observations.specialized = crate::support::telemetry::counter(specialized);
         if specialized != 0 {
             observations.functions_pruned += u64::from(unit_graph::prune_unreachable(program)?);
         }
@@ -209,6 +214,7 @@ pub(crate) fn optimize_observed(
     }
     observations.calls_inlined = stats.calls;
     observations.inlined_instructions = stats.instructions;
+    #[cfg(feature = "telemetry")]
     observations.finish(program, start)?;
     Ok(observations)
 }

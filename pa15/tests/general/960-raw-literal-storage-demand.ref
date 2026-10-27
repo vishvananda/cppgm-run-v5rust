@@ -1,0 +1,77 @@
+global @__strlit__1 [storage=readonly, binding=internal] = {
+  i8 49
+  i8 56
+  i8 52
+  i8 52
+  i8 54
+  i8 55
+  i8 52
+  i8 52
+  i8 48
+  i8 55
+  i8 51
+  i8 55
+  i8 48
+  i8 57
+  i8 53
+  i8 53
+  i8 49
+  i8 54
+  i8 49
+  i8 54
+  i8 0
+}
+global @__strlit__2 [storage=readonly, binding=internal] = {
+  i8 49
+  i8 101
+  i8 57
+  i8 57
+  i8 57
+  i8 57
+  i8 57
+  i8 57
+  i8 57
+  i8 57
+  i8 57
+  i8 0
+}
+
+function @operator___raw(%text : ptr) -> i32 [binding=strong, object=_Zli4_rawPKc] {
+  slot $text : ptr
+  slot $cond__1 : i32
+
+  block ^entry:
+    store typed ptr %text, $text
+    %t1 = load typed ptr $text
+    %t2 = index i8 [projection=array_element] %t1, 0
+    %t3 = load i8 %t2
+    %t4 = convert sext i32 i8 %t3
+    %t5 = cmp eq i32 %t4, 49
+    branch %t5, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t6 = load typed i32 $cond__1
+    return i32 %t6
+}
+function @read_raw() -> i32 [binding=strong, object=_Z8read_rawv] {
+  block ^entry:
+    %t1 = addr @__strlit__1
+    %t2 = call i32 @operator___raw(%t1)
+    %t3 = addr @__strlit__2
+    %t4 = call i32 @operator___raw(%t3)
+    %t5 = binary add nowrap i32 %t2, %t4
+    return i32 %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @read_raw()
+    return i32 %t1
+}

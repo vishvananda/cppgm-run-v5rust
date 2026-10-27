@@ -203,12 +203,16 @@ pub(super) fn select_for_object(
     mir.frame_policy = super::frame_encoding::Policy::for_body(body, &facts, model);
     mir.object_model = model;
     mir.variadic = signature.boundary.arity == Arity::Variadic;
-    mir.lowir_instructions = body.instructions().len();
-    mir.dead_slots = slots.iter().filter(|s| matches!(s, Slot::Dead)).count();
-    mir.promoted_slots = slots
-        .iter()
-        .filter(|s| matches!(s, Slot::Promoted(_)))
-        .count();
+    mir.lowir_instructions = crate::support::telemetry::observe(|| body.instructions().len());
+    mir.dead_slots = crate::support::telemetry::observe(|| {
+        slots.iter().filter(|s| matches!(s, Slot::Dead)).count()
+    });
+    mir.promoted_slots = crate::support::telemetry::observe(|| {
+        slots
+            .iter()
+            .filter(|s| matches!(s, Slot::Promoted(_)))
+            .count()
+    });
     let registers = EntryRegisters::analyze(body, &slots, &mir, program, function);
     let rbp_free = super::register_allocation::rbp_available(
         body,
@@ -243,7 +247,7 @@ pub(super) fn select_for_object(
     mir.global_registers = globals.count;
     mir.loop_splits = globals.splits.loops;
     mir.home_splits = globals.splits.blocks;
-    mir.liveness_steps = globals.steps;
+    mir.liveness_steps = crate::support::telemetry::observe(|| globals.steps);
     mir.hull_fallbacks = globals.fallbacks;
     let mut control = super::control_selection::Control::with_splits(
         body,
@@ -251,7 +255,7 @@ pub(super) fn select_for_object(
         region_flow.as_mut(),
         &globals.splits,
     )?;
-    mir.edge_blocks = control.edges.len();
+    mir.edge_blocks = crate::support::telemetry::observe(|| control.edges.len());
     let mut placement = Placement::new(
         body,
         &mir.layout,
@@ -294,7 +298,8 @@ pub(super) fn select_for_object(
     )?;
     selection.mir.lazy_addresses = selection.addresses.lazy_count;
     selection.mir.folded_loads = selection.addresses.folded_count;
-    selection.mir.fused_compares = selection.facts.fused.iter().filter(|&&v| v).count();
+    selection.mir.fused_compares =
+        crate::support::telemetry::observe(|| selection.facts.fused.iter().filter(|&&v| v).count());
     let floating = floating_scratch(program, function, body);
     selection.mir.blocks.clear();
     if control.entry_loop {

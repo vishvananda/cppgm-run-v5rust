@@ -1,22 +1,24 @@
 //! Linker observations (`native/link/linker.cpp`). See NOTICE.
+#[cfg(feature = "telemetry")]
 use std::io::Write;
 #[derive(Default)]
 pub(crate) struct Statistics {
-    pub(super) objects: usize,
-    pub(super) sections: usize,
-    pub(super) discarded_groups: usize,
-    pub(super) symbols: usize,
-    pub(super) relocations: usize,
-    pub(super) got_slots: usize,
-    pub(super) runtime_names: usize,
-    pub(super) text_bytes: usize,
-    pub(super) rodata_bytes: usize,
-    pub(super) data_bytes: usize,
-    pub(super) bss_bytes: u64,
-    pub(super) runtime_ms: f64,
-    pub(super) link_ms: f64,
+    pub(super) objects: crate::support::telemetry::Counter<usize>,
+    pub(super) sections: crate::support::telemetry::Counter<usize>,
+    pub(super) discarded_groups: crate::support::telemetry::Counter<usize>,
+    pub(super) symbols: crate::support::telemetry::Counter<usize>,
+    pub(super) relocations: crate::support::telemetry::Counter<usize>,
+    pub(super) got_slots: crate::support::telemetry::Counter<usize>,
+    pub(super) runtime_names: crate::support::telemetry::Counter<usize>,
+    pub(super) text_bytes: crate::support::telemetry::Counter<usize>,
+    pub(super) rodata_bytes: crate::support::telemetry::Counter<usize>,
+    pub(super) data_bytes: crate::support::telemetry::Counter<usize>,
+    pub(super) bss_bytes: crate::support::telemetry::Counter<u64>,
+    pub(super) runtime_ms: crate::support::telemetry::Counter<f64>,
+    pub(super) link_ms: crate::support::telemetry::Counter<f64>,
 }
 impl Statistics {
+    #[cfg(feature = "telemetry")]
     pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
         writeln!(
             out,

@@ -1,31 +1,46 @@
 //! Lowering work retained independently of streamed function storage. See NOTICE.
+#[cfg(feature = "telemetry")]
+use crate::lowir::model::GlobalInit;
 use crate::{
-    lowir::model::{GlobalInit, Program, SymbolId},
+    lowir::model::{Program, SymbolId},
     sema,
 };
-use std::{collections::HashSet, io::Write};
+#[cfg(feature = "telemetry")]
+use std::io::Write;
 
 #[derive(Default)]
 pub(super) struct Work {
-    pub(super) units: usize,
-    pub(super) mangled_names: usize,
-    pub(super) vtables: usize,
-    pub(super) lifetime_declarations: HashSet<SymbolId>,
-    pub(super) source_reference_storage: HashSet<SymbolId>,
+    pub(super) units: crate::support::telemetry::Counter<usize>,
+    pub(super) mangled_names: crate::support::telemetry::Counter<usize>,
+    pub(super) vtables: crate::support::telemetry::Counter<usize>,
+    pub(super) lifetime_declarations: crate::support::telemetry::Set<SymbolId>,
+    pub(super) source_reference_storage: crate::support::telemetry::Set<SymbolId>,
 }
+#[derive(Default)]
 pub(crate) struct Statistics {
-    units: usize,
+    #[cfg(feature = "telemetry")]
+    units: crate::support::telemetry::Counter<usize>,
+    #[cfg(feature = "telemetry")]
     construction: crate::lowir::Construction,
-    declarations: usize,
-    globals: usize,
-    mangled_names: usize,
-    vtables: usize,
+    #[cfg(feature = "telemetry")]
+    declarations: crate::support::telemetry::Counter<usize>,
+    #[cfg(feature = "telemetry")]
+    globals: crate::support::telemetry::Counter<usize>,
+    #[cfg(feature = "telemetry")]
+    mangled_names: crate::support::telemetry::Counter<usize>,
+    #[cfg(feature = "telemetry")]
+    vtables: crate::support::telemetry::Counter<usize>,
+    #[cfg(feature = "telemetry")]
     semantic: sema::Work,
-    symbols: usize,
-    names: usize,
-    arena_bytes: usize,
+    #[cfg(feature = "telemetry")]
+    symbols: crate::support::telemetry::Counter<usize>,
+    #[cfg(feature = "telemetry")]
+    names: crate::support::telemetry::Counter<usize>,
+    #[cfg(feature = "telemetry")]
+    arena_bytes: crate::support::telemetry::Counter<usize>,
 }
 impl Work {
+    #[cfg(feature = "telemetry")]
     pub(super) fn snapshot(&self, program: &Program, semantic: sema::Work) -> Statistics {
         let mut declarations = 0;
         let mut globals = 0;
@@ -66,13 +81,25 @@ impl Work {
             arena_bytes: program.storage_bytes(),
         }
     }
+    #[cfg(not(feature = "telemetry"))]
+    pub(super) fn snapshot(&self, program: &Program, semantic: sema::Work) -> Statistics {
+        let _ = self;
+        let _ = (program, semantic);
+        Statistics::default()
+    }
 }
 impl Statistics {
+    #[cfg(feature = "telemetry")]
     pub(crate) fn update_program(&mut self, program: &Program) {
         self.symbols = program.symbols().len();
         self.names = program.names.logical_len();
         self.arena_bytes = program.storage_bytes();
     }
+    #[cfg(not(feature = "telemetry"))]
+    pub(crate) fn update_program(&mut self, program: &Program) {
+        let _ = (self, program);
+    }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn write(&self, out: &mut impl Write) -> std::io::Result<()> {
         let built = self.construction;
         let work = self.semantic;

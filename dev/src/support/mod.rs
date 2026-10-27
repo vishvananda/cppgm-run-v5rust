@@ -4,5 +4,6 @@ pub mod unicode;
 
 pub mod source;
 pub mod stack;
+pub mod telemetry;
 
 pub(crate) mod ordering;

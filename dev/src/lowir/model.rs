@@ -17,6 +17,7 @@ pub(crate) use body_edits::LinkEditor;
 #[path = "body_import.rs"]
 mod body_import;
 pub(crate) use body_import::ImportMap;
+#[cfg(feature = "telemetry")]
 #[path = "model_storage.rs"]
 mod model_storage;
 #[path = "program_copies.rs"]
@@ -58,7 +59,9 @@ impl SlotId {
 pub(crate) struct Names {
     text: Vec<Arc<[u8]>>,
     index: HashMap<Arc<[u8]>, NameId>,
+    #[cfg(feature = "telemetry")]
     logical: Vec<bool>,
+    #[cfg(feature = "telemetry")]
     logical_count: usize,
 }
 impl Default for Names {
@@ -67,7 +70,9 @@ impl Default for Names {
         Self {
             text: vec![Arc::clone(&empty)],
             index: HashMap::from([(empty, NameId(0))]),
+            #[cfg(feature = "telemetry")]
             logical: vec![true],
+            #[cfg(feature = "telemetry")]
             logical_count: 1,
         }
     }
@@ -90,6 +95,7 @@ impl Names {
     }
     fn intern_kind(&mut self, text: &[u8], logical: bool) -> Result<NameId, Error> {
         if let Some(&id) = self.index.get(text) {
+            #[cfg(feature = "telemetry")]
             if logical && !self.logical[id.0 as usize] {
                 self.logical[id.0 as usize] = true;
                 self.logical_count += 1;
@@ -100,17 +106,24 @@ impl Names {
         let text: Arc<[u8]> = Arc::from(text);
         self.text.push(Arc::clone(&text));
         self.index.insert(text, id);
-        self.logical.push(logical);
-        self.logical_count += usize::from(logical);
+        #[cfg(feature = "telemetry")]
+        {
+            self.logical.push(logical);
+            self.logical_count += usize::from(logical);
+        }
+        #[cfg(not(feature = "telemetry"))]
+        let _ = logical;
         Ok(id)
     }
     pub(crate) fn get(&self, id: NameId) -> &str {
         // Grammar names are ASCII; only debug file tokens use the byte view.
         std::str::from_utf8(self.bytes(id)).unwrap_or("")
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn logical_len(&self) -> usize {
         self.logical_count
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn storage_bytes(&self) -> usize {
         self.text.iter().map(|text| text.len()).sum()
     }
@@ -236,6 +249,7 @@ impl Program {
         }
         Ok(())
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn statistics(&self) -> super::Statistics {
         let mut stats = super::Statistics {
             symbols: self.symbols.len(),
@@ -276,6 +290,11 @@ impl Program {
             }
         }
         stats
+    }
+    #[cfg(not(feature = "telemetry"))]
+    pub(crate) fn statistics(&self) -> super::Statistics {
+        let _ = self;
+        super::Statistics::default()
     }
     pub(crate) fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);

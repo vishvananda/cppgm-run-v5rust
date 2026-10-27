@@ -32,21 +32,22 @@ pub struct LowIrOutput {
         crate::native::ObservationOptions,
     )>,
     pub(crate) work: crate::sema::Work,
-    pub(crate) front_ms: f64,
-    lower_ms: f64,
+    pub(crate) front_ms: crate::support::telemetry::Counter<f64>,
+    lower_ms: crate::support::telemetry::Counter<f64>,
 }
 /// Owned reports from a completed source-to-LowIR view.
 pub struct LowIrStatistics {
     lowering: crate::lower::Statistics,
     optimizer: Option<crate::opt::Statistics>,
-    front_ms: f64,
-    lower_ms: f64,
-    write_ms: f64,
+    front_ms: crate::support::telemetry::Counter<f64>,
+    lower_ms: crate::support::telemetry::Counter<f64>,
+    write_ms: crate::support::telemetry::Counter<f64>,
 }
 impl LowIrStatistics {
     /// Write deterministic work counters and independently measured resources.
     /// # Errors
     /// Returns a diagnostic-sink write failure.
+    #[cfg(feature = "telemetry")]
     pub fn write(&self, out: &mut impl std::io::Write, peak_rss: u64) -> std::io::Result<()> {
         self.lowering.write(out)?;
         writeln!(
@@ -59,6 +60,22 @@ impl LowIrStatistics {
             writeln!(out)?;
         }
         Ok(())
+    }
+    /// # Errors
+    /// Returns the unavailable-statistics diagnostic.
+    #[cfg(not(feature = "telemetry"))]
+    pub fn write(&self, out: &mut impl std::io::Write, peak_rss: u64) -> std::io::Result<()> {
+        let _ = (
+            &self.lowering,
+            &self.optimizer,
+            self.front_ms,
+            self.lower_ms,
+            out,
+            peak_rss,
+        );
+        Err(std::io::Error::other(
+            crate::support::telemetry::UNAVAILABLE,
+        ))
     }
 }
 impl LowIrOutput {
@@ -135,7 +152,7 @@ impl LowIrOutput {
                 optimizer,
                 front_ms: self.front_ms,
                 lower_ms: self.lower_ms,
-                write_ms: 0.0,
+                write_ms: crate::support::telemetry::counter(0.0),
             },
         })
     }
@@ -194,8 +211,8 @@ impl LowIrOutput {
             output,
             object: Some((model, level, limits, observations)),
             work: crate::sema::Work::default(),
-            front_ms: 0.0,
-            lower_ms: 0.0,
+            front_ms: crate::support::telemetry::counter(0.0),
+            lower_ms: crate::support::telemetry::counter(0.0),
         })
     }
     #[cfg(test)]
@@ -265,13 +282,14 @@ impl LowIrView {
         mut self,
         output: &mut impl std::io::Write,
     ) -> Result<LowIrStatistics, std::io::Error> {
-        let start = std::time::Instant::now();
+        let start = crate::support::telemetry::Clock::now();
         match &self.storage {
             LowIrStorage::Retained(program) => crate::lowir::writer::write(program, &mut *output)?,
             LowIrStorage::Streamed(model) => write_streamed(model, output)?,
         }
         output.flush()?;
-        self.statistics.write_ms = start.elapsed().as_secs_f64() * 1000.0;
+        self.statistics.write_ms =
+            crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
         Ok(self.statistics)
     }
 }
@@ -441,7 +459,7 @@ fn emit_preprocessed(
         }
         destination => (destination, None),
     };
-    let front_start = std::time::Instant::now();
+    let front_start = crate::support::telemetry::Clock::now();
     let hosted = preprocessor.hosted() || mode == EmitMode::LowIr;
     let origins = if hosted {
         preprocessor
@@ -470,7 +488,8 @@ fn emit_preprocessed(
     };
     if let Some(observations) = observations.as_deref_mut() {
         observations.view = Some(mode);
-        observations.parse_ms = front_start.elapsed().as_secs_f64() * 1000.0;
+        observations.parse_ms =
+            crate::support::telemetry::counter(front_start.elapsed().as_secs_f64() * 1000.0);
         observations.syntax = Some(unit.statistics());
     }
     if let Err(error) = parsed {
@@ -489,7 +508,7 @@ fn emit_preprocessed(
             ),
         });
     }
-    let analyze_start = std::time::Instant::now();
+    let analyze_start = crate::support::telemetry::Clock::now();
     let graph = if mode == EmitMode::Ast {
         None
     } else {
@@ -535,13 +554,14 @@ fn emit_preprocessed(
         })?)
     };
     if let Some(observations) = observations.as_deref_mut() {
-        observations.analyze_ms = analyze_start.elapsed().as_secs_f64() * 1000.0;
+        observations.analyze_ms =
+            crate::support::telemetry::counter(analyze_start.elapsed().as_secs_f64() * 1000.0);
     }
     let front_ms = front_start.elapsed().as_secs_f64() * 1000.0;
     let output = match destination {
         Destination::Check => return Ok(()),
         Destination::LowIr(output) => {
-            let lower_start = std::time::Instant::now();
+            let lower_start = crate::support::telemetry::Clock::now();
             let mut graph =
                 graph.ok_or(AstToolError::Internal("lowering without semantic graph"))?;
             let (tree, cursor, declarations) = unit
@@ -616,7 +636,7 @@ fn emit_preprocessed(
         }
         Destination::Text(output) | Destination::ObservedText(output, _) => output,
     };
-    let print_start = std::time::Instant::now();
+    let print_start = crate::support::telemetry::Clock::now();
     writeln!(output, "start translation unit {ordinal}").map_err(AstToolError::Output)?;
     if let Some(graph) = graph {
         let (tree, cursor, declarations) = unit
@@ -639,7 +659,8 @@ fn emit_preprocessed(
     }
     let result = writeln!(output, "end translation unit").map_err(AstToolError::Output);
     if let Some(observations) = observations {
-        observations.print_ms = print_start.elapsed().as_secs_f64() * 1000.0;
+        observations.print_ms =
+            crate::support::telemetry::counter(print_start.elapsed().as_secs_f64() * 1000.0);
     }
     result
 }

@@ -15,6 +15,7 @@ pub(crate) mod model;
 mod reader;
 mod runtime;
 mod statistics;
+#[cfg(feature = "telemetry")]
 pub(crate) use statistics::Construction;
 pub use statistics::Statistics;
 pub(crate) mod validator;
@@ -75,9 +76,9 @@ impl Error {
 /// Returns structural, input/output or explicitly unimplemented feature failures.
 pub fn roundtrip(paths: &[PathBuf], output: &Path, statistics: bool) -> Result<Statistics, Error> {
     let (program, mut stats) = read_files(paths, statistics)?;
-    let start = std::time::Instant::now();
+    let start = crate::support::telemetry::Clock::now();
     write_file(&program, output)?;
-    stats.write_ms = start.elapsed().as_secs_f64() * 1000.0;
+    stats.write_ms = crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
     Ok(stats)
 }
 /// The text-tool boundary produces one validated unit, without a text roundtrip
@@ -99,7 +100,7 @@ fn read_program(
     object_facts: bool,
 ) -> Result<(model::Program, Statistics), Error> {
     let mut program = model::Program::default();
-    let start = std::time::Instant::now();
+    let start = crate::support::telemetry::Clock::now();
     let mut source_bytes = 0_usize;
     for path in paths {
         let source =
@@ -111,7 +112,7 @@ fn read_program(
         parser.parse()?;
     }
     let parse_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let start = std::time::Instant::now();
+    let start = crate::support::telemetry::Clock::now();
     program.finish_symbols()?;
     program.legacy_roles();
     validator::validate(&program)?;
@@ -121,9 +122,9 @@ fn read_program(
     } else {
         Statistics::default()
     };
-    stats.source_bytes = source_bytes;
-    stats.parse_ms = parse_ms;
-    stats.validate_ms = validate_ms;
+    stats.source_bytes = crate::support::telemetry::counter(source_bytes);
+    stats.parse_ms = crate::support::telemetry::counter(parse_ms);
+    stats.validate_ms = crate::support::telemetry::counter(validate_ms);
     Ok((program, stats))
 }
 /// Construct and validate a PA8 exercise through the shared typed model.
@@ -132,7 +133,7 @@ fn read_program(
 /// Returns invalid exercise, construction, storage or output failures.
 pub fn exercise(name: &str, output: &Path, statistics: bool) -> Result<Statistics, Error> {
     let mut program = model::Program::default();
-    let start = std::time::Instant::now();
+    let start = crate::support::telemetry::Clock::now();
     exercises::build(&mut program, name)?;
     validator::validate_constructed(&program).map_err(|error| match error {
         Error::Diagnostic(message) => Error::Construction(message),
@@ -144,10 +145,10 @@ pub fn exercise(name: &str, output: &Path, statistics: bool) -> Result<Statistic
     } else {
         Statistics::default()
     };
-    stats.build_ms = build_ms;
-    let start = std::time::Instant::now();
+    stats.build_ms = crate::support::telemetry::counter(build_ms);
+    let start = crate::support::telemetry::Clock::now();
     write_file(&program, output)?;
-    stats.write_ms = start.elapsed().as_secs_f64() * 1000.0;
+    stats.write_ms = crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
     Ok(stats)
 }
 pub(crate) fn write_file(program: &model::Program, output: &Path) -> Result<(), Error> {

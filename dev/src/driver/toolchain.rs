@@ -441,7 +441,8 @@ fn compile(
     values: &PredefinedValues,
     budget: StackBudget,
 ) -> Result<native::Object, AstToolError> {
-    let start = std::time::Instant::now();
+    #[cfg(feature = "telemetry")]
+    let start = crate::support::telemetry::Clock::now();
     let observations = native::ObservationOptions {
         census: invocation.audit.census,
         clocks: invocation.audit.statistics,
@@ -510,7 +511,9 @@ fn compile(
     // Optimization owns typed LowIR alone; source storage ends with the front
     // end, before the retained unit reaches its optimizer/backend consumers.
     drop(source);
+    #[cfg(feature = "telemetry")]
     let work = output.work;
+    #[cfg(feature = "telemetry")]
     let front_ms = output.front_ms;
     output
         .finish_object_observed(
@@ -524,6 +527,7 @@ fn compile(
             error => error,
         })
         .map(|(object, observations)| {
+            #[cfg(feature = "telemetry")]
             if invocation.audit.statistics {
                 let mut out = std::io::stderr().lock();
                 let _ = report_compile(
@@ -543,11 +547,13 @@ fn compile(
             object
         })
 }
+#[cfg(feature = "telemetry")]
 #[derive(Clone, Copy)]
 struct CompileTimes {
     front_ms: f64,
     back_ms: f64,
 }
+#[cfg(feature = "telemetry")]
 fn report_compile(
     input: &Input,
     object: &native::Object,
@@ -571,12 +577,17 @@ fn report_compile(
     observations.statistics.write_clocks(out)?;
     writeln!(out, " peak_rss_kb={peak_rss}")
 }
+#[cfg(feature = "telemetry")]
 fn report_census(lines: &[String]) {
     use std::io::Write;
     let mut out = std::io::stderr().lock();
     for line in lines {
         let _ = writeln!(out, "{line}");
     }
+}
+#[cfg(not(feature = "telemetry"))]
+fn report_census(lines: &[String]) {
+    let _ = lines;
 }
 fn read_source(input: &Input) -> Result<SourceBuffer, AstToolError> {
     if !std::fs::metadata(&input.path).is_ok_and(|m| m.is_file()) {
@@ -735,6 +746,9 @@ pub fn run(
             ast::native_error(error)
         })
         .map(|statistics| {
+            #[cfg(not(feature = "telemetry"))]
+            let _ = statistics;
+            #[cfg(feature = "telemetry")]
             if invocation.audit.statistics {
                 let _ = statistics.write(&mut std::io::stderr().lock(), peak_rss());
             }

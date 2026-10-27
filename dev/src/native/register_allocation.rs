@@ -374,9 +374,9 @@ pub(super) fn analyze(
         reserved: vec![0; body.blocks().len()],
         binding_first: vec![0; body.blocks().len() + 1],
         bindings: Vec::new(),
-        count: 0,
+        count: crate::support::telemetry::counter(0),
         steps: 0,
-        fallbacks: 0,
+        fallbacks: crate::support::telemetry::counter(0),
     };
     let has_eh = facts.flow.instructions.iter().enumerate().any(|(p, &id)| {
         facts.active[p]
@@ -559,7 +559,8 @@ pub(super) fn analyze(
         }
     }
     out.registers = assignment.registers;
-    out.count = out.registers.iter().filter(|r| r.is_some()).count();
+    out.count =
+        crate::support::telemetry::observe(|| out.registers.iter().filter(|r| r.is_some()).count());
     for (candidate, replacement) in ranges.candidates.iter_mut().zip(replacements) {
         if let Some(replacement) = replacement {
             candidate.ranges = replacement;

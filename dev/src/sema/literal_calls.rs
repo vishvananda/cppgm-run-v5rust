@@ -39,8 +39,8 @@ pub(crate) enum LiteralCall {
         number: NumberId,
     },
     Raw {
-        digits: usize,
-        object: TypeId,
+        digits: u32,
+        object: Option<TypeId>,
     },
     Template,
 }
@@ -253,18 +253,13 @@ impl Analyzer<'_> {
             ));
         };
         let shape = if is_raw {
-            let object = self.graph.types.intern(
-                TypeKind::Array {
-                    element: character,
-                    bound: u64::try_from(digits)
-                        .map_err(|_| Error::Limit("raw literal length"))?
-                        .checked_add(1)
-                        .ok_or(Error::Limit("raw literal length"))?,
-                    operand: None,
-                },
-                Cv::default(),
-            )?;
-            LiteralCall::Raw { digits, object }
+            let digits = u32::try_from(digits).map_err(|_| Error::Limit("raw literal length"))?;
+            // Runtime emission consumes the retained digit span directly.
+            // Only a constant-value query needs canonical array storage.
+            LiteralCall::Raw {
+                digits,
+                object: None,
+            }
         } else if form == LiteralForm::Floating {
             let digits = self
                 .literal_bytes
@@ -295,6 +290,22 @@ impl Analyzer<'_> {
             }
         };
         self.finish_literal_call(id, binding, shape)
+    }
+
+    fn raw_literal_array(&mut self, digits: u32) -> Result<TypeId, Error> {
+        let character = self
+            .graph
+            .types
+            .scalar(Scalar::Basic(FundamentalType::Char))?;
+        let element = self.graph.types.qualify(character, Cv::CONST)?;
+        self.graph.types.intern(
+            TypeKind::Array {
+                element,
+                bound: u64::from(digits) + 1,
+                operand: None,
+            },
+            Cv::default(),
+        )
     }
 
     fn numeric_literal_template(
@@ -464,7 +475,23 @@ impl Analyzer<'_> {
                 });
                 2
             }
-            LiteralCall::Raw { object, .. } => {
+            LiteralCall::Raw { object, digits } => {
+                let object = if let Some(object) = object {
+                    object
+                } else {
+                    let object = self.raw_literal_array(digits)?;
+                    self.graph.expression_facts.set(
+                        id,
+                        ExprFacts {
+                            literal_call: Some(LiteralCall::Raw {
+                                digits,
+                                object: Some(object),
+                            }),
+                            ..facts
+                        },
+                    );
+                    object
+                };
                 let TypeKind::Array { element, .. } = self.graph.types.get(object).kind else {
                     return Err(Error::Invariant("raw literal without array storage"));
                 };
@@ -639,13 +666,53 @@ mod tests {
         let mut lengths = Vec::new();
         for id in literals {
             if let Ok(facts) = analyzer.graph.expression_facts.get(id)
-                && let Some(LiteralCall::Raw { digits, .. }) = facts.literal_call
+                && let Some(LiteralCall::Raw { digits, object }) = facts.literal_call
             {
                 lengths.push(digits);
+                assert!(object.is_none());
                 assert!(!facts.null_literal);
             }
         }
         assert_eq!(lengths, [20, 11]);
+    }
+
+    #[test]
+    fn raw_storage_is_published_only_at_value_demand() {
+        let source = SourceBuffer::new(
+            br#"constexpr const char*operator""_r(const char*p){return p;}
+                const char*f(){return 123_r;}"#
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"raw-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let literals = return_literals(tree, declarations);
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let id = literals[0];
+        assert!(matches!(
+            analyzer
+                .graph
+                .expression_facts
+                .get(id)
+                .unwrap()
+                .literal_call,
+            Some(LiteralCall::Raw { object: None, .. })
+        ));
+        analyzer.constant_literal_call(id, scope, None).unwrap();
+        let storage = analyzer.graph.lower_literal_storage(id).unwrap();
+        assert!(matches!(
+            analyzer.graph.types.get(storage).kind,
+            TypeKind::Array { bound: 4, .. }
+        ));
+        analyzer.constant_literal_call(id, scope, None).unwrap();
+        assert_eq!(analyzer.graph.lower_literal_storage(id).unwrap(), storage);
+        assert_eq!(analyzer.constexpr_frames.depth(), 0);
     }
 
     #[test]
@@ -788,6 +855,13 @@ mod tests {
         analyzer.declarations(declarations, global).unwrap();
         assert_eq!(analyzer.tree.expressions.mark(), mark);
         assert_eq!(analyzer.constexpr_frames.depth(), 0);
+        // Runtime raw calls need no semantic storage type. Ask for their
+        // constant values before inspecting the interpreter's array identity.
+        for &literal in &literals {
+            analyzer
+                .constant_literal_call(literal, global, None)
+                .unwrap();
+        }
         let objects: Vec<_> = literals
             .iter()
             .map(|&id| analyzer.graph.lower_literal_storage(id).unwrap())

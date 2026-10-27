@@ -15,6 +15,7 @@ mod bulk;
 mod call_facts;
 mod call_selection;
 mod catch_tables;
+#[cfg(feature = "telemetry")]
 mod census;
 mod compilation_observations;
 mod condition;
@@ -118,7 +119,7 @@ pub(crate) struct Options {
 }
 
 pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statistics, Error> {
-    let start = std::time::Instant::now();
+    let start = crate::support::telemetry::Clock::now();
     let startup = startup::Startup::find(program)?;
     if !options.output.as_os_str().is_empty() && startup.entry.is_none() {
         return Err(Error::Diagnostic(
@@ -157,7 +158,7 @@ pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statis
     }
     for function in program.functions().iter().filter(|f| f.body.is_some()) {
         let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
-        let phase = options.stats.then(std::time::Instant::now);
+        let phase = options.stats.then(crate::support::telemetry::Clock::now);
         let selected =
             value_selection::select(program, symbol, function, options.optimization_level)?;
         if let Some(phase) = phase {
@@ -173,7 +174,7 @@ pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statis
             })?;
         }
         if !options.output.as_os_str().is_empty() {
-            let phase = options.stats.then(std::time::Instant::now);
+            let phase = options.stats.then(crate::support::telemetry::Clock::now);
             let emitted = selected.emit(&mut image, Some(runtime.symbols()))?;
             if let Some(phase) = phase {
                 stats.encode_ms += phase.elapsed().as_secs_f64() * 1000.0;
@@ -210,51 +211,51 @@ pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statis
             }
         }
     }
-    stats.total_ms = start.elapsed().as_secs_f64() * 1000.0;
+    stats.total_ms = crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
     Ok(stats)
 }
 
 #[derive(Default)]
 pub(crate) struct Statistics {
     runtime_linked: bool,
-    total_ms: f64,
-    select_ms: f64,
-    encode_ms: f64,
-    functions: usize,
-    spills: usize,
-    homes: usize,
-    lazy_addresses: usize,
-    folded_loads: usize,
-    fused_compares: usize,
-    strlen_prefixes: usize,
-    dynamic_copies: usize,
-    jump_tables: usize,
-    lowir_instructions: usize,
-    mir_instructions: usize,
-    dead_slots: usize,
-    promoted_slots: usize,
-    native_returns: usize,
-    global_registers: usize,
-    liveness_steps: usize,
-    hull_fallbacks: usize,
-    loop_splits: usize,
-    home_splits: usize,
-    edge_blocks: usize,
-    rotated_loops: usize,
-    threaded_blocks: usize,
-    layout_branches: usize,
-    short_branches: usize,
-    long_branches: usize,
-    fixups: usize,
-    code_bytes: usize,
-    carried_reloads: usize,
-    ordered_frames: usize,
-    dead_frame_stores: usize,
+    total_ms: crate::support::telemetry::Counter<f64>,
+    select_ms: crate::support::telemetry::Counter<f64>,
+    encode_ms: crate::support::telemetry::Counter<f64>,
+    functions: crate::support::telemetry::Counter<usize>,
+    spills: crate::support::telemetry::Counter<usize>,
+    homes: crate::support::telemetry::Counter<usize>,
+    lazy_addresses: crate::support::telemetry::Counter<usize>,
+    folded_loads: crate::support::telemetry::Counter<usize>,
+    fused_compares: crate::support::telemetry::Counter<usize>,
+    strlen_prefixes: crate::support::telemetry::Counter<usize>,
+    dynamic_copies: crate::support::telemetry::Counter<usize>,
+    jump_tables: crate::support::telemetry::Counter<usize>,
+    lowir_instructions: crate::support::telemetry::Counter<usize>,
+    mir_instructions: crate::support::telemetry::Counter<usize>,
+    dead_slots: crate::support::telemetry::Counter<usize>,
+    promoted_slots: crate::support::telemetry::Counter<usize>,
+    native_returns: crate::support::telemetry::Counter<usize>,
+    global_registers: crate::support::telemetry::Counter<usize>,
+    liveness_steps: crate::support::telemetry::Counter<usize>,
+    hull_fallbacks: crate::support::telemetry::Counter<usize>,
+    loop_splits: crate::support::telemetry::Counter<usize>,
+    home_splits: crate::support::telemetry::Counter<usize>,
+    edge_blocks: crate::support::telemetry::Counter<usize>,
+    rotated_loops: crate::support::telemetry::Counter<usize>,
+    threaded_blocks: crate::support::telemetry::Counter<usize>,
+    layout_branches: crate::support::telemetry::Counter<usize>,
+    short_branches: crate::support::telemetry::Counter<usize>,
+    long_branches: crate::support::telemetry::Counter<usize>,
+    fixups: crate::support::telemetry::Counter<usize>,
+    code_bytes: crate::support::telemetry::Counter<usize>,
+    carried_reloads: crate::support::telemetry::Counter<usize>,
+    ordered_frames: crate::support::telemetry::Counter<usize>,
+    dead_frame_stores: crate::support::telemetry::Counter<usize>,
 }
 impl Statistics {
     fn selected(&mut self, function: &mir::Function) -> Result<(), Error> {
         for (counter, increment) in [
-            (&mut self.functions, 1),
+            (&mut self.functions, crate::support::telemetry::counter(1)),
             (&mut self.rotated_loops, function.rotated_loops),
             (&mut self.threaded_blocks, function.threaded_blocks),
             (&mut self.layout_branches, function.layout_branches),
@@ -277,7 +278,9 @@ impl Statistics {
             (&mut self.lowir_instructions, function.lowir_instructions),
             (
                 &mut self.mir_instructions,
-                function.blocks.iter().map(|b| b.range.len()).sum(),
+                crate::support::telemetry::observe(|| {
+                    function.blocks.iter().map(|b| b.range.len()).sum()
+                }),
             ),
             (&mut self.dead_slots, function.dead_slots),
             (&mut self.promoted_slots, function.promoted_slots),
@@ -286,6 +289,7 @@ impl Statistics {
         }
         Ok(())
     }
+
     fn encoded(&mut self, emission: mir::Emission) -> Result<(), Error> {
         for (counter, increment) in [
             (&mut self.native_returns, emission.returns),
@@ -299,6 +303,8 @@ impl Statistics {
         }
         Ok(())
     }
+
+    #[cfg(feature = "telemetry")]
     pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
         if self.runtime_linked {
             return out.write_all(b"\n");
@@ -341,5 +347,12 @@ impl Statistics {
             self.encode_ms,
             self.total_ms
         )
+    }
+    #[cfg(not(feature = "telemetry"))]
+    pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
+        let _ = (self, out, peak_rss);
+        Err(std::io::Error::other(
+            crate::support::telemetry::UNAVAILABLE,
+        ))
     }
 }

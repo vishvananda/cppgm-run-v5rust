@@ -3,30 +3,30 @@
 
 #[derive(Clone, Copy, Default)]
 pub struct ExpansionCounters {
-    pub invocations: u64,
-    pub produced_tokens: usize,
-    pub argument_tokens: usize,
-    pub argument_expansions: u64,
-    pub nested_collections: u64,
-    pub pastes: u64,
-    pub stringizes: u64,
-    pub raw_operands_hidden: u64,
-    pub peak_contexts: usize,
-    pub peak_context_tokens: usize,
-    pub peak_invocations: usize,
+    pub invocations: crate::support::telemetry::Counter<u64>,
+    pub produced_tokens: crate::support::telemetry::Counter<usize>,
+    pub argument_tokens: crate::support::telemetry::Counter<usize>,
+    pub argument_expansions: crate::support::telemetry::Counter<u64>,
+    pub nested_collections: crate::support::telemetry::Counter<u64>,
+    pub pastes: crate::support::telemetry::Counter<u64>,
+    pub stringizes: crate::support::telemetry::Counter<u64>,
+    pub raw_operands_hidden: crate::support::telemetry::Counter<u64>,
+    pub peak_contexts: crate::support::telemetry::Counter<usize>,
+    pub peak_context_tokens: crate::support::telemetry::Counter<usize>,
+    pub peak_invocations: crate::support::telemetry::Counter<usize>,
 }
 
 #[derive(Clone, Copy, Default)]
 pub struct PreprocessorCounters {
-    pub source_tokens: u64,
-    pub directives: u64,
-    pub skipped_directives: u64,
-    pub includes: u64,
-    pub guarded_skips: u64,
-    pub files: usize,
-    pub source_bytes: usize,
-    pub identifiers: usize,
+    pub source_tokens: crate::support::telemetry::Counter<u64>,
+    pub directives: crate::support::telemetry::Counter<u64>,
+    pub skipped_directives: crate::support::telemetry::Counter<u64>,
+    pub includes: crate::support::telemetry::Counter<u64>,
+    pub guarded_skips: crate::support::telemetry::Counter<u64>,
+    pub files: crate::support::telemetry::Counter<usize>,
+    pub source_bytes: crate::support::telemetry::Counter<usize>,
+    pub identifiers: crate::support::telemetry::Counter<usize>,
     /// This implementation uses owned typed stores, not a bump arena.
-    pub arena_bytes: usize,
+    pub arena_bytes: crate::support::telemetry::Counter<usize>,
     pub expansion: ExpansionCounters,
 }

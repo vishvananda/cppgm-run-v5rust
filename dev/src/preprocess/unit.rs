@@ -24,7 +24,7 @@ pub struct Preprocessor<'a> {
     conditionals: Conditionals,
     line_tokens: Vec<Token<'a>>,
     pragmas: super::pragmas::Pragmas,
-    directives: u64,
+    directives: crate::support::telemetry::Counter<u64>,
 }
 impl<'a> Preprocessor<'a> {
     pub(crate) fn hosted(&self) -> bool {
@@ -132,7 +132,7 @@ impl<'a> Preprocessor<'a> {
             conditionals: Conditionals::default(),
             line_tokens: Vec::new(),
             pragmas: super::pragmas::Pragmas::new(services.identity),
-            directives: 0,
+            directives: crate::support::telemetry::counter(0),
         })
     }
     fn read_macro_name(&mut self, directive: &Token<'a>) -> Result<NameId, PreprocessError> {
@@ -292,6 +292,7 @@ impl<'a> Preprocessor<'a> {
     }
     /// Snapshot all work demanded so far, including a failed operation's work.
     #[must_use]
+    #[cfg(feature = "telemetry")]
     pub fn counters(&self) -> super::counters::PreprocessorCounters {
         super::counters::PreprocessorCounters {
             directives: self.directives,
@@ -300,6 +301,12 @@ impl<'a> Preprocessor<'a> {
             expansion: self.expander.counters(),
             ..self.source.counters()
         }
+    }
+    #[must_use]
+    #[cfg(not(feature = "telemetry"))]
+    pub fn counters(&self) -> super::counters::PreprocessorCounters {
+        let _ = self;
+        super::counters::PreprocessorCounters::default()
     }
     pub(crate) fn describe(&self, error: &PreprocessError) -> Result<Vec<u8>, PreprocessError> {
         match error {

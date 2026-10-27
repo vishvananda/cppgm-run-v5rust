@@ -27,8 +27,8 @@ pub(super) struct Splits {
     pub(super) moves: Vec<Move>,
     pub(super) home_first: Vec<usize>,
     pub(super) homes: Vec<TempId>,
-    pub(super) loops: usize,
-    pub(super) blocks: usize,
+    pub(super) loops: crate::support::telemetry::Counter<usize>,
+    pub(super) blocks: crate::support::telemetry::Counter<usize>,
 }
 impl Splits {
     pub(super) fn transfers(&self, from: BlockId, to: BlockId) -> &[Move] {

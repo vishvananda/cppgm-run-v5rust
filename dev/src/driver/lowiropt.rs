@@ -102,8 +102,12 @@ fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
             Error::Construction(format!("optimized LowIR is invalid: {message}"))
         })?;
     }
-    let start = std::time::Instant::now();
+    #[cfg(not(feature = "telemetry"))]
+    let _ = (read, stats, peak_rss);
+    #[cfg(feature = "telemetry")]
+    let start = crate::support::telemetry::Clock::now();
     lowir::write_file(&program, &invocation.output)?;
+    #[cfg(feature = "telemetry")]
     if invocation.stats {
         let mut out = io::stderr().lock();
         let _status = stats.write(&mut out).and_then(|()| {
@@ -147,7 +151,14 @@ fn parse(args: &[OsString]) -> Result<Invocation, Error> {
                     return Err(diagnostic("invalid --inline-limit"));
                 }
             }
-            b"--stats" => invocation.stats = true,
+            b"--stats" => {
+                if !crate::support::telemetry::ENABLED {
+                    return Err(Error::Diagnostic(
+                        crate::support::telemetry::UNAVAILABLE.into(),
+                    ));
+                }
+                invocation.stats = true;
+            }
             b"--validate" => invocation.validate = true,
             b"--verify-passes" => invocation.verify = true,
             bytes if bytes.starts_with(b"--verify-passes=") => {

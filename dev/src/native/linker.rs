@@ -138,7 +138,7 @@ pub(crate) fn link(
     path: &Path,
     permissions: Option<&std::fs::Permissions>,
 ) -> Result<super::link_statistics::Statistics, Error> {
-    let start = std::time::Instant::now();
+    let start = crate::support::telemetry::Clock::now();
     let mut linker = Linker {
         statistics: super::link_statistics::Statistics::default(),
         objects,
@@ -172,13 +172,14 @@ pub(crate) fn link(
         })
         .ok_or_else(|| Error::Diagnostic("no process entry".into()))?;
     executable::write(path, &layout, &linker.image, entry, permissions)?;
-    linker.statistics.objects = linker.objects.len();
-    linker.statistics.symbols = linker.globals.len();
-    linker.statistics.text_bytes = linker.image.text.len();
-    linker.statistics.rodata_bytes = linker.image.rodata.len();
-    linker.statistics.data_bytes = linker.image.data.len();
-    linker.statistics.bss_bytes = linker.image.bss;
-    linker.statistics.link_ms = start.elapsed().as_secs_f64() * 1000.0;
+    linker.statistics.objects = crate::support::telemetry::counter(linker.objects.len());
+    linker.statistics.symbols = crate::support::telemetry::counter(linker.globals.len());
+    linker.statistics.text_bytes = crate::support::telemetry::counter(linker.image.text.len());
+    linker.statistics.rodata_bytes = crate::support::telemetry::counter(linker.image.rodata.len());
+    linker.statistics.data_bytes = crate::support::telemetry::counter(linker.image.data.len());
+    linker.statistics.bss_bytes = crate::support::telemetry::counter(linker.image.bss);
+    linker.statistics.link_ms =
+        crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
     Ok(linker.statistics)
 }
 impl Linker {
@@ -309,7 +310,7 @@ impl Linker {
         Ok(())
     }
     fn add_runtime(&mut self) -> Result<(), Error> {
-        let start = std::time::Instant::now();
+        let start = crate::support::telemetry::Clock::now();
         let wanted: Vec<_> = self
             .globals
             .iter()
@@ -319,13 +320,14 @@ impl Linker {
             .map(|g| g.name.as_ref())
             .collect();
         let objects = super::runtime_link::build(&wanted)?;
-        self.statistics.runtime_names = wanted.len() + 1;
+        self.statistics.runtime_names = crate::support::telemetry::counter(wanted.len() + 1);
         let first = self.objects.len();
         self.objects.extend(objects);
         for index in first..self.objects.len() {
             self.add_object(ObjectId(u32::try_from(index).map_err(|_| Error::Limit)?))?;
         }
-        self.statistics.runtime_ms = start.elapsed().as_secs_f64() * 1000.0;
+        self.statistics.runtime_ms =
+            crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
         for (name, bound) in [
             (&b"__cppgm_init_array_start"[..], Bound::InitStart),
             (&b"__cppgm_init_array_end"[..], Bound::InitEnd),

@@ -33,9 +33,9 @@ pub(super) struct Globals {
     pub(super) reserved: Vec<u32>,
     pub(super) binding_first: Vec<usize>,
     pub(super) bindings: Vec<TempId>,
-    pub(super) count: usize,
+    pub(super) count: crate::support::telemetry::Counter<usize>,
     pub(super) steps: usize,
-    pub(super) fallbacks: usize,
+    pub(super) fallbacks: crate::support::telemetry::Counter<usize>,
 }
 // Counts of each physical clobber bit: fixed-width prefix differences answer
 // the same range OR in constant time, with linear function-owned storage.
@@ -121,9 +121,9 @@ impl Globals {
             reserved: vec![0; body.blocks().len()],
             binding_first: vec![0; body.blocks().len() + 1],
             bindings: Vec::new(),
-            count: 0,
+            count: crate::support::telemetry::counter(0),
             steps: 0,
-            fallbacks: 0,
+            fallbacks: crate::support::telemetry::counter(0),
         };
         if facts
             .flow
@@ -435,7 +435,7 @@ impl Globals {
                 }
             }
             if self.steps > budget {
-                self.fallbacks = candidates.len() - at;
+                self.fallbacks = crate::support::telemetry::counter(candidates.len() - at);
                 break;
             }
             hulls.push(hull);

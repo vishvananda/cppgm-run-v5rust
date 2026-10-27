@@ -155,8 +155,9 @@ pub(crate) fn compile_observed(
     compiler.out.path = path;
     compiler.encode(program, level)?;
     compiler.prune(program)?;
-    compiler.observations.statistics.pruned_functions =
-        compiler.ranges.iter().filter(|range| range.dropped).count();
+    compiler.observations.statistics.pruned_functions = crate::support::telemetry::observe(|| {
+        compiler.ranges.iter().filter(|range| range.dropped).count()
+    });
     compiler.place_text(program)?;
     compiler.place_globals(program)?;
     compiler.place_startup(program)?;
@@ -260,7 +261,7 @@ impl ObjectBuilder {
             super::jump_thunk::emit(symbol, thunk, &mut self.image)?;
         } else {
             let clock = (self.observation_options.clocks || self.observation_options.census)
-                .then(std::time::Instant::now);
+                .then(crate::support::telemetry::Clock::now);
             let mir = super::value_selection::select_for_object(
                 program, symbol, function, level, self.model,
             )?;
@@ -268,10 +269,11 @@ impl ObjectBuilder {
                 &mir,
                 clock.map_or(0.0, |start| start.elapsed().as_secs_f64() * 1000.0),
             )?;
+            #[cfg(feature = "telemetry")]
             if self.observation_options.census {
                 super::census::append(program, &mir, &mut self.observations.census);
             }
-            let clock = clock.map(|_| std::time::Instant::now());
+            let clock = clock.map(|_| crate::support::telemetry::Clock::now());
             let emission = super::emission::emit_with_frame(
                 &mir,
                 &mut self.image,

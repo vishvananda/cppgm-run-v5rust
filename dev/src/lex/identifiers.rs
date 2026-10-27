@@ -25,6 +25,7 @@ impl Identifiers {
     pub(crate) fn find(&self, text: &[u8]) -> Option<NameId> {
         self.index.get(text).copied()
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn len(&self) -> usize {
         self.spellings.len()
     }

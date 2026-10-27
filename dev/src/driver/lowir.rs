@@ -84,7 +84,14 @@ fn execute(args: &[OsString], peak_rss: fn() -> u64) -> Result<(), Error> {
                 }
                 *destination = value;
             }
-            "--stats" => stats = true,
+            "--stats" => {
+                if !crate::support::telemetry::ENABLED {
+                    return Err(Error::Diagnostic(
+                        crate::support::telemetry::UNAVAILABLE.into(),
+                    ));
+                }
+                stats = true;
+            }
             _ if argument.as_encoded_bytes().starts_with(b"-") => {
                 return Err(Error::argument("unknown option: ", argument));
             }

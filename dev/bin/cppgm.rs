@@ -260,6 +260,15 @@ fn invocation(args: &[OsString], mode: EmitMode) -> Result<Invocation<'_>, CliEr
 }
 fn run() -> Result<(), CliError> {
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    if !cppgm_rust::support::telemetry::ENABLED
+        && args
+            .iter()
+            .any(|arg| arg == "--stats" || arg == "--stats-functions")
+    {
+        return Err(CliError::Message(
+            cppgm_rust::support::telemetry::UNAVAILABLE.to_owned(),
+        ));
+    }
     if args.iter().any(|arg| arg == "--batch-stdin") {
         batch_status::write(&mut io::stdin().lock(), &mut io::stdout().lock());
         return Ok(());

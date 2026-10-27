@@ -98,6 +98,7 @@ impl<T> Default for Store<T> {
     }
 }
 impl<T> Store<T> {
+    #[cfg(feature = "telemetry")]
     pub(crate) fn reserved_bytes(&self) -> usize {
         self.data
             .capacity()
@@ -138,6 +139,7 @@ impl<T> Default for Lists<T> {
     }
 }
 impl<T: Copy> Lists<T> {
+    #[cfg(feature = "telemetry")]
     pub(crate) fn reserved_bytes(&self) -> usize {
         self.data
             .capacity()
@@ -251,9 +253,11 @@ impl TextStore {
             block: Some(block),
         })
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn spelling_bytes(&self) -> usize {
         self.string_bytes
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn reserved_bytes(&self) -> usize {
         self.bytes.capacity().saturating_add(
             self.strings

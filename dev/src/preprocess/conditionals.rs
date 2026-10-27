@@ -51,7 +51,7 @@ pub(crate) struct Conditionals {
     sections: Vec<Conditional>,
     skipped: Vec<bool>,
     evaluator: ExpressionEvaluator<'static, ReplacedDefinitions, PreprocessError>,
-    pub(crate) skipped_directives: u64,
+    pub(crate) skipped_directives: crate::support::telemetry::Counter<u64>,
 }
 impl Default for Conditionals {
     fn default() -> Self {
@@ -59,7 +59,7 @@ impl Default for Conditionals {
             sections: Vec::new(),
             skipped: Vec::new(),
             evaluator: ExpressionEvaluator::new(&REPLACED_DEFINITIONS, NumberDialect::Cxx11),
-            skipped_directives: 0,
+            skipped_directives: crate::support::telemetry::counter(0),
         }
     }
 }

@@ -1,34 +1,35 @@
 //! Deterministic semantic demand observations (`SemanticGraph` counters). See NOTICE.
 use std::cell::Cell;
+#[cfg(feature = "telemetry")]
 use std::io::Write;
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Work {
-    pub(crate) expressions: usize,
-    pub(crate) conversions: usize,
-    pub(crate) demands: usize,
-    pub(crate) specializations: usize,
-    pub(crate) instantiated_classes: usize,
-    pub(crate) instantiated_functions: usize,
-    pub(crate) instantiated_variables: usize,
-    pub(crate) constant_evaluations: usize,
-    pub(crate) resolutions: usize,
-    pub(crate) candidates: usize,
-    pub(crate) virtual_slots: usize,
-    pub(crate) override_steps: usize,
-    pub(crate) instantiated_arguments: usize,
-    pub(crate) value_substitutions: usize,
-    pub(crate) partial_candidates: usize,
-    pub(crate) substitution_failures: usize,
-    pub(crate) limited_lookups: usize,
-    pub(crate) constant_steps: usize,
-    pub(crate) base_steps: usize,
+    pub(crate) expressions: crate::support::telemetry::Counter<usize>,
+    pub(crate) conversions: crate::support::telemetry::Counter<usize>,
+    pub(crate) demands: crate::support::telemetry::Counter<usize>,
+    pub(crate) specializations: crate::support::telemetry::Counter<usize>,
+    pub(crate) instantiated_classes: crate::support::telemetry::Counter<usize>,
+    pub(crate) instantiated_functions: crate::support::telemetry::Counter<usize>,
+    pub(crate) instantiated_variables: crate::support::telemetry::Counter<usize>,
+    pub(crate) constant_evaluations: crate::support::telemetry::Counter<usize>,
+    pub(crate) resolutions: crate::support::telemetry::Counter<usize>,
+    pub(crate) candidates: crate::support::telemetry::Counter<usize>,
+    pub(crate) virtual_slots: crate::support::telemetry::Counter<usize>,
+    pub(crate) override_steps: crate::support::telemetry::Counter<usize>,
+    pub(crate) instantiated_arguments: crate::support::telemetry::Counter<usize>,
+    pub(crate) value_substitutions: crate::support::telemetry::Counter<usize>,
+    pub(crate) partial_candidates: crate::support::telemetry::Counter<usize>,
+    pub(crate) substitution_failures: crate::support::telemetry::Counter<usize>,
+    pub(crate) limited_lookups: crate::support::telemetry::Counter<usize>,
+    pub(crate) constant_steps: crate::support::telemetry::Counter<usize>,
+    pub(crate) base_steps: crate::support::telemetry::Counter<usize>,
 }
 #[derive(Default)]
 pub(super) struct Observations {
     pub(super) totals: Work,
-    base_steps: Cell<usize>,
-    limited_lookups: Cell<usize>,
+    base_steps: Cell<crate::support::telemetry::Counter<usize>>,
+    limited_lookups: Cell<crate::support::telemetry::Counter<usize>>,
 }
 impl Observations {
     pub(super) fn base_steps(&self, steps: usize) {
@@ -80,6 +81,7 @@ impl Work {
             *counter += increment;
         }
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn write(self, out: &mut impl Write) -> std::io::Result<()> {
         write!(
             out,

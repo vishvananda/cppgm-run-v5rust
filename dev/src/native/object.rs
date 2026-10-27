@@ -228,6 +228,7 @@ impl Object {
     pub(super) fn section_count(&self) -> usize {
         self.sections.len()
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn section_bytes(&self) -> usize {
         self.sections
             .iter()

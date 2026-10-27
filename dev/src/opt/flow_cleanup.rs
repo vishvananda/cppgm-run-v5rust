@@ -10,7 +10,7 @@ use crate::lowir::{
 
 const CFG_ROUNDS: usize = 8;
 const BYPASS_PREDECESSORS: usize = 32;
-fn bump(counter: &mut u64) -> Result<(), Error> {
+fn bump(counter: &mut crate::support::telemetry::Counter<u64>) -> Result<(), Error> {
     *counter = counter.checked_add(1).ok_or(Error::Limit)?;
     Ok(())
 }

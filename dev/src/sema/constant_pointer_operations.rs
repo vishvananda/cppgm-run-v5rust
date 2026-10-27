@@ -516,6 +516,7 @@ impl Analyzer<'_> {
         if let Some(super::literal_calls::LiteralCall::Raw { digits, .. }) =
             self.graph.expression_facts.get(id)?.literal_call
         {
+            let digits = usize::try_from(digits).map_err(|_| Error::Limit("raw literal length"))?;
             let bytes = self
                 .literal_bytes
                 .get(literal.spelling)

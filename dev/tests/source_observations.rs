@@ -13,6 +13,43 @@ fn counters(line: &str) -> BTreeMap<&str, &str> {
         .collect()
 }
 #[test]
+fn explicit_this_observes_the_same_member_work_as_implicit_this()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = Scratch(
+        std::env::temp_dir().join(format!("cppgm-this-observations-{}", std::process::id())),
+    );
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("input.cpp");
+    let output = directory.0.join("view");
+    let mut previous = None;
+    for member in ["value", "this->value"] {
+        std::fs::write(
+            &source,
+            format!("struct X{{int value; int read()const{{return {member};}}}};\n"),
+        )?;
+        let result = Command::new(env!("CARGO_BIN_EXE_cppgm"))
+            .args(["--emit-semantics", "--stats", "-o"])
+            .arg(&output)
+            .arg(&source)
+            .output()?;
+        assert!(result.status.success(), "{:?}", result.stderr);
+        let stderr = String::from_utf8(result.stderr)?;
+        let line = stderr
+            .lines()
+            .find(|line| line.starts_with("cppgm++ semantics "))
+            .ok_or("missing semantic observations")?;
+        let expressions = counters(line)
+            .get("expressions")
+            .ok_or("missing expression observations")?
+            .parse::<u64>()?;
+        if let Some(implicit) = previous {
+            assert_eq!(expressions, implicit);
+        }
+        previous = Some(expressions);
+    }
+    Ok(())
+}
+#[test]
 fn reports_retain_parse_work_and_follow_diagnostics() -> Result<(), Box<dyn std::error::Error>> {
     let directory = Scratch(
         std::env::temp_dir().join(format!("cppgm-source-observations-{}", std::process::id())),

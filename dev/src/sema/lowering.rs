@@ -2210,7 +2210,16 @@ impl Graph {
     pub(crate) fn lower_literal_storage(&self, id: ast::ExprId) -> Result<TypeId, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(match facts.literal_call {
-            Some(LiteralCall::String { object, .. } | LiteralCall::Raw { object, .. }) => object,
+            Some(
+                LiteralCall::String { object, .. }
+                | LiteralCall::Raw {
+                    object: Some(object),
+                    ..
+                },
+            ) => object,
+            Some(LiteralCall::Raw { object: None, .. }) => {
+                return Err(Error::Invariant("raw literal storage was not demanded"));
+            }
             _ => facts.ty,
         })
     }

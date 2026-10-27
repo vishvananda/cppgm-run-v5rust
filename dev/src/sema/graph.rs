@@ -415,6 +415,7 @@ impl Graph {
         self.auto_placeholder
             .ok_or(Error::Invariant("missing auto placeholder"))
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn statistics(&self) -> super::Statistics {
         let (names, lookups, member_cache) = self.names.observations();
         let (types, type_bytes) = self.types.observations();
@@ -448,6 +449,11 @@ impl Graph {
                 ),
             work: self.work(),
         }
+    }
+    #[cfg(not(feature = "telemetry"))]
+    pub(crate) fn statistics(&self) -> super::Statistics {
+        let _ = self;
+        super::observations::Statistics::default()
     }
     // Unscoped enumerators are canonical declarations in their enclosing
     // scope. Their qualifier checks that same current entry (not an alias

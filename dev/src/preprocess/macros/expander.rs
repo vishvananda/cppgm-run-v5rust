@@ -85,6 +85,7 @@ impl<'a> Expander<'a> {
     pub(crate) fn set_binary_exponents(&mut self, enabled: bool) {
         self.binary_exponents = enabled;
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn counters(&self) -> crate::preprocess::counters::ExpansionCounters {
         self.counters
     }

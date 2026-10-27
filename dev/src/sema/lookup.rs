@@ -111,8 +111,9 @@ struct CachedMember {
 }
 #[derive(Default)]
 pub(super) struct Names {
+    // Also bounds the retained member cache; it is required state.
     count: usize,
-    lookups: Cell<usize>,
+    lookups: Cell<crate::support::telemetry::Counter<usize>>,
     member_hints: HashSet<ValueKey>,
     epochs: HashMap<ValueKey, u32>,
     members: RefCell<HashMap<MemberQuery, CachedMember>>,
@@ -134,6 +135,7 @@ impl Names {
     pub(super) fn lookup(&self) {
         self.lookups.set(self.lookups.get() + 1);
     }
+    #[cfg(feature = "telemetry")]
     pub(super) fn observations(&self) -> (usize, usize, usize) {
         (self.count, self.lookups.get(), self.members.borrow().len())
     }

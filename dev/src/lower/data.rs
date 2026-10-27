@@ -423,6 +423,7 @@ pub(super) fn literal_object(
         graph.lower_literal_call(expr)?
     {
         let mut units = symbols.data.take_string_units();
+        let digits = usize::try_from(digits).map_err(|_| crate::lowir::Error::Limit)?;
         let digits = symbols.literal_spelling(literal).get(..digits).ok_or(
             crate::sema::Error::Invariant("numeric literal digits outside spelling"),
         )?;

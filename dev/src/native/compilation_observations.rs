@@ -1,6 +1,9 @@
 //! Object compilation observations, retained after each function is released. See NOTICE.
-use super::{Statistics, mir, object::Object};
+#[cfg(feature = "telemetry")]
+use super::object::Object;
+use super::{Statistics, mir};
 use crate::lowir::Error;
+#[cfg(feature = "telemetry")]
 use std::io::Write;
 
 #[derive(Clone, Copy, Default)]
@@ -16,12 +19,12 @@ pub(crate) struct Observations {
 #[derive(Default)]
 pub(crate) struct ObjectStatistics {
     backend: Statistics,
-    pub(super) landings: usize,
-    pub(super) lsdas: usize,
-    pub(super) unwind_bytes: usize,
-    pub(super) pruned_functions: usize,
-    eh_walks: usize,
-    eh_states: usize,
+    pub(super) landings: crate::support::telemetry::Counter<usize>,
+    pub(super) lsdas: crate::support::telemetry::Counter<usize>,
+    pub(super) unwind_bytes: crate::support::telemetry::Counter<usize>,
+    pub(super) pruned_functions: crate::support::telemetry::Counter<usize>,
+    eh_walks: crate::support::telemetry::Counter<usize>,
+    eh_states: crate::support::telemetry::Counter<usize>,
 }
 impl ObjectStatistics {
     pub(super) fn selected(
@@ -44,6 +47,7 @@ impl ObjectStatistics {
         self.backend.encode_ms += milliseconds;
         Ok(())
     }
+    #[cfg(feature = "telemetry")]
     pub(crate) fn write(&self, object: &Object, out: &mut impl Write) -> std::io::Result<()> {
         let backend = &self.backend;
         write!(
@@ -67,6 +71,8 @@ impl ObjectStatistics {
             self.pruned_functions
         )
     }
+
+    #[cfg(feature = "telemetry")]
     pub(crate) fn write_clocks(&self, out: &mut impl Write) -> std::io::Result<()> {
         write!(
             out,

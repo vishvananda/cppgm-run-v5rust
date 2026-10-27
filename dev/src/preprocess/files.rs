@@ -49,6 +49,7 @@ pub(crate) struct SourceFiles<'a> {
     services: FileServices,
 }
 impl<'a> SourceFiles<'a> {
+    #[cfg(feature = "telemetry")]
     pub(crate) fn counts(&self) -> (usize, usize) {
         (
             self.files.len(),

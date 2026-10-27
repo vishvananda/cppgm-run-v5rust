@@ -26,7 +26,7 @@ pub(super) struct Ranges {
     pub(super) total: usize,
     pub(super) candidates: Vec<Candidate>,
     pub(super) steps: usize,
-    pub(super) fallbacks: usize,
+    pub(super) fallbacks: crate::support::telemetry::Counter<usize>,
 }
 pub(super) fn tied(kind: &I) -> bool {
     matches!(kind, I::Binary(..) | I::Unary(..))
@@ -59,7 +59,7 @@ impl Ranges {
             total: 0,
             candidates: Vec::new(),
             steps: 0,
-            fallbacks: 0,
+            fallbacks: crate::support::telemetry::counter(0),
         };
         for &b in &body.layout {
             out.bases[b.index()] = out.total;
@@ -231,7 +231,7 @@ impl Ranges {
             }
             if self.steps > budget {
                 work.clear();
-                self.fallbacks = self.candidates.len() - c;
+                self.fallbacks = crate::support::telemetry::counter(self.candidates.len() - c);
                 self.candidates.truncate(c);
                 break;
             }

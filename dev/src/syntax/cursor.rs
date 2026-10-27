@@ -53,14 +53,14 @@ pub(crate) struct Cursor<'a> {
     null_literal: Option<Literal>,
     runs: Vec<Token>,
     replay: Vec<Replay>,
-    pub peak_run_tokens: usize,
+    pub peak_run_tokens: crate::support::telemetry::Counter<usize>,
     pub position: usize,
     retained: usize,
     base: u64,
     origin: u64,
     end: Option<Token>,
-    pub tokens_read: u64,
-    pub peak_window: usize,
+    pub tokens_read: crate::support::telemetry::Counter<u64>,
+    pub peak_window: crate::support::telemetry::Counter<usize>,
 }
 impl<'a> Cursor<'a> {
     pub(super) fn new(post: PostTokenizer<Preprocessor<'a>>) -> Self {
@@ -73,14 +73,14 @@ impl<'a> Cursor<'a> {
             null_literal: None,
             runs: Vec::new(),
             replay: Vec::new(),
-            peak_run_tokens: 0,
+            peak_run_tokens: crate::support::telemetry::counter(0),
             position: 0,
             retained: 0,
             base: 0,
             origin: 0,
             end: None,
-            tokens_read: 0,
-            peak_window: 0,
+            tokens_read: crate::support::telemetry::counter(0),
+            peak_window: crate::support::telemetry::counter(0),
         }
     }
     pub(super) fn set_origin(&mut self, origin: u64) {
