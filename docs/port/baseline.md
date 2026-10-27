@@ -10,3 +10,5 @@ audit must include current release/debug checks; PA33 remains open. Old bootstra
 generations are archived before fresh proof. Original goals and history remain.
 
 Plan, old tool/config snapshots, validation and restart status: `/home/vishvananda/work/maintenance/v5rust-audit-refresh-20261027T231931Z`.
+
+Audit workflow examples: da454c6. Interrupted constructor changes preserved at b506a9b4. Live/control helpers and their protected hashes are synchronized. Final acceptance checks are unchanged; old PA34-boundary watcher is superseded by this applied update. Owner receipts: /home/vishvananda/work/maintenance/v5rust-audit-refresh-20261027T231931Z.

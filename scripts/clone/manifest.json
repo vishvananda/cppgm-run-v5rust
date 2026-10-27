@@ -31470,7 +31470,7 @@
     "shared/README.md": "eeee979536905ade70973b8ff93232bd096b3b8aa4851f3351e0e79ae0d2308d",
     "shared/source.gram": "5bba09774e3b4e2a6ee9eb042a07b519b2092a23ee9e142044bf3c554940e4c9",
     "Makefile": "249b7cd27d167b3f2c2f392e26ef3b1f2692afbbdf88f8eae46fc25444ee55f3",
-    "AGENTS.md": "f83f0b5baffe4db2e2c726c9850b869710d5f1e651b1fee77593563643196194",
+    "AGENTS.md": "202af613de83194f77d0dbe4897d7893c246127cc37718a7f0130d28ddecdd44",
     "CLONE_CONTRACT.md": "65ea021c06bc5defa3672f021ece4467b516d64c9ba83313aafadb55a40c7e0c",
     "rust-toolchain.toml": "495c69d1db93f25f53e3d0d2d40d812313366cc368de317871c2ace6c6ffafa4",
     "dev/frontend_source_sets.mk": "5bd02ff6b685d82f9cf389519b0e9f152e48b62cf3a3b9a3708c5c7be0da656b",
@@ -31481,7 +31481,7 @@
     "scripts/clone/rust_audit.py": "18c4fe3f5d99566a1f74a3e35fb950fe1faeff61f38b0d90817a6ea5b639f8f9",
     "scripts/clone/clone_check.py": "3c8b468bb53a27b535142eb2c7dc9304d7362153d18cb6500cc2a9f81b35efe7",
     "scripts/clone/clone_bootstrap.py": "18dd826049d04a913f2833821d6453ba5bc216f5c36c68e9df2e519ca6628ed3",
-    "scripts/clone/clone_quality.py": "0ad96bec792490515046eea70a2561cc41299adf71874fb63f49d6e0c386a46a",
+    "scripts/clone/clone_quality.py": "6bbc8c2cea9d0ae99480edcfbd8c0cc469d12860e45cf07b3760ae063885878e",
     "scripts/clone_check.py": "0e2e63c854ee195a80392f2132f0ebd4117442e5286008fb577f31292eb2fff8",
     "pa5/tests/general/300-template-cache-alternative-types.ref": "34651ff48cf71221b0f0dd034fe3b5a6e98726b147f761ff59d703c729667cb6",
     "pa5/tests/general/300-template-cache-alternative-types.ref.exit_status": "9eb7741d8048b03ac34ac16732addd2a5e147f90397461ca21adf12c9ef98d9d",
@@ -32116,8 +32116,8 @@
     "pa33/tests/behavior/o3/900-wide-slot-copy-store-o3.ref.program.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "pa33/tests/behavior/o3/900-wide-slot-copy-store-o3.t": "6f89a3a9fb9069b2644ba50b8f468111101b276c813b80f19acec85d4971c54a",
     "scripts/audit_test_requirements.py": "6f5b4369946a56496023c9fd09e6fc039cbd0a8280204e80e30a31728187ca6f",
-    "scripts/clone/clone_evidence.py": "5ea8b629f3bf3c1887f68dfa3f5353a010b068c2d372d76c21cdd56c65ac7b0b",
-    "scripts/clone/test_clone_evidence.py": "a6e03401b3b26e852202a7439d9d372eebe80bb43c32559f3cd0edc18df8f9bd",
+    "scripts/clone/clone_evidence.py": "f276ba1e97d3ce7cddb74e221b2103c63816a4280e14fa6f8aeb0f9620d93a3c",
+    "scripts/clone/test_clone_evidence.py": "928b9c566b86683a731efa1fcba45fefc46df60501ec24844345ee84262d3ae8",
     "scripts/clone_evidence.py": "76f724e908ae54fafce2ea16058fa65849f8344f26d66160a862eff85e6ed6be",
     "scripts/clone/settings.json": "d5ff5dba6c2717677ad25b9b1ac5a5866bb7321d3fc2d72ba656f8ef779a09a7",
     "dev/build.rs": "0041965df5ea7430bd40a7b006ec957cf913ae731bc422ca7f65fa432526be6d",
@@ -32148,7 +32148,8 @@
     "pa33/scripts/check_kernels.pl": "ae2f12e3b9dcb879be77f51bff97f5d2c66383d4a2d085350c66c73cf8362ca3",
     "scripts/tests/test_constexpr_call_memo.py": "7741d4ef00a1ddc2bb52be9a02893082754dc5c7097527cdbe14bb050dd20c5f",
     "scripts/tests/test_function_order_reuse.py": "cb6d5fbe14c035108a1013dd1cff4b4fe54223b5f033c79dbdb9399dbf2120cb",
-    "scripts/tests/test_template_assert_reuse.py": "bba7cb67c570d68a906acb9e01ec91052a9649535ca7206aecc122b3e8509927"
+    "scripts/tests/test_template_assert_reuse.py": "bba7cb67c570d68a906acb9e01ec91052a9649535ca7206aecc122b3e8509927",
+    "scripts/clone_quality.py": "c86b78432d522e166e8cf83e55c18bf1b45c92e62203bf93602b2f158210b329"
   },
   "stages": {
     "pa1": [
