@@ -171,6 +171,7 @@ impl Analyzer<'_> {
         self.graph.expression_facts.set(operand, inner);
         super::record(&mut self.graph.expression_types, operand.index(), inner.ty);
         let concrete = found.functions.as_slice().len() == 1
+            && !self.graph.function_templates.requires_target(binding)
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -325,7 +326,9 @@ impl Analyzer<'_> {
                 }
             }
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() {
+            if entity.template_head.is_some()
+                || self.graph.function_templates.requires_target(binding)
+            {
                 template = true;
                 continue;
             }

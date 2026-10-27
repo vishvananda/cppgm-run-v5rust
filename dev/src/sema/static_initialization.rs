@@ -281,14 +281,19 @@ impl Analyzer<'_> {
             .map(|value| self.static_held_scalar(value))
             .transpose()?
             .flatten();
-        let value = if held.is_some() {
+        let mut value = if held.is_some() {
             held
         } else if let Some(expr) = self.single_initializer(initializer) {
             self.static_scalar_query(
                 expr,
                 target,
                 scope,
-                if recorded.is_some() {
+                if recorded.is_some()
+                    || matches!(
+                        self.graph.types.get(target).kind,
+                        TypeKind::Pointer(_) | TypeKind::Scalar(Scalar::Nullptr)
+                    )
+                {
                     StaticScalarDemand::Syntax
                 } else {
                     StaticScalarDemand::Initialization
@@ -304,6 +309,26 @@ impl Analyzer<'_> {
         } else {
             Some(Value::Integer(0))
         };
+        // static_global tries complete initialization when the syntax-shaped
+        // relocation cannot describe a pointer. This can use a later completed
+        // reference even before that reference's source backing is defined.
+        if value.is_none()
+            && recorded.is_none()
+            && matches!(
+                self.graph.types.get(target).kind,
+                TypeKind::Pointer(_) | TypeKind::Scalar(Scalar::Nullptr)
+            )
+            && !self.graph.lower_variable(entity)?.thread_local
+        {
+            let probe = self.in_constant_evaluation(|analyzer| {
+                analyzer.initialized_scalar_value(target, initializer, scope)
+            });
+            value = match probe {
+                Ok(core) => self.static_held_scalar(core)?,
+                Err(Error::NonConstant { .. } | Error::Missing(_)) => None,
+                Err(error) => return Err(error),
+            };
+        }
         self.graph.entity_mut(entity).static_initializer = value;
         Ok(())
     }

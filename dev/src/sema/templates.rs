@@ -82,6 +82,7 @@ pub(super) struct Templates {
     heads: Vec<Head>,
     shapes: HashMap<Vec<(ParameterShape, Option<TypeId>)>, ShapeId>,
     positions: HashMap<Position, EntityId>,
+    position_rows: HashMap<(u32, bool, bool), Vec<EntityId>>,
     synthesized_values: Vec<TypeId>,
     unique_names: Vec<TypeId>,
     unique_types: Vec<TypeId>,
@@ -149,6 +150,53 @@ impl Templates {
     }
 }
 impl super::graph::Graph {
+    // Ordinary parameter positions form dense rows by depth and kind. A
+    // template-template parameter instead has its own structural shape key.
+    fn positional_template_parameter(
+        &mut self,
+        position: Position,
+        key: Keyword,
+    ) -> Result<EntityId, Error> {
+        if position.shape.inner.is_some() {
+            if let Some(&entity) = self.templates.positions.get(&position) {
+                return Ok(entity);
+            }
+            let entity = self.add_entity(None, None, key)?;
+            self.templates.positions.insert(position, entity);
+            return Ok(entity);
+        }
+        let row = (position.depth, position.shape.non_type, position.shape.pack);
+        // template_parameters passes the already truncated parameter record's
+        // index to positional_parameter, including when a long list wraps.
+        let index = usize::from(position.index);
+        while self.templates.position_rows.get(&row).map_or(0, Vec::len) <= index {
+            let next = self.templates.position_rows.get(&row).map_or(0, Vec::len);
+            let entity = self.add_entity(None, None, key)?;
+            self.entity_mut(entity).template_parameter = Some(ParameterInfo {
+                position: Position {
+                    index: u16::try_from(next)
+                        .map_err(|_| Error::Limit("template parameter position limit"))?,
+                    ..position
+                },
+                inner: None,
+                value_type: None,
+            });
+            let ty = self.types.intern(
+                TypeKind::TemplateParameter {
+                    entity,
+                    template: false,
+                },
+                Cv::default(),
+            )?;
+            self.entity_mut(entity).ty = Some(ty);
+            self.templates
+                .position_rows
+                .entry(row)
+                .or_default()
+                .push(entity);
+        }
+        Ok(self.templates.position_rows[&row][index])
+    }
     // Only function and alias declaration signatures demand the canonical
     // type-pack form. Class heads and nested parameter lists retain compact
     // structural identity without publishing an unused language type.
@@ -574,20 +622,18 @@ impl Analyzer<'_> {
                 shape,
             };
             let entity = self.graph.add_entity(None, name, key)?;
-            let canonical = if let Some(&canonical) = self.graph.templates.positions.get(&position)
-            {
-                canonical
-            } else {
-                let canonical = self.graph.add_entity(None, None, key)?;
-                self.graph.templates.positions.insert(position, canonical);
-                canonical
-            };
+            let canonical = self.graph.positional_template_parameter(position, key)?;
             self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
                 position,
                 inner,
                 value_type,
             });
-            if self.graph.entity(canonical).template_parameter.is_none() {
+            if self
+                .graph
+                .entity(canonical)
+                .template_parameter
+                .is_none_or(|info| info.value_type.is_none())
+            {
                 self.graph.entity_mut(canonical).template_parameter =
                     self.graph.entity(entity).template_parameter;
             }

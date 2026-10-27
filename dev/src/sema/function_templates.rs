@@ -352,6 +352,7 @@ impl Analyzer<'_> {
             // A template-id forms its no-target declaration with unfilled
             // packs empty. Keep the original explicit arguments independently:
             // an ensuing target type can still deduce those packs.
+            let mut designation = primary;
             if !call && !partial {
                 let mut complete = arguments.clone();
                 let Some(binding) = self.complete_signature(primary, &mut complete)? else {
@@ -366,8 +367,9 @@ impl Analyzer<'_> {
                     specializations.push(occurrence);
                     continue;
                 }
+                designation = binding;
             }
-            let binding = self.graph.binding(primary);
+            let binding = self.graph.binding(designation);
             let hidden = if call {
                 self.graph.function_handle(
                     primary,
@@ -860,17 +862,6 @@ impl Analyzer<'_> {
         if let Some(&binding) = self.graph.function_templates.signatures.get(&key) {
             return Ok(Some(binding));
         }
-        // A specialization owns the same canonical overload signature as
-        // every other function declaration, even without a lookup binding.
-        self.graph.types.declaration_signature(ty)?;
-        let explicitness = match self.specialized_explicitness(primary, depth, &key.arguments) {
-            Ok(value) => value,
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
-                self.graph.work.totals.substitution_failures += 1;
-                return Ok(None);
-            }
-            Err(error) => return Err(error),
-        };
         let origin = self.graph.binding(primary);
         let entity = self.graph.add_entity(Some(ty), origin.name, origin.key)?;
         self.graph
@@ -904,13 +895,24 @@ impl Analyzer<'_> {
         specialized.special_name = special_name;
         specialized.member_function = member;
         specialized.special_definition = special_definition;
-        specialized.explicitness = explicitness;
         // Declaration facts belong to the specialization's formation point.
         // A later primary redeclaration must not rename its prototype; a
         // demanded body installs its own copied parameters separately.
         specialized.function_parameters = parameters;
         specialized.exceptions = exceptions;
         specialized.definition_emission = DefinitionEmission::Demanded;
+        // Formation owns its entity before the conditional-explicit check,
+        // but publishes neither its signature nor memo if that check fails.
+        let explicitness = match self.specialized_explicitness(primary, depth, &key.arguments) {
+            Ok(value) => value,
+            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                self.graph.work.totals.substitution_failures += 1;
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
+        self.graph.entity_mut(entity).explicitness = explicitness;
+        self.graph.types.declaration_signature(ty)?;
         self.specialization_defaults(entity, primary, pattern, ty)?;
         let binding = self.graph.function_handle(primary, entity, ty)?;
         self.graph
@@ -1508,13 +1510,22 @@ impl Analyzer<'_> {
         binding: BindingId,
         target: TypeId,
     ) -> Result<Option<BindingId>, Error> {
-        let Some(head) = self.function_template_head(binding)? else {
+        let declaration = self.graph.binding(binding).entity;
+        let primary = if self.graph.function_templates.requires_target(binding) {
+            self.graph
+                .function_templates
+                .primary(declaration)
+                .unwrap_or(binding)
+        } else {
+            binding
+        };
+        let Some(head) = self.function_template_head(primary)? else {
             return Ok(None);
         };
         let mut arguments = self.signature_arguments(binding, head)?;
         let pattern = self
             .graph
-            .binding(binding)
+            .binding(primary)
             .ty
             .ok_or(Error::Invariant("template target without type"))?;
         let depth = self.graph.templates.depth(head);
@@ -1527,7 +1538,7 @@ impl Analyzer<'_> {
         if !self.deduced_values_typed(head, pattern, &arguments)? {
             return Ok(None);
         }
-        self.complete_signature(binding, &mut arguments)
+        self.complete_signature(primary, &mut arguments)
     }
 
     fn target_deduction_pattern(

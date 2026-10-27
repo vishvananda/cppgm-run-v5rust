@@ -63,6 +63,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         if self.callee_name != Some(id)
             && let [binding] = functions
+            && !self.graph.function_templates.requires_target(*binding)
             && self
                 .graph
                 .entity(self.graph.binding(*binding).entity)

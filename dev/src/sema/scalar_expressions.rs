@@ -385,6 +385,7 @@ impl Analyzer<'_> {
             }
             if found.functions.as_slice().len() == 1
                 && self.callee_name != Some(id)
+                && !self.graph.function_templates.requires_target(binding)
                 && self
                     .graph
                     .entity(self.graph.binding(binding).entity)

@@ -69,7 +69,7 @@ impl Analyzer<'_> {
                             .ok_or(Error::Invariant("static reference binding"))?,
                     )
                     .entity;
-                self.static_named_place(entity, id, scope)?
+                self.static_named_place(entity, id)?
             }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
                 self.static_pointer(operand, scope)?
@@ -110,9 +110,7 @@ impl Analyzer<'_> {
                         TypeKind::Reference { .. }
                     )
                 {
-                    // Static members and evaluated reference members use the
-                    // core evaluator's stored value, not a field relocation.
-                    return self.constant_place(id, scope).map(StaticAddress::evaluated);
+                    return Err(nonconstant(node.location, "not a static member place"));
                 }
                 let place = if op.token.as_punctuator() == Some(P::Arrow) {
                     self.static_pointer(base, scope)?
@@ -141,7 +139,12 @@ impl Analyzer<'_> {
                 )?;
                 return Ok(StaticAddress { address, ..place });
             }
-            _ => StaticAddress::evaluated(self.constant_place(id, scope)?),
+            ExprKind::Literal(_)
+                if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Array { .. }) =>
+            {
+                StaticAddress::evaluated(Address::new(Root::Literal(id), facts.ty))
+            }
+            _ => return Err(nonconstant(node.location, "not a static place")),
         };
         place.address.designated = facts.ty;
         Ok(place)
@@ -151,7 +154,6 @@ impl Analyzer<'_> {
         &mut self,
         entity: EntityId,
         id: ast::ExprId,
-        scope: ScopeId,
     ) -> Result<StaticAddress, Error> {
         let ty = self.graph.lower_entity_type(entity)?;
         if let Some(&place) = self.static_addresses.references.get(&entity) {
@@ -188,7 +190,10 @@ impl Analyzer<'_> {
         {
             Address::new(Root::Variable(entity), designated)
         } else {
-            self.constant_place(id, scope)?
+            return Err(nonconstant(
+                self.tree.expressions.get(id).location,
+                "not a static named place",
+            ));
         };
         let mut place = StaticAddress::evaluated(address);
         if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
@@ -245,6 +250,9 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         let facts = self.graph.expression_facts.get(id)?;
         match node.kind {
+            ExprKind::Keyword(crate::lex::vocabulary::Keyword::Nullptr) => {
+                Ok(StaticAddress::evaluated(Address::new(Root::Null, facts.ty)))
+            }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::BitAnd) => {
                 self.static_place(operand, scope)
             }
@@ -324,9 +332,21 @@ impl Analyzer<'_> {
                 };
                 self.static_pointer(selected, scope)
             }
-            _ => self
-                .evaluate_address(id, scope)
-                .map(StaticAddress::evaluated),
+            ExprKind::FunctionalCast {
+                arguments,
+                braced: None,
+                ..
+            }
+            | ExprKind::Call { arguments, .. }
+                if matches!(node.kind, ExprKind::FunctionalCast { .. })
+                    || facts.functional_call =>
+            {
+                let [operand] = self.tree.expr_lists.get(arguments) else {
+                    return Err(nonconstant(node.location, "not a static pointer form"));
+                };
+                self.static_pointer(*operand, scope)
+            }
+            _ => Err(nonconstant(node.location, "not a static pointer form")),
         }
     }
     fn project_static_cast(
