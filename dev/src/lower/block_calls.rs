@@ -50,6 +50,7 @@ impl Function<'_, '_, '_, '_> {
         let invoke_type = self.graph.lower_block_invocation(source)?;
         let signature = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .call_signature(self.builder.program(), invoke_type, false)?;
         let invoke = self
             .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?

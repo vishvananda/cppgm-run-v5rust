@@ -50,7 +50,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let size = self
             .builder
-            .integer(u128::from(types::layout(self.graph, ty)?.0))?;
+            .integer(u128::from(types::layout(&*self.graph, ty)?.0))?;
         let object = if statement {
             if staged {
                 self.before_lifetime_call(true)?;
@@ -95,15 +95,27 @@ impl Function<'_, '_, '_, '_> {
         }
         let information = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .exception_type_information(self.builder.program(), ty)?;
         let information = self.emit(I::Addr(Value::Symbol(information)), ty)?.value;
-        self.symbols.thrown_type(self.builder.program(), ty)?;
-        let destructor = if let Some(destructor) = self.symbols.class_destructor(ty)? {
-            self.symbols.demand(destructor);
-            let symbol = self.symbols.entry_symbol(
-                self.builder.program(),
-                super::construction::Entry::Function(destructor),
-            )?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .thrown_type(self.builder.program(), ty)?;
+        let destructor = if let Some(destructor) = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(ty)?
+        {
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand(destructor);
+            let symbol = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .entry_symbol(
+                    self.builder.program(),
+                    super::construction::Entry::Function(destructor),
+                )?;
             self.emit(I::Addr(Value::Symbol(symbol)), ty)?.value
         } else {
             self.builder.integer(0)?
@@ -178,6 +190,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let symbol = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .runtime_function(self.builder.program(), role)?;
         let arguments = self.builder.arguments(operands)?;
         let call = I::Call(Call {
@@ -228,7 +241,11 @@ impl Function<'_, '_, '_, '_> {
         let source = self.result.ok_or(crate::sema::Error::Invariant(
             "throw without function result",
         ))?;
-        let ty = self.symbols.result_boundary(source)?.ty;
+        let ty = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(source)?
+            .ty;
         // A no-return continuation leaves the constructor's subobject record
         // for the actual unwind, unlike a source return from its body.
         let placing = std::mem::replace(&mut self.construction.placing, true);

@@ -57,10 +57,10 @@ impl Function<'_, '_, '_, '_> {
                 ) {
                     (
                         Type::I8,
-                        index.wrapping_mul(types::layout(self.graph, source)?.0),
+                        index.wrapping_mul(types::layout(&*self.graph, source)?.0),
                     )
                 } else {
-                    (types::storage(self.graph, source)?, index)
+                    (types::storage(&*self.graph, source)?, index)
                 };
                 let offset = self.builder.integer(u128::from(offset))?;
                 Ok(self

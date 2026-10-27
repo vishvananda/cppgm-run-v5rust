@@ -41,7 +41,12 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(Error::Missing("operator signature"));
         };
-        let boundary = self.symbols.result_boundary(result)?;
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
+        let boundary = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(result)?;
         let ty = boundary.ty;
         let member = function.object.is_some();
         let first = if member {

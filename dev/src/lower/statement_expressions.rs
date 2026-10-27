@@ -38,15 +38,17 @@ impl Function<'_, '_, '_, '_> {
             );
         };
         let source = self.graph.lower_expression(id)?.ty;
-        let value =
-            if super::types::storage(self.graph, source)? == crate::lowir::vocabulary::Type::Void {
-                None
-            } else {
-                self.graph.statement_expression_value(self.tree, body)?
-            };
+        let value = if super::types::storage(&*self.graph, source)?
+            == crate::lowir::vocabulary::Type::Void
+        {
+            None
+        } else {
+            self.graph.statement_expression_value(&*self.tree, body)?
+        };
         let depth = self.lifetime.cleanups.len();
         self.scan_statement_expression(body)?;
-        let statements = self.tree.stmt_lists.get(items);
+        let statements = self.tree.stmt_lists.get(items).to_vec();
+        let statements = statements.as_slice();
         let count = statements.len() - usize::from(value.is_some());
         for &statement in &statements[..count] {
             self.statement(statement)?;

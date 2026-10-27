@@ -152,7 +152,7 @@ impl Function<'_, '_, '_, '_> {
         {
             self.open_temporary_region()?;
         }
-        let slot = self.generated_slot("argobj", types::storage(self.graph, ty)?)?;
+        let slot = self.generated_slot("argobj", types::storage(&*self.graph, ty)?)?;
         let address = self.emit(I::Addr(slot), ty)?.value;
         self.initialize_list_object(list, ty, address, false, None)?;
         self.copy_object(ty, slot, object)?;
@@ -167,13 +167,21 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // finish_backing_array registers the whole backing array directly.
         // It does not use persistent_alive's per-temporary shared guard path.
-        if self.symbols.object_mode() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .object_mode()
+        {
             let Value::Symbol(global) = storage else {
                 return Err(crate::sema::Error::Invariant("persistent list storage").into());
             };
             return self.register_static_destruction(global, array);
         }
-        if owner.is_none() && self.symbols.temporary_owner_is_reference()?
+        if owner.is_none()
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .temporary_owner_is_reference()?
             || self
                 .static_temporaries
                 .as_ref()
@@ -186,8 +194,8 @@ impl Function<'_, '_, '_, '_> {
         };
         if let Some(finalizer) = super::shutdown::for_type(
             self.builder.program(),
-            self.symbols,
-            self.graph,
+            &mut self.symbols.view(&*self.graph, &*self.tree, self.cursor),
+            &*self.graph,
             global,
             array,
             None,
@@ -218,7 +226,12 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("list backing syntax").into());
         };
         let class = matches!(self.graph.lower_type(element)?, TypeView::Class(_));
-        let guarded = class && self.symbols.storage_destructor(element)?.is_some();
+        let guarded = class
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .storage_destructor(element)?
+                .is_some();
         let destroyed = guarded && !persistent && self.temporary_type_destroyed(element)?;
         let opens = owner.is_none()
             && (destroyed
@@ -250,7 +263,7 @@ impl Function<'_, '_, '_, '_> {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         }
-        let stride = types::layout(self.graph, element)?.0;
+        let stride = types::layout(&*self.graph, element)?.0;
         if class {
             let made = self.initialize_list_elements(
                 list,
@@ -267,7 +280,14 @@ impl Function<'_, '_, '_, '_> {
                 self.lifetime.list_elements.insert(base, &made)?;
             }
         }
-        for (index, &item) in self.tree.expr_lists.get(elements).iter().enumerate() {
+        for (index, &item) in self
+            .tree
+            .expr_lists
+            .get(elements)
+            .to_vec()
+            .iter()
+            .enumerate()
+        {
             if class {
                 break;
             }
@@ -297,8 +317,8 @@ impl Function<'_, '_, '_, '_> {
                 .value
             };
             self.effect(I::Store(
-                types::memory(self.graph, element)?,
-                types::storage(self.graph, element)?,
+                types::memory(&*self.graph, element)?,
+                types::storage(&*self.graph, element)?,
                 value,
                 address,
             ))?;

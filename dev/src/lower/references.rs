@@ -180,14 +180,14 @@ impl Function<'_, '_, '_, '_> {
                 value
             };
             let value = self.fit(value, target)?;
-            let storage = types::storage(self.graph, target)?;
+            let storage = types::storage(&*self.graph, target)?;
             let slot = if !persistent
                 && let Some(slot) = chosen
                 && matches!(
                     self.tree.expressions.get(self.without_parentheses(id)).kind,
                     ExprKind::Conditional { .. }
                 )
-                && types::storage(self.graph, facts.ty)? == storage
+                && types::storage(&*self.graph, facts.ty)? == storage
             {
                 slot
             } else {
@@ -283,12 +283,13 @@ impl Function<'_, '_, '_, '_> {
         stem: &'static str,
     ) -> Result<Value, Error> {
         if !persistent {
-            return self.generated_slot(stem, types::storage(self.graph, ty)?);
+            return self.generated_slot(stem, types::storage(&*self.graph, ty)?);
         }
         // A temporary's global has its own identity and sequence under the
         // initializing variable. It is never shared by value with another one.
         let (symbol, object) = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .dynamic_temporary_symbol(self.builder.program(), ty)?;
         let (storage, init) = if matches!(
             self.graph.lower_type(ty)?,
@@ -297,15 +298,22 @@ impl Function<'_, '_, '_, '_> {
             (
                 None,
                 GlobalInit::Data(vec![DataItem::Zero(
-                    i64::try_from(types::layout(self.graph, ty)?.0)
+                    i64::try_from(types::layout(&*self.graph, ty)?.0)
                         .map_err(|_| crate::lowir::Error::Limit)?,
                 )]),
             )
         } else {
-            (Some(types::storage(self.graph, ty)?), GlobalInit::Zero)
+            (Some(types::storage(&*self.graph, ty)?), GlobalInit::Zero)
         };
         let storage = if let GlobalInit::Data(items) = &init {
-            super::globals::structured_type(self.graph, ty, items, self.symbols.object_mode())?
+            super::globals::structured_type(
+                &*self.graph,
+                ty,
+                items,
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .object_mode(),
+            )?
         } else {
             storage
         };

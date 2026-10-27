@@ -10,7 +10,7 @@ impl Symbols<'_, '_> {
         ty: TypeId,
         nothrow: bool,
     ) -> Result<crate::lowir::model::SignatureId, Error> {
-        if let Some(&signature) = self.signatures.get(&(ty, nothrow)) {
+        if let Some(&signature) = self.state.signatures.get(&(ty, nothrow)) {
             return Ok(signature);
         }
         let signature = crate::lower::function::signature(program, self, self.graph, ty, nothrow)?;
@@ -37,7 +37,7 @@ impl Symbols<'_, '_> {
                 return Ok(signature);
             }
         }
-        self.signatures.insert((ty, nothrow), signature);
+        self.state.signatures.insert((ty, nothrow), signature);
         Ok(signature)
     }
 
@@ -49,7 +49,7 @@ impl Symbols<'_, '_> {
     ) -> Result<crate::lowir::model::SignatureId, Error> {
         use crate::lower::types;
         use crate::lowir::vocabulary::Type;
-        if let Some(&signature) = self.signatures.get(&(pointer, nothrow)) {
+        if let Some(&signature) = self.state.signatures.get(&(pointer, nothrow)) {
             return Ok(signature);
         }
         let graph = self.graph;
@@ -88,7 +88,7 @@ impl Symbols<'_, '_> {
             let name = program.names.intern(&format!("arg{index}"))?;
             program.signature_mut(signature).parameters[index].name = name;
         }
-        self.signatures.insert((pointer, nothrow), signature);
+        self.state.signatures.insert((pointer, nothrow), signature);
         Ok(signature)
     }
 }
@@ -111,12 +111,12 @@ impl Symbols<'_, '_> {
         entity: EntityId,
         builder: &mut crate::lowir::builder::FunctionBuilder<'_>,
     ) -> Result<crate::lowir::model::Value, Error> {
-        if let Some(&value) = self.callees.get(&entity) {
+        if let Some(&value) = self.state.callees.get(&entity) {
             return Ok(value);
         }
         let symbol = self.function_symbol(builder.program(), entity)?;
         let value = Value::Symbol(symbol);
-        self.callees.insert(entity, value);
+        self.state.callees.insert(entity, value);
         Ok(value)
     }
     pub(in crate::lower) fn function_symbol(
@@ -125,7 +125,7 @@ impl Symbols<'_, '_> {
         entity: EntityId,
     ) -> Result<SymbolId, Error> {
         let entity = self.graph.lower_function_entity(entity);
-        if let Some(Value::Symbol(symbol)) = self.callees.get(&entity) {
+        if let Some(Value::Symbol(symbol)) = self.state.callees.get(&entity) {
             return Ok(*symbol);
         }
         let name = self.name(entity)?;
@@ -146,13 +146,14 @@ impl Symbols<'_, '_> {
         };
         let local_object = if facts.internal
             && (facts.c_linkage
-                || object.is_some_and(|object| self.table.objects.contains_key(&object)))
+                || object.is_some_and(|object| self.state.table.objects.contains_key(&object)))
         {
             None
         } else {
             metadata.object
         };
         let symbol = self
+            .state
             .table
             .allocate(program, &name, object, facts.internal)?;
         let local_object = if facts.c_linkage && !facts.internal {
@@ -165,15 +166,16 @@ impl Symbols<'_, '_> {
         if facts.c_linkage && !facts.internal && local_object.is_some() {
             metadata.object = local_object;
         }
-        self.objects.insert(entity, local_object);
-        self.callees.insert(entity, Value::Symbol(symbol));
+        self.state.objects.insert(entity, local_object);
+        self.state.callees.insert(entity, Value::Symbol(symbol));
         if let Some(
             role @ (crate::lowir::vocabulary::Role::AllocateMemory
             | crate::lowir::vocabulary::Role::FreeMemory
             | crate::lowir::vocabulary::Role::Terminate),
         ) = metadata.role
         {
-            self.table
+            self.state
+                .table
                 .runtime_roles
                 .push(crate::lower::runtime_roles::RoleSymbol {
                     symbol,
@@ -189,7 +191,7 @@ impl Symbols<'_, '_> {
                     },
                 });
         }
-        if self.table.object_mode
+        if self.state.table.object_mode
             && !program.symbol(symbol).declared()
             && program.forward_boundary(symbol).is_none()
         {

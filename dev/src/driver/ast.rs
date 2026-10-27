@@ -542,13 +542,14 @@ fn emit_preprocessed(
         Destination::Check => return Ok(()),
         Destination::LowIr(output) => {
             let lower_start = std::time::Instant::now();
-            let graph = graph.ok_or(AstToolError::Internal("lowering without semantic graph"))?;
+            let mut graph =
+                graph.ok_or(AstToolError::Internal("lowering without semantic graph"))?;
             let (tree, cursor, declarations) = unit
                 .semantic_inputs()
                 .map_err(|_| AstToolError::Internal("missing syntax"))?;
             crate::lower::lower_unit(
                 &mut output.output,
-                &graph,
+                &mut graph,
                 tree,
                 cursor,
                 declarations,
@@ -1538,8 +1539,8 @@ mod tests {
         let mut analyzer =
             crate::sema::Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let graph = analyzer.analyze(declarations).unwrap();
-        crate::lower::assert_extended_ownership(&graph, tree, cursor, declarations, per_owner);
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        crate::lower::assert_extended_ownership(&mut graph, tree, cursor, declarations, per_owner);
         assert_eq!(count, tree.expressions.mark());
         }
     }
@@ -1561,8 +1562,13 @@ mod tests {
         let mut analyzer =
             crate::sema::Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let graph = analyzer.analyze(declarations).unwrap();
-        crate::lower::assert_constructor_parameter_temporaries(&graph, tree, cursor, declarations);
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        crate::lower::assert_constructor_parameter_temporaries(
+            &mut graph,
+            tree,
+            cursor,
+            declarations,
+        );
         assert_eq!(tree.expressions.mark(), count);
     }
     fn anchor_classes(
@@ -1857,12 +1863,12 @@ mod tests {
         let syntax_count = tree.expressions.mark();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let graph = analyzer.analyze(declarations).unwrap();
+        let mut graph = analyzer.analyze(declarations).unwrap();
         let mut output = Output::default();
         output.retain_object_definitions(true).unwrap();
         lower_unit(
             &mut output,
-            &graph,
+            &mut graph,
             tree,
             cursor,
             declarations,
@@ -1873,5 +1879,58 @@ mod tests {
         let program = output.finish_program().unwrap();
         assert!(!program.functions().is_empty());
         crate::lowir::validate_test_program(&program).unwrap();
+    }
+    #[test]
+    fn automatic_images_follow_actual_declarations_and_repeat_before_data_deduplication() {
+        let source = SourceBuffer::new(
+            b"int live(int n){int live_values[3]={1,2,3};return live_values[n];}\
+              int dynamic_table[2]={live(1),2};\
+              int dead(){return 0;int dead_values[3]={4,5,6};}\
+              constexpr int hidden(){int hidden_values[3]={7,8,9};return hidden_values[0];}\
+              constexpr int held=hidden();"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"array-demands").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax = tree.expressions.mark();
+        let budget = StackBudget::default();
+        let mut graph =
+            crate::sema::analyze_unit(tree, cursor, declarations, budget, true, true).unwrap();
+        let entity = |name: &[u8]| {
+            graph
+                .lower_array_image_requests()
+                .find(|&id| {
+                    graph
+                        .lower_variable(id)
+                        .unwrap()
+                        .name
+                        .is_some_and(|id| cursor.name(id) == name)
+                })
+                .unwrap()
+        };
+        let live = entity(b"live_values");
+        let dead = entity(b"dead_values");
+        let hidden = entity(b"hidden_values");
+        for id in [live, dead, hidden] {
+            assert!(graph.lower_array_image(id).is_none());
+        }
+        let before = graph.work();
+        let mut output = crate::lower::Output::default();
+        output.retain_object_definitions(true).unwrap();
+        crate::lower::lower_unit(&mut output, &mut graph, tree, cursor, declarations, budget)
+            .unwrap();
+        assert!(graph.lower_array_image(live).is_some());
+        assert!(graph.lower_array_image(dead).is_none());
+        assert!(graph.lower_array_image(hidden).is_none());
+        let visited = graph.work();
+        assert!(visited.constant_evaluations > before.constant_evaluations);
+        graph
+            .lower_demand_array_image(tree, cursor, budget, live)
+            .unwrap();
+        assert!(graph.work().constant_evaluations > visited.constant_evaluations);
+        assert_eq!(tree.expressions.mark(), syntax);
+        crate::lowir::validate_test_program(&output.finish_program().unwrap()).unwrap();
     }
 }

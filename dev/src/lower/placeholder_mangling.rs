@@ -63,11 +63,11 @@ impl Symbols<'_, '_> {
         // parameter position inside a larger type. Whole signature fallback is
         // separately owned by function_encoding.
         let value = self.graph.lower_value_argument(ty);
-        let parameter = self.abi.intern(
+        let parameter = self.state.abi.intern(
             Node::TemplateParam {
                 index: 0,
-                level: if self.bound_pattern {
-                    self.own_level
+                level: if self.state.bound_pattern {
+                    self.state.own_level
                 } else {
                     0
                 },
@@ -77,7 +77,10 @@ impl Symbols<'_, '_> {
             &[],
         )?;
         if value {
-            Ok(self.abi.intern(Node::ExpressionArgument(parameter), &[])?)
+            Ok(self
+                .state
+                .abi
+                .intern(Node::ExpressionArgument(parameter), &[])?)
         } else {
             Ok(parameter)
         }
@@ -121,32 +124,32 @@ impl Symbols<'_, '_> {
         Ok(false)
     }
     pub(super) fn placeholder_node(&mut self, ty: TypeId) -> Result<Option<NodeId>, Error> {
-        let key = (ty, self.bound_pattern, self.own_level);
-        if let Some(&node) = self.placeholders.get(&key) {
+        let key = (ty, self.state.bound_pattern, self.state.own_level);
+        if let Some(&node) = self.state.placeholders.get(&key) {
             return Ok(node);
         }
         if self.graph.lower_operand_key_dependent(ty) != Some(true) {
-            self.placeholders.insert(key, None);
+            self.state.placeholders.insert(key, None);
             return Ok(None);
         }
-        self.placeholders.insert(key, None);
+        self.state.placeholders.insert(key, None);
         let node = match self.placeholder_expression(ty) {
             Ok(node) => Some(node),
             // The frozen reader's unsupported production is ABI_NONE. Only
             // that result selects its concrete-specialization ABI fallback.
             Err(Error::Missing("dependent ABI expression form")) => None,
             Err(error) => {
-                self.placeholders.remove(&key);
+                self.state.placeholders.remove(&key);
                 return Err(error);
             }
         };
-        self.placeholders.insert(key, node);
+        self.state.placeholders.insert(key, node);
         Ok(node)
     }
 
     pub(super) fn unmangled_placeholder(&mut self, ty: TypeId) -> Result<bool, Error> {
         self.check_stack()?;
-        if let Some(&known) = self.unmangled.get(&ty) {
+        if let Some(&known) = self.state.unmangled.get(&ty) {
             return Ok(known);
         }
         let result = if self.graph.lower_operand_key_dependent(ty).is_some() {
@@ -202,7 +205,7 @@ impl Symbols<'_, '_> {
                 _ => false,
             }
         };
-        self.unmangled.insert(ty, result);
+        self.state.unmangled.insert(ty, result);
         Ok(result)
     }
     pub(super) fn placeholder_expression(&mut self, ty: TypeId) -> Result<NodeId, Error> {
@@ -217,6 +220,28 @@ impl Symbols<'_, '_> {
             return Err(missing());
         }
         Ok(result)
+    }
+    fn operand_keyword(&mut self, words: &mut OperandReader<'_>) -> Result<Node, Error> {
+        let W::Keyword(Some(keyword)) = words.next()? else {
+            return Err(missing());
+        };
+        Ok(match keyword {
+            Keyword::This => {
+                if !matches!(words.next()?, W::Node(N::This)) {
+                    return Err(missing());
+                }
+                words.next()?;
+                Node::ThisParam
+            }
+            Keyword::Nullptr => {
+                let ty = self
+                    .state
+                    .abi
+                    .intern(Node::Builtin(crate::abi::vocabulary::Builtin::Nullptr), &[])?;
+                Node::NullptrLiteral(ty)
+            }
+            _ => return Err(missing()),
+        })
     }
     fn operand_expression(
         &mut self,
@@ -233,8 +258,9 @@ impl Symbols<'_, '_> {
                     return Err(missing());
                 }
                 let argument = self.operand_type(words.ty()?)?;
-                let name = self.abi.string(transform.spelling().as_bytes())?;
+                let name = self.state.abi.string(transform.spelling().as_bytes())?;
                 return self
+                    .state
                     .abi
                     .intern(Node::VendorType(name), &[argument])
                     .map_err(Error::from);
@@ -245,27 +271,7 @@ impl Symbols<'_, '_> {
             },
             W::Constant(ty, bits) => self.abi_literal(*ty, *bits)?,
             W::Node(N::Id) => return self.operand_name(words, None).map(|(node, _)| node),
-            W::Node(N::Keyword) => {
-                let W::Keyword(Some(keyword)) = words.next()? else {
-                    return Err(missing());
-                };
-                match keyword {
-                    Keyword::This => {
-                        if !matches!(words.next()?, W::Node(N::This)) {
-                            return Err(missing());
-                        }
-                        words.next()?;
-                        Node::ThisParam
-                    }
-                    Keyword::Nullptr => {
-                        let ty = self
-                            .abi
-                            .intern(Node::Builtin(crate::abi::vocabulary::Builtin::Nullptr), &[])?;
-                        Node::NullptrLiteral(ty)
-                    }
-                    _ => return Err(missing()),
-                }
-            }
+            W::Node(N::Keyword) => self.operand_keyword(words)?,
             W::Node(N::Paren) => return self.operand_expression(words, depth + 1),
             W::Node(N::PackExpansion) => {
                 return self.operand_operation(words, O::PackExpansion, 1, depth);
@@ -299,7 +305,7 @@ impl Symbols<'_, '_> {
                             O::Decrement
                         })
                     };
-                    return self.abi.intern(node, &[operand]).map_err(Error::from);
+                    return self.state.abi.intern(node, &[operand]).map_err(Error::from);
                 }
                 let operation = match operator.as_punctuator() {
                     Some(P::Add) => O::UnaryPlus,
@@ -338,13 +344,14 @@ impl Symbols<'_, '_> {
                 for _ in 0..count {
                     arguments.push(self.operand_expression(words, depth + 1)?);
                 }
-                let node =
-                    if parenthesized && matches!(self.abi.get(callee), Node::UnresolvedName(_)) {
-                        Node::ParenthesizedCall
-                    } else {
-                        Node::Call
-                    };
-                return self.abi.intern(node, &arguments).map_err(Error::from);
+                let node = if parenthesized
+                    && matches!(self.state.abi.get(callee), Node::UnresolvedName(_))
+                {
+                    Node::ParenthesizedCall
+                } else {
+                    Node::Call
+                };
+                return self.state.abi.intern(node, &arguments).map_err(Error::from);
             }
             W::Node(N::FunctionalCast) => {
                 let count = words.count()?;
@@ -374,9 +381,10 @@ impl Symbols<'_, '_> {
                 let W::Identifier(name) = words.next()? else {
                     return Err(missing());
                 };
-                let member = self.abi.string(self.cursor.name(*name))?;
+                let member = self.state.abi.string(self.cursor.name(*name))?;
                 let arguments = self.operand_arguments(words)?;
                 return self
+                    .state
                     .abi
                     .intern(
                         Node::MemberAccess {
@@ -422,6 +430,7 @@ impl Symbols<'_, '_> {
                 let array = words.flag()?;
                 let operand = self.operand_expression(words, depth + 1)?;
                 return self
+                    .state
                     .abi
                     .intern(Node::Deallocation { array, global }, &[operand])
                     .map_err(Error::from);
@@ -443,7 +452,8 @@ impl Symbols<'_, '_> {
                         Keyword::Alignof => self.operand_type_query(words.ty()?, true),
                         Keyword::Typeid => {
                             let ty = self.operand_type(words.ty()?)?;
-                            self.abi
+                            self.state
+                                .abi
                                 .intern(Node::TypeidType(ty), &[])
                                 .map_err(Error::from)
                         }
@@ -460,7 +470,7 @@ impl Symbols<'_, '_> {
             }
             _ => return Err(missing()),
         };
-        self.abi.intern(node, &[]).map_err(Error::from)
+        self.state.abi.intern(node, &[]).map_err(Error::from)
     }
 
     fn operand_allocation(
@@ -496,7 +506,8 @@ impl Symbols<'_, '_> {
             )?),
             _ => return Err(missing()),
         };
-        self.abi
+        self.state
+            .abi
             .intern(
                 Node::Allocation {
                     array,
@@ -529,8 +540,9 @@ impl Symbols<'_, '_> {
                 kind: super::ParameterKind::Type,
             }
         };
-        let pack = self.abi.intern(node, &[])?;
-        self.abi
+        let pack = self.state.abi.intern(node, &[])?;
+        self.state
+            .abi
             .intern(Node::Operation(O::SizeofPack), &[pack])
             .map_err(Error::from)
     }
@@ -554,9 +566,11 @@ impl Symbols<'_, '_> {
             }
             let (size, align) = super::super::types::layout(self.graph, ty)?;
             let target = self
+                .state
                 .abi
                 .intern(Node::Builtin(super::B::UnsignedLong), &[])?;
             return self
+                .state
                 .abi
                 .intern(
                     Node::Literal {
@@ -568,7 +582,8 @@ impl Symbols<'_, '_> {
                 .map_err(Error::from);
         }
         let ty = self.operand_type(ty)?;
-        self.abi
+        self.state
+            .abi
             .intern(
                 if alignment {
                     Node::AlignofType(ty)
@@ -599,7 +614,7 @@ impl Symbols<'_, '_> {
             && let Node::Modified {
                 modifier: super::Modifier::Qualified(_),
                 operand,
-            } = self.abi.get(node)
+            } = self.state.abi.get(node)
         {
             return Ok(operand);
         }
@@ -630,7 +645,7 @@ impl Symbols<'_, '_> {
         for _ in 0..count {
             arguments.push(self.operand_expression(words, depth + 1)?);
         }
-        self.abi.intern(node, &arguments).map_err(Error::from)
+        self.state.abi.intern(node, &arguments).map_err(Error::from)
     }
 
     fn operand_operation(
@@ -644,7 +659,8 @@ impl Symbols<'_, '_> {
         for _ in 0..count {
             arguments.push(self.operand_expression(words, depth + 1)?);
         }
-        self.abi
+        self.state
+            .abi
             .intern(Node::Operation(operation), &arguments)
             .map_err(Error::from)
     }
@@ -659,6 +675,7 @@ impl Symbols<'_, '_> {
         if count == 1 {
             let operand = self.operand_expression(words, depth + 1)?;
             return self
+                .state
                 .abi
                 .intern(
                     Node::Cast {
@@ -674,7 +691,8 @@ impl Symbols<'_, '_> {
         for _ in 0..count {
             arguments.push(self.operand_expression(words, depth + 1)?);
         }
-        self.abi
+        self.state
+            .abi
             .intern(Node::ConversionList(ty), &arguments)
             .map_err(Error::from)
     }
@@ -729,7 +747,7 @@ impl Symbols<'_, '_> {
             {
                 let parameter = self.abi_parameter_level(*ty)?;
                 return Ok((
-                    self.abi.intern(
+                    self.state.abi.intern(
                         Node::TemplateParam {
                             index: parameter.index,
                             level: parameter.level,
@@ -769,7 +787,7 @@ impl Symbols<'_, '_> {
             _ => return Err(missing()),
         };
         let arguments = self.operand_arguments(words)?;
-        Ok((self.abi.intern(node, &arguments)?, cast))
+        Ok((self.state.abi.intern(node, &arguments)?, cast))
     }
     fn qualified_operand_name(
         &mut self,
@@ -818,13 +836,19 @@ impl Symbols<'_, '_> {
             W::Node(N::Function) => match words.next()? {
                 W::Entity(entity) if !implicit_object && !parameter_root => {
                     let encoding = self.function_encoding(*entity)?;
-                    let node = self.abi.intern(Node::EntityReference(encoding), &[])?;
+                    let node = self
+                        .state
+                        .abi
+                        .intern(Node::EntityReference(encoding), &[])?;
                     return Ok((node, None));
                 }
                 W::Absent | W::Entity(_) => {
                     if implicit_object || parameter_root {
-                        let member = self.abi.string(self.cursor.name(terminal))?;
-                        let node = self.abi.intern(Node::UnresolvedName(member), &arguments)?;
+                        let member = self.state.abi.string(self.cursor.name(terminal))?;
+                        let node = self
+                            .state
+                            .abi
+                            .intern(Node::UnresolvedName(member), &arguments)?;
                         return Ok((node, None));
                     }
                     None
@@ -840,8 +864,9 @@ impl Symbols<'_, '_> {
             _ => return Err(missing()),
         };
         let owner = self.operand_qualifier(qualifiers, global, implicit_object, qualifier)?;
-        let member = self.abi.string(self.cursor.name(terminal))?;
-        self.abi
+        let member = self.state.abi.string(self.cursor.name(terminal))?;
+        self.state
+            .abi
             .intern(
                 Node::ScopedMember {
                     owner,
@@ -903,7 +928,8 @@ impl Symbols<'_, '_> {
         } else {
             return Err(missing());
         };
-        self.abi
+        self.state
+            .abi
             .intern(Node::UnresolvedPrefix { root, global }, &levels)
             .map_err(Error::from)
     }
@@ -916,8 +942,9 @@ impl Symbols<'_, '_> {
             .iter()
             .map(|&ty| self.operand_type(ty))
             .collect::<Result<Vec<_>, _>>()?;
-        let name = self.abi.string(self.cursor.name(name))?;
-        self.abi
+        let name = self.state.abi.string(self.cursor.name(name))?;
+        self.state
+            .abi
             .intern(Node::UnresolvedName(name), &arguments)
             .map_err(Error::from)
     }
@@ -926,10 +953,11 @@ impl Symbols<'_, '_> {
         name: crate::lex::identifiers::NameId,
         implicit_object: bool,
     ) -> Result<Node, Error> {
-        let member = self.abi.string(self.cursor.name(name))?;
+        let member = self.state.abi.string(self.cursor.name(name))?;
         Ok(if implicit_object {
-            let pointer = self.abi.intern(Node::ThisParam, &[])?;
+            let pointer = self.state.abi.intern(Node::ThisParam, &[])?;
             let object = self
+                .state
                 .abi
                 .intern(Node::Operation(O::Dereference), &[pointer])?;
             Node::MemberAccess {
@@ -975,7 +1003,8 @@ impl Symbols<'_, '_> {
         } else {
             return Err(missing());
         };
-        self.abi
+        self.state
+            .abi
             .intern(node, &[])
             .map(|node| (node, None))
             .map_err(Error::from)
@@ -998,15 +1027,15 @@ impl Symbols<'_, '_> {
             for &argument in arguments {
                 nodes.push(self.abi_type(argument)?);
             }
-            let name = self.abi.string(self.cursor.name(name))?;
-            levels.push(self.abi.intern(Node::UnresolvedName(name), &nodes)?);
+            let name = self.state.abi.string(self.cursor.name(name))?;
+            levels.push(self.state.abi.intern(Node::UnresolvedName(name), &nodes)?);
             None
         } else {
             Some(self.abi_type(ty)?)
         };
         for name in members.into_iter().rev() {
-            let name = self.abi.string(self.cursor.name(name))?;
-            levels.push(self.abi.intern(Node::UnresolvedName(name), &[])?);
+            let name = self.state.abi.string(self.cursor.name(name))?;
+            levels.push(self.state.abi.intern(Node::UnresolvedName(name), &[])?);
         }
         Ok(root)
     }

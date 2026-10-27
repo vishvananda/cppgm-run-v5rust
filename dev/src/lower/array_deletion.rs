@@ -59,12 +59,14 @@ impl Function<'_, '_, '_, '_> {
         let size = if use_.incomplete {
             0
         } else {
-            types::layout(self.graph, element)?.0
+            types::layout(&*self.graph, element)?.0
         };
         let ty = self.graph.lower_function(use_.function)?.ty;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("array delete signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let sized = parameters.len() == 2;
         let mut storage = object.value;
         let mut block = self.builder.integer(u128::from(size))?;
@@ -105,7 +107,12 @@ impl Function<'_, '_, '_, '_> {
                     )?
                     .value;
             }
-            if self.symbols.class_destructor(element)?.is_some() {
+            if self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(element)?
+                .is_some()
+            {
                 let slot = self.generated_slot("array_delete_index", Type::I64)?;
                 self.effect(I::Store(Facts::memory(false, true), Type::I64, count, slot))?;
                 if self.destructor_throws(element)? {
@@ -202,6 +209,7 @@ impl Function<'_, '_, '_, '_> {
     fn destroy_deleted_element(&mut self, element: TypeId, object: Value) -> Result<(), Error> {
         let destructor = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .class_destructor(element)?
             .ok_or(crate::sema::Error::Invariant("array element destructor"))?;
         let throws = self.lifetime_call_throws(CallTarget::Direct(destructor))?;

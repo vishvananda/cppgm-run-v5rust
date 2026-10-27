@@ -33,8 +33,8 @@ impl Symbols<'_, '_> {
         if !context.construction {
             return self.segment_offsets(context.class);
         }
-        if self.vtables.contexts.offsets.contains_key(&context) {
-            return Ok(&self.vtables.contexts.offsets[&context]);
+        if self.state.vtables.contexts.offsets.contains_key(&context) {
+            return Ok(&self.state.vtables.contexts.offsets[&context]);
         }
         let group =
             self.graph
@@ -55,8 +55,8 @@ impl Symbols<'_, '_> {
             };
             offsets.push(value);
         }
-        self.vtables.contexts.offsets.insert(context, offsets);
-        Ok(&self.vtables.contexts.offsets[&context])
+        self.state.vtables.contexts.offsets.insert(context, offsets);
+        Ok(&self.state.vtables.contexts.offsets[&context])
     }
     pub(in crate::lower::symbols) fn context_at(
         &mut self,
@@ -66,13 +66,13 @@ impl Symbols<'_, '_> {
         if !context.construction {
             return Ok(self.segment_offsets(context.class)?[segment]);
         }
-        if !self.vtables.contexts.offsets.contains_key(&context) {
+        if !self.state.vtables.contexts.offsets.contains_key(&context) {
             self.context_offsets(context)?;
         }
-        Ok(self.vtables.contexts.offsets[&context][segment])
+        Ok(self.state.vtables.contexts.offsets[&context][segment])
     }
     fn prepare_context_owners(&mut self, context: TableContext) -> Result<(), Error> {
-        if self.vtables.contexts.owners.contains_key(&context) {
+        if self.state.vtables.contexts.owners.contains_key(&context) {
             return Ok(());
         }
         self.context_offsets(context)?;
@@ -83,7 +83,7 @@ impl Symbols<'_, '_> {
                     "construction owners without group",
                 ))?;
         let count = group.segments.len();
-        let at = &self.vtables.contexts.offsets[&context];
+        let at = &self.state.vtables.contexts.offsets[&context];
         let mut heads = HashMap::new();
         for (i, part) in group.segments.iter().enumerate().skip(1).rev() {
             if let Some((primary, true)) = self.graph.lower_itanium_primary(part.class) {
@@ -136,7 +136,7 @@ impl Symbols<'_, '_> {
                 owners[node] = owner;
             }
         }
-        self.vtables.contexts.owners.insert(context, owners);
+        self.state.vtables.contexts.owners.insert(context, owners);
         Ok(())
     }
     pub(super) fn construction_owner(
@@ -145,7 +145,7 @@ impl Symbols<'_, '_> {
         segment: usize,
     ) -> Result<usize, Error> {
         self.prepare_context_owners(context)?;
-        Ok(self.vtables.contexts.owners[&context][segment])
+        Ok(self.state.vtables.contexts.owners[&context][segment])
     }
     pub(super) fn construction_adjustment(
         &mut self,
@@ -187,8 +187,8 @@ impl Symbols<'_, '_> {
     ) -> Result<(SymbolId, u64), Error> {
         self.check_stack()?;
         self.prepare_context_owners(context)?;
-        let requested = self.vtables.contexts.owners[&context][segment];
-        if let Some(tables) = self.vtables.contexts.tables.get(&context) {
+        let requested = self.state.vtables.contexts.owners[&context][segment];
+        if let Some(tables) = self.state.vtables.contexts.tables.get(&context) {
             return tables[requested].ok_or_else(|| {
                 crate::sema::Error::Invariant("construction table recursively demanded").into()
             });
@@ -199,27 +199,28 @@ impl Symbols<'_, '_> {
                 .ok_or(crate::sema::Error::Invariant(
                     "construction table without group",
                 ))?;
-        self.vtables
+        self.state
+            .vtables
             .contexts
             .tables
             .insert(context, vec![None; group.segments.len()]);
         let derived = self.abi_type(self.graph.lower_entity_type(context.complete)?)?;
         let base = self.abi_type(self.graph.lower_entity_type(context.class)?)?;
         let mut encoded = Vec::new();
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             Target::ConstructionVtable {
                 derived,
                 offset: i64::from_ne_bytes(context.offset.to_ne_bytes()),
                 base,
             },
             &mut encoded,
-            self.budget,
+            self.state.budget,
         )?;
         let object = program.names.intern_bytes(&encoded)?;
         let (mut internal, _, _, _) = self.graph.lower_virtual_class_identity(context.complete)?;
-        if self.table.object_mode {
+        if self.state.table.object_mode {
             internal = self
                 .graph
                 .lower_object_type_unit_local(self.graph.lower_entity_type(context.complete)?)?;
@@ -245,7 +246,7 @@ impl Symbols<'_, '_> {
         // Entry demand precedes RTTI and data publication, as in C++.
         let mut bodies = Vec::new();
         for s in 0..group.segments.len() {
-            let owner = self.vtables.contexts.owners[&context][s];
+            let owner = self.state.vtables.contexts.owners[&context][s];
             if s != 0 && (s != owner || !self.vtt_segment(context.class, s)?) {
                 continue;
             }
@@ -283,7 +284,7 @@ impl Symbols<'_, '_> {
         let mut points = Vec::new();
         let mut position = 0_u64;
         for (s, targets) in bodies {
-            self.table.work.vtables += 1;
+            self.state.table.work.vtables += 1;
             let mut items = self.context_rows(context, s)?;
             let point = self.table_header_bytes(context.class, s)?;
             items.push(integer(
@@ -293,13 +294,13 @@ impl Symbols<'_, '_> {
             items.push(address(information, 0));
             let count = u64::try_from(targets.len()).map_err(|_| crate::lowir::Error::Limit)?;
             items.extend(targets);
-            if self.table.object_mode {
+            if self.state.table.object_mode {
                 points.push((s, position.wrapping_add(point)));
                 position = position.wrapping_add(point).wrapping_add(count * 8);
                 packed.extend(items);
                 continue;
             }
-            let symbol = self.table.allocate(
+            let symbol = self.state.table.allocate(
                 program,
                 &format!("{prefix}__s{s}__vtable"),
                 (s == 0).then_some(object),
@@ -317,10 +318,13 @@ impl Symbols<'_, '_> {
             )?;
             tables[s] = Some((symbol, point));
         }
-        if self.table.object_mode {
-            let symbol =
-                self.table
-                    .allocate(program, &format!("{prefix}__vtable"), Some(object), true)?;
+        if self.state.table.object_mode {
+            let symbol = self.state.table.allocate(
+                program,
+                &format!("{prefix}__vtable"),
+                Some(object),
+                true,
+            )?;
             define(
                 program,
                 symbol,
@@ -336,12 +340,12 @@ impl Symbols<'_, '_> {
             }
         }
         for s in 0..tables.len() {
-            tables[s] = tables[self.vtables.contexts.owners[&context][s]];
+            tables[s] = tables[self.state.vtables.contexts.owners[&context][s]];
         }
         let result = tables[requested].ok_or(crate::sema::Error::Invariant(
             "unemitted construction owner",
         ))?;
-        self.vtables.contexts.tables.insert(context, tables);
+        self.state.vtables.contexts.tables.insert(context, tables);
         Ok(result)
     }
     fn vtt_segment(&self, class: EntityId, index: usize) -> Result<bool, Error> {
@@ -357,7 +361,7 @@ impl Symbols<'_, '_> {
         )
     }
     fn vtt_size(&mut self, class: EntityId) -> Result<usize, Error> {
-        if let Some(&size) = self.vtables.contexts.sizes.get(&class) {
+        if let Some(&size) = self.state.vtables.contexts.sizes.get(&class) {
             return Ok(size);
         }
         self.check_stack()?;
@@ -376,11 +380,11 @@ impl Symbols<'_, '_> {
                     .ok_or(crate::lowir::Error::Limit)?;
             }
         }
-        self.vtables.contexts.sizes.insert(class, size);
+        self.state.vtables.contexts.sizes.insert(class, size);
         Ok(size)
     }
     fn vtt_positions(&mut self, class: EntityId) -> Result<(), Error> {
-        if self.vtables.contexts.positions.contains_key(&class) {
+        if self.state.vtables.contexts.positions.contains_key(&class) {
             return Ok(());
         }
         let mut index = 1usize;
@@ -412,7 +416,7 @@ impl Symbols<'_, '_> {
                     .ok_or(crate::lowir::Error::Limit)?;
             }
         }
-        self.vtables.contexts.positions.insert(
+        self.state.vtables.contexts.positions.insert(
             class,
             Positions {
                 bases,
@@ -428,7 +432,7 @@ impl Symbols<'_, '_> {
         index: usize,
     ) -> Result<usize, Error> {
         self.vtt_positions(class)?;
-        Ok(self.vtables.contexts.positions[&class].bases[index])
+        Ok(self.state.vtables.contexts.positions[&class].bases[index])
     }
     pub(in crate::lower) fn vtt_virtual_index(
         &mut self,
@@ -436,7 +440,7 @@ impl Symbols<'_, '_> {
         base: EntityId,
     ) -> Result<usize, Error> {
         self.vtt_positions(class)?;
-        self.vtables.contexts.positions[&class]
+        self.state.vtables.contexts.positions[&class]
             .virtuals
             .get(&base)
             .copied()
@@ -448,7 +452,7 @@ impl Symbols<'_, '_> {
         segment: usize,
     ) -> Result<usize, Error> {
         self.vtt_positions(class)?;
-        Ok(self.vtables.contexts.positions[&class].segments[segment])
+        Ok(self.state.vtables.contexts.positions[&class].segments[segment])
     }
     pub(super) fn vtt_entries(
         &mut self,
@@ -537,13 +541,12 @@ pub(crate) fn assert_construction_context(
 ) {
     let (complete, base, shared, dormant) = (classes[0], classes[1], classes[2], classes[3]);
     let mut table = crate::lower::symbols::SymbolTable::default();
-    let mut symbols = Symbols::new(
+    let mut symbol_state = crate::lower::symbols::State::new(
         graph,
-        tree,
-        cursor,
         crate::support::stack::StackBudget::default(),
-        &mut table,
+        std::mem::take(&mut table),
     );
+    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
     let offset = graph
         .lower_nonvirtual_offset(complete, base)
         .unwrap()

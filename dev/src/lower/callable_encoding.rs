@@ -41,11 +41,11 @@ impl Symbols<'_, '_> {
                 self.abi_type(self.graph.lower_entity_type(class)?)
             })
             .transpose()?;
-        let saved = (self.own_level, self.bound_pattern);
-        self.own_level = level;
-        self.bound_pattern = false;
+        let saved = (self.state.own_level, self.state.bound_pattern);
+        self.state.own_level = level;
+        self.state.bound_pattern = false;
         let result = self.encode_function_inner(facts, specialization, inherited_base, variant);
-        (self.own_level, self.bound_pattern) = saved;
+        (self.state.own_level, self.state.bound_pattern) = saved;
         let encoding = result?;
         if !self.graph.lower_has_abi_tags() || facts.c_linkage {
             return Ok(encoding);
@@ -55,11 +55,11 @@ impl Symbols<'_, '_> {
         };
         let scope_encoding = variant == Variant::Complete;
         if scope_encoding && let Some(owner) = facts.abi_owner {
-            self.encodings_underway.push((owner, encoding));
+            self.state.encodings_underway.push((owner, encoding));
         }
         let derived = self.with_implicit_tags(encoding, result);
         if scope_encoding && facts.abi_owner.is_some() {
-            self.encodings_underway.pop();
+            self.state.encodings_underway.pop();
         }
         derived
     }
@@ -77,8 +77,8 @@ impl Symbols<'_, '_> {
                 && self.graph.lower_presentation_scope(facts.home).0.is_none())
         {
             let spelling = self.source_function_spelling(facts.name)?;
-            let terminal = self.abi.string(spelling.as_bytes())?;
-            return Ok(self.abi.intern(
+            let terminal = self.state.abi.string(spelling.as_bytes())?;
+            return Ok(self.state.abi.intern(
                 Node::Name {
                     parent: None,
                     terminal,
@@ -103,7 +103,7 @@ impl Symbols<'_, '_> {
             facts.name,
             FunctionName::Constructor(_) | FunctionName::Destructor(_)
         ) {
-            self.abi.intern(
+            self.state.abi.intern(
                 Node::Terminal {
                     kind: match (facts.name, variant) {
                         (FunctionName::Destructor(_), Variant::Base) => {
@@ -156,7 +156,7 @@ impl Symbols<'_, '_> {
             for (index, &argument) in arguments.iter().enumerate() {
                 nodes.push(self.declared_template_argument(instance, index, argument)?);
             }
-            name = self.abi.intern(Node::Template(name), &nodes)?;
+            name = self.state.abi.intern(Node::Template(name), &nodes)?;
         }
         let TypeView::Function {
             result,
@@ -168,6 +168,8 @@ impl Symbols<'_, '_> {
                 "function without function type",
             )));
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let mut args = Vec::with_capacity(parameters.len());
         for (index, &parameter) in parameters.iter().enumerate() {
             let parameter = if specialization.template_instance.is_some()
@@ -178,6 +180,8 @@ impl Symbols<'_, '_> {
                 else {
                     return Err(Error::Missing("specialization without function type"));
                 };
+                let parameters = parameters.to_vec();
+                let parameters = parameters.as_slice();
                 *parameters
                     .get(index)
                     .ok_or(Error::Missing("specialization parameter count"))?
@@ -207,6 +211,7 @@ impl Symbols<'_, '_> {
             None
         };
         let function = self
+            .state
             .abi
             .intern(
                 Node::Function {

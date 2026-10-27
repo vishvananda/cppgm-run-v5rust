@@ -28,8 +28,9 @@ impl Function<'_, '_, '_, '_> {
         let ExprKind::Braced { elements, .. } = self.tree.expressions.get(list).kind else {
             return Err(crate::sema::Error::Invariant("counted list syntax").into());
         };
-        let values = self.tree.expr_lists.get(elements);
-        let stride = super::types::layout(self.graph, element)?.0;
+        let values = self.owned_expression_ids(elements);
+        let values = values.as_slice();
+        let stride = super::types::layout(&*self.graph, element)?.0;
         let counter = self.generated_slot("initlist_constructor_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(
@@ -79,7 +80,10 @@ impl Function<'_, '_, '_, '_> {
             this.place(cleanup)?;
             if enclosing.is_some()
                 && !this.handlers.contexts.is_empty()
-                && !this.symbols.host_objects()
+                && !this
+                    .symbols
+                    .view(&*this.graph, &*this.tree, this.cursor)
+                    .host_objects()
                 && let Some(attempt) = this.innermost_try()
             {
                 this.emit_try_clauses(attempt)?;
@@ -157,10 +161,17 @@ impl Function<'_, '_, '_, '_> {
             .count
             .take()
             .ok_or(crate::sema::Error::Invariant("list prefix counter"))?;
-        let stride = super::types::layout(self.graph, backing.element)?.0;
+        let stride = super::types::layout(&*self.graph, backing.element)?.0;
         let mut made = ElementAddresses::default();
         let result = (|| {
-            for (index, &item) in self.tree.expr_lists.get(elements).iter().enumerate() {
+            for (index, &item) in self
+                .tree
+                .expr_lists
+                .get(elements)
+                .to_vec()
+                .iter()
+                .enumerate()
+            {
                 let first = self.lifetime.cleanups.len();
                 let target = if index == 0 {
                     backing.base

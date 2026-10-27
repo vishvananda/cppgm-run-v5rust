@@ -17,7 +17,7 @@ use crate::{
 impl Function<'_, '_, '_, '_> {
     pub(super) fn evaluated_pointer(&mut self, id: ast::ExprId) -> Result<Option<RValue>, Error> {
         let id = self.without_parentheses(id);
-        let Some(value) = self.graph.lower_evaluated_pointer(self.tree, id)? else {
+        let Some(value) = self.graph.lower_evaluated_pointer(&*self.tree, id)? else {
             return Ok(None);
         };
         let source = self.graph.lower_expression(id)?.ty;
@@ -90,11 +90,14 @@ impl Function<'_, '_, '_, '_> {
                 offset,
                 offset.source,
                 Type::I64,
-                types::signed(self.graph, offset.source)?,
+                types::signed(&*self.graph, offset.source)?,
                 Context::Additive,
             )?;
-            let size =
-                types::size_of(self.graph, facts.ty, self.tree.expressions.get(id).location)?;
+            let size = types::size_of(
+                &*self.graph,
+                facts.ty,
+                self.tree.expressions.get(id).location,
+            )?;
             let size = self.builder.integer(u128::from(size))?;
             (
                 Type::I8,
@@ -104,7 +107,7 @@ impl Function<'_, '_, '_, '_> {
                 )?,
             )
         } else {
-            (types::storage(self.graph, facts.ty)?, offset)
+            (types::storage(&*self.graph, facts.ty)?, offset)
         };
         let place = self
             .emit(
@@ -154,7 +157,7 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "pointer offset without element",
             )))?;
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         if size != 1 {
             let size = self.builder.integer(u128::from(size))?;
             count = self
@@ -204,7 +207,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok((place, value));
         }
         self.effect(I::Store(
-            types::memory(self.graph, source)?,
+            types::memory(&*self.graph, source)?,
             Type::Ptr,
             value.value,
             place,
@@ -237,7 +240,7 @@ impl Function<'_, '_, '_, '_> {
         // The frozen bool-pointer path stores the comparison directly,
         // without the arithmetic path's fit/truncation instruction.
         self.effect(I::Store(
-            types::memory(self.graph, source)?,
+            types::memory(&*self.graph, source)?,
             Type::U8,
             value.value,
             place,
@@ -257,7 +260,7 @@ impl Function<'_, '_, '_, '_> {
         let left_element = self.pointer_element(a.source)?;
         let right_element = self.pointer_element(b.source)?;
         if let (Some(element), Some(_)) = (left_element, right_element) {
-            let size = types::layout(self.graph, element)?.0;
+            let size = types::layout(&*self.graph, element)?.0;
             let bytes = self.emit(
                 I::Binary(Binary::Sub, Facts::default(), Type::Ptr, a.value, b.value),
                 source,

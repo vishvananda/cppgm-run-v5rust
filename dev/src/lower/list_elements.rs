@@ -97,8 +97,13 @@ impl Function<'_, '_, '_, '_> {
             owner,
             ..
         } = backing;
-        let guarded = self.symbols.storage_destructor(element)?.is_some();
-        let values = self.tree.expr_lists.get(elements);
+        let guarded = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(element)?
+            .is_some();
+        let values = self.owned_expression_ids(elements);
+        let values = values.as_slice();
         if guarded
             && (!persistent || self.static_temporaries.is_some())
             && self.handlers.explicit == 0
@@ -119,7 +124,7 @@ impl Function<'_, '_, '_, '_> {
             self.counted_list_elements(list, backing)?;
             return Ok(ElementAddresses::default());
         }
-        let stride = super::types::layout(self.graph, element)?.0;
+        let stride = super::types::layout(&*self.graph, element)?.0;
         let mut made = ElementAddresses::default();
         let mut inside = false;
         let mut covered = None;
@@ -164,7 +169,10 @@ impl Function<'_, '_, '_, '_> {
                 self.with_enclosing_region(true, |this| {
                     if enclosing.is_some()
                         && !this.handlers.contexts.is_empty()
-                        && !this.symbols.host_objects()
+                        && !this
+                            .symbols
+                            .view(&*this.graph, &*this.tree, this.cursor)
+                            .host_objects()
                         && let Some(attempt) = this.innermost_try()
                     {
                         this.emit_try_clauses(attempt)?;
@@ -232,7 +240,12 @@ impl Function<'_, '_, '_, '_> {
             .value)
     }
     pub(super) fn resume_list_element(&mut self, enclosing: Option<BlockId>) -> Result<(), Error> {
-        if enclosing.is_some() && !self.handlers.contexts.is_empty() && self.symbols.host_objects()
+        if enclosing.is_some()
+            && !self.handlers.contexts.is_empty()
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
         {
             return self.handler_resume();
         }

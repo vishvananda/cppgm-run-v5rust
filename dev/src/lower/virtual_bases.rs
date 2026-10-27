@@ -39,7 +39,11 @@ impl Symbols<'_, '_> {
         from: EntityId,
         to: EntityId,
     ) -> Result<Route, Error> {
-        Ok(self.base_routes.projections.get(self.graph, from, to)?)
+        Ok(self
+            .state
+            .base_routes
+            .projections
+            .get(self.graph, from, to)?)
     }
     pub(in crate::lower) fn vbase_row_offset(
         &mut self,
@@ -47,20 +51,21 @@ impl Symbols<'_, '_> {
         base: EntityId,
     ) -> Result<i64, Error> {
         self.base_rows(class)?;
-        self.base_routes
+        self.state
+            .base_routes
             .positions
             .get(&(class, base))
             .copied()
             .ok_or_else(|| crate::sema::Error::Invariant("virtual base without a table row").into())
     }
     fn base_rows(&mut self, root: EntityId) -> Result<(), Error> {
-        if self.base_routes.rows.contains_key(&root) {
+        if self.state.base_routes.rows.contains_key(&root) {
             return Ok(());
         }
         let mut chain = Vec::new();
         let mut next = Some((root, false));
         while let Some((class, full)) = next {
-            if self.base_routes.rows.contains_key(&class) {
+            if self.state.base_routes.rows.contains_key(&class) {
                 if full {
                     self.full_base_rows(class)?;
                 }
@@ -79,9 +84,9 @@ impl Symbols<'_, '_> {
             if !self.graph.lower_virtual_bases(class).is_empty() {
                 if let Some((primary, virtual_edge)) = self.graph.lower_itanium_primary(class) {
                     let inherited = if virtual_edge {
-                        self.base_routes.full_rows.get(&primary)
+                        self.state.base_routes.full_rows.get(&primary)
                     } else {
-                        self.base_routes.rows.get(&primary)
+                        self.state.base_routes.rows.get(&primary)
                     };
                     let inherited = inherited.ok_or(crate::sema::Error::Invariant(
                         "inherited rows before primary recipe",
@@ -107,10 +112,13 @@ impl Symbols<'_, '_> {
                         .checked_add(3)
                         .and_then(|n| n.checked_mul(-8))
                         .ok_or(crate::sema::Error::Limit("vtable row limit"))?;
-                    self.base_routes.positions.insert((class, *base), offset);
+                    self.state
+                        .base_routes
+                        .positions
+                        .insert((class, *base), offset);
                 }
             }
-            self.base_routes.rows.insert(class, rows);
+            self.state.base_routes.rows.insert(class, rows);
             if full {
                 self.full_base_rows(class)?;
             }
@@ -118,10 +126,11 @@ impl Symbols<'_, '_> {
         Ok(())
     }
     fn full_base_rows(&mut self, class: EntityId) -> Result<(), Error> {
-        if self.base_routes.full_rows.contains_key(&class) {
+        if self.state.base_routes.full_rows.contains_key(&class) {
             return Ok(());
         }
         let mut rows = self
+            .state
             .base_routes
             .rows
             .get(&class)
@@ -177,12 +186,13 @@ impl Symbols<'_, '_> {
                     .checked_add(3)
                     .and_then(|n| n.checked_mul(-8))
                     .ok_or(crate::sema::Error::Limit("vcall row limit"))?;
-                self.base_routes
+                self.state
+                    .base_routes
                     .vcall_positions
                     .insert((class, *signature), position);
             }
         }
-        self.base_routes.full_rows.insert(class, rows);
+        self.state.base_routes.full_rows.insert(class, rows);
         Ok(())
     }
 }
@@ -201,14 +211,20 @@ impl Function<'_, '_, '_, '_> {
             let displacement = if self.virtual_context.vtt.is_some() {
                 self.construction_row(source, class, base)?
             } else {
-                self.builder
-                    .integer(u128::from(self.symbols.virtual_base_offset(class, base)?))?
+                self.builder.integer(u128::from(
+                    self.symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .virtual_base_offset(class, base)?,
+                ))?
             };
             return Ok(self
                 .emit(I::Index(Type::I8, None, object, displacement), source)?
                 .value);
         }
-        let row_offset = self.symbols.vbase_row_offset(class, base)?;
+        let row_offset = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .vbase_row_offset(class, base)?;
         let vptr = self
             .emit(
                 I::Load(Facts::memory(false, true), Type::Ptr, object),
@@ -248,7 +264,12 @@ pub(crate) fn assert_base_routes(
         .collect();
     let program = crate::lowir::model::Program::default();
     let mut table = super::SymbolTable::default();
-    let mut symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
+    let mut symbol_state = crate::lower::symbols::State::new(
+        graph,
+        StackBudget::default(),
+        std::mem::take(&mut table),
+    );
+    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
     let route = symbols.base_route(derived, inside).unwrap();
     assert_eq!(route.via, Some(shared));
     assert_eq!(
@@ -334,9 +355,9 @@ impl Symbols<'_, '_> {
             self.full_base_rows(holder)?;
         }
         Ok(if full {
-            self.base_routes.full_rows[&holder].len()
+            self.state.base_routes.full_rows[&holder].len()
         } else {
-            self.base_routes.rows[&holder].len()
+            self.state.base_routes.rows[&holder].len()
         })
     }
     pub(super) fn table_rows(
@@ -364,9 +385,9 @@ impl Symbols<'_, '_> {
         let mut values = Vec::with_capacity(count);
         for index in (0..count).rev() {
             let row = if full {
-                self.base_routes.full_rows[&holder][index]
+                self.state.base_routes.full_rows[&holder][index]
             } else {
-                self.base_routes.rows[&holder][index]
+                self.state.base_routes.rows[&holder][index]
             };
             let at = match row {
                 Row::Base(base) => self.virtual_base_offset(context.complete, base)?,
@@ -432,7 +453,7 @@ impl Symbols<'_, '_> {
         offset: u64,
         base: EntityId,
     ) -> Result<usize, Error> {
-        if !self.base_routes.segments.contains_key(&class) {
+        if !self.state.base_routes.segments.contains_key(&class) {
             let mut result = HashMap::new();
             let group = self
                 .graph
@@ -449,9 +470,9 @@ impl Symbols<'_, '_> {
                     .entry((at, group.segments[index].class))
                     .or_insert(index);
             }
-            self.base_routes.segments.insert(class, result);
+            self.state.base_routes.segments.insert(class, result);
         }
-        self.base_routes.segments[&class]
+        self.state.base_routes.segments[&class]
             .get(&(offset, base))
             .copied()
             .ok_or_else(|| {
@@ -466,7 +487,7 @@ impl Symbols<'_, '_> {
         &mut self,
         class: EntityId,
     ) -> Result<Vec<usize>, Error> {
-        if let Some(order) = self.base_routes.vtt_orders.get(&class) {
+        if let Some(order) = self.state.base_routes.vtt_orders.get(&class) {
             return Ok(order.clone());
         }
         let mut seen = HashSet::new();
@@ -528,7 +549,10 @@ impl Symbols<'_, '_> {
             )
             .into());
         }
-        self.base_routes.vtt_orders.insert(class, result.clone());
+        self.state
+            .base_routes
+            .vtt_orders
+            .insert(class, result.clone());
         Ok(result)
     }
 }
@@ -542,7 +566,8 @@ impl Symbols<'_, '_> {
         self.base_rows(class)?;
         self.full_base_rows(class)?;
         let signature = self.graph.lower_vcall_signature(function)?;
-        self.base_routes
+        self.state
+            .base_routes
             .vcall_positions
             .get(&(class, signature))
             .copied()
@@ -560,7 +585,7 @@ impl Symbols<'_, '_> {
         &mut self,
         class: EntityId,
     ) -> Vec<EntityId> {
-        if let Some(order) = self.base_routes.construction_orders.get(&class) {
+        if let Some(order) = self.state.base_routes.construction_orders.get(&class) {
             return order.clone();
         }
         let mut pending = vec![class];
@@ -568,7 +593,11 @@ impl Symbols<'_, '_> {
             let before = pending.len();
             for (base, _) in self.graph.lower_inheritance_edges(top) {
                 if !self.graph.lower_virtual_bases(base).is_empty()
-                    && !self.base_routes.construction_orders.contains_key(&base)
+                    && !self
+                        .state
+                        .base_routes
+                        .construction_orders
+                        .contains_key(&base)
                 {
                     pending.push(base);
                 }
@@ -577,21 +606,29 @@ impl Symbols<'_, '_> {
                 continue;
             }
             pending.pop();
-            if self.base_routes.construction_orders.contains_key(&top) {
+            if self
+                .state
+                .base_routes
+                .construction_orders
+                .contains_key(&top)
+            {
                 continue;
             }
             let mut seen = HashSet::new();
             let mut order = Vec::new();
             for (base, shared) in self.graph.lower_inheritance_edges(top) {
-                if let Some(inherited) = self.base_routes.construction_orders.get(&base) {
+                if let Some(inherited) = self.state.base_routes.construction_orders.get(&base) {
                     order.extend(inherited.iter().copied().filter(|&base| seen.insert(base)));
                 }
                 if shared && seen.insert(base) {
                     order.push(base);
                 }
             }
-            self.base_routes.construction_orders.insert(top, order);
+            self.state
+                .base_routes
+                .construction_orders
+                .insert(top, order);
         }
-        self.base_routes.construction_orders[&class].clone()
+        self.state.base_routes.construction_orders[&class].clone()
     }
 }

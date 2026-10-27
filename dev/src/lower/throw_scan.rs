@@ -12,7 +12,7 @@ use crate::{
 };
 impl Function<'_, '_, '_, '_> {
     pub(super) fn default_constructor_throws(&mut self, id: ConstructorId) -> Result<bool, Error> {
-        let facts = Entry::Constructor(id, Variant::Complete).facts(self.graph)?;
+        let facts = Entry::Constructor(id, Variant::Complete).facts(&*self.graph)?;
         if !facts.nothrow {
             return Ok(true);
         }
@@ -82,7 +82,7 @@ impl Function<'_, '_, '_, '_> {
                 .or(self.graph.lower_conversion_copy(id))
                 && (hidden
                     || !Entry::Constructor(constructor, Variant::Complete)
-                        .facts(self.graph)?
+                        .facts(&*self.graph)?
                         .nothrow)
             {
                 return Ok(true);
@@ -90,7 +90,7 @@ impl Function<'_, '_, '_, '_> {
             if let Some((constructor, _)) = self.graph.lower_class_conversion(id)
                 && (hidden
                     || !Entry::Constructor(constructor, Variant::Complete)
-                        .facts(self.graph)?
+                        .facts(&*self.graph)?
                         .nothrow)
             {
                 return Ok(true);
@@ -110,7 +110,7 @@ impl Function<'_, '_, '_, '_> {
             if let Some(constructor) = self.graph.lower_list_constructor(id)?
                 && (hidden
                     || !Entry::Constructor(constructor, Variant::Complete)
-                        .facts(self.graph)?
+                        .facts(&*self.graph)?
                         .nothrow)
             {
                 return Ok(true);
@@ -228,7 +228,7 @@ impl Function<'_, '_, '_, '_> {
                     if let Some(constructor) = self.graph.lower_list_constructor(id)?
                         && (hidden
                             || !Entry::Constructor(constructor, Variant::Complete)
-                                .facts(self.graph)?
+                                .facts(&*self.graph)?
                                 .nothrow)
                     {
                         return Ok(true);
@@ -269,7 +269,7 @@ impl Function<'_, '_, '_, '_> {
                 self.expression_throws(id)
             }
             ast::InitializerKind::Parenthesized(arguments) => {
-                for &argument in self.tree.expr_lists.get(arguments) {
+                for argument in self.owned_expression_ids(arguments) {
                     if self.expression_throws(argument)? {
                         return Ok(true);
                     }
@@ -293,7 +293,7 @@ impl Function<'_, '_, '_, '_> {
         if let Some(constructor) = self.graph.lower_construction(entity)
             && (initializer.is_some() || !self.graph.lower_constructor_trivial(constructor))
             && !Entry::Constructor(constructor, Variant::Complete)
-                .facts(self.graph)?
+                .facts(&*self.graph)?
                 .nothrow
         {
             return Ok(true);
@@ -302,7 +302,7 @@ impl Function<'_, '_, '_, '_> {
     }
     fn declaration_throws(&mut self, id: ast::DeclId) -> Result<bool, Error> {
         if let ast::DeclKind::Simple { declarators, .. } = self.tree.declarations.get(id).kind {
-            for declarator in self.tree.init_declarators.get(declarators) {
+            for declarator in self.tree.init_declarators.get(declarators).to_vec() {
                 if self.variable_throws(
                     self.graph.lower_declared(declarator.declarator)?,
                     declarator.initializer,
@@ -336,7 +336,7 @@ impl Function<'_, '_, '_, '_> {
             StmtKind::Asm(assembly) => {
                 let assembly = self.tree.assembly.get(assembly);
                 for list in [assembly.outputs, assembly.inputs] {
-                    for operand in self.tree.asm_operands.get(list) {
+                    for operand in self.tree.asm_operands.get(list).to_vec() {
                         if self.expression_throws(operand.expression)? {
                             return Ok(true);
                         }
@@ -345,7 +345,7 @@ impl Function<'_, '_, '_, '_> {
                 false
             }
             StmtKind::Compound(items) => {
-                for &item in self.tree.stmt_lists.get(items) {
+                for item in self.tree.stmt_lists.get(items).to_vec() {
                     if self.statement_throws(item)? {
                         return Ok(true);
                     }
@@ -359,7 +359,7 @@ impl Function<'_, '_, '_, '_> {
             StmtKind::Throw(_) => true,
             StmtKind::Try { body, handlers } => {
                 let mut throws = self.statement_throws(body)?;
-                for handler in self.tree.handlers.get(handlers) {
+                for handler in self.tree.handlers.get(handlers).to_vec() {
                     throws |= self.statement_throws(handler.body)?;
                 }
                 throws
@@ -448,8 +448,9 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn constructor_plan_throws(&mut self, id: ConstructorId) -> Result<bool, Error> {
         self.check_stack()?;
-        let plan = self.graph.lower_constructor(id);
-        if let Some(actions) = plan.copy {
+
+        if let Some(actions) = self.graph.lower_constructor(id).copy {
+            let actions = actions.to_vec();
             for action in actions {
                 if let Some(constructor) = action.constructor
                     && !self.graph.lower_constructor_trivial(constructor)
@@ -460,19 +461,27 @@ impl Function<'_, '_, '_, '_> {
             }
             return Ok(false);
         }
-        if let Some(delegation) = plan.delegation {
+        if let Some(delegation) = self.graph.lower_constructor(id).delegation {
             return Ok(
                 !Entry::Constructor(delegation.constructor, Variant::Complete)
-                    .facts(self.graph)?
+                    .facts(&*self.graph)?
                     .nothrow
                     || self.initializer_throws(Some(delegation.initializer))?,
             );
         }
-        for base in plan.bases.iter().chain(plan.indirect_bases) {
+        for base_index in 0..self.graph.lower_constructor(id).bases.len()
+            + self.graph.lower_constructor(id).indirect_bases.len()
+        {
+            let plan = self.graph.lower_constructor(id);
+            let base = if base_index < plan.bases.len() {
+                plan.bases[base_index]
+            } else {
+                plan.indirect_bases[base_index - plan.bases.len()]
+            };
             if let Some(constructor) = base.constructor
                 && !self.graph.lower_constructor_trivial(constructor)
                 && !Entry::Constructor(constructor, Variant::Base)
-                    .facts(self.graph)?
+                    .facts(&*self.graph)?
                     .nothrow
             {
                 return Ok(true);
@@ -481,12 +490,14 @@ impl Function<'_, '_, '_, '_> {
                 return Ok(true);
             }
         }
-        for &(_, initializer) in plan.members {
+        for member_index in 0..self.graph.lower_constructor(id).members.len() {
+            let (_, initializer) = self.graph.lower_constructor(id).members[member_index];
             if self.initializer_throws(initializer)? {
                 return Ok(true);
             }
         }
-        for child in plan.subobjects {
+        for child_index in 0..self.graph.lower_constructor(id).subobjects.len() {
+            let child = self.graph.lower_constructor(id).subobjects[child_index];
             let constructor = child.constructor;
             if self.graph.lower_anonymous_constructor(constructor) {
                 if self.constructor_plan_throws(constructor)? {
@@ -495,7 +506,7 @@ impl Function<'_, '_, '_, '_> {
                 continue;
             }
             if !Entry::Constructor(constructor, Variant::Complete)
-                .facts(self.graph)?
+                .facts(&*self.graph)?
                 .nothrow
             {
                 return Ok(true);

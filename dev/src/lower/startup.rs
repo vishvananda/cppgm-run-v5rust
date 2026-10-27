@@ -2,17 +2,14 @@
 // function_lowering.cpp::lower_dynamic_initializer/object_lowering.cpp::construct_global.
 // See NOTICE.
 //! One program-owned startup body; source facts and scratch end with each initializer.
-use super::{Error, function::Function, symbols::Symbols, types};
+use super::{Error, function::Function, types};
 use crate::{
     lowir::{
         builder::{FunctionBuilder, SuspendedFunction},
         model::{InstructionKind as I, Metadata, Program, SymbolId, Value},
         vocabulary::{Binding, Role, Type},
     },
-    sema::{
-        Graph,
-        lowering::{EntityId, TypeView},
-    },
+    sema::lowering::{EntityId, TypeView},
     support::stack::StackBudget,
     syntax::ast,
 };
@@ -72,29 +69,29 @@ impl Startup {
         builder.block("entry")?;
         Ok(builder)
     }
-    pub(super) fn initialize<'a>(
+    pub(super) fn initialize(
         &mut self,
         (program, definitions, finalizers): (
             &mut Program,
             &mut super::definition_order::Definitions,
             &mut Vec<super::shutdown::Finalizer>,
         ),
-        symbols: &mut Symbols<'a, '_>,
-        source: (&'a Graph, &'a ast::Tree),
+        cx: &mut crate::lower::unit_frontend::Context<'_, '_, '_>,
         (entity, initializer, dynamic): (EntityId, Option<ast::Initializer>, bool),
         budget: StackBudget,
         guard: Option<Guard>,
     ) -> Result<(), Error> {
-        let (graph, tree) = source;
-        symbols.request_initialization(program)?;
+        cx.symbols
+            .view(&*cx.graph, &*cx.tree, cx.cursor)
+            .request_initialization(program)?;
         let symbol =
-            symbols
+            cx.symbols
                 .initialization
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "startup symbol missing",
                 )))?;
         let builder = self.builder(program, symbol)?;
-        let mut function = Function::new(graph, tree, builder, symbols, None, None, budget);
+        let mut function = Function::new(cx.borrow(), builder, None, None, budget);
         function.terminated = self.terminated;
         function.handlers.next_selector = self.selector;
         function.persistent_references = true;
@@ -104,20 +101,30 @@ impl Startup {
             definitions,
             finalizers,
         });
-        let saved = function.symbols.replace_temporary_owner(Some((entity, 0)));
+        let saved = function
+            .symbols
+            .view(&*function.graph, &*function.tree, function.cursor)
+            .replace_temporary_owner(Some((entity, 0)));
         let unordered = guard.is_some() && dynamic;
         if unordered {
-            function.symbols.begin_owned_temporaries(entity);
+            function
+                .symbols
+                .view(&*function.graph, &*function.tree, function.cursor)
+                .begin_owned_temporaries(entity);
         }
         let result = function.initialize_guarded_global(entity, initializer, guard, dynamic);
         let finished = if unordered {
             function
                 .symbols
+                .view(&*function.graph, &*function.tree, function.cursor)
                 .end_owned_temporaries(function.builder.program())
         } else {
             Ok(())
         };
-        function.symbols.replace_temporary_owner(saved);
+        function
+            .symbols
+            .view(&*function.graph, &*function.tree, function.cursor)
+            .replace_temporary_owner(saved);
         result?;
         finished?;
         self.terminated = function.terminated;
@@ -138,16 +145,27 @@ impl Startup {
         Ok(())
     }
 }
-impl<'a, 'source> Function<'a, 'source, '_, '_> {
+impl<'source> Function<'_, 'source, '_, '_> {
     /// Suspend only this function's construction while a data address defines
     /// its dependencies. Startup fragments share the current body; ordinary
     /// functions borrow the unit's independent startup owner.
     pub(super) fn with_static_data<T>(
         &mut self,
-        action: impl FnOnce(&mut dyn super::data::Output, &mut Symbols<'a, 'source>) -> Result<T, Error>,
+        action: impl FnOnce(
+            &mut dyn super::data::Output,
+            &mut crate::lower::unit_frontend::Context<'_, 'source, '_>,
+        ) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let Some(mut output) = self.initialization_output.take() else {
-            return action(self.builder.program(), self.symbols);
+            return action(
+                self.builder.program(),
+                &mut crate::lower::unit_frontend::Context {
+                    graph: self.graph,
+                    tree: self.tree,
+                    cursor: self.cursor,
+                    symbols: self.symbols,
+                },
+            );
         };
         let inline = output.startup.is_none();
         let mut current = Startup {
@@ -163,7 +181,12 @@ impl<'a, 'source> Function<'a, 'source, '_, '_> {
                 definitions: output.definitions,
                 finalizers: output.finalizers,
             },
-            self.symbols,
+            &mut crate::lower::unit_frontend::Context {
+                graph: self.graph,
+                tree: self.tree,
+                cursor: self.cursor,
+                symbols: self.symbols,
+            },
         );
         self.initialization_output = Some(output);
         if let Some(body) = current.body {
@@ -207,8 +230,7 @@ impl Function<'_, '_, '_, '_> {
         if self.symbols.instance_variables.is_empty() {
             return Ok(());
         }
-        let (graph, tree) = (self.graph, self.tree);
-        self.with_static_data(|output, symbols| output.referenced_variable(symbols, graph, tree))
+        self.with_static_data(|output, cx| output.referenced_variable(cx))
     }
     fn initialize_guarded_global(
         &mut self,
@@ -275,9 +297,14 @@ impl Function<'_, '_, '_, '_> {
             self.initialize_global(entity, initializer)?;
             self.destroy_temporaries(0)?;
         }
-        if self.symbols.object_mode() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .object_mode()
+        {
             let symbol = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .variable_symbol(self.builder.program(), entity)?;
             self.register_static_destruction(symbol, self.graph.lower_entity_type(entity)?)?;
         }
@@ -291,6 +318,7 @@ impl Function<'_, '_, '_, '_> {
         let ty = self.graph.lower_entity_type(entity)?;
         let symbol = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .variable_symbol(self.builder.program(), entity)?;
         let storage = Value::Symbol(symbol);
         match self.graph.lower_type(ty)? {
@@ -326,7 +354,7 @@ impl Function<'_, '_, '_, '_> {
                     self.bind_reference(expr, ty, super::conversions::Context::Initialization)?
                 };
                 self.effect(I::Store(
-                    types::memory(self.graph, ty)?,
+                    types::memory(&*self.graph, ty)?,
                     Type::Ptr,
                     address,
                     storage,

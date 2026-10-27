@@ -99,6 +99,8 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(crate::sema::Error::Invariant("copy default signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let function = self
             .graph
             .lower_constructor_entity(id)
@@ -106,7 +108,11 @@ impl Function<'_, '_, '_, '_> {
         let mut made = false;
         for (index, &parameter) in parameters.iter().enumerate().skip(1) {
             made |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                && self.symbols.storage_destructor(parameter)?.is_some();
+                && self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .storage_destructor(parameter)?
+                    .is_some();
             if let Some(expression) = self.graph.lower_default(function, index) {
                 made |= self.expression_temporaries(expression)?.made;
             }

@@ -50,7 +50,7 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(crate::sema::Error::Invariant("overflow result pointer").into());
         };
-        let stored = types::storage(self.graph, result)?;
+        let stored = types::storage(&*self.graph, result)?;
         let target = Target {
             pointer: address.value,
             stored,

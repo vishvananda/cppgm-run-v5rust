@@ -124,7 +124,7 @@ impl Function<'_, '_, '_, '_> {
             .any(|h| matches!(h.exception, ast::ExceptionDeclaration::Ellipsis))
     }
     fn emit_clauses(&mut self, clauses: List<ast::Handler>) -> Result<bool, Error> {
-        for handler in self.tree.handlers.get(clauses) {
+        for handler in self.tree.handlers.get(clauses).to_vec() {
             let selector = Some(i64::from(self.handler_selector(handler.body)?));
             if matches!(handler.exception, ast::ExceptionDeclaration::Ellipsis) {
                 self.effect(I::Runtime(R::EhCatchAll(selector)))?;
@@ -137,6 +137,7 @@ impl Function<'_, '_, '_, '_> {
             };
             let symbol = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .exception_type_information(self.builder.program(), ty)?;
             self.effect(I::Runtime(R::EhCatch(symbol, selector)))?;
         }
@@ -224,7 +225,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.jump(context.entry)?;
         self.place(context.entry)?;
-        for &handler in self.tree.handlers.get(context.clauses) {
+        for handler in self.tree.handlers.get(context.clauses).to_vec() {
             let source = self
                 .result
                 .ok_or(crate::sema::Error::Invariant("handler without function"))?;
@@ -332,7 +333,9 @@ impl Function<'_, '_, '_, '_> {
                 TypeView::Reference { element, .. } => element,
                 _ => ty,
             };
-            self.symbols.caught_type(self.builder.program(), object)?;
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .caught_type(self.builder.program(), object)?;
             if let Some(entity) = entity {
                 self.catch_variable(
                     entity,
@@ -373,11 +376,15 @@ impl Function<'_, '_, '_, '_> {
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let reference = matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. });
-        let storage = types::storage(self.graph, ty)?;
+        let storage = types::storage(&*self.graph, ty)?;
         let name = self
             .graph
             .lower_local_name(entity)
-            .map(|name| self.symbols.parameter_name(name))
+            .map(|name| {
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .parameter_name(name)
+            })
             .transpose()?;
         let slot = if let Some(name) = name {
             self.builder.slot(&name, storage)?
@@ -448,7 +455,10 @@ impl Function<'_, '_, '_, '_> {
         if let Some(constructor) = self.graph.lower_construction(entity) {
             // The host handler becomes active only after its copy
             // completes. A throw before then must terminate (15.3p7).
-            let guarded = self.symbols.host_objects()
+            let guarded = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
                 && (!self.graph.lower_constructor_function(constructor)?.nothrow
                     || self.lifetime.temporary_segment.allows_eager_arguments());
             let region = if guarded {
@@ -473,7 +483,11 @@ impl Function<'_, '_, '_, '_> {
                 self.place(next)?;
             }
         }
-        if self.symbols.host_objects() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .host_objects()
+        {
             // Default-argument temporaries end with initialization,
             // before the handler's statements (1.9p10).
             self.destroy_temporaries(first)?;
@@ -490,6 +504,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Value, Error> {
         let symbol = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .runtime_function(self.builder.program(), role)?;
         let arguments = self.builder.arguments(operands)?;
         let call = I::Call(Call {
@@ -531,7 +546,10 @@ impl Function<'_, '_, '_, '_> {
         // cleanup_lowering.cpp::emit_resume: object mode terminates directly
         // under a nonthrowing function guard after all applicable tries.
         // The serialized view instead resumes into that guard.
-        if self.symbols.object_mode()
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .object_mode()
             && self.lifetime.function_guard.is_some()
             && self.lifetime.unexpected_specification.is_none()
             && (outside_tries || self.innermost_try().is_none())

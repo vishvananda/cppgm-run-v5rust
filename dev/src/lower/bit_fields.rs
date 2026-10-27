@@ -248,7 +248,7 @@ impl Function<'_, '_, '_, '_> {
             if let Some(layout) = self.graph.lower_bit_field(member)? {
                 layout.bit.wrapping_add(layout.width).wrapping_add(7) / 8
             } else {
-                start.wrapping_add(types::layout(self.graph, action.ty)?.0)
+                start.wrapping_add(types::layout(&*self.graph, action.ty)?.0)
             }
         } else if let crate::sema::lowering::TypeView::Class(base) =
             self.graph.lower_type(action.ty)?
@@ -264,7 +264,7 @@ impl Function<'_, '_, '_, '_> {
             crate::sema::Error::Invariant("field access without bit-field"),
         ))?;
         let source = self.graph.lower_entity_type(entity)?;
-        let declared = types::storage(self.graph, source)?;
+        let declared = types::storage(&*self.graph, source)?;
         let declared_bits = declared.bits();
         let width = u32::try_from(layout.width.min(u64::from(declared_bits)))
             .map_err(|_| crate::lowir::Error::Limit)?;

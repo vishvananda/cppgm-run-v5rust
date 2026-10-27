@@ -97,7 +97,12 @@ pub(crate) fn assert_covariant_routes(
     let (old, own) = (slots[0].unwrap(), slots[1].unwrap());
     assert_eq!(old.function, own.function);
     let mut table = super::SymbolTable::default();
-    let mut symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
+    let mut symbol_state = crate::lower::symbols::State::new(
+        graph,
+        StackBudget::default(),
+        std::mem::take(&mut table),
+    );
+    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
     let result = symbols
         .result_adjustment(own.function, old.kind, old.adjusted, class)
         .unwrap()
@@ -274,12 +279,14 @@ impl Symbols<'_, '_> {
         before: Option<SymbolId>,
     ) -> Result<(), Error> {
         while self
+            .state
             .vtables
             .pending
             .front()
             .is_some_and(|(symbol, _)| before.is_none_or(|limit| symbol.index() < limit.index()))
         {
             let (symbol, metadata) = self
+                .state
                 .vtables
                 .pending
                 .pop_front()
@@ -314,13 +321,18 @@ impl Symbols<'_, '_> {
     ) -> Result<(String, String), Error> {
         let node = self.abi_type(self.graph.lower_entity_type(class)?)?;
         let mut encoded = Vec::new();
-        Encoder::encode(&self.abi, Target::Type(node), &mut encoded, self.budget)?;
+        Encoder::encode(
+            &self.state.abi,
+            Target::Type(node),
+            &mut encoded,
+            self.state.budget,
+        )?;
         let name = String::from_utf8(encoded)
             .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI class name"))?;
         let mut object = Vec::new();
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             match kind {
                 ClassObject::Table => Target::Vtable(node),
                 ClassObject::Vtt => Target::Vtt(node),
@@ -328,7 +340,7 @@ impl Symbols<'_, '_> {
                 ClassObject::Name => Target::TypeinfoName(node),
             },
             &mut object,
-            self.budget,
+            self.state.budget,
         )?;
         Ok((
             name,
@@ -344,7 +356,7 @@ impl Symbols<'_, '_> {
     ) -> Result<(SymbolId, Metadata), Error> {
         let (encoding, object) = self.class_encoding(class, kind)?;
         let (mut internal, local, key, scope) = self.graph.lower_virtual_class_identity(class)?;
-        if self.table.object_mode {
+        if self.state.table.object_mode {
             internal = self
                 .graph
                 .lower_object_type_unit_local(self.graph.lower_entity_type(class)?)?;
@@ -403,8 +415,9 @@ impl Symbols<'_, '_> {
         // local_object: only the first internal symbol with this ABI spelling
         // owns it. Later definitions use their unique LowIR symbol name.
         let object_name =
-            (!internal || !self.table.objects.contains_key(&object)).then_some(object);
+            (!internal || !self.state.table.objects.contains_key(&object)).then_some(object);
         let symbol = self
+            .state
             .table
             .allocate(program, &spelling, Some(object), internal)?;
         let metadata = Metadata {
@@ -429,7 +442,7 @@ impl Symbols<'_, '_> {
                     defined: false,
                 },
             );
-            self.vtables.pending.push_back((symbol, metadata));
+            self.state.vtables.pending.push_back((symbol, metadata));
         }
         Ok((symbol, metadata))
     }
@@ -449,13 +462,13 @@ impl Symbols<'_, '_> {
         class: EntityId,
     ) -> Result<SymbolId, Error> {
         self.check_stack()?;
-        if let Some(&symbol) = self.vtables.objects.get(&class) {
+        if let Some(&symbol) = self.state.vtables.objects.get(&class) {
             return Ok(symbol);
         }
         let facts = self.graph.lower_virtual_class(class)?;
         let key = facts.key;
         let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Table)?;
-        self.vtables.objects.insert(class, symbol);
+        self.state.vtables.objects.insert(class, symbol);
         if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
             return Ok(symbol);
         }
@@ -491,12 +504,12 @@ impl Symbols<'_, '_> {
                 metadata.binding,
             )?);
         }
-        let one_object = self.table.object_mode && group.is_some();
+        let one_object = self.state.table.object_mode && group.is_some();
         if one_object {
             self.append_group_items(program, class, metadata.binding, &mut items)?;
         }
         define(program, symbol, metadata, items)?;
-        self.table.work.vtables += 1;
+        self.state.table.work.vtables += 1;
         if group.is_some() && !one_object {
             self.define_views(program, class, symbol, metadata.binding)?;
         }
@@ -572,14 +585,14 @@ impl Symbols<'_, '_> {
             return Ok(None);
         }
         let key = (function, adjusted, through);
-        if let Some(&known) = self.vtables.return_adjustments.get(&key) {
+        if let Some(&known) = self.state.vtables.return_adjustments.get(&key) {
             return Ok(known);
         }
         let Some(classes) = self
             .graph
             .lower_covariant_result(function, adjusted, through)?
         else {
-            self.vtables.return_adjustments.insert(key, None);
+            self.state.vtables.return_adjustments.insert(key, None);
             return Ok(None);
         };
         let route = if let Some(through) = classes.through {
@@ -602,16 +615,20 @@ impl Symbols<'_, '_> {
             offset: i64::from_ne_bytes(route.offset.to_ne_bytes()),
             reference: classes.reference,
         });
-        self.vtables.return_adjustments.insert(key, adjustment);
+        self.state
+            .vtables
+            .return_adjustments
+            .insert(key, adjustment);
         Ok(adjustment)
     }
     pub(super) fn segment_offsets(&mut self, class: EntityId) -> Result<&[u64], Error> {
-        if !self.vtables.offsets.contains_key(&class) {
-            self.vtables
+        if !self.state.vtables.offsets.contains_key(&class) {
+            self.state
+                .vtables
                 .offsets
                 .insert(class, self.graph.lower_segment_offsets(class)?);
         }
-        Ok(&self.vtables.offsets[&class])
+        Ok(&self.state.vtables.offsets[&class])
     }
     fn class_presentation(&mut self, class: EntityId) -> Result<String, Error> {
         let (_, _, _, scope) = self.graph.lower_virtual_class_identity(class)?;
@@ -649,26 +666,28 @@ impl Symbols<'_, '_> {
             let top = self.class_presentation(class)?;
             let spelling = format!(
                 "{top}____view__{base}__{}__vtable",
-                self.vtables.offsets[&class][index]
+                self.state.vtables.offsets[&class][index]
             );
-            views.push(Some(self.table.allocate(program, &spelling, None, true)?));
+            views.push(Some(
+                self.state.table.allocate(program, &spelling, None, true)?,
+            ));
         }
-        self.vtables.views.insert(class, views);
+        self.state.vtables.views.insert(class, views);
         let typeinfo = self.typeinfo_symbol(program, class)?;
         for index in 1..group.segments.len() {
-            let Some(symbol) = self.vtables.views[&class][index] else {
+            let Some(symbol) = self.state.vtables.views[&class][index] else {
                 continue;
             };
             let mut items = self.table_rows(class, index)?;
             items.extend([
                 integer(
                     Type::I64,
-                    self.vtables.offsets[&class][index].wrapping_neg(),
+                    self.state.vtables.offsets[&class][index].wrapping_neg(),
                 ),
                 address(typeinfo, 0),
             ]);
             self.append_view_targets(program, class, index, binding, &mut items)?;
-            self.table.work.vtables += 1;
+            self.state.table.work.vtables += 1;
             define(
                 program,
                 symbol,
@@ -745,7 +764,7 @@ impl Symbols<'_, '_> {
             items.extend([
                 integer(
                     Type::I64,
-                    self.vtables.offsets[&class][index].wrapping_neg(),
+                    self.state.vtables.offsets[&class][index].wrapping_neg(),
                 ),
                 address(typeinfo, 0),
             ]);
@@ -769,13 +788,13 @@ impl Symbols<'_, '_> {
         if segment == 0 {
             return Ok((symbol, self.table_header_bytes(class, 0)?));
         }
-        if let Some(views) = self.vtables.views.get(&class) {
+        if let Some(views) = self.state.vtables.views.get(&class) {
             return Ok((
                 views[segment].ok_or(crate::sema::Error::Invariant("missing view symbol"))?,
                 self.table_header_bytes(class, segment)?,
             ));
         }
-        if !self.vtables.address_points.contains_key(&class) {
+        if !self.state.vtables.address_points.contains_key(&class) {
             let primary = self.table_header_bytes(class, 0)?;
             let mut points = vec![primary];
             let mut position =
@@ -790,9 +809,9 @@ impl Symbols<'_, '_> {
                 position = point
                     .wrapping_add(u64::from(self.graph.lower_virtual_class(part.class)?.size) * 8);
             }
-            self.vtables.address_points.insert(class, points);
+            self.state.vtables.address_points.insert(class, points);
         }
-        Ok((symbol, self.vtables.address_points[&class][segment]))
+        Ok((symbol, self.state.vtables.address_points[&class][segment]))
     }
     fn thunk_symbol(
         &mut self,
@@ -811,11 +830,11 @@ impl Symbols<'_, '_> {
             result,
             internal,
         };
-        if let Some(&index) = self.vtables.thunk_symbols.get(&key) {
+        if let Some(&index) = self.state.vtables.thunk_symbols.get(&key) {
             if strong && !internal {
-                self.vtables.thunks[index].metadata.binding = Some(Binding::Strong);
+                self.state.vtables.thunks[index].metadata.binding = Some(Binding::Strong);
             }
-            return Ok(self.vtables.thunks[index].symbol);
+            return Ok(self.state.vtables.thunks[index].symbol);
         }
         let facts = self.entry_facts(entry)?;
         let target = self.entry_symbol(program, entry)?;
@@ -830,9 +849,9 @@ impl Symbols<'_, '_> {
             .map(|(from, via)| self.vbase_row_offset(from, via))
             .transpose()?;
         let mut object = Vec::new();
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             Target::Thunk {
                 function,
                 this: CallOffset {
@@ -845,7 +864,7 @@ impl Symbols<'_, '_> {
                 }),
             },
             &mut object,
-            self.budget,
+            self.state.budget,
         )?;
         let object = program.names.intern_bytes(&object)?;
         let returned = result.map_or(0, |r| r.offset);
@@ -878,6 +897,7 @@ impl Symbols<'_, '_> {
             .map_err(|_| crate::sema::Error::Invariant("thunk result spelling"))?;
         }
         let symbol = self
+            .state
             .table
             .allocate(program, &spelling, Some(object), internal)?;
         let entity = entry
@@ -924,19 +944,20 @@ impl Symbols<'_, '_> {
             },
         };
         let variadic = signature.boundary.arity == crate::lowir::model::Arity::Variadic;
-        if self.table.object_mode && variadic && result.is_some() {
+        if self.state.table.object_mode && variadic && result.is_some() {
             return Err(crate::sema::Error::Diagnostic {
                 location: crate::support::source::SourceOffset(0),
                 message: "a covariant thunk of a variadic function",
             }
             .into());
         }
-        let jump =
-            self.table.object_mode && (variadic || self.table.host_objects && result.is_none());
+        let jump = self.state.table.object_mode
+            && (variadic || self.state.table.host_objects && result.is_none());
         let signature = program.add_signature(signature)?;
-        self.vtables
+        self.state
+            .vtables
             .thunk_symbols
-            .insert(key, self.vtables.thunks.len());
+            .insert(key, self.state.vtables.thunks.len());
         let family = if matches!(
             facts.name,
             crate::sema::lowering::FunctionName::Destructor(_)
@@ -950,7 +971,7 @@ impl Symbols<'_, '_> {
                 // Object-family aliases are backend observations. The C++
                 // lowering neither mangles nor interns these extra aliases.
                 Encoder::encode(
-                    &self.abi,
+                    &self.state.abi,
                     Target::Thunk {
                         function,
                         this: CallOffset {
@@ -960,7 +981,7 @@ impl Symbols<'_, '_> {
                         result: None,
                     },
                     &mut object,
-                    self.budget,
+                    self.state.budget,
                 )?;
                 Some(program.names.intern_view_bytes(&object)?)
             };
@@ -968,7 +989,7 @@ impl Symbols<'_, '_> {
         } else {
             None
         };
-        self.vtables.thunks.push(Thunk {
+        self.state.vtables.thunks.push(Thunk {
             symbol,
             target,
             signature,
@@ -1001,7 +1022,7 @@ impl Symbols<'_, '_> {
             builder::FunctionBuilder,
             model::{Boundary, Call, InstructionKind as I, Value},
         };
-        for thunk in &self.vtables.thunks[self.vtables.pending_thunk..] {
+        for thunk in &self.state.vtables.thunks[self.state.vtables.pending_thunk..] {
             if program.function_defined(thunk.symbol) {
                 continue;
             }
@@ -1164,15 +1185,19 @@ impl Symbols<'_, '_> {
             builder.effect(I::Return(result, returned))?;
             builder.finish()?;
             let family = if let Some((entity, object, variant)) =
-                thunk.family.filter(|_| !self.table.object_mode)
+                thunk.family.filter(|_| !self.state.table.object_mode)
             {
-                let family = if let Some(&family) =
-                    self.vtables.thunk_families.get(&(entity, thunk.adjustment))
+                let family = if let Some(&family) = self
+                    .state
+                    .vtables
+                    .thunk_families
+                    .get(&(entity, thunk.adjustment))
                 {
                     family
                 } else {
                     let family = definitions.family(object)?;
-                    self.vtables
+                    self.state
+                        .vtables
                         .thunk_families
                         .insert((entity, thunk.adjustment), family);
                     family
@@ -1183,7 +1208,7 @@ impl Symbols<'_, '_> {
             };
             definitions.stream(program, family)?;
         }
-        self.vtables.pending_thunk = self.vtables.thunks.len();
+        self.state.vtables.pending_thunk = self.state.vtables.thunks.len();
         Ok(())
     }
     pub(super) fn rtti_vtable(
@@ -1240,7 +1265,7 @@ impl Symbols<'_, '_> {
             ),
         };
         let object = program.names.intern(object)?;
-        let symbol = self.table.allocate(
+        let symbol = self.state.table.allocate(
             program,
             &format!("__external_rtti_vtable__{name}"),
             Some(object),
@@ -1265,14 +1290,14 @@ impl Symbols<'_, '_> {
         Ok(symbol)
     }
     fn typeinfo_name(&mut self, program: &mut Program, class: EntityId) -> Result<SymbolId, Error> {
-        if let Some(&symbol) = self.vtables.names.get(&class) {
+        if let Some(&symbol) = self.state.vtables.names.get(&class) {
             return Ok(symbol);
         }
         let (symbol, metadata) = self.class_global(program, class, ClassObject::Name)?;
-        self.vtables.names.insert(class, symbol);
+        self.state.vtables.names.insert(class, symbol);
         if !defined(program, symbol) {
             let (mut name, _) = self.class_encoding(class, ClassObject::Name)?;
-            if self.table.object_mode
+            if self.state.table.object_mode
                 && self
                     .graph
                     .lower_private_type_name(self.graph.lower_entity_type(class)?)?
@@ -1302,11 +1327,11 @@ impl Symbols<'_, '_> {
         derived: bool,
     ) -> Result<SymbolId, Error> {
         self.check_stack()?;
-        let (symbol, metadata) = if let Some(&known) = self.vtables.typeinfos.get(&class) {
+        let (symbol, metadata) = if let Some(&known) = self.state.vtables.typeinfos.get(&class) {
             known
         } else {
             let result = self.class_global(program, class, ClassObject::Typeinfo)?;
-            self.vtables.typeinfos.insert(class, result);
+            self.state.vtables.typeinfos.insert(class, result);
             result
         };
         // A primary class object's information follows its vtable owner;
@@ -1399,7 +1424,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         entity: EntityId,
     ) -> Result<SignatureId, Error> {
-        if let Some(&signature) = self.vtables.signatures.get(&entity) {
+        if let Some(&signature) = self.state.vtables.signatures.get(&entity) {
             return Ok(signature);
         }
         let facts = self.function_facts(entity)?;
@@ -1435,7 +1460,7 @@ impl Symbols<'_, '_> {
             let name = program.names.intern(&format!("arg{index}"))?;
             program.signature_mut(signature).parameters[index].name = name;
         }
-        self.vtables.signatures.insert(entity, signature);
+        self.state.vtables.signatures.insert(entity, signature);
         Ok(signature)
     }
     fn pure_virtual_symbol(
@@ -1443,10 +1468,11 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         entity: EntityId,
     ) -> Result<SymbolId, Error> {
-        if let Some(symbol) = self.vtables.pure_virtual {
+        if let Some(symbol) = self.state.vtables.pure_virtual {
             return Ok(symbol);
         }
         let symbol = self
+            .state
             .table
             .allocate(program, "__cxa_pure_virtual", None, true)?;
         let signature = self.virtual_signature(program, entity)?;
@@ -1491,15 +1517,15 @@ impl Symbols<'_, '_> {
             },
         )?;
         program.publish_runtime_declaration(symbol);
-        self.vtables.pure_virtual = Some(symbol);
+        self.state.vtables.pure_virtual = Some(symbol);
         Ok(symbol)
     }
     fn prepare_definition_thunks(&mut self, class: EntityId) -> Result<(), Error> {
-        if self.vtables.definition_classes.contains(&class) {
+        if self.state.vtables.definition_classes.contains(&class) {
             return Ok(());
         }
-        if !self.vtables.definitions_indexed {
-            self.vtables.definitions_indexed = true;
+        if !self.state.vtables.definitions_indexed {
+            self.state.vtables.definitions_indexed = true;
             // Completion order puts each base before its derived classes.
             for &grouped in self.graph.lower_grouped_classes() {
                 let group = self
@@ -1512,30 +1538,37 @@ impl Symbols<'_, '_> {
                     }) || self
                         .graph
                         .lower_inheritance_edges(grouped)
-                        .any(|(base, _)| self.vtables.construction_sensitive.contains(&base))
+                        .any(|(base, _)| self.state.vtables.construction_sensitive.contains(&base))
                         || self
                             .graph
                             .lower_virtual_bases(grouped)
                             .iter()
-                            .any(|(base, _)| self.vtables.construction_sensitive.contains(base));
+                            .any(|(base, _)| {
+                                self.state.vtables.construction_sensitive.contains(base)
+                            });
                 if sensitive {
-                    self.vtables.construction_sensitive.insert(grouped);
+                    self.state.vtables.construction_sensitive.insert(grouped);
                 }
             }
             for &grouped in self.graph.lower_grouped_classes() {
-                if self.vtables.definition_classes.insert(grouped) {
+                if self.state.vtables.definition_classes.insert(grouped) {
                     self.index_definition_thunks(grouped)?;
                 }
             }
         }
-        if self.vtables.definition_classes.insert(class) {
+        if self.state.vtables.definition_classes.insert(class) {
             self.index_definition_thunks(class)?;
         }
         Ok(())
     }
     fn index_construction_thunks(&mut self, context: TableContext, top: bool) -> Result<(), Error> {
         self.check_stack()?;
-        if !self.vtables.construction_sensitive.contains(&context.class) {
+        if !self
+            .state
+            .vtables
+            .construction_sensitive
+            .contains(&context.class)
+        {
             return Ok(());
         }
         let graph = self.graph;
@@ -1662,7 +1695,7 @@ impl Symbols<'_, '_> {
         if target.adjustment.is_zero() && result.is_none() {
             return Ok(());
         }
-        self.vtables.definition_targets.note(target);
+        self.state.vtables.definition_targets.note(target);
         Ok(())
     }
     fn virtual_thunk_level(
@@ -1727,9 +1760,15 @@ impl Symbols<'_, '_> {
                 ))?
                 .metadata
                 .binding;
-            let mut next = self.vtables.definition_targets.heads.get(&entity).copied();
+            let mut next = self
+                .state
+                .vtables
+                .definition_targets
+                .heads
+                .get(&entity)
+                .copied();
             while let Some(index) = next {
-                let node = &self.vtables.definition_targets.nodes[index];
+                let node = &self.state.vtables.definition_targets.nodes[index];
                 let target = node.target;
                 next = node.next;
                 self.table_entry_symbol(
@@ -1762,13 +1801,12 @@ pub(crate) fn assert_definition_destructor_targets(
         host_objects: true,
         ..crate::lower::symbols::SymbolTable::default()
     };
-    let mut symbols = Symbols::new(
+    let mut symbol_state = crate::lower::symbols::State::new(
         graph,
-        tree,
-        cursor,
         crate::support::stack::StackBudget::default(),
-        &mut table,
+        std::mem::take(&mut table),
     );
+    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
     let mut program = Program::default();
     let target = TableTarget {
         function,
@@ -1858,13 +1896,12 @@ pub(crate) fn assert_table_demand(
     );
     let mut program = Program::default();
     let mut table = super::SymbolTable::default();
-    let mut symbols = Symbols::new(
+    let mut symbol_state = crate::lower::symbols::State::new(
         graph,
-        tree,
-        cursor,
         crate::support::stack::StackBudget::default(),
-        &mut table,
+        std::mem::take(&mut table),
     );
+    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
     let first = symbols.vtable_symbol(&mut program, b).unwrap();
     let counts = (
         program.globals().len(),
@@ -1897,7 +1934,12 @@ pub(crate) fn assert_hierarchy_flags(
     use crate::{sema::lowering::TypeView, support::stack::StackBudget};
     let program = Program::default();
     let mut table = super::SymbolTable::default();
-    let symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
+    let mut symbol_state = crate::lower::symbols::State::new(
+        graph,
+        StackBudget::default(),
+        std::mem::take(&mut table),
+    );
+    let symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
     assert_eq!(parameters.len(), 6);
     for (((&ty, expected), slots), layout) in parameters
         .iter()
@@ -1936,7 +1978,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         class: EntityId,
     ) -> Result<SymbolId, Error> {
-        if let Some(&symbol) = self.vtables.vtts.get(&class) {
+        if let Some(&symbol) = self.state.vtables.vtts.get(&class) {
             return Ok(symbol);
         }
         // Preserve the oracle's demand order: a first VTT request publishes
@@ -1945,7 +1987,7 @@ impl Symbols<'_, '_> {
         // each allocate a definition, and the outer one becomes the memo.
         self.vtable_symbol(program, class)?;
         let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Vtt)?;
-        self.vtables.vtts.insert(class, symbol);
+        self.state.vtables.vtts.insert(class, symbol);
         if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
             return Ok(symbol);
         }
@@ -2112,7 +2154,7 @@ impl Symbols<'_, '_> {
         Ok((anchor, unused))
     }
     fn own_entry_thunk(&mut self, class: EntityId, slot: usize) -> Result<bool, Error> {
-        if let Some(&known) = self.vtables.own_entry_thunks.get(&(class, slot)) {
+        if let Some(&known) = self.state.vtables.own_entry_thunks.get(&(class, slot)) {
             return Ok(known);
         }
         let own = self.graph.lower_virtual_slots(class)?[slot]
@@ -2127,7 +2169,10 @@ impl Symbols<'_, '_> {
                 .result_adjustment(function, kind, own.adjusted, class)?
                 .is_some()
                 || group.is_some() && !self.entry_adjustment(class, 0, slot)?.is_zero());
-        self.vtables.own_entry_thunks.insert((class, slot), result);
+        self.state
+            .vtables
+            .own_entry_thunks
+            .insert((class, slot), result);
         Ok(result)
     }
 }

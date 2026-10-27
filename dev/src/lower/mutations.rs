@@ -24,7 +24,7 @@ impl Function<'_, '_, '_, '_> {
         if self.untyped_places.contains(&place) {
             Ok(Facts::memory(self.graph.lower_cv(source) & 2 != 0, false))
         } else {
-            types::memory(self.graph, source)
+            types::memory(&*self.graph, source)
         }
     }
     pub(super) fn scalar_place(&mut self, id: ast::ExprId) -> Result<Value, Error> {
@@ -111,8 +111,8 @@ impl Function<'_, '_, '_, '_> {
                 };
                 super::data::string(
                     self.builder.program(),
-                    self.symbols,
-                    self.graph,
+                    &mut self.symbols.view(&*self.graph, &*self.tree, self.cursor),
+                    &*self.graph,
                     literal,
                     element,
                 )
@@ -122,9 +122,12 @@ impl Function<'_, '_, '_, '_> {
             ExprKind::Member { base, op, .. } => {
                 if let Some(function) = self.graph.lower_designated_function(id)? {
                     self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
-                    self.symbols.demand(function);
+                    self.symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .demand(function);
                     return self
                         .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
                         .function_symbol(self.builder.program(), function)
                         .map(Value::Symbol);
                 }
@@ -169,9 +172,12 @@ impl Function<'_, '_, '_, '_> {
                     return Ok(place);
                 }
                 if let Some(function) = self.graph.lower_designated_function(id)? {
-                    self.symbols.demand(function);
+                    self.symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .demand(function);
                     return self
                         .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
                         .function_symbol(self.builder.program(), function)
                         .map(Value::Symbol);
                 }
@@ -307,6 +313,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Value, Error> {
         if let Some(place) = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .predefined_variable(self.builder.program(), entity)?
         {
             return Ok(place);
@@ -318,18 +325,25 @@ impl Function<'_, '_, '_, '_> {
         } else if let Some(alias) = self.graph.lower_binding_alias(entity) {
             self.binding_alias_place(alias, source, location)
         } else if !self.graph.lower_is_variable(entity) {
-            self.symbols.demand(entity);
             self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand(entity);
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .function_symbol(self.builder.program(), entity)
                 .map(Value::Symbol)
         } else {
             if self.graph.lower_block_static(entity) {
-                let place = self.symbols.existing_local_storage(entity).ok_or_else(|| {
-                    crate::sema::Error::at(
-                        location,
-                        "a static local variable of a function not lowered first",
-                    )
-                })?;
+                let place = self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .existing_local_storage(entity)
+                    .ok_or_else(|| {
+                        crate::sema::Error::at(
+                            location,
+                            "a static local variable of a function not lowered first",
+                        )
+                    })?;
                 return self.reference_holder(place, self.graph.lower_entity_type(entity)?);
             }
             if !self.graph.lower_program_storage(entity) {
@@ -356,12 +370,15 @@ impl Function<'_, '_, '_, '_> {
         } else if self.graph.lower_program_storage(object) {
             self.global_place(object)?
         } else if self.graph.lower_explicit_static(object) {
-            self.symbols.existing_local_storage(object).ok_or_else(|| {
-                self.field_diagnostic(
-                    id,
-                    "a static local variable of a function not lowered first",
-                )
-            })?
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .existing_local_storage(object)
+                .ok_or_else(|| {
+                    self.field_diagnostic(
+                        id,
+                        "a static local variable of a function not lowered first",
+                    )
+                })?
         } else {
             return Err(
                 self.field_diagnostic(id, "a variable outside the procedural lowering slice")
@@ -398,7 +415,7 @@ impl Function<'_, '_, '_, '_> {
         self.emit(
             I::Load(
                 self.place_memory(place, source)?,
-                types::storage(self.graph, source)?,
+                types::storage(&*self.graph, source)?,
                 place,
             ),
             source,
@@ -410,7 +427,7 @@ impl Function<'_, '_, '_, '_> {
         source: crate::sema::lowering::TypeId,
         value: Value,
     ) -> Result<(), Error> {
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         if self.graph.lower_cv(source) & 4 != 0 {
             self.write_atomic_place(place, source, value)
         } else {
@@ -430,10 +447,10 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(Value, RValue), Error> {
         let source = self.graph.lower_builtin_operand_type(operand)?;
         let place = self.scalar_place(operand)?;
-        let storage = types::storage(self.graph, source)?;
+        let storage = types::storage(&*self.graph, source)?;
         if self.graph.lower_cv(source) & 4 != 0
             && storage.bits() != 0
-            && !types::boolean(self.graph, source)?
+            && !types::boolean(&*self.graph, source)?
         {
             let one = RValue {
                 value: self.builder.integer(1)?,
@@ -456,11 +473,11 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 (None, self.read_place(place, source)?)
             };
-        let result = if super::complex::part(self.graph, source)?.is_some() {
+        let result = if super::complex::part(&*self.graph, source)?.is_some() {
             self.complex_increment(old, decrement)?
         } else if old.ty == Type::Ptr {
             self.pointer_step(old, decrement)?
-        } else if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+        } else if let Some(kind) = super::soft_float::kind(&*self.graph, source)? {
             let one = self.soft_constant(
                 kind,
                 match kind {
@@ -477,7 +494,7 @@ impl Function<'_, '_, '_, '_> {
                 one,
                 source,
             )?
-        } else if types::boolean(self.graph, source)? {
+        } else if types::boolean(&*self.graph, source)? {
             RValue {
                 value: self.builder.integer(1)?,
                 ty: old.ty,
@@ -498,7 +515,7 @@ impl Function<'_, '_, '_, '_> {
             };
             let operation = if decrement { Binary::Sub } else { Binary::Add };
             let nowrap =
-                types::signed(self.graph, source)? && matches!(old.ty, Type::I32 | Type::I64);
+                types::signed(&*self.graph, source)? && matches!(old.ty, Type::I32 | Type::I64);
             self.emit(
                 I::Binary(
                     operation,
@@ -526,11 +543,11 @@ impl Function<'_, '_, '_, '_> {
         right: ast::ExprId,
     ) -> Result<(Value, RValue), Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         if ty == Type::Ptr && matches!(op, P::AddAssign | P::SubtractAssign) {
             return self.pointer_compound(left, right, op == P::SubtractAssign, source);
         }
-        if op == P::AddAssign && types::boolean(self.graph, source)? {
+        if op == P::AddAssign && types::boolean(&*self.graph, source)? {
             let (operation, _) = self.graph.lower_arithmetic_types(id)?;
             if self.pointer_element(operation)?.is_some() {
                 return self.bool_pointer_compound(left, right, source, operation);
@@ -553,7 +570,7 @@ impl Function<'_, '_, '_, '_> {
             };
             let value =
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(right).kind {
-                    if super::complex::part(self.graph, source)?.is_some() {
+                    if super::complex::part(&*self.graph, source)?.is_some() {
                         self.complex_list(source, elements, Context::Assignment)?
                     } else if let Some(&element) = self.tree.expr_lists.get(elements).first() {
                         self.operand(element, Context::Assignment)?
@@ -574,7 +591,7 @@ impl Function<'_, '_, '_, '_> {
             ) {
                 return self.vector_compound_assignment(op, [left, right], [source, operation]);
             }
-            let bfloat = super::soft_float::kind(self.graph, operation)?
+            let bfloat = super::soft_float::kind(&*self.graph, operation)?
                 == Some(super::soft_float::Kind::BFloat);
             let mut rhs = if bfloat {
                 self.bfloat_promoted(right)?
@@ -587,7 +604,7 @@ impl Function<'_, '_, '_, '_> {
             let place = self.scalar_place(left)?;
             if self.graph.lower_cv(source) & 4 != 0
                 && ty.bits() != 0
-                && !types::boolean(self.graph, source)?
+                && !types::boolean(&*self.graph, source)?
                 && matches!((self.graph.lower_type(source)?, self.graph.lower_type(operation)?),
                     (crate::sema::lowering::TypeView::Scalar(a), crate::sema::lowering::TypeView::Scalar(b)) if a == b)
             {
@@ -632,7 +649,7 @@ impl Function<'_, '_, '_, '_> {
                 return Ok((place, value));
             }
             let lhs = self.convert(old, operation, Context::CompoundAssignment)?;
-            if super::complex::part(self.graph, operation)?.is_some() {
+            if super::complex::part(&*self.graph, operation)?.is_some() {
                 let token = match op {
                     P::AddAssign => P::Add,
                     P::SubtractAssign => P::Subtract,
@@ -645,7 +662,7 @@ impl Function<'_, '_, '_, '_> {
                 self.write_place(place, source, value.value)?;
                 return Ok((place, value));
             }
-            let signed = types::signed(self.graph, operation)?;
+            let signed = types::signed(&*self.graph, operation)?;
             let code = match op {
                 P::AddAssign => Binary::Add,
                 P::SubtractAssign => Binary::Sub,
@@ -653,7 +670,7 @@ impl Function<'_, '_, '_, '_> {
                 P::DivideAssign
                     if signed
                         || lhs.ty.float_rank() != 0
-                        || super::soft_float::kind(self.graph, operation)?.is_some() =>
+                        || super::soft_float::kind(&*self.graph, operation)?.is_some() =>
                 {
                     Binary::Div
                 }
@@ -671,7 +688,7 @@ impl Function<'_, '_, '_, '_> {
             let nowrap = signed
                 && matches!(lhs.ty, Type::I32 | Type::I64)
                 && matches!(code, Binary::Add | Binary::Sub | Binary::Mul);
-            let value = if let Some(kind) = super::soft_float::kind(self.graph, operation)? {
+            let value = if let Some(kind) = super::soft_float::kind(&*self.graph, operation)? {
                 self.soft_arithmetic(code, kind, lhs, rhs, operation)?
             } else {
                 self.emit(

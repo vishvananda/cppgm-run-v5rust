@@ -31,7 +31,7 @@ pub(super) enum Context {
 }
 impl Function<'_, '_, '_, '_> {
     pub(super) fn fit(&mut self, value: RValue, target: TypeId) -> Result<RValue, Error> {
-        if types::boolean(self.graph, target)? && value.ty == Type::I64 {
+        if types::boolean(&*self.graph, target)? && value.ty == Type::I64 {
             return self.emit(
                 I::Convert(Convert::Truncate, Type::U8, Type::I64, value.value),
                 target,
@@ -69,7 +69,7 @@ impl Function<'_, '_, '_, '_> {
                 ..value
             });
         }
-        let to = types::storage(self.graph, target)?;
+        let to = types::storage(&*self.graph, target)?;
         if to == Type::Void {
             return Ok(value);
         }
@@ -85,8 +85,8 @@ impl Function<'_, '_, '_, '_> {
             let value = self.fit(value, value.source)?;
             return self.reinterpret_bytes(value, target);
         }
-        if types::boolean(self.graph, target)? {
-            if super::complex::part(self.graph, value.source)?.is_some() {
+        if types::boolean(&*self.graph, target)? {
+            if super::complex::part(&*self.graph, value.source)?.is_some() {
                 return self.complex_truth(value, target);
             }
             if self.graph.lower_member_pointer_type(value.source).is_some() {
@@ -94,10 +94,10 @@ impl Function<'_, '_, '_, '_> {
                 let zero = self.builder.integer(0)?;
                 return self.emit(I::Compare(Compare::Ne, truth.ty, truth.value, zero), target);
             }
-            if types::boolean(self.graph, value.source)? {
+            if types::boolean(&*self.graph, value.source)? {
                 return Ok(value);
             }
-            if let Some(kind) = super::soft_float::kind(self.graph, value.source)? {
+            if let Some(kind) = super::soft_float::kind(&*self.graph, value.source)? {
                 let zero = self.soft_constant(kind, 0, value.source)?;
                 return self.soft_compare(Compare::Ne, kind, value, zero, target);
             }
@@ -107,20 +107,20 @@ impl Function<'_, '_, '_, '_> {
                 target,
             );
         }
-        if super::complex::part(self.graph, target)?.is_some() {
+        if super::complex::part(&*self.graph, target)?.is_some() {
             return self.complex_convert(value, target, context);
         }
-        if super::complex::part(self.graph, value.source)?.is_some() {
+        if super::complex::part(&*self.graph, value.source)?.is_some() {
             let [real, _] = self.complex_parts(value)?;
             return self.convert(real, target, context);
         }
-        if super::soft_float::kind(self.graph, value.source)?.is_some()
-            || super::soft_float::kind(self.graph, target)?.is_some()
+        if super::soft_float::kind(&*self.graph, value.source)?.is_some()
+            || super::soft_float::kind(&*self.graph, target)?.is_some()
         {
             return self.soft_convert(value, target);
         }
-        let from_signed = types::signed(self.graph, value.source)?;
-        let to_signed = types::signed(self.graph, target)?;
+        let from_signed = types::signed(&*self.graph, value.source)?;
+        let to_signed = types::signed(&*self.graph, target)?;
         let operation = if to.float_rank() != 0 {
             if value.ty.float_rank() != 0 {
                 if to == value.ty {
@@ -176,10 +176,10 @@ impl Function<'_, '_, '_, '_> {
         to_signed: bool,
         context: Context,
     ) -> Result<RValue, Error> {
-        let from_signed = types::signed(self.graph, value.source)?;
+        let from_signed = types::signed(&*self.graph, value.source)?;
         let operation = {
             let sign_change =
-                !types::boolean(self.graph, value.source)? && from_signed != to_signed;
+                !types::boolean(&*self.graph, value.source)? && from_signed != to_signed;
             if to == value.ty && !sign_change {
                 return Ok(RValue {
                     source: target,
@@ -194,7 +194,7 @@ impl Function<'_, '_, '_, '_> {
             }
             let from_bits = value.ty.bits();
             let to_bits = to.bits();
-            let bool_source = types::boolean(self.graph, value.source)?;
+            let bool_source = types::boolean(&*self.graph, value.source)?;
             let widening = value.literal
                 && to_bits > from_bits
                 && if from_signed && to_signed {

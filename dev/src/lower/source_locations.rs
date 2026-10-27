@@ -20,12 +20,17 @@ impl Function<'_, '_, '_, '_> {
         location: SourceOffset,
         action: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        if !self.symbols.debug_locations() {
+        if !self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .debug_locations()
+        {
             return action(self);
         }
         let saved = self.builder.current_location();
         if let Some(here) = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .debug_location(self.builder.program(), location)?
         {
             self.builder.set_current_location(Some(here));
@@ -59,7 +64,9 @@ impl Function<'_, '_, '_, '_> {
         let source = self.graph.lower_expression(id)?.ty;
         if matches!(kind, SourceLocation::Line | SourceLocation::Column) {
             let bits = if kind == SourceLocation::Line {
-                self.symbols.source_line(location)?
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .source_line(location)?
             } else {
                 0
             };
@@ -67,6 +74,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let text = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .source_text(kind, location, self.name_context)?;
         let mut units = self.symbols.data.take_string_units();
         // The frozen predefined_name accepts a C string. Constant text
@@ -77,8 +85,12 @@ impl Function<'_, '_, '_, '_> {
                 .map(u64::from),
         );
         units.push(0);
-        let symbol =
-            super::data::string_object(self.builder.program(), self.symbols, Type::I8, units)?;
+        let symbol = super::data::string_object(
+            self.builder.program(),
+            &mut self.symbols.view(&*self.graph, &*self.tree, self.cursor),
+            Type::I8,
+            units,
+        )?;
         self.emit(I::Addr(Value::Symbol(symbol)), source)
     }
 }

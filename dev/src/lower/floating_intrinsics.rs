@@ -22,13 +22,14 @@ impl Function<'_, '_, '_, '_> {
         kind: Intrinsic,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        let arguments = self.tree.expr_lists.get(arguments);
+        let arguments = self.owned_expression_ids(arguments);
+        let arguments = arguments.as_slice();
         if matches!(kind, Intrinsic::Constant | Intrinsic::SignalingConstant) {
             let bits = self.graph.lower_builtin_floating(id)?;
             if kind == Intrinsic::SignalingConstant {
                 self.discard(arguments[0])?;
             }
-            let ty = super::types::storage(self.graph, source)?;
+            let ty = super::types::storage(&*self.graph, source)?;
             let kind = FloatKind::from_type(ty)
                 .ok_or(crate::sema::Error::Invariant("floating builtin storage"))?;
             return Ok(RValue {
@@ -105,7 +106,7 @@ impl Function<'_, '_, '_, '_> {
     }
     fn floating_operand(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let value = self.operand(id, Context::Operand)?;
-        if super::soft_float::kind(self.graph, value.source)?
+        if super::soft_float::kind(&*self.graph, value.source)?
             == Some(super::soft_float::Kind::BFloat)
         {
             self.bfloat_widened(value)

@@ -45,7 +45,7 @@ impl Function<'_, '_, '_, '_> {
                 self.graph.lower_type(facts.ty)?,
                 TypeView::Array { .. } | TypeView::Function { .. }
             )
-            && types::storage(self.graph, facts.ty)? != Type::Void)
+            && types::storage(&*self.graph, facts.ty)? != Type::Void)
     }
 
     pub(super) fn conditional_value(
@@ -56,11 +56,14 @@ impl Function<'_, '_, '_, '_> {
         else_expr: ast::ExprId,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        if types::storage(self.graph, source)? == Type::Void {
+        if types::storage(&*self.graph, source)? == Type::Void {
             self.discard(id)?;
             return self.zero(source);
         }
-        if let Some(selected) = self.graph.lower_constant_conversion(self.tree, condition)? {
+        if let Some(selected) = self
+            .graph
+            .lower_constant_conversion(&*self.tree, condition)?
+        {
             let value = self.operand(
                 if selected { then_expr } else { else_expr },
                 Context::Operand,
@@ -97,7 +100,7 @@ impl Function<'_, '_, '_, '_> {
                 return Err(crate::sema::Error::Invariant("choice without conditional").into());
             };
             let source = self.graph.lower_expression(current)?.ty;
-            let storage = types::storage(self.graph, source)?;
+            let storage = types::storage(&*self.graph, source)?;
             let slot = self.generated_slot("cond", storage)?;
             let then_block = self.new_block("cond_then")?;
             let else_block = self.new_block("cond_else")?;
@@ -176,7 +179,7 @@ impl Function<'_, '_, '_, '_> {
     fn store_choice(&mut self, value: RValue, level: &Choice) -> Result<(), Error> {
         let value = self.fit(value, level.source)?;
         self.effect(I::Store(
-            types::memory(self.graph, level.source)?,
+            types::memory(&*self.graph, level.source)?,
             level.storage,
             value.value,
             level.slot,
@@ -186,7 +189,7 @@ impl Function<'_, '_, '_, '_> {
     fn load_choice(&mut self, level: &Choice) -> Result<RValue, Error> {
         self.emit(
             I::Load(
-                types::memory(self.graph, level.source)?,
+                types::memory(&*self.graph, level.source)?,
                 level.storage,
                 level.slot,
             ),

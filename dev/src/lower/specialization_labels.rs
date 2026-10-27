@@ -13,7 +13,7 @@ pub(super) struct Labels {
 }
 impl Symbols<'_, '_> {
     pub(super) fn specialized_class_label(&mut self, class: EntityId) -> Result<String, Error> {
-        if let Some(label) = self.class_labels.classes.get(&class) {
+        if let Some(label) = self.state.class_labels.classes.get(&class) {
             return Ok(label.clone());
         }
         let (_, home, _) = self
@@ -89,15 +89,20 @@ impl Symbols<'_, '_> {
                 })
             })
             .collect::<String>();
-        self.class_labels.classes.insert(class, label.clone());
+        self.state.class_labels.classes.insert(class, label.clone());
         Ok(label)
     }
     fn append_label_identity(&mut self, class: EntityId, out: &mut String) -> Result<(), Error> {
-        let next = u32::try_from(self.class_labels.identities.len())
+        let next = u32::try_from(self.state.class_labels.identities.len())
             .ok()
             .and_then(|count| count.checked_add(1))
             .ok_or(crate::sema::Error::Limit("class label identity limit"))?;
-        let ordinal = self.class_labels.identities.entry(class).or_insert(next);
+        let ordinal = self
+            .state
+            .class_labels
+            .identities
+            .entry(class)
+            .or_insert(next);
         write!(out, "__cppgm_class_template_identity_{ordinal}")
             .map_err(|_| Error::Missing("class label formatting"))
     }

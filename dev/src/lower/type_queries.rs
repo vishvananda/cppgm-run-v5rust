@@ -21,6 +21,7 @@ impl Function<'_, '_, '_, '_> {
         if !query.dynamic {
             return self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .type_information(self.builder.program(), query.target)
                 .map(Value::Symbol);
         }
@@ -38,9 +39,13 @@ impl Function<'_, '_, '_, '_> {
         let object = self.address(operand)?;
         if let crate::sema::lowering::TypeView::Class(class) =
             self.graph.lower_type(query.target)?
-            && !self.symbols.host_objects()
+            && !self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
         {
             self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .construction_table(self.builder.program(), class)?;
         }
         let source = self.graph.lower_expression(id)?.ty;

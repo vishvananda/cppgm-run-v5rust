@@ -19,7 +19,8 @@ impl Symbols<'_, '_> {
     }
 
     pub(in crate::lower) fn debug_locations(&self) -> bool {
-        self.table.debug_locations == super::DebugLocations::Enabled && !self.table.object_mode
+        self.state.table.debug_locations == super::DebugLocations::Enabled
+            && !self.state.table.object_mode
     }
     pub(in crate::lower) fn debug_location(
         &self,
@@ -57,10 +58,10 @@ impl Symbols<'_, '_> {
         let Some(text) = self.graph.lower_predefined_variable(entity) else {
             return Ok(None);
         };
-        if let Some(&symbol) = self.table.predefined_variables.get(&entity) {
+        if let Some(&symbol) = self.state.table.predefined_variables.get(&entity) {
             return Ok(Some(crate::lowir::model::Value::Symbol(symbol)));
         }
-        let mut units = self.data.take_string_units();
+        let mut units = self.state.data.take_string_units();
         units.extend(
             self.cursor
                 .name(text)
@@ -76,7 +77,7 @@ impl Symbols<'_, '_> {
             crate::lowir::vocabulary::Type::I8,
             units,
         )?;
-        self.table.predefined_variables.insert(entity, symbol);
+        self.state.table.predefined_variables.insert(entity, symbol);
         Ok(Some(crate::lowir::model::Value::Symbol(symbol)))
     }
 
@@ -102,8 +103,8 @@ impl Symbols<'_, '_> {
             self.graph.lower_predefined_function_name(
                 self.cursor.post.input().identifiers(),
                 function,
-                self.budget,
-                self.stack_base,
+                self.state.budget,
+                self.state.stack_base,
             )?
         } else {
             Vec::new()

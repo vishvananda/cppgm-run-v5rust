@@ -38,7 +38,12 @@ impl Function<'_, '_, '_, '_> {
         offset: u64,
         base: Option<BaseSubobject>,
     ) -> Result<(), Error> {
-        if self.symbols.class_destructor(ty)?.is_none() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(ty)?
+            .is_none()
+        {
             return Ok(());
         }
         self.completed_construction(CompletedObject::Subobject(Subobject {
@@ -53,7 +58,12 @@ impl Function<'_, '_, '_, '_> {
         ty: TypeId,
         variant: Variant,
     ) -> Result<(), Error> {
-        if self.symbols.class_destructor(ty)?.is_none() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(ty)?
+            .is_none()
+        {
             return Ok(());
         }
         self.completed_construction(CompletedObject::Whole { ty, variant })
@@ -196,12 +206,13 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     fn destroy_delegated_object(&mut self, ty: TypeId, variant: Variant) -> Result<(), Error> {
-        let destructor =
-            self.symbols
-                .class_destructor(ty)?
-                .ok_or(crate::sema::Error::Invariant(
-                    "delegated cleanup without destructor",
-                ))?;
+        let destructor = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(ty)?
+            .ok_or(crate::sema::Error::Invariant(
+                "delegated cleanup without destructor",
+            ))?;
         let facts = self.graph.lower_function(destructor)?;
         let guarded = !facts.nothrow;
         if guarded {
@@ -232,8 +243,13 @@ impl Function<'_, '_, '_, '_> {
             self.virtual_context.hidden = saved;
             values.push(result?);
         }
-        let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
-        self.symbols.demand_entry(entry);
+        let symbol = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .entry_symbol(self.builder.program(), entry)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand_entry(entry);
         let arguments = self.builder.arguments(&values)?;
         self.effect(I::Call(crate::lowir::model::Call {
             result: crate::lowir::vocabulary::Type::Void,

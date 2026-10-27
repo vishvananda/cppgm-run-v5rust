@@ -80,28 +80,28 @@ impl Symbols<'_, '_> {
         base: EntityId,
         derived: EntityId,
     ) -> Result<i64, Error> {
-        if let Some(&hint) = self.cast_hints.pairs.get(&(derived, base)) {
+        if let Some(&hint) = self.state.cast_hints.pairs.get(&(derived, base)) {
             return Ok(hint);
         }
-        if self.cast_hints.current == Some(derived) && !self.cast_hints.grouped {
-            self.cast_hints.facts = walk_hints(self.graph, derived, None)?;
-            self.cast_hints.grouped = true;
+        if self.state.cast_hints.current == Some(derived) && !self.state.cast_hints.grouped {
+            self.state.cast_hints.facts = walk_hints(self.graph, derived, None)?;
+            self.state.cast_hints.grouped = true;
         }
-        let hint = if self.cast_hints.current == Some(derived)
-            && let Some(facts) = self.cast_hints.facts.as_ref()
+        let hint = if self.state.cast_hints.current == Some(derived)
+            && let Some(facts) = self.state.cast_hints.facts.as_ref()
         {
             facts.get(&base).copied().unwrap_or_default().value()
         } else {
-            if self.cast_hints.current != Some(derived) {
-                self.cast_hints.current = Some(derived);
-                self.cast_hints.grouped = false;
-                self.cast_hints.facts = None;
+            if self.state.cast_hints.current != Some(derived) {
+                self.state.cast_hints.current = Some(derived);
+                self.state.cast_hints.grouped = false;
+                self.state.cast_hints.facts = None;
             }
             walk_hints(self.graph, derived, Some(base))?.map_or(-1, |facts| {
                 facts.get(&base).copied().unwrap_or_default().value()
             })
         };
-        self.cast_hints.pairs.insert((derived, base), hint);
+        self.state.cast_hints.pairs.insert((derived, base), hint);
         Ok(hint)
     }
     pub(in crate::lower) fn cast_runtime(
@@ -123,7 +123,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         requested: Role,
     ) -> Result<SymbolId, Error> {
-        if let Some(&symbol) = self.table.runtime_entries.get(&requested) {
+        if let Some(&symbol) = self.state.table.runtime_entries.get(&requested) {
             return Ok(symbol);
         }
         let (object, types, result, noreturn): (_, &[Type], _, _) = match requested {
@@ -161,14 +161,14 @@ impl Symbols<'_, '_> {
             noreturn,
             Some(requested),
         )?;
-        self.table.runtime_entries.insert(requested, symbol);
+        self.state.table.runtime_entries.insert(requested, symbol);
         Ok(symbol)
     }
     pub(in crate::lower) fn unexpected_function(
         &mut self,
         program: &mut Program,
     ) -> Result<SymbolId, Error> {
-        if let Some(symbol) = self.table.unexpected_function {
+        if let Some(symbol) = self.state.table.unexpected_function {
             return Ok(symbol);
         }
         let symbol = self.declare_runtime_function(
@@ -179,7 +179,7 @@ impl Symbols<'_, '_> {
             true,
             None,
         )?;
-        self.table.unexpected_function = Some(symbol);
+        self.state.table.unexpected_function = Some(symbol);
         Ok(symbol)
     }
     fn declare_runtime_function(
@@ -191,7 +191,7 @@ impl Symbols<'_, '_> {
         noreturn: bool,
         role: Option<Role>,
     ) -> Result<SymbolId, Error> {
-        let symbol = self.table.allocate(
+        let symbol = self.state.table.allocate(
             program,
             &format!("__external_runtime__{object}"),
             None,
@@ -242,7 +242,8 @@ impl Symbols<'_, '_> {
         )?;
         program.publish_runtime_declaration(symbol);
         if let Some(role) = role {
-            self.table
+            self.state
+                .table
                 .runtime_roles
                 .push(crate::lower::runtime_roles::RoleSymbol {
                     symbol,

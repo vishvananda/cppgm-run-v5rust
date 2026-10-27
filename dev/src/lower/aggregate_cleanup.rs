@@ -252,7 +252,7 @@ impl Function<'_, '_, '_, '_> {
         if depth > 64 {
             return Ok(true);
         }
-        for &member in self.graph.lower_class_member_entities(class) {
+        for member in self.graph.lower_class_member_entities(class).to_vec() {
             let mut ty = self.graph.lower_entity_type(member)?;
             while let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
                 ty = element;

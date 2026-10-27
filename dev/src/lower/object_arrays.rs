@@ -70,7 +70,11 @@ impl Function<'_, '_, '_, '_> {
         if temporaries && throws {
             self.before_lifetime_call(true)?;
         }
-        let destroyed = self.symbols.class_destructor(element)?.is_some();
+        let destroyed = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(element)?
+            .is_some();
         if count <= 8 {
             self.construct_small_array(
                 element,
@@ -130,7 +134,7 @@ impl Function<'_, '_, '_, '_> {
             constructor,
             location,
         } = constructor_site;
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         for index in 0..count {
             let guard = if index != 0 && guarded {
                 let dispatch = self.new_block("call_unwind_dispatch")?;
@@ -188,8 +192,12 @@ impl Function<'_, '_, '_, '_> {
             constructor,
             location,
         } = constructor_site;
-        let destroyed = self.symbols.class_destructor(element)?.is_some();
-        let size = types::layout(self.graph, element)?.0;
+        let destroyed = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(element)?
+            .is_some();
+        let size = types::layout(&*self.graph, element)?.0;
         let slot = self.generated_slot("constructor_array_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;

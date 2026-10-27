@@ -32,7 +32,12 @@ impl Function<'_, '_, '_, '_> {
         let source = step.result;
         let class_result =
             !step.place && matches!(self.graph.lower_type(source)?, TypeView::Class(_));
-        let destroyed = class_result && self.symbols.storage_destructor(source)?.is_some();
+        let destroyed = class_result
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .storage_destructor(source)?
+                .is_some();
         if destroyed
             && self.lifetime.guarded_operands != 0
             && !self.lifetime.tracking.active
@@ -61,7 +66,10 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { result, .. } = self.graph.lower_type(function.ty)? else {
             return Err(crate::sema::Error::Invariant("arrow call without signature").into());
         };
-        let boundary = self.symbols.result_boundary(result)?;
+        let boundary = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(result)?;
         let mut values = [receiver; 2];
         if boundary.indirect {
             values[0] = destination.ok_or(crate::sema::Error::Invariant(

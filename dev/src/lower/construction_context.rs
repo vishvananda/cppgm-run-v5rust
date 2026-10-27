@@ -51,7 +51,10 @@ impl Function<'_, '_, '_, '_> {
         if let Some(&row) = self.virtual_context.rows.get(&base) {
             return Ok(row);
         }
-        let offset = self.symbols.vbase_row_offset(class, base)?;
+        let offset = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .vbase_row_offset(class, base)?;
         let offset = self
             .builder
             .integer(u128::from_le_bytes(i128::from(offset).to_le_bytes()))?;
@@ -82,7 +85,10 @@ impl Function<'_, '_, '_, '_> {
             }
             vtt
         } else {
-            let symbol = self.symbols.vtt_symbol(self.builder.program(), class)?;
+            let symbol = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .vtt_symbol(self.builder.program(), class)?;
             self.emit(I::Addr(Value::Symbol(symbol)), source)?.value
         };
         let offset = u64::try_from(index)

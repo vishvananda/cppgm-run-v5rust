@@ -13,7 +13,7 @@ impl Function<'_, '_, '_, '_> {
         source: Value,
         destination: Value,
     ) -> Result<(), Error> {
-        let (mut bytes, align) = types::layout(self.graph, ty)?;
+        let (mut bytes, align) = types::layout(&*self.graph, ty)?;
         if let TypeView::Class(class) = self.graph.lower_type(ty)? {
             if self.empty_storage == super::member_initialization::EmptyStorage::Overlapping
                 && self.graph.lower_class_empty(class)?

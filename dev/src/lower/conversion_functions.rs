@@ -49,7 +49,7 @@ impl Function<'_, '_, '_, '_> {
         let value = self.call_conversion(id, call)?;
         let value = self.convert(value, element, super::conversions::Context::Initialization)?;
         let value = self.fit(value, element)?;
-        let storage = super::types::storage(self.graph, element)?;
+        let storage = super::types::storage(&*self.graph, element)?;
         let slot = self.temporary_storage(element, persistent, "tmpref")?;
         self.effect(I::Store(
             crate::lowir::model::Facts::memory(
@@ -71,7 +71,13 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<crate::lowir::model::Value, Error> {
         let facts = self.graph.lower_expression(id)?;
         let place = self.original_scalar_place(self.without_parentheses(id))?;
-        if !facts.is_place && self.symbols.class_destructor(facts.ty)?.is_none() {
+        if !facts.is_place
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(facts.ty)?
+                .is_none()
+        {
             self.finish_inert_temporary(false)?;
         }
         self.storage_address(place, facts.ty)
@@ -100,10 +106,15 @@ impl Function<'_, '_, '_, '_> {
             let TypeView::Function { result, .. } = self.graph.lower_type(signature)? else {
                 return Err(crate::sema::Error::Invariant("staged conversion signature").into());
             };
-            if !self.symbols.result_boundary(result)?.indirect {
+            if !self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .result_boundary(result)?
+                .indirect
+            {
                 // local_object plans this staging slot even when the converter
                 // initializes the variable itself; its identity is observable.
-                self.generated_slot("argobj", super::types::storage(self.graph, ty)?)?;
+                self.generated_slot("argobj", super::types::storage(&*self.graph, ty)?)?;
             }
         }
         Ok(())
@@ -114,7 +125,12 @@ impl Function<'_, '_, '_, '_> {
         call: MemberCall,
         persistent: bool,
     ) -> Result<crate::lowir::model::Value, Error> {
-        let destroyed = !persistent && self.symbols.class_destructor(call.result)?.is_some();
+        let destroyed = !persistent
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(call.result)?
+                .is_some();
         let opens = destroyed
             && self.lifetime.full_expression
             && !self.lifetime.region
@@ -380,7 +396,10 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(crate::sema::Error::Invariant("conversion call signature").into());
         };
-        let boundary = self.symbols.result_boundary(result)?;
+        let boundary = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(result)?;
         let (callee, signature) = self.member_callee(
             call.function,
             receiver,
@@ -413,7 +432,7 @@ impl Function<'_, '_, '_, '_> {
                 crate::sema::lowering::TypeView::Function { .. }
             )
         {
-            let ty = super::types::storage(self.graph, call.result)?;
+            let ty = super::types::storage(&*self.graph, call.result)?;
             // A builtin conversion result is a normal glvalue. Ordinary scalar
             // initialization uses converted_value's unqualified Place instead.
             let memory = if qualified
@@ -423,7 +442,7 @@ impl Function<'_, '_, '_, '_> {
                 ) {
                 crate::lowir::model::Facts::default()
             } else if qualified {
-                super::types::memory(self.graph, call.result)?
+                super::types::memory(&*self.graph, call.result)?
             } else {
                 crate::lowir::model::Facts::memory(
                     false,

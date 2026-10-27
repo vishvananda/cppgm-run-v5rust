@@ -29,12 +29,18 @@ impl Function<'_, '_, '_, '_> {
         let Value::Symbol(global) = storage else {
             return Ok(());
         };
-        if self.symbols.storage_destructor(ty)?.is_none() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?
+            .is_none()
+        {
             return Ok(());
         }
         if self.static_temporaries.is_none()
             && let Some(guard) = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .temporary_registration_guard(self.builder.program(), global)?
         {
             use crate::lowir::{
@@ -59,7 +65,10 @@ impl Function<'_, '_, '_, '_> {
         // A static reference registers its successfully initialized temporaries
         // together. A static object's reference-member temporary registers as
         // soon as it completes, before later members can throw.
-        if self.symbols.object_mode()
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .object_mode()
             || self
                 .static_temporaries
                 .as_ref()
@@ -67,14 +76,18 @@ impl Function<'_, '_, '_, '_> {
         {
             return self.register_static_destruction(global, ty);
         }
-        if let Some(flag) = self.symbols.persistent_finalizer(
-            self.builder.program(),
-            global,
-            ty,
-            self.static_temporaries
-                .as_mut()
-                .map(|local| &mut local.made),
-        )? {
+        if let Some(flag) = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .persistent_finalizer(
+                self.builder.program(),
+                global,
+                ty,
+                self.static_temporaries
+                    .as_mut()
+                    .map(|local| &mut local.made),
+            )?
+        {
             let one = self.builder.integer(1)?;
             self.effect(crate::lowir::model::InstructionKind::Store(
                 crate::lowir::model::Facts::default(),
@@ -132,13 +145,22 @@ impl Function<'_, '_, '_, '_> {
         loop {
             id = self.without_parentheses(id);
             if let Some((call, _)) = self.graph.lower_function_conversion(id)? {
-                return Ok(!call.place && self.symbols.class_destructor(call.result)?.is_some());
+                return Ok(!call.place
+                    && self
+                        .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .class_destructor(call.result)?
+                        .is_some());
             }
             if let Some((constructor, _)) = self.class_conversion(id) {
                 let ty = self
                     .graph
                     .lower_entity_type(self.graph.lower_constructor(constructor).class)?;
-                return Ok(self.symbols.class_destructor(ty)?.is_some());
+                return Ok(self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .class_destructor(ty)?
+                    .is_some());
             }
             if self.graph.lower_expression(id)?.reference_cast.is_some()
                 && let ExprKind::Cast { operand, .. } = self.tree.expressions.get(id).kind
@@ -274,7 +296,7 @@ impl Function<'_, '_, '_, '_> {
         };
         let mut work = match initializer.kind {
             ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) => vec![expr],
-            ast::InitializerKind::Parenthesized(args) => self.tree.expr_lists.get(args).to_vec(),
+            ast::InitializerKind::Parenthesized(args) => self.owned_expression_ids(args),
             _ => return Ok(false),
         };
         while let Some(expr) = work.pop() {
@@ -296,6 +318,7 @@ impl Function<'_, '_, '_, '_> {
                     destroyed |= self.destroyed_list_array(temporary)?;
                     destroyed |= self
                         .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
                         .class_destructor(self.graph.lower_expression(temporary)?.ty)?
                         .is_some();
                 }
@@ -319,9 +342,9 @@ pub(crate) mod tests {
     };
 
     pub(crate) fn assert_extended_ownership(
-        graph: &crate::sema::Graph,
-        tree: &ast::Tree,
-        cursor: &crate::syntax::cursor::Cursor<'_>,
+        graph: &mut crate::sema::Graph,
+        tree: &mut ast::Tree,
+        cursor: &mut crate::syntax::cursor::Cursor<'_>,
         declarations: crate::syntax::storage::List<ast::DeclId>,
         per_owner: usize,
     ) {
@@ -344,35 +367,44 @@ pub(crate) mod tests {
         };
         let mut program = Program::default();
         let mut table = super::super::symbols::SymbolTable::default();
-        let mut symbols = super::super::symbols::Symbols::new(
+        let mut symbol_state = super::super::symbols::State::new(
             graph,
-            tree,
-            cursor,
             StackBudget::default(),
-            &mut table,
+            std::mem::take(&mut table),
         );
         let mut builder = FunctionBuilder::new(&mut program, "f", &[], Type::Void).unwrap();
         builder.block("entry").unwrap();
         let mut function = Function::new(
-            graph,
-            tree,
+            crate::lower::unit_frontend::Context {
+                graph,
+                tree,
+                cursor,
+                symbols: &mut symbol_state,
+            },
             builder,
-            &mut symbols,
             Some(entity),
             None,
             StackBudget::default(),
         );
         let mut owners = Vec::new();
-        for &statement in tree.stmt_lists.get(statements) {
-            let StmtKind::Declaration(declaration) = tree.statements.get(statement).kind else {
+        for index in 0..function.tree.stmt_lists.get(statements).len() {
+            let statement = function.tree.stmt_lists.get(statements)[index];
+            let StmtKind::Declaration(declaration) = function.tree.statements.get(statement).kind
+            else {
                 panic!("declaration");
             };
-            let DeclKind::Simple { declarators, .. } = tree.declarations.get(declaration).kind
+            let DeclKind::Simple { declarators, .. } =
+                function.tree.declarations.get(declaration).kind
             else {
                 panic!("simple declaration");
             };
-            let declarator = tree.init_declarators.get(declarators)[0];
-            owners.push(graph.lower_declared(declarator.declarator).unwrap());
+            let declarator = function.tree.init_declarators.get(declarators)[0];
+            owners.push(
+                function
+                    .graph
+                    .lower_declared(declarator.declarator)
+                    .unwrap(),
+            );
             function.declaration(declaration).unwrap();
             assert_eq!(function.lifetime.cleanups.len(), owners.len() * per_owner);
             let cleanup = &function.lifetime.cleanups[function.lifetime.cleanups.len() - per_owner];
@@ -392,6 +424,6 @@ pub(crate) mod tests {
         assert_eq!(function.lifetime.cleanups[0].variable, Some(owners[0]));
         function.leave_scope(0).unwrap();
         assert!(function.lifetime.cleanups.is_empty());
-        assert_eq!(tree.expressions.mark(), count);
+        assert_eq!(function.tree.expressions.mark(), count);
     }
 }

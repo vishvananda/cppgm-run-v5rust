@@ -29,7 +29,7 @@ impl Symbols<'_, '_> {
         entry: crate::lower::construction::Entry,
     ) -> Result<NameId, Error> {
         use crate::lower::construction::{Entry, Variant};
-        if let Some(&object) = self.families.aliases.get(&entry) {
+        if let Some(&object) = self.state.families.aliases.get(&entry) {
             return Ok(object);
         }
         let base = match entry {
@@ -39,7 +39,7 @@ impl Symbols<'_, '_> {
             | Entry::Function(entity) => Entry::DestructorBase(entity),
             Entry::InlineCopy(_) => return Err(Error::Missing("inline copy entry family")),
         };
-        if let Some(&Some(object)) = self.entry_objects.get(&base) {
+        if let Some(&Some(object)) = self.state.entry_objects.get(&base) {
             return Ok(object);
         }
         self.base_entry_object(program, entry)
@@ -50,8 +50,8 @@ impl Symbols<'_, '_> {
         output: &mut crate::lower::definition_order::Definitions,
         entry: crate::lower::construction::Entry,
     ) -> Result<(), Error> {
-        output.generated(&mut self.generated_definitions)?;
-        if self.table.object_mode {
+        output.generated(&mut self.state.generated_definitions)?;
+        if self.state.table.object_mode {
             if let crate::lower::construction::Entry::Function(entity) = entry
                 && self.destructor_inert(entity)?
             {
@@ -65,7 +65,7 @@ impl Symbols<'_, '_> {
             None
         };
         let family = if let crate::lower::construction::Entry::Constructor(id, variant) = entry {
-            let family = if let Some(&family) = self.families.entries.get(&id) {
+            let family = if let Some(&family) = self.state.families.entries.get(&id) {
                 family
             } else {
                 let facts = self.entry_facts(entry)?;
@@ -75,12 +75,12 @@ impl Symbols<'_, '_> {
                     Some(self.entry_family_object(program, entry)?)
                 };
                 let family = output.family(object)?;
-                self.families.entries.insert(id, family);
+                self.state.families.entries.insert(id, family);
                 family
             };
             Some((family, variant))
         } else if let Some(entity) = destructor {
-            let family = if let Some(&family) = self.families.destructors.get(&entity) {
+            let family = if let Some(&family) = self.state.families.destructors.get(&entity) {
                 family
             } else {
                 let facts = self.entry_facts(entry)?;
@@ -90,7 +90,7 @@ impl Symbols<'_, '_> {
                     Some(self.entry_family_object(program, entry)?)
                 };
                 let family = output.family(object)?;
-                self.families.destructors.insert(entity, family);
+                self.state.families.destructors.insert(entity, family);
                 family
             };
             Some((
@@ -120,31 +120,32 @@ impl Symbols<'_, '_> {
                 && let Some(form) = self.graph.lower_copy_form(entity)?
             {
                 let key = (form.class, form.assignment);
-                let family = if let Some(&family) = self.families.copies.get(&key) {
+                let family = if let Some(&family) = self.state.families.copies.get(&key) {
                     family
                 } else {
                     let ty = self.graph.lower_entity_type(form.class)?;
-                    let object = if let Some(&object) = self.families.classes.get(&form.class) {
+                    let object = if let Some(&object) = self.state.families.classes.get(&form.class)
+                    {
                         object
                     } else if form.locality == crate::sema::lowering::Locality::Unit {
-                        self.families.classes.insert(form.class, None);
+                        self.state.families.classes.insert(form.class, None);
                         None
                     } else {
                         let node = self.abi_type(ty)?;
                         let mut bytes = Vec::new();
-                        self.table.work.mangled_names += 1;
+                        self.state.table.work.mangled_names += 1;
                         abi::encoder::Encoder::encode(
-                            &self.abi,
+                            &self.state.abi,
                             abi::encoder::Target::Type(node),
                             &mut bytes,
-                            self.budget,
+                            self.state.budget,
                         )?;
                         let object = Some(program.names.intern_bytes(&bytes)?);
-                        self.families.classes.insert(form.class, object);
+                        self.state.families.classes.insert(form.class, object);
                         object
                     };
                     let family = output.form_family(object, form.assignment)?;
-                    self.families.copies.insert(key, family);
+                    self.state.families.copies.insert(key, family);
                     family
                 };
                 output.note_form(family, form.moving)?;

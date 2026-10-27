@@ -18,14 +18,14 @@ pub(in crate::lower) struct OwnedTemporaries {
 
 impl Symbols<'_, '_> {
     pub(in crate::lower) fn begin_owned_temporaries(&mut self, owner: EntityId) {
-        self.owned_temporaries.owner =
+        self.state.owned_temporaries.owner =
             (self.host_objects() && self.graph.lower_variable_instantiated(owner)).then_some(owner);
-        self.owned_temporaries.entries.clear();
-        self.owned_temporaries.indices.clear();
+        self.state.owned_temporaries.entries.clear();
+        self.state.owned_temporaries.indices.clear();
     }
 
     pub(super) fn note_owned_temporary(&mut self, symbol: SymbolId) {
-        let context = &mut self.owned_temporaries;
+        let context = &mut self.state.owned_temporaries;
         if context.owner.is_some() {
             context.indices.insert(symbol, context.entries.len());
             context.entries.push((symbol, None));
@@ -41,7 +41,7 @@ impl Symbols<'_, '_> {
             model::{Global, GlobalInit},
             vocabulary::{Binding, Type},
         };
-        let context = &self.owned_temporaries;
+        let context = &self.state.owned_temporaries;
         if context.owner.is_none() {
             return Ok(None);
         }
@@ -55,7 +55,7 @@ impl Symbols<'_, '_> {
             "__cppgm_guard__{}",
             program.names.get(program.symbol(temporary).name)
         );
-        let guard = self.table.allocate(program, &spelling, None, true)?;
+        let guard = self.state.table.allocate(program, &spelling, None, true)?;
         program.add_global(
             guard,
             Global {
@@ -68,7 +68,7 @@ impl Symbols<'_, '_> {
                 init: GlobalInit::Zero,
             },
         )?;
-        self.owned_temporaries.entries[index].1 = Some(guard);
+        self.state.owned_temporaries.entries[index].1 = Some(guard);
         Ok(Some(guard))
     }
 
@@ -76,27 +76,27 @@ impl Symbols<'_, '_> {
         &mut self,
         program: &mut Program,
     ) -> Result<(), Error> {
-        let Some(owner) = self.owned_temporaries.owner.take() else {
+        let Some(owner) = self.state.owned_temporaries.owner.take() else {
             return Ok(());
         };
-        if self.owned_temporaries.entries.is_empty() {
+        if self.state.owned_temporaries.entries.is_empty() {
             return Ok(());
         }
         let name = self.variable_abi_name(owner)?;
-        for index in 0..self.owned_temporaries.entries.len() {
-            let Some(guard) = self.owned_temporaries.entries[index].1 else {
+        for index in 0..self.state.owned_temporaries.entries.len() {
+            let Some(guard) = self.state.owned_temporaries.entries[index].1 else {
                 continue;
             };
             let sequence = u32::try_from(index).map_err(|_| crate::lowir::Error::Limit)?;
             let mut bytes = Vec::new();
             crate::abi::encoder::Encoder::encode(
-                &self.abi,
+                &self.state.abi,
                 crate::abi::encoder::Target::TemporaryGuard {
                     owner: name,
                     sequence,
                 },
                 &mut bytes,
-                self.budget,
+                self.state.budget,
             )?;
             let object = program.names.intern_bytes(&bytes)?;
             program.set_global_binding_and_object(
@@ -105,8 +105,8 @@ impl Symbols<'_, '_> {
                 object,
             )?;
         }
-        self.owned_temporaries.entries.clear();
-        self.owned_temporaries.indices.clear();
+        self.state.owned_temporaries.entries.clear();
+        self.state.owned_temporaries.indices.clear();
         Ok(())
     }
 
@@ -119,7 +119,7 @@ impl Symbols<'_, '_> {
             model::{Boundary, Function, Linkage, Parameter, Signature},
             vocabulary::{Binding, Type},
         };
-        if let Some(symbol) = self.table.guard_functions[call.index()] {
+        if let Some(symbol) = self.state.table.guard_functions[call.index()] {
             return Ok(symbol);
         }
         let stem = match call {
@@ -128,7 +128,8 @@ impl Symbols<'_, '_> {
             super::super::local_storage::GuardCall::Abort => "cxa_guard_abort",
         };
         let symbol =
-            self.table
+            self.state
+                .table
                 .allocate(program, &format!("__cppgm_runtime_{stem}"), None, true)?;
         let parameter = Parameter {
             name: program.names.intern("arg0")?,
@@ -161,8 +162,8 @@ impl Symbols<'_, '_> {
         )?;
         // local_static_lowering.cpp declares lifetime helpers outside its
         // lowering declaration-work counter.
-        self.table.work.lifetime_declarations.insert(symbol);
-        self.table.guard_functions[call.index()] = Some(symbol);
+        self.state.table.work.lifetime_declarations.insert(symbol);
+        self.state.table.guard_functions[call.index()] = Some(symbol);
         program.publish_runtime_declaration(symbol);
         Ok(symbol)
     }
@@ -174,11 +175,12 @@ impl Symbols<'_, '_> {
             model::{Boundary, Function, Linkage, Parameter, Signature},
             vocabulary::{Binding, Type},
         };
-        if let Some(symbol) = self.table.thread_atexit {
+        if let Some(symbol) = self.state.table.thread_atexit {
             return Ok(symbol);
         }
         let symbol =
-            self.table
+            self.state
+                .table
                 .allocate(program, "__cppgm_runtime_cxa_thread_atexit", None, true)?;
         let mut parameters = Vec::with_capacity(3);
         for index in 0..3 {
@@ -214,8 +216,8 @@ impl Symbols<'_, '_> {
         )?;
         // local_static_lowering.cpp declares lifetime helpers outside its
         // lowering declaration-work counter.
-        self.table.work.lifetime_declarations.insert(symbol);
-        self.table.thread_atexit = Some(symbol);
+        self.state.table.work.lifetime_declarations.insert(symbol);
+        self.state.table.thread_atexit = Some(symbol);
         program.publish_runtime_declaration(symbol);
         Ok(symbol)
     }
@@ -227,12 +229,13 @@ impl Symbols<'_, '_> {
             model::{Global, GlobalInit, Linkage},
             vocabulary::Binding,
         };
-        if let Some(symbol) = self.table.dso_handle {
+        if let Some(symbol) = self.state.table.dso_handle {
             return Ok(symbol);
         }
-        let symbol = self
-            .table
-            .allocate(program, "__cppgm_runtime_dso_handle", None, true)?;
+        let symbol =
+            self.state
+                .table
+                .allocate(program, "__cppgm_runtime_dso_handle", None, true)?;
         let object = program.names.intern("__dso_handle")?;
         program.add_global(
             symbol,
@@ -250,8 +253,8 @@ impl Symbols<'_, '_> {
         )?;
         // local_static_lowering.cpp declares lifetime helpers outside its
         // lowering declaration-work counter.
-        self.table.work.lifetime_declarations.insert(symbol);
-        self.table.dso_handle = Some(symbol);
+        self.state.table.work.lifetime_declarations.insert(symbol);
+        self.state.table.dso_handle = Some(symbol);
         Ok(symbol)
     }
     pub(in crate::lower) fn local_destructor_symbol(
@@ -263,7 +266,7 @@ impl Symbols<'_, '_> {
             "__cppgm_local_static_destructor__{}",
             program.names.get(program.symbol(global).name)
         );
-        self.table.allocate(program, &spelling, None, true)
+        self.state.table.allocate(program, &spelling, None, true)
     }
     pub(in crate::lower) fn atexit_function(
         &mut self,
@@ -273,11 +276,12 @@ impl Symbols<'_, '_> {
             model::{Boundary, Linkage, Parameter, Signature},
             vocabulary::{Binding, Type},
         };
-        if let Some(symbol) = self.table.atexit {
+        if let Some(symbol) = self.state.table.atexit {
             return Ok(symbol);
         }
         let object = program.names.intern("atexit")?;
         let symbol = self
+            .state
             .table
             .allocate(program, "__cppgm_runtime_atexit", None, true)?;
         let parameter = Parameter {
@@ -313,8 +317,8 @@ impl Symbols<'_, '_> {
         )?;
         // local_static_lowering.cpp declares lifetime helpers outside its
         // lowering declaration-work counter.
-        self.table.work.lifetime_declarations.insert(symbol);
-        self.table.atexit = Some(symbol);
+        self.state.table.work.lifetime_declarations.insert(symbol);
+        self.state.table.atexit = Some(symbol);
         program.publish_runtime_declaration(symbol);
         Ok(symbol)
     }

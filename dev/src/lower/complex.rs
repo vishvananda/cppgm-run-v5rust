@@ -50,11 +50,11 @@ impl Symbols<'_, '_> {
             (_, Type::F64) => 'd',
             _ => 'x',
         };
-        if let Some(&symbol) = self.complex_helpers.get(&(divide, mode)) {
+        if let Some(&symbol) = self.state.complex_helpers.get(&(divide, mode)) {
             return Ok(symbol);
         }
         let name = format!("__{}{mode}c3", if divide { "div" } else { "mul" });
-        let symbol = self.table.allocate(
+        let symbol = self.state.table.allocate(
             program,
             &format!("__cppgm_libgcc_{}", &name[2..]),
             None,
@@ -106,7 +106,7 @@ impl Symbols<'_, '_> {
             },
         )?;
         program.publish_runtime_declaration(symbol);
-        self.complex_helpers.insert((divide, mode), symbol);
+        self.state.complex_helpers.insert((divide, mode), symbol);
         Ok(symbol)
     }
 }
@@ -117,9 +117,9 @@ impl Function<'_, '_, '_, '_> {
         real: RValue,
         imaginary: RValue,
     ) -> Result<RValue, Error> {
-        let component = part(self.graph, ty)?
+        let component = part(&*self.graph, ty)?
             .ok_or(crate::sema::Error::Invariant("complex value without part"))?;
-        let whole = types::storage(self.graph, ty)?;
+        let whole = types::storage(&*self.graph, ty)?;
         let slot = self.generated_slot("complex", whole)?;
         let address = self.emit(I::Addr(slot), ty)?.value;
         self.write_place(address, component, real.value)?;
@@ -130,7 +130,7 @@ impl Function<'_, '_, '_, '_> {
     fn complex_offset(&mut self, address: Value, component: TypeId) -> Result<Value, Error> {
         let bytes = self
             .builder
-            .integer(u128::from(types::layout(self.graph, component)?.0))?;
+            .integer(u128::from(types::layout(&*self.graph, component)?.0))?;
         Ok(self
             .emit(
                 I::Index(Type::I8, Some(Projection::Field), address, bytes),
@@ -139,7 +139,7 @@ impl Function<'_, '_, '_, '_> {
             .value)
     }
     pub(in crate::lower) fn complex_parts(&mut self, value: RValue) -> Result<[RValue; 2], Error> {
-        let component = part(self.graph, value.source)?
+        let component = part(&*self.graph, value.source)?
             .ok_or(crate::sema::Error::Invariant("complex parts without part"))?;
         let slot = self.generated_slot("complex", value.ty)?;
         self.write_place(slot, value.source, value.value)?;
@@ -156,7 +156,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Value, Error> {
         let ty = self.graph.lower_expression(operand)?.ty;
         let place = self.scalar_place(operand)?;
-        let Some(component) = part(self.graph, ty)? else {
+        let Some(component) = part(&*self.graph, ty)? else {
             return Ok(place);
         };
         let address = if matches!(place, Value::Slot(_) | Value::Symbol(_)) {
@@ -178,7 +178,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let ty = self.graph.lower_expression(id)?.ty;
         let facts = self.graph.lower_expression(operand)?;
-        if part(self.graph, facts.ty)?.is_none() {
+        if part(&*self.graph, facts.ty)?.is_none() {
             if !imaginary {
                 return self.expression(operand, Context::Operand);
             }
@@ -207,9 +207,9 @@ impl Function<'_, '_, '_, '_> {
         target: TypeId,
         context: Context,
     ) -> Result<RValue, Error> {
-        let component = part(self.graph, target)?
+        let component = part(&*self.graph, target)?
             .ok_or(crate::sema::Error::Invariant("complex conversion target"))?;
-        let [real, imaginary] = if part(self.graph, value.source)?.is_some() {
+        let [real, imaginary] = if part(&*self.graph, value.source)?.is_some() {
             let [real, imaginary] = self.complex_parts(value)?;
             let imaginary = self.convert(imaginary, component, context)?;
             let imaginary = self.fit(imaginary, component)?;
@@ -229,7 +229,8 @@ impl Function<'_, '_, '_, '_> {
         elements: crate::syntax::storage::List<ast::ExprId>,
         context: Context,
     ) -> Result<RValue, Error> {
-        let elements = self.tree.expr_lists.get(elements);
+        let elements = self.owned_expression_ids(elements);
+        let elements = elements.as_slice();
         match elements {
             [] => self.zero(ty),
             [single] => {
@@ -237,10 +238,10 @@ impl Function<'_, '_, '_, '_> {
                 self.convert(value, ty, context)
             }
             [_, _] => {
-                let component = part(self.graph, ty)?
+                let component = part(&*self.graph, ty)?
                     .ok_or(crate::sema::Error::Invariant("complex list component"))?;
-                let whole = types::storage(self.graph, ty)?;
-                let (bytes, align) = types::layout(self.graph, ty)?;
+                let whole = types::storage(&*self.graph, ty)?;
+                let (bytes, align) = types::layout(&*self.graph, ty)?;
                 let slot = self.generated_slot("vector", whole)?;
                 self.effect(I::ZeroInit(bytes, align, slot))?;
                 let address = self.emit(I::Addr(slot), ty)?.value;
@@ -250,7 +251,7 @@ impl Function<'_, '_, '_, '_> {
                     let offset = if index == 0 {
                         0
                     } else {
-                        types::layout(self.graph, component)?.0
+                        types::layout(&*self.graph, component)?.0
                     };
                     let offset = self.builder.integer(u128::from(offset))?;
                     let place = self
@@ -272,7 +273,7 @@ impl Function<'_, '_, '_, '_> {
         decrement: bool,
     ) -> Result<RValue, Error> {
         let [real, imaginary] = self.complex_parts(old)?;
-        let one = if let Some(kind) = crate::lower::soft_float::kind(self.graph, real.source)? {
+        let one = if let Some(kind) = crate::lower::soft_float::kind(&*self.graph, real.source)? {
             let bits = match kind {
                 crate::lower::soft_float::Kind::Half => 0x3c00,
                 crate::lower::soft_float::Kind::BFloat => 0x3f80,
@@ -320,7 +321,7 @@ impl Function<'_, '_, '_, '_> {
         self.complex_value(self.graph.lower_expression(id)?.ty, real, imaginary)
     }
     fn part_binary(&mut self, op: P, a: RValue, b: RValue) -> Result<RValue, Error> {
-        let signed = types::signed(self.graph, a.source)?;
+        let signed = types::signed(&*self.graph, a.source)?;
         let binary = match op {
             P::Add => Binary::Add,
             P::Subtract => Binary::Sub,
@@ -328,14 +329,14 @@ impl Function<'_, '_, '_, '_> {
             P::Divide
                 if signed
                     || a.ty.float_rank() != 0
-                    || crate::lower::soft_float::kind(self.graph, a.source)?.is_some() =>
+                    || crate::lower::soft_float::kind(&*self.graph, a.source)?.is_some() =>
             {
                 Binary::Div
             }
             P::Divide => Binary::UDiv,
             _ => return Err(crate::sema::Error::Invariant("complex arithmetic token").into()),
         };
-        if let Some(kind) = crate::lower::soft_float::kind(self.graph, a.source)? {
+        if let Some(kind) = crate::lower::soft_float::kind(&*self.graph, a.source)? {
             return self.soft_arithmetic(binary, kind, a, b, a.source);
         }
         self.emit(
@@ -353,7 +354,7 @@ impl Function<'_, '_, '_, '_> {
         )
     }
     fn part_negate(&mut self, value: RValue) -> Result<RValue, Error> {
-        if let Some(kind) = crate::lower::soft_float::kind(self.graph, value.source)? {
+        if let Some(kind) = crate::lower::soft_float::kind(&*self.graph, value.source)? {
             self.soft_negate(kind, value)
         } else {
             self.emit(I::Unary(Unary::Neg, value.ty, value.value), value.source)
@@ -380,9 +381,9 @@ impl Function<'_, '_, '_, '_> {
         left: RValue,
         right: RValue,
     ) -> Result<RValue, Error> {
-        let left_complex = part(self.graph, left.source)?.is_some();
-        let right_complex = part(self.graph, right.source)?.is_some();
-        let component = part(self.graph, ty)?
+        let left_complex = part(&*self.graph, left.source)?.is_some();
+        let right_complex = part(&*self.graph, right.source)?.is_some();
+        let component = part(&*self.graph, ty)?
             .ok_or(crate::sema::Error::Invariant("complex arithmetic type"))?;
         let [a, b] = if left_complex {
             self.complex_parts(left)?
@@ -443,10 +444,11 @@ impl Function<'_, '_, '_, '_> {
         let arguments = self.builder.arguments(&parts.map(|part| part.value))?;
         let symbol = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .complex_helper(self.builder.program(), divide, ty)?;
         self.emit(
             I::Call(Call {
-                result: types::storage(self.graph, ty)?,
+                result: types::storage(&*self.graph, ty)?,
                 callee: Value::Symbol(symbol),
                 arguments,
                 signature: None,
@@ -498,18 +500,19 @@ impl Function<'_, '_, '_, '_> {
     }
     fn complex_quotient(&mut self, ty: TypeId, parts: [RValue; 4]) -> Result<RValue, Error> {
         let [a, b, c, d] = parts;
-        if a.ty.float_rank() != 0 || crate::lower::soft_float::kind(self.graph, a.source)?.is_some()
+        if a.ty.float_rank() != 0
+            || crate::lower::soft_float::kind(&*self.graph, a.source)?.is_some()
         {
             return self.complex_helper_call(true, ty, parts);
         }
-        let whole = types::storage(self.graph, ty)?;
+        let whole = types::storage(&*self.graph, ty)?;
         let slot = self.generated_slot("complex", whole)?;
         let mc = self.part_magnitude(c)?;
         let md = self.part_magnitude(d)?;
         let by_d = self.new_block("complex_by_d")?;
         let by_c = self.new_block("complex_by_c")?;
         let end = self.new_block("complex_end")?;
-        let compare = if types::signed(self.graph, a.source)? {
+        let compare = if types::signed(&*self.graph, a.source)? {
             Compare::Lt
         } else {
             Compare::Ult
@@ -544,7 +547,7 @@ impl Function<'_, '_, '_, '_> {
         self.read_place(slot, ty)
     }
     fn part_magnitude(&mut self, value: RValue) -> Result<RValue, Error> {
-        if !types::signed(self.graph, value.source)? {
+        if !types::signed(&*self.graph, value.source)? {
             return Ok(value);
         }
         let shift = self.builder.integer(u128::from(value.ty.bits() - 1))?;
@@ -581,7 +584,7 @@ impl Function<'_, '_, '_, '_> {
         truth: TypeId,
     ) -> Result<RValue, Error> {
         let predicate = if equal { Compare::Eq } else { Compare::Ne };
-        if let Some(kind) = crate::lower::soft_float::kind(self.graph, a.source)? {
+        if let Some(kind) = crate::lower::soft_float::kind(&*self.graph, a.source)? {
             self.soft_compare(predicate, kind, a, b, truth)
         } else {
             self.emit(I::Compare(predicate, a.ty, a.value, b.value), truth)

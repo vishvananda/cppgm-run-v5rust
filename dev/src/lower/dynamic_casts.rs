@@ -59,28 +59,46 @@ impl Function<'_, '_, '_, '_> {
         self.effect(I::Branch(null.value, end, scan))?;
         self.terminated = true;
         self.place(scan)?;
-        if !self.symbols.host_objects() {
+        if !self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .host_objects()
+        {
             self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .construction_table(self.builder.program(), from_class)?;
         }
         let from = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .typeinfo_symbol(self.builder.program(), from_class)?;
         let from = self.emit(I::Addr(Value::Symbol(from)), source)?.value;
-        if !self.symbols.host_objects() {
+        if !self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .host_objects()
+        {
             self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .construction_table(self.builder.program(), to_class)?;
         }
         let to = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .typeinfo_symbol(self.builder.program(), to_class)?;
         let to = self.emit(I::Addr(Value::Symbol(to)), source)?.value;
-        let hint = self.symbols.dynamic_cast_hint(from_class, to_class)?;
+        let hint = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .dynamic_cast_hint(from_class, to_class)?;
         let hint = self
             .builder
             .integer(u128::from_le_bytes(i128::from(hint).to_le_bytes()))?;
         let arguments = self.builder.arguments(&[object, from, to, hint])?;
-        let runtime = self.symbols.cast_runtime(self.builder.program(), false)?;
+        let runtime = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .cast_runtime(self.builder.program(), false)?;
         let found = self.emit(
             I::Call(Call {
                 result: Type::Ptr,
@@ -182,6 +200,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let runtime = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .runtime_function(self.builder.program(), role)?;
         let arguments = self.builder.arguments(&[])?;
         self.effect(I::Call(Call {

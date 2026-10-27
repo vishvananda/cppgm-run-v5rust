@@ -130,7 +130,10 @@ impl Function<'_, '_, '_, '_> {
         if !self.lifetime.full_expression
             || self.lifetime.tracking.active
             || self.static_initializer
-            || self.symbols.host_objects()
+            || self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
             || self.element_temporaries.depth != 0
             || self.constructor_unwind_target().is_some()
         {
@@ -210,7 +213,7 @@ impl Function<'_, '_, '_, '_> {
                     }
                     if !facts.is_place
                         && !class
-                        && super::types::storage(self.graph, facts.ty)? != Type::Void
+                        && super::types::storage(&*self.graph, facts.ty)? != Type::Void
                         && let Some(selected) = self.graph.lower_expression(condition)?.folded
                     {
                         work.push((

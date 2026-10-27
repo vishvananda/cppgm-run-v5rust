@@ -100,7 +100,7 @@ impl Function<'_, '_, '_, '_> {
                     ),
                     integer,
                 )?;
-                let storage = types::storage(self.graph, lane)?;
+                let storage = types::storage(&*self.graph, lane)?;
                 let place = self
                     .emit(
                         I::Index(
@@ -121,8 +121,8 @@ impl Function<'_, '_, '_, '_> {
         }
         self.emit(
             I::Load(
-                types::memory(self.graph, vector)?,
-                types::storage(self.graph, vector)?,
+                types::memory(&*self.graph, vector)?,
+                types::storage(&*self.graph, vector)?,
                 address,
             ),
             result,
@@ -175,7 +175,7 @@ impl Function<'_, '_, '_, '_> {
         self.effect(I::Store(Facts::default(), value.ty, value.value, slot))?;
         let address = self.emit(I::Addr(slot), value.source)?.value;
         self.emit(
-            I::Load(Facts::default(), types::storage(self.graph, to)?, address),
+            I::Load(Facts::default(), types::storage(&*self.graph, to)?, address),
             to,
         )
     }
@@ -198,9 +198,9 @@ impl Function<'_, '_, '_, '_> {
         let value = self.operand(operand, Context::Argument)?;
         let source = self.vector_storage(value)?;
         let mut result = self.vector_lane(source, vector, 0)?;
-        let soft = super::soft_float::kind(self.graph, lane)?;
-        let floating = types::storage(self.graph, lane)?.float_rank() != 0 || soft.is_some();
-        let signed = types::signed(self.graph, lane)? || floating;
+        let soft = super::soft_float::kind(&*self.graph, lane)?;
+        let floating = types::storage(&*self.graph, lane)?.float_rank() != 0 || soft.is_some();
+        let signed = types::signed(&*self.graph, lane)? || floating;
         for index in 1..bound {
             let x = self.vector_lane(source, vector, index)?;
             let op = match kind {
@@ -218,7 +218,7 @@ impl Function<'_, '_, '_, '_> {
                 )?;
             } else {
                 let best = self.generated_slot("vector", result.ty)?;
-                let memory = types::memory(self.graph, lane)?;
+                let memory = types::memory(&*self.graph, lane)?;
                 self.effect(I::Store(memory, result.ty, result.value, best))?;
                 let predicate = match (kind == Reduction::Max, signed) {
                     (true, true) => Compare::Gt,
@@ -272,8 +272,8 @@ impl Function<'_, '_, '_, '_> {
             )
             .into());
         }
-        let storage = types::storage(self.graph, ty)?;
-        let (bytes, align) = types::layout(self.graph, ty)?;
+        let storage = types::storage(&*self.graph, ty)?;
+        let (bytes, align) = types::layout(&*self.graph, ty)?;
         let slot = self.generated_slot("vector", storage)?;
         self.effect(I::ZeroInit(bytes, align, slot))?;
         let address = self.emit(I::Addr(slot), ty)?.value;
@@ -288,7 +288,14 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("vector list type").into());
         };
         let (slot, address) = self.zeroed_vector(ty)?;
-        for (index, &expression) in self.tree.expr_lists.get(elements).iter().enumerate() {
+        for (index, &expression) in self
+            .tree
+            .expr_lists
+            .get(elements)
+            .to_vec()
+            .iter()
+            .enumerate()
+        {
             let index = u64::try_from(index).map_err(|_| crate::lowir::Error::Limit)?;
             let value = self.operand(expression, Context::Initialization)?;
             let value = self.fit(value, lane)?;
@@ -298,7 +305,11 @@ impl Function<'_, '_, '_, '_> {
     }
     fn load_vector_storage(&mut self, slot: Value, vector: TypeId) -> Result<RValue, Error> {
         self.emit(
-            I::Load(Facts::default(), types::storage(self.graph, vector)?, slot),
+            I::Load(
+                Facts::default(),
+                types::storage(&*self.graph, vector)?,
+                slot,
+            ),
             vector,
         )
     }
@@ -353,11 +364,11 @@ impl Function<'_, '_, '_, '_> {
         value: RValue,
     ) -> Result<(), Error> {
         let (lane, _) = self.vector_shape(vector)?;
-        let boolean = types::boolean(self.graph, lane)?;
+        let boolean = types::boolean(&*self.graph, lane)?;
         let offset = self.builder.integer(u128::from(if boolean {
             index / 8
         } else {
-            index * types::layout(self.graph, lane)?.0
+            index * types::layout(&*self.graph, lane)?.0
         }))?;
         let place = self
             .emit(
@@ -398,11 +409,11 @@ impl Function<'_, '_, '_, '_> {
     }
     fn vector_lane(&mut self, address: Value, vector: TypeId, index: u64) -> Result<RValue, Error> {
         let (lane, _) = self.vector_shape(vector)?;
-        let boolean = types::boolean(self.graph, lane)?;
+        let boolean = types::boolean(&*self.graph, lane)?;
         let offset = self.builder.integer(u128::from(if boolean {
             index / 8
         } else {
-            index * types::layout(self.graph, lane)?.0
+            index * types::layout(&*self.graph, lane)?.0
         }))?;
         let place = self
             .emit(
@@ -491,11 +502,11 @@ impl Function<'_, '_, '_, '_> {
         };
         let (lane, bound) = self.vector_shape(vector)?;
         let (truth_lane, _) = self.vector_shape(result)?;
-        let boolean = types::boolean(self.graph, truth_lane)?;
-        let truth_type = types::storage(self.graph, truth_lane)?;
-        let soft = super::soft_float::kind(self.graph, lane)?;
-        let signed = types::signed(self.graph, lane)?
-            || types::storage(self.graph, lane)?.float_rank() != 0
+        let boolean = types::boolean(&*self.graph, truth_lane)?;
+        let truth_type = types::storage(&*self.graph, truth_lane)?;
+        let soft = super::soft_float::kind(&*self.graph, lane)?;
+        let signed = types::signed(&*self.graph, lane)?
+            || types::storage(&*self.graph, lane)?.float_rank() != 0
             || soft.is_some();
         let predicate = match (op, signed) {
             (P::Equal, _) => Compare::Eq,
@@ -570,7 +581,7 @@ impl Function<'_, '_, '_, '_> {
             let x = self.vector_lane(address, vector, index)?;
             let value = if op == P::Complement {
                 self.emit(I::Unary(Unary::BitNot, x.ty, x.value), lane)?
-            } else if let Some(kind) = super::soft_float::kind(self.graph, lane)? {
+            } else if let Some(kind) = super::soft_float::kind(&*self.graph, lane)? {
                 self.soft_negate(kind, x)?
             } else {
                 self.emit(I::Unary(Unary::Neg, x.ty, x.value), lane)?
@@ -601,7 +612,7 @@ impl Function<'_, '_, '_, '_> {
         let offset = self.vector_index(index)?;
         let size = self
             .builder
-            .integer(u128::from(types::layout(self.graph, lane)?.0))?;
+            .integer(u128::from(types::layout(&*self.graph, lane)?.0))?;
         let offset = self.emit(
             I::Binary(Binary::Mul, Facts::default(), Type::I64, offset.value, size),
             offset.source,
@@ -638,7 +649,7 @@ impl Function<'_, '_, '_, '_> {
         let lane = self.graph.lower_expression(id)?.ty;
         let base = self.without_parentheses(base);
         let facts = self.graph.lower_expression(base)?;
-        let boolean = types::boolean(self.graph, lane)?;
+        let boolean = types::boolean(&*self.graph, lane)?;
         if !boolean && facts.is_place {
             let place = self.vector_lane_place(id, base, index)?;
             return self.read_place(place, lane);

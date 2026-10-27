@@ -62,6 +62,7 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn destructor_throws(&mut self, ty: TypeId) -> Result<bool, Error> {
         self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .class_destructor(ty)?
             .map_or(Ok(false), |entity| {
                 Ok(!self.graph.lower_function(entity)?.nothrow)
@@ -76,7 +77,11 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn shared_cleanup_unwind_guard(&mut self) -> Result<BlockId, Error> {
         // Object landings have one enclosing region state. Serialized course
         // LowIR alone shares this landing across distinct destructions.
-        if self.symbols.object_mode() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .object_mode()
+        {
             return self.new_cleanup_terminate();
         }
         if let Some(block) = self.lexical.terminate {

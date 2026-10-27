@@ -149,7 +149,12 @@ impl Function<'_, '_, '_, '_> {
                     element,
                 )?
                 .value;
-            if self.symbols.class_destructor(element)?.is_some() {
+            if self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(element)?
+                .is_some()
+            {
                 self.destroy_allocated_prefix(element, elements, constructed)?;
             }
             if let Some(deallocator) = deallocator {
@@ -176,10 +181,16 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("array default signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let mut made = false;
         for (index, &parameter) in parameters.iter().enumerate() {
             made |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                && self.symbols.storage_destructor(parameter)?.is_some();
+                && self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .storage_destructor(parameter)?
+                    .is_some();
             if let Some(default) = self.graph.lower_default(entity, index) {
                 made |= self.expression_temporaries(default)?.made;
             }
@@ -194,7 +205,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Value, Error> {
         let size = self
             .builder
-            .integer(u128::from(types::layout(self.graph, element)?.0))?;
+            .integer(u128::from(types::layout(&*self.graph, element)?.0))?;
         let offset = self
             .emit(
                 I::Binary(Binary::Mul, Facts::default(), Type::I64, index, size),

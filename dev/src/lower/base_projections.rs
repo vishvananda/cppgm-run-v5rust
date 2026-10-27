@@ -90,7 +90,10 @@ impl Function<'_, '_, '_, '_> {
         let offset = match projection {
             BaseProjection::Fixed(offset) => offset,
             BaseProjection::Route { from, to } => {
-                let route = self.symbols.base_route(from, to)?;
+                let route = self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .base_route(from, to)?;
                 let Some(base) = route.via else {
                     return self.base_projection(object, source, route.offset);
                 };

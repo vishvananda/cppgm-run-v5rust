@@ -1,5 +1,5 @@
 // Translated from lower/global_lowering.cpp's static_value/static_converted queries. See NOTICE.
-//! Demand static scalar images while analysis owns constant evaluation. Lowering reads the image.
+//! Language values remain recorded; automatic array images are queried at emitted declarations.
 use super::{
     Error,
     analyzer::Analyzer,
@@ -33,6 +33,32 @@ pub(crate) struct ReferenceTemporary {
     pub value: TypeId,
 }
 impl super::graph::Graph {
+    pub(crate) fn lower_demand_array_image(
+        &mut self,
+        tree: &mut ast::Tree,
+        cursor: &mut crate::syntax::cursor::Cursor<'_>,
+        budget: crate::support::stack::StackBudget,
+        entity: EntityId,
+    ) -> Result<(), Error> {
+        let request = self.array_images.requested(entity).ok_or(Error::Invariant(
+            "automatic array image without declaration request",
+        ))?;
+        let graph = std::mem::replace(self, Self::new());
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.graph.array_images.clear(entity);
+        let result = (|| {
+            if !analyzer.record_completed_image(entity)? {
+                let target = analyzer.graph.lower_entity_type(entity)?;
+                analyzer.record_array_image(entity, request.initializer, target, request.scope)?;
+            }
+            Ok(())
+        })();
+        *self = analyzer.graph;
+        result
+    }
     /// The shared lowering policy for automatic array images. Class leaves
     /// always retain construction; mutable arrays require scalar elements.
     pub(crate) fn lower_array_image_eligible(&self, entity: EntityId) -> Result<bool, Error> {
@@ -80,11 +106,6 @@ impl Analyzer<'_> {
                 continue;
             }
             if self.graph.lower_automatic(entity) {
-                if matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. })
-                    && self.record_completed_image(entity)?
-                {
-                    continue;
-                }
                 if let Some(initializer) = initializer {
                     self.record_static_initializer(entity, initializer, scope)?;
                 }
@@ -166,14 +187,19 @@ impl Analyzer<'_> {
         home: ScopeId,
     ) -> Result<(), Error> {
         let eligible_array = self.graph.lower_array_image_eligible(entity)?;
-        if self.graph.lower_automatic(entity)
-            && let Some(initializer) = initializer
-        {
-            self.queue_local_scalar(entity, initializer, scope)?;
+        if self.graph.lower_automatic(entity) {
+            if let Some(initializer) = initializer {
+                self.queue_local_scalar(entity, initializer, scope)?;
+                if eligible_array {
+                    self.graph.array_images.request(entity, initializer, scope);
+                }
+            }
+            if eligible_array {
+                return Ok(());
+            }
         }
         if self.graph.scope(home).kind == super::graph::ScopeKind::Namespace
             || !self.graph.lower_automatic(entity)
-            || eligible_array
         {
             self.static_initializers.push((entity, initializer, scope));
         }

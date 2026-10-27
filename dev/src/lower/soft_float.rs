@@ -177,11 +177,11 @@ fn spec_classes(code: u8, object: bool) -> Option<ObjectClasses> {
 }
 impl Symbols<'_, '_> {
     fn soft_helper(&mut self, program: &mut Program, helper: Helper) -> Result<SymbolId, Error> {
-        if let Some(&symbol) = self.soft_float_helpers.get(&helper) {
+        if let Some(&symbol) = self.state.soft_float_helpers.get(&helper) {
             return Ok(symbol);
         }
         let (name, parameters, result) = SPECS[helper as usize];
-        let symbol = self.table.allocate(
+        let symbol = self.state.table.allocate(
             program,
             &format!("__cppgm_libgcc_{}", &name[2..]),
             None,
@@ -224,7 +224,7 @@ impl Symbols<'_, '_> {
             },
         )?;
         program.publish_runtime_declaration(symbol);
-        self.soft_float_helpers.insert(helper, symbol);
+        self.state.soft_float_helpers.insert(helper, symbol);
         Ok(symbol)
     }
 }
@@ -236,7 +236,10 @@ impl Function<'_, '_, '_, '_> {
         second: Option<RValue>,
         source: TypeId,
     ) -> Result<RValue, Error> {
-        let callee = self.symbols.soft_helper(self.builder.program(), helper)?;
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .soft_helper(self.builder.program(), helper)?;
         let arguments = if let Some(second) = second {
             self.builder.arguments(&[first.value, second.value])?
         } else {
@@ -356,8 +359,8 @@ impl Function<'_, '_, '_, '_> {
         target: TypeId,
     ) -> Result<RValue, Error> {
         use Helper as H;
-        let from = kind(self.graph, value.source)?;
-        let to = kind(self.graph, target)?;
+        let from = kind(&*self.graph, value.source)?;
+        let to = kind(&*self.graph, target)?;
         if from == Some(Kind::BFloat) || to == Some(Kind::BFloat) {
             return self.bfloat_convert(value, target);
         }
@@ -384,7 +387,7 @@ impl Function<'_, '_, '_, '_> {
             if value.ty.float_rank() != 0 {
                 return self.soft_call(floating_helper(value.ty, to, true), value, None, target);
             }
-            let signed = types::signed(self.graph, value.source)?;
+            let signed = types::signed(&*self.graph, value.source)?;
             let bits = value.ty.bits();
             if bits == 128 {
                 return self.soft_call(
@@ -434,11 +437,11 @@ impl Function<'_, '_, '_, '_> {
         let from = from.ok_or(crate::sema::Error::Invariant(
             "soft conversion without kind",
         ))?;
-        let storage = types::storage(self.graph, target)?;
+        let storage = types::storage(&*self.graph, target)?;
         if storage.float_rank() != 0 {
             return self.soft_call(floating_helper(storage, from, false), value, None, target);
         }
-        let signed = types::signed(self.graph, target)?;
+        let signed = types::signed(&*self.graph, target)?;
         let bits = storage.bits();
         if bits == 128 {
             return self.soft_call(
@@ -486,8 +489,8 @@ impl Function<'_, '_, '_, '_> {
     }
     fn bfloat_convert(&mut self, value: RValue, target: TypeId) -> Result<RValue, Error> {
         use Helper as H;
-        let from = kind(self.graph, value.source)?;
-        let to = kind(self.graph, target)?;
+        let from = kind(&*self.graph, value.source)?;
+        let to = kind(&*self.graph, target)?;
         if from == to {
             return Ok(RValue {
                 source: target,
@@ -506,7 +509,7 @@ impl Function<'_, '_, '_, '_> {
                     Type::F64 => H::TruncDFBF,
                     Type::F80 => H::TruncXFBF,
                     _ => {
-                        let signed = types::signed(self.graph, value.source)?;
+                        let signed = types::signed(&*self.graph, value.source)?;
                         let single = self.soft_convert_op(
                             if signed {
                                 Convert::SignedToFloat
@@ -530,7 +533,7 @@ impl Function<'_, '_, '_, '_> {
         if to == Some(Kind::Quad) {
             return self.soft_call(H::ExtendSFTF, wide, None, target);
         }
-        let ty = types::storage(self.graph, target)?;
+        let ty = types::storage(&*self.graph, target)?;
         if ty == Type::F32 {
             return Ok(RValue {
                 source: target,
@@ -540,7 +543,7 @@ impl Function<'_, '_, '_, '_> {
         self.soft_convert_op(
             if ty.float_rank() != 0 {
                 Convert::FloatExtend
-            } else if types::signed(self.graph, target)? {
+            } else if types::signed(&*self.graph, target)? {
                 Convert::FloatToSigned
             } else {
                 Convert::FloatToUnsigned
@@ -644,7 +647,7 @@ impl Function<'_, '_, '_, '_> {
     pub(in crate::lower) fn bfloat_operation(&self, id: ast::ExprId) -> Result<bool, Error> {
         let id = self.without_parentheses(id);
         if self.graph.lower_operator_call(id)?
-            || kind(self.graph, self.graph.lower_expression(id)?.ty)? != Some(Kind::BFloat)
+            || kind(&*self.graph, self.graph.lower_expression(id)?.ty)? != Some(Kind::BFloat)
         {
             return Ok(false);
         }
@@ -720,7 +723,7 @@ impl Function<'_, '_, '_, '_> {
         let result = self.soft_binary(op, left, right)?;
         // The operation is a float value although the semantic source carries
         // the bfloat operation type. Select the exact destination route here.
-        if let Some(kind) = kind(self.graph, target)? {
+        if let Some(kind) = kind(&*self.graph, target)? {
             return self.soft_call(
                 if kind == Kind::BFloat {
                     Helper::TruncSFBF
@@ -732,14 +735,14 @@ impl Function<'_, '_, '_, '_> {
                 target,
             );
         }
-        let ty = types::storage(self.graph, target)?;
+        let ty = types::storage(&*self.graph, target)?;
         if ty == Type::F32 {
             return Ok(RValue {
                 source: target,
                 ..result
             });
         }
-        if types::boolean(self.graph, target)? {
+        if types::boolean(&*self.graph, target)? {
             let zero = self
                 .builder
                 .constant(crate::lowir::literals::Constant::Float(
@@ -757,7 +760,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let op = if ty.float_rank() != 0 {
             Convert::FloatExtend
-        } else if types::signed(self.graph, target)? {
+        } else if types::signed(&*self.graph, target)? {
             Convert::FloatToSigned
         } else {
             Convert::FloatToUnsigned

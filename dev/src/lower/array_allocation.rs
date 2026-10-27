@@ -52,7 +52,7 @@ impl Function<'_, '_, '_, '_> {
             per_element = per_element.wrapping_mul(bound);
             element = inner;
         }
-        let (element_size, _) = types::layout(self.graph, element)?;
+        let (element_size, _) = types::layout(&*self.graph, element)?;
         let stride = element_size.wrapping_mul(per_element);
         let signature = self.graph.lower_function(use_.function)?.ty;
         let variadic = matches!(
@@ -79,9 +79,9 @@ impl Function<'_, '_, '_, '_> {
         } else {
             let facts = self.graph.lower_expression(array.count)?;
             let ty = facts.target.unwrap_or(facts.ty);
-            let bits = types::storage(self.graph, ty)?.bits();
+            let bits = types::storage(&*self.graph, ty)?.bits();
             listed != 0
-                || types::signed(self.graph, ty)?
+                || types::signed(&*self.graph, ty)?
                 || bits >= 64
                 || ((1_u64 << bits) - 1) > largest
         };
@@ -120,9 +120,15 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)? else {
             return Err(crate::sema::Error::Invariant("array allocation signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let mut values = vec![size];
         let mut argument_classes = Vec::new();
-        let written = self.tree.expr_lists.get(placement.unwrap_or_default());
+        let written = self
+            .tree
+            .expr_lists
+            .get(placement.unwrap_or_default())
+            .to_vec();
         for (index, &argument) in written.iter().enumerate() {
             let value = if let Some(&parameter) = parameters.get(index + 1) {
                 self.operator_argument(argument, parameter)?
@@ -132,8 +138,13 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        self.symbols.demand(use_.function);
-        let callee = self.symbols.callee(use_.function, &mut self.builder)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand(use_.function);
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .callee(use_.function, &mut self.builder)?;
         let arguments = self.builder.arguments(&values)?;
         let throws = self.lifetime_call_throws(CallTarget::Direct(use_.function))?;
         if throws
@@ -253,7 +264,7 @@ impl Function<'_, '_, '_, '_> {
         let count = if promoted.ty.bits() == 64 {
             promoted.value
         } else {
-            let op = if types::signed(self.graph, promoted.source)? {
+            let op = if types::signed(&*self.graph, promoted.source)? {
                 crate::lowir::vocabulary::Convert::SignExtend
             } else {
                 crate::lowir::vocabulary::Convert::ZeroExtend
@@ -338,7 +349,10 @@ impl Function<'_, '_, '_, '_> {
             self.effect(I::Store(Facts::memory(false, true), Type::Ptr, zero, slot))?;
             self.jump(end)?;
         } else {
-            let symbol = self.symbols.bad_array_length(self.builder.program())?;
+            let symbol = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .bad_array_length(self.builder.program())?;
             let arguments = self.builder.arguments(&[])?;
             self.before_lifetime_call(true)?;
             self.effect(I::Call(Call {
@@ -373,11 +387,18 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // Frozen zero_bytes uses the shared fill runtime for host objects;
         // course LowIR retains its explicit byte loop.
-        if self.symbols.host_objects() {
-            let callee = self.symbols.hosted_runtime_function(
-                self.builder.program(),
-                super::runtime_intrinsics::RuntimeFunction::Memset,
-            )?;
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .host_objects()
+        {
+            let callee = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .hosted_runtime_function(
+                    self.builder.program(),
+                    super::runtime_intrinsics::RuntimeFunction::Memset,
+                )?;
             let zero = self.builder.integer(0)?;
             let arguments = self.builder.arguments(&[storage, zero, size])?;
             let _result = self.emit(

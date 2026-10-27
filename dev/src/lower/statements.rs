@@ -38,7 +38,7 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "source return in synthetic function",
             )))?;
-        let ty = types::storage(self.graph, result)?;
+        let ty = types::storage(&*self.graph, result)?;
         if matches!(
             self.graph.lower_type(result)?,
             crate::sema::lowering::TypeView::Class(_)
@@ -93,7 +93,7 @@ impl Function<'_, '_, '_, '_> {
             {
                 // A later label can enter the scope of an uninitialized object.
                 // Preserve its storage without evaluating an unreachable initializer.
-                for declarator in self.tree.init_declarators.get(declarators) {
+                for declarator in self.tree.init_declarators.get(declarators).to_vec() {
                     let entity = self.graph.lower_declared(declarator.declarator)?;
                     let initializer = if self.graph.lower_explicit_static(entity) {
                         declarator.initializer
@@ -113,7 +113,7 @@ impl Function<'_, '_, '_, '_> {
             StmtKind::Asm(assembly) => self.asm_statement(id, *self.tree.assembly.get(assembly))?,
             StmtKind::Compound(statements) => {
                 let depth = self.lifetime.cleanups.len();
-                for &id in self.tree.stmt_lists.get(statements) {
+                for id in self.tree.stmt_lists.get(statements).to_vec() {
                     self.statement(id)?;
                 }
                 self.leave_scope(depth)?;
@@ -475,7 +475,7 @@ impl Function<'_, '_, '_, '_> {
                 self.scan_switch(body, labels)?;
             }
             StmtKind::Compound(list) => {
-                for &id in self.tree.stmt_lists.get(list) {
+                for id in self.tree.stmt_lists.get(list).to_vec() {
                     self.scan_switch(id, labels)?;
                 }
             }
@@ -518,7 +518,7 @@ impl Function<'_, '_, '_, '_> {
             StmtKind::Case { .. } | StmtKind::Default(_) | StmtKind::Label { .. } => true,
             StmtKind::Compound(list) => {
                 let mut found = false;
-                for &id in self.tree.stmt_lists.get(list) {
+                for id in self.tree.stmt_lists.get(list).to_vec() {
                     if self.reachable_label(id)? {
                         found = true;
                         break;

@@ -1,0 +1,69 @@
+global @value : i32 [binding=weak, object=_Z5valueIiE] = zero
+global @__cppgm_guard__value : i64 [binding=weak, object=_ZGV5valueIiE] = zero
+global @value__2 : i32 [binding=weak, object=_Z5valueIcE] = zero
+global @__cppgm_guard__value__2 : i64 [binding=weak, object=_ZGV5valueIcE] = zero
+global @objects [binding=strong] = {
+  ptr addr @value
+  ptr addr @value__2
+}
+
+function @source() -> i32 [binding=strong, object=_Z6sourcev] {
+  block ^entry:
+    return i32 2
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $lor__1 : i64
+
+  block ^entry:
+    %t1 = addr @objects
+    %t2 = index ptr [projection=array_element] %t1, 0
+    %t3 = load typed ptr %t2
+    %t4 = load typed i32 %t3
+    %t5 = cmp ne i32 %t4, 2
+    branch %t5, ^lor_short_2, ^lor_rhs_1
+
+  block ^lor_rhs_1:
+    %t6 = addr @objects
+    %t7 = index ptr [projection=array_element] %t6, 1
+    %t8 = load typed ptr %t7
+    %t9 = load typed i32 %t8
+    %t10 = cmp ne i32 %t9, 2
+    %t11 = cmp ne i64 %t10, 0
+    store typed i64 %t11, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_short_2:
+    store typed i64 1, $lor__1
+    jump ^lor_end_3
+
+  block ^lor_end_3:
+    %t12 = load typed i64 $lor__1
+    %t13 = convert trunc i32 i64 %t12
+    return i32 %t13
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    %t1 = load typed i64 @__cppgm_guard__value
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ctor_done_2, ^local_static_ctor_run_1
+
+  block ^local_static_ctor_run_1:
+    store typed i64 1, @__cppgm_guard__value
+    %t3 = call i32 @source()
+    store typed i32 %t3, @value
+    jump ^local_static_ctor_done_2
+
+  block ^local_static_ctor_done_2:
+    %t4 = load typed i64 @__cppgm_guard__value__2
+    %t5 = cmp ne i64 %t4, 0
+    branch %t5, ^local_static_ctor_done_4, ^local_static_ctor_run_3
+
+  block ^local_static_ctor_run_3:
+    store typed i64 1, @__cppgm_guard__value__2
+    %t6 = call i32 @source()
+    store typed i32 %t6, @value__2
+    jump ^local_static_ctor_done_4
+
+  block ^local_static_ctor_done_4:
+    return void
+}

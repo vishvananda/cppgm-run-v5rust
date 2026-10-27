@@ -119,45 +119,54 @@ impl Function<'_, '_, '_, '_> {
             || !matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_))
         {
             let value = self.operand(id, super::conversions::Context::Argument)?;
-            let classes = if self.symbols.object_mode()
+            let classes = if self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .object_mode()
                 && matches!(
                     value.ty,
                     crate::lowir::vocabulary::Type::Object { .. }
                         | crate::lowir::vocabulary::Type::I128
                 ) {
-                self.symbols.object_argument_classes(value.source)?
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .object_argument_classes(value.source)?
             } else {
                 None
             };
-            let value =
-                if value.ty == crate::lowir::vocabulary::Type::I128 && self.symbols.object_mode() {
-                    let ty = crate::lowir::vocabulary::Type::Object {
-                        bytes: 16,
-                        align: if self.graph.lower_member_pointer_type(facts.ty).is_some() {
-                            3
-                        } else {
-                            4
-                        },
-                    };
-                    let slot = self.generated_slot("arg", ty)?;
-                    let object = self.emit(I::Addr(slot), facts.ty)?.value;
-                    self.effect(I::Store(
-                        crate::lowir::model::Facts::memory(false, true),
-                        value.ty,
-                        value.value,
-                        object,
-                    ))?;
-                    slot
-                } else {
-                    value.value
+            let value = if value.ty == crate::lowir::vocabulary::Type::I128
+                && self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .object_mode()
+            {
+                let ty = crate::lowir::vocabulary::Type::Object {
+                    bytes: 16,
+                    align: if self.graph.lower_member_pointer_type(facts.ty).is_some() {
+                        3
+                    } else {
+                        4
+                    },
                 };
+                let slot = self.generated_slot("arg", ty)?;
+                let object = self.emit(I::Addr(slot), facts.ty)?.value;
+                self.effect(I::Store(
+                    crate::lowir::model::Facts::memory(false, true),
+                    value.ty,
+                    value.value,
+                    object,
+                ))?;
+                slot
+            } else {
+                value.value
+            };
             return Ok((value, classes));
         }
         let TypeView::Class(class) = self.graph.lower_type(facts.ty)? else {
             return Err(crate::sema::Error::Invariant("ellipsis class argument").into());
         };
         let ty = facts.ty;
-        let slot = self.generated_slot("arg", types::storage(self.graph, ty)?)?;
+        let slot = self.generated_slot("arg", types::storage(&*self.graph, ty)?)?;
         let object = self.emit(I::Addr(slot), ty)?.value;
         if facts.is_place {
             let source = self.address(id)?;
@@ -167,8 +176,18 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.materialize_class(id, ty, object)?;
         }
-        if self.symbols.object_mode() && self.graph.lower_direct_class_parameter(class)? {
-            Ok((slot, self.symbols.object_argument_classes(ty)?))
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .object_mode()
+            && self.graph.lower_direct_class_parameter(class)?
+        {
+            Ok((
+                slot,
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .object_argument_classes(ty)?,
+            ))
         } else {
             Ok((object, None))
         }
@@ -326,7 +345,11 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(crate::sema::Error::Invariant(
                     "converted reference without constructor",
                 ))?;
-        let destroyed = self.symbols.storage_destructor(ty)?.is_some();
+        let destroyed = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?
+            .is_some();
         if destroyed
             && !persistent
             && self.lifetime.full_expression
@@ -362,7 +385,11 @@ impl Function<'_, '_, '_, '_> {
             return Err(crate::sema::Error::Invariant("class argument without class").into());
         };
         let direct = self.graph.lower_direct_class_parameter(class)?;
-        let destroyed = self.symbols.storage_destructor(ty)?.is_some();
+        let destroyed = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?
+            .is_some();
         if destroyed
             && self.lifetime.full_expression
             && !self.lifetime.region
@@ -382,7 +409,7 @@ impl Function<'_, '_, '_, '_> {
                 self.open_temporary_region()?;
             }
         }
-        let storage = types::storage(self.graph, ty)?;
+        let storage = types::storage(&*self.graph, ty)?;
         let stem = if direct { "argobj" } else { "arg" };
         let slot = if destroyed {
             self.element_argument_slot(storage, stem)?
@@ -474,7 +501,10 @@ impl Function<'_, '_, '_, '_> {
         let persistent = persistent || self.persistent_temporary_path(id);
         let ty = self.graph.lower_expression(id)?.ty;
         let owner = self.extended_temporary_owner(id);
-        let destructor = self.symbols.storage_destructor(ty)?;
+        let destructor = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?;
         // A scoped temporary with no earlier cleanup opens its region only
         // after construction, covering the reference's address store.
         let staged = owner.is_some()
@@ -717,7 +747,9 @@ impl Function<'_, '_, '_, '_> {
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         self.check_stack()?;
-        self.symbols.storage_destructor(ty)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?;
         let id = self.without_parentheses(id);
         if let Some(action @ CopyAction::Constructor { constructor, .. }) =
             self.graph.lower_class_copy(id)?
@@ -878,7 +910,7 @@ impl Function<'_, '_, '_, '_> {
             ) => self.aggregate_prvalue(
                 ty,
                 object,
-                self.tree.expr_lists.get(arguments),
+                &self.owned_expression_ids(arguments),
                 self.graph.lower_aggregate_union_member(arguments),
             ),
             Some(ClassInitialization::FromExpression(source)) => {

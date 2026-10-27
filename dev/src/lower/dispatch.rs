@@ -12,9 +12,13 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn demand_virtual_call_table(&mut self) -> Result<(), Error> {
         if let Some(class) = self.call_object_class
             && !self.graph.lower_virtual_bases(class).is_empty()
-            && !self.symbols.host_objects()
+            && !self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
         {
             self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .construction_table(self.builder.program(), class)?;
         }
         Ok(())
@@ -24,10 +28,14 @@ impl Function<'_, '_, '_, '_> {
         if !self.graph.lower_dynamic_class(class) {
             return Ok(());
         }
-        self.symbols.vtable_symbol(self.builder.program(), class)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .vtable_symbol(self.builder.program(), class)?;
         let offsets = self.graph.lower_segment_offsets(class)?;
         let order = if self.virtual_context.vtt.is_some() {
-            self.symbols.vtt_pointer_order(class)?
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .vtt_pointer_order(class)?
         } else {
             Vec::new()
         };
@@ -61,7 +69,10 @@ impl Function<'_, '_, '_, '_> {
         }
         for index in order {
             let object = self.table_subobject(class, source, index, &offsets)?;
-            let slot = self.symbols.vtt_segment_index(class, index)?;
+            let slot = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .vtt_segment_index(class, index)?;
             let offset = u64::try_from(slot)
                 .map_err(|_| crate::lowir::Error::Limit)?
                 .wrapping_mul(8);
@@ -99,6 +110,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         let (symbol, point) = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .table_address(self.builder.program(), class, index)?;
         let table = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
         let offset = self.builder.integer(u128::from(point))?;
@@ -191,16 +203,23 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(Value, Option<SignatureId>), Error> {
         if !dispatch {
             return Ok((
-                self.symbols.direct_callee(self.builder.program(), entity)?,
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .direct_callee(self.builder.program(), entity)?,
                 None,
             ));
         }
         if !self.graph.lower_virtual_pure(entity)
-            && !self.symbols.host_objects()
+            && !self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
             && (self.graph.lower_function_defined(entity)
                 || self.graph.lower_has_synthesized_body(entity))
         {
-            self.symbols.demand(entity);
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand(entity);
         }
         let slot = self
             .graph
@@ -208,6 +227,7 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(crate::sema::Error::Invariant("virtual call without slot"))?;
         let signature = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .virtual_signature(self.builder.program(), entity)?;
         Ok((self.virtual_callee(object, slot, source)?, Some(signature)))
     }

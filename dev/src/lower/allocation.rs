@@ -49,10 +49,13 @@ impl Function<'_, '_, '_, '_> {
         {
             let destructor = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .class_destructor(use_.target)?
                 .ok_or(crate::sema::Error::Invariant("virtual deletion destructor"))?;
             let throws = self.lifetime_call_throws(CallTarget::Direct(destructor))?;
-            self.symbols.vtable_symbol(self.builder.program(), class)?;
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .vtable_symbol(self.builder.program(), class)?;
             self.begin_lifetime_call(throws)?;
             self.before_lifetime_call(throws)?;
             let slot = self
@@ -63,6 +66,7 @@ impl Function<'_, '_, '_, '_> {
             let callee = self.virtual_callee(object.value, slot, source)?;
             let signature = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .virtual_signature(self.builder.program(), destructor)?;
             let arguments = self.builder.arguments(&[object.value])?;
             self.effect(I::Call(Call {
@@ -84,9 +88,14 @@ impl Function<'_, '_, '_, '_> {
         let bytes = if use_.incomplete {
             0
         } else {
-            types::layout(self.graph, use_.target)?.0
+            types::layout(&*self.graph, use_.target)?.0
         };
-        if class && let Some(destructor) = self.symbols.class_destructor(use_.target)? {
+        if class
+            && let Some(destructor) = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(use_.target)?
+        {
             let throws = self.lifetime_call_throws(CallTarget::Direct(destructor))?;
             let first = self.lifetime.cleanups.len();
             if throws {
@@ -126,6 +135,8 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(crate::sema::Error::Invariant("deallocation signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let throws = may_throw && self.lifetime_call_throws(CallTarget::Direct(function))?;
         let arguments = if let Some(arguments) = placement {
             arguments
@@ -134,8 +145,13 @@ impl Function<'_, '_, '_, '_> {
         } else {
             self.builder.arguments(&[storage])?
         };
-        self.symbols.demand(function);
-        let callee = self.symbols.callee(function, &mut self.builder)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand(function);
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .callee(function, &mut self.builder)?;
         // The frozen delete expression emits this call directly: unlike its
         // destructor it does not begin/end a lifetime call around deallocation.
         let transient = throws
@@ -172,7 +188,7 @@ impl Function<'_, '_, '_, '_> {
             return self.array_allocation(id, &use_, array);
         }
         let source = self.graph.lower_expression(id)?.ty;
-        let bytes = types::layout(self.graph, use_.target)?.0;
+        let bytes = types::layout(&*self.graph, use_.target)?.0;
         let size = self.builder.integer(u128::from(bytes))?;
         let size = if bytes <= 0x7fff_ffff {
             self.emit(
@@ -187,9 +203,16 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(function.ty)? else {
             return Err(crate::sema::Error::Invariant("allocation signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let mut values = vec![size];
         let mut argument_classes = Vec::new();
-        let written = self.tree.expr_lists.get(placement.unwrap_or_default());
+        let written = self
+            .tree
+            .expr_lists
+            .get(placement.unwrap_or_default())
+            .to_vec();
+        let written = written.as_slice();
         // The frozen allocation loop emits only written placement operands,
         // including when overload viability accepted an unwritten default.
         for (index, &argument) in written.iter().enumerate() {
@@ -206,8 +229,13 @@ impl Function<'_, '_, '_, '_> {
             || self.lifetime.full_expression
                 && self.lifetime.temporary_segment.allows_eager_arguments()
                 && function.builtin.is_none();
-        self.symbols.demand(use_.function);
-        let callee = self.symbols.callee(use_.function, &mut self.builder)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand(use_.function);
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .callee(use_.function, &mut self.builder)?;
         let arguments = self.builder.arguments(&values)?;
         self.before_lifetime_call(throws)?;
         let object = self.lifetime_result(
@@ -350,7 +378,11 @@ impl Function<'_, '_, '_, '_> {
                     return Err(crate::sema::Error::Invariant("allocated aggregate list").into());
                 };
                 if elements.is_empty() {
-                    return if self.symbols.empty_list_constructs(class)? {
+                    return if self
+                        .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .empty_list_constructs(class)?
+                    {
                         self.aggregate_array(use_.target, object, &[], None)
                     } else {
                         self.zero_class_object(use_.target, object, None)
@@ -359,7 +391,7 @@ impl Function<'_, '_, '_, '_> {
                 return self.allocated_aggregate(
                     use_.target,
                     object,
-                    self.tree.expr_lists.get(elements),
+                    &self.owned_expression_ids(elements),
                     self.graph.lower_list_union_member(list),
                 );
             }
@@ -395,7 +427,7 @@ impl Function<'_, '_, '_, '_> {
             crate::lowir::model::Facts::memory(
                 false,
                 !matches!(
-                    types::storage(self.graph, use_.target)?,
+                    types::storage(&*self.graph, use_.target)?,
                     Type::I8 | Type::U8
                 ),
             ),
@@ -452,6 +484,8 @@ impl Function<'_, '_, '_, '_> {
                     crate::sema::Error::Invariant("allocated constructor signature").into(),
                 );
             };
+            let parameters = parameters.to_vec();
+            let parameters = parameters.as_slice();
             for index in written..parameters.len() {
                 work.extend(self.graph.lower_default(entity, index));
             }

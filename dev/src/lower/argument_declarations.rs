@@ -57,6 +57,7 @@ impl Symbols<'_, '_> {
                     return Ok(node);
                 }
                 return self
+                    .state
                     .abi
                     .intern(
                         Node::TypedArgument {
@@ -90,11 +91,11 @@ impl Symbols<'_, '_> {
                     ));
                 };
                 let ty = self.abi_type(ty)?;
-                let declaration = self.abi.intern(Node::NonTypeParameter(ty), &[])?;
+                let declaration = self.state.abi.intern(Node::NonTypeParameter(ty), &[])?;
                 declarations.push(declaration);
             }
             if let Some((&declaration, rest)) = declarations.split_first() {
-                node = self.abi.intern(
+                node = self.state.abi.intern(
                     Node::TypedArgument {
                         declaration,
                         argument: node,
@@ -106,7 +107,7 @@ impl Symbols<'_, '_> {
         }
         if self.declared_type_dependent(ty)? || empty {
             let declaration = self.parameter_declaration(parameter)?;
-            node = self.abi.intern(
+            node = self.state.abi.intern(
                 Node::TypedArgument {
                     declaration,
                     argument: node,
@@ -118,30 +119,31 @@ impl Symbols<'_, '_> {
     }
     fn parameter_declaration(&mut self, parameter: EntityId) -> Result<NodeId, Error> {
         self.check_stack()?;
-        let key = (parameter, self.bound_pattern, self.own_level);
-        if let Some(&node) = self.parameter_declarations.get(&key) {
+        let key = (parameter, self.state.bound_pattern, self.state.own_level);
+        if let Some(&node) = self.state.parameter_declarations.get(&key) {
             return Ok(node);
         }
         let (declaration, pack, _) = self.graph.lower_template_declaration(parameter)?;
         let node = match declaration {
             TemplateDeclaration::Template => self.head_declaration(parameter, pack, 0)?,
             TemplateDeclaration::Type => {
-                let node = self.abi.intern(Node::TypeParameter, &[])?;
+                let node = self.state.abi.intern(Node::TypeParameter, &[])?;
                 self.parameter_pack(node, pack)?
             }
             TemplateDeclaration::Value(ty) => {
                 let ty = self.abi_type(ty)?;
-                let node = self.abi.intern(Node::NonTypeParameter(ty), &[])?;
+                let node = self.state.abi.intern(Node::NonTypeParameter(ty), &[])?;
                 self.parameter_pack(node, pack)?
             }
         };
-        self.parameter_declarations.insert(key, node);
+        self.state.parameter_declarations.insert(key, node);
         Ok(node)
     }
 
     fn parameter_pack(&mut self, node: NodeId, pack: bool) -> Result<NodeId, Error> {
         if pack {
-            self.abi
+            self.state
+                .abi
                 .intern(Node::ParameterPack(node), &[])
                 .map_err(Error::from)
         } else {
@@ -157,16 +159,16 @@ impl Symbols<'_, '_> {
     ) -> Result<NodeId, Error> {
         self.check_stack()?;
         let key = (owner, pack, level);
-        if let Some(&node) = self.head_declarations.get(&key) {
+        if let Some(&node) = self.state.head_declarations.get(&key) {
             return Ok(node);
         }
-        let saved = (self.own_level, self.bound_pattern);
-        self.own_level = level;
-        self.bound_pattern = true;
+        let saved = (self.state.own_level, self.state.bound_pattern);
+        self.state.own_level = level;
+        self.state.bound_pattern = true;
         let result = self.head_declaration_inner(owner, pack);
-        (self.own_level, self.bound_pattern) = saved;
+        (self.state.own_level, self.state.bound_pattern) = saved;
         let node = result?;
-        self.head_declarations.insert(key, node);
+        self.state.head_declarations.insert(key, node);
         Ok(node)
     }
 
@@ -179,7 +181,7 @@ impl Symbols<'_, '_> {
         for &parameter in parameters {
             nodes.push(self.parameter_declaration(parameter)?);
         }
-        let node = self.abi.intern(Node::TemplateParameter, &nodes)?;
+        let node = self.state.abi.intern(Node::TemplateParameter, &nodes)?;
         self.parameter_pack(node, pack)
     }
 }

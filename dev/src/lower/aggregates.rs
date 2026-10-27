@@ -64,7 +64,12 @@ impl Function<'_, '_, '_, '_> {
             // and parenthesized value-initialization keep their own zeroing.
             return Ok(());
         }
-        if values.is_empty() && self.symbols.zeroed_by_value(ty)? {
+        if values.is_empty()
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .zeroed_by_value(ty)?
+        {
             return self.zero_class_object(ty, object, None);
         }
         self.aggregate_array(ty, object, values, selected)
@@ -111,9 +116,11 @@ impl Function<'_, '_, '_, '_> {
                 "base aggregate list shape",
             )));
         };
-        self.symbols.storage_destructor(ty)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?;
         let mut input = Input {
-            values: self.tree.expr_lists.get(elements),
+            values: &self.owned_expression_ids(elements),
             next: 0,
             selected: self.graph.lower_list_union_member(id),
         };
@@ -147,7 +154,9 @@ impl Function<'_, '_, '_, '_> {
         initializer: Option<ast::Initializer>,
         storage: NamedStorage,
     ) -> Result<(), Error> {
-        self.symbols.storage_destructor(ty)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?;
         if self.graph.lower_construction(entity).is_none()
             && let Some(list) = self.list_variable(initializer)?
         {
@@ -219,14 +228,14 @@ impl Function<'_, '_, '_, '_> {
                     let value = self.emit(
                         I::Load(
                             Facts::memory(self.graph.lower_cv(source_ty) & 2 != 0, false),
-                            types::storage(self.graph, ty)?,
+                            types::storage(&*self.graph, ty)?,
                             source,
                         ),
                         ty,
                     )?;
                     return self.effect(I::Store(
                         Facts::memory(self.graph.lower_cv(ty) & 2 != 0, false),
-                        types::storage(self.graph, ty)?,
+                        types::storage(&*self.graph, ty)?,
                         value.value,
                         slot,
                     ));
@@ -245,6 +254,7 @@ impl Function<'_, '_, '_, '_> {
                     && self.lifetime.cleanups.is_empty()
                     && self
                         .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
                         .storage_destructor(self.graph.lower_expression(source)?.ty)?
                         .is_some()
                 {
@@ -319,7 +329,7 @@ impl Function<'_, '_, '_, '_> {
             self.storage_address(slot, ty)?;
         }
         let mut input = Input {
-            values: self.tree.expr_lists.get(elements),
+            values: &self.owned_expression_ids(elements),
             next: 0,
             selected: self.graph.lower_list_union_member(id),
         };
@@ -349,10 +359,10 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         let ty = self.graph.lower_entity_type(member)?;
-        let values = match initializer.kind {
+        let values: &[ast::ExprId] = match initializer.kind {
             ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
                 if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
-                    self.tree.expr_lists.get(elements)
+                    &self.owned_expression_ids(elements)
                 } else if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
                     return Err(Error::Semantic(crate::sema::Error::Diagnostic {
                         location,
@@ -383,7 +393,9 @@ impl Function<'_, '_, '_, '_> {
                 ));
             }
         };
-        self.symbols.storage_destructor(ty)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?;
         let selected = match initializer.kind {
             ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
                 self.graph.lower_list_union_member(id)
@@ -408,7 +420,7 @@ impl Function<'_, '_, '_, '_> {
             untyped: union,
         });
         let string = if let TypeView::Array { element, .. } = self.graph.lower_type(ty)? {
-            types::character(self.graph, element)?
+            types::character(&*self.graph, element)?
                 && values.first().is_some_and(|&id| {
                     matches!(
                         self.tree.expressions.get(self.without_parentheses(id)).kind,
@@ -446,7 +458,7 @@ impl Function<'_, '_, '_, '_> {
         let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Missing("class array non-list initialization"));
         };
-        self.static_array_temporary(ty, storage, self.tree.expr_lists.get(elements))
+        self.static_array_temporary(ty, storage, &self.owned_expression_ids(elements))
     }
     pub(super) fn static_array_temporary(
         &mut self,
@@ -476,7 +488,9 @@ impl Function<'_, '_, '_, '_> {
         values: &[ast::ExprId],
         selected: Option<EntityId>,
     ) -> Result<(), Error> {
-        self.symbols.storage_destructor(ty)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?;
         let mut input = Input {
             values,
             next: 0,
@@ -540,6 +554,8 @@ impl Function<'_, '_, '_, '_> {
     fn aggregate_stores(&self, class: EntityId) -> Result<bool, Error> {
         self.check_stack()?;
         let (members, _) = self.graph.lower_class_members(class)?;
+        let members = members.to_vec();
+        let members = members.as_slice();
         for &member in members {
             if self.graph.lower_unnamed_bit_field(member) {
                 continue;
@@ -645,6 +661,8 @@ impl Function<'_, '_, '_, '_> {
             return self.structured_members(class, input, path);
         }
         let (members, union) = self.graph.lower_class_members(class)?;
+        let members = members.to_vec();
+        let members = members.as_slice();
         let selected = self
             .graph
             .lower_selected_union_member(class, input.selected);
@@ -682,7 +700,7 @@ impl Function<'_, '_, '_, '_> {
                 .graph
                 .lower_member_offset(member)?
                 .wrapping_add(types::size_of(
-                    self.graph,
+                    &*self.graph,
                     ty,
                     crate::support::source::SourceOffset(0),
                 )?)
@@ -746,7 +764,7 @@ impl Function<'_, '_, '_, '_> {
             return self.named_class_item(class, ty, input, path, item);
         }
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)?
-            && types::character(self.graph, element)?
+            && types::character(&*self.graph, element)?
             && let Some(id) = expr
             && let ExprKind::Literal(literal) =
                 self.tree.expressions.get(self.without_parentheses(id)).kind
@@ -771,7 +789,7 @@ impl Function<'_, '_, '_, '_> {
             {
                 input.next += 1;
                 let mut nested = Input {
-                    values: self.tree.expr_lists.get(elements),
+                    values: &self.owned_expression_ids(elements),
                     next: 0,
                     selected: self.graph.lower_list_union_member(id),
                 };
@@ -852,7 +870,11 @@ impl Function<'_, '_, '_, '_> {
         let counted = std::mem::take(&mut self.aggregation.counted_item);
         let destroyed = self.aggregation.floor.is_some()
             && !(aggregate && counted)
-            && self.symbols.storage_destructor(ty)?.is_some();
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .storage_destructor(ty)?
+                .is_some();
         let expr = input.values.get(input.next).copied();
         // Omitted scalar-class subobjects end their value-initialization's
         // temporaries separately; array elements remain in the array segment.
@@ -924,7 +946,7 @@ impl Function<'_, '_, '_, '_> {
                 self.named_contents(
                     ty,
                     &mut Input {
-                        values: self.tree.expr_lists.get(elements),
+                        values: &self.owned_expression_ids(elements),
                         next: 0,
                         selected: self.graph.lower_list_union_member(id),
                     },
@@ -960,7 +982,7 @@ impl Function<'_, '_, '_, '_> {
         address: Value,
         value: Value,
     ) -> Result<(), Error> {
-        let storage = types::storage(self.graph, ty)?;
+        let storage = types::storage(&*self.graph, ty)?;
         if self.graph.lower_cv(ty) & 4 != 0 {
             return self.write_atomic_place(address, ty, value);
         }
@@ -988,7 +1010,7 @@ impl Function<'_, '_, '_, '_> {
         path: &mut Path,
         field: bool,
     ) -> Result<(), Error> {
-        let ty = types::storage(self.graph, element)?;
+        let ty = types::storage(&*self.graph, element)?;
         for index in 0..bound {
             path.steps.push(Step {
                 scale: None,
@@ -1060,7 +1082,7 @@ impl Function<'_, '_, '_, '_> {
         match self.graph.lower_type(ty)? {
             TypeView::Class(class) => self.named_members(class, input, path),
             TypeView::Array { element, bound } => {
-                if types::character(self.graph, element)?
+                if types::character(&*self.graph, element)?
                     && let Some(&id) = input.values.get(input.next)
                     && let ExprKind::Literal(literal) =
                         self.tree.expressions.get(self.without_parentheses(id)).kind
@@ -1084,9 +1106,9 @@ impl Function<'_, '_, '_, '_> {
                 for index in 0..bound {
                     let (ty_ir, scale) =
                         if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
-                            (Type::I8, Some(types::layout(self.graph, element)?.0))
+                            (Type::I8, Some(types::layout(&*self.graph, element)?.0))
                         } else {
-                            (types::storage(self.graph, element)?, None)
+                            (types::storage(&*self.graph, element)?, None)
                         };
                     path.steps.push(Step {
                         scale,
@@ -1133,6 +1155,8 @@ impl Function<'_, '_, '_, '_> {
             )));
         };
         let (members, union) = self.graph.lower_class_members(class)?;
+        let members = members.to_vec();
+        let members = members.as_slice();
         let selected = self
             .graph
             .lower_selected_union_member(class, input.selected);
@@ -1182,7 +1206,7 @@ impl Function<'_, '_, '_, '_> {
                 .graph
                 .lower_member_offset(member)?
                 .wrapping_add(types::size_of(
-                    self.graph,
+                    &*self.graph,
                     ty,
                     crate::support::source::SourceOffset(0),
                 )?)
@@ -1227,7 +1251,7 @@ impl Function<'_, '_, '_, '_> {
         );
         let (storage, projection, offset) = if field && !object {
             (
-                types::storage(self.graph, element)?,
+                types::storage(&*self.graph, element)?,
                 Some(Projection::ArrayElement),
                 index,
             )
@@ -1239,7 +1263,7 @@ impl Function<'_, '_, '_, '_> {
                 Type::I8,
                 (!object).then_some(Projection::ArrayElement),
                 index
-                    .checked_mul(types::layout(self.graph, element)?.0)
+                    .checked_mul(types::layout(&*self.graph, element)?.0)
                     .ok_or(crate::lowir::Error::Limit)?,
             )
         };

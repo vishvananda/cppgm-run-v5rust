@@ -52,6 +52,7 @@ pub(crate) struct Instruction {
     pub bytes: u64,
     pub immediate: u64,
 }
+#[derive(Clone)]
 pub(crate) struct Program {
     pub instructions: Box<[Instruction]>,
     pub registers: Box<[bool]>,

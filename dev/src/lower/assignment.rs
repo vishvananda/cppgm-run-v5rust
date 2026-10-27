@@ -13,11 +13,9 @@ pub(super) struct DefinitionOutput<'a> {
     pub definitions: &'a mut super::definition_order::Definitions,
     pub emitted: &'a mut std::collections::HashSet<EntityId>,
 }
-pub(super) fn lower_definitions<'a>(
+pub(super) fn lower_definitions(
     output: DefinitionOutput<'_>,
-    symbols: &mut super::symbols::Symbols<'a, '_>,
-    graph: &'a crate::sema::Graph,
-    tree: &'a crate::syntax::ast::Tree,
+    cx: &mut crate::lower::unit_frontend::Context<'_, '_, '_>,
     declarators: crate::syntax::storage::List<crate::syntax::ast::InitDeclarator>,
     budget: crate::support::stack::StackBudget,
 ) -> Result<(), Error> {
@@ -26,16 +24,16 @@ pub(super) fn lower_definitions<'a>(
         definitions,
         emitted,
     } = output;
-    for init in tree.init_declarators.get(declarators) {
+    for init in cx.tree.init_declarators.get(declarators).to_vec() {
         if init
             .initializer
             .is_none_or(|i| !matches!(i.kind, crate::syntax::ast::InitializerKind::Default))
         {
             continue;
         }
-        let entity = graph.lower_declared(init.declarator)?;
-        if graph.lower_assignment(entity).is_some()
-            && graph.lower_function(entity)?.emission == crate::sema::lowering::Emission::Always
+        let entity = cx.graph.lower_declared(init.declarator)?;
+        if cx.graph.lower_assignment(entity).is_some()
+            && cx.graph.lower_function(entity)?.emission == crate::sema::lowering::Emission::Always
             && emitted.insert(entity)
         {
             let entry = super::construction::Entry::Function(entity);
@@ -44,14 +42,14 @@ pub(super) fn lower_definitions<'a>(
                     program,
                     initialization: None,
                 },
-                symbols,
-                graph,
-                tree,
+                cx,
                 entry,
                 None,
                 budget,
             )?;
-            symbols.stream_definition(program, definitions, entry)?;
+            cx.symbols
+                .view(&*cx.graph, &*cx.tree, cx.cursor)
+                .stream_definition(program, definitions, entry)?;
         }
     }
     Ok(())
@@ -70,6 +68,8 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(signature)? else {
             return Err(crate::sema::Error::Invariant("assignment source signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let ty = *parameters
             .first()
             .ok_or(crate::sema::Error::Invariant("assignment source parameter"))?;
@@ -147,7 +147,8 @@ impl Function<'_, '_, '_, '_> {
             .object
             .ok_or(crate::sema::Error::Invariant("assignment class"))?;
         let ty = self.graph.lower_entity_type(class)?;
-        let actions = &properties.actions;
+        let actions = properties.actions.clone();
+        let actions = actions.as_slice();
         let transfers: Vec<_> = actions
             .iter()
             .map(|&action| {
@@ -188,7 +189,7 @@ impl Function<'_, '_, '_, '_> {
             if !self.graph.lower_class_empty(class)? {
                 let destination = self.assignment_this(ty)?;
                 let source = self.assignment_source(function)?;
-                let (size, alignment) = types::layout(self.graph, ty)?;
+                let (size, alignment) = types::layout(&*self.graph, ty)?;
                 self.effect(I::CopyObject(
                     size.min(self.graph.lower_nonvirtual_bytes(class)?),
                     alignment,
@@ -212,7 +213,7 @@ impl Function<'_, '_, '_, '_> {
                 let source = self.assignment_source(function)?;
                 self.effect(I::CopyObject(
                     prefix,
-                    types::layout(self.graph, ty)?.1,
+                    types::layout(&*self.graph, ty)?.1,
                     source,
                     destination,
                 ))?;
@@ -263,10 +264,10 @@ impl Function<'_, '_, '_, '_> {
             if matches!(self.graph.lower_type(action.ty)?, TypeView::Array { .. }) {
                 let object = self.assignment_this(ty)?;
                 let object = self.assignment_address(object, action)?;
-                let (bytes, alignment) = types::layout(self.graph, action.ty)?;
+                let (bytes, alignment) = types::layout(&*self.graph, action.ty)?;
                 self.effect(I::CopyObject(bytes, alignment, source, object))?;
             } else {
-                let storage = types::storage(self.graph, action.ty)?;
+                let storage = types::storage(&*self.graph, action.ty)?;
                 let value = self
                     .emit(
                         I::Load(Facts::memory(false, storage.bits() != 8), storage, source),
@@ -305,7 +306,9 @@ impl Function<'_, '_, '_, '_> {
                 .is_some_and(|p| p.trivial)
         {
             if action.member.is_some() {
-                self.symbols.demand(selected);
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .demand(selected);
             }
             return Ok(());
         }
@@ -316,7 +319,7 @@ impl Function<'_, '_, '_, '_> {
             let source = self.assignment_address(source, action)?;
             self.call_assignment(action, destination, source, ty)?;
         } else {
-            let size = types::layout(self.graph, element)?.0;
+            let size = types::layout(&*self.graph, element)?.0;
             if count > 8 {
                 let base = self.assignment_source(function)?;
                 let source = self.assignment_address(base, action)?;
@@ -349,7 +352,7 @@ impl Function<'_, '_, '_, '_> {
         source: Value,
     ) -> Result<(), Error> {
         use crate::lowir::vocabulary::{Binary, Compare};
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         let slot = self.generated_slot("assign_array_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;
@@ -422,6 +425,8 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(crate::sema::Error::Invariant("assignment call signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         // copy_lowering.cpp::copied_parameter requires the retained constructor
         // for every by-value subobject assignment, including a scalar selected
         // through a user conversion. Preserve its lowering diagnostic.
@@ -437,7 +442,11 @@ impl Function<'_, '_, '_, '_> {
             .into());
         }
         let caller_destroyed = matches!(self.graph.lower_type(parameters[0])?, TypeView::Class(_))
-            && self.symbols.storage_destructor(parameters[0])?.is_some();
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .storage_destructor(parameters[0])?
+                .is_some();
         let began = caller_destroyed && !self.lifetime.full_expression;
         if began {
             self.lifetime.full_expression = true;
@@ -452,7 +461,8 @@ impl Function<'_, '_, '_, '_> {
         }
         let mut source = source;
         if let TypeView::Class(class) = self.graph.lower_type(parameters[0])? {
-            let slot = self.generated_slot("argobj", types::storage(self.graph, parameters[0])?)?;
+            let slot =
+                self.generated_slot("argobj", types::storage(&*self.graph, parameters[0])?)?;
             let object = self.emit(I::Addr(slot), parameters[0])?.value;
             let constructor = action
                 .parameter_constructor
@@ -480,8 +490,13 @@ impl Function<'_, '_, '_, '_> {
                 self.temporary_alive(parameters[0], source)?;
             }
         }
-        self.symbols.demand(selected);
-        let callee = self.symbols.callee(selected, &mut self.builder)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand(selected);
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .callee(selected, &mut self.builder)?;
         let arguments = self.builder.arguments(&[destination, source])?;
         self.before_lifetime_call(!facts.nothrow)?;
         let result = self.emit(

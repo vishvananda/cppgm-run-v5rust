@@ -121,7 +121,7 @@ impl Function<'_, '_, '_, '_> {
         let id = self.without_parentheses(id);
         let facts = self.graph.lower_expression(id)?;
         let scalar = matches!(self.graph.lower_type(facts.ty)?, TypeView::Scalar(_));
-        let integral = scalar && types::storage(self.graph, facts.ty)?.float_rank() == 0;
+        let integral = scalar && types::storage(&*self.graph, facts.ty)?.float_rank() == 0;
         Ok(match self.tree.expressions.get(id).kind {
             ExprKind::Literal(_) => integral && self.graph.lower_literal_call(id)?.is_none(),
             ExprKind::Keyword(Keyword::True | Keyword::False) => true,
@@ -149,7 +149,7 @@ impl Function<'_, '_, '_, '_> {
         ty: Type,
         source: crate::sema::lowering::TypeId,
     ) -> Result<Option<RValue>, Error> {
-        if let Some(bits) = self.graph.lower_evaluated_wide(self.tree, id)? {
+        if let Some(bits) = self.graph.lower_evaluated_wide(&*self.tree, id)? {
             if let ExprKind::Member { base, op, .. } =
                 self.tree.expressions.get(self.without_parentheses(id)).kind
             {
@@ -170,12 +170,12 @@ impl Function<'_, '_, '_, '_> {
     }
     fn evaluated_floating(&mut self, id: ast::ExprId) -> Result<Option<RValue>, Error> {
         let id = self.without_parentheses(id);
-        let Some(bits) = self.graph.lower_evaluated_floating(self.tree, id)? else {
+        let Some(bits) = self.graph.lower_evaluated_floating(&*self.tree, id)? else {
             return Ok(None);
         };
         let source = self.graph.lower_expression(id)?.ty;
-        let ty = types::storage(self.graph, source)?;
-        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+        let ty = types::storage(&*self.graph, source)?;
+        if let Some(kind) = super::soft_float::kind(&*self.graph, source)? {
             return if kind == super::soft_float::Kind::BFloat {
                 self.soft_constant(kind, bits, source).map(Some)
             } else {
@@ -211,7 +211,7 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(RValue {
             value: self.builder.integer(
-                if ty != Type::I128 || types::signed(self.graph, source)? {
+                if ty != Type::I128 || types::signed(&*self.graph, source)? {
                     i128::from(bits.cast_signed()).cast_unsigned()
                 } else {
                     u128::from(bits)
@@ -241,7 +241,7 @@ impl Function<'_, '_, '_, '_> {
             .fold(0_u128, |bits, (index, &byte)| {
                 bits | (u128::from(byte) << (index * 8))
             });
-        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+        if let Some(kind) = super::soft_float::kind(&*self.graph, source)? {
             return self.soft_constant(kind, bits, source);
         }
         let constant = if let Some(kind) = FloatKind::from_type(ty) {
@@ -346,7 +346,7 @@ impl Function<'_, '_, '_, '_> {
             let place = self.scalar_place(id)?;
             return self.read_place(place, source);
         }
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         if let Some(bits) = facts.query {
             let value = self.builder.integer(u128::from(bits))?;
             return self.emit(I::Const(ty, value), source);
@@ -363,7 +363,7 @@ impl Function<'_, '_, '_, '_> {
         if let Some(pointer) = self.evaluated_pointer(id)? {
             return Ok(pointer);
         }
-        if let Some(value) = self.graph.lower_evaluated_member_pointer(self.tree, id)? {
+        if let Some(value) = self.graph.lower_evaluated_member_pointer(&*self.tree, id)? {
             if let ExprKind::Member { base, op, .. } =
                 self.tree.expressions.get(self.without_parentheses(id)).kind
             {
@@ -489,7 +489,7 @@ impl Function<'_, '_, '_, '_> {
                 if matches!(self.graph.lower_type(source)?, TypeView::Vector { .. }) {
                     return self.vector_list(source, elements);
                 }
-                if super::complex::part(self.graph, source)?.is_some() {
+                if super::complex::part(&*self.graph, source)?.is_some() {
                     return self.complex_list(source, elements, Context::Initialization);
                 }
                 if let Some(&id) = self.tree.expr_lists.get(elements).first() {
@@ -613,16 +613,16 @@ impl Function<'_, '_, '_, '_> {
         } else {
             b
         };
-        if super::complex::part(self.graph, source)?.is_some() {
+        if super::complex::part(&*self.graph, source)?.is_some() {
             return self.complex_arithmetic(op, source, a, b);
         }
-        if comparison && super::complex::part(self.graph, a.source)?.is_some() {
+        if comparison && super::complex::part(&*self.graph, a.source)?.is_some() {
             return self.complex_equal(op == P::Equal, a, b, source);
         }
         if comparison {
             let facts = self.graph.lower_expression(left)?;
             let common = facts.target.unwrap_or(a.source);
-            let common_storage = types::storage(self.graph, common)?;
+            let common_storage = types::storage(&*self.graph, common)?;
             let ty = if a.ty.bits() != 0
                 && common_storage.bits() != 0
                 && a.ty.bits() == common_storage.bits()
@@ -631,9 +631,9 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 a.ty
             };
-            let soft = super::soft_float::kind(self.graph, common)?;
+            let soft = super::soft_float::kind(&*self.graph, common)?;
             let unsigned =
-                !types::signed(self.graph, common)? && a.ty.float_rank() == 0 && soft.is_none();
+                !types::signed(&*self.graph, common)? && a.ty.float_rank() == 0 && soft.is_none();
             let predicate = match (op, unsigned) {
                 (P::Equal, _) => Compare::Eq,
                 (P::NotEqual, _) => Compare::Ne,
@@ -646,7 +646,10 @@ impl Function<'_, '_, '_, '_> {
                 (P::GreaterEqual, false) => Compare::Ge,
                 _ => Compare::Uge,
             };
-            if self.symbols.host_objects()
+            if self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
                 && a.ty == Type::I128
                 && self.graph.lower_member_pointer_type(common).is_some()
             {
@@ -668,8 +671,8 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         // Arithmetic has the recorded result type even when an intrinsic's
         // backend value uses another same-width representation (u32 counts).
-        let ty = types::storage(self.graph, source)?;
-        let signed = types::signed(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
+        let signed = types::signed(&*self.graph, source)?;
         let operation = match op {
             P::Add => Binary::Add,
             P::Subtract => Binary::Sub,
@@ -677,7 +680,7 @@ impl Function<'_, '_, '_, '_> {
             P::Divide
                 if signed
                     || ty.float_rank() != 0
-                    || super::soft_float::kind(self.graph, source)?.is_some() =>
+                    || super::soft_float::kind(&*self.graph, source)?.is_some() =>
             {
                 Binary::Div
             }
@@ -692,7 +695,7 @@ impl Function<'_, '_, '_, '_> {
             P::ShiftRight => Binary::UShr,
             _ => return Err(Error::Missing("logical expression lowering")),
         };
-        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+        if let Some(kind) = super::soft_float::kind(&*self.graph, source)? {
             return self.soft_arithmetic(operation, kind, a, b, source);
         }
         if a.ty == Type::Ptr {
@@ -798,7 +801,7 @@ impl Function<'_, '_, '_, '_> {
                 value,
             );
         }
-        if super::complex::part(self.graph, value.source)?.is_some()
+        if super::complex::part(&*self.graph, value.source)?.is_some()
             && matches!(op.token.as_punctuator(), Some(P::Subtract | P::Complement))
         {
             return self.complex_unary(
@@ -811,7 +814,7 @@ impl Function<'_, '_, '_, '_> {
         match op.token.as_punctuator() {
             Some(P::Add) => Ok(value),
             Some(P::Subtract) => {
-                if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+                if let Some(kind) = super::soft_float::kind(&*self.graph, source)? {
                     self.soft_negate(kind, value)
                 } else {
                     self.emit(I::Unary(Unary::Neg, value.ty, value.value), source)
@@ -821,12 +824,12 @@ impl Function<'_, '_, '_, '_> {
                 self.emit(I::Unary(Unary::BitNot, value.ty, value.value), source)
             }
             Some(P::LogicalNot) => {
-                if super::complex::part(self.graph, value.source)?.is_some() {
+                if super::complex::part(&*self.graph, value.source)?.is_some() {
                     let truth = self.complex_truth(value, source)?;
                     let zero = self.builder.integer(0)?;
                     return self.emit(I::Compare(Compare::Eq, truth.ty, truth.value, zero), source);
                 }
-                if let Some(kind) = super::soft_float::kind(self.graph, value.source)? {
+                if let Some(kind) = super::soft_float::kind(&*self.graph, value.source)? {
                     let zero = self.soft_constant(kind, 0, value.source)?;
                     let truth = self.soft_compare(Compare::Ne, kind, value, zero, source)?;
                     let zero = self.builder.integer(0)?;
@@ -861,7 +864,7 @@ impl Function<'_, '_, '_, '_> {
             if matches!(self.graph.lower_type(source)?, TypeView::Vector { .. }) {
                 return self.vector_list(source, elements);
             }
-            if super::complex::part(self.graph, source)?.is_some() {
+            if super::complex::part(&*self.graph, source)?.is_some() {
                 return self.complex_list(source, elements, Context::Cast);
             }
             // Scalar list initialization records the conversion on its element;
@@ -875,7 +878,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let operand = self.tree.expr_lists.get(arguments).first().copied();
         if let Some(operand) = operand {
-            if types::storage(self.graph, source)? == Type::Void {
+            if types::storage(&*self.graph, source)? == Type::Void {
                 self.discard_to_void(operand)?;
                 return self.zero(source);
             }
@@ -920,6 +923,49 @@ impl Function<'_, '_, '_, '_> {
             Err(crate::sema::Error::Invariant("intrinsic call without operation").into())
         }
     }
+    fn source_builtin_call(
+        &mut self,
+        target: CallTarget,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+        source: crate::sema::lowering::TypeId,
+    ) -> Result<Option<RValue>, Error> {
+        if let CallTarget::Direct(entity) = target
+            && matches!(
+                self.graph.lower_function(entity)?.builtin,
+                Some(crate::sema::lowering::BuiltinFunction::Expect)
+            )
+        {
+            let [value, expected] = *self.tree.expr_lists.get(arguments) else {
+                return Err(
+                    crate::sema::Error::Invariant("expect builtin without two arguments").into(),
+                );
+            };
+            let value = self.operand(value, Context::Argument)?;
+            let value = self.convert(value, source, Context::Argument)?;
+            self.discard(expected)?;
+            return Ok(Some(value));
+        }
+        if let CallTarget::Direct(entity) = target
+            && matches!(
+                self.graph.lower_function(entity)?.builtin,
+                Some(
+                    crate::sema::lowering::BuiltinFunction::Unreachable
+                        | crate::sema::lowering::BuiltinFunction::Trap
+                )
+            )
+        {
+            if matches!(
+                self.graph.lower_function(entity)?.builtin,
+                Some(crate::sema::lowering::BuiltinFunction::Trap)
+            ) {
+                self.hosted_runtime_call(super::runtime_intrinsics::RuntimeFunction::Trap, source)?;
+            }
+            self.effect(I::Unreachable)?;
+            self.terminated = true;
+            return self.zero(source).map(Some);
+        }
+        Ok(None)
+    }
     pub(super) fn call_into(
         &mut self,
         id: ast::ExprId,
@@ -952,43 +998,11 @@ impl Function<'_, '_, '_, '_> {
             return self.explicit_closure_conversion(callee_expression, invoker, source);
         }
         let invoker = self.graph.lower_closure_invocation(id);
-        if let CallTarget::Direct(entity) = target
-            && matches!(
-                self.graph.lower_function(entity)?.builtin,
-                Some(crate::sema::lowering::BuiltinFunction::Expect)
-            )
-        {
-            let [value, expected] = *self.tree.expr_lists.get(arguments) else {
-                return Err(
-                    crate::sema::Error::Invariant("expect builtin without two arguments").into(),
-                );
-            };
-            let value = self.operand(value, Context::Argument)?;
-            let value = self.convert(value, source, Context::Argument)?;
-            self.discard(expected)?;
+        if let Some(value) = self.source_builtin_call(target, arguments, source)? {
             return Ok(value);
         }
-        if let CallTarget::Direct(entity) = target
-            && matches!(
-                self.graph.lower_function(entity)?.builtin,
-                Some(
-                    crate::sema::lowering::BuiltinFunction::Unreachable
-                        | crate::sema::lowering::BuiltinFunction::Trap
-                )
-            )
-        {
-            if matches!(
-                self.graph.lower_function(entity)?.builtin,
-                Some(crate::sema::lowering::BuiltinFunction::Trap)
-            ) {
-                self.hosted_runtime_call(super::runtime_intrinsics::RuntimeFunction::Trap, source)?;
-            }
-            self.effect(I::Unreachable)?;
-            self.terminated = true;
-            return self.zero(source);
-        }
         let throws = self.lifetime_call_throws(target)?;
-        self.begin_argument_call(throws, self.tree.expr_lists.get(arguments))?;
+        self.begin_argument_call(throws, &self.owned_expression_ids(arguments))?;
         let function_type = match target {
             CallTarget::Direct(entity) => {
                 let facts = self.graph.lower_function(entity)?;
@@ -1006,9 +1020,15 @@ impl Function<'_, '_, '_, '_> {
                 "call signature missing",
             )));
         };
-        let boundary = self.symbols.result_boundary(result)?;
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
+        let boundary = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(result)?;
         let ty = boundary.ty;
-        let supplied = self.tree.expr_lists.get(arguments);
+        let supplied = self.owned_expression_ids(arguments);
+        let supplied = supplied.as_slice();
         let member_access = self
             .graph
             .lower_bound_member_pointer(callee_expression)?
@@ -1092,18 +1112,24 @@ impl Function<'_, '_, '_, '_> {
             CallTarget::Direct(entity) => {
                 let dispatch = self.graph.lower_virtual_dispatch(id)?;
                 if let Some(invoker) = invoker {
-                    self.symbols.demand(invoker);
+                    self.symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .demand(invoker);
                     let symbol = self
                         .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
                         .function_symbol(self.builder.program(), invoker)?;
                     let value = self
                         .emit(I::Addr(crate::lowir::model::Value::Symbol(symbol)), source)?
                         .value;
-                    let signature = self.symbols.call_signature(
-                        self.builder.program(),
-                        self.graph.lower_function(invoker)?.ty,
-                        self.graph.lower_function(invoker)?.nothrow,
-                    )?;
+                    let signature = self
+                        .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .call_signature(
+                            self.builder.program(),
+                            self.graph.lower_function(invoker)?.ty,
+                            self.graph.lower_function(invoker)?.nothrow,
+                        )?;
                     (value, Some(signature))
                 } else if dispatch {
                     let receiver = *values.get(usize::from(boundary.indirect)).ok_or(
@@ -1114,7 +1140,9 @@ impl Function<'_, '_, '_, '_> {
                     callee
                 } else {
                     (
-                        self.symbols.direct_callee(self.builder.program(), entity)?,
+                        self.symbols
+                            .view(&*self.graph, &*self.tree, self.cursor)
+                            .direct_callee(self.builder.program(), entity)?,
                         None,
                     )
                 }
@@ -1130,11 +1158,10 @@ impl Function<'_, '_, '_, '_> {
                     )?
                 } else {
                     let callee = self.operand(callee_expression, Context::Operand)?.value;
-                    let signature = self.symbols.call_signature(
-                        self.builder.program(),
-                        function_type,
-                        nothrow,
-                    )?;
+                    let signature = self
+                        .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .call_signature(self.builder.program(), function_type, nothrow)?;
                     (callee, Some(signature))
                 }
             }

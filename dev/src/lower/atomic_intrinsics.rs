@@ -33,7 +33,8 @@ impl Function<'_, '_, '_, '_> {
         arguments: List<ast::ExprId>,
         intrinsic: AtomicIntrinsic,
     ) -> Result<RValue, Error> {
-        let arguments = self.tree.expr_lists.get(arguments);
+        let arguments = self.owned_expression_ids(arguments);
+        let arguments = arguments.as_slice();
         let source = self.graph.lower_expression(id)?.ty;
         let kind = intrinsic.operation;
         if matches!(kind, Op::ThreadFence | Op::SignalFence) {
@@ -174,7 +175,7 @@ impl Function<'_, '_, '_, '_> {
                     )
                 {
                     let bytes = types::size_of(
-                        self.graph,
+                        &*self.graph,
                         pointee,
                         self.tree.expressions.get(id).location,
                     )?;
@@ -207,12 +208,12 @@ impl Function<'_, '_, '_, '_> {
         let object_type = if byte {
             Type::U8
         } else {
-            types::storage(self.graph, element)?
+            types::storage(&*self.graph, element)?
         };
         let mut stored = object_type;
         if stored.bits() == 0 && stored != Type::Ptr {
             let size = types::size_of(
-                self.graph,
+                &*self.graph,
                 element,
                 self.tree.expressions.get(argument).location,
             )?;
@@ -255,7 +256,7 @@ impl Function<'_, '_, '_, '_> {
             // Legacy lock_release may read its first trailing operand. The
             // frozen value_operand materializes a class there, then reads the
             // object's integer width, without argument destruction ownership.
-            let slot = self.generated_slot("argobj", types::storage(self.graph, source.ty)?)?;
+            let slot = self.generated_slot("argobj", types::storage(&*self.graph, source.ty)?)?;
             let address = self.storage_address(slot, source.ty)?;
             if source.is_place && self.graph.lower_class_copy(argument)?.is_none() {
                 let from = self.address(argument)?;

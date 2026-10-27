@@ -131,11 +131,29 @@ impl Analyzer<'_> {
         self.instantiation_context(formation_depth, location, limit, action)
             .map_err(Error::required_instantiation)
     }
+    pub(super) fn required_unlimited_instantiation<T>(
+        &mut self,
+        formation_depth: u32,
+        location: SourceOffset,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.with_instantiation_limit(formation_depth, location, None, action)
+            .map_err(Error::required_instantiation)
+    }
     pub(super) fn instantiation_context<T>(
         &mut self,
         formation_depth: u32,
         location: SourceOffset,
         limit: usize,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.with_instantiation_limit(formation_depth, location, Some(limit), action)
+    }
+    fn with_instantiation_limit<T>(
+        &mut self,
+        formation_depth: u32,
+        location: SourceOffset,
+        limit: Option<usize>,
         action: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
         self.check_stack()?;
@@ -150,7 +168,7 @@ impl Analyzer<'_> {
         let mut saved = Context::default();
         saved.swap(self);
         self.instantiation_depth = formation_depth + 1;
-        let saved_limit = self.graph.lookup_limit.replace(limit);
+        let saved_limit = std::mem::replace(&mut self.graph.lookup_limit, limit);
         let result = action(self);
         self.graph.lookup_limit = saved_limit;
         saved.swap(self);
@@ -184,6 +202,20 @@ mod tests {
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.graph.lookup_limit = Some(7);
+        let unrestricted = analyzer.required_unlimited_instantiation(0, SourceOffset(0), |inner| {
+            assert!(inner.graph.lookup_limit.is_none());
+            Err::<(), _>(Error::at(SourceOffset(0), "unrestricted context test"))
+        });
+        assert!(matches!(
+            unrestricted,
+            Err(Error::InstantiationDiagnostic {
+                message: "unrestricted context test",
+                ..
+            })
+        ));
+        assert_eq!(analyzer.graph.lookup_limit, Some(7));
+        analyzer.graph.lookup_limit = None;
         analyzer.instantiation_depth = 7;
         analyzer.global_allocation_context =
             super::super::allocation::GlobalAllocationContext::Declaration;

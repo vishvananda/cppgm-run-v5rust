@@ -21,7 +21,8 @@ impl Function<'_, '_, '_, '_> {
         kind: Bit,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        let arguments = self.tree.expr_lists.get(arguments);
+        let arguments = self.owned_expression_ids(arguments);
+        let arguments = arguments.as_slice();
         let mut x = self.operand(arguments[0], Context::Argument)?;
         if kind == Bit::ByteSwap {
             return self.emit(I::Unary(Unary::ByteSwap, x.ty, x.value), source);
@@ -150,7 +151,12 @@ impl Function<'_, '_, '_, '_> {
                 I::Convert(Convert::Truncate, Type::I32, count.ty, count.value),
                 source,
             )
-        } else if count.ty == Type::I32 || self.symbols.object_mode() {
+        } else if count.ty == Type::I32
+            || self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .object_mode()
+        {
             Ok(RValue { source, ..count })
         } else {
             self.emit(I::Copy(Type::I32, count.value), source)

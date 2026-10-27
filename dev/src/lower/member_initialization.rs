@@ -80,13 +80,18 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<bool, Error> {
         self.check_stack()?;
         let plan = self.graph.lower_constructor(id);
+        let class = plan.class;
+        let plan_union = plan.union;
+        let subobjects = plan.subobjects.to_vec();
+        let members = plan.members.to_vec();
+        let written_members = plan.written_members.to_vec();
         let within = self.member_initialization_class(pointer)?;
         let union = self.graph.lower_union_class(within);
-        let nested = plan.class != within;
+        let nested = class != within;
         let mut wrote = false;
-        let mut children = plan.subobjects.iter().peekable();
-        for (index, &(member, initializer)) in plan.members.iter().enumerate() {
-            let site = (!plan.written_members[index]).then_some(location);
+        let mut children = subobjects.iter().peekable();
+        for (index, &(member, initializer)) in members.iter().enumerate() {
+            let site = (!written_members[index]).then_some(location);
             self.with_member_initialization_site(member, site, |lowering| {
                 let union = union || lowering.graph.lower_member_union(member);
                 let ty = lowering.graph.lower_entity_type(member)?;
@@ -151,7 +156,7 @@ impl Function<'_, '_, '_, '_> {
                     )?;
                     lowering.destroy_temporaries(first)?;
                     lowering.end_lifetime_expression(region)?;
-                    if !plan.union && !nested {
+                    if !plan_union && !nested {
                         lowering.subobject_constructed(ty, offset, None)?;
                     }
                     lowering.bit_initialization.unit = 0;
@@ -163,7 +168,7 @@ impl Function<'_, '_, '_, '_> {
                     return Ok(());
                 }
                 let Some(initializer) = initializer else {
-                    if !plan.union && !nested {
+                    if !plan_union && !nested {
                         lowering.subobject_constructed(ty, offset, None)?;
                     }
                     return Ok(());
@@ -180,7 +185,7 @@ impl Function<'_, '_, '_, '_> {
                 )?;
                 lowering.destroy_temporaries(first)?;
                 lowering.end_lifetime_expression(region)?;
-                if !plan.union && !nested {
+                if !plan_union && !nested {
                     lowering.subobject_constructed(ty, offset, None)?;
                 }
                 lowering.bit_initialization.unit = 0;
@@ -290,11 +295,11 @@ impl Function<'_, '_, '_, '_> {
                     self.graph.lower_cv(ty) & 2 == 0
                         && !union
                         && !matches!(
-                            super::types::storage(self.graph, ty)?,
+                            super::types::storage(&*self.graph, ty)?,
                             Type::I8 | Type::U8 | Type::Object { .. }
                         ),
                 ),
-                super::types::storage(self.graph, ty)?,
+                super::types::storage(&*self.graph, ty)?,
                 value,
                 address,
             ))?;
@@ -302,7 +307,7 @@ impl Function<'_, '_, '_, '_> {
         self.bit_initialization.high = self.bit_initialization.high.max(
             self.graph
                 .lower_member_offset(member)?
-                .wrapping_add(super::types::layout(self.graph, ty)?.0)
+                .wrapping_add(super::types::layout(&*self.graph, ty)?.0)
                 .wrapping_mul(8),
         );
         Ok(())

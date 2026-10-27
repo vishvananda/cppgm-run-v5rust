@@ -331,7 +331,7 @@ impl Function<'_, '_, '_, '_> {
         self.step_field_value(widened, decrement)
     }
     fn step_field_value(&mut self, old: RValue, decrement: bool) -> Result<RValue, Error> {
-        if types::boolean(self.graph, old.source)? {
+        if types::boolean(&*self.graph, old.source)? {
             return Ok(RValue {
                 value: self.builder.integer(1)?,
                 bits: Some(1),
@@ -340,7 +340,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let one = self.builder.integer(1)?;
         let nowrap =
-            types::signed(self.graph, old.source)? && matches!(old.ty, Type::I32 | Type::I64);
+            types::signed(&*self.graph, old.source)? && matches!(old.ty, Type::I32 | Type::I64);
         self.emit(
             I::Binary(
                 if decrement { Binary::Sub } else { Binary::Add },
@@ -398,7 +398,7 @@ impl Function<'_, '_, '_, '_> {
             right = self.convert(right, operation, Context::CompoundAssignment)?;
         }
         let left = self.convert(old, operation, Context::CompoundAssignment)?;
-        let signed = types::signed(self.graph, operation)?;
+        let signed = types::signed(&*self.graph, operation)?;
         let code = match op {
             P::AddAssign => Binary::Add,
             P::SubtractAssign => Binary::Sub,

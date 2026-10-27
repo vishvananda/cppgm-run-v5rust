@@ -46,7 +46,7 @@ impl Function<'_, '_, '_, '_> {
         place: Value,
         source: TypeId,
     ) -> Result<RValue, Error> {
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         let facts = Facts::memory(self.graph.lower_cv(source) & 2 != 0, false);
         if ty.bits() != 0 || ty == Type::Ptr {
             return self.emit(
@@ -86,7 +86,7 @@ impl Function<'_, '_, '_, '_> {
         source: TypeId,
         value: Value,
     ) -> Result<(), Error> {
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         if ty.bits() != 0 || ty == Type::Ptr {
             return self.effect(I::Runtime(R::AtomicStore(
                 ty,
@@ -123,7 +123,7 @@ impl Function<'_, '_, '_, '_> {
         fetch_old: bool,
         value: RValue,
     ) -> Result<RValue, Error> {
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         self.atomic_update(
             AtomicObject {
                 source,
@@ -148,7 +148,7 @@ impl Function<'_, '_, '_, '_> {
         if self.graph.lower_cv(source) & 4 == 0 {
             return Ok(None);
         }
-        let storage = types::storage(self.graph, source)?;
+        let storage = types::storage(&*self.graph, source)?;
         let Some(bits) = bits(storage) else {
             return Ok(None);
         };
@@ -198,7 +198,7 @@ impl Function<'_, '_, '_, '_> {
         state: AtomicLoop,
         updated: RValue,
     ) -> Result<(), Error> {
-        let storage = types::storage(self.graph, source)?;
+        let storage = types::storage(&*self.graph, source)?;
         self.end_atomic_bits_loop(place, source, storage, state, updated)
     }
 

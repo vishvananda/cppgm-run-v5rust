@@ -54,10 +54,11 @@ fn parameter_bindings(
     }
 }
 pub(super) struct Function<'a, 'source, 'program, 'symbols> {
-    pub graph: &'a Graph,
-    pub tree: &'a ast::Tree,
+    pub graph: &'a mut Graph,
+    pub tree: &'a mut ast::Tree,
     pub builder: FunctionBuilder<'program>,
-    pub symbols: &'symbols mut Symbols<'a, 'source>,
+    pub cursor: &'a mut crate::syntax::cursor::Cursor<'source>,
+    pub symbols: &'symbols mut super::symbols::State,
     pub locals: HashMap<EntityId, Value>,
     pub parameter_slots: Vec<Value>,
     pub untyped_places: std::collections::HashSet<Value>,
@@ -147,47 +148,15 @@ fn require_analyzed_body(
     Ok(())
 }
 
-pub(super) fn lower<'a>(
-    output: super::startup::FunctionOutput<'_>,
-    symbols: &mut Symbols<'a, '_>,
-    graph: &'a Graph,
-    tree: &'a ast::Tree,
-    entry: super::construction::Entry,
-    body: Option<ast::BodyId>,
-    budget: StackBudget,
-) -> Result<(), Error> {
-    require_analyzed_body(graph, tree, entry.entity(graph), body)?;
-    let program = output.program;
-    let facts = entry.facts(graph)?;
-    let entity = entry.entity(graph);
-    let TypeView::Function {
-        result,
-        parameters,
-        variadic,
-    } = graph.lower_type(facts.ty)?
-    else {
-        return Err(Error::Semantic(crate::sema::Error::Invariant(
-            "function signature missing",
-        )));
-    };
-    let parameter_bindings = parameter_bindings(graph, facts.scope, parameters);
-    if parameters.len() != parameter_bindings.len() {
-        return Err(Error::Semantic(crate::sema::Error::Invariant(
-            "function parameter binding mismatch",
-        )));
-    }
-    let mut reserved = std::collections::HashSet::new();
-    for &Parameter { name, .. } in &parameter_bindings {
-        if let Some(name) = name {
-            reserved.insert(symbols.parameter_name(name)?);
-        }
-    }
-    let object_count = usize::from(facts.object.is_some());
-    let hidden_count = usize::from(entry.hidden_vtt(graph)?);
-    let result_boundary = symbols.result_boundary(result)?;
-    let result_count = usize::from(result_boundary.indirect);
-    let mut names = Vec::with_capacity(parameters.len() + object_count + result_count);
-    if result_boundary.indirect {
+fn parameter_names(
+    cx: &mut crate::lower::unit_frontend::Context<'_, '_, '_>,
+    entity: Option<EntityId>,
+    bindings: &[Parameter],
+    reserved: &std::collections::HashSet<String>,
+    (result_count, object_count, hidden_count): (usize, usize, usize),
+) -> Result<Vec<(String, Type)>, Error> {
+    let mut names = Vec::with_capacity(bindings.len() + object_count + result_count);
+    if result_count != 0 {
         names.push(("ret".to_owned(), Type::Ptr));
     }
     if object_count != 0 {
@@ -196,14 +165,16 @@ pub(super) fn lower<'a>(
     if hidden_count != 0 {
         names.push(("__vtt".to_owned(), Type::Ptr));
     }
-    for &Parameter { name, ty, .. } in &parameter_bindings {
+    for &Parameter { name, ty, .. } in bindings {
         names.push((
             if entity.is_some_and(|entity| {
-                graph.lower_implicit_assignment(entity) || graph.lower_implicit_copy(entity)
+                cx.graph.lower_implicit_assignment(entity) || cx.graph.lower_implicit_copy(entity)
             }) {
                 "other".to_owned()
             } else if let Some(name) = name {
-                symbols.parameter_name(name)?
+                cx.symbols
+                    .view(&*cx.graph, &*cx.tree, cx.cursor)
+                    .parameter_name(name)?
             } else {
                 let mut name = format!("__param{}", names.len());
                 while reserved.contains(&name) {
@@ -211,16 +182,78 @@ pub(super) fn lower<'a>(
                 }
                 name
             },
-            parameter_type(graph, ty)?,
+            parameter_type(&*cx.graph, ty)?,
         ));
     }
-    let symbol = symbols.entry_symbol(program, entry)?;
-    let replaces_entry = symbols.definition_replacement(program, entry, symbol)?;
-    let metadata = symbols.definition_metadata(program, entry, symbol)?;
+    Ok(names)
+}
+pub(super) fn lower(
+    output: super::startup::FunctionOutput<'_>,
+    cx: &mut crate::lower::unit_frontend::Context<'_, '_, '_>,
+    entry: super::construction::Entry,
+    body: Option<ast::BodyId>,
+    budget: StackBudget,
+) -> Result<(), Error> {
+    require_analyzed_body(&*cx.graph, &*cx.tree, entry.entity(&*cx.graph), body)?;
+    let program = output.program;
+    let facts = entry.facts(&*cx.graph)?;
+    let entity = entry.entity(&*cx.graph);
+    let TypeView::Function {
+        result,
+        parameters,
+        variadic,
+    } = cx.graph.lower_type(facts.ty)?
+    else {
+        return Err(Error::Semantic(crate::sema::Error::Invariant(
+            "function signature missing",
+        )));
+    };
+    let parameter_bindings = parameter_bindings(&*cx.graph, facts.scope, parameters);
+    if parameters.len() != parameter_bindings.len() {
+        return Err(Error::Semantic(crate::sema::Error::Invariant(
+            "function parameter binding mismatch",
+        )));
+    }
+    let mut reserved = std::collections::HashSet::new();
+    for &Parameter { name, .. } in &parameter_bindings {
+        if let Some(name) = name {
+            reserved.insert(
+                cx.symbols
+                    .view(&*cx.graph, &*cx.tree, cx.cursor)
+                    .parameter_name(name)?,
+            );
+        }
+    }
+    let object_count = usize::from(facts.object.is_some());
+    let hidden_count = usize::from(entry.hidden_vtt(&*cx.graph)?);
+    let result_boundary = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .result_boundary(result)?;
+    let result_count = usize::from(result_boundary.indirect);
+    let names = parameter_names(
+        cx,
+        entity,
+        &parameter_bindings,
+        &reserved,
+        (result_count, object_count, hidden_count),
+    )?;
+    let symbol = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .entry_symbol(program, entry)?;
+    let replaces_entry = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .definition_replacement(program, entry, symbol)?;
+    let metadata = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .definition_metadata(program, entry, symbol)?;
     let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
     let parameters = constructed_parameters(
         program,
-        graph,
+        &*cx.graph,
         entity,
         &names,
         &parameter_bindings,
@@ -231,14 +264,16 @@ pub(super) fn lower<'a>(
     } else {
         FunctionBuilder::with_parameter_ids(program, symbol, &parameters, result_boundary.ty)?
     };
-    symbols.locate_definition(&mut builder, entity.and(facts.definition))?;
+    cx.symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .locate_definition(&mut builder, entity.and(facts.definition))?;
     builder.metadata(metadata);
-    let distinct = entity.is_some_and(|entity| graph.lower_copy_constructor(entity));
+    let distinct = entity.is_some_and(|entity| cx.graph.lower_copy_constructor(entity));
     if result_boundary.indirect {
         builder.parameter_boundary(
             0,
             Some(crate::lowir::vocabulary::Pass::IndirectResult),
-            types::layout(graph, result)?.0,
+            types::layout(&*cx.graph, result)?.0,
             false,
         )?;
     }
@@ -246,15 +281,17 @@ pub(super) fn lower<'a>(
         builder.parameter_boundary(
             result_count,
             None,
-            types::layout(graph, graph.lower_entity_type(class)?)?.0,
+            types::layout(&*cx.graph, cx.graph.lower_entity_type(class)?)?.0,
             distinct,
         )?;
     }
-    for (index, &ty) in parameters_types(graph, facts.ty)?.iter().enumerate() {
-        let (pass, bytes) = reference_boundary(graph, ty)?;
+    for (index, &ty) in parameters_types(&*cx.graph, facts.ty)?.iter().enumerate() {
+        let (pass, bytes) = reference_boundary(&*cx.graph, ty)?;
         builder.parameter_classes(
             index + object_count + result_count + hidden_count,
-            symbols.parameter_classes(ty)?,
+            cx.symbols
+                .view(&*cx.graph, &*cx.tree, cx.cursor)
+                .parameter_classes(ty)?,
         )?;
         builder.parameter_boundary(
             index + object_count + result_count + hidden_count,
@@ -278,11 +315,11 @@ pub(super) fn lower<'a>(
         ..Boundary::default()
     };
     builtin_boundary(&mut boundary, facts.builtin);
-    declared_effects(&mut boundary, graph, entity);
+    declared_effects(&mut boundary, &*cx.graph, entity);
     builder.boundary(boundary);
     builder.block("entry")?;
-    let mut function = Function::new(graph, tree, builder, symbols, entity, Some(result), budget);
-    function.name_context = entry.source_function(graph);
+    let mut function = Function::new(cx.borrow(), builder, entity, Some(result), budget);
+    function.name_context = entry.source_function(&*function.graph);
     function.initialization_output = output.initialization;
     function.virtual_context.class = facts.object;
     if result_boundary.indirect {
@@ -290,14 +327,15 @@ pub(super) fn lower<'a>(
     }
     let body = body
         .map(|id| {
-            let ast::Body::Parsed(body) = tree.bodies.get(id) else {
+            let ast::Body::Parsed(body) = function.tree.bodies.get(id) else {
                 return Err(Error::Semantic(crate::sema::Error::Invariant(
                     "lowering deferred body",
                 )));
             };
-            Ok(body)
+            Ok(*body)
         })
         .transpose()?;
+    let body = body.as_ref();
     function.lifetime.body = body.map(|body| body.compound);
     if result_boundary.indirect
         && let Some(body) = body.filter(|body| body.handlers.is_none())
@@ -306,14 +344,21 @@ pub(super) fn lower<'a>(
     }
     let deleting = matches!(entry, super::construction::Entry::DestructorDeleting(_));
     let calls_complete = if deleting {
-        !function.symbols.deleting_inlines_body(
-            entity.ok_or(crate::sema::Error::Invariant("deleting entity"))?,
-        )?
+        !function
+            .symbols
+            .view(&*function.graph, &*function.tree, function.cursor)
+            .deleting_inlines_body(
+                entity.ok_or(crate::sema::Error::Invariant("deleting entity"))?,
+            )?
     } else {
         false
     };
     let specification = entity.filter(|&entity| {
-        function.symbols.host_objects() && graph.lower_throw_specification(entity).is_some()
+        function
+            .symbols
+            .view(&*function.graph, &*function.tree, function.cursor)
+            .host_objects()
+            && function.graph.lower_throw_specification(entity).is_some()
     });
     if (facts.nothrow || specification.is_some()) && !calls_complete {
         let raises = body
@@ -328,7 +373,7 @@ pub(super) fn lower<'a>(
             ) {
                 facts
                     .object
-                    .map(|class| graph.lower_destructor_subobjects_throw(class))
+                    .map(|class| function.graph.lower_destructor_subobjects_throw(class))
                     .transpose()?
                     .unwrap_or(false)
             } else {
@@ -352,56 +397,97 @@ pub(super) fn lower<'a>(
         object_count + result_count + hidden_count,
     )?;
     if let Some(entity) = entity
-        && graph.lower_assignment(entity).is_some()
+        && function.graph.lower_assignment(entity).is_some()
     {
         function.assign_members(entity)?;
     }
     function.source_body(entry, body, calls_complete)?;
-    if !function.terminated {
-        let ty = result_boundary.ty;
-        if ty != Type::Void
-            && !is_main
-            && function
-                .builder
-                .insertion_targeted(&function.folded_targets)?
-        {
-            function.builder.effect(I::Unreachable)?;
-        } else {
-            let value = function.zero_return(result)?;
-            function.effect(I::Return(ty, value))?;
-        }
-    }
-    function.finish_constructor_cleanups()?;
-    // An empty trailing region can leave its already allocated handlers
-    // pending. finish_body publishes those blocks even without a later call.
-    function.place_cleanup_chains(false)?;
-    function.place_lexical_cleanups()?;
-    function.place_cleanup_chains(true)?;
-    function.place_destructor_terminates()?;
-    function.finish_fallback_returns()?;
-    function.place_function_guard(entry)?;
-    // The terminate landing itself has a no-return continuation. Its
-    // fallback slot follows the guard's exception slot and earlier patches.
-    function.finish_fallback_returns()?;
+    function.finish_source_body(entry, result, result_boundary.ty, is_main)?;
     function.builder.finish()?;
-    super::definition_demands::finish_function_definition(symbols, graph, program, entry, symbol)?;
+    super::definition_demands::finish_function_definition(
+        &mut function
+            .symbols
+            .view(&*function.graph, &*function.tree, function.cursor),
+        &*function.graph,
+        program,
+        entry,
+        symbol,
+    )?;
     Ok(())
 }
 impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> {
+    fn finish_source_body(
+        &mut self,
+        entry: super::construction::Entry,
+        result: TypeId,
+        ty: Type,
+        is_main: bool,
+    ) -> Result<(), Error> {
+        if !self.terminated {
+            if ty != Type::Void
+                && !is_main
+                && self.builder.insertion_targeted(&self.folded_targets)?
+            {
+                self.builder.effect(I::Unreachable)?;
+            } else {
+                let value = self.zero_return(result)?;
+                self.effect(I::Return(ty, value))?;
+            }
+        }
+        self.finish_constructor_cleanups()?;
+        // An empty trailing region can leave its already allocated handlers
+        // pending. finish_body publishes those blocks even without a later call.
+        self.place_cleanup_chains(false)?;
+        self.place_lexical_cleanups()?;
+        self.place_cleanup_chains(true)?;
+        self.place_destructor_terminates()?;
+        self.finish_fallback_returns()?;
+        self.place_function_guard(entry)?;
+        // The terminate landing itself has a no-return continuation. Its
+        // fallback slot follows the guard's exception slot and earlier patches.
+        self.finish_fallback_returns()?;
+        Ok(())
+    }
+    /// Detach compact IDs before a demand can extend the frontend's stores.
+    pub(super) fn owned_expression_ids(
+        &self,
+        list: crate::syntax::storage::List<ast::ExprId>,
+    ) -> Vec<ast::ExprId> {
+        self.tree.expr_lists.get(list).to_vec()
+    }
     pub(super) fn new(
-        graph: &'a Graph,
-        tree: &'a ast::Tree,
+        source: crate::lower::unit_frontend::Context<'a, 'source, 'symbols>,
         builder: FunctionBuilder<'program>,
-        symbols: &'symbols mut Symbols<'a, 'source>,
         entity: Option<EntityId>,
         result: Option<TypeId>,
         budget: StackBudget,
     ) -> Self {
+        let crate::lower::unit_frontend::Context {
+            graph,
+            tree,
+            cursor,
+            symbols,
+        } = source;
         let marker = 0u8;
+        let captured_members = entity
+            .and_then(|function| graph.lower_call_closure(function))
+            .map(|class| {
+                graph
+                    .lower_closure_captures(class)
+                    .iter()
+                    .map(|capture| (capture.entity, capture.member))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let closure_this = entity
+            .and_then(|function| graph.lower_call_closure(function))
+            .and_then(|class| graph.lower_closure(class))
+            .and_then(|closure| closure.this_member);
         Self {
             graph,
             tree,
             builder,
+            cursor,
             symbols,
             locals: HashMap::new(),
             parameter_slots: Vec::new(),
@@ -416,20 +502,8 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             this_slot: None,
             virtual_context: super::construction_context::FunctionContext::default(),
             call_object_class: None,
-            captured_members: entity
-                .and_then(|function| graph.lower_call_closure(function))
-                .map(|class| {
-                    graph
-                        .lower_closure_captures(class)
-                        .iter()
-                        .map(|capture| (capture.entity, capture.member))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            closure_this: entity
-                .and_then(|function| graph.lower_call_closure(function))
-                .and_then(|class| graph.lower_closure(class))
-                .and_then(|closure| closure.this_member),
+            captured_members,
+            closure_this,
             persistent_references: false,
             static_temporaries: None,
             static_initializer: false,
@@ -480,7 +554,7 @@ impl Function<'_, '_, '_, '_> {
         ) in bindings.iter().enumerate()
         {
             let index = ordinal + first;
-            let storage = types::storage(self.graph, parameter)?;
+            let storage = types::storage(&*self.graph, parameter)?;
             let slot = if name.is_some()
                 || self.entity.is_some_and(|e| {
                     self.graph.lower_implicit_assignment(e) || self.graph.lower_implicit_copy(e)
@@ -538,7 +612,7 @@ impl Function<'_, '_, '_, '_> {
                 self.copy_object(ty, incoming, address)?;
             }
         } else {
-            let storage = types::storage(self.graph, ty)?;
+            let storage = types::storage(&*self.graph, ty)?;
             // Prologue writes an unqualified frame place. Source accesses
             // retain the parameter object's volatile fact.
             self.builder.effect(I::Store(
@@ -665,19 +739,19 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn zero(&mut self, source: TypeId) -> Result<RValue, Error> {
-        if super::complex::part(self.graph, source)?.is_some()
+        if super::complex::part(&*self.graph, source)?.is_some()
             || matches!(self.graph.lower_type(source)?, TypeView::Vector { .. })
         {
-            let ty = types::storage(self.graph, source)?;
-            let (bytes, align) = types::layout(self.graph, source)?;
+            let ty = types::storage(&*self.graph, source)?;
+            let (bytes, align) = types::layout(&*self.graph, source)?;
             let slot = self.generated_slot("complex", ty)?;
             self.effect(I::ZeroInit(bytes, align, slot))?;
             return self.read_place(slot, source);
         }
-        if let Some(kind) = super::soft_float::kind(self.graph, source)? {
+        if let Some(kind) = super::soft_float::kind(&*self.graph, source)? {
             return self.soft_constant(kind, 0, source);
         }
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         let bits = if self.data_member_pointer(source) {
             u64::MAX
         } else {
@@ -713,7 +787,7 @@ impl Function<'_, '_, '_, '_> {
             | DeclKind::Class(_) => return Ok(()),
             _ => return Err(Error::Missing("block declaration lowering")),
         };
-        for declarator in self.tree.init_declarators.get(declarators) {
+        for declarator in self.tree.init_declarators.get(declarators).to_vec() {
             self.local_variable(
                 declarator.declarator,
                 declarator.initializer,
@@ -806,7 +880,7 @@ impl Function<'_, '_, '_, '_> {
                 ast::InitializerKind::Parenthesized(arguments)
                     if self.tree.expr_lists.get(arguments).len() == 1 =>
                 {
-                    for &id in self.tree.expr_lists.get(arguments) {
+                    for id in self.owned_expression_ids(arguments) {
                         self.begin_tracking(
                             id,
                             super::temporary_scan::ExpressionUse::Initialization,
@@ -919,14 +993,19 @@ impl Function<'_, '_, '_, '_> {
             return self.local_static(entity, initializer, tokens);
         }
         let ty = self.local_object_type(entity)?;
-        let storage = types::local_storage(self.graph, entity, ty)?;
+        let storage = types::local_storage(&*self.graph, entity, ty)?;
         let slot = if self.returned_local == Some(entity) {
             self.result_destination
                 .ok_or(crate::sema::Error::Invariant(
                     "returned local without destination",
                 ))?
         } else if let Some(name) = self.graph.lower_local_name(entity) {
-            self.builder.slot(self.symbols.identifier(name)?, storage)?
+            self.builder.slot(
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .identifier(name)?,
+                storage,
+            )?
         } else {
             self.generated_slot("__anonymous_union_storage", storage)?
         };
@@ -957,7 +1036,7 @@ impl Function<'_, '_, '_, '_> {
             return self.local_aggregate(entity, ty, slot, initializer);
         }
         if let Some(value) = self.graph.lower_variable(entity)?.initializer {
-            let soft = super::soft_float::kind(self.graph, ty)?;
+            let soft = super::soft_float::kind(&*self.graph, ty)?;
             let value = match value {
                 crate::sema::lowering::StaticValue::Floating(_, _)
                     if soft.is_some_and(|kind| kind != super::soft_float::Kind::BFloat) =>
@@ -991,7 +1070,7 @@ impl Function<'_, '_, '_, '_> {
         slot: Value,
         initializer: Option<ast::Initializer>,
     ) -> Result<(), Error> {
-        self.initialize_scalar_memory(ty, slot, initializer, types::memory(self.graph, ty)?)
+        self.initialize_scalar_memory(ty, slot, initializer, types::memory(&*self.graph, ty)?)
     }
     pub(super) fn initialize_scalar_memory(
         &mut self,
@@ -1026,7 +1105,7 @@ impl Function<'_, '_, '_, '_> {
             }
             self.effect(I::Store(
                 memory,
-                types::storage(self.graph, ty)?,
+                types::storage(&*self.graph, ty)?,
                 value.value,
                 slot,
             ))?;

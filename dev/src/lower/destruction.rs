@@ -50,10 +50,15 @@ impl Function<'_, '_, '_, '_> {
         let source = self.graph.lower_entity_type(class)?;
         if calls_complete {
             let object = self.object_pointer(source)?.value;
-            self.symbols.demand_entry(Entry::DestructorDeleting(entity));
-            self.symbols.demand_entry(Entry::Function(entity));
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand_entry(Entry::DestructorDeleting(entity));
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand_entry(Entry::Function(entity));
             let callee = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .function_symbol(self.builder.program(), entity)?;
             let arguments = self.builder.arguments(&[object])?;
             self.effect(I::Call(crate::lowir::model::Call {
@@ -78,7 +83,11 @@ impl Function<'_, '_, '_, '_> {
         deleting: bool,
         calls_complete: bool,
     ) -> Result<(), Error> {
-        if self.symbols.destructor_inert(entity)? {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .destructor_inert(entity)?
+        {
             return Ok(());
         }
         let class = self
@@ -90,7 +99,12 @@ impl Function<'_, '_, '_, '_> {
         if !self.graph.lower_union_class(class) {
             for &member in self.graph.lower_class_member_entities(class).iter().rev() {
                 let ty = self.graph.lower_entity_type(member)?;
-                if self.symbols.class_destructor(ty)?.is_none() {
+                if self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .class_destructor(ty)?
+                    .is_none()
+                {
                     continue;
                 }
                 let offset = self.graph.lower_member_offset(member)?;
@@ -135,7 +149,12 @@ impl Function<'_, '_, '_, '_> {
                 continue;
             }
             let ty = self.graph.lower_entity_type(base)?;
-            if self.symbols.class_destructor(ty)?.is_some() {
+            if self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(ty)?
+                .is_some()
+            {
                 self.destruction.actions.push(Subobject {
                     ty,
                     offset,
@@ -149,12 +168,18 @@ impl Function<'_, '_, '_, '_> {
         if self.virtual_context.vtt.is_none() {
             for base in self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .virtual_construction_order(class)
                 .into_iter()
                 .rev()
             {
                 let ty = self.graph.lower_entity_type(base)?;
-                if self.symbols.class_destructor(ty)?.is_some() {
+                if self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .class_destructor(ty)?
+                    .is_some()
+                {
                     let offset = self.graph.lower_virtual_base_offset(class, base).ok_or(
                         crate::sema::Error::Invariant("destructor virtual base layout"),
                     )?;
@@ -218,7 +243,7 @@ impl Function<'_, '_, '_, '_> {
         let function = self.graph.lower_virtual_deallocator(class)?;
         let size = self
             .builder
-            .integer(u128::from(super::types::layout(self.graph, source)?.0))?;
+            .integer(u128::from(super::types::layout(&*self.graph, source)?.0))?;
         let object = self.object_pointer(source)?.value;
         self.deallocate_storage(function, object, size, None, false)
     }
@@ -227,12 +252,13 @@ impl Function<'_, '_, '_, '_> {
         action: Subobject,
         unwinding: bool,
     ) -> Result<(), Error> {
-        let destructor =
-            self.symbols
-                .class_destructor(action.ty)?
-                .ok_or(crate::sema::Error::Invariant(
-                    "destruction action without destructor",
-                ))?;
+        let destructor = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(action.ty)?
+            .ok_or(crate::sema::Error::Invariant(
+                "destruction action without destructor",
+            ))?;
         let guard = if unwinding && !self.graph.lower_function(destructor)?.nothrow {
             let guard = self.open_destructor_unwind_guard()?;
             Some(guard)
@@ -290,7 +316,7 @@ impl Function<'_, '_, '_, '_> {
             .value;
         if let TypeView::Array { element, .. } = self.graph.lower_type(action.ty)? {
             if let Some(index) = action.element {
-                let size = super::types::layout(self.graph, element)?.0;
+                let size = super::types::layout(&*self.graph, element)?.0;
                 let object = self.element_address(object, index, size, element)?;
                 self.destroy_object(element, object)?;
             } else {
@@ -343,12 +369,14 @@ impl Function<'_, '_, '_, '_> {
             if hidden {
                 let saved = self.virtual_context.hidden;
                 self.virtual_context.hidden = Some(match action.base {
-                    Some(BaseSubobject::Direct(index)) => {
-                        self.symbols.vtt_base_index(class, index as usize)?
-                    }
-                    Some(BaseSubobject::Virtual(base)) => {
-                        self.symbols.vtt_virtual_index(class, base)?
-                    }
+                    Some(BaseSubobject::Direct(index)) => self
+                        .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .vtt_base_index(class, index as usize)?,
+                    Some(BaseSubobject::Virtual(base)) => self
+                        .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .vtt_virtual_index(class, base)?,
                     None => {
                         return Err(
                             crate::sema::Error::Invariant("hidden member destructor").into()
@@ -359,8 +387,13 @@ impl Function<'_, '_, '_, '_> {
                 self.virtual_context.hidden = saved;
                 values.push(result?);
             }
-            self.symbols.demand_entry(entry);
-            let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand_entry(entry);
+            let symbol = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .entry_symbol(self.builder.program(), entry)?;
             let arguments = self.builder.arguments(&values)?;
             // A deferred subobject cleanup can be emitted while a source
             // initializer's segment is pending. Its nonthrowing destructor
@@ -393,7 +426,9 @@ impl Function<'_, '_, '_, '_> {
         let guard = self.new_block("lexical_cleanup_terminate")?;
         let selector = i64::from(self.next_handler_selector()?);
         self.destruction.terminates.push((guard, selector));
-        self.symbols.terminate_helper(self.builder.program())?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .terminate_helper(self.builder.program())?;
         Ok(guard)
     }
     pub(super) fn destroy_member_array_guarded(
@@ -402,7 +437,7 @@ impl Function<'_, '_, '_, '_> {
         base: Value,
         count: u64,
     ) -> Result<(), Error> {
-        let size = super::types::layout(self.graph, element)?.0;
+        let size = super::types::layout(&*self.graph, element)?.0;
         let slot = self.generated_slot("destructor_array_index", Type::I64)?;
         let count = self.builder.integer(u128::from(count))?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, count, slot))?;

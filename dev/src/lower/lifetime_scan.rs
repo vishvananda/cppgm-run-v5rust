@@ -40,7 +40,7 @@ impl Function<'_, '_, '_, '_> {
         mut live: Option<LiveId>,
     ) -> Result<Option<LiveId>, Error> {
         if let ast::DeclKind::Simple { declarators, .. } = self.tree.declarations.get(decl).kind {
-            for decl in self.tree.init_declarators.get(declarators) {
+            for decl in self.tree.init_declarators.get(declarators).to_vec() {
                 live = self.declared_live(
                     self.graph.lower_declared(decl.declarator)?,
                     decl.initializer,
@@ -89,7 +89,7 @@ impl Function<'_, '_, '_, '_> {
         match self.tree.statements.get(id).kind {
             StmtKind::Compound(items) => {
                 let mut inner = live;
-                for &item in self.tree.stmt_lists.get(items) {
+                for item in self.tree.stmt_lists.get(items).to_vec() {
                     inner = self.count_live(item, inner, contexts, context)?;
                 }
             }
@@ -200,7 +200,7 @@ impl Function<'_, '_, '_, '_> {
         contexts: usize,
     ) -> Result<(), Error> {
         self.count_live(body, live, contexts + 1, Some(body))?;
-        for handler in self.tree.handlers.get(handlers) {
+        for handler in self.tree.handlers.get(handlers).to_vec() {
             let mut inner = live;
             if !matches!(handler.exception, ast::ExceptionDeclaration::Ellipsis) {
                 let (ty, variable) = self.graph.lower_handler(handler.body)?;
@@ -256,7 +256,7 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Ok(false);
         };
-        for init in self.tree.init_declarators.get(declarators) {
+        for init in self.tree.init_declarators.get(declarators).to_vec() {
             let entity = self.graph.lower_declared(init.declarator)?;
             if self.graph.lower_binding_alias(entity).is_some() {
                 continue;
@@ -275,7 +275,11 @@ impl Function<'_, '_, '_, '_> {
                 *alive |= self.initializer_extends_temporary(init.initializer)?;
                 continue;
             }
-            if let Some(destructor) = self.symbols.class_destructor(ty)? {
+            if let Some(destructor) = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(ty)?
+            {
                 if !self.graph.lower_function(destructor)?.nothrow {
                     return Ok(true);
                 }
@@ -293,7 +297,7 @@ impl Function<'_, '_, '_, '_> {
         match self.tree.statements.get(id).kind {
             StmtKind::Compound(items) => {
                 let mut inner = *alive;
-                for &item in self.tree.stmt_lists.get(items) {
+                for item in self.tree.stmt_lists.get(items).to_vec() {
                     if self.body_unwinds(item, &mut inner)? {
                         return Ok(true);
                     }

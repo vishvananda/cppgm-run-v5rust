@@ -48,7 +48,7 @@ impl Symbols<'_, '_> {
         let Some((scalar, pointer, cv)) = self.runtime_information_base(ty)? else {
             return self.type_information(program, ty);
         };
-        if let Some(&symbol) = self.exception_information.external.get(&ty) {
+        if let Some(&symbol) = self.state.exception_information.external.get(&ty) {
             return Ok(symbol);
         }
         let prefix = if !pointer {
@@ -64,7 +64,10 @@ impl Symbols<'_, '_> {
         );
         let object = self.type_encoding(ty, TypeObject::Information)?;
         let object = program.names.intern(&object)?;
-        let symbol = self.table.allocate(program, &label, Some(object), false)?;
+        let symbol = self
+            .state
+            .table
+            .allocate(program, &label, Some(object), false)?;
         if !program.symbol(symbol).declared() {
             program.add_global(
                 symbol,
@@ -81,7 +84,7 @@ impl Symbols<'_, '_> {
                 },
             )?;
         }
-        self.exception_information.external.insert(ty, symbol);
+        self.state.exception_information.external.insert(ty, symbol);
         Ok(symbol)
     }
     pub(in crate::lower) fn defined_exception_information(
@@ -94,10 +97,10 @@ impl Symbols<'_, '_> {
         let Some((scalar, pointer, _)) = self.runtime_information_base(ty)? else {
             return self.type_information(program, ty);
         };
-        if let Some(&symbol) = self.exception_information.defined.get(&ty) {
+        if let Some(&symbol) = self.state.exception_information.defined.get(&ty) {
             return Ok(symbol);
         }
-        if let Some(symbol) = self.type_information.get(ty)
+        if let Some(symbol) = self.state.type_information.get(ty)
             && program
                 .global(program.symbol(symbol))
                 .is_some_and(|global| matches!(global.init, GlobalInit::Data(_)))
@@ -119,14 +122,15 @@ impl Symbols<'_, '_> {
             scalar.name().replace(' ', "_")
         };
         let symbol = self
+            .state
             .table
             .allocate(program, &format!("__rtti_{label}"), None, true)?;
-        self.exception_information.defined.insert(ty, symbol);
+        self.state.exception_information.defined.insert(ty, symbol);
         let vtable =
             self.rtti_vtable(program, if pointer { K::Pointer } else { K::Fundamental })?;
         let object = self.type_encoding(ty, TypeObject::Name)?;
         let object = program.names.intern(&object)?;
-        let name = self.table.allocate(
+        let name = self.state.table.allocate(
             program,
             &format!("__typeinfo_name_{}{label}", if pointer { "" } else { "_" }),
             Some(object),
@@ -172,17 +176,17 @@ impl Symbols<'_, '_> {
     ) -> Result<(), Error> {
         // The course view retains otherwise unreferenced RTTI and a zeroed
         // placeholder for every thrown type. Native objects demand neither.
-        if self.table.object_mode {
+        if self.state.table.object_mode {
             return Ok(());
         }
         let ty = self.graph.lower_rtti_type(ty)?;
-        if !self.exception_information.thrown.insert(ty) {
+        if !self.state.exception_information.thrown.insert(ty) {
             return Ok(());
         }
         let information = self.defined_exception_information(program, ty)?;
         let name = program.names.get(program.symbol(information).name);
         let label = format!("__ehobj_{}", name.strip_prefix("__rtti_").unwrap_or(name));
-        let symbol = self.table.allocate(program, &label, None, true)?;
+        let symbol = self.state.table.allocate(program, &label, None, true)?;
         program.add_global(
             symbol,
             Global {
@@ -204,7 +208,7 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         ty: TypeId,
     ) -> Result<(), Error> {
-        if !self.table.object_mode {
+        if !self.state.table.object_mode {
             self.defined_exception_information(program, ty)?;
         }
         Ok(())

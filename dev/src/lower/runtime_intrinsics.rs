@@ -117,7 +117,8 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let argument_list = arguments;
         let source = self.graph.lower_expression(id)?.ty;
-        let arguments = self.tree.expr_lists.get(arguments);
+        let arguments = self.owned_expression_ids(arguments);
+        let arguments = arguments.as_slice();
         match operation {
             RuntimeIntrinsic::AddressOf => Ok(RValue {
                 value: self.address(arguments[0])?,
@@ -170,6 +171,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<RValue, Error> {
         let callee = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .hosted_runtime_function(self.builder.program(), function)?;
         let arguments = self.builder.arguments(&[])?;
         let call = I::Call(Call {

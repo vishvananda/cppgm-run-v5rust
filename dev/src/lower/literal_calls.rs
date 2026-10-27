@@ -40,6 +40,8 @@ impl Function<'_, '_, '_, '_> {
         else {
             return Err(Error::Missing("literal operator signature"));
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let throws = self.lifetime_call_throws(CallTarget::Direct(entity))?;
         self.begin_lifetime_call(throws)?;
         let shape = self
@@ -53,7 +55,7 @@ impl Function<'_, '_, '_, '_> {
                     value: self.builder.integer(u128::from_le_bytes(
                         i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes(),
                     ))?,
-                    ty: types::storage(self.graph, source)?,
+                    ty: types::storage(&*self.graph, source)?,
                     source,
                     literal: false,
                     bits: Some(bits),
@@ -61,7 +63,7 @@ impl Function<'_, '_, '_, '_> {
                 let value = self.convert(value, parameters[0], Context::Initialization)?;
                 let mut value = value;
                 if let Some(bits) = value.bits
-                    && types::signed(self.graph, value.source)?
+                    && types::signed(&*self.graph, value.source)?
                 {
                     value.value = self.builder.integer(u128::from_le_bytes(
                         i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes(),
@@ -74,7 +76,7 @@ impl Function<'_, '_, '_, '_> {
                     value: self.builder.integer(u128::from_le_bytes(
                         i128::from(i64::from_le_bytes(bits.to_le_bytes())).to_le_bytes(),
                     ))?,
-                    ty: types::storage(self.graph, source)?,
+                    ty: types::storage(&*self.graph, source)?,
                     source,
                     literal: false,
                     bits: Some(bits),
@@ -102,9 +104,9 @@ impl Function<'_, '_, '_, '_> {
             LiteralCall::Raw { .. } => {
                 let symbol = super::data::literal_object(
                     self.builder.program(),
-                    self.symbols,
-                    self.graph,
-                    self.tree,
+                    &mut self.symbols.view(&*self.graph, &*self.tree, self.cursor),
+                    &*self.graph,
+                    &*self.tree,
                     id,
                 )?;
                 let address = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
@@ -113,9 +115,9 @@ impl Function<'_, '_, '_, '_> {
             LiteralCall::String { units, .. } => {
                 let symbol = super::data::literal_object(
                     self.builder.program(),
-                    self.symbols,
-                    self.graph,
-                    self.tree,
+                    &mut self.symbols.view(&*self.graph, &*self.tree, self.cursor),
+                    &*self.graph,
+                    &*self.tree,
                     id,
                 )?;
                 let address = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
@@ -129,9 +131,17 @@ impl Function<'_, '_, '_, '_> {
                 (Some([address, length]), 2)
             }
         };
-        self.symbols.demand(entity);
-        let callee = self.symbols.callee(entity, &mut self.builder)?;
-        let boundary = self.symbols.result_boundary(result)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand(entity);
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .callee(entity, &mut self.builder)?;
+        let boundary = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(result)?;
         let mut arguments = [callee; 3];
         let prefix = usize::from(boundary.indirect);
         if let Some(values) = values {

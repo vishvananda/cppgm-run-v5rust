@@ -165,7 +165,7 @@ impl Function<'_, '_, '_, '_> {
             throwing_destructor |= summary.operand_call_result.destructor_throws();
             member_template_result |= summary.operand_call_result.member_template();
         }
-        for &argument in self.tree.expr_lists.get(arguments) {
+        for argument in self.owned_expression_ids(arguments) {
             let summary = if constructor.is_some_and(|constructor| {
                 self.graph.lower_elides_conversion(argument, constructor)
             }) {
@@ -192,7 +192,7 @@ impl Function<'_, '_, '_, '_> {
             .map(|id| self.expression_throws(id))
             .transpose()?
             .unwrap_or(false);
-        for &argument in self.tree.expr_lists.get(arguments) {
+        for argument in self.owned_expression_ids(arguments) {
             throwing |= self.expression_throws(argument)?;
         }
         if !caller && !throwing && (!calls || throwing_destructor) {
@@ -222,7 +222,7 @@ impl Function<'_, '_, '_, '_> {
                 self.begin_tracking(root, ExpressionUse::Initialization)?;
             }
         } else if !caller && throwing {
-            for &argument in self.tree.expr_lists.get(arguments) {
+            for argument in self.owned_expression_ids(arguments) {
                 self.begin_tracking(argument, ExpressionUse::InitializerArgument)?;
             }
         }
@@ -327,7 +327,7 @@ impl Function<'_, '_, '_, '_> {
             && matches!(self.graph.lower_type(object)?, TypeView::Class(class)
                 if self.graph.lower_aggregate_class(class))
         {
-            for &element in self.tree.expr_lists.get(list) {
+            for element in self.owned_expression_ids(list) {
                 let element = self.without_parentheses(element);
                 let made = if matches!(
                     self.tree.expressions.get(element).kind,
@@ -588,6 +588,8 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("temporary call without function").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let caller = self.caller_destroys_parameters(ty)?;
         summary.made |= caller;
         summary.caller_destroyed |= caller;
@@ -604,6 +606,8 @@ impl Function<'_, '_, '_, '_> {
                 crate::sema::Error::Invariant("temporary signature without function").into(),
             );
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         for &parameter in parameters {
             // A nontrivial destructor implies the indirect class boundary.
             // References and ordinary direct-register classes contribute none.
@@ -710,7 +714,7 @@ impl Function<'_, '_, '_, '_> {
                 self.initializer_expression_temporaries(id, transfer)
             }
             ast::InitializerKind::Parenthesized(arguments) => {
-                for &argument in self.tree.expr_lists.get(arguments) {
+                for argument in self.owned_expression_ids(arguments) {
                     if self.initializer_expression_temporaries(argument, transfer)? {
                         return Ok(true);
                     }
@@ -743,9 +747,9 @@ pub(crate) mod tests {
     };
 
     pub(crate) fn assert_constructor_parameter_temporaries(
-        graph: &crate::sema::Graph,
-        tree: &ast::Tree,
-        cursor: &crate::syntax::cursor::Cursor<'_>,
+        graph: &mut crate::sema::Graph,
+        tree: &mut ast::Tree,
+        cursor: &mut crate::syntax::cursor::Cursor<'_>,
         declarations: crate::syntax::storage::List<ast::DeclId>,
     ) {
         let count = tree.expressions.mark();
@@ -779,27 +783,28 @@ pub(crate) mod tests {
         };
         let mut program = Program::default();
         let mut table = super::super::symbols::SymbolTable::default();
-        let mut symbols = super::super::symbols::Symbols::new(
+        let mut symbol_state = super::super::symbols::State::new(
             graph,
-            tree,
-            cursor,
             StackBudget::default(),
-            &mut table,
+            std::mem::take(&mut table),
         );
         let mut builder = FunctionBuilder::new(&mut program, "f", &[], Type::Void).unwrap();
         builder.block("entry").unwrap();
         let mut function = Function::new(
-            graph,
-            tree,
+            crate::lower::unit_frontend::Context {
+                graph,
+                tree,
+                cursor,
+                symbols: &mut symbol_state,
+            },
             builder,
-            &mut symbols,
             Some(entity),
             None,
             StackBudget::default(),
         );
         assert!(
             !function
-                .temporary_type_destroyed(graph.lower_expression(root).unwrap().ty)
+                .temporary_type_destroyed(function.graph.lower_expression(root).unwrap().ty)
                 .unwrap()
         );
         for summary in [
@@ -813,6 +818,6 @@ pub(crate) mod tests {
         assert!(function.lifetime.temporary_work.is_empty());
         assert!(function.lifetime.cleanups.is_empty());
         assert!(!function.lifetime.full_expression);
-        assert_eq!(tree.expressions.mark(), count);
+        assert_eq!(function.tree.expressions.mark(), count);
     }
 }

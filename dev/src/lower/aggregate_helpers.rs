@@ -54,6 +54,8 @@ impl Function<'_, '_, '_, '_> {
             return Ok(false);
         };
         let (members, union) = self.graph.lower_class_members(class)?;
+        let members = members.to_vec();
+        let members = members.as_slice();
         if union || list.is_empty() {
             return Ok(false);
         }
@@ -98,6 +100,8 @@ impl Function<'_, '_, '_, '_> {
             return Ok(false);
         }
         let (members, union) = self.graph.lower_class_members(class)?;
+        let members = members.to_vec();
+        let members = members.as_slice();
         if union || members.is_empty() {
             return Ok(false);
         }
@@ -167,7 +171,7 @@ impl Function<'_, '_, '_, '_> {
             if let TypeView::Array { element, .. } = self.graph.lower_type(ty)?
                 && let Some(id) = values.and_then(|values| values.get(*next)).copied()
                 && !matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. })
-                && types::character(self.graph, element)?
+                && types::character(&*self.graph, element)?
                 && matches!(
                     self.graph.lower_type(self.graph.lower_expression(id)?.ty)?,
                     TypeView::Array { .. }
@@ -204,7 +208,7 @@ impl Function<'_, '_, '_, '_> {
         };
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)? {
             let braced = matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { .. });
-            let string = types::character(self.graph, element)?
+            let string = types::character(&*self.graph, element)?
                 && matches!(
                     self.graph.lower_type(self.graph.lower_expression(id)?.ty)?,
                     TypeView::Array { .. }
@@ -298,7 +302,7 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 let offset = self.builder.integer(u128::from(
                     index
-                        .checked_mul(types::layout(self.graph, element)?.0)
+                        .checked_mul(types::layout(&*self.graph, element)?.0)
                         .ok_or(crate::lowir::Error::Limit)?,
                 ))?;
                 self.emit(I::Index(Type::I8, None, address, offset), element)?
@@ -315,7 +319,7 @@ impl Function<'_, '_, '_, '_> {
                         cv: 0,
                     },
                     object,
-                    self.tree.expr_lists.get(elements),
+                    &self.owned_expression_ids(elements),
                     &mut 0,
                 )?;
             } else {
@@ -344,6 +348,8 @@ impl Function<'_, '_, '_, '_> {
         next: &mut usize,
     ) -> Result<(), Error> {
         let (members, _) = self.graph.lower_class_members(key.class)?;
+        let members = members.to_vec();
+        let members = members.as_slice();
         let mut values = Vec::with_capacity(members.len() + 1);
         values.push(object);
         for &member in members.iter().take(key.count) {
@@ -392,12 +398,10 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        let symbol = self.symbols.aggregate_helper_symbol(
-            self.builder.program(),
-            key.class,
-            key.count,
-            key.cv,
-        )?;
+        let symbol = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .aggregate_helper_symbol(self.builder.program(), key.class, key.count, key.cv)?;
         let arguments = self.builder.arguments(&values)?;
         self.effect(I::Call(Call {
             result: Type::Void,

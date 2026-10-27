@@ -25,7 +25,7 @@ impl Function<'_, '_, '_, '_> {
         let id = self.without_parentheses(id);
         match self.tree.expressions.get(id).kind {
             ExprKind::Braced { elements, .. } => {
-                for &element in self.tree.expr_lists.get(elements) {
+                for element in self.owned_expression_ids(elements) {
                     self.imaged_discard_slots(element, depth + 1)?;
                 }
             }
@@ -36,7 +36,7 @@ impl Function<'_, '_, '_, '_> {
                 let facts = self.graph.lower_expression(left)?;
                 if !facts.is_place && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(_))
                 {
-                    self.generated_slot("discard", types::storage(self.graph, facts.ty)?)?;
+                    self.generated_slot("discard", types::storage(&*self.graph, facts.ty)?)?;
                 } else {
                     self.imaged_discard_slots(left, depth + 1)?;
                 }
@@ -52,7 +52,7 @@ impl Function<'_, '_, '_, '_> {
         list: &[ast::ExprId],
         next: &mut usize,
     ) -> Result<Value, Error> {
-        let slot = self.generated_slot("argarr", types::storage(self.graph, ty)?)?;
+        let slot = self.generated_slot("argarr", types::storage(&*self.graph, ty)?)?;
         let address = self.emit(I::Addr(slot), ty)?.value;
         self.structured_array_item(ty, address, list, next)?;
         Ok(address)
@@ -89,12 +89,15 @@ impl Function<'_, '_, '_, '_> {
         };
         let slot = self.temporary_storage(ty, persistent, stem)?;
         if persistent {
-            self.static_array_temporary(ty, slot, self.tree.expr_lists.get(list))?;
+            self.static_array_temporary(ty, slot, &self.owned_expression_ids(list))?;
             self.persistent_alive(ty, slot)?;
             return Ok(self.emit(I::Addr(slot), ty)?.value);
         }
         let owner = self.extended_temporary_owner(id);
-        let destructor = self.symbols.storage_destructor(ty)?;
+        let destructor = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?;
         if destructor.is_some() && self.lifetime.full_expression && !self.lifetime.region {
             self.open_temporary_region()?;
         }
@@ -106,7 +109,7 @@ impl Function<'_, '_, '_, '_> {
         if matches!(self.graph.lower_type(element)?, TypeView::Class(_)) {
             self.initialize_temporary_array(ty, address, initializer)?;
         } else {
-            self.structured_array(ty, address, self.tree.expr_lists.get(list), &mut 0)?;
+            self.structured_array(ty, address, &self.owned_expression_ids(list), &mut 0)?;
         }
         if destructor.is_some() {
             if let Some(owner) = owner {
@@ -135,7 +138,7 @@ impl Function<'_, '_, '_, '_> {
         let regions = self.aggregation.regions;
         let result = (|| {
             let counted =
-                if self.counts_aggregate_elements(ty, self.tree.expr_lists.get(elements))? {
+                if self.counts_aggregate_elements(ty, &self.owned_expression_ids(elements))? {
                     Some(self.begin_counted_elements(ty, address)?)
                 } else {
                     None
@@ -160,7 +163,7 @@ impl Function<'_, '_, '_, '_> {
                     class,
                     bound,
                     address,
-                    self.tree.expr_lists.get(elements),
+                    &self.owned_expression_ids(elements),
                 )?;
             } else {
                 self.automatic_array_contents(ty, address, initializer)?;
@@ -189,10 +192,32 @@ impl Function<'_, '_, '_, '_> {
             .checked_add(width)
             .ok_or(crate::lowir::Error::Limit)?;
         let mut value = [0u8; 8];
-        if let Some(unit) = self.symbols.literal_bytes(literal).get(offset..end) {
+        if let Some(unit) = self.cursor.spellings.get(literal.data).get(offset..end) {
             value[..unit.len()].copy_from_slice(unit);
         }
         Ok(u64::from_le_bytes(value))
+    }
+    fn array_image_spelling(&self, initializer: ast::Initializer) -> Result<bool, Error> {
+        let expr = match initializer.kind {
+            ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) => expr,
+            ast::InitializerKind::Parenthesized(arguments) => {
+                let [expr] = self.tree.expr_lists.get(arguments) else {
+                    return Ok(false);
+                };
+                *expr
+            }
+            ast::InitializerKind::Default | ast::InitializerKind::Delete => return Ok(false),
+        };
+        let expr = self.without_parentheses(expr);
+        Ok(match self.tree.expressions.get(expr).kind {
+            ExprKind::Braced { .. } => true,
+            ExprKind::Literal(_) => matches!(
+                self.graph
+                    .lower_type(self.graph.lower_expression(expr)?.ty)?,
+                TypeView::Array { .. }
+            ),
+            _ => false,
+        })
     }
     pub(super) fn local_array(
         &mut self,
@@ -207,7 +232,9 @@ impl Function<'_, '_, '_, '_> {
                 object = element;
             }
             if matches!(self.graph.lower_type(object)?, TypeView::Class(_)) {
-                self.symbols.storage_destructor(ty)?;
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .storage_destructor(ty)?;
                 if !self.graph.lower_trivial_default_construction(entity)? {
                     return self.default_class_array(entity, ty, slot);
                 }
@@ -223,8 +250,15 @@ impl Function<'_, '_, '_, '_> {
         while let TypeView::Array { element: child, .. } = self.graph.lower_type(leaf)? {
             leaf = child;
         }
+        if self.graph.lower_automatic(entity)
+            && self.graph.lower_array_image_eligible(entity)?
+            && self.array_image_spelling(initializer)?
+        {
+            self.graph
+                .lower_demand_array_image(self.tree, self.cursor, self.budget, entity)?;
+        }
         if self.graph.lower_array_image_eligible(entity)?
-            && let Some(image) = self.graph.lower_array_image(entity)
+            && let Some(image) = self.graph.lower_array_image(entity).map(<[_]>::to_vec)
         {
             let expr = match initializer.kind {
                 ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr) => {
@@ -239,8 +273,8 @@ impl Function<'_, '_, '_, '_> {
             if let Some(expr) = expr {
                 self.imaged_discard_slots(expr, 0)?;
             }
-            let image = self.static_data_image(image)?;
-            let (bytes, align) = types::layout(self.graph, ty)?;
+            let image = self.static_data_image(&image)?;
+            let (bytes, align) = types::layout(&*self.graph, ty)?;
             let destination = self.emit(I::Addr(slot), ty)?;
             return self.effect(I::CopyObject(
                 bytes,
@@ -270,7 +304,8 @@ impl Function<'_, '_, '_, '_> {
             let ExprKind::Braced { elements, .. } = self.tree.expressions.get(expr).kind else {
                 return Err(Error::Missing("class array non-list initialization"));
             };
-            let list = self.tree.expr_lists.get(elements);
+            let list = self.owned_expression_ids(elements);
+            let list = list.as_slice();
             let counted = if self.counts_aggregate_elements(ty, list)? {
                 Some(self.begin_counted_elements(ty, slot)?)
             } else {
@@ -300,11 +335,12 @@ impl Function<'_, '_, '_, '_> {
         while let ExprKind::Paren(inner) = self.tree.expressions.get(root).kind {
             root = inner;
         }
-        let list = if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(root).kind {
-            self.tree.expr_lists.get(elements)
-        } else {
-            &[]
-        };
+        let list: &[ast::ExprId] =
+            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(root).kind {
+                &self.owned_expression_ids(elements)
+            } else {
+                &[]
+            };
         let literal = if list.len() == 1
             && matches!(
                 self.graph
@@ -324,7 +360,7 @@ impl Function<'_, '_, '_, '_> {
             None
         };
         // The literal byte slice belongs to the syntax cursor; each unit is copied before mutation.
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         for index in 0..bound {
             let offset = index.checked_mul(size).ok_or(crate::lowir::Error::Limit)?;
             let place = if offset == 0 {
@@ -338,7 +374,7 @@ impl Function<'_, '_, '_, '_> {
                 let unit = self.literal_array_unit(literal, index, width)?;
                 RValue {
                     value: self.builder.integer(u128::from(unit))?,
-                    ty: types::storage(self.graph, element)?,
+                    ty: types::storage(&*self.graph, element)?,
                     source: element,
                     literal: false,
                     bits: None,
@@ -356,7 +392,7 @@ impl Function<'_, '_, '_, '_> {
                 continue;
             }
             self.effect(I::Store(
-                types::memory(self.graph, element)?,
+                types::memory(&*self.graph, element)?,
                 value.ty,
                 value.value,
                 place,
@@ -380,7 +416,7 @@ impl Function<'_, '_, '_, '_> {
                     return self.structured_array(
                         ty,
                         address,
-                        self.tree.expr_lists.get(elements),
+                        &self.owned_expression_ids(elements),
                         &mut 0,
                     );
                 }
@@ -411,8 +447,8 @@ impl Function<'_, '_, '_, '_> {
             return self.write_atomic_place(address, ty, value.value);
         }
         self.effect(I::Store(
-            types::memory(self.graph, ty)?,
-            types::storage(self.graph, ty)?,
+            types::memory(&*self.graph, ty)?,
+            types::storage(&*self.graph, ty)?,
             value.value,
             address,
         ))
@@ -450,7 +486,7 @@ impl Function<'_, '_, '_, '_> {
         if units.is_some() {
             *next += 1;
         }
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         for index in 0..bound {
             let place = if index == 0 {
                 address
@@ -475,8 +511,8 @@ impl Function<'_, '_, '_, '_> {
                     continue;
                 }
                 self.effect(I::Store(
-                    types::memory(self.graph, element)?,
-                    types::storage(self.graph, element)?,
+                    types::memory(&*self.graph, element)?,
+                    types::storage(&*self.graph, element)?,
                     value,
                     place,
                 ))?;

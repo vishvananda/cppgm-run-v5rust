@@ -39,7 +39,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok(0);
         }
         if sized || self.graph.lower_nontrivial_destructor(class)? {
-            let (_, alignment) = types::layout(self.graph, element)?;
+            let (_, alignment) = types::layout(&*self.graph, element)?;
             Ok(8_u64.max(1_u64 << alignment))
         } else {
             Ok(0)
@@ -303,8 +303,11 @@ impl Function<'_, '_, '_, '_> {
         let saved_count = self.aggregation.count.take();
         let saved_floor = self.aggregation.floor;
         self.aggregation.floor = freed.map(|_| self.lifetime.cleanups.len());
-        let initialized =
-            self.allocated_array_prefix(prefix, elements, self.tree.expr_lists.get(list_elements));
+        let initialized = self.allocated_array_prefix(
+            prefix,
+            elements,
+            &self.owned_expression_ids(list_elements),
+        );
         self.aggregation.floor = saved_floor;
         self.aggregation.count = saved_count;
         self.reference_lifetimes.aggregate = saved_extension;
@@ -322,6 +325,8 @@ impl Function<'_, '_, '_, '_> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
             return Err(crate::sema::Error::Invariant("array deallocation signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let mut values = vec![raw];
         for index in 1..parameters.len() {
             values.push(placement.get(index).copied().unwrap_or(size));

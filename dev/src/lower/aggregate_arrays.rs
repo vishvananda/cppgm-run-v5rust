@@ -38,7 +38,12 @@ impl Function<'_, '_, '_, '_> {
         while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
             element = inner;
         }
-        if self.symbols.class_destructor(element)?.is_none() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(element)?
+            .is_none()
+        {
             return Ok(false);
         }
         for &id in values {
@@ -239,7 +244,7 @@ impl Function<'_, '_, '_, '_> {
             last,
             counter,
         ))?;
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         let offset = if size == 1 {
             last
         } else {

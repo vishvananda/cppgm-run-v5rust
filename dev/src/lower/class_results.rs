@@ -90,7 +90,12 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn zero_return(&mut self, source: TypeId) -> Result<Option<Value>, Error> {
-        match self.symbols.result_boundary(source)?.ty {
+        match self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(source)?
+            .ty
+        {
             Type::Void => Ok(None),
             ty @ Type::Object { bytes, align } => {
                 let slot = self.class_result_storage(ty)?;
@@ -244,7 +249,10 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn class_return(&mut self, id: ast::ExprId, result: TypeId) -> Result<(), Error> {
-        let boundary = self.symbols.result_boundary(result)?;
+        let boundary = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(result)?;
         let first = self.lifetime.cleanups.len();
         let began = self
             .begin_full_expression(Some(id), super::temporary_scan::ExpressionUse::ClassResult)?;
@@ -310,7 +318,13 @@ impl Function<'_, '_, '_, '_> {
         // CWG 2176: once its own full-expression finishes, a completed
         // result is destroyed first if a local destructor throws on return.
         let returned = self.lexical.returned;
-        if !elided && self.symbols.storage_destructor(result)?.is_some() {
+        if !elided
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .storage_destructor(result)?
+                .is_some()
+        {
             let mut cleanup = super::lifetime::Cleanup::temporary(result, object);
             if let Some(slot) = value {
                 cleanup.place = super::lifetime::CleanupPlace::Storage(slot);
@@ -335,7 +349,7 @@ impl Function<'_, '_, '_, '_> {
                 braced: None,
                 ..
             } => {
-                for &argument in self.tree.expr_lists.get(arguments) {
+                for argument in self.owned_expression_ids(arguments) {
                     if self.expression_temporaries(argument)?.made {
                         return Ok(false);
                     }

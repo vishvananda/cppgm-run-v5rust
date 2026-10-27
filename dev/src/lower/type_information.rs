@@ -58,8 +58,8 @@ impl Symbols<'_, '_> {
             TypeObject::Name => Target::TypeinfoName(node),
             TypeObject::Encoding => Target::Type(node),
         };
-        self.table.work.mangled_names += 1;
-        Encoder::encode(&self.abi, target, &mut bytes, self.budget)?;
+        self.state.table.work.mangled_names += 1;
+        Encoder::encode(&self.state.abi, target, &mut bytes, self.state.budget)?;
         String::from_utf8(bytes)
             .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI type name").into())
     }
@@ -88,11 +88,12 @@ impl Symbols<'_, '_> {
         if self.host_objects() && self.runtime_information_base(ty)?.is_some() {
             return self.exception_type_information(program, ty);
         }
-        if let Some(&symbol) = self.type_information.objects.get(&ty) {
+        if let Some(&symbol) = self.state.type_information.objects.get(&ty) {
             return Ok(symbol);
         }
         if matches!(self.graph.lower_type(ty)?, TypeView::Scalar(Scalar::Void)) {
             let symbol = self
+                .state
                 .table
                 .allocate(program, "__external_rtti__void", None, true)?;
             let object = program.names.intern("_ZTIv")?;
@@ -110,7 +111,7 @@ impl Symbols<'_, '_> {
                     init: GlobalInit::Declaration,
                 },
             )?;
-            self.type_information.objects.insert(ty, symbol);
+            self.state.type_information.objects.insert(ty, symbol);
             return Ok(symbol);
         }
         let encoding = self.type_encoding(ty, TypeObject::Encoding)?;
@@ -126,19 +127,19 @@ impl Symbols<'_, '_> {
         };
         let object = self.type_encoding(ty, TypeObject::Information)?;
         let object = program.names.intern(&object)?;
-        let internal = if self.table.object_mode {
+        let internal = if self.state.table.object_mode {
             self.graph.lower_object_type_unit_local(ty)?
         } else {
             self.graph.lower_type_unit_local(ty)?
         };
         let local_information = self.local_type_information(ty)?;
-        let symbol = self.table.allocate(
+        let symbol = self.state.table.allocate(
             program,
             &format!("__rtti_{label}"),
             Some(object),
             internal || local_information,
         )?;
-        self.type_information.objects.insert(ty, symbol);
+        self.state.type_information.objects.insert(ty, symbol);
         if program.symbol(symbol).declared() {
             return Ok(symbol);
         }
@@ -176,7 +177,7 @@ impl Symbols<'_, '_> {
         let vtable = self.rtti_vtable(program, kind)?;
         let name_object = self.type_encoding(ty, TypeObject::Name)?;
         let name_object = program.names.intern(&name_object)?;
-        let name = self.table.allocate(
+        let name = self.state.table.allocate(
             program,
             &format!(
                 "__typeinfo_name_{}{label}",
@@ -186,8 +187,9 @@ impl Symbols<'_, '_> {
             internal,
         )?;
         if !program.symbol(name).declared() {
-            let marker =
-                self.table.object_mode && internal && self.graph.lower_private_type_name(ty)?;
+            let marker = self.state.table.object_mode
+                && internal
+                && self.graph.lower_private_type_name(ty)?;
             let items = marker
                 .then_some(b'*')
                 .into_iter()

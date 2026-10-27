@@ -169,7 +169,7 @@ impl Function<'_, '_, '_, '_> {
         if count > 8 {
             return self.destroy_array_loop(element, address, count);
         }
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         for index in (0..count).rev() {
             // The chain's constant element offsets are already target byte offsets.
             let offset = self.builder.integer(u128::from(index.wrapping_mul(size)))?;

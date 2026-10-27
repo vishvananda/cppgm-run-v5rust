@@ -40,9 +40,13 @@ impl Function<'_, '_, '_, '_> {
         let constructor = action
             .constructor
             .ok_or(crate::sema::Error::Invariant("array copy constructor"))?;
-        let guarded = self.symbols.class_destructor(element)?.is_some()
+        let guarded = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(element)?
+            .is_some()
             && self.default_constructor_throws(constructor)?;
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         if count > 8 {
             let source = self.assignment_source(function)?;
             let source = self.copy_address(source, action.ty, transfer)?;
@@ -97,7 +101,11 @@ impl Function<'_, '_, '_, '_> {
             count = count.wrapping_mul(bound);
             element = child;
         }
-        let guarded = self.symbols.class_destructor(element)?.is_some()
+        let guarded = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(element)?
+            .is_some()
             && self.default_constructor_throws(constructor)?;
         let elements = Elements {
             element,
@@ -115,7 +123,7 @@ impl Function<'_, '_, '_, '_> {
         if temporaries && self.default_constructor_throws(constructor)? {
             self.before_lifetime_call(true)?;
         }
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         let mut covered = None;
         for index in 0..count {
             let guard = if index != 0 && guarded {
@@ -364,7 +372,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Value, Error> {
         let size = self
             .builder
-            .integer(u128::from(types::layout(self.graph, element)?.0))?;
+            .integer(u128::from(types::layout(&*self.graph, element)?.0))?;
         let offset = self
             .emit(
                 I::Binary(Binary::Mul, Facts::default(), Type::I64, index, size),

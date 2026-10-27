@@ -22,8 +22,10 @@ impl Symbols<'_, '_> {
         entity: EntityId,
         global: SymbolId,
     ) -> Result<Option<SymbolId>, Error> {
-        if let Some(&wrapper) = self.tls.wrappers.get(&entity) {
-            return Ok((!self.object_mode() || self.tls.used.contains(&entity)).then_some(wrapper));
+        if let Some(&wrapper) = self.state.tls.wrappers.get(&entity) {
+            return Ok(
+                (!self.object_mode() || self.state.tls.used.contains(&entity)).then_some(wrapper),
+            );
         }
         let facts = self.graph.lower_variable(entity)?;
         if facts.definition.is_some() {
@@ -36,7 +38,7 @@ impl Symbols<'_, '_> {
             let wrapper = self.tls_wrapper_symbol(program, entity, global)?;
             let init = self.tls_init_entry(program, entity, false)?;
             self.emit_tls_wrapper(program, entity, Some(init))?;
-            program.stream_last_definition(&mut self.generated_definitions)?;
+            program.stream_last_definition(&mut self.state.generated_definitions)?;
             return Ok(Some(wrapper));
         }
         Ok(None)
@@ -48,7 +50,7 @@ impl Symbols<'_, '_> {
         entity: EntityId,
         global: SymbolId,
     ) -> Result<SymbolId, Error> {
-        self.tls.used.insert(entity);
+        self.state.tls.used.insert(entity);
         self.tls_wrapper_symbol_in(program, entity, global)
     }
     fn tls_wrapper_symbol_in(
@@ -57,7 +59,7 @@ impl Symbols<'_, '_> {
         entity: EntityId,
         global: SymbolId,
     ) -> Result<SymbolId, Error> {
-        if let Some(&wrapper) = self.tls.wrappers.get(&entity) {
+        if let Some(&wrapper) = self.state.tls.wrappers.get(&entity) {
             return Ok(wrapper);
         }
         let spelling = format!(
@@ -67,22 +69,23 @@ impl Symbols<'_, '_> {
         let name = self.variable_abi_name(entity)?;
         let mut bytes = Vec::new();
         abi::encoder::Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             abi::encoder::Target::TlsWrapper(name),
             &mut bytes,
-            self.budget,
+            self.state.budget,
         )?;
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         let object = program.names.intern_bytes(&bytes)?;
         let internal =
             self.graph.lower_variable(entity)?.locality == crate::sema::lowering::Locality::Unit;
         let local_object =
-            (!internal || !self.table.objects.contains_key(&object)).then_some(object);
+            (!internal || !self.state.table.objects.contains_key(&object)).then_some(object);
         let wrapper = self
+            .state
             .table
             .allocate(program, &spelling, Some(object), internal)?;
         let object = local_object;
-        self.tls.wrappers.insert(entity, wrapper);
+        self.state.tls.wrappers.insert(entity, wrapper);
         // The wrapper's ABI identity is retained on its own symbol declaration.
         let signature = program.add_signature(crate::lowir::model::Signature {
             parameters: Vec::new(),
@@ -130,9 +133,12 @@ impl Symbols<'_, '_> {
         };
         let global = self.variable_symbol(program, entity)?;
         let base = program.names.get(program.symbol(global).name).to_owned();
-        let guard =
-            self.table
-                .allocate(program, &format!("__cppgm_tls_guard__{base}"), None, true)?;
+        let guard = self.state.table.allocate(
+            program,
+            &format!("__cppgm_tls_guard__{base}"),
+            None,
+            true,
+        )?;
         program.add_global(
             guard,
             Global {
@@ -147,7 +153,8 @@ impl Symbols<'_, '_> {
             },
         )?;
         let init =
-            self.table
+            self.state
+                .table
                 .allocate(program, &format!("__cppgm_tls_init__{base}"), None, true)?;
         Self::tls_function(
             program,
@@ -165,7 +172,7 @@ impl Symbols<'_, '_> {
         entity: EntityId,
         initializer: Option<SymbolId>,
     ) -> Result<bool, Error> {
-        let Some(&wrapper) = self.tls.wrappers.get(&entity) else {
+        let Some(&wrapper) = self.state.tls.wrappers.get(&entity) else {
             return Ok(false);
         };
         let global = self.variable_symbol(program, entity)?;
@@ -233,18 +240,19 @@ impl Symbols<'_, '_> {
         let name = self.variable_abi_name(entity)?;
         let mut bytes = Vec::new();
         abi::encoder::Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             abi::encoder::Target::TlsInit(name),
             &mut bytes,
-            self.budget,
+            self.state.budget,
         )?;
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         let object = program.names.intern_bytes(&bytes)?;
         let spelling = format!(
             "__cppgm_tls_init__{}",
             program.names.get(program.symbol(global).name)
         );
         let symbol = self
+            .state
             .table
             .allocate(program, &spelling, Some(object), false)?;
         if program.function(program.symbol(symbol)).is_none() {
@@ -333,7 +341,7 @@ impl Symbols<'_, '_> {
                 "__cppgm_tls_init__{}",
                 program.names.get(program.symbol(global).name)
             );
-            let init = self.table.allocate(program, &spelling, None, true)?;
+            let init = self.state.table.allocate(program, &spelling, None, true)?;
             Self::tls_function(
                 program,
                 init,
@@ -351,8 +359,9 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         init: SymbolId,
     ) -> Result<SymbolId, Error> {
-        if self.tls.unit.is_none() {
+        if self.state.tls.unit.is_none() {
             let init = self
+                .state
                 .table
                 .allocate(program, "__cppgm_tls_init", None, true)?;
             Self::tls_function(
@@ -364,6 +373,7 @@ impl Symbols<'_, '_> {
                 },
             )?;
             let guard = self
+                .state
                 .table
                 .allocate(program, "__cppgm_tls_guard", None, true)?;
             program.add_global(
@@ -379,20 +389,25 @@ impl Symbols<'_, '_> {
                     },
                 },
             )?;
-            self.tls.unit = Some(Unit {
+            self.state.tls.unit = Some(Unit {
                 init,
                 guard,
                 initializers: Vec::new(),
             });
         }
-        let unit = self.tls.unit.as_mut().ok_or(crate::sema::Error::Invariant(
-            "TLS unit initialization missing",
-        ))?;
+        let unit = self
+            .state
+            .tls
+            .unit
+            .as_mut()
+            .ok_or(crate::sema::Error::Invariant(
+                "TLS unit initialization missing",
+            ))?;
         unit.initializers.push(init);
         Ok(unit.init)
     }
     pub(in crate::lower) fn take_tls_unit(&mut self) -> Option<Unit> {
-        self.tls.unit.take()
+        self.state.tls.unit.take()
     }
     pub(in crate::lower) fn tls_static_entry(
         &mut self,
@@ -408,12 +423,12 @@ impl Symbols<'_, '_> {
         }
         let entry = self.tls_init_entry(program, entity, true)?;
         super::super::thread_local::forwarder(program, entry, None)?;
-        program.stream_last_definition(&mut self.generated_definitions)?;
-        if !self.tls.wrappers.contains_key(&entity) {
+        program.stream_last_definition(&mut self.state.generated_definitions)?;
+        if !self.state.tls.wrappers.contains_key(&entity) {
             let global = self.variable_symbol(program, entity)?;
             self.tls_wrapper_symbol_in(program, entity, global)?;
             self.emit_tls_wrapper(program, entity, None)?;
-            program.stream_last_definition(&mut self.generated_definitions)?;
+            program.stream_last_definition(&mut self.state.generated_definitions)?;
         }
         Ok(())
     }

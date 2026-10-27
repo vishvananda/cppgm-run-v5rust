@@ -25,6 +25,12 @@ pub(crate) enum Item {
 #[derive(Default)]
 pub(super) struct Images {
     values: HashMap<EntityId, Image>,
+    requests: HashMap<EntityId, Request>,
+}
+#[derive(Clone, Copy)]
+pub(super) struct Request {
+    pub initializer: ast::Initializer,
+    pub scope: ScopeId,
 }
 #[derive(Clone, Copy, Default)]
 struct ClassImage {
@@ -37,6 +43,21 @@ enum Image {
     Dynamic(Vec<Item>),
 }
 impl Images {
+    pub(super) fn request(
+        &mut self,
+        entity: EntityId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+    ) {
+        self.requests.insert(entity, Request { initializer, scope });
+    }
+    pub(super) fn requested(&self, entity: EntityId) -> Option<Request> {
+        self.requests.get(&entity).copied()
+    }
+    pub(super) fn clear(&mut self, entity: EntityId) {
+        self.values.remove(&entity);
+    }
+
     pub(super) fn set_constant(&mut self, entity: EntityId, items: Vec<Item>) {
         self.values.insert(entity, Image::Constant(items));
     }
@@ -831,4 +852,11 @@ fn flush_bits(
         *bytes = 0;
     }
     Ok(())
+}
+
+#[cfg(test)]
+impl super::graph::Graph {
+    pub(crate) fn lower_array_image_requests(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.array_images.requests.keys().copied()
+    }
 }

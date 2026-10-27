@@ -356,11 +356,18 @@ impl Function<'_, '_, '_, '_> {
         entity: EntityId,
     ) -> Result<Option<EntityId>, Error> {
         let ty = self.local_object_type(entity)?;
-        let Some(destructor) = self.symbols.storage_destructor(ty)? else {
+        let Some(destructor) = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?
+        else {
             return Ok(None);
         };
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
-            && self.symbols.destructor_inert(destructor)?
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .destructor_inert(destructor)?
         {
             return Ok(None);
         }
@@ -368,12 +375,17 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn register_local_destruction(&mut self, entity: EntityId) -> Result<(), Error> {
         let ty = self.local_object_type(entity)?;
-        let Some(destructor) = self.symbols.storage_destructor(ty)? else {
+        let Some(destructor) = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?
+        else {
             return Ok(());
         };
         if self.automatic_destructor(entity)?.is_none() {
             if self.returned_local != Some(entity) {
                 self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
                     .root_destructor(self.builder.program(), destructor)?;
             }
             return Ok(());
@@ -384,7 +396,12 @@ impl Function<'_, '_, '_, '_> {
     /// (`exception_lowering.cpp::catch_variable`).
     pub(super) fn register_catch_destruction(&mut self, entity: EntityId) -> Result<(), Error> {
         let ty = self.local_object_type(entity)?;
-        if self.symbols.storage_destructor(ty)?.is_none() {
+        if self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(ty)?
+            .is_none()
+        {
             return Ok(());
         }
         self.register_local_cleanup(entity, ty)
@@ -721,13 +738,19 @@ impl Function<'_, '_, '_, '_> {
         // Automatic storage owns the entry family; temporaries, members and
         // delete[] demand only the complete entry their direct calls name.
         if let Some(variable) = cleanup.variable
-            && let Some(destructor) = self.symbols.class_destructor(cleanup.ty)?
+            && let Some(destructor) = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(cleanup.ty)?
             && self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .class_destructor(self.graph.lower_entity_type(variable)?)?
                 == Some(destructor)
         {
-            self.symbols.demand_destruction(destructor)?;
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand_destruction(destructor)?;
         }
         let terminate = unwinding
             && !matches!(cleanup.place, CleanupPlace::Deallocation { .. })
@@ -827,7 +850,7 @@ impl Function<'_, '_, '_, '_> {
             } => {
                 let size = self
                     .builder
-                    .integer(u128::from(types::layout(self.graph, cleanup.ty)?.0))?;
+                    .integer(u128::from(types::layout(&*self.graph, cleanup.ty)?.0))?;
                 self.deallocate_storage(function, storage, size, placement, false)
             }
         };
@@ -861,7 +884,7 @@ impl Function<'_, '_, '_, '_> {
                 let address = if original == object {
                     self.lifetime.list_elements.address(original, index)?
                 } else {
-                    let size = types::layout(self.graph, element)?.0;
+                    let size = types::layout(&*self.graph, element)?.0;
                     self.list_element_address(
                         object,
                         usize::try_from(index).map_err(|_| crate::lowir::Error::Limit)?,
@@ -877,7 +900,7 @@ impl Function<'_, '_, '_, '_> {
             if bound > 8 && !matches!(self.graph.lower_type(element)?, TypeView::Array { .. }) {
                 return self.destroy_array_loop(element, object, bound);
             }
-            let size = types::layout(self.graph, element)?.0;
+            let size = types::layout(&*self.graph, element)?.0;
             for index in (0..bound).rev() {
                 let address = self.element_address(object, index, size, element)?;
                 self.destroy_object(element, address)?;
@@ -888,11 +911,20 @@ impl Function<'_, '_, '_, '_> {
         }
     }
     pub(super) fn call_destructor(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
-        let Some(destructor) = self.symbols.class_destructor(ty)? else {
+        let Some(destructor) = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_destructor(ty)?
+        else {
             return Ok(());
         };
-        self.symbols.demand(destructor);
-        let callee = self.symbols.callee(destructor, &mut self.builder)?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand(destructor);
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .callee(destructor, &mut self.builder)?;
         let arguments = self.builder.arguments(&[object])?;
         self.effect(I::Call(crate::lowir::model::Call {
             result: Type::Void,
@@ -906,7 +938,7 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn destroy_object(&mut self, ty: TypeId, object: Value) -> Result<(), Error> {
         self.check_stack()?;
         if let TypeView::Array { element, bound } = self.graph.lower_type(ty)? {
-            let size = types::layout(self.graph, element)?.0;
+            let size = types::layout(&*self.graph, element)?.0;
             for index in (0..bound).rev() {
                 let offset = self.builder.integer(u128::from(index.wrapping_mul(size)))?;
                 let address = self
@@ -952,7 +984,7 @@ impl Function<'_, '_, '_, '_> {
                 let base = self.emit(I::Addr(storage), ty)?.value;
                 return self.destroy_array_loop(element, base, bound);
             }
-            let size = types::layout(self.graph, element)?.0;
+            let size = types::layout(&*self.graph, element)?.0;
             for index in (0..bound).rev() {
                 let base = self.emit(I::Addr(storage), ty)?.value;
                 let address = self.element_address(base, index, size, element)?;
@@ -997,7 +1029,7 @@ impl Function<'_, '_, '_, '_> {
         count: u64,
     ) -> Result<(), Error> {
         use crate::lowir::vocabulary::{Binary, Compare, Projection};
-        let size = types::layout(self.graph, element)?.0;
+        let size = types::layout(&*self.graph, element)?.0;
         let slot = self.generated_slot("destructor_array_index", Type::I64)?;
         let count = self.builder.integer(u128::from(count))?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, count, slot))?;
@@ -1431,7 +1463,7 @@ impl Function<'_, '_, '_, '_> {
                 }
             } else {
                 let ty = types::storage(
-                    self.graph,
+                    &*self.graph,
                     self.result
                         .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                             "shared synthetic return",

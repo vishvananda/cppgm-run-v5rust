@@ -127,7 +127,7 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn literal_truth(&self, id: ast::ExprId) -> Result<Option<bool>, Error> {
         self.graph
-            .lower_literal_truth(self.tree, id)
+            .lower_literal_truth(&*self.tree, id)
             .map_err(Error::from)
     }
     pub(super) fn truth(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
@@ -148,13 +148,13 @@ impl Function<'_, '_, '_, '_> {
         self.scalar_truth(value)
     }
     fn scalar_truth(&mut self, value: RValue) -> Result<RValue, Error> {
-        if super::complex::part(self.graph, value.source)?.is_some() {
+        if super::complex::part(&*self.graph, value.source)?.is_some() {
             return self.complex_truth(value, value.source);
         }
         if self.graph.lower_member_pointer_type(value.source).is_some() {
             return self.member_pointer_truth(value);
         }
-        if let Some(kind) = super::soft_float::kind(self.graph, value.source)? {
+        if let Some(kind) = super::soft_float::kind(&*self.graph, value.source)? {
             let zero = self.soft_constant(kind, 0, value.source)?;
             return self.soft_compare(Compare::Ne, kind, value, zero, value.source);
         }
@@ -188,7 +188,7 @@ impl Function<'_, '_, '_, '_> {
                 return self.emit(
                     I::Convert(
                         crate::lowir::vocabulary::Convert::ZeroExtend,
-                        types::storage(self.graph, target)?,
+                        types::storage(&*self.graph, target)?,
                         value.ty,
                         value.value,
                     ),
@@ -197,7 +197,7 @@ impl Function<'_, '_, '_, '_> {
             }
             return self.convert(value, target, Context::Operand);
         }
-        let ty = types::storage(self.graph, source)?;
+        let ty = types::storage(&*self.graph, source)?;
         let place =
             *self
                 .locals
@@ -206,7 +206,7 @@ impl Function<'_, '_, '_, '_> {
                     "condition without storage",
                 )))?;
         let value = self.emit(
-            I::Load(types::memory(self.graph, source)?, ty, place),
+            I::Load(types::memory(&*self.graph, source)?, ty, place),
             source,
         )?;
         if to_bool {
@@ -568,7 +568,7 @@ impl Function<'_, '_, '_, '_> {
                 self.emit(
                     I::Load(
                         Facts::memory(true, false),
-                        types::storage(self.graph, source)?,
+                        types::storage(&*self.graph, source)?,
                         place,
                     ),
                     source,

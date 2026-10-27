@@ -78,8 +78,7 @@ impl Function<'_, '_, '_, '_> {
         variant: Variant,
         actions: &[SubobjectCopy],
     ) -> Result<(), Error> {
-        let plan = self.graph.lower_constructor(id);
-        let class = plan.class;
+        let class = self.graph.lower_constructor(id).class;
         let ty = self.graph.lower_entity_type(class)?;
         let function = self
             .graph
@@ -135,7 +134,7 @@ impl Function<'_, '_, '_, '_> {
         let mut limit = if variant == Variant::Base && !self.graph.lower_constructor_trivial(id) {
             self.graph.lower_nonvirtual_bytes(class)?
         } else {
-            types::layout(self.graph, ty)?.0
+            types::layout(&*self.graph, ty)?.0
         };
         if variant != Variant::Base {
             for &(base, offset) in self.graph.lower_virtual_bases(class) {
@@ -173,6 +172,7 @@ impl Function<'_, '_, '_, '_> {
             }
             let order: Vec<_> = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .virtual_construction_order(class)
                 .into_iter()
                 .filter_map(|base| planned.get(&base).copied())
@@ -195,7 +195,7 @@ impl Function<'_, '_, '_, '_> {
             let source = self.assignment_source(function)?;
             self.effect(I::CopyObject(
                 prefix,
-                types::layout(self.graph, ty)?.1,
+                types::layout(&*self.graph, ty)?.1,
                 source,
                 destination,
             ))?;
@@ -227,7 +227,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.copying.active = false;
         self.copy_truncate(0);
-        self.store_vptr(class, plan.object_pointer()?)?;
+        self.store_vptr(class, self.graph.lower_constructor(id).object_pointer()?)?;
         Ok(())
     }
     fn note_copied_member(
@@ -239,7 +239,11 @@ impl Function<'_, '_, '_, '_> {
         address: Option<Value>,
     ) -> Result<(), Error> {
         if self.graph.lower_union_class(class)
-            || self.symbols.class_destructor(transfer.ty)?.is_none()
+            || self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(transfer.ty)?
+                .is_none()
         {
             return Ok(());
         }
@@ -298,7 +302,12 @@ impl Function<'_, '_, '_, '_> {
             && self.graph.lower_class_empty(class)?
             && transfer.trivial
         {
-            if self.symbols.class_destructor(action.ty)?.is_some() {
+            if self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(action.ty)?
+                .is_some()
+            {
                 let destination = self.assignment_this(ty)?;
                 let destination = self.copy_address(destination, action.ty, transfer)?;
                 let source = self.assignment_source(function)?;
@@ -312,7 +321,7 @@ impl Function<'_, '_, '_, '_> {
             TypeView::Reference { .. }
         );
         if cls.is_none() && element == action.ty {
-            let storage = types::storage(self.graph, action.ty)?;
+            let storage = types::storage(&*self.graph, action.ty)?;
             let destination = if reference {
                 None
             } else {
@@ -360,7 +369,7 @@ impl Function<'_, '_, '_, '_> {
             self.copy_address(source, action.ty, transfer)?
         };
         if transfer.trivial {
-            let (size, align) = types::layout(self.graph, action.ty)?;
+            let (size, align) = types::layout(&*self.graph, action.ty)?;
             if shared.is_none()
                 && transfer.member.is_none()
                 && transfer.offset.wrapping_add(size) > limit
@@ -389,13 +398,17 @@ impl Function<'_, '_, '_, '_> {
                 .is_empty()
         {
             self.virtual_context.hidden = Some(match action.target {
-                CopyTarget::Base(index) if shared.is_none() => {
-                    self.symbols.vtt_base_index(owner, index as usize)?
-                }
-                _ => self.symbols.vtt_virtual_index(
-                    owner,
-                    cls.ok_or(crate::sema::Error::Invariant("shared copy class"))?,
-                )?,
+                CopyTarget::Base(index) if shared.is_none() => self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .vtt_base_index(owner, index as usize)?,
+                _ => self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .vtt_virtual_index(
+                        owner,
+                        cls.ok_or(crate::sema::Error::Invariant("shared copy class"))?,
+                    )?,
             });
         }
         let result = self.call_copy_constructor(
@@ -420,7 +433,6 @@ impl Function<'_, '_, '_, '_> {
         written: crate::sema::lowering::ConstructorArguments,
         location: crate::support::source::SourceOffset,
     ) -> Result<bool, Error> {
-        let plan = self.graph.lower_constructor(id);
         if !self.graph.lower_constructor_copies_storage(id) {
             return Ok(false);
         }
@@ -441,9 +453,19 @@ impl Function<'_, '_, '_, '_> {
         if self.graph.lower_function_conversion(source)?.is_some() {
             return Ok(false);
         }
-        let empty = self.graph.lower_class_empty(plan.class)?;
-        let ty = self.graph.lower_entity_type(plan.class)?;
-        if empty && self.symbols.class_destructor(ty)?.is_some() {
+        let empty = self
+            .graph
+            .lower_class_empty(self.graph.lower_constructor(id).class)?;
+        let ty = self
+            .graph
+            .lower_entity_type(self.graph.lower_constructor(id).class)?;
+        if empty
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(ty)?
+                .is_some()
+        {
             return Ok(false);
         }
         if empty && self.side_effect_free(source, false, 0)? {
@@ -451,7 +473,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let facts = self.graph.lower_expression(source)?;
         if !facts.is_place
-            && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(class) if class == plan.class)
+            && matches!(self.graph.lower_type(facts.ty)?, TypeView::Class(class) if class == self.graph.lower_constructor(id).class)
         {
             self.materialize_prvalue(source, ty, object, false, location)?;
         } else {
@@ -459,6 +481,8 @@ impl Function<'_, '_, '_, '_> {
             let TypeView::Function { parameters, .. } = self.graph.lower_type(signature)? else {
                 return Err(crate::sema::Error::Invariant("delegated copy signature").into());
             };
+            let parameters = parameters.to_vec();
+            let parameters = parameters.as_slice();
             let source =
                 self.bind_reference(source, parameters[0], super::conversions::Context::Argument)?;
             if !empty {
@@ -479,7 +503,11 @@ impl Function<'_, '_, '_, '_> {
         let ty = self.graph.lower_entity_type(class)?;
         let empty_lifetime = self.graph.lower_constructor_trivial(id)
             && self.graph.lower_class_empty(class)?
-            && self.symbols.class_destructor(ty)?.is_some();
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(ty)?
+                .is_some();
         if self.graph.lower_constructor_copies_storage(id) && !empty_lifetime {
             if !self.graph.lower_class_empty(class)? {
                 self.copy_object(ty, source, destination)?;
@@ -487,17 +515,19 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         let entry = Entry::Constructor(id, Variant::Complete);
-        let facts = entry.facts(self.graph)?;
+        let facts = entry.facts(&*self.graph)?;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(
                 crate::sema::Error::Invariant("address-bound constructor signature").into(),
             );
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         self.begin_lifetime_call(!facts.nothrow)?;
         let mut values = vec![destination, source];
         for (index, &parameter) in parameters.iter().enumerate().skip(1) {
             let function = entry
-                .entity(self.graph)
+                .entity(&*self.graph)
                 .ok_or(crate::sema::Error::Invariant("capture copy defaults owner"))?;
             let expression =
                 self.graph
@@ -542,10 +572,12 @@ impl Function<'_, '_, '_, '_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let entry = Entry::Constructor(id, variant);
-        let facts = entry.facts(self.graph)?;
+        let facts = entry.facts(&*self.graph)?;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(crate::sema::Error::Invariant("copy call type").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let throws = self.default_constructor_throws(id)?;
         let chained = if parameters.len() > 1 {
             self.begin_copy_call(throws)?
@@ -585,7 +617,7 @@ impl Function<'_, '_, '_, '_> {
         }
         // call_copy forms the hidden context before demanding the entry and
         // opening a plain copy region. This also fixes table emission order.
-        if entry.hidden_vtt(self.graph)? {
+        if entry.hidden_vtt(&*self.graph)? {
             values.insert(1, self.hidden_vtt_value()?);
         }
         let chained = if parameters.len() == 1 {

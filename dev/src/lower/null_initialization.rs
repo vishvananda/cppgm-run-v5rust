@@ -41,7 +41,7 @@ pub(super) fn static_nulls(
                     }
                 }
                 TypeView::Class(class) => {
-                    for child in graph.lower_null_subobjects(class) {
+                    for child in graph.lower_null_subobjects(class).collect::<Vec<_>>() {
                         let (ty, offset) = child?;
                         work.push((ty, at.wrapping_add(offset)));
                     }
@@ -131,7 +131,7 @@ impl Function<'_, '_, '_, '_> {
         }
         match self.graph.lower_type(ty)? {
             TypeView::Array { element, bound } => {
-                let stride = types::layout(self.graph, element)?.0;
+                let stride = types::layout(&*self.graph, element)?.0;
                 if bound <= 4 {
                     for index in 0..bound {
                         self.null_data_members(
@@ -148,8 +148,8 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
             TypeView::Class(class) => {
-                let graph = self.graph;
-                for child in graph.lower_null_subobjects(class) {
+                let graph = &*self.graph;
+                for child in graph.lower_null_subobjects(class).collect::<Vec<_>>() {
                     let (child, offset) = child?;
                     self.null_data_members(child, object, at.wrapping_add(offset))?;
                 }
@@ -171,7 +171,7 @@ impl Function<'_, '_, '_, '_> {
         elements: Value,
         count: Value,
     ) -> Result<(), Error> {
-        let stride = types::layout(self.graph, ty)?.0;
+        let stride = types::layout(&*self.graph, ty)?.0;
         let slot = self.generated_slot("null_member_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;

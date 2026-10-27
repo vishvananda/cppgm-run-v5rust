@@ -11,11 +11,11 @@ impl Symbols<'_, '_> {
         &mut self,
         program: &mut Program,
     ) -> Result<(), Error> {
-        for index in 0..self.inline_static_owners.len() {
-            let entity = self.inline_static_owners[index];
+        for index in 0..self.state.inline_static_owners.len() {
+            let entity = self.state.inline_static_owners[index];
             crate::lower::function::declare(program, self, self.graph, Entry::Function(entity))?;
         }
-        self.inline_static_owners.clear();
+        self.state.inline_static_owners.clear();
         Ok(())
     }
 
@@ -32,7 +32,7 @@ impl Symbols<'_, '_> {
             return Ok(Value::Symbol(self.function_symbol(program, entity)?));
         }
         let entry = Entry::InlineCopy(entity);
-        if let Some(&symbol) = self.entries.get(&entry) {
+        if let Some(&symbol) = self.state.entries.get(&entry) {
             return Ok(Value::Symbol(symbol));
         }
         let name = self.name(entity)?;
@@ -45,25 +45,25 @@ impl Symbols<'_, '_> {
             let encoding = self.function_encoding(entity)?;
             let mut bytes = Vec::new();
             crate::abi::encoder::Encoder::encode(
-                &self.abi,
+                &self.state.abi,
                 crate::abi::encoder::Target::Entity(encoding),
                 &mut bytes,
-                self.budget,
+                self.state.budget,
             )?;
             bytes
         };
         object.extend_from_slice(b".always_inline");
         let object = program.names.intern_bytes(&object)?;
-        let local_object = (!self.table.objects.contains_key(&object)).then_some(object);
-        let symbol = self.table.allocate(
+        let local_object = (!self.state.table.objects.contains_key(&object)).then_some(object);
+        let symbol = self.state.table.allocate(
             program,
             &format!("{name}.always_inline"),
             Some(object),
             true,
         )?;
-        self.entries.insert(entry, symbol);
-        self.entry_objects.insert(entry, local_object);
-        self.pending_copies.push(entity);
+        self.state.entries.insert(entry, symbol);
+        self.state.entry_objects.insert(entry, local_object);
+        self.state.pending_copies.push(entity);
         // The boundary is available while the body is still queued. This is
         // equally required by retained views and the consuming O0 object sink.
         let signature =
@@ -82,7 +82,7 @@ impl Symbols<'_, '_> {
         let name = program.names.get(program.symbol(symbol).name).to_owned();
         let mut metadata = self.metadata(program, entity, &name)?;
         metadata.binding = Some(Binding::Internal);
-        metadata.object = self.entry_objects[&Entry::InlineCopy(entity)]
+        metadata.object = self.state.entry_objects[&Entry::InlineCopy(entity)]
             .filter(|&object| object != program.symbol(symbol).name);
         Ok(metadata)
     }

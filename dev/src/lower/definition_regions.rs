@@ -21,7 +21,7 @@ impl Function<'_, '_, '_, '_> {
         body: Option<&ast::FunctionBody>,
         calls_complete: bool,
     ) -> Result<(), Error> {
-        let destructor = matches!(entry.facts(self.graph)?.name, FunctionName::Destructor(_));
+        let destructor = matches!(entry.facts(&*self.graph)?.name, FunctionName::Destructor(_));
         let deleting = matches!(entry, Entry::DestructorDeleting(_));
         let function_try = body.filter(|_| !deleting).and_then(|body| {
             body.handlers.map(|clauses| {
@@ -45,7 +45,7 @@ impl Function<'_, '_, '_, '_> {
         if destructor {
             self.destructor_prologue(
                 entry
-                    .entity(self.graph)
+                    .entity(&*self.graph)
                     .ok_or(crate::sema::Error::Invariant("destructor without entity"))?,
                 deleting,
                 calls_complete,

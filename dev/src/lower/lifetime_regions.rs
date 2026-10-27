@@ -187,12 +187,14 @@ impl Function<'_, '_, '_, '_> {
         // that ordering, including an entry marker with no landing block.
         let synthesized_copy = matches!(entry, super::construction::Entry::Constructor(id, _)
             if self.graph.lower_constructor(id).copy.is_some());
-        let inert_destructor = if let Some(entity) = entry.entity(self.graph)
+        let inert_destructor = if let Some(entity) = entry.entity(&*self.graph)
             && matches!(
-                entry.facts(self.graph)?.name,
+                entry.facts(&*self.graph)?.name,
                 crate::sema::lowering::FunctionName::Destructor(_)
             ) {
-            self.symbols.destructor_inert(entity)?
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .destructor_inert(entity)?
         } else {
             false
         };
@@ -229,7 +231,11 @@ impl Function<'_, '_, '_, '_> {
             .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
             .value;
         self.terminate_exception(exception)?;
-        let ty = self.symbols.result_boundary(source)?.ty;
+        let ty = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(source)?
+            .ty;
         self.termination_return(source, ty)
     }
     fn place_unexpected_landing(
@@ -256,6 +262,7 @@ impl Function<'_, '_, '_, '_> {
             };
             information.push(Value::Symbol(
                 self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
                     .exception_type_information(self.builder.program(), ty)?,
             ));
         }
@@ -282,7 +289,10 @@ impl Function<'_, '_, '_, '_> {
         let exception = self
             .emit(I::Runtime(R::Exception(Type::Ptr)), source)?
             .value;
-        let callee = self.symbols.unexpected_function(self.builder.program())?;
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .unexpected_function(self.builder.program())?;
         let arguments = self.builder.arguments(&[exception])?;
         self.effect(I::Call(Call {
             result: Type::Void,
@@ -302,7 +312,10 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         exception: crate::lowir::model::Value,
     ) -> Result<(), Error> {
-        let callee = self.symbols.terminate_helper(self.builder.program())?;
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .terminate_helper(self.builder.program())?;
         let arguments = self.builder.arguments(&[exception])?;
         self.effect(I::Call(crate::lowir::model::Call {
             result: Type::Void,
@@ -332,7 +345,11 @@ impl Function<'_, '_, '_, '_> {
             .emit(I::Load(Facts::memory(false, true), Type::Ptr, slot), source)?
             .value;
         self.terminate_exception(exception)?;
-        let ty = self.symbols.result_boundary(source)?.ty;
+        let ty = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_boundary(source)?
+            .ty;
         self.termination_return(source, ty)
     }
     fn function_exception_slot(&mut self) -> Result<crate::lowir::model::Value, Error> {
@@ -852,7 +869,7 @@ impl Function<'_, '_, '_, '_> {
         })
     }
     pub(super) fn lifetime_result(&mut self, call: I, source: TypeId) -> Result<RValue, Error> {
-        if types::storage(self.graph, source)? == Type::Void {
+        if types::storage(&*self.graph, source)? == Type::Void {
             self.effect(call)?;
             self.zero(source)
         } else {

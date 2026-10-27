@@ -56,7 +56,10 @@ impl Function<'_, '_, '_, '_> {
         ty: crate::sema::lowering::TypeId,
     ) -> Result<Value, Error> {
         let address = self.emit(I::Addr(Value::Symbol(guard)), ty)?.value;
-        let callee = self.symbols.guard_function(self.builder.program(), call)?;
+        let callee = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .guard_function(self.builder.program(), call)?;
         let arguments = self.builder.arguments(&[address])?;
         self.before_lifetime_call(false)?;
         let instruction = I::Call(crate::lowir::model::Call {
@@ -81,6 +84,56 @@ impl Function<'_, '_, '_, '_> {
         };
         Ok(self.finish_lifetime_call(value, false)?.value)
     }
+    fn local_static_has_temporaries(
+        &mut self,
+        entity: EntityId,
+        ty: crate::sema::lowering::TypeId,
+        initializer: Option<ast::Initializer>,
+    ) -> Result<(Option<ast::ExprId>, bool), Error> {
+        let listed = if self.graph.lower_construction(entity).is_none()
+            && !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. })
+        {
+            self.list_variable(initializer)?
+        } else {
+            None
+        };
+        let temporary = listed.is_some()
+            || if let Some(initializer) = initializer {
+                if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
+                    let expr = self.initializer_expression(initializer)?;
+                    !self.graph.lower_expression(expr)?.is_place
+                        || self.initializer_temporaries(Some(initializer))?
+                } else {
+                    self.initializer_temporaries(Some(initializer))?
+                }
+            } else {
+                false
+            };
+        Ok((listed, temporary))
+    }
+    fn local_static_is_dynamic(
+        &self,
+        entity: EntityId,
+        initializer: Option<ast::Initializer>,
+        aggregate: bool,
+        destroyed: bool,
+    ) -> Result<bool, Error> {
+        let facts = self.graph.lower_variable(entity)?;
+        let mut element = facts.ty;
+        while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
+            element = inner;
+        }
+        Ok(destroyed
+            || if aggregate {
+                self.graph.lower_array_image(entity).is_none()
+                    && self.graph.lower_static_construction(entity).is_none()
+                    && (initializer.is_some()
+                        || matches!(self.graph.lower_type(element)?, TypeView::Class(_))
+                            && !self.graph.lower_trivial_default_construction(entity)?)
+            } else {
+                initializer.is_some() && facts.initializer.is_none()
+            })
+    }
     pub(super) fn local_static(
         &mut self,
         entity: EntityId,
@@ -95,58 +148,38 @@ impl Function<'_, '_, '_, '_> {
             self.graph.lower_type(facts.ty)?,
             TypeView::Array { .. } | TypeView::Class(_)
         );
-        let destroyed = self.symbols.storage_destructor(facts.ty)?.is_some();
-        let mut element = facts.ty;
-        while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
-            element = inner;
-        }
-        let dynamic = destroyed
-            || if aggregate {
-                self.graph.lower_array_image(entity).is_none()
-                    && self.graph.lower_static_construction(entity).is_none()
-                    && (initializer.is_some()
-                        || matches!(self.graph.lower_type(element)?, TypeView::Class(_))
-                            && !self.graph.lower_trivial_default_construction(entity)?)
-            } else {
-                initializer.is_some() && facts.initializer.is_none()
-            };
-        let listed = if self.graph.lower_construction(entity).is_none()
-            && !matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. })
-        {
-            self.list_variable(initializer)?
-        } else {
-            None
-        };
-        let temporary = listed.is_some()
-            || if let Some(initializer) = initializer {
-                if matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. }) {
-                    let expr = self.initializer_expression(initializer)?;
-                    !self.graph.lower_expression(expr)?.is_place
-                        || self.initializer_temporaries(Some(initializer))?
-                } else {
-                    self.initializer_temporaries(Some(initializer))?
-                }
-            } else {
-                false
-            };
+        let destroyed = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .storage_destructor(facts.ty)?
+            .is_some();
+        let dynamic = self.local_static_is_dynamic(entity, initializer, aggregate, destroyed)?;
+        let (listed, temporary) =
+            self.local_static_has_temporaries(entity, facts.ty, initializer)?;
         let ordinal = self.next_static;
         self.next_static = ordinal.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
         let StorageSymbols {
             object: symbol,
             guard,
             metadata,
-        } = self.symbols.local_storage_symbols(
-            self.builder.program(),
-            entity,
-            self.entity
-                .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                    "implicit constructor with static local",
-                )))?,
-            ordinal,
-            dynamic,
-            tokens.filter(|_| temporary),
-        )?;
-        let saved = self.symbols.replace_temporary_owner(Some((entity, 0)));
+        } = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .local_storage_symbols(
+                self.builder.program(),
+                entity,
+                self.entity
+                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
+                        "implicit constructor with static local",
+                    )))?,
+                ordinal,
+                dynamic,
+                tokens.filter(|_| temporary),
+            )?;
+        let saved = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .replace_temporary_owner(Some((entity, 0)));
         let defined = self.define_static_storage(
             entity,
             initializer,
@@ -158,7 +191,9 @@ impl Function<'_, '_, '_, '_> {
                 metadata,
             },
         );
-        self.symbols.replace_temporary_owner(saved);
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .replace_temporary_owner(saved);
         defined?;
         self.locals.insert(entity, Value::Symbol(symbol));
         let Some((guard, _)) = guard else {
@@ -171,6 +206,7 @@ impl Function<'_, '_, '_, '_> {
                 && !self.graph.lower_constructor_trivial(constructor)
             {
                 self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
                     .demand_entry(super::construction::Entry::Constructor(
                         constructor,
                         super::construction::Variant::Complete,
@@ -178,7 +214,8 @@ impl Function<'_, '_, '_, '_> {
             }
             if self.graph.lower_evaluated_construction(entity) {
                 self.symbols
-                    .demand_constant_constructions(self.graph, self.tree, initializer);
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .demand_constant_constructions(&*self.graph, &*self.tree, initializer);
             }
             for &constructor in self
                 .graph
@@ -187,6 +224,7 @@ impl Function<'_, '_, '_, '_> {
                 .rev()
             {
                 self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
                     .demand_entry(super::construction::Entry::Constructor(
                         constructor,
                         super::construction::Variant::Complete,
@@ -200,7 +238,11 @@ impl Function<'_, '_, '_, '_> {
         let flag = Value::Symbol(guard);
         let ready = self.new_block("local_static_ready")?;
         let initialize = self.new_block("local_static_init")?;
-        let thread_safe = self.symbols.host_objects() && !facts.thread_local;
+        let thread_safe = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .host_objects()
+            && !facts.thread_local;
         let aborting = self.begin_static_guard(guard, facts.ty, ready, initialize, thread_safe)?;
         let address = self.emit(I::Addr(Value::Symbol(symbol)), facts.ty)?.value;
         let mut first = self.lifetime.cleanups.len();
@@ -211,13 +253,19 @@ impl Function<'_, '_, '_, '_> {
             made: Vec::new(),
         });
         if let Some(list) = listed
-            && !self.symbols.object_mode()
+            && !self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .object_mode()
             && let Some(array) = self.graph.lower_initializer_array(list)
             && matches!(self.graph.lower_type(array)?, TypeView::Array { bound, .. } if bound != 0)
         {
-            self.generated_slot("initlist", types::storage(self.graph, array)?)?;
+            self.generated_slot("initlist", types::storage(&*self.graph, array)?)?;
         }
-        let saved = self.symbols.replace_temporary_owner(Some((entity, 0)));
+        let saved = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .replace_temporary_owner(Some((entity, 0)));
         let mut region = false;
         let construction = self.lifetime.construction;
         let construction_flow = self.lifetime.construction_flow;
@@ -279,7 +327,9 @@ impl Function<'_, '_, '_, '_> {
             Ok::<(), Error>(())
         });
         self.persistent_references = persistent;
-        self.symbols.replace_temporary_owner(saved);
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .replace_temporary_owner(saved);
         let temporaries = std::mem::replace(&mut self.static_temporaries, previous).ok_or(
             crate::sema::Error::Invariant("local static lost temporary inventory"),
         )?;
@@ -295,11 +345,12 @@ impl Function<'_, '_, '_, '_> {
             self.register_static_finalizers(symbol, &temporaries.made, facts.ty)?;
         }
         if destroyed {
-            self.register_destruction(
-                symbol,
-                facts.ty,
-                facts.thread_local && self.symbols.object_mode(),
-            )?;
+            let thread_local = facts.thread_local
+                && self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .object_mode();
+            self.register_destruction(symbol, facts.ty, thread_local)?;
         }
         if thread_safe {
             self.guard_call(GuardCall::Release, guard, facts.ty)?;
@@ -411,7 +462,11 @@ impl Function<'_, '_, '_, '_> {
         // A static-construction attempt can publish base tables and symbolic
         // addresses even when its final image replaces them or it fails.
         // Replay that demand before defining the surviving storage image.
-        self.static_data_items(self.graph.lower_static_construction_demands(entity))?;
+        let demands = self
+            .graph
+            .lower_static_construction_demands(entity)
+            .to_vec();
+        self.static_data_items(&demands)?;
         let mut init = if aggregate {
             GlobalInit::Data(
                 if let Some(image) = self
@@ -419,10 +474,13 @@ impl Function<'_, '_, '_, '_> {
                     .lower_static_construction(entity)
                     .or_else(|| self.graph.lower_array_image(entity))
                 {
-                    self.static_data_items(image)?
+                    {
+                        let image = image.to_vec();
+                        self.static_data_items(&image)?
+                    }
                 } else {
                     vec![DataItem::Zero(
-                        i64::try_from(types::layout(self.graph, facts.ty)?.0)
+                        i64::try_from(types::layout(&*self.graph, facts.ty)?.0)
                             .map_err(|_| crate::lowir::Error::Limit)?,
                     )]
                 },
@@ -458,7 +516,7 @@ impl Function<'_, '_, '_, '_> {
             GlobalInit::Zero
         };
         if let GlobalInit::Data(items) = &mut init {
-            super::null_initialization::static_nulls(self.graph, facts.ty, items)?;
+            super::null_initialization::static_nulls(&*self.graph, facts.ty, items)?;
         } else if matches!(init, GlobalInit::Zero)
             && self.graph.lower_member_pointer_type(facts.ty).is_some()
             && self.graph.lower_holds_data_member_pointer(facts.ty)?
@@ -470,32 +528,43 @@ impl Function<'_, '_, '_, '_> {
             && self.graph.lower_reference_reads_storage(entity)
         {
             self.symbols
-                .demand_reference_initializer_calls(self.graph, self.tree, initializer)?;
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand_reference_initializer_calls(&*self.graph, &*self.tree, initializer)?;
         }
-        if !dynamic && !facts.thread_local && self.symbols.readonly_object(facts.ty)? {
+        if !dynamic
+            && !facts.thread_local
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .readonly_object(facts.ty)?
+        {
             metadata.storage = Some(Storage::ReadOnly);
         }
         let program = self.builder.program();
         let name = program.symbol(symbol).name;
         let mut ty = if let GlobalInit::Data(items) = &init {
             super::globals::structured_type(
-                self.graph,
+                &*self.graph,
                 facts.ty,
                 items,
-                self.symbols.object_mode(),
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .object_mode(),
             )?
         } else {
             Some(match facts.initializer.and_then(data::soft_item) {
                 Some(crate::lowir::model::DataItem::Constant(ty, _)) => ty,
-                _ => types::storage(self.graph, facts.ty)?,
+                _ => types::storage(&*self.graph, facts.ty)?,
             })
         };
         super::globals::align_storage(
-            self.graph,
+            &*self.graph,
             entity,
             &mut ty,
             &mut init,
-            self.symbols.object_mode(),
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .object_mode(),
         )?;
         program.add_global(
             symbol,
@@ -536,8 +605,8 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         let Some(finalizer) = super::shutdown::for_type(
             self.builder.program(),
-            self.symbols,
-            self.graph,
+            &mut self.symbols.view(&*self.graph, &*self.tree, self.cursor),
+            &*self.graph,
             global,
             ty,
             None,
@@ -564,19 +633,31 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         use crate::lowir::model::Call;
         let program = self.builder.program();
-        let destructor = self.symbols.local_destructor_symbol(program, global)?;
+        let destructor = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .local_destructor_symbol(program, global)?;
         super::shutdown::local(program, destructor, finalizers)?;
         program.stream_last_definition(&mut self.symbols.generated_definitions)?;
         let (registrar, arguments) = if thread {
-            let dso = self.symbols.dso_handle(program)?;
-            let registrar = self.symbols.thread_atexit_function(program)?;
+            let dso = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .dso_handle(program)?;
+            let registrar = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .thread_atexit_function(program)?;
             let zero = self.builder.integer(0)?;
             let arguments =
                 self.builder
                     .arguments(&[Value::Symbol(destructor), zero, Value::Symbol(dso)])?;
             (registrar, arguments)
         } else {
-            let registrar = self.symbols.atexit_function(program)?;
+            let registrar = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .atexit_function(program)?;
             (
                 registrar,
                 self.builder.arguments(&[Value::Symbol(destructor)])?,
@@ -604,26 +685,32 @@ impl Function<'_, '_, '_, '_> {
             && self.graph.lower_array_image(entity).is_none();
         let ordinal = self.next_static;
         self.next_static = ordinal.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
-        let symbols = self.symbols.local_storage_symbols(
-            self.builder.program(),
-            entity,
-            self.entity.ok_or(crate::sema::Error::Invariant(
-                "static object without function",
-            ))?,
-            ordinal,
-            dynamic,
-            None,
-        )?;
+        let symbols = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .local_storage_symbols(
+                self.builder.program(),
+                entity,
+                self.entity.ok_or(crate::sema::Error::Invariant(
+                    "static object without function",
+                ))?,
+                ordinal,
+                dynamic,
+                None,
+            )?;
         let initialized = {
             let program = self.builder.program();
             program.global(program.symbol(symbols.object)).is_some()
         };
         if !initialized {
             let items = if let Some(image) = self.graph.lower_array_image(entity) {
-                self.static_data_items(image)?
+                {
+                    let image = image.to_vec();
+                    self.static_data_items(&image)?
+                }
             } else {
                 vec![DataItem::Zero(
-                    i64::try_from(types::layout(self.graph, ty)?.0)
+                    i64::try_from(types::layout(&*self.graph, ty)?.0)
                         .map_err(|_| crate::lowir::Error::Limit)?,
                 )]
             };
@@ -634,10 +721,12 @@ impl Function<'_, '_, '_, '_> {
                 Global {
                     name,
                     ty: super::globals::structured_type(
-                        self.graph,
+                        &*self.graph,
                         ty,
                         &items,
-                        self.symbols.object_mode(),
+                        self.symbols
+                            .view(&*self.graph, &*self.tree, self.cursor)
+                            .object_mode(),
                     )?,
                     metadata: symbols.metadata,
                     init: GlobalInit::Data(items),
@@ -687,6 +776,7 @@ impl Function<'_, '_, '_, '_> {
             && !self.graph.lower_constructor_trivial(constructor)
         {
             self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .demand_entry(super::construction::Entry::Constructor(
                     constructor,
                     super::construction::Variant::Complete,

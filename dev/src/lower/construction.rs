@@ -105,7 +105,7 @@ impl Function<'_, '_, '_, '_> {
         {
             let saved = self.lifetime.expression_start;
             self.lifetime.expression_start = Some(self.builder.position()?);
-            for &id in self.tree.expr_lists.get(values) {
+            for id in self.owned_expression_ids(values) {
                 self.begin_tracking(
                     id,
                     super::temporary_scan::ExpressionUse::InitializerArgument,
@@ -217,8 +217,8 @@ impl Function<'_, '_, '_, '_> {
             location,
         } = input;
         let single;
-        let written = match arguments {
-            Some(ConstructorArguments::Values(values)) => self.tree.expr_lists.get(values),
+        let written: &[ast::ExprId] = match arguments {
+            Some(ConstructorArguments::Values(values)) => &self.owned_expression_ids(values),
             Some(ConstructorArguments::Single(id)) => {
                 single = [id];
                 &single
@@ -226,7 +226,7 @@ impl Function<'_, '_, '_, '_> {
             Some(ConstructorArguments::Value) | None => &[],
         };
         let entry = Entry::Constructor(id, variant);
-        let facts = entry.facts(self.graph)?;
+        let facts = entry.facts(&*self.graph)?;
         let list_call = matches!(arguments, Some(ConstructorArguments::Single(list))
             if self.graph.lower_initializer_array(list).is_some()
                 && self.graph.lower_list_constructor(list)? == Some(id));
@@ -266,9 +266,11 @@ impl Function<'_, '_, '_, '_> {
                 "constructor signature missing",
             )));
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let mut values = vec![object];
         let mut argument_classes = Vec::new();
-        let hidden_vtt = entry.hidden_vtt(self.graph)?;
+        let hidden_vtt = entry.hidden_vtt(&*self.graph)?;
         if hidden_vtt && !written.is_empty() {
             values.push(self.hidden_vtt_value()?);
         }
@@ -281,12 +283,9 @@ impl Function<'_, '_, '_, '_> {
             let parameter = parameter.ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "constructor argument type",
             )))?;
-            let function =
-                entry
-                    .entity(self.graph)
-                    .ok_or(Error::Semantic(crate::sema::Error::Invariant(
-                        "implicit constructor parameters",
-                    )))?;
+            let function = entry.entity(&*self.graph).ok_or(Error::Semantic(
+                crate::sema::Error::Invariant("implicit constructor parameters"),
+            ))?;
             let default = written
                 .get(index)
                 .copied()
@@ -401,24 +400,36 @@ impl Function<'_, '_, '_, '_> {
                     && self.aggregation.call_scope
                         == super::aggregate_cleanup::CallScope::FullExpression,
         )?;
-        self.symbols.demand_entry(entry);
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand_entry(entry);
         if publish_table
-            && !self.symbols.host_objects()
+            && !self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .host_objects()
             && let Entry::Constructor(id, _) = entry
         {
-            self.symbols.construction_table(
-                self.builder.program(),
-                self.graph.lower_constructor(id).class,
-            )?;
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .construction_table(
+                    self.builder.program(),
+                    self.graph.lower_constructor(id).class,
+                )?;
         }
-        let symbol = self.symbols.entry_symbol(self.builder.program(), entry)?;
+        let symbol = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .entry_symbol(self.builder.program(), entry)?;
         let mut hidden_values;
-        let values = if entry.hidden_vtt(self.graph)? {
+        let values = if entry.hidden_vtt(&*self.graph)? {
             let TypeView::Function { parameters, .. } =
-                self.graph.lower_type(entry.facts(self.graph)?.ty)?
+                self.graph.lower_type(entry.facts(&*self.graph)?.ty)?
             else {
                 return Err(crate::sema::Error::Invariant("base entry signature").into());
             };
+            let parameters = parameters.to_vec();
+            let parameters = parameters.as_slice();
             if values.len() == parameters.len() + 1 {
                 hidden_values = values.to_vec();
                 hidden_values.insert(1, self.hidden_vtt_value()?);
@@ -450,12 +461,14 @@ impl Function<'_, '_, '_, '_> {
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
         let entry = Entry::Constructor(id, Variant::Base);
-        let facts = entry.facts(self.graph)?;
+        let facts = entry.facts(&*self.graph)?;
         let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
             return Err(Error::Semantic(crate::sema::Error::Invariant(
                 "forwarding without signature",
             )));
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let function = self
             .entity
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
@@ -463,7 +476,7 @@ impl Function<'_, '_, '_, '_> {
             )))?;
         let own = self.graph.lower_function(function)?;
         let mut values = vec![object];
-        for (entity, _, ty) in self.graph.lower_parameters(own.scope) {
+        for (entity, _, ty) in self.graph.lower_parameters(own.scope).collect::<Vec<_>>() {
             let slot = self.locals.get(&entity).copied().ok_or(Error::Semantic(
                 crate::sema::Error::Invariant("forwarded parameter without slot"),
             ))?;
@@ -477,7 +490,7 @@ impl Function<'_, '_, '_, '_> {
         }
         let function =
             entry
-                .entity(self.graph)
+                .entity(&*self.graph)
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "forwarded constructor without entity",
                 )))?;
@@ -515,7 +528,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // Preliminary value-initialization covers the complete storage span,
         // including padding. Volatile scalar member writes remain distinct.
-        let (size, alignment) = super::types::layout(self.graph, ty)?;
+        let (size, alignment) = super::types::layout(&*self.graph, ty)?;
         if self.empty_storage == super::member_initialization::EmptyStorage::Overlapping
             && let TypeView::Class(class) = self.graph.lower_type(ty)?
             && self.graph.lower_class_empty(class)?
@@ -581,9 +594,9 @@ impl Function<'_, '_, '_, '_> {
         variant: Variant,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
-        let plan = self.graph.lower_constructor(id);
-        if let Some(actions) = plan.copy {
-            return self.copy_members(id, variant, actions);
+        if let Some(actions) = self.graph.lower_constructor(id).copy {
+            let actions = actions.to_vec();
+            return self.copy_members(id, variant, &actions);
         }
         self.construction.detached = self
             .lifetime
@@ -591,26 +604,29 @@ impl Function<'_, '_, '_, '_> {
             .map(|body| self.body_unwinds(body, &mut false))
             .transpose()?
             .unwrap_or(false);
-        for child in plan.subobjects {
+        for child_index in 0..self.graph.lower_constructor(id).subobjects.len() {
+            let child = self.graph.lower_constructor(id).subobjects[child_index];
             let ty = self.graph.lower_entity_type(child.member)?;
             if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
                 && !self.graph.lower_constructor_trivial(child.constructor)
                 && !Entry::Constructor(child.constructor, Variant::Complete)
-                    .facts(self.graph)?
+                    .facts(&*self.graph)?
                     .nothrow
             {
                 self.construction.detached = true;
                 break;
             }
         }
-        self.destruction.class = Some(plan.class);
-        self.bit_initialization_order = if self.graph.lower_implicit_assignment_demanded(plan.class)
+        self.destruction.class = Some(self.graph.lower_constructor(id).class);
+        self.bit_initialization_order = if self
+            .graph
+            .lower_implicit_assignment_demanded(self.graph.lower_constructor(id).class)
         {
             super::bit_fields::InitializationOrder::AssignmentDemanded
         } else {
             super::bit_fields::InitializationOrder::Ordinary
         };
-        if let Some(delegation) = plan.delegation {
+        if let Some(delegation) = self.graph.lower_constructor(id).delegation {
             if self.virtual_context.vtt.is_some() {
                 self.virtual_context.hidden = Some(0);
             }
@@ -621,7 +637,9 @@ impl Function<'_, '_, '_, '_> {
             {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
             }
-            let object = self.object_pointer(plan.object_pointer()?)?.value;
+            let object = self
+                .object_pointer(self.graph.lower_constructor(id).object_pointer()?)?
+                .value;
             if !self.delegate_copy_storage(
                 delegation.constructor,
                 object,
@@ -643,32 +661,42 @@ impl Function<'_, '_, '_, '_> {
             }
             self.destroy_temporaries(first)?;
             self.end_lifetime_expression(began)?;
-            self.delegated_object_constructed(self.graph.lower_entity_type(plan.class)?, variant)?;
+            self.delegated_object_constructed(
+                self.graph
+                    .lower_entity_type(self.graph.lower_constructor(id).class)?,
+                variant,
+            )?;
             return Ok(());
         }
         self.bit_initialization = super::bit_fields::Initialization::default();
         if variant == Variant::Base && !self.graph.lower_constructor_trivial(id) {
             self.bit_initialization.limit = self
                 .graph
-                .lower_nonvirtual_bytes(plan.class)?
+                .lower_nonvirtual_bytes(self.graph.lower_constructor(id).class)?
                 .wrapping_mul(8);
         }
         if variant != Variant::Base {
-            for &(base, offset) in self.graph.lower_virtual_bases(plan.class) {
+            for &(base, offset) in self
+                .graph
+                .lower_virtual_bases(self.graph.lower_constructor(id).class)
+            {
                 if !self.graph.lower_class_empty(base)? {
                     self.bit_initialization.limit =
                         self.bit_initialization.limit.min(offset.wrapping_mul(8));
                 }
             }
         }
-        self.virtual_context.pending = !self.graph.lower_virtual_bases(plan.class).is_empty();
+        self.virtual_context.pending = !self
+            .graph
+            .lower_virtual_bases(self.graph.lower_constructor(id).class)
+            .is_empty();
         if variant != Variant::Base {
             self.initialize_virtual_bases(id, location)?;
         }
-        for index in 0..plan.bases.len() {
+        for index in 0..self.graph.lower_constructor(id).bases.len() {
             if self
                 .graph
-                .lower_inheritance_edge(plan.class, index)
+                .lower_inheritance_edge(self.graph.lower_constructor(id).class, index)
                 .is_some_and(|(_, shared, _)| !shared)
             {
                 self.initialize_base(id, variant, index, location)?;
@@ -678,8 +706,15 @@ impl Function<'_, '_, '_, '_> {
         if self.virtual_context.vtt.is_none() {
             self.virtual_context.this_values.clear();
         }
-        self.store_vptr(plan.class, plan.object_pointer()?)?;
-        self.initialize_member_plan(id, plan.object_pointer()?, location)
-            .map(|_| ())
+        self.store_vptr(
+            self.graph.lower_constructor(id).class,
+            self.graph.lower_constructor(id).object_pointer()?,
+        )?;
+        self.initialize_member_plan(
+            id,
+            self.graph.lower_constructor(id).object_pointer()?,
+            location,
+        )
+        .map(|_| ())
     }
 }

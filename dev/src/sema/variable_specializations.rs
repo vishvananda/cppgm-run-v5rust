@@ -285,10 +285,9 @@ impl Analyzer<'_> {
             frame
         };
         self.graph.variable_instances.begin(entity);
-        let result = self.required_instantiation(
+        let result = self.required_unlimited_instantiation(
             self.graph.instantiation_levels.get(entity)?,
             pattern.location,
-            pattern.limit,
             |analyzer| {
                 let initializer = pattern
                     .initializer

@@ -47,7 +47,7 @@ impl Function<'_, '_, '_, '_> {
         id: ast::StmtId,
         assembly: ast::AsmStatement,
     ) -> Result<(), Error> {
-        let program = self.graph.lower_assembly(id)?;
+        let program = self.graph.lower_assembly(id)?.clone();
         if let Some(message) = program.unlifted {
             return Err(Error::Semantic(crate::sema::Error::Diagnostic {
                 location: self.tree.statements.get(id).location,
@@ -57,12 +57,12 @@ impl Function<'_, '_, '_, '_> {
         let outputs = self.tree.asm_operands.get(assembly.outputs).len();
         let mut bound = Vec::<Bound>::with_capacity(program.registers.len());
         for list in [assembly.outputs, assembly.inputs] {
-            for operand in self.tree.asm_operands.get(list) {
+            for operand in self.tree.asm_operands.get(list).to_vec() {
                 let index = bound.len();
                 let output = index < outputs;
                 let expr = operand.expression;
                 let facts = self.graph.lower_expression(expr)?;
-                let ty = types::storage(self.graph, facts.ty)?;
+                let ty = types::storage(&*self.graph, facts.ty)?;
                 let mut binding = Bound {
                     address: None,
                     home: None,

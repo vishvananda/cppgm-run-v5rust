@@ -1,5 +1,8 @@
 // Translated from lower/symbol_lowering.cpp's procedural symbol and ABI construction. See NOTICE.
 use super::Error;
+#[path = "symbol_state.rs"]
+mod state;
+pub(super) use state::State;
 #[path = "abi_tags.rs"]
 mod abi_tags;
 #[path = "argument_declarations.rs"]
@@ -157,104 +160,75 @@ impl Symbols<'_, '_> {
         program: &mut Program,
         function: super::runtime_intrinsics::RuntimeFunction,
     ) -> Result<SymbolId, Error> {
-        if let Some(symbol) = self.table.hosted_runtime[function.index()] {
+        if let Some(symbol) = self.state.table.hosted_runtime[function.index()] {
             return Ok(symbol);
         }
         let symbol = self
+            .state
             .table
             .allocate(program, function.spelling().0, None, true)?;
         super::runtime_intrinsics::declare_runtime(program, symbol, function)?;
-        self.table.hosted_runtime[function.index()] = Some(symbol);
+        self.state.table.hosted_runtime[function.index()] = Some(symbol);
         program.publish_runtime_declaration(symbol);
         Ok(symbol)
     }
 }
 
+impl State {
+    pub(super) fn view<'a, 'source>(
+        &'a mut self,
+        graph: &'a Graph,
+        tree: &'a ast::Tree,
+        cursor: &'a Cursor<'source>,
+    ) -> Symbols<'a, 'source> {
+        Symbols::new(graph, tree, cursor, self)
+    }
+}
+
+fn parameter_kind(parameter: &crate::sema::lowering::TemplateParameterView) -> ParameterKind {
+    if parameter.value {
+        ParameterKind::Type
+    } else {
+        match (parameter.template, parameter.pack) {
+            (false, false) => ParameterKind::Type,
+            (false, true) => ParameterKind::TypePack,
+            (true, false) => ParameterKind::Template,
+            (true, true) => ParameterKind::TemplatePack,
+        }
+    }
+}
 pub(super) struct Symbols<'a, 'source> {
     graph: &'a Graph,
     tree: &'a ast::Tree,
     cursor: &'a Cursor<'source>,
-    abi: abi::graph::Graph,
-    types: HashMap<(TypeId, bool, u32), NodeId>,
-    parameter_declarations: HashMap<(EntityId, bool, u32), NodeId>,
-    head_declarations: HashMap<(EntityId, bool, u32), NodeId>,
-    bound_pattern: bool,
-    own_level: u32,
-    placeholders: HashMap<(TypeId, bool, u32), Option<NodeId>>,
-    unmangled: HashMap<TypeId, bool>,
-    scopes: HashMap<(ScopeId, bool, u32), Option<NodeId>>,
-    encodings_underway: Vec<(EntityId, NodeId)>,
-    budget: StackBudget,
-    stack_base: usize,
-    pub pending: super::definition_demands::Demands,
-    pub(super) root_arguments: super::definition_demands::RootArguments,
-    pub initialization: Option<SymbolId>,
-    pub aggregate_helpers: super::aggregate_helpers::Helpers,
-    seen: std::collections::HashSet<super::construction::Entry>,
-    entries: HashMap<super::construction::Entry, SymbolId>,
-    labeled_entries: HashMap<SymbolId, super::construction::Entry>,
-    pub(super) pending_copies: Vec<EntityId>,
-    inline_static_owners: Vec<EntityId>,
-    entry_objects: HashMap<super::construction::Entry, Option<NameId>>,
-    families: definition_families::Families,
-    ordinals: HashMap<EntityId, usize>,
-    names: HashMap<EntityId, std::sync::Arc<str>>,
-    callees: HashMap<EntityId, Value>,
-    table: &'a mut SymbolTable,
-    pub globals: Vec<EntityId>,
-    // Syntax can require declaration-only storage even when semantic
-    // redeclaration bookkeeping retains a definition flag.
-    declaration_only_globals: std::collections::HashSet<EntityId>,
-    variable_requests: HashMap<EntityId, super::definition_demands::RequestId>,
-    variable_owner: Option<EntityId>,
-    active_variables: std::collections::HashSet<EntityId>,
-    variable_dependencies: std::collections::HashSet<(EntityId, EntityId)>,
-    pub instance_variables: std::collections::VecDeque<EntityId>,
-    objects: HashMap<EntityId, Option<NameId>>,
-    signatures: HashMap<(TypeId, bool), crate::lowir::model::SignatureId>,
-    complex_helpers: HashMap<(bool, char), SymbolId>,
-    pub(super) soft_float_helpers: HashMap<super::soft_float::Helper, SymbolId>,
-    pub data: super::data::Objects,
-    vtables: vtables::Tables,
-    base_routes: virtual_bases::Routes,
-    cast_hints: runtime_types::CastHints,
-    type_information: type_information::Information,
-    exception_information: exception_information::Information,
-    temporary_owner: Option<(EntityId, u32)>,
-    owned_temporaries: lifetime_symbols::OwnedTemporaries,
-    local_counts: HashMap<(EntityId, crate::lex::identifiers::NameId), u32>,
-    local_discriminators: HashMap<EntityId, u32>,
-    tls: thread_local_symbols::State,
-    variable_names: HashMap<EntityId, NodeId>,
-    class_storage: HashMap<EntityId, super::types::ClassStorage>,
-    empty_list_constructions: HashMap<EntityId, bool>,
-    class_parameters: super::class_parameters::Classes,
-    object_classes: super::object_classes::Classes,
-    class_labels: specialization_labels::Labels,
-    rooted_destructors: std::collections::HashSet<EntityId>,
-    inert_destructors: HashMap<(EntityId, bool), bool>,
-    anonymous_names: super::anonymous_names::Names,
-    // A source declaration is shared by every ABI entry running its body.
-    local_statics: HashMap<EntityId, super::local_storage::StorageSymbols>,
-    local_static_names: HashMap<EntityId, NodeId>,
-    persistent_finalizers: Vec<super::shutdown::Finalizer>,
-    pub(super) generated_definitions: Vec<u8>,
+    state: &'a mut State,
+}
+impl std::ops::Deref for Symbols<'_, '_> {
+    type Target = State;
+    fn deref(&self) -> &State {
+        self.state
+    }
+}
+impl std::ops::DerefMut for Symbols<'_, '_> {
+    fn deref_mut(&mut self) -> &mut State {
+        self.state
+    }
 }
 impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn object_mode(&self) -> bool {
-        self.table.object_mode
+        self.state.table.object_mode
     }
     pub(super) fn host_objects(&self) -> bool {
-        self.table.host_objects
+        self.state.table.host_objects
     }
     // Text streaming publishes pending source declarations at unit boundaries.
     // They remain unresolved in C++ until finish(), unlike runtime declarations.
     pub(super) fn note_deferred_global(&mut self, symbol: SymbolId) {
-        self.table.deferred_globals.insert(symbol);
+        self.state.table.deferred_globals.insert(symbol);
     }
     pub(super) fn global_definition_conflicts(&self, program: &Program, symbol: SymbolId) -> bool {
         program.symbol(symbol).declared()
-            && !(self.table.deferred_globals.contains(&symbol)
+            && !(self.state.table.deferred_globals.contains(&symbol)
                 && program
                     .global(program.symbol(symbol))
                     .is_some_and(|global| {
@@ -262,91 +236,26 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     }))
     }
     pub(super) fn note_declaration_only_global(&mut self, entity: EntityId) {
-        self.declaration_only_globals.insert(entity);
+        self.state.declaration_only_globals.insert(entity);
     }
     pub(super) fn declaration_only_global(&self, entity: EntityId) -> bool {
-        self.declaration_only_globals.contains(&entity)
+        self.state.declaration_only_globals.contains(&entity)
     }
     pub(super) fn new(
         graph: &'a Graph,
         tree: &'a ast::Tree,
         cursor: &'a Cursor<'source>,
-        budget: StackBudget,
-        table: &'a mut SymbolTable,
+        state: &'a mut State,
     ) -> Self {
-        let marker = 0u8;
         Self {
-            stack_base: std::ptr::from_ref(&marker).addr(),
             graph,
             tree,
             cursor,
-            abi: abi::graph::Graph::default(),
-            types: HashMap::new(),
-            parameter_declarations: HashMap::new(),
-            head_declarations: HashMap::new(),
-            bound_pattern: false,
-            own_level: 0,
-            placeholders: HashMap::new(),
-            unmangled: HashMap::new(),
-            scopes: HashMap::new(),
-            encodings_underway: Vec::new(),
-            budget,
-            pending: super::definition_demands::Demands::default(),
-            root_arguments: super::definition_demands::RootArguments::new(
-                graph.lower_argument_functions(None).rev(),
-            ),
-            initialization: None,
-            aggregate_helpers: super::aggregate_helpers::Helpers::default(),
-            seen: std::collections::HashSet::new(),
-            entries: HashMap::new(),
-            labeled_entries: HashMap::new(),
-            pending_copies: Vec::new(),
-            inline_static_owners: Vec::new(),
-            entry_objects: HashMap::new(),
-            families: definition_families::Families::default(),
-            ordinals: HashMap::new(),
-            names: HashMap::new(),
-            callees: HashMap::new(),
-            table,
-            globals: Vec::new(),
-            declaration_only_globals: std::collections::HashSet::new(),
-            variable_requests: HashMap::new(),
-            variable_owner: None,
-            active_variables: std::collections::HashSet::new(),
-            variable_dependencies: std::collections::HashSet::new(),
-            instance_variables: std::collections::VecDeque::new(),
-            objects: HashMap::new(),
-            data: super::data::Objects::default(),
-            vtables: vtables::Tables::default(),
-            base_routes: virtual_bases::Routes::default(),
-            cast_hints: runtime_types::CastHints::default(),
-            type_information: type_information::Information::default(),
-            exception_information: exception_information::Information::default(),
-            temporary_owner: None,
-            owned_temporaries: lifetime_symbols::OwnedTemporaries::default(),
-            local_counts: HashMap::new(),
-            local_discriminators: HashMap::new(),
-            tls: thread_local_symbols::State::default(),
-            variable_names: HashMap::new(),
-            class_storage: HashMap::new(),
-            empty_list_constructions: HashMap::new(),
-            class_parameters: super::class_parameters::Classes::default(),
-            object_classes: super::object_classes::Classes::default(),
-            class_labels: specialization_labels::Labels::default(),
-            rooted_destructors: std::collections::HashSet::new(),
-            inert_destructors: HashMap::new(),
-            anonymous_names: super::anonymous_names::Names::default(),
-            local_statics: HashMap::new(),
-            local_static_names: HashMap::new(),
-            persistent_finalizers: Vec::new(),
-            generated_definitions: Vec::new(),
-            signatures: HashMap::new(),
-            soft_float_helpers: HashMap::new(),
-            complex_helpers: HashMap::new(),
+            state,
         }
     }
     pub(super) fn publish_finalizers(&mut self, output: &mut Vec<super::shutdown::Finalizer>) {
-        output.append(&mut self.persistent_finalizers);
+        output.append(&mut self.state.persistent_finalizers);
     }
     pub(super) fn persistent_finalizer(
         &mut self,
@@ -365,7 +274,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             "{}_constructed",
             program.names.get(program.symbol(global).name)
         );
-        let flag = self.table.allocate(program, &name, None, true)?;
+        let flag = self.state.table.allocate(program, &name, None, true)?;
         program.add_global(
             flag,
             crate::lowir::model::Global {
@@ -383,7 +292,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Some(local) = local {
             local.push(finalizer);
         } else {
-            self.persistent_finalizers.push(finalizer);
+            self.state.persistent_finalizers.push(finalizer);
         }
         Ok(Some(flag))
     }
@@ -391,7 +300,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         &mut self,
         ty: TypeId,
     ) -> Result<Option<crate::lowir::vocabulary::ObjectClasses>, Error> {
-        self.object_classes.classify(self.graph, ty, self.budget)
+        self.state
+            .object_classes
+            .classify(self.graph, ty, self.state.budget)
     }
     pub(super) fn parameter_classes(
         &mut self,
@@ -403,8 +314,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         if self.object_mode() {
             return Ok(self
+                .state
                 .object_classes
-                .classify(self.graph, ty, self.budget)?
+                .classify(self.graph, ty, self.state.budget)?
                 .map(|classes| match classes {
                     crate::lowir::vocabulary::ObjectClasses::X87
                     | crate::lowir::vocabulary::ObjectClasses::ComplexX87 => {
@@ -413,11 +325,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     other => other,
                 }));
         }
-        self.class_parameters.parameter(self.graph, ty, self.budget)
+        self.state
+            .class_parameters
+            .parameter(self.graph, ty, self.state.budget)
     }
     pub(super) fn class_result_memory(&mut self, class: EntityId) -> Result<bool, Error> {
-        self.class_parameters
-            .result_memory(self.graph, class, self.budget)
+        self.state
+            .class_parameters
+            .result_memory(self.graph, class, self.state.budget)
     }
     // program_lowering.cpp::parameter_name: syntax element identities remain
     // zero based; the emitted first parameter retains the original pack name.
@@ -455,14 +370,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .map_err(|_| Error::Missing("local name spelling"))
     }
     pub(super) fn request_initialization(&mut self, program: &mut Program) -> Result<(), Error> {
-        let symbol = if let Some(symbol) = self.table.initializer {
+        let symbol = if let Some(symbol) = self.state.table.initializer {
             symbol
         } else {
-            let symbol = self.table.allocate(program, "__cppgm_init", None, true)?;
-            self.table.initializer = Some(symbol);
+            let symbol = self
+                .state
+                .table
+                .allocate(program, "__cppgm_init", None, true)?;
+            self.state.table.initializer = Some(symbol);
             symbol
         };
-        self.initialization = Some(symbol);
+        self.state.initialization = Some(symbol);
         Ok(())
     }
     pub(super) fn resolve_runtime_roles(
@@ -473,54 +391,59 @@ impl<'a, 'source> Symbols<'a, 'source> {
         super::runtime_roles::resolve(
             program,
             definitions,
-            &self.table.runtime_roles,
-            self.table.object_mode,
+            &self.state.table.runtime_roles,
+            self.state.table.object_mode,
         )
     }
     pub(super) fn bad_array_length(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
-        if let Some(symbol) = self.table.bad_array_length {
+        if let Some(symbol) = self.state.table.bad_array_length {
             return Ok(symbol);
         }
-        let symbol = self.table.allocate(
+        let symbol = self.state.table.allocate(
             program,
             "__external_runtime____cxa_throw_bad_array_new_length",
             None,
             true,
         )?;
         super::exception_helpers::declare_bad_array_length(program, symbol)?;
-        self.table.bad_array_length = Some(symbol);
+        self.state.table.bad_array_length = Some(symbol);
         Ok(symbol)
     }
     pub(super) fn terminate_helper(&mut self, program: &mut Program) -> Result<SymbolId, Error> {
-        if let Some(helpers) = self.table.exception_helpers {
+        if let Some(helpers) = self.state.table.exception_helpers {
             return Ok(helpers.helper);
         }
         let helpers = super::exception_helpers::Helpers {
             begin_catch: self
                 .runtime_function(program, crate::lowir::vocabulary::Role::EhBeginCatch)?,
-            terminate: self.table.allocate(program, "std_terminate", None, true)?,
+            terminate: self
+                .state
+                .table
+                .allocate(program, "std_terminate", None, true)?,
             helper: self
+                .state
                 .table
                 .allocate(program, "cppgm_call_terminate", None, true)?,
         };
         super::exception_helpers::declare(program, helpers)?;
-        self.table
+        self.state
+            .table
             .runtime_roles
             .push(super::runtime_roles::RoleSymbol {
                 symbol: helpers.terminate,
                 role: crate::lowir::vocabulary::Role::Terminate,
                 origin: super::runtime_roles::Origin::Runtime,
             });
-        self.table.exception_helpers = Some(helpers);
-        self.table.terminate_pending = true;
+        self.state.table.exception_helpers = Some(helpers);
+        self.state.table.terminate_pending = true;
         Ok(helpers.helper)
     }
     pub(super) fn take_terminate_helper(&mut self) -> Option<super::exception_helpers::Helpers> {
-        if !self.table.terminate_pending {
+        if !self.state.table.terminate_pending {
             return None;
         }
-        self.table.terminate_pending = false;
-        self.table.exception_helpers
+        self.state.table.terminate_pending = false;
+        self.state.table.exception_helpers
     }
     pub(super) fn aggregate_helper_symbol(
         &mut self,
@@ -530,7 +453,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         cv: u8,
     ) -> Result<SymbolId, Error> {
         let key = super::aggregate_helpers::Key { class, count, cv };
-        if let Some(symbol) = self.aggregate_helpers.get(key) {
+        if let Some(symbol) = self.state.aggregate_helpers.get(key) {
             return Ok(symbol);
         }
         let (_, mut scope, _) = self
@@ -544,14 +467,14 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         components.reverse();
         let mut spelling = components.join("__");
-        let shapes = self.aggregate_helpers.shapes(class);
+        let shapes = self.state.aggregate_helpers.shapes(class);
         if shapes != 0 {
             write!(spelling, "__sym{}", shapes + 1)
                 .map_err(|_| Error::Missing("helper label formatting"))?;
         }
-        let symbol = self.table.allocate(program, &spelling, None, true)?;
+        let symbol = self.state.table.allocate(program, &spelling, None, true)?;
         super::aggregate_helpers::declare(program, self, self.graph, key, symbol)?;
-        self.aggregate_helpers.insert(key, symbol);
+        self.state.aggregate_helpers.insert(key, symbol);
         Ok(symbol)
     }
     pub(super) fn readonly_object(&mut self, mut ty: TypeId) -> Result<bool, Error> {
@@ -609,7 +532,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         {
             self.demand_entry(super::construction::Entry::DestructorBase(entity));
         }
-        self.rooted_destructors.insert(entity);
+        self.state.rooted_destructors.insert(entity);
         let symbol = self.function_symbol(program, entity)?;
         program.root_function(symbol);
         Ok(())
@@ -626,7 +549,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         depth: u16,
     ) -> Result<EmptyListConstruction, Error> {
         self.check_stack()?;
-        if let Some(&known) = self.empty_list_constructions.get(&class) {
+        if let Some(&known) = self.state.empty_list_constructions.get(&class) {
             return Ok(EmptyListConstruction::Complete(known));
         }
         // This is the frozen semantic query cap, independent of native stack
@@ -658,7 +581,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             }
         }
         if let EmptyListConstruction::Complete(constructs) = result {
-            self.empty_list_constructions.insert(class, constructs);
+            self.state
+                .empty_list_constructions
+                .insert(class, constructs);
         }
         Ok(result)
     }
@@ -673,7 +598,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         class: EntityId,
     ) -> Result<super::types::ClassStorage, Error> {
         self.check_stack()?;
-        if let Some(&properties) = self.class_storage.get(&class) {
+        if let Some(&properties) = self.state.class_storage.get(&class) {
             return Ok(properties);
         }
         let graph = self.graph;
@@ -705,7 +630,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 properties.value_zero &= child.value_zero;
             }
         }
-        self.class_storage.insert(class, properties);
+        self.state.class_storage.insert(class, properties);
         Ok(properties)
     }
     pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
@@ -825,11 +750,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 inherited: None,
             },
             FunctionName::Identifier(name) => {
-                return Ok(self.abi.string(self.cursor.name(name))?);
+                return Ok(self.state.abi.string(self.cursor.name(name))?);
             }
             FunctionName::Conversion(target) => Node::Conversion(self.abi_type(target)?),
             FunctionName::Literal(suffix) => {
-                Node::LiteralOperator(self.abi.string(self.cursor.name(suffix))?)
+                Node::LiteralOperator(self.state.abi.string(self.cursor.name(suffix))?)
             }
             FunctionName::Operator { token, array } => {
                 let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
@@ -837,6 +762,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         "operator without function type",
                     )));
                 };
+                let parameters = parameters.to_vec();
+                let parameters = parameters.as_slice();
                 return self.abi_operator_terminal(
                     token,
                     array,
@@ -844,7 +771,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 );
             }
         };
-        Ok(self.abi.intern(node, &[])?)
+        Ok(self.state.abi.intern(node, &[])?)
     }
     pub(super) fn abi_operator_terminal(
         &mut self,
@@ -914,7 +841,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             },
             _ => return Err(Error::Missing("operator function ABI terminal")),
         };
-        Ok(self.abi.intern(
+        Ok(self.state.abi.intern(
             Node::Terminal {
                 kind: terminal.for_operands(operands),
                 inherited: None,
@@ -943,7 +870,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
     pub(super) fn note_source_reference_storage(&mut self, symbol: SymbolId) {
         // define_reference publishes its source-shaped backing outside the
         // counted global-definition path; constant_temporary counts its own.
-        self.table.work.source_reference_storage.insert(symbol);
+        self.state
+            .table
+            .work
+            .source_reference_storage
+            .insert(symbol);
     }
     pub(super) fn reference_temporary_symbol(
         &mut self,
@@ -952,12 +883,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         constant: bool,
     ) -> Result<(SymbolId, Option<NameId>), Error> {
         let spelling = if constant {
-            self.table.reference_temporaries = self
+            self.state.table.reference_temporaries = self
+                .state
                 .table
                 .reference_temporaries
                 .checked_add(1)
                 .ok_or(crate::lowir::Error::Limit)?;
-            format!("__ref_tmp__{}", self.table.reference_temporaries)
+            format!("__ref_tmp__{}", self.state.table.reference_temporaries)
         } else {
             format!(
                 "__ref_tmp__{}",
@@ -970,14 +902,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
         &mut self,
         program: &mut Program,
     ) -> Result<(SymbolId, Option<NameId>), Error> {
-        self.table.reference_temporaries = self
+        self.state.table.reference_temporaries = self
+            .state
             .table
             .reference_temporaries
             .checked_add(1)
             .ok_or(crate::lowir::Error::Limit)?;
         self.named_reference_temporary(
             program,
-            &format!("__ref_tmp__{}", self.table.reference_temporaries),
+            &format!("__ref_tmp__{}", self.state.table.reference_temporaries),
         )
     }
     pub(super) fn dynamic_temporary_symbol(
@@ -985,19 +918,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
         program: &mut Program,
         ty: TypeId,
     ) -> Result<(SymbolId, Option<NameId>), Error> {
-        let spelling = if let Some((owner, sequence)) = self.temporary_owner {
+        let spelling = if let Some((owner, sequence)) = self.state.temporary_owner {
             let facts = self.graph.lower_variable(owner)?;
             if !matches!(self.graph.lower_type(facts.ty)?, TypeView::Reference { .. })
                 && matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
             {
-                self.table.initializer_list_backings = self
+                self.state.table.initializer_list_backings = self
+                    .state
                     .table
                     .initializer_list_backings
                     .checked_add(1)
                     .ok_or(crate::lowir::Error::Limit)?;
                 format!(
                     "__cppgm_initlist_backing_{}",
-                    self.table.initializer_list_backings
+                    self.state.table.initializer_list_backings
                 )
             } else {
                 let symbol = self.variable_symbol(program, owner)?;
@@ -1008,12 +942,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 )
             }
         } else {
-            self.table.reference_temporaries = self
+            self.state.table.reference_temporaries = self
+                .state
                 .table
                 .reference_temporaries
                 .checked_add(1)
                 .ok_or(crate::lowir::Error::Limit)?;
-            format!("__ref_tmp__{}", self.table.reference_temporaries)
+            format!("__ref_tmp__{}", self.state.table.reference_temporaries)
         };
         let result = self.named_reference_temporary(program, &spelling)?;
         self.note_owned_temporary(result.0);
@@ -1024,39 +959,45 @@ impl<'a, 'source> Symbols<'a, 'source> {
         program: &mut Program,
         spelling: &str,
     ) -> Result<(SymbolId, Option<NameId>), Error> {
-        let Some((owner, sequence)) = self.temporary_owner else {
-            return Ok((self.table.allocate(program, spelling, None, true)?, None));
+        let Some((owner, sequence)) = self.state.temporary_owner else {
+            return Ok((
+                self.state.table.allocate(program, spelling, None, true)?,
+                None,
+            ));
         };
-        self.temporary_owner = Some((
+        self.state.temporary_owner = Some((
             owner,
             sequence.checked_add(1).ok_or(crate::lowir::Error::Limit)?,
         ));
-        let owner = if let Some(&name) = self.local_static_names.get(&owner) {
+        let owner = if let Some(&name) = self.state.local_static_names.get(&owner) {
             name
         } else {
             self.variable_abi_name(owner)?
         };
         let mut bytes = Vec::new();
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             abi::encoder::Target::ReferenceTemporary { owner, sequence },
             &mut bytes,
-            self.budget,
+            self.state.budget,
         )?;
         let object = program.names.intern_bytes(&bytes)?;
-        let local_object = (!self.table.objects.contains_key(&object)).then_some(object);
-        let symbol = self.table.allocate(program, spelling, Some(object), true)?;
+        let local_object = (!self.state.table.objects.contains_key(&object)).then_some(object);
+        let symbol = self
+            .state
+            .table
+            .allocate(program, spelling, Some(object), true)?;
         Ok((symbol, local_object))
     }
     pub(super) fn replace_temporary_owner(
         &mut self,
         owner: Option<(EntityId, u32)>,
     ) -> Option<(EntityId, u32)> {
-        std::mem::replace(&mut self.temporary_owner, owner)
+        std::mem::replace(&mut self.state.temporary_owner, owner)
     }
     pub(super) fn temporary_owner_is_reference(&self) -> Result<bool, Error> {
-        let Some((owner, _)) = self.temporary_owner else {
+        let Some((owner, _)) = self.state.temporary_owner else {
             return Ok(false);
         };
         Ok(matches!(
@@ -1073,20 +1014,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let name = if let Some(index) = image {
             format!("__constexpr_template__{}", index + 1)
         } else {
-            self.table.string_literals = self
+            self.state.table.string_literals = self
+                .state
                 .table
                 .string_literals
                 .checked_add(1)
                 .ok_or(crate::lowir::Error::Limit)?;
-            format!("__strlit__{}", self.table.string_literals)
+            format!("__strlit__{}", self.state.table.string_literals)
         };
-        self.table.allocate(program, &name, None, true)
+        self.state.table.allocate(program, &name, None, true)
     }
     pub(super) fn check_stack(&self) -> Result<(), Error> {
         let marker = 0u8;
         if self
+            .state
             .budget
-            .exceeded(self.stack_base, std::ptr::from_ref(&marker).addr())
+            .exceeded(self.state.stack_base, std::ptr::from_ref(&marker).addr())
         {
             return Err(Error::Semantic(crate::sema::Error::Limit(
                 "constructs nested too deeply",
@@ -1096,16 +1039,18 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     fn scope(&mut self, scope: ScopeId) -> Result<Option<NodeId>, Error> {
         self.check_stack()?;
-        if let Some(&id) = self
-            .scopes
-            .get(&(scope, self.bound_pattern, self.own_level))
+        if let Some(&id) =
+            self.state
+                .scopes
+                .get(&(scope, self.state.bound_pattern, self.state.own_level))
         {
             return Ok(id);
         }
         if let Some(class) = self.graph.lower_scope_class(scope) {
             let id = Some(self.abi_type(self.graph.lower_entity_type(class)?)?);
-            self.scopes
-                .insert((scope, self.bound_pattern, self.own_level), id);
+            self.state
+                .scopes
+                .insert((scope, self.state.bound_pattern, self.state.own_level), id);
             return Ok(id);
         }
         if let Some(function) = self.graph.lower_local_scope(scope) {
@@ -1116,10 +1061,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             {
                 let spelling = self.source_function_spelling(facts.name)?;
                 let raw = format!("Z{}{spelling}E", spelling.len());
-                Node::RawFunctionScope(self.abi.string(raw.as_bytes())?)
+                Node::RawFunctionScope(self.state.abi.string(raw.as_bytes())?)
             } else {
                 Node::FunctionScope {
                     encoding: if let Some((_, encoding)) = self
+                        .state
                         .encodings_underway
                         .iter()
                         .rev()
@@ -1132,9 +1078,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     default_argument: 0,
                 }
             };
-            let id = Some(self.abi.intern(node, &[])?);
-            self.scopes
-                .insert((scope, self.bound_pattern, self.own_level), id);
+            let id = Some(self.state.abi.intern(node, &[])?);
+            self.state
+                .scopes
+                .insert((scope, self.state.bound_pattern, self.state.own_level), id);
             return Ok(id);
         }
         let (parent, name, namespace) = self.graph.lower_abi_scope(scope)?;
@@ -1144,18 +1091,21 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 && parent.is_none()
                 && name.is_some_and(|name| self.cursor.name(name) == b"std")
             {
-                let id = Some(self.abi.intern(Node::Std, &[])?);
-                self.scopes
-                    .insert((scope, self.bound_pattern, self.own_level), id);
+                let id = Some(self.state.abi.intern(Node::Std, &[])?);
+                self.state
+                    .scopes
+                    .insert((scope, self.state.bound_pattern, self.state.own_level), id);
                 return Ok(id);
             }
             let terminal = if let Some(terminal) =
-                self.anonymous_names
-                    .scope_terminal(self.graph, &mut self.abi, scope)?
+                self.state
+                    .anonymous_names
+                    .scope_terminal(self.graph, &mut self.state.abi, scope)?
             {
                 terminal
             } else {
-                self.abi
+                self.state
+                    .abi
                     .string(name.map_or(&b"_GLOBAL__N_1"[..], |name| self.cursor.name(name)))?
             };
             let occurrence = if let Some((class, function, declared)) =
@@ -1168,10 +1118,11 @@ impl<'a, 'source> Symbols<'a, 'source> {
             let tags = self.graph.lower_namespace_abi_tags(scope);
             let mut nodes = Vec::with_capacity(tags.len());
             for tag in tags {
-                nodes.push(self.abi.string(self.cursor.name(*tag))?);
+                nodes.push(self.state.abi.string(self.cursor.name(*tag))?);
             }
             Some(
-                self.abi
+                self.state
+                    .abi
                     .intern(
                         Node::Name {
                             parent,
@@ -1188,8 +1139,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else {
             None
         };
-        self.scopes
-            .insert((scope, self.bound_pattern, self.own_level), id);
+        self.state
+            .scopes
+            .insert((scope, self.state.bound_pattern, self.state.own_level), id);
         Ok(id)
     }
     fn local_discriminator(
@@ -1202,16 +1154,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if self.graph.lower_function_visible_locals(function) {
             return Ok(declared);
         }
-        if let Some(&known) = self.local_discriminators.get(&entity) {
+        if let Some(&known) = self.state.local_discriminators.get(&entity) {
             return Ok(known);
         }
         let Some(name) = name else {
             return Ok(declared);
         };
-        let count = self.local_counts.entry((function, name)).or_default();
+        let count = self.state.local_counts.entry((function, name)).or_default();
         let occurrence = *count;
         *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
-        self.local_discriminators.insert(entity, occurrence);
+        self.state.local_discriminators.insert(entity, occurrence);
         Ok(occurrence)
     }
     pub(super) fn name_scopes(&mut self, scopes: &[ScopeId]) -> Result<(), Error> {
@@ -1242,17 +1194,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
             nodes.push(self.abi_type(argument)?);
         }
         if let Some(first) = view.pack {
-            let pack = self.abi.intern(Node::ArgumentPack, &nodes[first..])?;
+            let pack = self.state.abi.intern(Node::ArgumentPack, &nodes[first..])?;
             nodes.truncate(first);
             nodes.push(pack);
         }
-        self.abi
+        self.state
+            .abi
             .intern(Node::Template(name), &nodes)
             .map_err(Error::from)
     }
     fn abi_type(&mut self, ty: TypeId) -> Result<NodeId, Error> {
         self.check_stack()?;
-        if let Some(&id) = self.types.get(&(ty, self.bound_pattern, self.own_level)) {
+        if let Some(&id) =
+            self.state
+                .types
+                .get(&(ty, self.state.bound_pattern, self.state.own_level))
+        {
             return Ok(id);
         }
         if let Some(aliased) = self.graph.lower_aliased_type(ty) {
@@ -1261,10 +1218,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         let node = if let Some((_, home, name)) = self.graph.lower_template_name(ty) {
             let parent = self.scope(home)?;
-            let terminal = self.abi.string(self.cursor.name(name))?;
+            let terminal = self.state.abi.string(self.cursor.name(name))?;
             // A template used as an argument names the template without its
             // explicit tags; its class specializations retain their own tags.
-            let node = self.abi.intern(
+            let node = self.state.abi.intern(
                 Node::Name {
                     parent,
                     terminal,
@@ -1285,27 +1242,18 @@ impl<'a, 'source> Symbols<'a, 'source> {
             for element in elements {
                 nodes.push(self.abi_type(element)?);
             }
-            let id = self.abi.intern(Node::ArgumentPack, &nodes)?;
+            let id = self.state.abi.intern(Node::ArgumentPack, &nodes)?;
             return self.finish_abi_type(ty, id);
         } else if let Some(pattern) = self.graph.lower_pack_expansion(ty) {
-            let saved = self.bound_pattern;
-            self.bound_pattern |= self.graph.lower_names_bound_pack(pattern);
+            let saved = self.state.bound_pattern;
+            self.state.bound_pattern |= self.graph.lower_names_bound_pack(pattern);
             let result = self.expansion_abi_node(pattern);
-            self.bound_pattern = saved;
+            self.state.bound_pattern = saved;
             result?
         } else if self.graph.lower_parameter_level(ty).is_some() {
             let parameter = self.abi_parameter_level(ty)?;
-            let kind = if parameter.value {
-                ParameterKind::Type
-            } else {
-                match (parameter.template, parameter.pack) {
-                    (false, false) => ParameterKind::Type,
-                    (false, true) => ParameterKind::TypePack,
-                    (true, false) => ParameterKind::Template,
-                    (true, true) => ParameterKind::TemplatePack,
-                }
-            };
-            let node = self.abi.intern(
+            let kind = parameter_kind(&parameter);
+            let node = self.state.abi.intern(
                 Node::TemplateParam {
                     index: parameter.index,
                     level: parameter.level,
@@ -1322,12 +1270,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         } else if let Some((owner, member)) = self.graph.lower_member_pointer_type(ty) {
             let owner = self.abi_type(owner)?;
             let member = self.abi_type(member)?;
-            let node = self.abi.member_pointer(owner, member)?;
+            let node = self.state.abi.member_pointer(owner, member)?;
             return self.finish_abi_type(ty, node);
         } else if let Some((qualifier, name)) = self.graph.lower_dependent_member(ty) {
             Node::Name {
                 parent: Some(self.abi_type(qualifier)?),
-                terminal: self.abi.string(self.cursor.name(name))?,
+                terminal: self.state.abi.string(self.cursor.name(name))?,
                 internal: false,
                 hidden_tags: false,
                 data_member: false,
@@ -1338,12 +1286,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 let node = self.unencoded_placeholder(ty)?;
                 return self.finish_abi_type(ty, node);
             };
-            if matches!(self.abi.get(expression), Node::VendorType(_)) {
+            if matches!(self.state.abi.get(expression), Node::VendorType(_)) {
                 return self.finish_abi_type(ty, expression);
             }
             let kind = self.tree.expressions.get(operand).kind;
             if self.graph.lower_value_argument(ty) {
-                match self.abi.get(expression) {
+                match self.state.abi.get(expression) {
                     Node::Literal { .. }
                     | Node::UnsignedLiteral { .. }
                     | Node::NullptrLiteral(_)
@@ -1383,7 +1331,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     operand: self.abi_type(element)?,
                 },
                 TypeView::BlockPointer(element) => Node::Modified {
-                    modifier: Modifier::Vendor(self.abi.string(b"block_pointer")?),
+                    modifier: Modifier::Vendor(self.state.abi.string(b"block_pointer")?),
                     operand: self.abi_type(element)?,
                 },
                 TypeView::Array { element, bound } => Node::Modified {
@@ -1418,7 +1366,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         } else {
                             self.scope(home)?
                         };
-                    if self.table.object_mode {
+                    if self.state.table.object_mode {
                         parent = self.closure_context_scope(entity, parent)?;
                     }
                     let terminal = if self.graph.lower_closure(entity).is_some()
@@ -1426,10 +1374,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     {
                         self.closure_abi_name(entity)?
                     } else if let Some(name) = name {
-                        self.abi.string(self.cursor.name(name))?
+                        self.state.abi.string(self.cursor.name(name))?
                     } else {
-                        self.anonymous_names
-                            .terminal(self.graph, &mut self.abi, entity)?
+                        self.state.anonymous_names.terminal(
+                            self.graph,
+                            &mut self.state.abi,
+                            entity,
+                        )?
                     };
                     let occurrence = if self.graph.lower_closure(entity).is_some() {
                         0
@@ -1456,7 +1407,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         for argument in arguments {
                             nodes.push(self.abi_type(argument)?);
                         }
-                        self.abi.abbreviated_template_id(name, &nodes)?
+                        self.state.abi.abbreviated_template_id(name, &nodes)?
                     } else {
                         name
                     };
@@ -1478,15 +1429,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         qualifiers: self.graph.lower_function_type_qualifiers(ty),
                         variadic,
                     };
-                    let id = self.abi.intern(node, &args)?;
-                    self.types
-                        .insert((ty, self.bound_pattern, self.own_level), id);
+                    let id = self.state.abi.intern(node, &args)?;
+                    self.state
+                        .types
+                        .insert((ty, self.state.bound_pattern, self.state.own_level), id);
                     return Ok(id);
                 }
                 TypeView::Unsupported => return Err(Error::Missing("aggregate ABI type lowering")),
             }
         };
-        let id = self.abi.intern(node, &[]).map_err(Error::from)?;
+        let id = self.state.abi.intern(node, &[]).map_err(Error::from)?;
         self.finish_abi_type(ty, id)
     }
     fn closure_abi_name(&mut self, class: EntityId) -> Result<NodeId, Error> {
@@ -1503,18 +1455,20 @@ impl<'a, 'source> Symbols<'a, 'source> {
         else {
             return Err(crate::sema::Error::Invariant("closure ABI signature").into());
         };
+        let parameters = parameters.to_vec();
+        let parameters = parameters.as_slice();
         let mut nodes = Vec::with_capacity(parameters.len());
         for &parameter in parameters {
             nodes.push(self.abi_type(parameter)?);
         }
-        Ok(self.abi.intern(
+        Ok(self.state.abi.intern(
             Node::ClosureName {
-                number: u32::from(if self.table.object_mode {
+                number: u32::from(if self.state.table.object_mode {
                     closure.object_number
                 } else {
                     closure.course_number
                 }),
-                variadic: self.table.object_mode && variadic,
+                variadic: self.state.table.object_mode && variadic,
             },
             &nodes,
         )?)
@@ -1541,7 +1495,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     .ok_or(crate::sema::Error::Invariant("closure member name"))?;
                 Node::Name {
                     parent,
-                    terminal: self.abi.string(self.cursor.name(name))?,
+                    terminal: self.state.abi.string(self.cursor.name(name))?,
                     internal: false,
                     hidden_tags: false,
                     data_member: true,
@@ -1553,6 +1507,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
                     return Err(crate::sema::Error::Invariant("closure context signature").into());
                 };
+                let parameters = parameters.to_vec();
+                let parameters = parameters.as_slice();
                 let count =
                     u32::try_from(parameters.len()).map_err(|_| crate::lowir::Error::Limit)?;
                 Node::FunctionScope {
@@ -1566,7 +1522,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 }
             }
         };
-        Ok(Some(self.abi.intern(node, &[])?))
+        Ok(Some(self.state.abi.intern(node, &[])?))
     }
 
     fn expansion_abi_node(&mut self, pattern: TypeId) -> Result<Node, Error> {
@@ -1579,7 +1535,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     substitutable: false,
                     kind: ParameterKind::Type,
                 };
-                Some(self.abi.intern(node, &[])?)
+                Some(self.state.abi.intern(node, &[])?)
             } else {
                 self.placeholder_node(pattern)?
             }
@@ -1587,7 +1543,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             None
         };
         if let Some(operand) = operand {
-            let expression = self.abi.intern(
+            let expression = self.state.abi.intern(
                 Node::Operation(abi::vocabulary::Operation::PackExpansion),
                 &[operand],
             )?;
@@ -1608,10 +1564,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .lower_parameter_level(ty)
             .ok_or(Error::Missing("ABI parameter level"))?;
         if !self.graph.lower_bound_parameter(ty) {
-            parameter.level = if self.bound_pattern {
+            parameter.level = if self.state.bound_pattern {
                 parameter
                     .level
-                    .checked_add(self.own_level)
+                    .checked_add(self.state.own_level)
                     .ok_or(Error::Semantic(crate::sema::Error::Limit(
                         "ABI parameter level",
                     )))?
@@ -1624,8 +1580,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
     fn finish_abi_type(&mut self, ty: TypeId, mut id: NodeId) -> Result<NodeId, Error> {
         if !matches!(self.graph.lower_type(ty)?, TypeView::Array { .. }) {
             if self.graph.lower_cv(ty) & 4 != 0 {
-                let name = self.abi.string(b"_Atomic")?;
-                id = self.abi.intern(
+                let name = self.state.abi.string(b"_Atomic")?;
+                id = self.state.abi.intern(
                     Node::Modified {
                         modifier: Modifier::Vendor(name),
                         operand: id,
@@ -1641,7 +1597,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 cv = cv.union(Qualifiers::VOLATILE);
             }
             if !cv.is_empty() {
-                id = self.abi.intern(
+                id = self.state.abi.intern(
                     Node::Modified {
                         modifier: Modifier::Qualified(cv),
                         operand: id,
@@ -1650,8 +1606,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 )?;
             }
         }
-        self.types
-            .insert((ty, self.bound_pattern, self.own_level), id);
+        self.state
+            .types
+            .insert((ty, self.state.bound_pattern, self.state.own_level), id);
         Ok(id)
     }
     pub(super) fn demand_destruction(&mut self, entity: EntityId) -> Result<(), Error> {
@@ -1687,10 +1644,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
     }
     pub(super) fn name(&mut self, entity: EntityId) -> Result<std::sync::Arc<str>, Error> {
         let entity = self.graph.lower_function_entity(entity);
-        if let Some(name) = self.names.get(&entity) {
+        if let Some(name) = self.state.names.get(&entity) {
             return Ok(std::sync::Arc::clone(name));
         }
-        if !self.ordinals.contains_key(&entity) {
+        if !self.state.ordinals.contains_key(&entity) {
             let facts = self.function_facts(entity)?;
             if matches!(facts.name, FunctionName::Constructor(_)) {
                 let class = facts
@@ -1699,18 +1656,18 @@ impl<'a, 'source> Symbols<'a, 'source> {
                         "constructor without owner",
                     )))?;
                 for (index, overload) in self.graph.lower_constructor_overloads(class).enumerate() {
-                    self.ordinals.insert(overload, index + 1);
+                    self.state.ordinals.insert(overload, index + 1);
                 }
             } else if matches!(facts.name, FunctionName::Conversion(_)) {
                 let class = facts
                     .object
                     .ok_or(crate::sema::Error::Invariant("conversion without owner"))?;
                 for (index, overload) in self.graph.lower_conversion_overloads(class).enumerate() {
-                    self.ordinals.insert(overload, index + 1);
+                    self.state.ordinals.insert(overload, index + 1);
                 }
             } else if !matches!(facts.name, FunctionName::Destructor(_)) {
                 for (index, overload) in self.graph.lower_overloads(entity)?.enumerate() {
-                    self.ordinals.insert(overload, index + 1);
+                    self.state.ordinals.insert(overload, index + 1);
                 }
             }
         }
@@ -1743,14 +1700,16 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         components.reverse();
         let mut name = components.join("__");
-        let ordinal = self.ordinals.get(&entity).copied().unwrap_or(1);
+        let ordinal = self.state.ordinals.get(&entity).copied().unwrap_or(1);
         if ordinal > 1 && (!facts.c_linkage || facts.internal) {
             write!(name, "__ov{ordinal}").map_err(|_| {
                 Error::Semantic(crate::sema::Error::Invariant("symbol formatting failure"))
             })?;
         }
         let name: std::sync::Arc<str> = name.into();
-        self.names.insert(entity, std::sync::Arc::clone(&name));
+        self.state
+            .names
+            .insert(entity, std::sync::Arc::clone(&name));
         Ok(name)
     }
     pub(super) fn variable_symbol(
@@ -1758,7 +1717,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         program: &mut Program,
         entity: EntityId,
     ) -> Result<SymbolId, Error> {
-        if let Some(&Value::Symbol(symbol)) = self.callees.get(&entity) {
+        if let Some(&Value::Symbol(symbol)) = self.state.callees.get(&entity) {
             self.request_variable_dependency(program, entity, symbol);
             return Ok(symbol);
         }
@@ -1800,7 +1759,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     && !facts.internal
                     && self.graph.lower_variable_arguments(entity).is_none()
                     && (!self.graph.lower_has_abi_tags()
-                        || named_identity.is_some_and(|name| self.abi.items(name).is_empty())))
+                        || named_identity
+                            .is_some_and(|name| self.state.abi.items(name).is_empty())))
         {
             Some(
                 program
@@ -1814,31 +1774,31 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 self.variable_abi_name(entity)?
             };
             let mut bytes = Vec::new();
-            self.table.work.mangled_names += 1;
+            self.state.table.work.mangled_names += 1;
             abi::encoder::Encoder::encode(
-                &self.abi,
+                &self.state.abi,
                 abi::encoder::Target::Entity(name),
                 &mut bytes,
-                self.budget,
+                self.state.budget,
             )?;
             Some(program.names.intern_bytes(&bytes)?)
         };
         let local_object = if facts.locality == crate::sema::lowering::Locality::Unit
             && (facts.c_linkage
-                || object.is_some_and(|object| self.table.objects.contains_key(&object)))
+                || object.is_some_and(|object| self.state.table.objects.contains_key(&object)))
         {
             None
         } else {
             object
         };
-        let symbol = self.table.allocate(
+        let symbol = self.state.table.allocate(
             program,
             &spelling,
             object,
             facts.locality == crate::sema::lowering::Locality::Unit,
         )?;
-        self.callees.insert(entity, Value::Symbol(symbol));
-        self.objects.insert(entity, local_object);
+        self.state.callees.insert(entity, Value::Symbol(symbol));
+        self.state.objects.insert(entity, local_object);
         let metadata = self.variable_metadata(program, entity, symbol)?;
         program.set_forward_global(
             symbol,
@@ -1848,15 +1808,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 defined: facts.definition.is_some() && metadata.flags & 64 == 0,
             },
         );
-        self.globals.push(entity);
+        self.state.globals.push(entity);
         if facts.emission == crate::sema::lowering::Emission::Demanded
             && self.graph.lower_demanded_initializer(entity).is_some()
         {
-            self.instance_variables.push_back(entity);
-            let request = self.pending.variable();
-            self.variable_requests.insert(entity, request);
-            if let Some(owner) = self.variable_owner {
-                self.variable_dependencies.insert((owner, entity));
+            self.state.instance_variables.push_back(entity);
+            let request = self.state.pending.variable();
+            self.state.variable_requests.insert(entity, request);
+            if let Some(owner) = self.state.variable_owner {
+                self.state.variable_dependencies.insert((owner, entity));
             }
         }
         Ok(symbol)
@@ -1871,38 +1831,38 @@ impl<'a, 'source> Symbols<'a, 'source> {
         entity: EntityId,
         symbol: SymbolId,
     ) {
-        if let Some(owner) = self.variable_owner
-            && self.variable_requests.contains_key(&entity)
-            && !self.active_variables.contains(&entity)
+        if let Some(owner) = self.state.variable_owner
+            && self.state.variable_requests.contains_key(&entity)
+            && !self.state.active_variables.contains(&entity)
             && program
                 .global(program.symbol(symbol))
                 .is_none_or(|g| matches!(g.init, crate::lowir::model::GlobalInit::Declaration))
-            && self.variable_dependencies.insert((owner, entity))
+            && self.state.variable_dependencies.insert((owner, entity))
         {
             // Its old reservation has no children until definition begins.
             // Fill a reservation under this owner so initializer-demanded
             // functions also precede the caller's later requests.
-            let request = self.pending.variable();
-            self.variable_requests.insert(entity, request);
-            self.instance_variables.push_back(entity);
+            let request = self.state.pending.variable();
+            self.state.variable_requests.insert(entity, request);
+            self.state.instance_variables.push_back(entity);
         }
     }
     pub(super) fn begin_variable_definition(&mut self, entity: EntityId) -> Option<EntityId> {
-        self.active_variables.insert(entity);
-        self.variable_owner.replace(entity)
+        self.state.active_variables.insert(entity);
+        self.state.variable_owner.replace(entity)
     }
     pub(super) fn end_variable_definition(&mut self, entity: EntityId, previous: Option<EntityId>) {
-        self.active_variables.remove(&entity);
-        self.variable_owner = previous;
+        self.state.active_variables.remove(&entity);
+        self.state.variable_owner = previous;
     }
     pub(super) fn variable_request(
         &self,
         entity: EntityId,
     ) -> Option<super::definition_demands::RequestId> {
-        self.variable_requests.get(&entity).copied()
+        self.state.variable_requests.get(&entity).copied()
     }
     pub(super) fn budget(&self) -> StackBudget {
-        self.budget
+        self.state.budget
     }
     pub(super) fn instance_constructed(
         &mut self,
@@ -1911,9 +1871,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
     ) -> Result<SymbolId, Error> {
         let global = self.variable_symbol(program, entity)?;
         let base = program.names.get(program.symbol(global).name).to_owned();
-        let flag = self
-            .table
-            .allocate(program, &format!("{base}_constructed"), None, true)?;
+        let flag =
+            self.state
+                .table
+                .allocate(program, &format!("{base}_constructed"), None, true)?;
         program.add_global(
             flag,
             crate::lowir::model::Global {
@@ -1938,15 +1899,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let base = program.names.get(program.symbol(global).name).to_owned();
         let name = self.variable_abi_name(entity)?;
         let mut bytes = Vec::new();
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             abi::encoder::Target::GuardVariable(name),
             &mut bytes,
-            self.budget,
+            self.state.budget,
         )?;
         let guard_name = program.names.intern_bytes(&bytes)?;
-        let guard = self.table.allocate(
+        let guard = self.state.table.allocate(
             program,
             &format!("__cppgm_guard__{base}"),
             Some(guard_name),
@@ -1969,7 +1930,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         Ok(guard)
     }
     pub(super) fn variable_abi_name(&mut self, entity: EntityId) -> Result<NodeId, Error> {
-        if let Some(&name) = self.variable_names.get(&entity) {
+        if let Some(&name) = self.state.variable_names.get(&entity) {
             return Ok(name);
         }
         let facts = self.graph.lower_variable(entity)?;
@@ -1977,12 +1938,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let terminal = super::anonymous_names::variable_terminal(
             self.graph,
             self.cursor,
-            &mut self.abi,
+            &mut self.state.abi,
             entity,
         )?;
         if facts.c_linkage {
-            let name = self.abi.name(None, terminal, &[])?;
-            self.variable_names.insert(entity, name);
+            let name = self.state.abi.name(None, terminal, &[])?;
+            self.state.variable_names.insert(entity, name);
             return Ok(name);
         }
         let mut name = self.tagged_entity_name(
@@ -2004,14 +1965,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
             for &argument in arguments {
                 nodes.push(self.abi_type(argument)?);
             }
-            name = self.abi.intern(Node::Template(name), &nodes)?;
+            name = self.state.abi.intern(Node::Template(name), &nodes)?;
         }
         name = self.with_implicit_tags(name, facts.ty)?;
-        self.variable_names.insert(entity, name);
+        self.state.variable_names.insert(entity, name);
         Ok(name)
     }
     pub(super) fn existing_local_storage(&self, entity: EntityId) -> Option<Value> {
-        self.local_statics
+        self.state
+            .local_statics
             .get(&entity)
             .map(|symbols| Value::Symbol(symbols.object))
     }
@@ -2025,16 +1987,17 @@ impl<'a, 'source> Symbols<'a, 'source> {
         tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<super::local_storage::StorageSymbols, Error> {
         use crate::lowir::vocabulary::{Binding, Storage};
-        if let Some(&symbols) = self.local_statics.get(&entity) {
+        if let Some(&symbols) = self.state.local_statics.get(&entity) {
             return Ok(symbols);
         }
         let facts = self.graph.lower_variable(entity)?;
         let owner = self.function_symbol(program, function)?;
         if self
+            .state
             .entries
             .contains_key(&super::construction::Entry::InlineCopy(function))
         {
-            self.inline_static_owners.push(function);
+            self.state.inline_static_owners.push(function);
         }
         let owner_name = program.names.get(program.symbol(owner).name).to_owned();
         let weak = self.metadata(program, function, &owner_name)?.binding == Some(Binding::Weak);
@@ -2056,7 +2019,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             };
         if facts.name.is_none() && self.graph.lower_decomposition(entity).is_none() {
             let spelling = format!("__local_static__{owner_name}__decl{ordinal}__object");
-            let object = self.table.allocate(program, &spelling, None, !weak)?;
+            let object = self.state.table.allocate(program, &spelling, None, !weak)?;
             let metadata = Metadata {
                 binding: Some(if weak {
                     Binding::Weak
@@ -2072,8 +2035,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
             };
             let guard = if dynamic {
                 Some((
-                    self.table
-                        .allocate(program, &format!("{spelling}__guard"), None, !weak)?,
+                    self.state.table.allocate(
+                        program,
+                        &format!("{spelling}__guard"),
+                        None,
+                        !weak,
+                    )?,
                     Metadata {
                         section: None,
                         ..metadata
@@ -2087,8 +2054,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
                 metadata,
                 guard,
             };
-            self.callees.insert(entity, Value::Symbol(object));
-            self.local_statics.insert(entity, symbols);
+            self.state.callees.insert(entity, Value::Symbol(object));
+            self.state.local_statics.insert(entity, symbols);
             return Ok(symbols);
         }
         let name = facts
@@ -2108,7 +2075,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         let lexical = self.graph.lower_closure_body_owner(function);
         let encoding = self.function_encoding(lexical)?;
-        let parent = self.abi.intern(
+        let parent = self.state.abi.intern(
             Node::FunctionScope {
                 encoding,
                 default_argument: 0,
@@ -2118,11 +2085,15 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let terminal = super::anonymous_names::variable_terminal(
             self.graph,
             self.cursor,
-            &mut self.abi,
+            &mut self.state.abi,
             entity,
         )?;
         let occurrence = if let Some(identifier) = facts.name {
-            let count = self.local_counts.entry((lexical, identifier)).or_default();
+            let count = self
+                .state
+                .local_counts
+                .entry((lexical, identifier))
+                .or_default();
             let occurrence = *count;
             *count = count.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
             occurrence
@@ -2141,27 +2112,29 @@ impl<'a, 'source> Symbols<'a, 'source> {
             Some(entity),
         )?;
         let name = self.with_implicit_tags(name, facts.ty)?;
-        self.local_static_names.insert(entity, name);
+        self.state.local_static_names.insert(entity, name);
         let mut bytes = Vec::new();
         if self.graph.lower_asm_label(entity).is_none() {
-            self.table.work.mangled_names += 1;
+            self.state.table.work.mangled_names += 1;
         }
         abi::encoder::Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             abi::encoder::Target::Entity(name),
             &mut bytes,
-            self.budget,
+            self.state.budget,
         )?;
         let object = program
             .names
             .intern_bytes(self.graph.lower_asm_label(entity).unwrap_or(&bytes))?;
-        let local_object = (weak || !self.table.objects.contains_key(&object)).then_some(object);
+        let local_object =
+            (weak || !self.state.table.objects.contains_key(&object)).then_some(object);
         // Each unit's parsed static owns storage identity, even when its weak
         // ABI name is shared. Unit-local copies can lower both declarations.
         let symbol = self
+            .state
             .table
             .allocate(program, &spelling, Some(object), true)?;
-        self.callees.insert(entity, Value::Symbol(symbol));
+        self.state.callees.insert(entity, Value::Symbol(symbol));
         let metadata = Metadata {
             binding: Some(if weak {
                 Binding::Weak
@@ -2179,19 +2152,22 @@ impl<'a, 'source> Symbols<'a, 'source> {
         };
         let guard = if dynamic {
             bytes.clear();
-            self.table.work.mangled_names += 1;
+            self.state.table.work.mangled_names += 1;
             abi::encoder::Encoder::encode(
-                &self.abi,
+                &self.state.abi,
                 abi::encoder::Target::GuardVariable(name),
                 &mut bytes,
-                self.budget,
+                self.state.budget,
             )?;
             let object = program.names.intern_bytes(&bytes)?;
             let local_object =
-                (weak || !self.table.objects.contains_key(&object)).then_some(object);
-            let guard =
-                self.table
-                    .allocate(program, &format!("{spelling}__guard"), Some(object), true)?;
+                (weak || !self.state.table.objects.contains_key(&object)).then_some(object);
+            let guard = self.state.table.allocate(
+                program,
+                &format!("{spelling}__guard"),
+                Some(object),
+                true,
+            )?;
             Some((
                 guard,
                 Metadata {
@@ -2208,7 +2184,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             guard,
             metadata,
         };
-        self.local_statics.insert(entity, symbols);
+        self.state.local_statics.insert(entity, symbols);
         Ok(symbols)
     }
     fn apply_weak_attribute(&self, entity: EntityId, metadata: &mut Metadata) {
@@ -2227,6 +2203,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
     ) -> Result<Metadata, Error> {
         let facts = self.graph.lower_variable(entity)?;
         let object = self
+            .state
             .objects
             .get(&entity)
             .copied()
@@ -2307,7 +2284,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if self.graph.lower_no_inline(entity) {
             metadata.flags |= 32;
         }
-        if self.rooted_destructors.contains(&entity) {
+        if self.state.rooted_destructors.contains(&entity) {
             metadata.flags |= 4;
         }
         if self.graph.lower_is_closure_invoker(entity) {
@@ -2331,7 +2308,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
                     metadata.object = Some(program.names.intern(object)?);
                 }
                 B::Abort => {
-                    if !self.table.object_mode {
+                    if !self.state.table.object_mode {
                         metadata.role = Some(Role::Terminate);
                     }
                     metadata.object = Some(program.names.intern("abort")?);
@@ -2370,7 +2347,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(metadata);
         }
         if let Some(allocation) = facts.allocation
-            && (!allocation.array || !self.table.object_mode && facts.definition.is_none())
+            && (!allocation.array || !self.state.table.object_mode && facts.definition.is_none())
         {
             metadata.role = Some(match allocation.role {
                 crate::sema::lowering::AllocationRole::Allocate => Role::AllocateMemory,
@@ -2381,7 +2358,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             metadata.linkage = Linkage::C;
         }
         if let Some(label) = self.graph.lower_asm_label(entity) {
-            metadata.object = if let Some(&object) = self.objects.get(&entity) {
+            metadata.object = if let Some(&object) = self.state.objects.get(&entity) {
                 object
             } else if label.is_empty() || label == name.as_bytes() {
                 None
@@ -2391,10 +2368,10 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return Ok(metadata);
         }
         if facts.c_linkage && !facts.internal {
-            metadata.object = self.objects.get(&entity).copied().flatten();
+            metadata.object = self.state.objects.get(&entity).copied().flatten();
             return Ok(metadata);
         }
-        if let Some(&object) = self.objects.get(&entity) {
+        if let Some(&object) = self.state.objects.get(&entity) {
             metadata.object = object;
             return Ok(metadata);
         }
@@ -2419,39 +2396,40 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         let function = self.function_encoding(entity)?;
         let mut object = Vec::new();
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             abi::encoder::Target::Entity(function),
             &mut object,
-            self.budget,
+            self.state.budget,
         )
         .map_err(Error::from)?;
         metadata.object = Some(program.names.intern_bytes(&object)?);
         Ok(metadata)
     }
     pub(super) fn demand_entry(&mut self, entry: super::construction::Entry) {
-        if self.seen.insert(entry) {
+        if self.state.seen.insert(entry) {
             if let Some(entity) = entry.entity(self.graph)
                 && !self.graph.lower_gnu_inline(entity)
                 && let Some(owner) = self.graph.lower_enclosing_static_owner(entity)
             {
                 self.demand(owner);
             }
-            self.pending.function(entry);
+            self.state.pending.function(entry);
         }
     }
     pub(super) fn has_entry_symbol(&self, entry: super::construction::Entry) -> bool {
         use super::construction::{Entry, Variant};
-        self.entries.contains_key(&entry)
+        self.state.entries.contains_key(&entry)
             || match entry {
                 Entry::Function(entity) => self
+                    .state
                     .callees
                     .contains_key(&self.graph.lower_function_entity(entity)),
                 Entry::Constructor(id, Variant::Complete) => self
                     .graph
                     .lower_constructor_entity(id)
-                    .is_some_and(|entity| self.callees.contains_key(&entity)),
+                    .is_some_and(|entity| self.state.callees.contains_key(&entity)),
                 _ => false,
             }
     }
@@ -2464,7 +2442,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if let Entry::Function(entity) = entry {
             return self.function_symbol(program, entity);
         }
-        if let Some(&symbol) = self.entries.get(&entry) {
+        if let Some(&symbol) = self.state.entries.get(&entry) {
             return Ok(symbol);
         }
         let (entity, variant) = match entry {
@@ -2477,7 +2455,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             && let Some(entity) = entity
         {
             let symbol = self.function_symbol(program, entity)?;
-            self.entries.insert(entry, symbol);
+            self.state.entries.insert(entry, symbol);
             return Ok(symbol);
         }
         let facts = self.entry_facts(entry)?;
@@ -2502,18 +2480,19 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let object = if facts.internal
             && metadata
                 .object
-                .is_some_and(|object| self.table.objects.contains_key(&object))
+                .is_some_and(|object| self.state.table.objects.contains_key(&object))
         {
             None
         } else {
             metadata.object
         };
         let symbol = self
+            .state
             .table
             .allocate(program, &name, metadata.object, facts.internal)?;
-        self.entry_objects.insert(entry, object);
-        self.entries.insert(entry, symbol);
-        if self.table.object_mode
+        self.state.entry_objects.insert(entry, object);
+        self.state.entries.insert(entry, symbol);
+        if self.state.table.object_mode
             && !program.symbol(symbol).declared()
             && program.forward_boundary(symbol).is_none()
         {
@@ -2592,7 +2571,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return self.metadata(program, entity, name);
         }
         if let Entry::InlineCopy(entity) = entry {
-            let symbol = self.entries[&entry];
+            let symbol = self.state.entries[&entry];
             return self.inline_copy_metadata(program, entity, symbol);
         }
         let (entity, variant) = match entry {
@@ -2607,19 +2586,19 @@ impl<'a, 'source> Symbols<'a, 'source> {
             return self.metadata(program, entity, name);
         }
         let facts = self.entry_facts(entry)?;
-        let object = if let Some(&object) = self.entry_objects.get(&entry) {
+        let object = if let Some(&object) = self.state.entry_objects.get(&entry) {
             object
         } else if let Some(label) = entity.and_then(|entity| self.graph.lower_asm_label(entity)) {
             Some(program.names.intern_bytes(label)?)
         } else {
             let function = self.encode_function(&facts, variant)?;
             let mut object = Vec::new();
-            self.table.work.mangled_names += 1;
+            self.state.table.work.mangled_names += 1;
             abi::encoder::Encoder::encode(
-                &self.abi,
+                &self.state.abi,
                 abi::encoder::Target::Entity(function),
                 &mut object,
-                self.budget,
+                self.state.budget,
             )?;
             Some(program.names.intern_bytes(&object)?)
         };
@@ -2671,7 +2650,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .entity(self.graph)
             .is_some_and(|entity| self.graph.lower_asm_label(entity).is_some())
         {
-            self.labeled_entries.insert(symbol, entry);
+            self.state.labeled_entries.insert(symbol, entry);
         }
         if let Some(function) = entry.entity(self.graph) {
             self.name_local_classes(function)?;
@@ -2692,8 +2671,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
             )
         {
             let object = self.base_entry_object(program, entry)?;
-            self.families.note_alias(entry, object);
-            self.table
+            self.state.families.note_alias(entry, object);
+            self.state
+                .table
                 .entry_aliases
                 .push(crate::lowir::model::ObjectAlias {
                     object,
@@ -2702,8 +2682,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
         if let Entry::Constructor(_, Variant::Complete) = entry {
             let object = self.base_entry_object(program, entry)?;
-            self.families.note_alias(entry, object);
-            self.table
+            self.state.families.note_alias(entry, object);
+            self.state
+                .table
                 .entry_aliases
                 .push(crate::lowir::model::ObjectAlias {
                     object,
@@ -2728,12 +2709,12 @@ impl<'a, 'source> Symbols<'a, 'source> {
         let facts = self.entry_facts(entry)?;
         let encoding = self.encode_function(&facts, super::construction::Variant::Base)?;
         let mut bytes = Vec::new();
-        self.table.work.mangled_names += 1;
+        self.state.table.work.mangled_names += 1;
         abi::encoder::Encoder::encode(
-            &self.abi,
+            &self.state.abi,
             abi::encoder::Target::Entity(encoding),
             &mut bytes,
-            self.budget,
+            self.state.budget,
         )?;
         Ok(program.names.intern_bytes(&bytes)?)
     }
@@ -2750,19 +2731,23 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if !program.function_defined(symbol) {
             return Ok(false);
         }
-        let shared = self.labeled_entries.get(&symbol).is_some_and(|&previous| {
-            previous != entry
-                && previous.entity(self.graph) == entry.entity(self.graph)
-                && matches!(
-                    (previous, entry),
-                    (Entry::Constructor(_, _), Entry::Constructor(_, _))
-                        | (
-                            Entry::DestructorBase(_),
-                            Entry::Function(_) | Entry::DestructorDeleting(_)
-                        )
-                        | (Entry::DestructorDeleting(_), Entry::Function(_))
-                )
-        });
+        let shared = self
+            .state
+            .labeled_entries
+            .get(&symbol)
+            .is_some_and(|&previous| {
+                previous != entry
+                    && previous.entity(self.graph) == entry.entity(self.graph)
+                    && matches!(
+                        (previous, entry),
+                        (Entry::Constructor(_, _), Entry::Constructor(_, _))
+                            | (
+                                Entry::DestructorBase(_),
+                                Entry::Function(_) | Entry::DestructorDeleting(_)
+                            )
+                            | (Entry::DestructorDeleting(_), Entry::Function(_))
+                    )
+            });
         if shared {
             return Ok(true);
         }
@@ -2813,7 +2798,7 @@ impl Symbols<'_, '_> {
         contained: bool,
     ) -> Result<bool, Error> {
         self.check_stack()?;
-        if let Some(&inert) = self.inert_destructors.get(&(entity, contained)) {
+        if let Some(&inert) = self.state.inert_destructors.get(&(entity, contained)) {
             return Ok(inert);
         }
         let graph = self.graph;
@@ -2840,7 +2825,9 @@ impl Symbols<'_, '_> {
                 }
             }
         }
-        self.inert_destructors.insert((entity, contained), inert);
+        self.state
+            .inert_destructors
+            .insert((entity, contained), inert);
         Ok(inert)
     }
     fn destructor_body_inert(&self, entity: EntityId) -> Result<bool, Error> {
@@ -2856,7 +2843,7 @@ impl Symbols<'_, '_> {
                 Entry::DestructorDeleting(entity),
             ]
             .iter()
-            .any(|entry| self.seen.contains(entry))
+            .any(|entry| self.state.seen.contains(entry))
         {
             return Ok(false);
         }
@@ -2887,14 +2874,19 @@ impl Symbols<'_, '_> {
                 return Ok(boundary);
             }
             boundary.classes = if self.object_mode() {
-                self.object_classes.classify(self.graph, ty, self.budget)?
+                self.state
+                    .object_classes
+                    .classify(self.graph, ty, self.state.budget)?
             } else {
                 self.parameter_classes(ty)?.filter(|classes| {
                     !matches!(classes, crate::lowir::vocabulary::ObjectClasses::Memory)
                 })
             };
         } else if self.object_mode() {
-            boundary.classes = self.object_classes.classify(self.graph, ty, self.budget)?;
+            boundary.classes =
+                self.state
+                    .object_classes
+                    .classify(self.graph, ty, self.state.budget)?;
         }
         boundary.ty = super::types::storage(self.graph, ty)?;
         Ok(boundary)
@@ -2937,7 +2929,12 @@ pub(crate) fn assert_label_name_demand(
     let syntax_count = tree.expressions.mark();
     let mut program = Program::default();
     let mut table = SymbolTable::default();
-    let mut symbols = Symbols::new(graph, tree, cursor, StackBudget::default(), &mut table);
+    let mut symbol_state = crate::lower::symbols::State::new(
+        graph,
+        StackBudget::default(),
+        std::mem::take(&mut table),
+    );
+    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
     let first = symbols.variable_symbol(&mut program, entities[0]).unwrap();
     assert!(!symbols.variable_names.contains_key(&entities[0]));
     assert_eq!(

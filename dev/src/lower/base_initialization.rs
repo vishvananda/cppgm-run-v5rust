@@ -20,23 +20,32 @@ impl Function<'_, '_, '_, '_> {
         owner: ConstructorId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let plan = self.graph.lower_constructor(owner);
         // Plan order governs tail occupancy; construction order is a separate
         // projection. Index each shared occurrence once for this ABI entry.
         let mut selected = std::collections::HashMap::new();
-        for (index, base) in plan.bases.iter().enumerate() {
+        for (index, base) in self.graph.lower_constructor(owner).bases.iter().enumerate() {
             if self
                 .graph
-                .lower_inheritance_edge(plan.class, index)
+                .lower_inheritance_edge(self.graph.lower_constructor(owner).class, index)
                 .is_some_and(|(_, shared, _)| shared)
             {
                 selected.insert(base.class, SharedPlan::Direct(index));
             }
         }
-        for (index, base) in plan.indirect_bases.iter().enumerate() {
+        for (index, base) in self
+            .graph
+            .lower_constructor(owner)
+            .indirect_bases
+            .iter()
+            .enumerate()
+        {
             selected.insert(base.class, SharedPlan::Indirect(index));
         }
-        for base in self.symbols.virtual_construction_order(plan.class) {
+        for base in self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .virtual_construction_order(self.graph.lower_constructor(owner).class)
+        {
             match selected.get(&base).copied() {
                 Some(SharedPlan::Direct(index)) => {
                     self.initialize_base(owner, Variant::Complete, index, location)?;
@@ -100,16 +109,15 @@ impl Function<'_, '_, '_, '_> {
         indirect: bool,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let plan = self.graph.lower_constructor(owner);
         let base = if indirect {
-            plan.indirect_bases[index]
+            self.graph.lower_constructor(owner).indirect_bases[index]
         } else {
-            plan.bases[index]
+            self.graph.lower_constructor(owner).bases[index]
         };
         let shared = indirect
             || self
                 .graph
-                .lower_inheritance_edge(plan.class, index)
+                .lower_inheritance_edge(self.graph.lower_constructor(owner).class, index)
                 .is_some_and(|(_, shared, _)| shared);
         let identity = Some(if shared {
             super::destruction::BaseSubobject::Virtual(base.class)
@@ -125,16 +133,20 @@ impl Function<'_, '_, '_, '_> {
             self.indirect_initialization_span(owner, index)?
         } else {
             self.graph.lower_base_initialization_span(
-                plan.class,
+                self.graph.lower_constructor(owner).class,
                 index,
                 variant == Variant::Base && !self.graph.lower_constructor_trivial(owner),
             )?
         };
         if !self.graph.lower_virtual_bases(base.class).is_empty() {
             self.virtual_context.hidden = Some(if shared {
-                self.symbols.vtt_virtual_index(plan.class, base.class)?
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .vtt_virtual_index(self.graph.lower_constructor(owner).class, base.class)?
             } else {
-                self.symbols.vtt_base_index(plan.class, index)?
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .vtt_base_index(self.graph.lower_constructor(owner).class, index)?
             });
         }
         let ty = self.graph.lower_entity_type(base.class)?;
@@ -159,7 +171,9 @@ impl Function<'_, '_, '_, '_> {
                 .wrapping_mul(8),
         );
         if base.forwards {
-            let object = self.object_pointer(plan.object_pointer()?)?.value;
+            let object = self
+                .object_pointer(self.graph.lower_constructor(owner).object_pointer()?)?
+                .value;
             let object = self.base_projection(object, ty, offset)?;
             self.forward_constructor(
                 base.constructor.ok_or(crate::sema::Error::Invariant(
@@ -213,7 +227,9 @@ impl Function<'_, '_, '_, '_> {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
             }
         }
-        let object = self.object_pointer(plan.object_pointer()?)?.value;
+        let object = self
+            .object_pointer(self.graph.lower_constructor(owner).object_pointer()?)?
+            .value;
         let object = self.base_projection(object, ty, offset)?;
         if let Some(constructor) = base.constructor {
             if value && !empty && self.graph.lower_constructor(constructor).zero_before_value {
@@ -233,9 +249,16 @@ impl Function<'_, '_, '_, '_> {
         } else if let Some(source) = source.filter(|_| copy.is_some()) {
             self.initialize_base_copy(source, ty, object, copy, span, location)?;
         } else if let Some(source) = source.filter(|_| prvalue) {
-            let (size, alignment) = types::layout(self.graph, ty)?;
-            if span < size && !empty && self.symbols.storage_destructor(ty)?.is_none() {
-                let slot = self.generated_slot("baseobj", types::storage(self.graph, ty)?)?;
+            let (size, alignment) = types::layout(&*self.graph, ty)?;
+            if span < size
+                && !empty
+                && self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .storage_destructor(ty)?
+                    .is_none()
+            {
+                let slot = self.generated_slot("baseobj", types::storage(&*self.graph, ty)?)?;
                 let made = self.emit(I::Addr(slot), ty)?.value;
                 self.materialize_class(source, ty, made)?;
                 self.effect(I::CopyObject(span, alignment, made, object))?;
@@ -257,15 +280,24 @@ impl Function<'_, '_, '_, '_> {
         self.destroy_temporaries(first)?;
         self.end_lifetime_expression(region)?;
         // object_lowering.cpp::construct_base's course entry demand.
-        if !self.symbols.host_objects()
-            && (self.graph.lower_polymorphic(plan.class)
+        if !self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .host_objects()
+            && (self
+                .graph
+                .lower_polymorphic(self.graph.lower_constructor(owner).class)
                 && (!self.graph.lower_polymorphic(base.class)
                     || self.graph.lower_virtual_destructor(base.class))
-                || !self.graph.lower_virtual_bases(plan.class).is_empty())
+                || !self
+                    .graph
+                    .lower_virtual_bases(self.graph.lower_constructor(owner).class)
+                    .is_empty())
             && let Some(constructor) =
                 constructor.filter(|id| self.graph.lower_user_provided_constructor(*id))
         {
             self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .demand_entry(super::construction::Entry::Constructor(
                     constructor,
                     Variant::Complete,
@@ -279,26 +311,30 @@ impl Function<'_, '_, '_, '_> {
         owner: ConstructorId,
         index: usize,
     ) -> Result<(u64, bool, u64), Error> {
-        let plan = self.graph.lower_constructor(owner);
-        let base = plan.indirect_bases[index].class;
-        let (offset, empty, size) = self.graph.lower_indirect_base_layout(plan.class, base)?;
+        let base = self.graph.lower_constructor(owner).indirect_bases[index].class;
+        let (offset, empty, size) = self
+            .graph
+            .lower_indirect_base_layout(self.graph.lower_constructor(owner).class, base)?;
         let data = self.graph.lower_nonvirtual_bytes(base)?;
         let begin = offset.wrapping_add(data);
         let end = offset.wrapping_add(size);
         let mut occupied = !self.graph.lower_virtual_bases(base).is_empty();
         // The C++ plan places indirect virtual entries after direct bases
         // and members. Occupancy is plan order, independently of execution.
-        for i in 0..plan.bases.len() {
-            let (class, _, from) = self.graph.lower_inheritance_edge(plan.class, i).ok_or(
-                crate::sema::Error::Invariant("constructor plan without direct base"),
-            )?;
+        for i in 0..self.graph.lower_constructor(owner).bases.len() {
+            let (class, _, from) = self
+                .graph
+                .lower_inheritance_edge(self.graph.lower_constructor(owner).class, i)
+                .ok_or(crate::sema::Error::Invariant(
+                    "constructor plan without direct base",
+                ))?;
             let from = from.ok_or(crate::sema::Error::Invariant(
                 "constructor base before layout",
             ))?;
             let to = from.wrapping_add(self.graph.lower_nonvirtual_bytes(class)?);
             occupied |= from < end && to > begin;
         }
-        for &(member, _) in plan.members {
+        for &(member, _) in self.graph.lower_constructor(owner).members {
             let (from, to) = if let Some(field) = self.graph.lower_bit_field(member)? {
                 (
                     field.bit / 8,
@@ -306,15 +342,16 @@ impl Function<'_, '_, '_, '_> {
                 )
             } else {
                 let from = self.graph.lower_member_offset(member)?;
-                let size = types::layout(self.graph, self.graph.lower_entity_type(member)?)?.0;
+                let size = types::layout(&*self.graph, self.graph.lower_entity_type(member)?)?.0;
                 (from, from.wrapping_add(size))
             };
             occupied |= from < end && to > begin;
         }
-        for prior in &plan.indirect_bases[..index] {
-            let (from, _, _) = self
-                .graph
-                .lower_indirect_base_layout(plan.class, prior.class)?;
+        for prior in &self.graph.lower_constructor(owner).indirect_bases[..index] {
+            let (from, _, _) = self.graph.lower_indirect_base_layout(
+                self.graph.lower_constructor(owner).class,
+                prior.class,
+            )?;
             let to = from.wrapping_add(self.graph.lower_nonvirtual_bytes(prior.class)?);
             occupied |= from < end && to > begin;
         }
@@ -332,10 +369,15 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         let reference = match copy {
             Some(CopyAction::Constructor { constructor, .. }) => {
-                let plan = self.graph.lower_constructor(constructor);
                 if !self.graph.lower_constructor_trivial(constructor)
-                    || self.graph.lower_class_empty(plan.class)?
-                        && self.symbols.storage_destructor(ty)?.is_some()
+                    || self
+                        .graph
+                        .lower_class_empty(self.graph.lower_constructor(constructor).class)?
+                        && self
+                            .symbols
+                            .view(&*self.graph, &*self.tree, self.cursor)
+                            .storage_destructor(ty)?
+                            .is_some()
                 {
                     return self.call_constructor(
                         constructor,
@@ -352,6 +394,8 @@ impl Function<'_, '_, '_, '_> {
                 else {
                     return Err(crate::sema::Error::Invariant("base copy signature").into());
                 };
+                let parameters = parameters.to_vec();
+                let parameters = parameters.as_slice();
                 parameters[0]
             }
             Some(CopyAction::Storage { reference, .. }) => reference,
@@ -368,7 +412,7 @@ impl Function<'_, '_, '_, '_> {
         if !empty {
             self.effect(I::CopyObject(
                 span.min(self.graph.lower_nonvirtual_bytes(class)?),
-                types::layout(self.graph, ty)?.1,
+                types::layout(&*self.graph, ty)?.1,
                 source,
                 object,
             ))?;

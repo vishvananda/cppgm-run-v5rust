@@ -70,11 +70,15 @@ impl Function<'_, '_, '_, '_> {
             let ast::ExprKind::Binary { right, .. } = self.tree.expressions.get(access).kind else {
                 return Err(crate::sema::Error::Invariant("bound member access syntax").into());
             };
-            Some(self.symbols.member_call_signature(
-                self.builder.program(),
-                self.graph.lower_expression(right)?.ty,
-                nothrow,
-            )?)
+            Some(
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .member_call_signature(
+                        self.builder.program(),
+                        self.graph.lower_expression(right)?.ty,
+                        nothrow,
+                    )?,
+            )
         };
         Ok((callee, signature))
     }
@@ -202,7 +206,7 @@ impl Function<'_, '_, '_, '_> {
     }
 
     pub(super) fn data_member_pointer(&self, source: TypeId) -> bool {
-        is_data_pointer(self.graph, source)
+        is_data_pointer(&*self.graph, source)
     }
 
     pub(super) fn member_pointer_truth(&mut self, value: RValue) -> Result<RValue, Error> {
@@ -276,9 +280,12 @@ impl Function<'_, '_, '_, '_> {
             self.builder
                 .integer(u128::from(slot.byte_offset().wrapping_add(1)))?
         } else {
-            self.symbols.demand(function);
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand(function);
             let symbol = self
                 .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
                 .function_symbol(self.builder.program(), function)?;
             let address = self.emit(I::Addr(Value::Symbol(symbol)), source)?;
             self.emit(I::Copy(Type::I64, address.value), source)?.value
@@ -376,16 +383,26 @@ impl Function<'_, '_, '_, '_> {
             && let Some(function) = self.graph.lower_member_function_address(named)?
             && self.graph.lower_virtual_slot(function).is_none()
         {
-            self.symbols.demand(function);
-            return self.symbols.callee(function, &mut self.builder);
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand(function);
+            return self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .callee(function, &mut self.builder);
         }
         if self.graph.lower_member_pointer_conversion(right)?.is_none()
-            && let Some(value) = self.graph.lower_member_argument(self.tree, named)
+            && let Some(value) = self.graph.lower_member_argument(&*self.tree, named)
             && let Some(function) = value.member
             && self.graph.lower_virtual_slot(function).is_none()
         {
-            self.symbols.demand(function);
-            let callee = self.symbols.callee(function, &mut self.builder)?;
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand(function);
+            let callee = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .callee(function, &mut self.builder)?;
             return Ok(self.emit(I::Addr(callee), source)?.value);
         }
         let bits = self.operand(right, Context::Operand)?;

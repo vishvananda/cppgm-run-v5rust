@@ -20,9 +20,12 @@ impl Function<'_, '_, '_, '_> {
         invoker: EntityId,
         source: TypeId,
     ) -> Result<RValue, Error> {
-        self.symbols.demand(invoker);
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .demand(invoker);
         let symbol = self
             .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
             .function_symbol(self.builder.program(), invoker)?;
         self.emit(I::Addr(Value::Symbol(symbol)), source)
     }
@@ -170,7 +173,7 @@ impl Function<'_, '_, '_, '_> {
                 place,
             ))?;
         }
-        let captures = self.graph.lower_closure_captures(class);
+        let captures = self.graph.lower_closure_captures(class).to_vec();
         let mut last_throwing = None;
         for (index, capture) in captures.iter().enumerate() {
             if self.capture_copy_throws(
@@ -210,7 +213,7 @@ impl Function<'_, '_, '_, '_> {
                 let source = self.capture_address(capture.entity, location)?;
                 if matches!(self.graph.lower_type(member_type)?, TypeView::Array { .. }) {
                     if self.graph.lower_constructor_copies_storage(constructor) {
-                        let (size, align) = types::layout(self.graph, member_type)?;
+                        let (size, align) = types::layout(&*self.graph, member_type)?;
                         self.effect(I::CopyObject(size, align, source, place))?;
                     } else {
                         self.copy_captured_elements(
@@ -226,11 +229,11 @@ impl Function<'_, '_, '_, '_> {
                 }
             } else if matches!(self.graph.lower_type(member_type)?, TypeView::Array { .. }) {
                 let source = self.capture_address(capture.entity, location)?;
-                let (size, align) = types::layout(self.graph, member_type)?;
+                let (size, align) = types::layout(&*self.graph, member_type)?;
                 self.effect(I::CopyObject(size, align, source, place))?;
             } else {
                 let source = self.capture_place(capture.entity, location)?;
-                let storage = types::storage(self.graph, member_type)?;
+                let storage = types::storage(&*self.graph, member_type)?;
                 let value = self
                     .emit(
                         I::Load(self.place_memory(source, member_type)?, storage, source),
@@ -246,7 +249,11 @@ impl Function<'_, '_, '_, '_> {
             }
             if !self.static_initializer
                 && last_throwing.is_some_and(|last| index < last)
-                && self.symbols.class_destructor(member_type)?.is_some()
+                && self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .class_destructor(member_type)?
+                    .is_some()
             {
                 self.register_aggregate_member(member_type, place);
                 tracked = true;
@@ -274,7 +281,11 @@ impl Function<'_, '_, '_, '_> {
             && self
                 .graph
                 .lower_class_empty(self.graph.lower_constructor(id).class)?
-            && self.symbols.class_destructor(ty)?.is_some();
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_destructor(ty)?
+                .is_some();
         Ok(!(storage && (array || !called)) && !self.graph.lower_constructor_function(id)?.nothrow)
     }
     fn closure_member_region(&mut self) -> Result<(), Error> {
