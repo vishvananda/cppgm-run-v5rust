@@ -194,6 +194,9 @@ impl Analyzer<'_> {
             return Ok(false);
         };
         let binding = self.graph.binding(binding);
+        if self.graph.lower_binding_alias(binding.entity).is_some() {
+            return Ok(false);
+        }
         let entity = self.graph.entity(binding.entity);
         let Some(ty) = entity.ty else {
             return Ok(false);

@@ -59,6 +59,7 @@ pub(super) struct CallSelection {
 }
 #[derive(Default)]
 pub(super) struct CallScratch {
+    offered: Vec<BindingId>,
     candidates: Vec<(BindingId, usize)>,
     sequences: Vec<Option<ArgumentSequence>>,
     pub(super) surrogates: super::callable_objects::SurrogateScratch,
@@ -68,6 +69,7 @@ impl CallScratch {
         !self.candidates.is_empty()
     }
     pub(super) fn clear(&mut self) {
+        self.offered.clear();
         self.candidates.clear();
         self.sequences.clear();
         self.surrogates.clear();
@@ -929,10 +931,24 @@ impl Analyzer<'_> {
         } else {
             [None; 2]
         };
-        let declared = set.bindings(&self.graph).len();
+        // Freeze the offered set before deduction, as constructor_candidates
+        // and list_constructor_phase do. Excluded templates do no semantic work.
+        scratch.offered.clear();
+        for &binding in set.bindings(&self.graph) {
+            if set.includes(&self.graph, binding)
+                && (!matches!(set, Candidates::ListConstructors(_))
+                    || self.initializer_list_constructor(binding)?)
+            {
+                scratch.offered.push(binding);
+            }
+        }
+        let declared = scratch.offered.len();
+        if declared == 0 && copies.iter().all(Option::is_none) {
+            return Ok(());
+        }
         self.graph.work.totals.resolutions += 1;
         self.graph.work.totals.candidates += declared + copies.iter().flatten().count();
-        let has_templates = set.bindings(&self.graph).iter().any(|&id| {
+        let has_templates = scratch.offered.iter().any(|&id| {
             self.graph
                 .entity(self.graph.binding(id).entity)
                 .template_head
@@ -951,7 +967,7 @@ impl Analyzer<'_> {
             }
             let index = visit % total;
             let primary = if index < declared {
-                set.bindings(&self.graph)[index]
+                scratch.offered[index]
             } else if let Some(binding) = copies[index - declared] {
                 binding
             } else {

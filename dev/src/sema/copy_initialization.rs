@@ -552,7 +552,9 @@ impl Analyzer<'_> {
                 .kind
             && self.bare_type(element)? == self.bare_type(facts.ty)?
         {
-            return self.check_copy_selection(resolution, Some(scope), location);
+            // The probe decides the source category; the actual result's
+            // constructor selection owns its conversions, access and demand.
+            return self.select_copy_sequence(class, view, Some(scope), false, location);
         }
         self.select_copy_sequence(class, facts, Some(scope), false, location)
     }
@@ -616,10 +618,28 @@ impl Analyzer<'_> {
     ) -> Result<CopyResolution, Error> {
         let copies = self.implicit_copy_candidates(class)?;
         candidates.clear();
-        self.graph.work.totals.resolutions += 1;
-        self.graph.work.totals.candidates += self.graph.entity(class).declared_constructors.len()
-            + usize::from(copies.copy.is_some())
-            + usize::from(copies.moving.is_some());
+        let declared = self
+            .graph
+            .entity(class)
+            .declared_constructors
+            .iter()
+            .filter(|&&binding| {
+                !matches!(
+                    context,
+                    ConstructorContext::Copy | ConstructorContext::Standard { explicit: false }
+                ) || self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .explicitness
+                    != super::specifiers::Explicitness::Explicit
+            })
+            .count();
+        let offered_count =
+            declared + usize::from(copies.copy.is_some()) + usize::from(copies.moving.is_some());
+        if offered_count != 0 {
+            self.graph.work.totals.resolutions += 1;
+            self.graph.work.totals.candidates += offered_count;
+        }
         let mut offered = copies.copy.is_some() || copies.moving.is_some();
         offered |= self.declared_copy_candidates(class, facts, context, false, candidates)?;
         for (kind, parameter, deleted) in [
