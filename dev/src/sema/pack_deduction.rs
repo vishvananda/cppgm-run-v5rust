@@ -133,7 +133,15 @@ impl Analyzer<'_> {
             .last()
             .is_some_and(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
         {
-            return self.deduce_type_list(patterns, actual, depth, arguments);
+            let patterns = self
+                .graph
+                .types
+                .intern(TypeKind::Pack(patterns.to_vec()), Cv::default())?;
+            let actual = self
+                .graph
+                .types
+                .intern(TypeKind::Pack(actual.to_vec()), Cv::default())?;
+            return self.deduce_signature_type(patterns, actual, depth, arguments, false);
         }
         if patterns.len() != actual.len() {
             return Ok(false);

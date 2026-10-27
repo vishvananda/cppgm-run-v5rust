@@ -348,6 +348,17 @@ impl Analyzer<'_> {
                 }
                 self.evaluate_constant(right, scope, skipping)?
             }
+            ExprKind::Binary {
+                op,
+                assignment: false,
+                ..
+            } if self.semantic()
+                && !skipping
+                && self.graph.expression_facts.get(id).is_ok()
+                && matches!(op.token.as_punctuator(), Some(P::LogicalAnd | P::LogicalOr)) =>
+            {
+                self.constant_logical_chain(id, scope)?
+            }
             ExprKind::Binary { op, .. }
                 if self.semantic()
                     && !skipping
@@ -1016,6 +1027,58 @@ impl Analyzer<'_> {
         let kind =
             IntegralKind::of(scalar).ok_or(Error::Invariant("nonintegral character type"))?;
         self.scalar_constant(kind.convert(u64::from_le_bytes(bytes)), scalar)
+    }
+    fn constant_logical_chain(
+        &mut self,
+        root: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Constant, Error> {
+        let base = self.constant_spine.len();
+        let result = (|| {
+            let mut next = self.graph.expression_facts.root(root);
+            while let ExprKind::Binary {
+                left,
+                op,
+                assignment: false,
+                ..
+            } = self.tree.expressions.get(next).kind
+            {
+                if !matches!(op.token.as_punctuator(), Some(P::LogicalAnd | P::LogicalOr))
+                    || self.graph.expression_facts.get(next)?.call_form
+                        == super::expression_facts::CallForm::Operator
+                    || self
+                        .graph
+                        .expression_facts
+                        .function_conversion(next)
+                        .is_some()
+                {
+                    break;
+                }
+                if next != root {
+                    // Each logical operand is its own rvalue visit; unlike an
+                    // arithmetic spine, a logical node makes a demand decision.
+                    self.check_deferred_constant(next)?;
+                    self.constant_step(self.tree.expressions.get(next).location)?;
+                }
+                self.constant_spine.push(next);
+                next = self.graph.expression_facts.root(left);
+            }
+            let mut value = self.constant_truth(next, scope, false)?;
+            for index in (base..self.constant_spine.len()).rev() {
+                let ExprKind::Binary { right, op, .. } =
+                    self.tree.expressions.get(self.constant_spine[index]).kind
+                else {
+                    return Err(Error::Invariant("logical constant spine node"));
+                };
+                let conjunction = op.token.as_punctuator() == Some(P::LogicalAnd);
+                if value == conjunction {
+                    value = self.constant_truth(right, scope, false)?;
+                }
+            }
+            self.boolean(value)
+        })();
+        self.constant_spine.truncate(base);
+        result
     }
     // ConstantInterpreter::binary visits the whole left spine once, including
     // through parentheses. Keep owned scalar results between its operations.

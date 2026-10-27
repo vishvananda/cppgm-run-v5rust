@@ -36,7 +36,7 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("pack function without signature"));
         };
         let depth = self.graph.templates.depth(head);
-        let mut arguments = self.signature_arguments(binding, head);
+        let mut arguments = self.signature_arguments(binding, head)?;
         let offset = usize::from(prefix.is_some());
         let supplied = args.len() + offset;
         // analyzer_calls.cpp::resolve filters the declared fixed prefix before

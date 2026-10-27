@@ -316,6 +316,15 @@ impl Analyzer<'_> {
             }
             _ => (),
         }
+        // rvalue designates a pointer-valued glvalue before reading it;
+        // assignment and prefix increment use this same path as a name.
+        // A conditional chooses its operand as a value instead.
+        if facts.category != ValueCategory::Prvalue
+            && !matches!(node.kind, ExprKind::Conditional { .. })
+        {
+            let place = self.constant_place(id, scope)?;
+            return self.read_constant_address(place, location);
+        }
         let mut value = match node.kind {
             _ if (facts.literal_call.is_some()
                 || facts.call_form == super::expression_facts::CallForm::Operator) =>
@@ -326,14 +335,6 @@ impl Analyzer<'_> {
                     return Err(Error::Invariant("pointer operator returned no address"));
                 };
                 value
-            }
-            ExprKind::Cast { .. } | ExprKind::FunctionalCast { .. } | ExprKind::Call { .. }
-                if facts.reference_cast.is_some_and(|ty| {
-                    matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
-                }) =>
-            {
-                let place = self.constant_place(id, scope)?;
-                self.read_constant_address(place, location)?
             }
             ExprKind::Keyword(Keyword::Nullptr) => Address::new(Root::Null, facts.ty),
             ExprKind::Keyword(Keyword::This) => self.constant_receiver_place(
@@ -364,15 +365,6 @@ impl Analyzer<'_> {
                 } else {
                     self.read_constant_address(place, location)?
                 }
-            }
-            ExprKind::Id(_)
-            | ExprKind::Unary { .. }
-            | ExprKind::Subscript { .. }
-            | ExprKind::Member { .. }
-                if facts.category != ValueCategory::Prvalue =>
-            {
-                let place = self.constant_place(id, scope)?;
-                self.read_constant_address(place, location)?
             }
             ExprKind::Binary {
                 op,
@@ -1367,7 +1359,12 @@ impl Analyzer<'_> {
                             "a void expression outside constant evaluation",
                         ));
                     }
-                    _ if facts.category != ValueCategory::Prvalue => {
+                    _ if facts.category != ValueCategory::Prvalue
+                        && !matches!(
+                            self.graph.types.get(facts.ty).kind,
+                            TypeKind::Function { .. }
+                        ) =>
+                    {
                         self.constant_place(id, scope)?;
                     }
                     _ if self.vector_shape(facts.ty).is_some() => {

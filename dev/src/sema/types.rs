@@ -215,6 +215,13 @@ impl Types {
     pub(super) fn canonical_view(&self, id: TypeId) -> TypeId {
         self.canonical[id.0 as usize].unwrap_or(id)
     }
+    /// The top-level unqualified form; array element qualification is retained.
+    pub(super) fn unqualified(&mut self, id: TypeId) -> Result<TypeId, Error> {
+        if self.get(id).cv.0 == 0 {
+            return Ok(id);
+        }
+        self.intern(self.get(id).kind.clone(), Cv::default())
+    }
     pub(super) fn get(&self, id: TypeId) -> &Type {
         &self.records[id.0 as usize]
     }
@@ -753,7 +760,23 @@ mod collision_tests {
             )
             .unwrap();
         assert_eq!(types.canonical_view(null), canonical_null);
+        let const_int = types.qualify(int, Cv::CONST).unwrap();
+        let const_array = types
+            .intern(
+                TypeKind::Array {
+                    element: const_int,
+                    bound: 5,
+                    operand: None,
+                },
+                Cv::default(),
+            )
+            .unwrap();
         let count = types.observations().0;
+        assert_eq!(types.unqualified(qualified).unwrap(), bare);
+        assert_eq!(types.unqualified(const_array).unwrap(), const_array);
+        assert!(
+            matches!(types.get(const_array).kind, TypeKind::Array { element, .. } if element == const_int)
+        );
         assert_eq!(types.canonical_function(function).unwrap(), canonical);
         assert_eq!(types.qualify(bare, Cv::CONST).unwrap(), qualified);
         assert_eq!(types.observations().0, count);

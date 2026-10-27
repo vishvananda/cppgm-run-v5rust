@@ -1001,6 +1001,7 @@ fn template_signatures_reuse_identity_keep_lookup_clean_and_demand_only_selected
         let entity = graph.binding(binding).entity;
         assert!(graph.function_templates.primary(entity).is_some());
         assert_eq!(graph.function_origin(entity).unwrap(), binding);
+        assert!(graph.binding_visible_before(binding, Some(0)));
         assert!(graph.entity(entity).template_head.is_none());
     }
     assert_eq!(selected[0], selected[1]);

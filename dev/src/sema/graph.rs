@@ -943,6 +943,28 @@ impl Graph {
         self.binding_access[id.0 as usize] = self.binding_access(origin);
         Ok(id)
     }
+    pub(super) fn function_handle(
+        &mut self,
+        origin: BindingId,
+        function: EntityId,
+        signature: TypeId,
+    ) -> Result<BindingId, Error> {
+        let source = self.binding(origin);
+        self.store_binding(
+            self.binding_scope(origin),
+            Binding {
+                kind: BindingKind::Function,
+                name: source.name,
+                entity: function,
+                ty: Some(signature),
+                key: source.key,
+            },
+            self.binding_access(origin),
+            BindingOrigin::Callable,
+            false,
+            false,
+        )
+    }
     // A class template's friend is source-facing syntax, not a namespace
     // declaration until that class is instantiated (14.5.4p4).
     pub(super) fn add_pattern_function(

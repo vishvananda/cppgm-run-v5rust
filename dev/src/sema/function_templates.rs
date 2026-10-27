@@ -6,7 +6,7 @@ use super::{
     analyzer::Analyzer,
     expression_facts::ValueCategory,
     function_demands::DefinitionEmission,
-    graph::{Binding, BindingId, BindingKind, EntityId, ScopeId},
+    graph::{BindingId, EntityId, ScopeId},
     lookup::{FunctionCandidates, LookupResult},
     templates::HeadId,
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
@@ -38,6 +38,11 @@ struct OrderingParameters {
     object: Option<TypeId>,
 }
 
+enum ExplicitArguments {
+    Call(Vec<Option<TypeId>>),
+    Target(TypeId),
+}
+
 #[derive(Default)]
 pub(super) struct FunctionTemplates {
     pub(super) conditions: super::explicit_conditions::Conditions,
@@ -50,7 +55,7 @@ pub(super) struct FunctionTemplates {
     pub(super) instantiations: super::explicit_instantiations::Instantiations,
     pub(super) arguments: HashMap<EntityId, Vec<TypeId>>,
     pub(super) object_signatures: HashMap<EntityId, TypeId>,
-    explicit: HashMap<BindingId, Vec<Option<TypeId>>>,
+    explicit: HashMap<BindingId, ExplicitArguments>,
     defaults: HashMap<(HeadId, usize, Vec<TypeId>), TypeId>,
     demanded_bodies: HashSet<EntityId>,
     trailing_results: HashSet<EntityId>,
@@ -353,12 +358,36 @@ impl Analyzer<'_> {
                     continue;
                 };
                 if !packs {
-                    specializations.push(binding);
+                    // The template-id owns a source binding; the deduced
+                    // declaration's memo contains only a private callable.
+                    let occurrence = self
+                        .graph
+                        .add_hidden_function(primary, self.graph.binding(binding))?;
+                    specializations.push(occurrence);
                     continue;
                 }
             }
             let binding = self.graph.binding(primary);
-            let hidden = self.graph.add_hidden_function(primary, binding)?;
+            let hidden = if call {
+                self.graph.function_handle(
+                    primary,
+                    binding.entity,
+                    binding
+                        .ty
+                        .ok_or(Error::Invariant("template argument handle without type"))?,
+                )?
+            } else {
+                self.graph.add_hidden_function(primary, binding)?
+            };
+            let arguments = if call {
+                ExplicitArguments::Call(arguments)
+            } else {
+                ExplicitArguments::Target(
+                    self.graph
+                        .types
+                        .intern(TypeKind::Pack(converted), Cv::default())?,
+                )
+            };
             self.graph
                 .function_templates
                 .explicit
@@ -831,6 +860,9 @@ impl Analyzer<'_> {
         if let Some(&binding) = self.graph.function_templates.signatures.get(&key) {
             return Ok(Some(binding));
         }
+        // A specialization owns the same canonical overload signature as
+        // every other function declaration, even without a lookup binding.
+        self.graph.types.declaration_signature(ty)?;
         let explicitness = match self.specialized_explicitness(primary, depth, &key.arguments) {
             Ok(value) => value,
             Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
@@ -880,16 +912,7 @@ impl Analyzer<'_> {
         specialized.exceptions = exceptions;
         specialized.definition_emission = DefinitionEmission::Demanded;
         self.specialization_defaults(entity, primary, pattern, ty)?;
-        let binding = self.graph.add_hidden_function(
-            primary,
-            Binding {
-                kind: BindingKind::Function,
-                name: origin.name,
-                entity,
-                ty: Some(ty),
-                key: origin.key,
-            },
-        )?;
+        let binding = self.graph.function_handle(primary, entity, ty)?;
         self.graph
             .function_templates
             .primaries
@@ -1218,13 +1241,21 @@ impl Analyzer<'_> {
         &self,
         binding: BindingId,
         head: HeadId,
-    ) -> Vec<Option<TypeId>> {
-        self.graph
-            .function_templates
-            .explicit
-            .get(&binding)
-            .cloned()
-            .unwrap_or_else(|| vec![None; self.graph.templates.parameters(head).len()])
+    ) -> Result<Vec<Option<TypeId>>, Error> {
+        let mut arguments = vec![None; self.graph.templates.parameters(head).len()];
+        match self.graph.function_templates.explicit.get(&binding) {
+            Some(ExplicitArguments::Call(given)) => arguments.copy_from_slice(given),
+            Some(ExplicitArguments::Target(pack)) => {
+                for (slot, &given) in arguments
+                    .iter_mut()
+                    .zip(self.graph.types.pack_elements(*pack)?)
+                {
+                    *slot = Some(given);
+                }
+            }
+            None => (),
+        }
+        Ok(arguments)
     }
     pub(super) fn needs_deduction(&mut self, ty: TypeId, depth: u32) -> Result<bool, Error> {
         // deduce_for_call tests the aliased type. A shell retains discarded
@@ -1348,7 +1379,7 @@ impl Analyzer<'_> {
         {
             return Ok(None);
         }
-        let mut arguments = self.signature_arguments(binding, head);
+        let mut arguments = self.signature_arguments(binding, head)?;
         let given = arguments.clone();
         // Explicit arguments substitute a leading result before parameter
         // deduction. A trailing result waits until signature completion.
@@ -1480,18 +1511,15 @@ impl Analyzer<'_> {
         let Some(head) = self.function_template_head(binding)? else {
             return Ok(None);
         };
-        let mut arguments = self.signature_arguments(binding, head);
+        let mut arguments = self.signature_arguments(binding, head)?;
         let pattern = self
             .graph
             .binding(binding)
             .ty
             .ok_or(Error::Invariant("template target without type"))?;
         let depth = self.graph.templates.depth(head);
-        let mut environment = Substitution::new(depth, &arguments);
-        environment.context = Some(self.graph.binding(binding).entity);
-        let Some(pattern) = self.substitute_signature_type(pattern, &mut environment)? else {
-            return Ok(None);
-        };
+        // Explicit arguments constrain structural deduction in place. Form
+        // the substituted signature only after deduction has completed.
         let pattern = self.target_deduction_pattern(pattern, target, depth)?;
         if !self.deduce_signature_type(pattern, target, depth, &mut arguments, false)? {
             return Ok(None);

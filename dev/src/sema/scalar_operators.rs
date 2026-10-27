@@ -756,8 +756,8 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         let [left, right] = operands;
         let [a, b] = *facts;
-        let at = self.bare_type(a.ty)?;
-        let bt = self.bare_type(b.ty)?;
+        let at = self.graph.types.unqualified(a.ty)?;
+        let bt = self.graph.types.unqualified(b.ty)?;
         let va = matches!(
             self.graph.types.get(at).kind,
             TypeKind::Scalar(Scalar::Void)
@@ -813,12 +813,7 @@ impl Analyzer<'_> {
         let bc = self.graph.types.get(b.ty).cv.0;
         // The C++ conditional owner compares shallow unqualified identities:
         // unlike reference-relatedness, an array retains its element cv here.
-        let same_glvalue_type = if matches!(self.graph.types.get(a.ty).kind, TypeKind::Array { .. })
-        {
-            a.ty == b.ty
-        } else {
-            at == bt
-        };
+        let same_glvalue_type = at == bt;
         if a.category == b.category
             && a.category != V::Prvalue
             && same_glvalue_type
