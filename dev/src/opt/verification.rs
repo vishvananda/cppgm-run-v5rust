@@ -21,7 +21,7 @@ impl Context<'_> {
         // even on failure. No body is cloned or serialized to feed validation.
         let body = std::mem::replace(self.body, Body::new(None, 0));
         self.program.restore_body(self.symbol, body)?;
-        let result = lowir::validator::validate_constructed(self.program);
+        let result = lowir::validator::validate_constructed_with_spellings(self.program, false);
         *self.body = self.program.take_body(self.symbol)?.ok_or(Error::Limit)?;
         let problem = match result {
             Ok(()) if self.verification.dump.is_some() && self.unlinked_definition_used() => Some(

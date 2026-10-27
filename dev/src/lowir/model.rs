@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[path = "body_edits.rs"]
 mod body_edits;
+#[path = "store_validation.rs"]
+pub(crate) mod store_validation;
 pub(crate) use body_edits::LinkEditor;
 #[path = "body_import.rs"]
 mod body_import;
