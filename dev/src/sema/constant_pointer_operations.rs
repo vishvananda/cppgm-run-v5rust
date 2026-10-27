@@ -614,7 +614,9 @@ impl Analyzer<'_> {
             let mut spans = Vec::with_capacity(self.graph.entity(class).members.len());
             for index in 0..self.graph.entity(class).members.len() {
                 let member = self.graph.entity(class).members[index];
-                if self.graph.entity(member).bit_field.is_some() {
+                if self.graph.entity(member).bit_field.is_some()
+                    || self.graph.lower_overlapping_empty_member(member)?
+                {
                     continue;
                 }
                 let ty = self.graph.lower_entity_type(member)?;
@@ -626,6 +628,10 @@ impl Analyzer<'_> {
                 );
                 let size = if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
                     8
+                } else if self.graph.entity(member).storage_attributes.overlapping
+                    && let TypeKind::Class(child) = self.graph.types.get(ty).kind
+                {
+                    integral::signed(self.graph.lower_nonvirtual_bytes(child)?).max(1)
                 } else {
                     self.address_element_size(ty, location)?.max(1)
                 };
@@ -636,7 +642,9 @@ impl Analyzer<'_> {
                     size,
                 });
             }
-            spans.sort_unstable_by_key(|span| span.start);
+            if self.graph.entity(class).members.len() > 8 {
+                crate::support::ordering::sort_by(&mut spans, |a, b| a.start < b.start);
+            }
             self.constant_evaluation
                 .as_mut()
                 .ok_or(Error::Invariant("ordering lost evaluation"))?
@@ -657,11 +665,17 @@ impl Analyzer<'_> {
             .0
             .get(&class)
             .ok_or(Error::Invariant("completed member spans missing"))?;
-        let found = spans
-            .partition_point(|span| span.start <= offset)
-            .checked_sub(1)
-            .and_then(|index| spans.get(index))
-            .filter(|span| offset < span.start.wrapping_add(span.size));
+        let found = if self.graph.entity(class).members.len() <= 8 {
+            spans
+                .iter()
+                .find(|span| offset >= span.start && offset < span.start.wrapping_add(span.size))
+        } else {
+            spans
+                .partition_point(|span| span.start <= offset)
+                .checked_sub(1)
+                .and_then(|index| spans.get(index))
+                .filter(|span| offset < span.start.wrapping_add(span.size))
+        };
         Ok(found.map(|span| Subobject {
             part: OrderedPart::Member(span.member),
             ty: span.ty,
