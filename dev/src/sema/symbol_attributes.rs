@@ -12,6 +12,7 @@ use std::collections::HashMap;
 #[derive(Default)]
 struct Attributes {
     weak: bool,
+    used: bool,
     section: Option<Box<[u8]>>,
     asm_label: Option<Box<[u8]>>,
 }
@@ -247,6 +248,21 @@ fn token_safe_section(spelling: &[u8]) -> Option<Vec<u8>> {
 }
 
 impl Graph {
+    pub(super) fn note_function_used(&mut self, entity: EntityId) {
+        self.symbol_attributes
+            .values
+            .entry(entity)
+            .or_default()
+            .used = true;
+    }
+    pub(crate) fn lower_function_used(&self, entity: EntityId) -> bool {
+        // Function-template specialization copies effects/noinline but not
+        // `used`; an instantiated class member receives its own declaration.
+        self.symbol_attributes
+            .values
+            .get(&entity)
+            .is_some_and(|own| own.used)
+    }
     pub(crate) fn lower_asm_label(&self, entity: EntityId) -> Option<&[u8]> {
         self.symbol_attributes
             .values
@@ -291,6 +307,38 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn used_is_an_entity_fact_with_frozen_specialization_and_lambda_rules() {
+        let source = SourceBuffer::new(
+            br"__attribute__((used)) int f(); int f(){return 7;}
+                template<class T> __attribute__((used)) int g(){return sizeof(T);}
+                int main(){auto l=[]() __attribute__((used,aligned(3))){return 1;};
+                    return f()+g<int>()+l();}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"used-facts").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let g = cursor.intern_name(b"g").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let function = graph.functions_at(graph.global, f.into()).next().unwrap();
+        assert!(graph.lower_function_used(graph.binding(function).entity));
+        assert!(graph.function_templates.arguments.keys().any(|&entity| {
+            graph.entity(entity).name == Some(g) && !graph.lower_function_used(entity)
+        }));
+        assert!(
+            graph
+                .closures
+                .records
+                .values()
+                .any(|closure| { graph.lower_function_used(closure.call) })
+        );
+    }
 
     #[test]
     fn labels_belong_to_declared_entities_without_demanding_unused_types() {

@@ -508,8 +508,7 @@ fn emit_preprocessed(
     }
     if let Err(error) = parsed {
         return Err(match error {
-            ParseError::NotImplemented(group)
-            | ParseError::Preprocess(PreprocessError::NotImplemented(group)) => {
+            ParseError::Preprocess(PreprocessError::NotImplemented(group)) => {
                 AstToolError::Missing(group)
             }
             ParseError::Invariant(message)

@@ -468,7 +468,6 @@ pub(super) fn copy_error(error: &ParseError) -> Error {
     match error {
         ParseError::Syntax { location, message } => Error::at(*location, message),
         ParseError::Limit(message) => Error::Limit(message),
-        ParseError::NotImplemented(group) => Error::Missing(group),
         _ => Error::Invariant("invalid parsed template body copy"),
     }
 }

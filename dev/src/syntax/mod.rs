@@ -80,7 +80,6 @@ pub(crate) enum ParseError {
     Preprocess(PreprocessError),
     Limit(&'static str),
     Invariant(&'static str),
-    NotImplemented(&'static str),
 }
 /// The parser and all syntax storage belong to one translation unit. Printing
 /// borrows the tree; later phases will consume the same typed records.

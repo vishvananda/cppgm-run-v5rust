@@ -55,8 +55,10 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let mut requested = false;
+        let mut used = false;
         let mut apply = |list| {
             for attribute in self.tree.attributes.get(list) {
+                used |= attribute.kind == ast::AttributeKind::Used;
                 if attribute.kind != ast::AttributeKind::NoReturn {
                     continue;
                 }
@@ -84,6 +86,9 @@ impl Analyzer<'_> {
             let node = self.tree.declarators.get(id);
             apply(node.attributes)?;
             part = node.nested;
+        }
+        if used && let Some(entity) = function {
+            self.graph.note_function_used(entity);
         }
         if requested && let Some(entity) = function {
             self.graph

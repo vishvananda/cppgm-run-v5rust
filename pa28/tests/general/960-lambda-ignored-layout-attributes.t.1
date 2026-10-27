@@ -1,0 +1,13 @@
+template<class T, class U> struct Pair {};
+template<class...> struct Align {};
+template<class... T> struct X {
+  template<class... U> int f() {
+    auto g = []() __attribute__((aligned(sizeof(Align<Pair<T, U>...>)))) { return 7; };
+    return g();
+  }
+};
+int main() {
+  auto ordinary = []() __attribute__((aligned(3))) { return 1; };
+  X<int, char> object;
+  return ordinary() + object.f<short>() - 8;
+}

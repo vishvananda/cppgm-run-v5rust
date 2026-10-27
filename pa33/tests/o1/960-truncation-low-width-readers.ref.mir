@@ -1,0 +1,65 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @input
+  storage scalar i32
+  init i32 -7
+
+function @low_reads
+  abi
+    param %x -> rdi : i64
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    lea r8, [rdi+4]
+    add rdi, 1
+    add r8, rdi
+    sext.i32 r8
+    ret r8
+
+function @full_read
+  abi
+    param %x -> rdi : i64
+    return i64 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    sext.i32 rdi
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+
+  block ^entry
+    load.i32 rdi, @input
+    call @low_reads [args=(rdi)]
+    cmp.i32 rax, -9
+    setne rbx
+    movzx rbx, rbx
+    mov rdi, 4294967295
+    call @full_read [args=(rdi)]
+    cmp.i64 rax, -1
+    setne rax
+    movzx rax, rax
+    or rbx, rax
+    ret rbx

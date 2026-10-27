@@ -1,0 +1,130 @@
+global @N__value : i32 [binding=strong, object=_ZN1N5valueE] = 7
+global @M__value : i32 [binding=strong, object=_ZN1M5valueE] = 3
+
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $x : obj<1x1>
+  slot $y : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $x
+    %t2 = addr $y
+    %t3 = call i32 @nested()
+    %t4 = call i32 @nested__2()
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = call i32 @local_class()
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = call i32 @local_class__2()
+    %t9 = binary add nowrap i32 %t7, %t8
+    %t10 = addr $x
+    %t11 = call i32 @Box_int___get(%t10)
+    %t12 = binary add nowrap i32 %t9, %t11
+    %t13 = addr $y
+    %t14 = call i32 @Box_char___get(%t13)
+    %t15 = binary add nowrap i32 %t12, %t14
+    %t16 = binary sub nowrap i32 %t15, 77
+    return i32 %t16
+}
+function @nested() -> i32 [binding=weak, object=_Z6nestedIiEiv] {
+  slot $result : i32
+
+  block ^entry:
+    %t1 = load typed i32 @N__value
+    store typed i32 %t1, $result
+    %t2 = load typed i32 @M__value
+    %t3 = load typed i32 $result
+    %t4 = binary add nowrap i32 %t3, %t2
+    store typed i32 %t4, $result
+    %t5 = load typed i32 $result
+    %t6 = load typed i32 @N__value
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = const i64 4
+    %t9 = convert sext i64 i32 %t7
+    %t10 = binary add i64 %t9, %t8
+    %t11 = convert trunc i32 i64 %t10
+    return i32 %t11
+}
+function @nested__2() -> i32 [binding=weak, object=_Z6nestedIcEiv] {
+  slot $result : i32
+
+  block ^entry:
+    %t1 = load typed i32 @N__value
+    store typed i32 %t1, $result
+    %t2 = load typed i32 @M__value
+    %t3 = load typed i32 $result
+    %t4 = binary add nowrap i32 %t3, %t2
+    store typed i32 %t4, $result
+    %t5 = load typed i32 $result
+    %t6 = load typed i32 @N__value
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = const i64 1
+    %t9 = convert sext i64 i32 %t7
+    %t10 = binary add i64 %t9, %t8
+    %t11 = convert trunc i32 i64 %t10
+    return i32 %t11
+}
+function @local_class() -> i32 [binding=weak, object=_Z11local_classIiEiv] {
+  slot $object : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $object
+    %t3 = call i32 @Local__get(%t2)
+    return i32 %t3
+}
+function @local_class__2() -> i32 [binding=weak, object=_Z11local_classIcEiv] {
+  slot $object : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $object
+    %t2 = addr $object
+    %t3 = call i32 @Local__get__2(%t2)
+    return i32 %t3
+}
+function @Box_int___get(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN3BoxIiE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @N__value
+    %t2 = const i64 4
+    %t3 = convert sext i64 i32 %t1
+    %t4 = binary add i64 %t3, %t2
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @Box_char___get(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZN3BoxIcE3getEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @N__value
+    %t2 = const i64 1
+    %t3 = convert sext i64 i32 %t1
+    %t4 = binary add i64 %t3, %t2
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @Local__get(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZZ11local_classIiEivEN5Local3getEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @N__value
+    %t2 = const i64 4
+    %t3 = convert sext i64 i32 %t1
+    %t4 = binary add i64 %t3, %t2
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}
+function @Local__get__2(%this : ptr [object_bytes=1]) -> i32 [binding=internal, object=_ZZ11local_classIcEivEN5Local3getEv, prefer_local=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @N__value
+    %t2 = const i64 1
+    %t3 = convert sext i64 i32 %t1
+    %t4 = binary add i64 %t3, %t2
+    %t5 = convert trunc i32 i64 %t4
+    return i32 %t5
+}

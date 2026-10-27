@@ -396,9 +396,9 @@ impl<'a> Cursor<'a> {
                 })
             }
             ParseError::Preprocess(error) => self.post.input().describe(error),
-            ParseError::Limit(message)
-            | ParseError::Invariant(message)
-            | ParseError::NotImplemented(message) => Ok(message.as_bytes().to_vec()),
+            ParseError::Limit(message) | ParseError::Invariant(message) => {
+                Ok(message.as_bytes().to_vec())
+            }
         }
     }
 }

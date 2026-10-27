@@ -136,7 +136,17 @@ impl<'a> Cloner<'a> {
         Ok(node)
     }
     fn attributes(&mut self, list: List<Attribute>) -> Result<List<Attribute>, ParseError> {
-        self.list(list, |tree| &mut tree.attributes, Self::attribute)
+        // The C++ linked chain copies its tail before the current attribute.
+        // Keep that failure order while retaining the original list order.
+        let mut attributes = self.tree.attributes.get(list).to_vec();
+        for attribute in attributes.iter_mut().rev() {
+            *attribute = self.attribute(*attribute)?;
+        }
+        let start = self.tree.attributes.begin();
+        for attribute in attributes {
+            self.tree.attributes.push(attribute);
+        }
+        self.tree.attributes.finish(start)
     }
     fn specifier(&mut self, mut node: Specifier) -> Result<Specifier, ParseError> {
         node.kind = match node.kind {
@@ -184,11 +194,11 @@ impl<'a> Cloner<'a> {
     fn declarator(&mut self, id: DeclaratorId) -> Result<DeclaratorId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.declarators.get(id);
+        node.pointers = self.list(node.pointers, |tree| &mut tree.pointers, Self::pointer)?;
         node.name = self.optional(node.name, Self::name)?;
         node.nested = self.optional(node.nested, Self::declarator)?;
-        node.attributes = self.attributes(node.attributes)?;
-        node.pointers = self.list(node.pointers, |tree| &mut tree.pointers, Self::pointer)?;
         node.suffixes = self.list(node.suffixes, |tree| &mut tree.suffixes, Self::suffix)?;
+        node.attributes = self.attributes(node.attributes)?;
         self.tree.declarators.add(node)
     }
     fn pointer(&mut self, mut node: Pointer) -> Result<Pointer, ParseError> {
@@ -212,7 +222,11 @@ impl<'a> Cloner<'a> {
             QualifierKind::Noexcept(id) => {
                 QualifierKind::Noexcept(self.optional(id, Self::expression)?)
             }
-            QualifierKind::Throw(ids) => QualifierKind::Throw(self.expanded_types(ids)?),
+            // Exception specifications retain their type-id pack declarators;
+            // their semantic owner forms the expanded types on demand.
+            QualifierKind::Throw(ids) => {
+                QualifierKind::Throw(self.list(ids, |tree| &mut tree.type_lists, Self::ty)?)
+            }
             QualifierKind::Trailing(id) => QualifierKind::Trailing(self.ty(id)?),
             other => other,
         };
@@ -257,8 +271,8 @@ impl<'a> Cloner<'a> {
         let Body::Parsed(mut node) = *self.tree.bodies.get(id) else {
             return Err(ParseError::Invariant("unparsed instantiation body"));
         };
-        node.compound = self.statement(node.compound)?;
         node.initializers = self.expanded_initializers(node.initializers)?;
+        node.compound = self.statement(node.compound)?;
         if let Some(handlers) = node.handlers {
             node.handlers = Some(self.list(handlers, |tree| &mut tree.handlers, Self::handler)?);
         }
@@ -500,7 +514,8 @@ impl<'a> Cloner<'a> {
         }
         node.exception = self.optional(node.exception, Self::qualifier)?;
         node.trailing = self.optional(node.trailing, Self::ty)?;
-        node.attributes = self.attributes(node.attributes)?;
+        // The call operator reads only immutable function-policy attributes;
+        // ignored attribute operands are not an instantiation demand.
         node.body = match node.body {
             super::ast::LambdaBody::Parsed(body) => {
                 super::ast::LambdaBody::Parsed(self.statement(body)?)
@@ -701,9 +716,9 @@ impl<'a> Cloner<'a> {
         self.check_stack()?;
         let mut node = *self.tree.classes.get(id);
         node.name = self.optional(node.name, Self::name)?;
-        node.attributes = self.attributes(node.attributes)?;
         node.bases = self.expanded_bases(node.bases)?;
         node.members = self.list(node.members, |tree| &mut tree.decl_lists, Self::declaration)?;
+        node.attributes = self.attributes(node.attributes)?;
         self.tree.classes.add(node)
     }
     fn declaration(&mut self, id: DeclId) -> Result<DeclId, ParseError> {
@@ -714,7 +729,6 @@ impl<'a> Cloner<'a> {
             node.kind,
             DeclKind::Simple { .. } | DeclKind::Function { .. } | DeclKind::SpecialMember { .. }
         );
-        node.attributes = self.attributes(node.attributes)?;
         node.kind = match node.kind {
             DeclKind::Simple {
                 specifiers,
@@ -770,7 +784,11 @@ impl<'a> Cloner<'a> {
             } => DeclKind::Using {
                 directive,
                 typename_keyword,
-                target: self.name(target)?,
+                target: if directive {
+                    target
+                } else {
+                    self.name(target)?
+                },
             },
             DeclKind::Alias { name, ty } => DeclKind::Alias {
                 name,
@@ -784,24 +802,31 @@ impl<'a> Cloner<'a> {
                 enumerators,
                 has_body,
                 trailing_comma,
-            } => DeclKind::Enum {
-                scope,
-                name: self.optional(name, Self::name)?,
-                key,
-                underlying: self.optional(underlying, Self::ty)?,
-                enumerators: self.list(
-                    enumerators,
-                    |tree| &mut tree.enumerators,
-                    Self::enumerator,
-                )?,
-                has_body,
-                trailing_comma,
-            },
+            } => {
+                let name = self.optional(name, Self::name)?;
+                let underlying = self.optional(underlying, Self::ty)?;
+                node.attributes = self.attributes(node.attributes)?;
+                DeclKind::Enum {
+                    scope,
+                    name,
+                    key,
+                    underlying,
+                    enumerators: self.list(
+                        enumerators,
+                        |tree| &mut tree.enumerators,
+                        Self::enumerator,
+                    )?,
+                    has_body,
+                    trailing_comma,
+                }
+            }
             DeclKind::StaticAssert { condition, message } => DeclKind::StaticAssert {
                 condition: self.expression(condition)?,
                 message,
             },
-            other @ (DeclKind::Empty | DeclKind::Access(_)) => other,
+            other @ (DeclKind::Empty | DeclKind::Access(_) | DeclKind::NamespaceAlias { .. }) => {
+                other
+            }
             // Template heads are immutable syntax. Each copied declaration
             // binds its own parameters and copies defaults only on demand;
             // member bodies remain retained until their specialization uses them.
@@ -817,15 +842,50 @@ impl<'a> Cloner<'a> {
                     declaration: copy?,
                 }
             }
-            DeclKind::ExplicitInstantiation { .. }
-            | DeclKind::Namespace { .. }
-            | DeclKind::NamespaceAlias { .. }
-            | DeclKind::Linkage { .. } => {
-                return Err(ParseError::NotImplemented(
-                    "nested template declaration copying",
-                ));
-            }
+            DeclKind::ExplicitInstantiation {
+                is_extern,
+                declaration,
+            } => DeclKind::ExplicitInstantiation {
+                is_extern,
+                declaration: self.declaration(declaration)?,
+            },
+            DeclKind::Namespace {
+                name,
+                inline,
+                declarations,
+            } => DeclKind::Namespace {
+                name,
+                inline,
+                declarations: self.list(
+                    declarations,
+                    |tree| &mut tree.decl_lists,
+                    Self::declaration,
+                )?,
+            },
+            DeclKind::Linkage {
+                language,
+                braced,
+                declarations,
+            } => DeclKind::Linkage {
+                language,
+                braced,
+                declarations: self.list(
+                    declarations,
+                    |tree| &mut tree.decl_lists,
+                    Self::declaration,
+                )?,
+            },
         };
+        if matches!(
+            node.kind,
+            DeclKind::Simple { .. }
+                | DeclKind::Function { .. }
+                | DeclKind::SpecialMember { .. }
+                | DeclKind::Alias { .. }
+                | DeclKind::BitField { .. }
+        ) {
+            node.attributes = self.attributes(node.attributes)?;
+        }
         if scoped_packs {
             self.restore_parameter_packs(pack_mark);
         }

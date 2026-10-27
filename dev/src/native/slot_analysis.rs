@@ -19,6 +19,7 @@ struct Uses {
     stores: u32,
     escape: u8,
     stored: Option<Value>,
+    ordinary_access: bool,
 }
 pub(super) fn analyze(body: &Body, flow: &super::control_flow::Flow) -> Result<Vec<Slot>, Error> {
     let mut uses: Vec<Uses> = (0..body.slots().len()).map(|_| Uses::default()).collect();
@@ -56,6 +57,7 @@ pub(super) fn analyze(body: &Body, flow: &super::control_flow::Flow) -> Result<V
             ref kind => body.visit_values(kind, |value| {
                 if let Value::Slot(slot) = value {
                     uses[slot.index()].escape = 1;
+                    uses[slot.index()].ordinary_access = true;
                 }
             }),
         }
@@ -72,7 +74,9 @@ pub(super) fn analyze(body: &Body, flow: &super::control_flow::Flow) -> Result<V
                 .is_some_and(|from| alias_compatible(slot.ty, from)),
             _ => true,
         });
-        out.push(if u.loads == 0 && u.stores == 0 && u.escape == 0 {
+        // A slot appearing only as a direct store's value retains SS_UNUSED
+        // in C++: that special store case marks escape but not slot state.
+        out.push(if u.loads == 0 && u.stores == 0 && !u.ordinary_access {
             Slot::Unused
         } else if u.loads == 0 && u.escape == 0 {
             Slot::Dead

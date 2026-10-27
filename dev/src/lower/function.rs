@@ -778,14 +778,16 @@ impl Function<'_, '_, '_, '_> {
         }
         let declarators = match self.tree.declarations.get(id).kind {
             DeclKind::Simple { declarators, .. } => declarators,
-            DeclKind::Empty
-            | DeclKind::Alias { .. }
-            | DeclKind::NamespaceAlias { .. }
-            | DeclKind::Using { .. }
-            | DeclKind::Enum { .. }
-            | DeclKind::StaticAssert { .. }
-            | DeclKind::Class(_) => return Ok(()),
-            _ => return Err(Error::Missing("block declaration lowering")),
+            DeclKind::Function { .. } => {
+                return Err(crate::sema::Error::at(
+                    self.tree.declarations.get(id).location,
+                    "a local function definition",
+                )
+                .into());
+            }
+            // C++ declaration_statement emits storage only for Simple. Other
+            // declarations have already been checked and publish names only.
+            _ => return Ok(()),
         };
         for declarator in self.tree.init_declarators.get(declarators).to_vec() {
             self.local_variable(

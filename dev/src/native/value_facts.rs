@@ -156,6 +156,7 @@ impl Facts {
             intervals: vec![Interval::default(); body.temps().len()],
         };
         let fits = super::integer_facts::analyze(body, &facts);
+        let low_only = super::integer_facts::low_only(body, slots, &facts);
         for (pos, &id) in ids.iter().enumerate() {
             let inst = body.instruction(id);
             if !facts.active[pos] {
@@ -242,7 +243,11 @@ impl Facts {
                         };
                         let same =
                             fits[temp.index()] <= kept.min(super::integer_facts::capacity(to));
-                        if ints && (boolean || extension || same) {
+                        let low = op == Convert::Truncate
+                            && inst
+                                .result
+                                .is_some_and(|result| low_only.get(result.index()) == Some(&true));
+                        if ints && (boolean || extension || same || low) {
                             Some(source)
                         } else {
                             None
@@ -838,6 +843,53 @@ fn alias_bits(bits: u128, ty: Type) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn truncation_alias_requires_every_reader_to_ignore_upper_bits() -> Result<(), Error> {
+        let cases = [
+            ("%r = binary add i32 %n, 7\nreturn i32 %r", true),
+            ("%r = binary xor i32 %n, 7\nreturn i32 %r", false),
+            ("%r = cmp eq i32 %n, 7\nreturn i64 %r", true),
+            ("%r = cmp eq i16 %n, 7\nreturn i64 %r", false),
+            ("store i16 %n, @sink\nreturn i64 0", true),
+            ("store volatile i16 %n, @sink\nreturn i64 0", false),
+            ("%r = convert sext i64 i32 %n\nreturn i64 %r", false),
+            ("return i32 %n", false),
+            (
+                "store i32 %n, $local\n%r = load i32 $local\nreturn i32 %r",
+                false,
+            ),
+            (
+                "%r = binary add i32 %n, 7\n%full = convert sext i64 i32 %n\nreturn i64 %full",
+                false,
+            ),
+        ];
+        for (readers, aliases) in cases {
+            let result = if readers.ends_with("return i32 %r") || readers == "return i32 %n" {
+                "i32"
+            } else {
+                "i64"
+            };
+            let program = crate::lowir::test_program(format!(
+                "global @sink : i64 = 0\nfunction @f(%x : i64) -> {result} {{\nslot $local : i32\nblock ^entry:\n%n = convert trunc i32 i64 %x\n{readers}\n}}"
+            ).as_bytes())?;
+            let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
+            let temp = body
+                .temps()
+                .iter()
+                .position(|t| program.names.get(t.name) == "n")
+                .and_then(|index| body.temp_id(index))
+                .ok_or(Error::Limit)?;
+            for level in [0, 1, 2, 3] {
+                let flow = super::super::control_flow::Flow::analyze(body)?;
+                let slots = super::super::slot_analysis::analyze(body, &flow)?;
+                let facts = Facts::analyze(body, &slots, flow, level)?;
+                let remains = facts.resolve(body, Value::Temp(temp)) == Alias::Temporary(temp);
+                assert_eq!(remains, level == 0 || !aliases, "{readers}, O{level}");
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn boolean_phi_facts_are_bounded_and_require_every_input() -> Result<(), Error> {

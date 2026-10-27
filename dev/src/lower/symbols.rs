@@ -2287,7 +2287,7 @@ impl<'a, 'source> Symbols<'a, 'source> {
         if self.state.rooted_destructors.contains(&entity) {
             metadata.flags |= 4;
         }
-        if self.graph.lower_is_closure_invoker(entity) {
+        if self.graph.lower_is_closure_invoker(entity) || self.graph.lower_function_used(entity) {
             metadata.flags |= 4;
         }
         if self

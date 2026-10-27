@@ -109,3 +109,77 @@ pub(super) fn analyze(body: &Body, facts: &Facts) -> Vec<u32> {
     }
     fits
 }
+
+fn narrows(kind: &I) -> bool {
+    matches!(kind, I::Convert(Convert::Truncate, to, from, _)
+        if to.bits() != 0 && !matches!(to, Type::I1 | Type::I128)
+        && from.bits() != 0 && *from != Type::I128)
+}
+
+// analysis.cpp::find_aliases: a truncation can retain its source's upper
+// bits only when every raw reader ignores them. Promotion makes a slot's
+// stored value stand for its loads, so its later readers are not bounded by
+// the store's width and must keep the normalized value.
+pub(super) fn low_only(
+    body: &Body,
+    slots: &[super::slot_analysis::Slot],
+    facts: &Facts,
+) -> Vec<bool> {
+    if facts.level == 0 {
+        return Vec::new();
+    }
+    let mut low = vec![false; body.temps().len()];
+    for (pos, &id) in facts.flow.instructions.iter().enumerate() {
+        let inst = body.instruction(id);
+        if facts.active[pos]
+            && narrows(&inst.kind)
+            && matches!(inst.kind, I::Convert(_, _, _, Value::Temp(_)))
+            && let Some(result) = inst.result
+        {
+            low[result.index()] = true;
+        }
+    }
+    for slot in slots {
+        if let super::slot_analysis::Slot::Promoted(Value::Temp(temp)) = slot {
+            low[temp.index()] = false;
+        }
+    }
+    for (pos, &id) in facts.flow.instructions.iter().enumerate() {
+        if !facts.active[pos] {
+            continue;
+        }
+        let kind = &body.instruction(id).kind;
+        if matches!(kind, I::Store(_, _, _, Value::Slot(slot))
+            if matches!(slots[slot.index()], super::slot_analysis::Slot::Dead
+                | super::slot_analysis::Slot::Promoted(_)))
+        {
+            continue;
+        }
+        let mut position = 0;
+        body.visit_values(kind, |value| {
+            let operand = position;
+            position += 1;
+            let Value::Temp(temp) = value else { return };
+            if !low[temp.index()] {
+                return;
+            }
+            let Some(ty) = body.temp(temp).ty else {
+                low[temp.index()] = false;
+                return;
+            };
+            let allowed = match kind {
+                I::Binary(Binary::Add | Binary::Sub | Binary::Mul, _, to, ..) => {
+                    operand < 2 && *to == ty
+                }
+                I::Store(flags, to, ..) => {
+                    operand == 0 && to.bits() != 0 && to.bits() <= ty.bits() && !flags.volatile()
+                }
+                I::Compare(_, to, ..) => operand < 2 && *to == ty,
+                I::Convert(_, to, ..) => operand == 0 && narrows(kind) && to.bits() <= ty.bits(),
+                _ => false,
+            };
+            low[temp.index()] = allowed;
+        });
+    }
+    low
+}

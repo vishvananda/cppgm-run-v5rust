@@ -24,10 +24,13 @@ impl Analyzer<'_> {
         pattern: TypeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let packs = self.type_pack_pattern(pattern, true)?;
-        if (self.template_depth == 0 && packs.bound.is_empty())
-            || (packs.parameters.is_empty() && packs.bound.is_empty() && !packs.expression)
-        {
+        let valid = if self.template_depth == 0 {
+            false
+        } else {
+            let packs = self.type_pack_pattern(pattern, true)?;
+            !packs.parameters.is_empty() || !packs.bound.is_empty() || packs.expression
+        };
+        if !valid {
             return Err(Error::at(
                 location,
                 "a pack expansion that names no parameter pack",

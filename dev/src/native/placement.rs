@@ -328,6 +328,13 @@ impl Placement {
         mir: &mut Function,
     ) -> Result<(), Error> {
         use super::slot_analysis::Slot;
+        for (index, state) in states.iter().enumerate() {
+            if matches!(state, Slot::Unused) {
+                // The frozen unused-slot view has displacement zero without
+                // allocating storage or publishing a frame binding.
+                self.slots[index] = Some(0);
+            }
+        }
         let owners = super::object_storage::shared_slots(body, facts, states);
         let sharing = |index: usize| {
             owners

@@ -693,9 +693,22 @@ impl Analyzer<'_> {
         function.definition_emission = super::function_demands::DefinitionEmission::Demanded;
         function.defined = true;
         function.function_parameters = Some(parameters);
-        let attributes = self.layout_attributes(lambda.attributes, scope, false)?;
-        self.graph.note_no_inline(call, attributes.no_inline)?;
-        self.graph.note_effects(call, attributes.effects)?;
+        for index in 0..self.tree.attributes.get(lambda.attributes).len() {
+            let kind = self.tree.attributes.get(lambda.attributes)[index].kind;
+            match kind {
+                ast::AttributeKind::NoInline => self.graph.note_no_inline(call, true)?,
+                ast::AttributeKind::Used => self.graph.note_function_used(call),
+                ast::AttributeKind::Const => {
+                    self.graph
+                        .note_effects(call, super::graph::FunctionEffect::ReadNone)?;
+                }
+                ast::AttributeKind::Pure => {
+                    self.graph
+                        .note_effects(call, super::graph::FunctionEffect::ReadOnly)?;
+                }
+                _ => (),
+            }
+        }
         if lambda.template_parameters.is_some() {
             let head = self
                 .template_head
