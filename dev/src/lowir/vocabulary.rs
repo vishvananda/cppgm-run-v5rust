@@ -196,8 +196,60 @@ pub(crate) enum ObjectClasses {
     X87,
     ComplexX87,
     Direct(EightbyteClass, Option<EightbyteClass>),
+    Raw(std::num::NonZeroU8),
 }
 impl ObjectClasses {
+    /// Host object text also accepts every nonzero byte encoding. Keep
+    /// noncanonical flags intact; canonical spellings retain their usual view.
+    pub(crate) fn from_number(value: u64, bytes: u64) -> Option<Self> {
+        let bits = std::num::NonZeroU8::new(u8::try_from(value).ok()?)?;
+        Some(match bits.get() {
+            0x90 => Self::Memory,
+            0xa0 => Self::X87,
+            0xc0 => Self::ComplexX87,
+            value if value & !0x8f == 0 && value & 0x80 != 0 => Self::Direct(
+                Self::decode_eightbyte(value),
+                (bytes == 0 || bytes > 8).then(|| Self::decode_eightbyte(value >> 2)),
+            ),
+            _ => Self::Raw(bits),
+        })
+    }
+
+    fn decode_eightbyte(bits: u8) -> EightbyteClass {
+        match bits & 3 {
+            0 => EightbyteClass::None,
+            1 => EightbyteClass::Integer,
+            2 => EightbyteClass::Sse,
+            _ => EightbyteClass::SseUp,
+        }
+    }
+
+    pub(crate) fn eightbyte(self, index: u32) -> EightbyteClass {
+        match (self, index) {
+            (Self::Direct(first, _), 0) => first,
+            (Self::Direct(_, second), 1) => second.unwrap_or(EightbyteClass::None),
+            (Self::Raw(bits), 0..2) => Self::decode_eightbyte(bits.get() >> (2 * index)),
+            _ => EightbyteClass::None,
+        }
+    }
+
+    pub(crate) fn is_memory(self) -> bool {
+        matches!(self, Self::Memory) || matches!(self, Self::Raw(bits) if bits.get() & 0x10 != 0)
+    }
+
+    pub(crate) fn has_x87(self) -> bool {
+        matches!(self, Self::X87) || matches!(self, Self::Raw(bits) if bits.get() & 0x20 != 0)
+    }
+
+    pub(crate) fn has_complex_x87(self) -> bool {
+        matches!(self, Self::ComplexX87)
+            || matches!(self, Self::Raw(bits) if bits.get() & 0x40 != 0)
+    }
+
+    pub(crate) fn argument_in_memory(self) -> bool {
+        self.is_memory() || self.has_x87() || self.has_complex_x87()
+    }
+
     pub(crate) fn parse(text: &str, bytes: u64) -> Option<Self> {
         if text == "memory" {
             return Some(Self::Memory);
@@ -219,6 +271,7 @@ impl std::fmt::Display for ObjectClasses {
             Self::Memory => f.write_str("memory"),
             Self::X87 => f.write_str("x87"),
             Self::ComplexX87 => f.write_str("complex_x87"),
+            Self::Raw(bits) => write!(f, "{}", bits.get()),
             Self::Direct(first, second) => {
                 f.write_str(first.spelling())?;
                 if let Some(second) = second {

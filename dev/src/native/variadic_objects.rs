@@ -25,10 +25,8 @@ impl ObjectArgument {
         };
         let classes = if ty == Type::F80
             || bytes > 16
-            || matches!(
-                classes,
-                Some(ObjectClasses::Memory | ObjectClasses::X87 | ObjectClasses::ComplexX87)
-            ) {
+            || classes.is_some_and(ObjectClasses::argument_in_memory)
+        {
             ObjectClasses::Memory
         } else {
             classes.unwrap_or(ObjectClasses::Direct(
@@ -43,11 +41,7 @@ impl ObjectArgument {
         })
     }
     fn class(self, index: u32) -> Class {
-        match (self.classes, index) {
-            (ObjectClasses::Direct(first, _), 0) => first,
-            (ObjectClasses::Direct(_, second), _) => second.unwrap_or(Class::None),
-            _ => Class::None,
-        }
+        self.classes.eightbyte(index)
     }
     pub(super) fn emit(
         self,

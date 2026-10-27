@@ -821,6 +821,31 @@ mod tests {
     use crate::lowir::model::{Boundary, Parameter};
 
     #[test]
+    fn host_numeric_classes_round_trip_canonical_and_unstated_flags() {
+        let source = b"declare function @classes(%single : obj<8x8> [classes=130], \
+            %pair : obj<16x8> [classes=133], %unstated : obj<8x8> [classes=5], \
+            %mixed_flags : obj<16x8> [classes=240]) -> obj<16x8> [result_classes=192]\n";
+        let program = crate::lowir::test_program_dialect(source, true).unwrap();
+        let mut output = Vec::new();
+        write(&program, &mut output).unwrap();
+        let text = std::str::from_utf8(&output).unwrap();
+        for field in [
+            "%single : obj<8x8> [classes=sse]",
+            "%pair : obj<16x8> [classes=integer_integer]",
+            "%unstated : obj<8x8> [classes=5]",
+            "%mixed_flags : obj<16x8> [classes=240]",
+            "result_classes=complex_x87",
+        ] {
+            assert!(text.contains(field), "{text}");
+        }
+        let reread = crate::lowir::test_program_dialect(&output, true).unwrap();
+        let mut repeated = Vec::new();
+        write(&reread, &mut repeated).unwrap();
+        assert_eq!(output, repeated);
+        assert!(crate::lowir::test_program(source).is_err());
+    }
+
+    #[test]
     fn unnamed_boundary_parameters_skip_explicit_name_collisions() {
         let mut program = Program::default();
         let parameters = [

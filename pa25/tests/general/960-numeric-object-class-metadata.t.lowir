@@ -1,0 +1,14 @@
+function @consume(%value : obj<8x8> [classes=130]) -> i64 {
+  block ^entry:
+    %number = load f64 %value
+    %result = convert fptosi i64 f64 %number
+    return i64 %result
+}
+function @main() -> i64 [role=entry] {
+  slot $object : obj<8x8>
+  block ^entry:
+    store f64 42.0, $object
+    %result = call i64 @consume($object)
+    %failed = cmp ne i64 %result, 42
+    return i64 %failed
+}

@@ -346,6 +346,8 @@ impl<'a> Parser<'a> {
                         )
                 })
             }
+        } else if self.object_facts && self.at(Kind::Number) {
+            ObjectClasses::from_number(self.positive(self.lexer.token.word())?, bytes)
         } else {
             None
         };

@@ -43,11 +43,7 @@ pub(super) fn move_type(ty: Type) -> Type {
     }
 }
 fn eightbyte_class(classes: Option<ObjectClasses>, index: u32) -> EightbyteClass {
-    match (classes, index) {
-        (Some(ObjectClasses::Direct(first, _)), 0) => first,
-        (Some(ObjectClasses::Direct(_, second)), _) => second.unwrap_or(EightbyteClass::None),
-        _ => EightbyteClass::Integer,
-    }
+    classes.map_or(EightbyteClass::Integer, |classes| classes.eightbyte(index))
 }
 #[derive(Clone, Copy)]
 pub(super) struct Part {
@@ -116,21 +112,21 @@ impl Layout {
             value_bytes(signature.result)?;
         }
         let x87_pair_result = matches!(signature.result, Type::Object { .. })
-            && matches!(
-                signature.boundary.result_classes,
-                Some(ObjectClasses::ComplexX87)
-            );
+            && signature
+                .boundary
+                .result_classes
+                .is_some_and(ObjectClasses::has_complex_x87);
         let indirect_result = !x87_pair_result
-            && matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16 || matches!(
-                signature.boundary.result_classes,
-                Some(ObjectClasses::Memory)
-            ));
+            && matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16 || signature.boundary.result_classes.is_some_and(ObjectClasses::is_memory));
         let classified_result = matches!(signature.result, Type::Object { .. })
             && signature.boundary.result_classes.is_some();
         let x87_result = signature.result == Type::F80
             || !indirect_result
                 && classified_result
-                && matches!(signature.boundary.result_classes, Some(ObjectClasses::X87));
+                && signature
+                    .boundary
+                    .result_classes
+                    .is_some_and(ObjectClasses::has_x87);
         let mut result: [Option<Part>; 2] = [None; 2];
         let mut result_count: usize = 0;
         if !indirect_result
@@ -254,32 +250,21 @@ impl Layout {
         let bytes = value_bytes(ty)?;
         if matches!(ty, Type::Object { .. } | Type::I128) {
             let count = bytes.div_ceil(8);
-            let (gprs, xmms) = if let Some(ObjectClasses::Direct(a, b)) = classes {
-                let types = [Some(a), b];
-                (
-                    types
-                        .iter()
-                        .flatten()
-                        .filter(|&&k| k == EightbyteClass::Integer)
-                        .count(),
-                    u8::try_from(
-                        types
-                            .iter()
-                            .flatten()
-                            .filter(|&&k| k == EightbyteClass::Sse)
-                            .count(),
-                    )
-                    .map_err(|_| Error::Limit)?,
-                )
+            let (gprs, xmms) = if let Some(classes) = classes {
+                let mut gprs = 0;
+                let mut xmms = 0;
+                for index in 0..count.min(2) {
+                    let class = classes.eightbyte(index);
+                    gprs += usize::from(class == EightbyteClass::Integer);
+                    xmms += u8::from(class == EightbyteClass::Sse);
+                }
+                (gprs, xmms)
             } else {
                 (usize::try_from(count).map_err(|_| Error::Limit)?, 0)
             };
             if bytes > 16
                 || bytes == 0 && classes.is_none()
-                || matches!(
-                    classes,
-                    Some(ObjectClasses::Memory | ObjectClasses::X87 | ObjectClasses::ComplexX87)
-                )
+                || classes.is_some_and(ObjectClasses::argument_in_memory)
                 || self.gprs + gprs > 6
                 || self.xmms + xmms > 8
             {

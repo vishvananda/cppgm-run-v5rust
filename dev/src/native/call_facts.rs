@@ -78,7 +78,8 @@ impl CallPlan {
                     Value::Temp(t) => body.temp(t).ty.ok_or(Error::Limit)?,
                     Value::Slot(s) => body.slot(s).ty,
                     Value::Integer(_) => Type::I64,
-                    Value::Float(_, k) => k.ty(),
+                    Value::Float(_, crate::lowir::literals::FloatKind::F80) => Type::F80,
+                    Value::Float(..) => Type::F64,
                     Value::Symbol(_) => Type::Ptr,
                 }
             };
