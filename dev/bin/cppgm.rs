@@ -90,7 +90,7 @@ enum CliError {
     PassVerification(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
-    InvalidLowIr(Vec<u8>),
+    InternalDiagnostic(Vec<u8>),
     Output,
 }
 // Like the oracle ofstream, failed output does not stop parsing later inputs.
@@ -401,7 +401,7 @@ fn run() -> Result<(), CliError> {
         )
         .map_err(|error| match error {
             AstToolError::PassVerification(bytes) => CliError::PassVerification(bytes),
-            AstToolError::InvalidLowIr(bytes) => CliError::InvalidLowIr(bytes),
+            AstToolError::InternalDiagnostic(bytes) => CliError::InternalDiagnostic(bytes),
             AstToolError::Missing(group) => CliError::Missing(group),
             AstToolError::Internal(message) => CliError::Internal(message),
             AstToolError::Diagnostic(bytes) | AstToolError::NativeDiagnostic(bytes) => {
@@ -500,7 +500,7 @@ fn main() -> ExitCode {
             let _ = writeln!(io::stderr().lock(), "internal compiler error: {message}");
             ExitCode::from(70)
         }
-        Err(CliError::InvalidLowIr(bytes)) => {
+        Err(CliError::InternalDiagnostic(bytes)) => {
             let mut out = io::stderr().lock();
             let _ = out.write_all(b"internal compiler error: ");
             let _ = out.write_all(&bytes);
@@ -526,7 +526,7 @@ fn tool_error(error: AstToolError) -> CliError {
         AstToolError::Initialization(PreprocessError::Read(error)) => {
             CliError::Message(error.to_string())
         }
-        AstToolError::InvalidLowIr(bytes) => CliError::InvalidLowIr(bytes),
+        AstToolError::InternalDiagnostic(bytes) => CliError::InternalDiagnostic(bytes),
         AstToolError::PassVerification(bytes) => CliError::PassVerification(bytes),
         AstToolError::Missing(group)
         | AstToolError::Initialization(PreprocessError::NotImplemented(group)) => {

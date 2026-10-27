@@ -46,7 +46,10 @@ impl ParameterInfo {
         self.position.shape.pack
     }
     pub(super) fn depth(self) -> u32 {
-        self.position.depth
+        // Canonical-position keys keep the full lexical depth. The published
+        // parameter record independently has the frozen uint16_t depth.
+        let [low, high, ..] = self.position.depth.to_le_bytes();
+        u32::from(u16::from_le_bytes([low, high]))
     }
     pub(super) fn abi_index(self) -> u32 {
         // Ordinary signature mangling uses T_, T0_, ... at every lexical
@@ -54,12 +57,13 @@ impl ParameterInfo {
         u32::from(self.position.index)
     }
     pub(super) fn index(self, depth: u32) -> Option<usize> {
-        (self.position.depth == depth).then_some(self.argument_index())
+        (self.depth() == depth).then_some(self.argument_index())
     }
     pub(super) fn argument_index(self) -> usize {
         usize::from(self.position.index)
     }
 }
+
 #[derive(Clone, Copy)]
 pub(super) struct DefaultArgument {
     pub syntax: ast::TemplateArgumentKind,
@@ -972,6 +976,50 @@ impl Analyzer<'_> {
         } else {
             self.graph.entity_mut(entity).template_head = Some(head);
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::*;
+
+    #[test]
+    fn wrapped_record_depth_does_not_merge_distinct_canonical_positions() -> Result<(), Error> {
+        let mut graph = super::super::graph::Graph::new();
+        let position = Position {
+            depth: 0,
+            index: 0,
+            shape: ParameterShape {
+                non_type: false,
+                pack: false,
+                inner: None,
+            },
+        };
+        let deeper = Position {
+            depth: 1 << 16,
+            ..position
+        };
+        let first = graph.positional_template_parameter(position, Keyword::Class)?;
+        let second = graph.positional_template_parameter(deeper, Keyword::Class)?;
+        assert_ne!(first, second);
+        for entity in [first, second] {
+            let info = graph
+                .entity(entity)
+                .template_parameter
+                .ok_or(Error::Invariant("missing test parameter"))?;
+            assert_eq!(info.depth(), 0);
+            assert_eq!(info.index(0), Some(0));
+            assert_eq!(info.index(1 << 16), None);
+        }
+        assert_eq!(
+            graph.positional_template_parameter(position, Keyword::Class)?,
+            first
+        );
+        assert_eq!(
+            graph.positional_template_parameter(deeper, Keyword::Class)?,
+            second
+        );
         Ok(())
     }
 }

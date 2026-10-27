@@ -84,7 +84,7 @@ impl Operand {
             Self::Frame(d) => Ok(Rm::frame(d)),
             Self::Memory(m) => Ok(m.rm()),
             _ => Err(Error::Construction(
-                "scalar operand is not register/memory".into(),
+                "operand is not a register or memory location".into(),
             )),
         }
     }

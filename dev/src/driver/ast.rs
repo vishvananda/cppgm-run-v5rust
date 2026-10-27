@@ -12,7 +12,7 @@ pub enum AstToolError {
     PassVerification(Vec<u8>),
     Missing(&'static str),
     Internal(&'static str),
-    InvalidLowIr(Vec<u8>),
+    InternalDiagnostic(Vec<u8>),
     Output(std::io::Error),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -316,7 +316,7 @@ fn validate_lowir(
             crate::lowir::Error::NotImplemented(group) => group.as_bytes().to_vec(),
             crate::lowir::Error::Output(error) => error.to_string().into_bytes(),
         };
-        AstToolError::InvalidLowIr(
+        AstToolError::InternalDiagnostic(
             [
                 if optimized {
                     b"optimized LowIR is invalid: ".as_slice()
@@ -600,9 +600,11 @@ fn emit_preprocessed(
                     crate::lowir::Error::ByteDiagnostic(bytes) => {
                         AstToolError::NativeDiagnostic(bytes)
                     }
-                    crate::lowir::Error::Construction(_)
-                    | crate::lowir::Error::PassVerification(_) => {
-                        AstToolError::Internal("typed LowIR construction failed")
+                    crate::lowir::Error::Construction(message) => {
+                        AstToolError::InternalDiagnostic(message.into_bytes())
+                    }
+                    crate::lowir::Error::PassVerification(bytes) => {
+                        AstToolError::PassVerification(bytes)
                     }
                 },
             })?;
@@ -648,14 +650,32 @@ fn lower_error(error: crate::lower::Error) -> AstToolError {
         | crate::lower::Error::Semantic(crate::sema::Error::Missing(group)) => {
             AstToolError::Missing(group)
         }
-        _ => AstToolError::Internal("object startup finalization failed"),
+        crate::lower::Error::Semantic(error) => match error {
+            crate::sema::Error::Diagnostic { message, .. }
+            | crate::sema::Error::NonConstant { message, .. }
+            | crate::sema::Error::UnconditionalDiagnostic { message, .. }
+            | crate::sema::Error::InstantiationDiagnostic { message, .. }
+            | crate::sema::Error::Limit(message) => {
+                AstToolError::Diagnostic(message.as_bytes().to_vec())
+            }
+            crate::sema::Error::Invariant(message) => AstToolError::Internal(message),
+            crate::sema::Error::DeferredBuiltin => {
+                AstToolError::Internal("unconsumed reserved builtin deferral")
+            }
+            crate::sema::Error::Missing(group) => AstToolError::Missing(group),
+        },
+        crate::lower::Error::Abi(error) => match error {
+            crate::abi::Error::Diagnostic(bytes) => AstToolError::Diagnostic(bytes),
+            crate::abi::Error::NotImplemented(group) => AstToolError::Missing(group),
+            crate::abi::Error::StorageLimit => AstToolError::Internal("ABI storage limit"),
+        },
     }
 }
 pub(crate) fn native_error(error: crate::lowir::Error) -> AstToolError {
     match error {
         crate::lowir::Error::NotImplemented(group) => AstToolError::Missing(group),
-        crate::lowir::Error::Construction(_) => {
-            AstToolError::Internal("native construction invariant")
+        crate::lowir::Error::Construction(message) => {
+            AstToolError::InternalDiagnostic(message.into_bytes())
         }
         crate::lowir::Error::PassVerification(bytes) => AstToolError::PassVerification(bytes),
         crate::lowir::Error::Diagnostic(message) => {
