@@ -336,7 +336,10 @@ impl Analyzer<'_> {
         }
         place.designated = self.bare_type(place.designated)?;
         let value = match place.root {
-            Root::Object(_) => self.constexpr_frames.read(place, location)?,
+            Root::Object(_) => {
+                self.constexpr_frames
+                    .read(&self.graph.constant_member_spans, place, location)?
+            }
             Root::Variable(entity) => {
                 self.instantiate_variable_value(entity)?;
                 let declared = self.graph.lower_entity_type(entity)?;

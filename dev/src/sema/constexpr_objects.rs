@@ -15,7 +15,6 @@ use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast
 
 #[derive(Default)]
 pub(super) struct ProjectionQuery {
-    pub(super) member_spans: super::constant_pointer_operations::MemberSpans,
     work: Vec<(TypeId, i64)>,
     visited: std::collections::HashSet<(TypeId, i64)>,
 }
@@ -140,7 +139,9 @@ impl Analyzer<'_> {
         let place = self
             .constexpr_frames
             .allocate((ty, cell_type), value, location)?;
-        let root = self.constexpr_frames.locate(place, location)?;
+        let root =
+            self.constexpr_frames
+                .locate(&self.graph.constant_member_spans, place, location)?;
         self.populate_constant_skeleton(place, root, location, origin)?;
         Ok(place)
     }
@@ -260,6 +261,9 @@ impl Analyzer<'_> {
                 self.class_layout(class, location)?;
                 if self.graph.entity(class).key == Keyword::Union {
                     self.constexpr_frames.mark_union(cell);
+                } else {
+                    self.prepare_constant_member_spans(class, location)?;
+                    self.constexpr_frames.mark_class(cell, class);
                 }
                 for index in 0..self.graph.entity(class).bases.len() {
                     let base = self.graph.entity(class).bases[index];
@@ -436,7 +440,8 @@ impl Analyzer<'_> {
         }
 
         place.designated = self.bare_type(place.designated)?;
-        self.constexpr_frames.write(place, value, location)
+        self.constexpr_frames
+            .write(&self.graph.constant_member_spans, place, value, location)
     }
     pub(super) fn constant_zero_object(
         &mut self,
@@ -444,7 +449,9 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         place.designated = self.bare_type(place.designated)?;
-        let cells = self.constexpr_frames.zero_cells(place, location)?;
+        let cells =
+            self.constexpr_frames
+                .zero_cells(&self.graph.constant_member_spans, place, location)?;
         for index in cells {
             let child = self.constexpr_frames.cell_place(place, index);
             if matches!(

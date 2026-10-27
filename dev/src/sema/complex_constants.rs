@@ -41,6 +41,7 @@ impl Analyzer<'_> {
         if matches!(place.root, super::constant_addresses::Root::Object(_)) {
             let designated = self.bare_type(place.designated)?;
             self.constexpr_frames.locate(
+                &self.graph.constant_member_spans,
                 Address {
                     designated,
                     ..place

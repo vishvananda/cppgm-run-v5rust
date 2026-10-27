@@ -353,6 +353,7 @@ pub(crate) struct Graph {
     pub(super) special_labels: HashMap<BindingId, crate::syntax::ast::Name>,
     pub(super) constant_facts: Vec<Option<super::constants::Constant>>,
     pub(super) floating_constants: super::constant_floats::Floats,
+    pub(super) constant_member_spans: super::constant_pointer_operations::MemberSpans,
     pub(super) aggregate_constants: Box<super::constexpr_values::Values>,
     pub(super) constant_addresses: Box<super::constant_addresses::Addresses>,
     pub(super) initializer_constructors: super::constructor_initialization::InitializerConstructors,
@@ -700,6 +701,7 @@ impl Graph {
             special_labels: HashMap::new(),
             constant_facts: Vec::new(),
             floating_constants: super::constant_floats::Floats::default(),
+            constant_member_spans: super::constant_pointer_operations::MemberSpans::default(),
             aggregate_constants: Box::default(),
             constant_addresses: Box::default(),
             initializer_constructors:

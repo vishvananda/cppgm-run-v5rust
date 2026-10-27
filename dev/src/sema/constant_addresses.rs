@@ -1066,7 +1066,11 @@ impl Analyzer<'_> {
         }
         if matches!(place.root, Root::Object(_)) {
             place.designated = self.bare_type(place.designated)?;
-            return match self.constexpr_frames.read(place, location)? {
+            return match self.constexpr_frames.read(
+                &self.graph.constant_member_spans,
+                place,
+                location,
+            )? {
                 TemporaryValue::Pointer(value) => {
                     self.constexpr_frames.valid_pointer(value, location)?;
                     Ok(value)
@@ -1170,7 +1174,11 @@ impl Analyzer<'_> {
         match place.root {
             Root::Object(_) => {
                 place.designated = self.bare_type(place.designated)?;
-                match self.constexpr_frames.read(place, location)? {
+                match self.constexpr_frames.read(
+                    &self.graph.constant_member_spans,
+                    place,
+                    location,
+                )? {
                     TemporaryValue::Integer(value) => Ok(value),
                     TemporaryValue::Pointer(_)
                     | TemporaryValue::Floating(_)

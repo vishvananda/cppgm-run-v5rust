@@ -413,9 +413,11 @@ impl Analyzer<'_> {
             ..place
         };
         if matches!(place.root, Root::Object(_)) {
-            self.constexpr_frames.locate(place, location)?;
+            self.constexpr_frames
+                .locate(&self.graph.constant_member_spans, place, location)?;
             if self.constant_lane_vector(place.designated).is_none() {
-                self.constexpr_frames.read(place, location)?;
+                self.constexpr_frames
+                    .read(&self.graph.constant_member_spans, place, location)?;
             }
             return Ok(place);
         }

@@ -178,6 +178,7 @@ impl Analyzer<'_> {
                 )
                 .map_err(|_| Error::Limit("vector lane offset"))?;
                 let value = self.constexpr_frames.read_value(
+                    &self.graph.constant_member_spans,
                     Address {
                         designated: lane,
                         offset: place.offset.wrapping_add(super::integral::signed(offset)),

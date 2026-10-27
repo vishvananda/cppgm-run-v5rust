@@ -330,7 +330,11 @@ impl Analyzer<'_> {
                     .constexpr_frames
                     .local(entity)
                     .ok_or(Error::Invariant("condition local missing"))?;
-                match self.constexpr_frames.read(place, location)? {
+                match self.constexpr_frames.read(
+                    &self.graph.constant_member_spans,
+                    place,
+                    location,
+                )? {
                     Value::MemberPointer(value) => Ok(value.member.is_some()),
                     Value::Integer(value) => Ok(value.truth()),
                     Value::Floating(value) => Ok(value.value.truth()),

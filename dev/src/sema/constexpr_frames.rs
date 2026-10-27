@@ -3,6 +3,7 @@
 use super::{
     Error,
     constant_addresses::{Address, Root, Selection, TemporaryValue, Variant, nonconstant},
+    constant_pointer_operations::MemberSpans,
     graph::{EntityId, ScopeId},
     types::TypeId,
 };
@@ -29,6 +30,7 @@ struct Cell {
     parent: Option<CellId>,
     member: Option<EntityId>,
     union: bool,
+    class_spans: Option<EntityId>,
     active: Option<CellId>,
     next: Option<CellId>,
 }
@@ -48,11 +50,13 @@ pub(super) struct PlacementValue {
 impl Frozen {
     fn locate(
         &self,
+        spans: &MemberSpans,
         place: Address,
         named: Option<Variant>,
         location: SourceOffset,
     ) -> Result<usize, Error> {
         resolve(
+            spans,
             &self.cells,
             place,
             named,
@@ -71,11 +75,12 @@ impl Frozen {
     }
     pub(super) fn read(
         &self,
+        spans: &MemberSpans,
         place: Address,
         named: Option<Variant>,
         location: SourceOffset,
     ) -> Result<TemporaryValue, Error> {
-        self.cells[self.locate(place, named, location)?]
+        self.cells[self.locate(spans, place, named, location)?]
             .value
             .ok_or_else(|| nonconstant(location, "a read of an object that is not initialized"))
     }
@@ -190,11 +195,12 @@ struct Unions {
 impl Frames {
     pub(super) fn freeze(
         &self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
         mut publish: impl FnMut(TemporaryValue) -> Result<TemporaryValue, Error>,
     ) -> Result<Frozen, Error> {
-        let range = self.cells(place, location)?;
+        let range = self.cells(spans, place, location)?;
         let mut cells = self.cells[range.clone()].to_vec();
         let mut index = HashMap::with_capacity(cells.len());
         let first = u32::try_from(range.start)
@@ -244,14 +250,15 @@ impl Frames {
     }
     pub(super) fn copy_published(
         &mut self,
+        spans: &MemberSpans,
         to: Address,
         from: Address,
         value: &Frozen,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let first = value.locate(from, self.designation(from.variant()), location)?;
+        let first = value.locate(spans, from, self.designation(from.variant()), location)?;
         let source = first..value.cells[first].end;
-        let target = self.copy_destination(to, location)?;
+        let target = self.copy_destination(spans, to, location)?;
         if target.len() != source.len() {
             return Err(Error::Invariant(
                 "incompatible published constant object copy",
@@ -456,6 +463,7 @@ impl Frames {
             parent: None,
             member: None,
             union: false,
+            class_spans: None,
             active: None,
             next,
         });
@@ -482,14 +490,23 @@ impl Frames {
         }
         Ok(child)
     }
+    pub(super) fn mark_class(&mut self, cell: CellId, class: EntityId) {
+        self.cells[cell.0 as usize].class_spans = Some(class);
+    }
     pub(super) fn mark_union(&mut self, cell: CellId) {
         self.cells[cell.0 as usize].union = true;
     }
-    pub(super) fn locate(&self, place: Address, location: SourceOffset) -> Result<CellId, Error> {
-        self.resolve(place, false, location)
+    pub(super) fn locate(
+        &self,
+        spans: &MemberSpans,
+        place: Address,
+        location: SourceOffset,
+    ) -> Result<CellId, Error> {
+        self.resolve(spans, place, false, location)
     }
     fn resolve(
         &self,
+        spans: &MemberSpans,
         place: Address,
         write: bool,
         location: SourceOffset,
@@ -499,6 +516,7 @@ impl Frames {
         };
         self.object(object, location)?;
         resolve(
+            spans,
             &self.cells,
             place,
             self.designation(place.variant()),
@@ -546,10 +564,11 @@ impl Frames {
     }
     pub(super) fn activate(
         &mut self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
     ) -> Result<CellId, Error> {
-        let id = self.resolve(place, true, location)?;
+        let id = self.resolve(spans, place, true, location)?;
         let mut path = std::mem::take(&mut self.unions.activation_path);
         let mut child = id;
         while let Some(parent) = self.cells[child.0 as usize].parent {
@@ -574,10 +593,11 @@ impl Frames {
     }
     pub(super) fn zero_cells(
         &mut self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
     ) -> Result<Vec<usize>, Error> {
-        let root = self.activate(place, location)?;
+        let root = self.activate(spans, place, location)?;
         let mut work = vec![root.0 as usize];
         let mut leaves = Vec::new();
         while let Some(index) = work.pop() {
@@ -603,10 +623,11 @@ impl Frames {
     }
     pub(super) fn active_cells(
         &self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
     ) -> Result<Vec<usize>, Error> {
-        let range = self.cells(place, location)?;
+        let range = self.cells(spans, place, location)?;
         range
             .filter_map(|i| match u32::try_from(i) {
                 Ok(id) => accessible(&self.cells, CellId(id), 0).then_some(Ok(i)),
@@ -616,10 +637,11 @@ impl Frames {
     }
     pub(super) fn cells(
         &self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
     ) -> Result<std::ops::Range<usize>, Error> {
-        let id = self.locate(place, location)?.0 as usize;
+        let id = self.locate(spans, place, location)?.0 as usize;
         Ok(id..self.cells[id].end)
     }
     pub(super) fn cell_place(&self, root: Address, index: usize) -> Address {
@@ -633,38 +655,42 @@ impl Frames {
     }
     pub(super) fn read(
         &self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
     ) -> Result<TemporaryValue, Error> {
-        self.read_value(place, location)?
+        self.read_value(spans, place, location)?
             .ok_or_else(|| nonconstant(location, "a read of an object that is not initialized"))
     }
     pub(super) fn read_value(
         &self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
     ) -> Result<Option<TemporaryValue>, Error> {
-        let id = self.locate(place, location)?;
+        let id = self.locate(spans, place, location)?;
         Ok(self.cells[id.0 as usize].value)
     }
     pub(super) fn write(
         &mut self,
+        spans: &MemberSpans,
         place: Address,
         value: TemporaryValue,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let id = self.activate(place, location)?;
+        let id = self.activate(spans, place, location)?;
         self.cells[id.0 as usize].value = (!value.indeterminate()).then_some(value);
         Ok(())
     }
     pub(super) fn copy(
         &mut self,
+        spans: &MemberSpans,
         to: Address,
         from: Address,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let source = self.cells(from, location)?;
-        let target = self.copy_destination(to, location)?;
+        let source = self.cells(spans, from, location)?;
+        let target = self.copy_destination(spans, to, location)?;
         if target.len() != source.len() {
             return Err(Error::Invariant("incompatible constant object copy"));
         }
@@ -699,6 +725,7 @@ impl Frames {
     }
     fn copy_destination(
         &mut self,
+        spans: &MemberSpans,
         place: Address,
         location: SourceOffset,
     ) -> Result<std::ops::Range<usize>, Error> {
@@ -708,7 +735,7 @@ impl Frames {
                 "a modification of an object whose lifetime began outside the evaluation",
             ));
         }
-        let id = self.activate(place, location)?;
+        let id = self.activate(spans, place, location)?;
         Ok(id.0 as usize..self.cells[id.0 as usize].end)
     }
 }
@@ -768,12 +795,13 @@ fn compare_preference(cells: &[Cell], a: CellId, b: CellId, first: usize) -> std
         })
 }
 fn find(
+    spans: &MemberSpans,
     cells: &[Cell],
     mut head: Option<CellId>,
     range: std::ops::Range<usize>,
     write: bool,
     field: bool,
-) -> Option<CellId> {
+) -> Result<Option<CellId>, Error> {
     let mut best = None;
     let owner = |id: CellId| {
         if field {
@@ -786,6 +814,7 @@ fn find(
         let index = id.0 as usize;
         head = cells[index].next;
         if range.contains(&index)
+            && selected_member_path(spans, cells, owner(id), range.start)?
             && (write || accessible(cells, owner(id), range.start))
             && best.is_none_or(|prior: CellId| {
                 compare_preference(cells, owner(id), owner(prior), range.start)
@@ -796,10 +825,36 @@ fn find(
             best = Some(id);
         }
     }
-    best
+    Ok(best)
+}
+
+// An index hit is only a possible subobject. Non-union class descent selects
+// the member owning the byte first, before checking its contained type.
+fn selected_member_path(
+    spans: &MemberSpans,
+    cells: &[Cell],
+    mut child: CellId,
+    first: usize,
+) -> Result<bool, Error> {
+    let offset = cells[child.0 as usize].offset;
+    while let Some(parent) = cells[child.0 as usize].parent {
+        if (parent.0 as usize) < first {
+            break;
+        }
+        let node = cells[child.0 as usize];
+        let owner = cells[parent.0 as usize];
+        if let (Some(class), Some(member), None) = (owner.class_spans, node.member, node.field)
+            && !spans.permits(class, member, offset.wrapping_sub(owner.offset))?
+        {
+            return Ok(false);
+        }
+        child = parent;
+    }
+    Ok(true)
 }
 
 fn resolve(
+    spans: &MemberSpans,
     cells: &[Cell],
     place: Address,
     named: Option<Variant>,
@@ -833,7 +888,8 @@ fn resolve(
             selection: Selection::None,
             ..place
         };
-        let owner = find(cells, lookup(owner), range.clone(), write, false).ok_or_else(outside)?;
+        let owner =
+            find(spans, cells, lookup(owner), range.clone(), write, false)?.ok_or_else(outside)?;
         let first = owner.0 as usize;
         let child_id = member_slot(owner, named.member)
             .ok_or(Error::Invariant("union designation without member storage"))?;
@@ -849,10 +905,10 @@ fn resolve(
     if place.bit_field().is_some() {
         // Locate the containing class on its active path first. Bit-field
         // identity selects its cell without activating a direct union field.
-        return find(cells, lookup(place), range, write, true)
+        return find(spans, cells, lookup(place), range, write, true)?
             .ok_or_else(|| nonconstant(location, "an access outside the designated object"));
     }
-    find(cells, lookup(place), range, write, false).ok_or_else(|| {
+    find(spans, cells, lookup(place), range, write, false)?.ok_or_else(|| {
         if variant {
             nonconstant(location, "an access outside the designated object")
         } else {
@@ -945,7 +1001,11 @@ mod tests {
                     assert_eq!(analyzer.constexpr_frames.objects.len(), objects);
                     assert_eq!(analyzer.constexpr_frames.cells.len(), cells);
                     assert!(matches!(
-                        analyzer.constexpr_frames.read(outer, integer.location)?,
+                        analyzer.constexpr_frames.read(
+                            &analyzer.graph.constant_member_spans,
+                            outer,
+                            integer.location
+                        )?,
                         TemporaryValue::Integer(Constant { bits: 123, .. })
                     ));
                 }
@@ -983,7 +1043,9 @@ mod tests {
         let source = frames
             .allocate((union_ty, union_ty), None, location)
             .unwrap();
-        let root = frames.locate(source, location).unwrap();
+        let root = frames
+            .locate(&graph.constant_member_spans, source, location)
+            .unwrap();
         frames.mark_union(root);
         for member in [a, b] {
             let id = frames.designate(member, union_ty, 0).unwrap();
@@ -1014,6 +1076,7 @@ mod tests {
         };
         frames
             .write(
+                &graph.constant_member_spans,
                 a_place,
                 TemporaryValue::Integer(Constant {
                     state: crate::sema::constant_addresses::ScalarState::Value,
@@ -1025,7 +1088,7 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(
-            frames.read(b_place, location),
+            frames.read(&graph.constant_member_spans, b_place, location),
             Err(Error::NonConstant {
                 message: "a read of an inactive union member",
                 ..
@@ -1033,6 +1096,7 @@ mod tests {
         ));
         frames
             .write(
+                &graph.constant_member_spans,
                 b_place,
                 TemporaryValue::Integer(Constant {
                     state: crate::sema::constant_addresses::ScalarState::Value,
@@ -1043,13 +1107,21 @@ mod tests {
                 location,
             )
             .unwrap();
-        assert!(frames.read(a_place, location).is_err());
-        let frozen = frames.freeze(source, location, Ok).unwrap();
+        assert!(
+            frames
+                .read(&graph.constant_member_spans, a_place, location)
+                .is_err()
+        );
+        let frozen = frames
+            .freeze(&graph.constant_member_spans, source, location, Ok)
+            .unwrap();
         assert!(frozen.complete(|t| t == union_ty));
         let target = frames
             .allocate((union_ty, union_ty), None, location)
             .unwrap();
-        let root = frames.locate(target, location).unwrap();
+        let root = frames
+            .locate(&graph.constant_member_spans, target, location)
+            .unwrap();
         frames.mark_union(root);
         for member in [a, b] {
             frames
@@ -1066,14 +1138,22 @@ mod tests {
         }
         frames.finish_cell(root);
         frames
-            .copy_published(target, source, &frozen, location)
+            .copy_published(
+                &graph.constant_member_spans,
+                target,
+                source,
+                &frozen,
+                location,
+            )
             .unwrap();
         let copied = Address {
             root: target.root,
             ..b_place
         };
         assert!(matches!(
-            frames.read(copied, location).unwrap(),
+            frames
+                .read(&graph.constant_member_spans, copied, location)
+                .unwrap(),
             TemporaryValue::Integer(Constant {
                 high: 0,
                 bits: 7,
@@ -1082,6 +1162,7 @@ mod tests {
         ));
         frames
             .write(
+                &graph.constant_member_spans,
                 b_place,
                 TemporaryValue::Integer(Constant {
                     state: crate::sema::constant_addresses::ScalarState::Value,
@@ -1093,7 +1174,9 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(
-            frames.read(copied, location).unwrap(),
+            frames
+                .read(&graph.constant_member_spans, copied, location)
+                .unwrap(),
             TemporaryValue::Integer(Constant {
                 high: 0,
                 bits: 7,
@@ -1139,7 +1222,7 @@ mod tests {
         storage.push(inner);
         assert_eq!(storage.local(entity).unwrap().root, second.root);
         assert!(matches!(
-            storage.read(second, location),
+            storage.read(&graph.constant_member_spans, second, location),
             Err(Error::NonConstant {
                 message: "a read of an object that is not initialized",
                 ..
@@ -1151,14 +1234,14 @@ mod tests {
         let reused = storage.allocate((ty, ty), None, location).unwrap();
         assert_ne!(second.root, reused.root);
         assert!(matches!(
-            storage.read(second, location),
+            storage.read(&graph.constant_member_spans, second, location),
             Err(Error::NonConstant {
                 message: "an access to an object whose lifetime has ended",
                 ..
             })
         ));
         assert!(matches!(
-            storage.read(first, location),
+            storage.read(&graph.constant_member_spans, first, location),
             Ok(TemporaryValue::Integer(Constant {
                 high: 0,
                 bits: 1,
@@ -1191,7 +1274,9 @@ mod tests {
         let mut objects = Vec::new();
         for _ in 0..2 {
             let root = storage.allocate((ty, ty), None, location).unwrap();
-            let cell = storage.locate(root, location).unwrap();
+            let cell = storage
+                .locate(&graph.constant_member_spans, root, location)
+                .unwrap();
             for (offset, bits) in [(0, 3), (4, 7)] {
                 let place = Address {
                     designated: integer,
@@ -1214,7 +1299,14 @@ mod tests {
             storage.finish_cell(cell);
             objects.push(root);
         }
-        storage.copy(objects[1], objects[0], location).unwrap();
+        storage
+            .copy(
+                &graph.constant_member_spans,
+                objects[1],
+                objects[0],
+                location,
+            )
+            .unwrap();
         let source = Address {
             designated: integer,
             offset: 4,
@@ -1222,6 +1314,7 @@ mod tests {
         };
         storage
             .write(
+                &graph.constant_member_spans,
                 source,
                 TemporaryValue::Integer(Constant {
                     state: crate::sema::constant_addresses::ScalarState::Value,
@@ -1238,7 +1331,7 @@ mod tests {
             ..objects[1]
         };
         assert!(matches!(
-            storage.read(target, location),
+            storage.read(&graph.constant_member_spans, target, location),
             Ok(TemporaryValue::Integer(Constant {
                 high: 0,
                 bits: 7,
@@ -1248,6 +1341,7 @@ mod tests {
         assert!(
             storage
                 .read(
+                    &graph.constant_member_spans,
                     Address {
                         offset: 2,
                         ..target
@@ -1259,6 +1353,10 @@ mod tests {
         storage.release(region);
         assert!(storage.index.is_empty());
         assert!(storage.cells.is_empty());
-        assert!(storage.read(target, location).is_err());
+        assert!(
+            storage
+                .read(&graph.constant_member_spans, target, location)
+                .is_err()
+        );
     }
 }

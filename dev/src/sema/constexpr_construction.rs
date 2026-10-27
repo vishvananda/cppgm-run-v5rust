@@ -391,6 +391,7 @@ impl Analyzer<'_> {
             };
             let place = self.bind_constant_reference(expr, element, scope)?;
             return self.constexpr_frames.write(
+                &self.graph.constant_member_spans,
                 target,
                 super::constant_addresses::TemporaryValue::Pointer(place.pointer()),
                 location,
@@ -568,7 +569,11 @@ impl Analyzer<'_> {
                         continue;
                     }
                     let place = self.constant_member_slot(target, member, location)?;
-                    self.constexpr_frames.activate(place, location)?;
+                    self.constexpr_frames.activate(
+                        &self.graph.constant_member_spans,
+                        place,
+                        location,
+                    )?;
                     self.constant_aggregate_element(place, values, next, scope, location)?;
                     if self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union {
                         break;
@@ -652,12 +657,14 @@ impl Analyzer<'_> {
             && self.constant_binds_temporary(expr)?
         {
             let super::constant_addresses::TemporaryValue::Pointer(place) =
-                self.constexpr_frames.read(target, location)?
+                self.constexpr_frames
+                    .read(&self.graph.constant_member_spans, target, location)?
             else {
                 return Err(Error::Invariant("reference member without address"));
             };
             let place = self.extend_constant_temporary(place, location)?;
             self.constexpr_frames.write(
+                &self.graph.constant_member_spans,
                 target,
                 super::constant_addresses::TemporaryValue::Pointer(place.pointer()),
                 location,
@@ -983,7 +990,11 @@ impl Analyzer<'_> {
             if anonymous {
                 if let Some(child) = constructor {
                     if place.variant().is_some() && self.constant_plan_initializes(child) {
-                        self.constexpr_frames.activate(place, location)?;
+                        self.constexpr_frames.activate(
+                            &self.graph.constant_member_spans,
+                            place,
+                            location,
+                        )?;
                     }
                     self.constant_constructor_subobjects(place, child, location)?;
                 }
@@ -1000,7 +1011,11 @@ impl Analyzer<'_> {
                     TypeKind::Reference { .. }
                 )
             {
-                self.constexpr_frames.activate(place, location)?;
+                self.constexpr_frames.activate(
+                    &self.graph.constant_member_spans,
+                    place,
+                    location,
+                )?;
             }
             let written = self.graph.constructors.get(id).written_members[index];
             let function = self.graph.lower_constructor_entity(id);

@@ -75,7 +75,11 @@ impl Analyzer<'_> {
                     | TypeKind::Scalar(super::types::Scalar::Nullptr)
             ) {
                 self.constexpr_frames
-                    .read_value(place, initializer.location)?
+                    .read_value(
+                        &self.graph.constant_member_spans,
+                        place,
+                        initializer.location,
+                    )?
                     .ok_or_else(|| {
                         nonconstant(
                             initializer.location,
@@ -201,17 +205,22 @@ impl Analyzer<'_> {
             self.bare_type(ty)?
         };
         let root = Address::new(place.root, self.bare_type(ty)?);
-        let value = self.constexpr_frames.freeze(root, location, |value| {
-            if let Value::Pointer(pointer) = value
-                && !self.address_publishable(pointer)
-            {
-                return Err(nonconstant(
-                    location,
-                    "a constant designates an object without static storage duration",
-                ));
-            }
-            Ok(value)
-        })?;
+        let value = self.constexpr_frames.freeze(
+            &self.graph.constant_member_spans,
+            root,
+            location,
+            |value| {
+                if let Value::Pointer(pointer) = value
+                    && !self.address_publishable(pointer)
+                {
+                    return Err(nonconstant(
+                        location,
+                        "a constant designates an object without static storage duration",
+                    ));
+                }
+                Ok(value)
+            },
+        )?;
         if !value.complete(|ty| {
             matches!(
                 self.graph.types.get(ty).kind,
@@ -355,7 +364,7 @@ impl Analyzer<'_> {
         }
         let constructor = self.graph.lower_construction(entity);
         self.construct_constant_object(place, initializer, constructor, scope, location)?;
-        let value = self.constexpr_frames.freeze(place, location, |value| {
+        let value = self.constexpr_frames.freeze(&self.graph.constant_member_spans, place, location, |value| {
             let Value::Pointer(mut pointer) = value else {
                 return Ok(value);
             };
@@ -405,6 +414,7 @@ impl Analyzer<'_> {
                 .temporary(id)
                 .value
                 .read(
+                    &self.graph.constant_member_spans,
                     place,
                     self.constexpr_frames.designation(place.variant()),
                     location,
@@ -427,6 +437,7 @@ impl Analyzer<'_> {
             .get(entity)
             .map(|value| {
                 value.read(
+                    &self.graph.constant_member_spans,
                     place,
                     self.constexpr_frames.designation(place.variant()),
                     location,
@@ -444,6 +455,7 @@ impl Analyzer<'_> {
         source.designated = self.bare_type(source.designated)?;
         if let Root::Published(id) = source.root {
             return self.constexpr_frames.copy_published(
+                &self.graph.constant_member_spans,
                 target,
                 source,
                 &self.graph.aggregate_constants.temporary(id).value,
@@ -455,16 +467,21 @@ impl Analyzer<'_> {
             if self.graph.entity(entity).constexpr
                 && let Some(value) = self.graph.aggregate_constants.get(entity)
             {
-                return self
-                    .constexpr_frames
-                    .copy_published(target, source, value, location);
+                return self.constexpr_frames.copy_published(
+                    &self.graph.constant_member_spans,
+                    target,
+                    source,
+                    value,
+                    location,
+                );
             }
             return Err(nonconstant(
                 location,
                 "a variable is not usable in a constant expression",
             ));
         }
-        self.constexpr_frames.copy(target, source, location)
+        self.constexpr_frames
+            .copy(&self.graph.constant_member_spans, target, source, location)
     }
 }
 

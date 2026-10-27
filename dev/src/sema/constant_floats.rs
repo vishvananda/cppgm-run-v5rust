@@ -183,7 +183,10 @@ impl Analyzer<'_> {
             return self.read_constant_scalar(place, location);
         }
         place.designated = self.bare_type(place.designated)?;
-        if let Some(value) = self.constexpr_frames.read_value(place, location)? {
+        if let Some(value) =
+            self.constexpr_frames
+                .read_value(&self.graph.constant_member_spans, place, location)?
+        {
             return Ok(value);
         }
         if self.constant_floating_type(place.designated) {
@@ -723,7 +726,10 @@ impl Analyzer<'_> {
         }
         place.designated = self.bare_type(place.designated)?;
         let value = match place.root {
-            Root::Object(_) => self.constexpr_frames.read(place, location)?,
+            Root::Object(_) => {
+                self.constexpr_frames
+                    .read(&self.graph.constant_member_spans, place, location)?
+            }
             Root::Variable(entity) => {
                 self.instantiate_variable_value(entity)?;
                 let declared = self.graph.lower_entity_type(entity)?;

@@ -374,18 +374,21 @@ impl Analyzer<'_> {
                 scope,
                 initializer.location,
             )?;
-            for cell in analyzer
-                .constexpr_frames
-                .active_cells(place, initializer.location)?
-            {
+            for cell in analyzer.constexpr_frames.active_cells(
+                &analyzer.graph.constant_member_spans,
+                place,
+                initializer.location,
+            )? {
                 let child = analyzer.constexpr_frames.cell_place(place, cell);
                 if !matches!(
                     analyzer.graph.types.get(child.designated).kind,
                     TypeKind::Class(_) | TypeKind::Array { .. }
                 ) {
-                    analyzer
-                        .constexpr_frames
-                        .read(child, initializer.location)?;
+                    analyzer.constexpr_frames.read(
+                        &analyzer.graph.constant_member_spans,
+                        child,
+                        initializer.location,
+                    )?;
                 }
             }
             Ok(())

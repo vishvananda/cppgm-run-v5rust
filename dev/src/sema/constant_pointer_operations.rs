@@ -16,10 +16,52 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 
-/// A completed class's immutable byte spans. The evaluation scratch belongs to
-/// one analyzer/unit; only complete layouts enter the class-identity cache.
+/// Immutable byte spans owned by the semantic unit, shared by pointer ordering
+/// and live/published object lookup. Only complete layouts enter this cache;
+/// distinct specializations have distinct class IDs and need no invalidation.
 #[derive(Default)]
-pub(super) struct MemberSpans(std::collections::HashMap<EntityId, Vec<MemberSpan>>);
+pub(super) struct MemberSpans(std::collections::HashMap<EntityId, ClassSpans>);
+struct ClassSpans {
+    ordinary: Vec<MemberSpan>,
+    empty: std::collections::HashSet<EntityId>,
+    large: bool,
+}
+impl MemberSpans {
+    fn member_at(&self, class: EntityId, offset: i64) -> Result<Option<MemberSpan>, Error> {
+        let spans = self
+            .0
+            .get(&class)
+            .ok_or(Error::Invariant("completed member spans missing"))?;
+        Ok(if spans.large {
+            spans
+                .ordinary
+                .partition_point(|span| span.start <= offset)
+                .checked_sub(1)
+                .and_then(|index| spans.ordinary.get(index))
+                .filter(|span| offset < span.start.wrapping_add(span.size))
+        } else {
+            spans
+                .ordinary
+                .iter()
+                .find(|span| offset >= span.start && offset < span.start.wrapping_add(span.size))
+        }
+        .copied())
+    }
+    pub(super) fn permits(
+        &self,
+        class: EntityId,
+        member: EntityId,
+        offset: i64,
+    ) -> Result<bool, Error> {
+        let spans = self.0.get(&class).ok_or(Error::Invariant(
+            "constant storage without completed member spans",
+        ))?;
+        Ok(spans.empty.contains(&member)
+            || self
+                .member_at(class, offset)?
+                .is_some_and(|span| span.member == member))
+    }
+}
 #[derive(Clone, Copy)]
 struct MemberSpan {
     member: EntityId,
@@ -603,20 +645,32 @@ impl Analyzer<'_> {
                 }));
             }
         }
-        let known = self
-            .constant_evaluation
-            .as_ref()
-            .ok_or(Error::Invariant("ordering outside evaluation"))?
-            .projections
-            .as_ref()
-            .is_some_and(|query| query.member_spans.0.contains_key(&class));
-        if !known {
+        self.prepare_constant_member_spans(class, location)?;
+        Ok(self
+            .graph
+            .constant_member_spans
+            .member_at(class, offset)?
+            .map(|span| Subobject {
+                part: OrderedPart::Member(span.member),
+                ty: span.ty,
+                start: span.start,
+            }))
+    }
+    pub(super) fn prepare_constant_member_spans(
+        &mut self,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if !self.graph.constant_member_spans.0.contains_key(&class) {
             let mut spans = Vec::with_capacity(self.graph.entity(class).members.len());
+            let mut empty = std::collections::HashSet::new();
             for index in 0..self.graph.entity(class).members.len() {
                 let member = self.graph.entity(class).members[index];
-                if self.graph.entity(member).bit_field.is_some()
-                    || self.graph.lower_overlapping_empty_member(member)?
-                {
+                if self.graph.entity(member).bit_field.is_some() {
+                    continue;
+                }
+                if self.graph.lower_overlapping_empty_member(member)? {
+                    empty.insert(member);
                     continue;
                 }
                 let ty = self.graph.lower_entity_type(member)?;
@@ -645,42 +699,16 @@ impl Analyzer<'_> {
             if self.graph.entity(class).members.len() > 8 {
                 crate::support::ordering::sort_by(&mut spans, |a, b| a.start < b.start);
             }
-            self.constant_evaluation
-                .as_mut()
-                .ok_or(Error::Invariant("ordering lost evaluation"))?
-                .projections
-                .get_or_insert_with(Box::default)
-                .member_spans
-                .0
-                .insert(class, spans);
+            self.graph.constant_member_spans.0.insert(
+                class,
+                ClassSpans {
+                    ordinary: spans,
+                    empty,
+                    large: self.graph.entity(class).members.len() > 8,
+                },
+            );
         }
-        let spans = &self
-            .constant_evaluation
-            .as_ref()
-            .ok_or(Error::Invariant("ordering outside evaluation"))?
-            .projections
-            .as_ref()
-            .ok_or(Error::Invariant("ordering lost member spans"))?
-            .member_spans
-            .0
-            .get(&class)
-            .ok_or(Error::Invariant("completed member spans missing"))?;
-        let found = if self.graph.entity(class).members.len() <= 8 {
-            spans
-                .iter()
-                .find(|span| offset >= span.start && offset < span.start.wrapping_add(span.size))
-        } else {
-            spans
-                .partition_point(|span| span.start <= offset)
-                .checked_sub(1)
-                .and_then(|index| spans.get(index))
-                .filter(|span| offset < span.start.wrapping_add(span.size))
-        };
-        Ok(found.map(|span| Subobject {
-            part: OrderedPart::Member(span.member),
-            ty: span.ty,
-            start: span.start,
-        }))
+        Ok(())
     }
     fn address_difference(
         &mut self,
@@ -895,17 +923,11 @@ mod tests {
         analyzer.declarations(declarations, global).unwrap();
         assert_eq!(analyzer.tree.expressions.mark(), mark);
         assert_eq!(analyzer.constexpr_frames.depth(), 0);
-        let spans = &analyzer
-            .constant_scratch
-            .projections
-            .as_ref()
-            .unwrap()
-            .member_spans
-            .0;
+        let spans = &analyzer.graph.constant_member_spans.0;
         assert_eq!(spans.len(), 2);
         let mut keys = spans.keys();
-        let first = &spans[keys.next().unwrap()];
-        let second = &spans[keys.next().unwrap()];
+        let first = &spans[keys.next().unwrap()].ordinary;
+        let second = &spans[keys.next().unwrap()].ordinary;
         assert_eq!(first.len(), 2);
         assert_eq!(second.len(), 2);
         assert_ne!(first[0].member, second[0].member);
