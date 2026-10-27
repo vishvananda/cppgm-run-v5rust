@@ -214,10 +214,12 @@ impl Function<'_, '_, '_, '_> {
                     if !facts.is_place
                         && !class
                         && super::types::storage(&*self.graph, facts.ty)? != Type::Void
-                        && let Some(selected) = self.graph.lower_expression(condition)?.folded
+                        && let Some(selected) = self
+                            .graph
+                            .lower_constant_conversion(&*self.tree, condition)?
                     {
                         work.push((
-                            if selected != 0 { then_expr } else { else_expr },
+                            if selected { then_expr } else { else_expr },
                             at_root,
                             depth + 1,
                         ));

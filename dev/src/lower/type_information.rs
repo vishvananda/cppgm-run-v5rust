@@ -75,6 +75,50 @@ impl Symbols<'_, '_> {
         }
         Ok(flags)
     }
+    pub(super) fn type_name_object(
+        &mut self,
+        program: &mut Program,
+        ty: TypeId,
+        label: &str,
+        internal: bool,
+    ) -> Result<SymbolId, Error> {
+        let object = self.type_encoding(ty, TypeObject::Name)?;
+        let object = program.names.intern(&object)?;
+        let symbol = self.state.table.allocate(
+            program,
+            &format!("__typeinfo_name_{label}"),
+            Some(object),
+            internal,
+        )?;
+        if program.symbol(symbol).declared() {
+            return Ok(symbol);
+        }
+        let encoding = self.type_encoding(ty, TypeObject::Encoding)?;
+        let marker =
+            self.state.table.object_mode && internal && self.graph.lower_private_type_name(ty)?;
+        let items = marker
+            .then_some(b'*')
+            .into_iter()
+            .chain(encoding.bytes())
+            .chain(std::iter::once(0))
+            .map(|byte| integer(Type::I8, u64::from(byte)))
+            .collect();
+        define(
+            program,
+            symbol,
+            Metadata {
+                object: Some(object),
+                binding: Some(if internal {
+                    Binding::Internal
+                } else {
+                    Binding::Weak
+                }),
+                ..Metadata::default()
+            },
+            items,
+        )?;
+        Ok(symbol)
+    }
     pub(in crate::lower) fn type_information(
         &mut self,
         program: &mut Program,
@@ -114,7 +158,6 @@ impl Symbols<'_, '_> {
             self.state.type_information.objects.insert(ty, symbol);
             return Ok(symbol);
         }
-        let encoding = self.type_encoding(ty, TypeObject::Encoding)?;
         let fundamental = if let TypeView::Scalar(scalar) = self.graph.lower_type(ty)? {
             Some(scalar)
         } else {
@@ -123,7 +166,7 @@ impl Symbols<'_, '_> {
         let label = if let Some(scalar) = fundamental {
             scalar.name().replace(' ', "_")
         } else {
-            format!("type_{encoding}")
+            format!("type_{}", self.type_encoding(ty, TypeObject::Encoding)?)
         };
         let object = self.type_encoding(ty, TypeObject::Information)?;
         let object = program.names.intern(&object)?;
@@ -175,43 +218,12 @@ impl Symbols<'_, '_> {
             .map(|owner| self.type_information(program, owner))
             .transpose()?;
         let vtable = self.rtti_vtable(program, kind)?;
-        let name_object = self.type_encoding(ty, TypeObject::Name)?;
-        let name_object = program.names.intern(&name_object)?;
-        let name = self.state.table.allocate(
+        let name = self.type_name_object(
             program,
-            &format!(
-                "__typeinfo_name_{}{label}",
-                if fundamental.is_some() { "_" } else { "" }
-            ),
-            Some(name_object),
+            ty,
+            &format!("{}{label}", if fundamental.is_some() { "_" } else { "" }),
             internal,
         )?;
-        if !program.symbol(name).declared() {
-            let marker = self.state.table.object_mode
-                && internal
-                && self.graph.lower_private_type_name(ty)?;
-            let items = marker
-                .then_some(b'*')
-                .into_iter()
-                .chain(encoding.bytes())
-                .chain(std::iter::once(0))
-                .map(|b| integer(Type::I8, u64::from(b)))
-                .collect();
-            define(
-                program,
-                name,
-                Metadata {
-                    object: Some(name_object),
-                    binding: Some(if internal {
-                        Binding::Internal
-                    } else {
-                        Binding::Weak
-                    }),
-                    ..Metadata::default()
-                },
-                items,
-            )?;
-        }
         let mut items = vec![address(vtable, 16), address(name, 0)];
         if let (Some(pointee), Some(target_object)) = (pointee, target_object) {
             let mut flags = self.pointee_flags(pointee)?;

@@ -2,7 +2,7 @@
 //! Demanded primary tables and readonly class RTTI, keyed by semantic class identity.
 #[path = "construction_tables.rs"]
 mod construction_tables;
-use super::Symbols;
+use super::{Symbols, type_information::TypeObject};
 use crate::{
     abi::encoder::{Encoder, Target},
     lex::vocabulary::Keyword,
@@ -314,21 +314,8 @@ impl Symbols<'_, '_> {
         }
         Ok(())
     }
-    fn class_encoding(
-        &mut self,
-        class: EntityId,
-        kind: ClassObject,
-    ) -> Result<(String, String), Error> {
+    fn class_encoding(&mut self, class: EntityId, kind: ClassObject) -> Result<String, Error> {
         let node = self.abi_type(self.graph.lower_entity_type(class)?)?;
-        let mut encoded = Vec::new();
-        Encoder::encode(
-            &self.state.abi,
-            Target::Type(node),
-            &mut encoded,
-            self.state.budget,
-        )?;
-        let name = String::from_utf8(encoded)
-            .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI class name"))?;
         let mut object = Vec::new();
         self.state.table.work.mangled_names += 1;
         Encoder::encode(
@@ -342,11 +329,8 @@ impl Symbols<'_, '_> {
             &mut object,
             self.state.budget,
         )?;
-        Ok((
-            name,
-            String::from_utf8(object)
-                .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI class object"))?,
-        ))
+        String::from_utf8(object)
+            .map_err(|_| crate::sema::Error::Invariant("non-UTF8 ABI class object").into())
     }
     fn class_global(
         &mut self,
@@ -354,7 +338,7 @@ impl Symbols<'_, '_> {
         class: EntityId,
         kind: ClassObject,
     ) -> Result<(SymbolId, Metadata), Error> {
-        let (encoding, object) = self.class_encoding(class, kind)?;
+        let object = self.class_encoding(class, kind)?;
         let (mut internal, local, key, scope) = self.graph.lower_virtual_class_identity(class)?;
         if self.state.table.object_mode {
             internal = self
@@ -373,6 +357,8 @@ impl Symbols<'_, '_> {
         let spelling = if matches!(kind, ClassObject::Vtt) {
             format!("{}____vtt", self.class_presentation(class)?)
         } else if internal && local {
+            let encoding =
+                self.type_encoding(self.graph.lower_entity_type(class)?, TypeObject::Encoding)?;
             format!("{prefix}type_{encoding}")
         } else {
             let mut components = Vec::new();
@@ -1296,7 +1282,8 @@ impl Symbols<'_, '_> {
         let (symbol, metadata) = self.class_global(program, class, ClassObject::Name)?;
         self.state.vtables.names.insert(class, symbol);
         if !defined(program, symbol) {
-            let (mut name, _) = self.class_encoding(class, ClassObject::Name)?;
+            let mut name =
+                self.type_encoding(self.graph.lower_entity_type(class)?, TypeObject::Encoding)?;
             if self.state.table.object_mode
                 && self
                     .graph

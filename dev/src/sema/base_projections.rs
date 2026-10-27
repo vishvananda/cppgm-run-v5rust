@@ -18,7 +18,7 @@ pub(crate) struct BaseRoute {
 #[derive(Default)]
 pub(crate) struct BaseRoutes {
     selected: HashMap<(EntityId, EntityId), BaseRoute>,
-    holders: HashMap<EntityId, HashMap<EntityId, BaseRoute>>,
+    holders: HashMap<EntityId, HashMap<EntityId, EntityId>>,
 }
 impl BaseRoutes {
     pub(crate) fn get(
@@ -43,41 +43,39 @@ impl BaseRoutes {
         let route = if let Some(offset) = graph.lower_nonvirtual_offset(from, to)? {
             BaseRoute { via: None, offset }
         } else {
-            self.virtual_holders(graph, from)?;
-            self.holders[&from]
+            self.virtual_holders(graph, from);
+            let via = self.holders[&from]
                 .get(&to)
                 .copied()
-                .ok_or(Error::Invariant("virtual projection without a base route"))?
+                .ok_or(Error::Invariant("virtual projection without a base route"))?;
+            let offset = graph
+                .lower_nonvirtual_offset(via, to)?
+                .ok_or(Error::Invariant("base outside its virtual holder"))?;
+            BaseRoute {
+                via: Some(via),
+                offset,
+            }
         };
         self.selected.insert((from, to), route);
         Ok(route)
     }
-    fn virtual_holders(&mut self, graph: &Graph, from: EntityId) -> Result<(), Error> {
+    fn virtual_holders(&mut self, graph: &Graph, from: EntityId) {
         let std::collections::hash_map::Entry::Vacant(entry) = self.holders.entry(from) else {
-            return Ok(());
+            return;
         };
         let mut holders = HashMap::new();
         let mut work = Vec::new();
         for &(base, _) in graph.lower_virtual_bases(from) {
-            work.push((base, 0_u64));
-            while let Some((class, offset)) = work.pop() {
+            work.push(base);
+            while let Some(class) = work.pop() {
                 if holders.contains_key(&class) {
                     continue;
                 }
-                holders.insert(
-                    class,
-                    BaseRoute {
-                        via: Some(base),
-                        offset,
-                    },
-                );
-                for (child, step) in graph.lower_nonvirtual_base_offsets(class).rev() {
-                    work.push((child, offset.wrapping_add(step?)));
-                }
+                holders.insert(class, base);
+                work.extend(graph.lower_nonvirtual_bases(class));
             }
         }
         entry.insert(holders);
-        Ok(())
     }
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {

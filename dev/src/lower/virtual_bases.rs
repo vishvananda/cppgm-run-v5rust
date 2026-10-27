@@ -20,6 +20,7 @@ enum Row {
         function: EntityId,
         holder: EntityId,
         level: EntityId,
+        offset: u64,
     },
 }
 #[derive(Default)]
@@ -143,9 +144,9 @@ impl Symbols<'_, '_> {
                 Row::Base(_) => None,
             })
             .collect();
-        let mut work = vec![(class, false)];
+        let mut work = vec![(class, 0_u64, false)];
         let mut visited = HashSet::new();
-        while let Some((holder, own)) = work.pop() {
+        while let Some((holder, offset, own)) = work.pop() {
             let primary = self
                 .graph
                 .lower_itanium_primary(holder)
@@ -155,9 +156,9 @@ impl Symbols<'_, '_> {
                 if !visited.insert(holder) {
                     continue;
                 }
-                work.push((holder, true));
+                work.push((holder, offset, true));
                 if let Some(primary) = primary {
-                    work.push((primary, false));
+                    work.push((primary, offset, false));
                 }
                 continue;
             }
@@ -169,12 +170,13 @@ impl Symbols<'_, '_> {
                         function,
                         holder,
                         level: class,
+                        offset,
                     });
                 }
             }
-            for base in self.graph.lower_nonvirtual_bases(holder).rev() {
+            for (base, step) in self.graph.lower_nonvirtual_base_offsets(holder).rev() {
                 if Some(base) != primary && self.graph.lower_dynamic(base) {
-                    work.push((base, false));
+                    work.push((base, offset.wrapping_add(step?), false));
                 }
             }
         }
@@ -395,6 +397,7 @@ impl Symbols<'_, '_> {
                     function,
                     holder: declaring,
                     level,
+                    offset,
                     ..
                 } => {
                     let level = if level == holder {
@@ -402,17 +405,7 @@ impl Symbols<'_, '_> {
                     } else {
                         self.group_segment(class, self.virtual_base_offset(class, level)?, level)?
                     };
-                    let relative = self
-                        .graph
-                        .lower_nonvirtual_offset(
-                            group
-                                .ok_or(crate::sema::Error::Invariant("vcall row without group"))?
-                                .segments[level]
-                                .class,
-                            declaring,
-                        )?
-                        .ok_or(crate::sema::Error::Invariant("vcall row outside its level"))?;
-                    let at = self.segment_offsets(class)?[level].wrapping_add(relative);
+                    let at = self.segment_offsets(class)?[level].wrapping_add(offset);
                     let k = self.group_segment(class, at, declaring)?;
                     let slot = self
                         .graph

@@ -1,0 +1,120 @@
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+declare global @__external_rtti_vtable____pointer_type_info [role=rtti_pointer, binding=strong, object=_ZTVN10__cxxabiv119__pointer_type_infoE]
+
+declare function @__external_runtime____cxa_allocate_exception(%arg0 : i64) -> ptr [role=eh_allocate_exception, linkage=c, binding=strong, object=__cxa_allocate_exception]
+declare function @__external_runtime____cxa_throw(%arg0 : ptr, %arg1 : ptr, %arg2 : ptr) -> void [return=noreturn, role=eh_throw, linkage=c, binding=strong, object=__cxa_throw]
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=weak, object=_ZTIi] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+global @__typeinfo_name_type_Pi [storage=readonly, binding=weak, object=_ZTSPi] = {
+  i8 80
+  i8 105
+  i8 0
+}
+global @__rtti_type_Pi [storage=readonly, binding=weak, object=_ZTIPi] = {
+  ptr addr @__external_rtti_vtable____pointer_type_info + 16
+  ptr addr @__typeinfo_name_type_Pi
+  i32 0
+  ptr addr @__rtti_int
+}
+global @__ehobj_type_Pi [binding=internal] = {
+  zero 8
+}
+
+function @before() -> i32 [binding=strong, object=_Z6beforev] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @__rtti_type_Pi
+    %t2 = addr @__rtti_type_Pi
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @thrown() -> i32 [binding=strong, object=_Z6thrownv] {
+  block ^entry:
+    eh_try ^catch_dispatch_1
+    %t1 = call ptr @__external_runtime____cxa_allocate_exception(8)
+    store typed ptr 0, %t1
+    %t2 = addr @__rtti_type_Pi
+    call void @__external_runtime____cxa_throw(%t1, %t2, 0)
+    eh_end
+    return i32 0
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_type_Pi, 1
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t3 = exception ptr
+    %t4 = exception_selector i32
+    %t5 = cmp eq i32 %t4, 1
+    branch %t5, ^catch_body_4, ^catch_next_5
+
+  block ^catch_body_4:
+    %t6 = call ptr @__external_runtime____cxa_begin_catch(%t3)
+    eh_cleanup ^catch_cleanup_6
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    return i32 0
+
+  block ^catch_cleanup_6:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    resume
+
+  block ^catch_next_5:
+    resume
+
+  block ^try_end_3:
+    return i32 0
+}
+function @after() -> i32 [binding=strong, object=_Z5afterv] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = addr @__rtti_type_Pi
+    %t2 = addr @__rtti_type_Pi
+    %t3 = cmp eq ptr %t1, %t2
+    branch %t3, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed i32 $cond__1
+    return i32 %t4
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @before()
+    %t2 = call i32 @thrown()
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call i32 @after()
+    %t5 = binary add nowrap i32 %t3, %t4
+    return i32 %t5
+}

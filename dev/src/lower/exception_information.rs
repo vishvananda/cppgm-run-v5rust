@@ -115,9 +115,8 @@ impl Symbols<'_, '_> {
         } else {
             None
         };
-        let encoding = self.type_encoding(ty, TypeObject::Encoding)?;
         let label = if pointer {
-            format!("type_{encoding}")
+            format!("type_{}", self.type_encoding(ty, TypeObject::Encoding)?)
         } else {
             scalar.name().replace(' ', "_")
         };
@@ -128,31 +127,12 @@ impl Symbols<'_, '_> {
         self.state.exception_information.defined.insert(ty, symbol);
         let vtable =
             self.rtti_vtable(program, if pointer { K::Pointer } else { K::Fundamental })?;
-        let object = self.type_encoding(ty, TypeObject::Name)?;
-        let object = program.names.intern(&object)?;
-        let name = self.state.table.allocate(
+        let name = self.type_name_object(
             program,
-            &format!("__typeinfo_name_{}{label}", if pointer { "" } else { "_" }),
-            Some(object),
+            ty,
+            &format!("{}{label}", if pointer { "" } else { "_" }),
             false,
         )?;
-        if !program.symbol(name).declared() {
-            let items = encoding
-                .bytes()
-                .chain(std::iter::once(0))
-                .map(|b| integer(Type::I8, u64::from(b)))
-                .collect();
-            define(
-                program,
-                name,
-                Metadata {
-                    binding: Some(Binding::Weak),
-                    object: Some(object),
-                    ..Metadata::default()
-                },
-                items,
-            )?;
-        }
         let mut items = vec![address(vtable, 16), address(name, 0)];
         if let Some((element, target_object)) = target_object {
             items.push(integer(Type::I32, u64::from(self.pointee_flags(element)?)));

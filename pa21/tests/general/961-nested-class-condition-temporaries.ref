@@ -1,0 +1,334 @@
+global @live : i32 [binding=strong] = zero
+
+function @left(%value : u8) -> i32 [binding=strong, object=_Z4leftb] {
+  slot $value : u8
+  slot $cond__1 : i32
+  slot $cond__2 : i32
+  slot $tmpobj__3 : obj<1x1>
+  slot $call__4 : u8
+  slot $tmpobj__5 : obj<1x1>
+  slot $call__6 : i32
+  slot $tmpobj__7 : obj<1x1>
+  slot $call__8 : i32
+
+  block ^entry:
+    store u8 %value, $value
+    %t1 = load u8 $value
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t2 = addr $tmpobj__3
+    %t3 = call u8 @True__operatorbool(%t2)
+    store u8 %t3, $call__4
+    %t4 = load u8 $call__4
+    branch %t4, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    eh_try ^cleanup_resume_7
+    %t5 = addr $tmpobj__5
+    call void @Object__Object(%t5)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_resume_7:
+    resume
+
+  block ^call_unwind_end_8:
+    eh_try ^cleanup_action_9
+    %t6 = call i32 @Object__operatorint(%t5)
+    store typed i32 %t6, $call__6
+    %t7 = load typed i32 $call__6
+    store typed i32 %t7, $cond__2
+    call void @Object___Object(%t5)
+    eh_end
+    jump ^call_unwind_end_10
+
+  block ^cleanup_action_9:
+    call void @Object___Object(%t5)
+    jump ^cleanup_resume_7
+
+  block ^call_unwind_end_10:
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    eh_try ^cleanup_resume_7
+    %t8 = addr $tmpobj__7
+    call void @Object__Object(%t8)
+    eh_end
+    eh_try ^cleanup_action_11
+    %t9 = call i32 @Object__operatorint(%t8)
+    store typed i32 %t9, $call__8
+    %t10 = load typed i32 $call__8
+    store typed i32 %t10, $cond__2
+    call void @Object___Object(%t8)
+    eh_end
+    jump ^call_unwind_end_12
+
+  block ^cleanup_action_11:
+    call void @Object___Object(%t8)
+    jump ^cleanup_resume_7
+
+  block ^call_unwind_end_12:
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t11 = load typed i32 $cond__2
+    store typed i32 %t11, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 3, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @right(%value : u8) -> i32 [binding=strong, object=_Z5rightb] {
+  slot $value : u8
+  slot $cond__1 : i32
+  slot $cond__2 : i32
+  slot $tmpobj__3 : obj<1x1>
+  slot $call__4 : u8
+  slot $tmpobj__5 : obj<1x1>
+  slot $call__6 : i32
+  slot $tmpobj__7 : obj<1x1>
+  slot $call__8 : i32
+
+  block ^entry:
+    store u8 %value, $value
+    %t1 = load u8 $value
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 3, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t2 = addr $tmpobj__3
+    %t3 = call u8 @False__operatorbool(%t2)
+    store u8 %t3, $call__4
+    %t4 = load u8 $call__4
+    branch %t4, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    eh_try ^cleanup_resume_7
+    %t5 = addr $tmpobj__5
+    call void @Object__Object(%t5)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_resume_7:
+    resume
+
+  block ^call_unwind_end_8:
+    eh_try ^cleanup_action_9
+    %t6 = call i32 @Object__operatorint(%t5)
+    store typed i32 %t6, $call__6
+    %t7 = load typed i32 $call__6
+    store typed i32 %t7, $cond__2
+    call void @Object___Object(%t5)
+    eh_end
+    jump ^call_unwind_end_10
+
+  block ^cleanup_action_9:
+    call void @Object___Object(%t5)
+    jump ^cleanup_resume_7
+
+  block ^call_unwind_end_10:
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    eh_try ^cleanup_resume_7
+    %t8 = addr $tmpobj__7
+    call void @Object__Object(%t8)
+    eh_end
+    eh_try ^cleanup_action_11
+    %t9 = call i32 @Object__operatorint(%t8)
+    store typed i32 %t9, $call__8
+    %t10 = load typed i32 $call__8
+    store typed i32 %t10, $cond__2
+    call void @Object___Object(%t8)
+    eh_end
+    jump ^call_unwind_end_12
+
+  block ^cleanup_action_11:
+    call void @Object___Object(%t8)
+    jump ^cleanup_resume_7
+
+  block ^call_unwind_end_12:
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t11 = load typed i32 $cond__2
+    store typed i32 %t11, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t12 = load typed i32 $cond__1
+    return i32 %t12
+}
+function @either(%value : u8) -> i32 [binding=strong, object=_Z6eitherb] {
+  slot $value : u8
+  slot $cond__1 : i32
+  slot $cond__2 : i32
+  slot $tmpobj__3 : obj<1x1>
+  slot $call__4 : u8
+  slot $tmpobj__5 : obj<1x1>
+  slot $call__6 : i32
+  slot $tmpobj__7 : obj<1x1>
+  slot $call__8 : i32
+  slot $tmpobj__9 : obj<1x1>
+  slot $call__10 : i32
+
+  block ^entry:
+    store u8 %value, $value
+    %t1 = load u8 $value
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t2 = addr $tmpobj__3
+    %t3 = call u8 @True__operatorbool(%t2)
+    store u8 %t3, $call__4
+    %t4 = load u8 $call__4
+    branch %t4, ^cond_then_4, ^cond_else_5
+
+  block ^cond_then_4:
+    eh_try ^cleanup_resume_7
+    %t5 = addr $tmpobj__5
+    call void @Object__Object(%t5)
+    eh_end
+    jump ^call_unwind_end_8
+
+  block ^cleanup_resume_7:
+    resume
+
+  block ^call_unwind_end_8:
+    eh_try ^cleanup_action_9
+    %t6 = call i32 @Object__operatorint(%t5)
+    store typed i32 %t6, $call__6
+    %t7 = load typed i32 $call__6
+    store typed i32 %t7, $cond__2
+    call void @Object___Object(%t5)
+    eh_end
+    jump ^call_unwind_end_10
+
+  block ^cleanup_action_9:
+    call void @Object___Object(%t5)
+    jump ^cleanup_resume_7
+
+  block ^call_unwind_end_10:
+    jump ^cond_end_6
+
+  block ^cond_else_5:
+    eh_try ^cleanup_resume_7
+    %t8 = addr $tmpobj__7
+    call void @Object__Object(%t8)
+    eh_end
+    eh_try ^cleanup_action_11
+    %t9 = call i32 @Object__operatorint(%t8)
+    store typed i32 %t9, $call__8
+    %t10 = load typed i32 $call__8
+    store typed i32 %t10, $cond__2
+    call void @Object___Object(%t8)
+    eh_end
+    jump ^call_unwind_end_12
+
+  block ^cleanup_action_11:
+    call void @Object___Object(%t8)
+    jump ^cleanup_resume_7
+
+  block ^call_unwind_end_12:
+    jump ^cond_end_6
+
+  block ^cond_end_6:
+    %t11 = load typed i32 $cond__2
+    store typed i32 %t11, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    eh_try ^cleanup_resume_7
+    %t12 = addr $tmpobj__9
+    call void @Object__Object(%t12)
+    eh_end
+    eh_try ^cleanup_action_13
+    %t13 = call i32 @Object__operatorint(%t12)
+    store typed i32 %t13, $call__10
+    %t14 = load typed i32 $call__10
+    store typed i32 %t14, $cond__1
+    call void @Object___Object(%t12)
+    eh_end
+    jump ^call_unwind_end_14
+
+  block ^cleanup_action_13:
+    call void @Object___Object(%t12)
+    jump ^cleanup_resume_7
+
+  block ^call_unwind_end_14:
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t15 = load typed i32 $cond__1
+    return i32 %t15
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    %t1 = call i32 @left(1)
+    %t2 = call i32 @left(0)
+    %t3 = binary add nowrap i32 %t1, %t2
+    %t4 = call i32 @right(1)
+    %t5 = binary add nowrap i32 %t3, %t4
+    %t6 = call i32 @right(0)
+    %t7 = binary add nowrap i32 %t5, %t6
+    %t8 = call i32 @either(1)
+    %t9 = binary add nowrap i32 %t7, %t8
+    %t10 = call i32 @either(0)
+    %t11 = binary add nowrap i32 %t9, %t10
+    %t12 = binary sub nowrap i32 %t11, 10
+    %t13 = load typed i32 @live
+    %t14 = binary add nowrap i32 %t12, %t13
+    return i32 %t14
+}
+function @True__operatorbool(%this : ptr [object_bytes=1]) -> u8 [binding=weak, object=_ZNK4TruecvbEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return u8 1
+}
+function @Object__Object(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN6ObjectC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @Object__operatorint(%this : ptr [object_bytes=1]) -> i32 [binding=weak, object=_ZNK6ObjectcviEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return i32 1
+}
+function @Object___Object(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN6ObjectD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @live
+    %t2 = binary sub nowrap i32 %t1, 1
+    store typed i32 %t2, @live
+    return void
+}
+function @False__operatorbool(%this : ptr [object_bytes=1]) -> u8 [binding=weak, object=_ZNK5FalsecvbEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return u8 0
+}
+alias object _ZN6ObjectC2Ev = @Object__Object
+alias object _ZN6ObjectD2Ev = @Object___Object
