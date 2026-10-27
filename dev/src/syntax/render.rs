@@ -167,8 +167,12 @@ impl<'a, 'source> Renderer<'a, 'source> {
                     }
                     self.tasks.push(Render::Initializer(member.initializer));
                     self.tasks.push(Render::Name(member.name, true));
-                    self.tasks
-                        .push(Render::Text(if index == 0 { ":" } else { "," }));
+                    if index != 0 {
+                        self.tasks.push(Render::Text(","));
+                    }
+                }
+                if body.initializer_location.is_some() {
+                    self.tasks.push(Render::Text(":"));
                 }
                 if body.handlers.is_some() {
                     self.tasks.push(Render::Text("try"));
@@ -894,8 +898,12 @@ impl Renderer<'_, '_> {
             if base.virtual_first {
                 self.tasks.push(Render::Text("virtual"));
             }
-            self.tasks
-                .push(Render::Text(if index == 0 { ":" } else { "," }));
+            if index != 0 {
+                self.tasks.push(Render::Text(","));
+            }
+        }
+        if class.has_base_clause {
+            self.tasks.push(Render::Text(":"));
         }
         if class.final_specifier {
             self.tasks.push(Render::Text("final"));

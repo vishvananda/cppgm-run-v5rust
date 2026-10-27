@@ -289,13 +289,7 @@ impl Parser<'_> {
             return self.postfix(fold);
         }
         if self.at_ahead(P::LeftBrace, 1)? {
-            self.cursor.advance()?;
-            let body = self.without_angle(Self::compound_statement)?;
-            self.expect(P::RightParen)?;
-            let expression = self.tree.expressions.add(Expression {
-                location,
-                kind: ExprKind::Statement(body),
-            })?;
+            let expression = self.statement_expression(location)?;
             return self.postfix(expression);
         }
         if self.name_starts_ahead(1)? {
@@ -339,6 +333,15 @@ impl Parser<'_> {
             parser.parenthesized_end(location, inner)
         })?;
         self.postfix(expression)
+    }
+    fn statement_expression(&mut self, location: SourceOffset) -> Result<ExprId, ParseError> {
+        self.cursor.advance()?;
+        let body = self.without_angle(Self::compound_statement)?;
+        self.expect(P::RightParen)?;
+        self.tree.expressions.add(Expression {
+            location,
+            kind: ExprKind::Statement(body),
+        })
     }
     fn at_compound_literal(&mut self, ty: TypeId) -> Result<bool, ParseError> {
         if self.environment != super::parser::Environment::Hosted
@@ -897,7 +900,7 @@ impl Parser<'_> {
             self.attempt(|parser| {
                 parser.cursor.advance()?;
                 let ty = parser.without_angle(|parser| parser.type_id(false))?;
-                if !function_types && parser.named_function_type(ty) {
+                if parser.named_function_type(ty) {
                     return Err(ParseError::Syntax {
                         location: parser.location()?,
                         message: "syntax error",
@@ -979,6 +982,9 @@ impl Parser<'_> {
                 }
                 _ => match op.token.as_punctuator() {
                     Some(P::LeftParen) => {
+                        if self.at_ahead(P::LeftBrace, 1)? {
+                            return self.statement_expression(location);
+                        }
                         return self.without_angle(|parser| {
                             if parser.at_ahead(P::Ellipsis, 1)? {
                                 parser.left_fold(location)

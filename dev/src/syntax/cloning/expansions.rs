@@ -804,6 +804,94 @@ mod tests {
         }
     }
 
+    struct EmptyOrRepeatedPacks(usize);
+    impl PackExpander for EmptyOrRepeatedPacks {
+        fn pack_length(&self, _: NameId) -> Option<usize> {
+            Some(self.0)
+        }
+        fn element_name(&mut self, name: NameId, _: usize) -> Result<NameId, ParseError> {
+            Ok(name)
+        }
+    }
+
+    #[test]
+    fn expanded_clause_presence_survives_empty_base_and_constructor_packs() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            support::{source::SourceBuffer, stack::StackBudget},
+            syntax::{
+                SyntaxUnit, printer,
+                render::{Render, Renderer},
+            },
+        };
+        for (count, expected) in [
+            (0, "struct C:{C():{}};"),
+            (1, "struct C:B{C():B(){}};"),
+            (2, "struct C:B,B{C():B(),B(){}};"),
+        ] {
+            let source =
+                SourceBuffer::new(b"template<class... B>struct C:B...{C():B()...{}};".to_vec())
+                    .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"expanded-clauses").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let ast::DeclKind::Template { declaration, .. } = tree
+                .declarations
+                .get(tree.decl_lists.get(declarations)[0])
+                .kind
+            else {
+                panic!("template class")
+            };
+            let marker = 0u8;
+            let mut packs = EmptyOrRepeatedPacks(count);
+            let copy = Cloner::new(
+                tree,
+                StackBudget::default(),
+                std::ptr::from_ref(&marker).addr(),
+            )
+            .with_expander(&mut packs)
+            .declaration(declaration)
+            .unwrap();
+            let ast::DeclKind::Class(specifier) = tree.declarations.get(copy).kind else {
+                panic!("class")
+            };
+            let ast::SpecifierKind::Class(class) = specifier.kind else {
+                panic!("class specifier")
+            };
+            let class = tree.classes.get(class);
+            assert!(class.has_base_clause);
+            assert_eq!(tree.bases.get(class.bases).len(), count);
+            let ast::DeclKind::SpecialMember {
+                body: Some(body), ..
+            } = tree
+                .declarations
+                .get(tree.decl_lists.get(class.members)[0])
+                .kind
+            else {
+                panic!("constructor")
+            };
+            let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+                panic!("parsed body")
+            };
+            assert!(body.initializer_location.is_some());
+            assert_eq!(tree.mem_initializers.get(body.initializers).len(), count);
+            let mut renderer = Renderer::new(tree, cursor);
+            renderer.render(Render::Declaration(copy)).unwrap();
+            assert_eq!(renderer.bytes, expected.as_bytes());
+            let start = tree.decl_lists.begin();
+            tree.decl_lists.push(copy);
+            let declarations = tree.decl_lists.finish(start).unwrap();
+            let mut bytes = Vec::new();
+            printer::print(tree, cursor, declarations, &mut bytes).unwrap();
+            let dump = String::from_utf8(bytes).unwrap();
+            assert!(dump.contains("base-clause\n"));
+            assert!(dump.contains("ctor-initializer\n"));
+            assert_eq!(dump.matches("base-specifier").count(), count);
+            assert_eq!(dump.matches("mem-initializer\n").count(), count);
+        }
+    }
+
     #[test]
     fn name_use_queries_retain_occurrences_and_nested_syntax_without_retaining_copies() {
         use crate::{

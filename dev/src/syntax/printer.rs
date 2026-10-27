@@ -636,6 +636,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         Ok(())
     }
     fn specifiers(&mut self, specifiers: List<Specifier>, types: bool) -> io::Result<()> {
+        if !types && specifiers.is_empty() {
+            return Ok(());
+        }
         self.open(
             if types {
                 "type-specifier-seq"
@@ -812,7 +815,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         {
             self.tasks.push(Task::Declaration(member));
         }
-        if !class.bases.is_empty() {
+        if class.has_base_clause {
             self.tasks.push(Task::Close);
             for &base in self.renderer.tree.bases.get(class.bases).iter().rev() {
                 self.tasks.push(Task::Base(base));
@@ -841,7 +844,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
         }
         self.tasks.push(Task::Statement(body.compound));
-        if !body.initializers.is_empty() {
+        if body.initializer_location.is_some() {
             self.tasks.push(Task::Close);
             for &member in self
                 .renderer

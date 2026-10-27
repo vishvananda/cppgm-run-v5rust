@@ -337,13 +337,6 @@ pub(crate) struct Base {
 pub(crate) struct ClassSyntax {
     pub packing: u32,
     pub tokens: TokenSpan,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The presence of an empty base clause is distinct from its owned base list"
-        )
-    )]
     pub has_base_clause: bool,
     pub attributes: List<Attribute>,
     pub location: SourceOffset,
@@ -369,13 +362,6 @@ pub(crate) struct MemInitializer {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FunctionBody {
     pub reserved_call: Option<NameId>,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "The ctor-initializer colon location is retained for later constructor diagnostics"
-        )
-    )]
     pub initializer_location: Option<SourceOffset>,
     pub initializers: List<MemInitializer>,
     pub compound: StmtId,

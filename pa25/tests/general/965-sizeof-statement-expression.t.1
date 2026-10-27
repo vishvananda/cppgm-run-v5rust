@@ -1,0 +1,8 @@
+int main() {
+  int value = 3;
+  int values[2];
+  if (sizeof ({ ++value; }) != sizeof(int)) return 1;
+  if (sizeof ({ values; })[0] != sizeof(int)) return 2;
+  if (sizeof (({ ++value; })) != sizeof(int)) return 3;
+  return value - 3;
+}
