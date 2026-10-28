@@ -511,10 +511,9 @@ fn demand_explicit_definitions(
             .view(&*cx.graph, &*cx.tree, cx.cursor)
             .demand(entity);
     }
-    for &class in cx.graph.lower_explicit_classes() {
-        cx.symbols
-            .view(&*cx.graph, &*cx.tree, cx.cursor)
-            .construction_table(program, class)?;
+    for index in 0..cx.graph.lower_explicit_classes().len() {
+        let class = cx.graph.lower_explicit_classes()[index];
+        cx.construction_table(program, class)?;
     }
     Ok(())
 }

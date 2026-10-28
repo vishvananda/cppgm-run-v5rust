@@ -1707,19 +1707,15 @@ mod tests {
         let syntax_count = tree.expressions.mark();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let graph = analyzer.analyze(declarations).unwrap();
+        let mut graph = analyzer.analyze(declarations).unwrap();
         let declaration = *tree.decl_lists.get(declarations).last().unwrap();
         let ast::DeclKind::SpecialMember { declarator, .. } =
             tree.declarations.get(declaration).kind
         else {
             panic!("destructor definition");
         };
-        crate::lower::assert_definition_destructor_targets(
-            &graph,
-            tree,
-            cursor,
-            graph.lower_declared(declarator).unwrap(),
-        );
+        let function = graph.lower_declared(declarator).unwrap();
+        crate::lower::assert_definition_destructor_targets(&mut graph, tree, cursor, function);
         assert_eq!(syntax_count, tree.expressions.mark());
     }
     #[test]
@@ -1737,7 +1733,7 @@ mod tests {
         let syntax = (tree.expressions.mark(), tree.declarations.mark());
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let graph = analyzer.analyze(declarations).unwrap();
+        let mut graph = analyzer.analyze(declarations).unwrap();
         let ast::DeclKind::Function { declarator, .. } = tree
             .declarations
             .get(*tree.decl_lists.get(declarations).last().unwrap())
@@ -1763,7 +1759,7 @@ mod tests {
                 class
             })
             .collect();
-        crate::lower::assert_table_demand(&graph, tree, cursor, &classes);
+        crate::lower::assert_table_demand(&mut graph, tree, cursor, &classes);
         assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
     }
     #[test]

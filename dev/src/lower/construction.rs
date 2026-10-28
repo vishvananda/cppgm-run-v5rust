@@ -430,12 +430,14 @@ impl Function<'_, '_, '_, '_> {
                 .host_objects()
             && let Entry::Constructor(id, _) = entry
         {
-            self.symbols
-                .view(&*self.graph, &*self.tree, self.cursor)
-                .construction_table(
-                    self.builder.program(),
-                    self.graph.lower_constructor(id).class,
-                )?;
+            let class = self.graph.lower_constructor(id).class;
+            crate::lower::unit_frontend::Context {
+                graph: self.graph,
+                tree: self.tree,
+                cursor: self.cursor,
+                symbols: self.symbols,
+            }
+            .construction_table(self.builder.program(), class)?;
         }
         let symbol = self
             .symbols

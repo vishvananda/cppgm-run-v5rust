@@ -44,9 +44,13 @@ impl Function<'_, '_, '_, '_> {
                 .view(&*self.graph, &*self.tree, self.cursor)
                 .host_objects()
         {
-            self.symbols
-                .view(&*self.graph, &*self.tree, self.cursor)
-                .construction_table(self.builder.program(), class)?;
+            crate::lower::unit_frontend::Context {
+                graph: self.graph,
+                tree: self.tree,
+                cursor: self.cursor,
+                symbols: self.symbols,
+            }
+            .construction_table(self.builder.program(), class)?;
         }
         let source = self.graph.lower_expression(id)?.ty;
         if through_pointer {

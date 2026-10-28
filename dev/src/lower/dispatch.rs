@@ -17,9 +17,13 @@ impl Function<'_, '_, '_, '_> {
                 .view(&*self.graph, &*self.tree, self.cursor)
                 .host_objects()
         {
-            self.symbols
-                .view(&*self.graph, &*self.tree, self.cursor)
-                .construction_table(self.builder.program(), class)?;
+            crate::lower::unit_frontend::Context {
+                graph: self.graph,
+                tree: self.tree,
+                cursor: self.cursor,
+                symbols: self.symbols,
+            }
+            .construction_table(self.builder.program(), class)?;
         }
         Ok(())
     }
@@ -28,9 +32,13 @@ impl Function<'_, '_, '_, '_> {
         if !self.graph.lower_dynamic_class(class) {
             return Ok(());
         }
-        self.symbols
-            .view(&*self.graph, &*self.tree, self.cursor)
-            .vtable_symbol(self.builder.program(), class)?;
+        crate::lower::unit_frontend::Context {
+            graph: self.graph,
+            tree: self.tree,
+            cursor: self.cursor,
+            symbols: self.symbols,
+        }
+        .vtable_symbol(self.builder.program(), class)?;
         let offsets = self.graph.lower_segment_offsets(class)?;
         let order = if self.virtual_context.vtt.is_some() {
             self.symbols
@@ -108,10 +116,13 @@ impl Function<'_, '_, '_, '_> {
         index: usize,
         object: Value,
     ) -> Result<(), Error> {
-        let (symbol, point) = self
-            .symbols
-            .view(&*self.graph, &*self.tree, self.cursor)
-            .table_address(self.builder.program(), class, index)?;
+        let (symbol, point) = crate::lower::unit_frontend::Context {
+            graph: self.graph,
+            tree: self.tree,
+            cursor: self.cursor,
+            symbols: self.symbols,
+        }
+        .table_address(self.builder.program(), class, index)?;
         let table = self.emit(I::Addr(Value::Symbol(symbol)), source)?.value;
         let offset = self.builder.integer(u128::from(point))?;
         let table = self
@@ -225,10 +236,13 @@ impl Function<'_, '_, '_, '_> {
             .graph
             .lower_virtual_slot(entity)
             .ok_or(crate::sema::Error::Invariant("virtual call without slot"))?;
-        let signature = self
-            .symbols
-            .view(&*self.graph, &*self.tree, self.cursor)
-            .virtual_signature(self.builder.program(), entity)?;
+        let signature = crate::lower::unit_frontend::Context {
+            graph: self.graph,
+            tree: self.tree,
+            cursor: self.cursor,
+            symbols: self.symbols,
+        }
+        .virtual_signature(self.builder.program(), entity)?;
         Ok((self.virtual_callee(object, slot, source)?, Some(signature)))
     }
 }

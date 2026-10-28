@@ -53,9 +53,13 @@ impl Function<'_, '_, '_, '_> {
                 .class_destructor(use_.target)?
                 .ok_or(crate::sema::Error::Invariant("virtual deletion destructor"))?;
             let throws = self.lifetime_call_throws(CallTarget::Direct(destructor))?;
-            self.symbols
-                .view(&*self.graph, &*self.tree, self.cursor)
-                .vtable_symbol(self.builder.program(), class)?;
+            crate::lower::unit_frontend::Context {
+                graph: self.graph,
+                tree: self.tree,
+                cursor: self.cursor,
+                symbols: self.symbols,
+            }
+            .vtable_symbol(self.builder.program(), class)?;
             self.begin_lifetime_call(throws)?;
             self.before_lifetime_call(throws)?;
             let slot = self
@@ -64,10 +68,13 @@ impl Function<'_, '_, '_, '_> {
                 .ok_or(crate::sema::Error::Invariant("virtual deletion slot"))?
                 .deleting()?;
             let callee = self.virtual_callee(object.value, slot, source)?;
-            let signature = self
-                .symbols
-                .view(&*self.graph, &*self.tree, self.cursor)
-                .virtual_signature(self.builder.program(), destructor)?;
+            let signature = crate::lower::unit_frontend::Context {
+                graph: self.graph,
+                tree: self.tree,
+                cursor: self.cursor,
+                symbols: self.symbols,
+            }
+            .virtual_signature(self.builder.program(), destructor)?;
             let arguments = self.builder.arguments(&[object.value])?;
             self.effect(I::Call(Call {
                 result: Type::Void,

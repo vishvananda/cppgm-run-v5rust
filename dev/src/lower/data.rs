@@ -249,10 +249,8 @@ pub(super) fn items(
         }
         out.push(match item {
             StaticItem::Table(class, segment) => {
-                let (symbol, addend) = cx
-                    .symbols
-                    .view(&*cx.graph, &*cx.tree, cx.cursor)
-                    .table_address(output.program(), class, segment.index())?;
+                let (symbol, addend) =
+                    cx.table_address(output.program(), class, segment.index())?;
                 DataItem::Address(
                     crate::lowir::vocabulary::Type::Ptr,
                     symbol,

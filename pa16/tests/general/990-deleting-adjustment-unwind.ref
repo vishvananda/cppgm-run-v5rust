@@ -1,0 +1,368 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+declare global @__external_rtti_vtable____vmi_class_type_info [role=rtti_vmi, binding=strong, object=_ZTVN10__cxxabiv121__vmi_class_type_infoE]
+
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
+declare function @operatordelete(%arg0 : ptr) -> void [unwind=no, role=free_memory, binding=strong, object=cppgm_builtin_operator_delete]
+
+global @__typeinfo_name__struct_A [storage=readonly, binding=weak, object=_ZTS1A] = {
+  i8 49
+  i8 65
+  i8 0
+}
+global @__rtti_struct_A [storage=readonly, binding=weak, object=_ZTI1A] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_A
+}
+global @A__vtable [storage=readonly, binding=weak, object=_ZTV1A] = {
+  i64 0
+  ptr addr @__rtti_struct_A
+  ptr addr @A___A
+  ptr addr @A___A__deleting_entry
+}
+global @__typeinfo_name__struct_B [storage=readonly, binding=weak, object=_ZTS1B] = {
+  i8 49
+  i8 66
+  i8 0
+}
+global @__rtti_struct_B [storage=readonly, binding=weak, object=_ZTI1B] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_B
+}
+global @B__vtable [storage=readonly, binding=weak, object=_ZTV1B] = {
+  i64 0
+  ptr addr @__rtti_struct_B
+  ptr addr @B___B
+  ptr addr @B___B__deleting_entry
+}
+global @__typeinfo_name__struct_C [storage=readonly, binding=weak, object=_ZTS1C] = {
+  i8 49
+  i8 67
+  i8 0
+}
+global @__rtti_struct_C [storage=readonly, binding=weak, object=_ZTI1C] = {
+  ptr addr @__external_rtti_vtable____vmi_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_C
+  i32 0
+  i32 2
+  ptr addr @__rtti_struct_A
+  i64 2
+  ptr addr @__rtti_struct_B
+  i64 2050
+}
+global @C__vtable [storage=readonly, binding=weak, object=_ZTV1C] = {
+  i64 0
+  ptr addr @__rtti_struct_C
+  ptr addr @C___C
+  ptr addr @C___C__deleting_entry
+}
+global @C____view__B__8__vtable [storage=readonly, binding=internal] = {
+  i64 -8
+  ptr addr @__rtti_struct_C
+  ptr addr @_C___C__vtable_return_adjust__this_neg8__return_pos0
+  ptr addr @_C___C__deleting_entry__vtable_return_adjust__this_neg8__return_pos0
+}
+global @c [binding=strong] = {
+  ptr addr @C__vtable + 16
+  ptr addr @C____view__B__8__vtable + 16
+}
+
+function @g(%p : ptr) -> void [binding=strong, object=_Z1gP1B] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = cmp ne ptr %t1, 0
+    branch %t2, ^delete_nonnull_1, ^delete_end_2
+
+  block ^delete_nonnull_1:
+    %t3 = load typed ptr %t1
+    %t4 = index i8 %t3, 8
+    %t5 = load typed ptr %t4
+    call void %t5(%t1) as (%arg0 : ptr [object_bytes=8]) -> void
+    jump ^delete_end_2
+
+  block ^delete_end_2:
+    return void
+}
+function @A___A__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN1AD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @A__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @A___A__deleting_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN1AD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @A__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @B___B__base_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN1BD2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @B__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @B___B__deleting_entry(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN1BD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @B__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    eh_end
+    %t4 = load typed ptr $this
+    call void @operatordelete(%t4)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t5 = load typed ptr $this
+    call void @operatordelete(%t5)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+function @C___C__deleting_entry(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN1CD0Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @C__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 8
+    %t6 = addr @C____view__B__8__vtable
+    %t7 = index i8 %t6, 16
+    store typed ptr %t7, %t5
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 8
+    call void @B___B__base_entry(%t9)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    eh_try ^lexical_cleanup_terminate_5
+    %t10 = load typed ptr $this
+    %t11 = index i8 %t10, 0
+    call void @A___A__base_entry(%t11)
+    eh_end
+    %t12 = load typed ptr $this
+    call void @operatordelete(%t12)
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_5:
+    eh_catch_all, 1
+    %t13 = exception ptr
+    call void @cppgm_call_terminate(%t13)
+    unreachable
+
+  block ^destructor_suffix_next_4:
+    eh_cleanup ^destructor_suffix_cleanup_6
+    %t14 = load typed ptr $this
+    %t15 = index i8 %t14, 0
+    call void @A___A__base_entry(%t15)
+    eh_end
+    jump ^destructor_suffix_next_7
+
+  block ^destructor_suffix_cleanup_6:
+    %t16 = load typed ptr $this
+    call void @operatordelete(%t16)
+    eh_end
+    resume
+
+  block ^destructor_suffix_next_7:
+    %t17 = load typed ptr $this
+    call void @operatordelete(%t17)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    eh_try ^lexical_cleanup_terminate_8
+    %t18 = load typed ptr $this
+    %t19 = index i8 %t18, 8
+    call void @B___B__base_entry(%t19)
+    eh_end
+    eh_try ^lexical_cleanup_terminate_9
+    %t20 = load typed ptr $this
+    %t21 = index i8 %t20, 0
+    call void @A___A__base_entry(%t21)
+    eh_end
+    %t22 = load typed ptr $this
+    call void @operatordelete(%t22)
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_8:
+    eh_catch_all, 2
+    %t23 = exception ptr
+    call void @cppgm_call_terminate(%t23)
+    unreachable
+
+  block ^lexical_cleanup_terminate_9:
+    eh_catch_all, 3
+    %t24 = exception ptr
+    call void @cppgm_call_terminate(%t24)
+    unreachable
+
+  block ^destructor_end_2:
+    return void
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    return void
+}
+function @C___C(%this : ptr [object_bytes=16]) -> void [binding=weak, object=_ZN1CD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    %t1 = load typed ptr $this
+    %t2 = addr @C__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    %t4 = load typed ptr $this
+    %t5 = index i8 %t4, 8
+    %t6 = addr @C____view__B__8__vtable
+    %t7 = index i8 %t6, 16
+    store typed ptr %t7, %t5
+    eh_end
+    eh_cleanup ^destructor_suffix_cleanup_3
+    %t8 = load typed ptr $this
+    %t9 = index i8 %t8, 8
+    call void @B___B__base_entry(%t9)
+    eh_end
+    jump ^destructor_suffix_next_4
+
+  block ^destructor_suffix_cleanup_3:
+    eh_try ^lexical_cleanup_terminate_5
+    %t10 = load typed ptr $this
+    %t11 = index i8 %t10, 0
+    call void @A___A__base_entry(%t11)
+    eh_end
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_5:
+    eh_catch_all, 1
+    %t12 = exception ptr
+    call void @cppgm_call_terminate(%t12)
+    unreachable
+
+  block ^destructor_suffix_next_4:
+    %t13 = load typed ptr $this
+    %t14 = index i8 %t13, 0
+    call void @A___A__base_entry(%t14)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    eh_try ^lexical_cleanup_terminate_6
+    %t15 = load typed ptr $this
+    %t16 = index i8 %t15, 8
+    call void @B___B__base_entry(%t16)
+    eh_end
+    eh_try ^lexical_cleanup_terminate_7
+    %t17 = load typed ptr $this
+    %t18 = index i8 %t17, 0
+    call void @A___A__base_entry(%t18)
+    eh_end
+    eh_end
+    resume
+
+  block ^lexical_cleanup_terminate_6:
+    eh_catch_all, 2
+    %t19 = exception ptr
+    call void @cppgm_call_terminate(%t19)
+    unreachable
+
+  block ^lexical_cleanup_terminate_7:
+    eh_catch_all, 3
+    %t20 = exception ptr
+    call void @cppgm_call_terminate(%t20)
+    unreachable
+
+  block ^destructor_end_2:
+    return void
+}
+function @B___B(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN1BD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @B__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @A___A(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN1AD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @A__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @_C___C__deleting_entry__vtable_return_adjust__this_neg8__return_pos0(%arg0 : ptr) -> void [binding=weak, object=_ZThn8_N1CD0Ev] {
+  block ^entry:
+    %t1 = index i8 %arg0, -8
+    call void @C___C__deleting_entry(%t1)
+    return void
+}
+function @_C___C__vtable_return_adjust__this_neg8__return_pos0(%arg0 : ptr) -> void [binding=weak, object=_ZThn8_N1CD1Ev] {
+  block ^entry:
+    %t1 = index i8 %arg0, -8
+    call void @C___C(%t1)
+    return void
+}
+function @__cppgm_fini() -> void [role=fini, binding=internal] {
+  block ^entry:
+    %t1 = addr @c
+    call void @C___C(%t1)
+    return void
+}
+alias object _ZN1CD2Ev = @C___C

@@ -3,7 +3,7 @@
 //! First-reference variable work reserves a position in the emission queue.
 //! Its initializer's requests fill that position after the caller's body has
 //! released its builder. Appending children never shifts unrelated requests.
-use super::{Error, construction::Entry, symbols::Symbols};
+use super::{Error, construction::Entry};
 use crate::lowir::model::{Program, SymbolId};
 use crate::sema::lowering::EntityId;
 
@@ -39,17 +39,20 @@ impl RootArguments {
 // Finalize the ABI entry before appending functions designated by this
 // definition's template arguments, matching emit_definition's demand order.
 pub(super) fn finish_function_definition(
-    symbols: &mut Symbols<'_, '_>,
-    graph: &crate::sema::Graph,
+    cx: &mut super::unit_frontend::Context<'_, '_, '_>,
     program: &mut Program,
     entry: Entry,
     symbol: SymbolId,
 ) -> Result<(), Error> {
-    symbols.finish_entry(program, entry, symbol)?;
-    symbols.key_function_table(program, entry)?;
-    if let Some(entity) = entry.entity(graph) {
-        for function in graph.lower_argument_functions(Some(entity)) {
-            symbols.demand(function);
+    cx.symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .finish_entry(program, entry, symbol)?;
+    cx.key_function_table(program, entry)?;
+    if let Some(entity) = entry.entity(&*cx.graph) {
+        for function in cx.graph.lower_argument_functions(Some(entity)) {
+            cx.symbols
+                .view(&*cx.graph, &*cx.tree, cx.cursor)
+                .demand(function);
         }
     }
     Ok(())

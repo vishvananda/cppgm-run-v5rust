@@ -445,134 +445,7 @@ impl Symbols<'_, '_> {
         }
         Ok((symbol, metadata))
     }
-    pub(in crate::lower) fn construction_table(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-    ) -> Result<(), Error> {
-        if self.graph.lower_dynamic_class(class) && self.graph.lower_emits_vtable(class)? {
-            self.vtable_symbol(program, class)?;
-        }
-        Ok(())
-    }
-    pub(in crate::lower) fn vtable_symbol(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-    ) -> Result<SymbolId, Error> {
-        self.check_stack()?;
-        if let Some(&symbol) = self.state.vtables.objects.get(&class) {
-            return Ok(symbol);
-        }
-        let facts = self.graph.lower_virtual_class(class)?;
-        let key = facts.key;
-        let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Table)?;
-        self.state.vtables.objects.insert(class, symbol);
-        if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
-            return Ok(symbol);
-        }
-        if let Some(key) = key
-            && self.function_facts(key)?.emission == Emission::Always
-            && metadata.binding != Some(Binding::Internal)
-        {
-            metadata.binding = Some(Binding::Strong);
-        }
-        let typeinfo = self.typeinfo_symbol(program, class)?;
-        let slots = self.graph.lower_virtual_slots(class)?;
-        let mut items = self.table_rows(class, 0)?;
-        items.reserve(slots.len() + 2);
-        items.push(integer(Type::I64, 0));
-        items.push(address(typeinfo, 0));
-        let group = self.graph.lower_vtable_group(class);
-        for (index, slot) in slots.iter().enumerate() {
-            let slot = slot.ok_or(crate::sema::Error::Invariant("unfilled virtual slot"))?;
-            let (function, kind) = group.map_or((slot.function, slot.kind), |group| {
-                let entry = group.entries[index];
-                (entry.function, entry.kind)
-            });
-            let adjustment = self.entry_adjustment(class, 0, index)?;
-            items.push(self.table_target(
-                program,
-                TableTarget {
-                    function,
-                    kind,
-                    adjustment,
-                    adjusted: slot.adjusted,
-                    through: class,
-                },
-                metadata.binding,
-            )?);
-        }
-        let one_object = self.state.table.object_mode && group.is_some();
-        if one_object {
-            self.append_group_items(program, class, metadata.binding, &mut items)?;
-        }
-        define(program, symbol, metadata, items)?;
-        self.state.table.work.vtables += 1;
-        if group.is_some() && !one_object {
-            self.define_views(program, class, symbol, metadata.binding)?;
-        }
-        if !self.graph.lower_virtual_bases(class).is_empty() {
-            self.vtt_symbol(program, class)?;
-        }
-        if !self.host_objects() && self.graph.lower_vtable_group(class).is_some() {
-            for (base, _) in self.graph.lower_inheritance_edges(class) {
-                self.construction_table(program, base)?;
-            }
-        }
-        Ok(symbol)
-    }
-    fn table_target(
-        &mut self,
-        program: &mut Program,
-        target: TableTarget,
-        binding: Option<Binding>,
-    ) -> Result<DataItem, Error> {
-        Ok(self
-            .table_entry_symbol(program, target, binding, false)?
-            .map_or_else(|| integer(Type::Ptr, 0), |symbol| address(symbol, 0)))
-    }
-    fn table_entry_symbol(
-        &mut self,
-        program: &mut Program,
-        target: TableTarget,
-        binding: Option<Binding>,
-        strong: bool,
-    ) -> Result<Option<SymbolId>, Error> {
-        let TableTarget {
-            function,
-            kind,
-            adjustment,
-            adjusted,
-            through,
-        } = target;
-        if adjustment.unused {
-            return Ok(None);
-        }
-        if self.graph.lower_virtual_pure(function) {
-            return Ok(Some(self.pure_virtual_symbol(program, function)?));
-        }
-        let entry = if matches!(kind, SlotKind::DeletingDestructor) {
-            Entry::DestructorDeleting(function)
-        } else {
-            Entry::Function(function)
-        };
-        let result = self.result_adjustment(function, kind, adjusted, through)?;
-        if matches!(kind, SlotKind::CompleteDestructor) {
-            // Both table data and definition-owned thunks request the pair,
-            // even when this unit never emits the class's own table.
-            self.demand_entry(Entry::DestructorDeleting(function));
-            self.demand_entry(Entry::Function(function));
-        } else if matches!(kind, SlotKind::Function) {
-            self.demand(function);
-        }
-        let symbol = if !adjustment.is_zero() || result.is_some() {
-            self.thunk_symbol(program, entry, adjustment, result, binding, strong)?
-        } else {
-            self.entry_symbol(program, entry)?
-        };
-        Ok(Some(symbol))
-    }
+
     fn result_adjustment(
         &mut self,
         function: EntityId,
@@ -642,375 +515,7 @@ impl Symbols<'_, '_> {
         components.reverse();
         Ok(components.join("__"))
     }
-    fn define_views(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-        primary: SymbolId,
-        binding: Option<Binding>,
-    ) -> Result<(), Error> {
-        let graph = self.graph;
-        let group = graph
-            .lower_vtable_group(class)
-            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
-        self.segment_offsets(class)?;
-        let mut views = vec![Some(primary)];
-        for (index, segment) in group.segments.iter().enumerate().skip(1) {
-            if segment.shared {
-                views.push(None);
-                continue;
-            }
-            let base = self.class_presentation(segment.class)?;
-            let top = self.class_presentation(class)?;
-            let spelling = format!(
-                "{top}____view__{base}__{}__vtable",
-                self.state.vtables.offsets[&class][index]
-            );
-            views.push(Some(
-                self.state.table.allocate(program, &spelling, None, true)?,
-            ));
-        }
-        self.state.vtables.views.insert(class, views);
-        let typeinfo = self.typeinfo_symbol(program, class)?;
-        for index in 1..group.segments.len() {
-            let Some(symbol) = self.state.vtables.views[&class][index] else {
-                continue;
-            };
-            let mut items = self.table_rows(class, index)?;
-            items.extend([
-                integer(
-                    Type::I64,
-                    self.state.vtables.offsets[&class][index].wrapping_neg(),
-                ),
-                address(typeinfo, 0),
-            ]);
-            self.append_view_targets(program, class, index, binding, &mut items)?;
-            self.state.table.work.vtables += 1;
-            define(
-                program,
-                symbol,
-                Metadata {
-                    binding: Some(Binding::Internal),
-                    ..Metadata::default()
-                },
-                items,
-            )?;
-        }
-        Ok(())
-    }
-    fn append_view_targets(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-        segment: usize,
-        binding: Option<Binding>,
-        targets: &mut Vec<DataItem>,
-    ) -> Result<(), Error> {
-        let graph = self.graph;
-        let group = graph
-            .lower_vtable_group(class)
-            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
-        let part = &group.segments[segment];
-        let own = graph.lower_virtual_slots(part.class)?;
-        for (slot, entry) in group.entries[part.entries.clone()].iter().enumerate() {
-            let adjustment = self.entry_adjustment(class, segment, slot)?;
-            targets.push(
-                self.table_target(
-                    program,
-                    TableTarget {
-                        function: entry.function,
-                        kind: entry.kind,
-                        adjustment,
-                        adjusted: own[slot]
-                            .ok_or(crate::sema::Error::Invariant("unfilled view slot"))?
-                            .adjusted,
-                        through: part.class,
-                    },
-                    binding,
-                )?,
-            );
-        }
-        Ok(())
-    }
-    fn append_group_items(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-        binding: Option<Binding>,
-        items: &mut Vec<DataItem>,
-    ) -> Result<(), Error> {
-        let graph = self.graph;
-        let group = graph
-            .lower_vtable_group(class)
-            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
-        // Resolve every slot before publishing the one packed definition.
-        // Target demand can publish other globals; no view symbol is allocated.
-        let mut targets = Vec::new();
-        for (index, part) in group.segments.iter().enumerate().skip(1) {
-            if !part.shared {
-                self.append_view_targets(program, class, index, binding, &mut targets)?;
-            }
-        }
-        self.segment_offsets(class)?;
-        let typeinfo = self.typeinfo_symbol(program, class)?;
-        let mut targets = targets.into_iter();
-        for (index, part) in group.segments.iter().enumerate().skip(1) {
-            if part.shared {
-                continue;
-            }
-            items.extend(self.table_rows(class, index)?);
-            items.extend([
-                integer(
-                    Type::I64,
-                    self.state.vtables.offsets[&class][index].wrapping_neg(),
-                ),
-                address(typeinfo, 0),
-            ]);
-            items.extend(targets.by_ref().take(part.entries.len()));
-        }
-        Ok(())
-    }
-    pub(in crate::lower) fn table_address(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-        mut segment: usize,
-    ) -> Result<(SymbolId, u64), Error> {
-        let symbol = self.vtable_symbol(program, class)?;
-        let Some(group) = self.graph.lower_vtable_group(class) else {
-            return Ok((symbol, self.table_header_bytes(class, 0)?));
-        };
-        while segment != 0 && group.segments[segment].shared {
-            segment = group.segments[segment].parent.index();
-        }
-        if segment == 0 {
-            return Ok((symbol, self.table_header_bytes(class, 0)?));
-        }
-        if let Some(views) = self.state.vtables.views.get(&class) {
-            return Ok((
-                views[segment].ok_or(crate::sema::Error::Invariant("missing view symbol"))?,
-                self.table_header_bytes(class, segment)?,
-            ));
-        }
-        if !self.state.vtables.address_points.contains_key(&class) {
-            let primary = self.table_header_bytes(class, 0)?;
-            let mut points = vec![primary];
-            let mut position =
-                primary.wrapping_add(u64::from(self.graph.lower_virtual_class(class)?.size) * 8);
-            for (index, part) in group.segments.iter().enumerate().skip(1) {
-                if part.shared {
-                    points.push(0);
-                    continue;
-                }
-                let point = position.wrapping_add(self.table_header_bytes(class, index)?);
-                points.push(point);
-                position = point
-                    .wrapping_add(u64::from(self.graph.lower_virtual_class(part.class)?.size) * 8);
-            }
-            self.state.vtables.address_points.insert(class, points);
-        }
-        Ok((symbol, self.state.vtables.address_points[&class][segment]))
-    }
-    fn thunk_symbol(
-        &mut self,
-        program: &mut Program,
-        entry: Entry,
-        adjustment: ThisAdjustment,
-        result: Option<ResultAdjustment>,
-        binding: Option<Binding>,
-        strong: bool,
-    ) -> Result<SymbolId, Error> {
-        use crate::abi::encoder::CallOffset;
-        let internal = binding == Some(Binding::Internal);
-        let key = ThunkKey {
-            entry,
-            adjustment,
-            result,
-            internal,
-        };
-        if let Some(&index) = self.state.vtables.thunk_symbols.get(&key) {
-            if strong && !internal {
-                self.state.vtables.thunks[index].metadata.binding = Some(Binding::Strong);
-            }
-            return Ok(self.state.vtables.thunks[index].symbol);
-        }
-        let facts = self.entry_facts(entry)?;
-        let target = self.entry_symbol(program, entry)?;
-        let variant = if matches!(entry, Entry::DestructorDeleting(_)) {
-            super::super::construction::Variant::Deleting
-        } else {
-            super::super::construction::Variant::Complete
-        };
-        let function = self.encode_function(&facts, variant)?;
-        let result_row = result
-            .and_then(|r| r.via.map(|via| (r.from, via)))
-            .map(|(from, via)| self.vbase_row_offset(from, via))
-            .transpose()?;
-        let mut object = Vec::new();
-        self.state.table.work.mangled_names += 1;
-        Encoder::encode(
-            &self.state.abi,
-            Target::Thunk {
-                function,
-                this: CallOffset {
-                    offset: adjustment.offset,
-                    vcall: adjustment.vcall,
-                },
-                result: result.map(|r| CallOffset {
-                    offset: r.offset,
-                    vcall: result_row,
-                }),
-            },
-            &mut object,
-            self.state.budget,
-        )?;
-        let object = program.names.intern_bytes(&object)?;
-        let returned = result.map_or(0, |r| r.offset);
-        let mut spelling = format!(
-            "_{}__vtable_return_adjust__this_{}{}__return_{}{}",
-            program.names.get(program.symbol(target).name),
-            if adjustment.offset < 0 { "neg" } else { "pos" },
-            adjustment.offset.unsigned_abs(),
-            if returned < 0 { "neg" } else { "pos" },
-            returned.unsigned_abs()
-        );
-        if let Some(vcall) = adjustment.vcall {
-            use std::fmt::Write;
-            write!(
-                spelling,
-                "__vcall_{}{}",
-                if vcall < 0 { "n" } else { "p" },
-                vcall.unsigned_abs()
-            )
-            .map_err(|_| crate::sema::Error::Invariant("thunk spelling"))?;
-        }
-        if let Some(row) = result_row {
-            use std::fmt::Write;
-            write!(
-                spelling,
-                "__virtual_{}{}",
-                if row < 0 { "n" } else { "p" },
-                row.unsigned_abs()
-            )
-            .map_err(|_| crate::sema::Error::Invariant("thunk result spelling"))?;
-        }
-        let symbol = self
-            .state
-            .table
-            .allocate(program, &spelling, Some(object), internal)?;
-        let entity = entry
-            .entity(self.graph)
-            .ok_or(crate::sema::Error::Invariant("thunk without function"))?;
-        let original = self.virtual_signature(program, entity)?;
-        let original = program.signature(original);
-        let this_index = usize::from(
-            original
-                .parameters
-                .first()
-                .is_some_and(|p| p.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)),
-        );
-        let parameters = original
-            .parameters
-            .iter()
-            .enumerate()
-            .map(|(index, p)| crate::lowir::model::Parameter {
-                name: p.name,
-                ty: p.ty,
-                pass: p.pass,
-                object_bytes: if index == this_index {
-                    0
-                } else {
-                    p.object_bytes
-                },
-                no_alias: p.no_alias,
-                classes: p.classes,
-            })
-            .collect();
-        let signature = crate::lowir::model::Signature {
-            parameters,
-            result: original.result,
-            boundary: crate::lowir::model::Boundary {
-                arity: original.boundary.arity,
-                effects: original.boundary.effects,
-                returns: original.boundary.returns,
-                result_classes: original.boundary.result_classes,
-                unwind: if matches!(entry, Entry::DestructorDeleting(_)) {
-                    Unwind::No
-                } else {
-                    original.boundary.unwind
-                },
-            },
-        };
-        let variadic = signature.boundary.arity == crate::lowir::model::Arity::Variadic;
-        if self.state.table.object_mode && variadic && result.is_some() {
-            return Err(crate::sema::Error::Diagnostic {
-                location: crate::support::source::SourceOffset(0),
-                message: "a covariant thunk of a variadic function",
-            }
-            .into());
-        }
-        let jump = self.state.table.object_mode
-            && (variadic || self.state.table.host_objects && result.is_none());
-        let signature = program.add_signature(signature)?;
-        self.state
-            .vtables
-            .thunk_symbols
-            .insert(key, self.state.vtables.thunks.len());
-        let family = if matches!(
-            facts.name,
-            crate::sema::lowering::FunctionName::Destructor(_)
-        ) {
-            let object = if internal {
-                None
-            } else {
-                let function =
-                    self.encode_function(&facts, crate::lower::construction::Variant::Base)?;
-                let mut object = Vec::new();
-                // Object-family aliases are backend observations. The C++
-                // lowering neither mangles nor interns these extra aliases.
-                Encoder::encode(
-                    &self.state.abi,
-                    Target::Thunk {
-                        function,
-                        this: CallOffset {
-                            offset: adjustment.offset,
-                            vcall: adjustment.vcall,
-                        },
-                        result: None,
-                    },
-                    &mut object,
-                    self.state.budget,
-                )?;
-                Some(program.names.intern_view_bytes(&object)?)
-            };
-            Some((entity, object, variant))
-        } else {
-            None
-        };
-        self.state.vtables.thunks.push(Thunk {
-            symbol,
-            target,
-            signature,
-            this_index,
-            adjustment,
-            result,
-            result_row,
-            jump,
-            family,
-            metadata: Metadata {
-                object: Some(object),
-                binding: Some(if internal {
-                    Binding::Internal
-                } else if strong {
-                    Binding::Strong
-                } else {
-                    Binding::Weak
-                }),
-                ..Metadata::default()
-            },
-        });
-        Ok(symbol)
-    }
+
     pub(in crate::lower) fn emit_thunks(
         &mut self,
         program: &mut Program,
@@ -1418,84 +923,7 @@ impl Symbols<'_, '_> {
         }
         flags
     }
-    pub(in crate::lower) fn virtual_signature(
-        &mut self,
-        program: &mut Program,
-        entity: EntityId,
-    ) -> Result<SignatureId, Error> {
-        if let Some(&signature) = self.state.vtables.signatures.get(&entity) {
-            return Ok(signature);
-        }
-        let facts = self.function_facts(entity)?;
-        let mut signature =
-            function::argument_shape(program, self, self.graph, Entry::Function(entity))?;
-        signature.boundary.unwind = if facts.nothrow {
-            Unwind::No
-        } else {
-            Unwind::Default
-        };
-        function::declared_effects(&mut signature.boundary, self.graph, Some(entity));
-        let signature = program.add_signature(signature)?;
-        self.state.vtables.signatures.insert(entity, signature);
-        Ok(signature)
-    }
-    fn pure_virtual_symbol(
-        &mut self,
-        program: &mut Program,
-        entity: EntityId,
-    ) -> Result<SymbolId, Error> {
-        if let Some(symbol) = self.state.vtables.pure_virtual {
-            return Ok(symbol);
-        }
-        let symbol = self
-            .state
-            .table
-            .allocate(program, "__cxa_pure_virtual", None, true)?;
-        let signature = self.virtual_signature(program, entity)?;
-        // A handler has its own boundary, never mutate a call site's signature.
-        let original = program.signature(signature);
-        let mut parameters = Vec::with_capacity(original.parameters.len());
-        for p in &original.parameters {
-            parameters.push(crate::lowir::model::Parameter {
-                name: p.name,
-                ty: p.ty,
-                pass: p.pass,
-                object_bytes: p.object_bytes,
-                no_alias: p.no_alias,
-                classes: p.classes,
-            });
-        }
-        let boundary = crate::lowir::model::Boundary {
-            unwind: Unwind::No,
-            returns: Returns::NoReturn,
-            arity: original.boundary.arity,
-            effects: original.boundary.effects,
-            result_classes: original.boundary.result_classes,
-        };
-        let result = original.result;
-        let signature = program.add_signature(crate::lowir::model::Signature {
-            parameters,
-            result,
-            boundary,
-        })?;
-        program.add(
-            symbol,
-            crate::lowir::model::Function {
-                name: program.symbol(symbol).name,
-                signature,
-                metadata: Metadata {
-                    role: Some(Role::PureVirtual),
-                    binding: Some(Binding::Strong),
-                    ..Metadata::default()
-                },
-                body: None,
-                location: None,
-            },
-        )?;
-        program.publish_runtime_declaration(symbol);
-        self.state.vtables.pure_virtual = Some(symbol);
-        Ok(symbol)
-    }
+
     fn prepare_definition_thunks(&mut self, class: EntityId) -> Result<(), Error> {
         if self.state.vtables.definition_classes.contains(&class) {
             return Ok(());
@@ -1716,59 +1144,13 @@ impl Symbols<'_, '_> {
         }
         Ok(level)
     }
-    pub(in crate::lower) fn key_function_table(
-        &mut self,
-        program: &mut Program,
-        entry: Entry,
-    ) -> Result<(), Error> {
-        if let Entry::Function(entity) = entry
-            && self.graph.lower_virtual_slot(entity).is_some()
-            && !self.function_facts(entity)?.internal
-            && !self.graph.lower_virtual_pure(entity)
-            && let Some(class) = self.function_facts(entity)?.object
-        {
-            self.prepare_definition_thunks(class)?;
-            let symbol = self.entry_symbol(program, entry)?;
-            let binding = program
-                .function(program.symbol(symbol))
-                .ok_or(crate::sema::Error::Invariant(
-                    "virtual definition missing function",
-                ))?
-                .metadata
-                .binding;
-            let mut next = self
-                .state
-                .vtables
-                .definition_targets
-                .heads
-                .get(&entity)
-                .copied();
-            while let Some(index) = next {
-                let node = &self.state.vtables.definition_targets.nodes[index];
-                let target = node.target;
-                next = node.next;
-                self.table_entry_symbol(
-                    program,
-                    target,
-                    binding,
-                    binding == Some(Binding::Strong),
-                )?;
-            }
-        }
-        if let Entry::Function(entity) = entry
-            && let Some(class) = self.graph.lower_virtual_key_owner(entity)
-        {
-            self.vtable_symbol(program, class)?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 pub(crate) fn assert_definition_destructor_targets(
-    graph: &crate::sema::Graph,
-    tree: &crate::syntax::ast::Tree,
-    cursor: &crate::syntax::cursor::Cursor<'_>,
+    graph: &mut crate::sema::Graph,
+    tree: &mut crate::syntax::ast::Tree,
+    cursor: &mut crate::syntax::cursor::Cursor<'_>,
     function: EntityId,
 ) {
     let through = graph.lower_function(function).unwrap().object.unwrap();
@@ -1782,7 +1164,12 @@ pub(crate) fn assert_definition_destructor_targets(
         crate::support::stack::StackBudget::default(),
         std::mem::take(&mut table),
     );
-    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
+    let mut cx = crate::lower::unit_frontend::Context {
+        graph,
+        tree,
+        cursor,
+        symbols: &mut symbol_state,
+    };
     let mut program = Program::default();
     let target = TableTarget {
         function,
@@ -1802,49 +1189,47 @@ pub(crate) fn assert_definition_destructor_targets(
         ..target
     };
     assert!(
-        symbols
-            .table_entry_symbol(&mut program, unused, Some(Binding::Weak), false)
+        cx.table_entry_symbol(&mut program, unused, Some(Binding::Weak), false)
             .unwrap()
             .is_none()
     );
-    assert_eq!(symbols.pending.len(), 0);
+    assert_eq!(cx.symbols.pending.len(), 0);
     assert!(program.symbols().is_empty());
 
-    let first = symbols
+    let first = cx
         .table_entry_symbol(&mut program, target, Some(Binding::Weak), false)
         .unwrap();
     assert!(first.is_some());
     assert!(matches!(
-        symbols.pending.next(),
+        cx.symbols.pending.next(),
         Some(Entry::DestructorDeleting(entity)) if entity == function
     ));
     assert!(matches!(
-        symbols.pending.next(),
+        cx.symbols.pending.next(),
         Some(Entry::Function(entity)) if entity == function
     ));
-    assert!(symbols.pending.next().is_none());
+    assert!(cx.symbols.pending.next().is_none());
     assert_eq!(
         first,
-        symbols
-            .table_entry_symbol(&mut program, target, Some(Binding::Strong), true)
+        cx.table_entry_symbol(&mut program, target, Some(Binding::Strong), true)
             .unwrap()
     );
-    assert!(symbols.pending.next().is_none());
-    assert_eq!(symbols.vtables.thunks.len(), 1);
+    assert!(cx.symbols.pending.next().is_none());
+    assert_eq!(cx.symbols.vtables.thunks.len(), 1);
     assert_eq!(
-        symbols.vtables.thunks[0].metadata.binding,
+        cx.symbols.vtables.thunks[0].metadata.binding,
         Some(Binding::Strong)
     );
-    assert!(symbols.vtables.objects.is_empty());
-    assert!(symbols.vtables.typeinfos.is_empty());
+    assert!(cx.symbols.vtables.objects.is_empty());
+    assert!(cx.symbols.vtables.typeinfos.is_empty());
     assert!(program.globals().is_empty());
 }
 
 #[cfg(test)]
 pub(crate) fn assert_table_demand(
-    graph: &crate::sema::Graph,
-    tree: &crate::syntax::ast::Tree,
-    cursor: &crate::syntax::cursor::Cursor<'_>,
+    graph: &mut crate::sema::Graph,
+    tree: &mut crate::syntax::ast::Tree,
+    cursor: &mut crate::syntax::cursor::Cursor<'_>,
     classes: &[EntityId],
 ) {
     let (a, b, unused) = (classes[0], classes[1], classes[2]);
@@ -1877,27 +1262,32 @@ pub(crate) fn assert_table_demand(
         crate::support::stack::StackBudget::default(),
         std::mem::take(&mut table),
     );
-    let mut symbols = Symbols::new(graph, tree, cursor, &mut symbol_state);
-    let first = symbols.vtable_symbol(&mut program, b).unwrap();
+    let mut cx = crate::lower::unit_frontend::Context {
+        graph,
+        tree,
+        cursor,
+        symbols: &mut symbol_state,
+    };
+    let first = cx.vtable_symbol(&mut program, b).unwrap();
     let counts = (
         program.globals().len(),
         program.symbols().len(),
-        symbols.pending.len(),
+        cx.symbols.pending.len(),
     );
-    assert_eq!(symbols.vtable_symbol(&mut program, b).unwrap(), first);
+    assert_eq!(cx.vtable_symbol(&mut program, b).unwrap(), first);
     assert_eq!(
         counts,
         (
             program.globals().len(),
             program.symbols().len(),
-            symbols.pending.len()
+            cx.symbols.pending.len()
         )
     );
-    assert!(!symbols.vtables.objects.contains_key(&a));
-    assert!(!symbols.vtables.objects.contains_key(&unused));
-    assert!(!symbols.vtables.typeinfos.contains_key(&unused));
-    symbols.vtable_symbol(&mut program, a).unwrap();
-    assert!(symbols.vtables.pure_virtual.is_some());
+    assert!(!cx.symbols.vtables.objects.contains_key(&a));
+    assert!(!cx.symbols.vtables.objects.contains_key(&unused));
+    assert!(!cx.symbols.vtables.typeinfos.contains_key(&unused));
+    cx.vtable_symbol(&mut program, a).unwrap();
+    assert!(cx.symbols.vtables.pure_virtual.is_some());
 }
 
 #[cfg(test)]
@@ -1948,29 +1338,6 @@ impl Symbols<'_, '_> {
         rows.checked_mul(8)
             .and_then(|bytes| bytes.checked_add(16))
             .ok_or_else(|| crate::sema::Error::Limit("vtable row limit").into())
-    }
-    pub(in crate::lower) fn vtt_symbol(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-    ) -> Result<SymbolId, Error> {
-        if let Some(&symbol) = self.state.vtables.vtts.get(&class) {
-            return Ok(symbol);
-        }
-        // Preserve the oracle's demand order: a first VTT request publishes
-        // its class table, which can recursively publish a VTT of its own.
-        // External ABI identity coalesces the two requests; internal requests
-        // each allocate a definition, and the outer one becomes the memo.
-        self.vtable_symbol(program, class)?;
-        let (symbol, mut metadata) = self.class_global(program, class, ClassObject::Vtt)?;
-        self.state.vtables.vtts.insert(class, symbol);
-        if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
-            return Ok(symbol);
-        }
-        let items = self.vtt_entries(program, class)?;
-        metadata.flags |= 4;
-        define(program, symbol, metadata, items)?;
-        Ok(symbol)
     }
 }
 
@@ -2155,3 +1522,746 @@ impl Symbols<'_, '_> {
 
 #[cfg(test)]
 pub(crate) use construction_tables::assert_construction_context;
+
+impl crate::lower::unit_frontend::Context<'_, '_, '_> {
+    pub(in crate::lower) fn construction_table(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+    ) -> Result<(), Error> {
+        if self.graph.lower_dynamic_class(class) && self.graph.lower_emits_vtable(class)? {
+            self.vtable_symbol(program, class)?;
+        }
+        Ok(())
+    }
+    pub(in crate::lower) fn vtable_symbol(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+    ) -> Result<SymbolId, Error> {
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .check_stack()?;
+        if let Some(&symbol) = self.symbols.vtables.objects.get(&class) {
+            return Ok(symbol);
+        }
+        let facts = self.graph.lower_virtual_class(class)?;
+        let key = facts.key;
+        let (symbol, mut metadata) = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_global(program, class, ClassObject::Table)?;
+        self.symbols.vtables.objects.insert(class, symbol);
+        if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
+            return Ok(symbol);
+        }
+        if let Some(key) = key
+            && self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .function_facts(key)?
+                .emission
+                == Emission::Always
+            && metadata.binding != Some(Binding::Internal)
+        {
+            metadata.binding = Some(Binding::Strong);
+        }
+        let typeinfo = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .typeinfo_symbol(program, class)?;
+        let slot_count = self.graph.lower_virtual_slots(class)?.len();
+        let mut items = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .table_rows(class, 0)?;
+        items.reserve(slot_count + 2);
+        items.push(integer(Type::I64, 0));
+        items.push(address(typeinfo, 0));
+        let grouped = self.graph.lower_vtable_group(class).is_some();
+        for index in 0..slot_count {
+            let slot = self.graph.lower_virtual_slots(class)?[index]
+                .ok_or(crate::sema::Error::Invariant("unfilled virtual slot"))?;
+            let (function, kind) =
+                self.graph
+                    .lower_vtable_group(class)
+                    .map_or((slot.function, slot.kind), |group| {
+                        let entry = group.entries[index];
+                        (entry.function, entry.kind)
+                    });
+            let adjustment = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .entry_adjustment(class, 0, index)?;
+            items.push(self.table_target(
+                program,
+                TableTarget {
+                    function,
+                    kind,
+                    adjustment,
+                    adjusted: slot.adjusted,
+                    through: class,
+                },
+                metadata.binding,
+            )?);
+        }
+        let one_object = self.symbols.table.object_mode && grouped;
+        if one_object {
+            self.append_group_items(program, class, metadata.binding, &mut items)?;
+        }
+        define(program, symbol, metadata, items)?;
+        self.symbols.table.work.vtables += 1;
+        if grouped && !one_object {
+            self.define_views(program, class, symbol, metadata.binding)?;
+        }
+        if !self.graph.lower_virtual_bases(class).is_empty() {
+            self.vtt_symbol(program, class)?;
+        }
+        if !self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .host_objects()
+            && self.graph.lower_vtable_group(class).is_some()
+        {
+            for index in 0..self.graph.lower_inheritance_edges(class).count() {
+                let (base, _, _) = self
+                    .graph
+                    .lower_inheritance_edge(class, index)
+                    .ok_or(crate::sema::Error::Invariant("missing construction base"))?;
+                self.construction_table(program, base)?;
+            }
+        }
+        Ok(symbol)
+    }
+    fn table_target(
+        &mut self,
+        program: &mut Program,
+        target: TableTarget,
+        binding: Option<Binding>,
+    ) -> Result<DataItem, Error> {
+        Ok(self
+            .table_entry_symbol(program, target, binding, false)?
+            .map_or_else(|| integer(Type::Ptr, 0), |symbol| address(symbol, 0)))
+    }
+    fn table_entry_symbol(
+        &mut self,
+        program: &mut Program,
+        target: TableTarget,
+        binding: Option<Binding>,
+        strong: bool,
+    ) -> Result<Option<SymbolId>, Error> {
+        let TableTarget {
+            function,
+            kind,
+            adjustment,
+            adjusted,
+            through,
+        } = target;
+        if adjustment.unused {
+            return Ok(None);
+        }
+        if self.graph.lower_virtual_pure(function) {
+            return Ok(Some(self.pure_virtual_symbol(program, function)?));
+        }
+        let entry = if matches!(kind, SlotKind::DeletingDestructor) {
+            Entry::DestructorDeleting(function)
+        } else {
+            Entry::Function(function)
+        };
+        let result = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .result_adjustment(function, kind, adjusted, through)?;
+        if matches!(kind, SlotKind::CompleteDestructor) {
+            // Both table data and definition-owned thunks request the pair,
+            // even when this unit never emits the class's own table.
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand_entry(Entry::DestructorDeleting(function));
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand_entry(Entry::Function(function));
+        } else if matches!(kind, SlotKind::Function) {
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .demand(function);
+        }
+        let symbol = if !adjustment.is_zero() || result.is_some() {
+            self.thunk_symbol(program, entry, adjustment, result, binding, strong)?
+        } else {
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .entry_symbol(program, entry)?
+        };
+        Ok(Some(symbol))
+    }
+    fn define_views(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        primary: SymbolId,
+        binding: Option<Binding>,
+    ) -> Result<(), Error> {
+        let group = self
+            .graph
+            .lower_vtable_group(class)
+            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .segment_offsets(class)?;
+        let mut views = vec![Some(primary)];
+        for (index, segment) in group.segments.iter().enumerate().skip(1) {
+            if segment.shared {
+                views.push(None);
+                continue;
+            }
+            let base = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_presentation(segment.class)?;
+            let top = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .class_presentation(class)?;
+            let spelling = format!(
+                "{top}____view__{base}__{}__vtable",
+                self.symbols.vtables.offsets[&class][index]
+            );
+            views.push(Some(
+                self.symbols
+                    .table
+                    .allocate(program, &spelling, None, true)?,
+            ));
+        }
+        let segment_count = group.segments.len();
+        self.symbols.vtables.views.insert(class, views);
+        let typeinfo = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .typeinfo_symbol(program, class)?;
+        for index in 1..segment_count {
+            let Some(symbol) = self.symbols.vtables.views[&class][index] else {
+                continue;
+            };
+            let mut items = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .table_rows(class, index)?;
+            items.extend([
+                integer(
+                    Type::I64,
+                    self.symbols.vtables.offsets[&class][index].wrapping_neg(),
+                ),
+                address(typeinfo, 0),
+            ]);
+            self.append_view_targets(program, class, index, binding, &mut items)?;
+            self.symbols.table.work.vtables += 1;
+            define(
+                program,
+                symbol,
+                Metadata {
+                    binding: Some(Binding::Internal),
+                    ..Metadata::default()
+                },
+                items,
+            )?;
+        }
+        Ok(())
+    }
+    fn append_view_targets(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        segment: usize,
+        binding: Option<Binding>,
+        targets: &mut Vec<DataItem>,
+    ) -> Result<(), Error> {
+        let group = self
+            .graph
+            .lower_vtable_group(class)
+            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
+        let part = &group.segments[segment];
+        let through = part.class;
+        let range = part.entries.clone();
+        for (slot, index) in range.enumerate() {
+            let entry = self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(crate::sema::Error::Invariant("missing vtable group"))?
+                .entries[index];
+            let own = self.graph.lower_virtual_slots(through)?[slot]
+                .ok_or(crate::sema::Error::Invariant("unfilled view slot"))?;
+            let adjustment = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .entry_adjustment(class, segment, slot)?;
+            targets.push(self.table_target(
+                program,
+                TableTarget {
+                    function: entry.function,
+                    kind: entry.kind,
+                    adjustment,
+                    adjusted: own.adjusted,
+                    through,
+                },
+                binding,
+            )?);
+        }
+        Ok(())
+    }
+    fn append_group_items(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        binding: Option<Binding>,
+        items: &mut Vec<DataItem>,
+    ) -> Result<(), Error> {
+        let group = self
+            .graph
+            .lower_vtable_group(class)
+            .ok_or(crate::sema::Error::Invariant("missing vtable group"))?;
+        // Resolve every slot before publishing the one packed definition.
+        // Target demand can publish other globals; no view symbol is allocated.
+        let mut targets = Vec::new();
+        let segment_count = group.segments.len();
+        for index in 1..segment_count {
+            if !self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(crate::sema::Error::Invariant("missing vtable group"))?
+                .segments[index]
+                .shared
+            {
+                self.append_view_targets(program, class, index, binding, &mut targets)?;
+            }
+        }
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .segment_offsets(class)?;
+        let typeinfo = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .typeinfo_symbol(program, class)?;
+        let mut targets = targets.into_iter();
+        for index in 1..segment_count {
+            let part = &self
+                .graph
+                .lower_vtable_group(class)
+                .ok_or(crate::sema::Error::Invariant("missing vtable group"))?
+                .segments[index];
+            if part.shared {
+                continue;
+            }
+            items.extend(
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .table_rows(class, index)?,
+            );
+            items.extend([
+                integer(
+                    Type::I64,
+                    self.symbols.vtables.offsets[&class][index].wrapping_neg(),
+                ),
+                address(typeinfo, 0),
+            ]);
+            items.extend(targets.by_ref().take(part.entries.len()));
+        }
+        Ok(())
+    }
+    pub(in crate::lower) fn table_address(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+        mut segment: usize,
+    ) -> Result<(SymbolId, u64), Error> {
+        let symbol = self.vtable_symbol(program, class)?;
+        let Some(group) = self.graph.lower_vtable_group(class) else {
+            return Ok((
+                symbol,
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .table_header_bytes(class, 0)?,
+            ));
+        };
+        while segment != 0 && group.segments[segment].shared {
+            segment = group.segments[segment].parent.index();
+        }
+        if segment == 0 {
+            return Ok((
+                symbol,
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .table_header_bytes(class, 0)?,
+            ));
+        }
+        if let Some(views) = self.symbols.vtables.views.get(&class) {
+            return Ok((
+                views[segment].ok_or(crate::sema::Error::Invariant("missing view symbol"))?,
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .table_header_bytes(class, segment)?,
+            ));
+        }
+        if !self.symbols.vtables.address_points.contains_key(&class) {
+            let primary = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .table_header_bytes(class, 0)?;
+            let mut points = vec![primary];
+            let mut position =
+                primary.wrapping_add(u64::from(self.graph.lower_virtual_class(class)?.size) * 8);
+            for (index, part) in group.segments.iter().enumerate().skip(1) {
+                if part.shared {
+                    points.push(0);
+                    continue;
+                }
+                let point = position.wrapping_add(
+                    self.symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .table_header_bytes(class, index)?,
+                );
+                points.push(point);
+                position = point
+                    .wrapping_add(u64::from(self.graph.lower_virtual_class(part.class)?.size) * 8);
+            }
+            self.symbols.vtables.address_points.insert(class, points);
+        }
+        Ok((symbol, self.symbols.vtables.address_points[&class][segment]))
+    }
+    fn thunk_symbol(
+        &mut self,
+        program: &mut Program,
+        entry: Entry,
+        adjustment: ThisAdjustment,
+        result: Option<ResultAdjustment>,
+        binding: Option<Binding>,
+        strong: bool,
+    ) -> Result<SymbolId, Error> {
+        use crate::abi::encoder::CallOffset;
+        let internal = binding == Some(Binding::Internal);
+        let key = ThunkKey {
+            entry,
+            adjustment,
+            result,
+            internal,
+        };
+        if let Some(&index) = self.symbols.vtables.thunk_symbols.get(&key) {
+            if strong && !internal {
+                self.symbols.vtables.thunks[index].metadata.binding = Some(Binding::Strong);
+            }
+            return Ok(self.symbols.vtables.thunks[index].symbol);
+        }
+        let facts = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .entry_facts(entry)?;
+        let target = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .entry_symbol(program, entry)?;
+        let variant = if matches!(entry, Entry::DestructorDeleting(_)) {
+            super::super::construction::Variant::Deleting
+        } else {
+            super::super::construction::Variant::Complete
+        };
+        let function = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .encode_function(&facts, variant)?;
+        let result_row = result
+            .and_then(|r| r.via.map(|via| (r.from, via)))
+            .map(|(from, via)| {
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .vbase_row_offset(from, via)
+            })
+            .transpose()?;
+        let mut object = Vec::new();
+        self.symbols.table.work.mangled_names += 1;
+        Encoder::encode(
+            &self.symbols.abi,
+            Target::Thunk {
+                function,
+                this: CallOffset {
+                    offset: adjustment.offset,
+                    vcall: adjustment.vcall,
+                },
+                result: result.map(|r| CallOffset {
+                    offset: r.offset,
+                    vcall: result_row,
+                }),
+            },
+            &mut object,
+            self.symbols.budget,
+        )?;
+        let object = program.names.intern_bytes(&object)?;
+        let returned = result.map_or(0, |r| r.offset);
+        let mut spelling = format!(
+            "_{}__vtable_return_adjust__this_{}{}__return_{}{}",
+            program.names.get(program.symbol(target).name),
+            if adjustment.offset < 0 { "neg" } else { "pos" },
+            adjustment.offset.unsigned_abs(),
+            if returned < 0 { "neg" } else { "pos" },
+            returned.unsigned_abs()
+        );
+        if let Some(vcall) = adjustment.vcall {
+            use std::fmt::Write;
+            write!(
+                spelling,
+                "__vcall_{}{}",
+                if vcall < 0 { "n" } else { "p" },
+                vcall.unsigned_abs()
+            )
+            .map_err(|_| crate::sema::Error::Invariant("thunk spelling"))?;
+        }
+        if let Some(row) = result_row {
+            use std::fmt::Write;
+            write!(
+                spelling,
+                "__virtual_{}{}",
+                if row < 0 { "n" } else { "p" },
+                row.unsigned_abs()
+            )
+            .map_err(|_| crate::sema::Error::Invariant("thunk result spelling"))?;
+        }
+        let symbol = self
+            .symbols
+            .table
+            .allocate(program, &spelling, Some(object), internal)?;
+        let entity = entry
+            .entity(self.graph)
+            .ok_or(crate::sema::Error::Invariant("thunk without function"))?;
+        let mut signature = self.argument_signature(program, entity)?;
+        let this_index = usize::from(
+            signature
+                .parameters
+                .first()
+                .is_some_and(|p| p.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)),
+        );
+        signature.parameters[this_index].object_bytes = 0;
+        let variadic = signature.boundary.arity == crate::lowir::model::Arity::Variadic;
+        if self.symbols.table.object_mode && variadic && result.is_some() {
+            return Err(crate::sema::Error::Diagnostic {
+                location: crate::support::source::SourceOffset(0),
+                message: "a covariant thunk of a variadic function",
+            }
+            .into());
+        }
+        let jump = self.symbols.table.object_mode
+            && (variadic || self.symbols.table.host_objects && result.is_none());
+        let signature = program.add_signature(signature)?;
+        self.symbols
+            .vtables
+            .thunk_symbols
+            .insert(key, self.symbols.vtables.thunks.len());
+        let family = if matches!(
+            facts.name,
+            crate::sema::lowering::FunctionName::Destructor(_)
+        ) {
+            let object = if internal {
+                None
+            } else {
+                let function = self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .encode_function(&facts, crate::lower::construction::Variant::Base)?;
+                let mut object = Vec::new();
+                // Object-family aliases are backend observations. The C++
+                // lowering neither mangles nor interns these extra aliases.
+                Encoder::encode(
+                    &self.symbols.abi,
+                    Target::Thunk {
+                        function,
+                        this: CallOffset {
+                            offset: adjustment.offset,
+                            vcall: adjustment.vcall,
+                        },
+                        result: None,
+                    },
+                    &mut object,
+                    self.symbols.budget,
+                )?;
+                Some(program.names.intern_view_bytes(&object)?)
+            };
+            Some((entity, object, variant))
+        } else {
+            None
+        };
+        self.symbols.vtables.thunks.push(Thunk {
+            symbol,
+            target,
+            signature,
+            this_index,
+            adjustment,
+            result,
+            result_row,
+            jump,
+            family,
+            metadata: Metadata {
+                object: Some(object),
+                binding: Some(if internal {
+                    Binding::Internal
+                } else if strong {
+                    Binding::Strong
+                } else {
+                    Binding::Weak
+                }),
+                ..Metadata::default()
+            },
+        });
+        Ok(symbol)
+    }
+    fn argument_signature(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<crate::lowir::model::Signature, Error> {
+        let mut signature = function::argument_shape(
+            program,
+            &mut self.symbols.view(&*self.graph, &*self.tree, self.cursor),
+            &*self.graph,
+            Entry::Function(entity),
+        )?;
+        signature.boundary.unwind = if self.function_nothrow(entity)? {
+            Unwind::No
+        } else {
+            Unwind::Default
+        };
+        let facts = self.graph.lower_function(entity)?;
+        function::builtin_boundary(&mut signature.boundary, facts.builtin);
+        function::declared_effects(&mut signature.boundary, &*self.graph, Some(entity));
+        Ok(signature)
+    }
+    pub(in crate::lower) fn virtual_signature(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<SignatureId, Error> {
+        if let Some(&signature) = self.symbols.vtables.signatures.get(&entity) {
+            return Ok(signature);
+        }
+        let signature = self.argument_signature(program, entity)?;
+        let signature = program.add_signature(signature)?;
+        self.symbols.vtables.signatures.insert(entity, signature);
+        Ok(signature)
+    }
+    fn pure_virtual_symbol(
+        &mut self,
+        program: &mut Program,
+        entity: EntityId,
+    ) -> Result<SymbolId, Error> {
+        if let Some(symbol) = self.symbols.vtables.pure_virtual {
+            return Ok(symbol);
+        }
+        let symbol = self
+            .symbols
+            .table
+            .allocate(program, "__cxa_pure_virtual", None, true)?;
+        let mut signature = self.argument_signature(program, entity)?;
+        signature.boundary.unwind = Unwind::No;
+        signature.boundary.returns = Returns::NoReturn;
+        let signature = program.add_signature(signature)?;
+        program.add(
+            symbol,
+            crate::lowir::model::Function {
+                name: program.symbol(symbol).name,
+                signature,
+                metadata: Metadata {
+                    role: Some(Role::PureVirtual),
+                    binding: Some(Binding::Strong),
+                    ..Metadata::default()
+                },
+                body: None,
+                location: None,
+            },
+        )?;
+        program.publish_runtime_declaration(symbol);
+        self.symbols.vtables.pure_virtual = Some(symbol);
+        Ok(symbol)
+    }
+    pub(in crate::lower) fn key_function_table(
+        &mut self,
+        program: &mut Program,
+        entry: Entry,
+    ) -> Result<(), Error> {
+        if let Entry::Function(entity) = entry
+            && self.graph.lower_virtual_slot(entity).is_some()
+            && !self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .function_facts(entity)?
+                .internal
+            && !self.graph.lower_virtual_pure(entity)
+            && let Some(class) = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .function_facts(entity)?
+                .object
+        {
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .prepare_definition_thunks(class)?;
+            let symbol = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .entry_symbol(program, entry)?;
+            let binding = program
+                .function(program.symbol(symbol))
+                .ok_or(crate::sema::Error::Invariant(
+                    "virtual definition missing function",
+                ))?
+                .metadata
+                .binding;
+            let mut next = self
+                .symbols
+                .vtables
+                .definition_targets
+                .heads
+                .get(&entity)
+                .copied();
+            while let Some(index) = next {
+                let node = &self.symbols.vtables.definition_targets.nodes[index];
+                let target = node.target;
+                next = node.next;
+                self.table_entry_symbol(
+                    program,
+                    target,
+                    binding,
+                    binding == Some(Binding::Strong),
+                )?;
+            }
+        }
+        if let Entry::Function(entity) = entry
+            && let Some(class) = self.graph.lower_virtual_key_owner(entity)
+        {
+            self.vtable_symbol(program, class)?;
+        }
+        Ok(())
+    }
+    pub(in crate::lower) fn vtt_symbol(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+    ) -> Result<SymbolId, Error> {
+        if let Some(&symbol) = self.symbols.vtables.vtts.get(&class) {
+            return Ok(symbol);
+        }
+        // Preserve the oracle's demand order: a first VTT request publishes
+        // its class table, which can recursively publish a VTT of its own.
+        // External ABI identity coalesces the two requests; internal requests
+        // each allocate a definition, and the outer one becomes the memo.
+        self.vtable_symbol(program, class)?;
+        let (symbol, mut metadata) = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_global(program, class, ClassObject::Vtt)?;
+        self.symbols.vtables.vtts.insert(class, symbol);
+        if defined(program, symbol) || !self.graph.lower_emits_vtable(class)? {
+            return Ok(symbol);
+        }
+        let items = self.vtt_entries(program, class)?;
+        metadata.flags |= 4;
+        define(program, symbol, metadata, items)?;
+        Ok(symbol)
+    }
+}

@@ -85,10 +85,13 @@ impl Function<'_, '_, '_, '_> {
             }
             vtt
         } else {
-            let symbol = self
-                .symbols
-                .view(&*self.graph, &*self.tree, self.cursor)
-                .vtt_symbol(self.builder.program(), class)?;
+            let symbol = crate::lower::unit_frontend::Context {
+                graph: self.graph,
+                tree: self.tree,
+                cursor: self.cursor,
+                symbols: self.symbols,
+            }
+            .vtt_symbol(self.builder.program(), class)?;
             self.emit(I::Addr(Value::Symbol(symbol)), source)?.value
         };
         let offset = u64::try_from(index)

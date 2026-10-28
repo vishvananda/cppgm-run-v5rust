@@ -336,10 +336,12 @@ pub(super) fn lower(
     function.finish_source_body(entry, result, result_boundary.ty, is_main)?;
     function.builder.finish()?;
     super::definition_demands::finish_function_definition(
-        &mut function
-            .symbols
-            .view(&*function.graph, &*function.tree, function.cursor),
-        &*function.graph,
+        &mut super::unit_frontend::Context {
+            graph: function.graph,
+            tree: function.tree,
+            cursor: function.cursor,
+            symbols: function.symbols,
+        },
         program,
         entry,
         symbol,

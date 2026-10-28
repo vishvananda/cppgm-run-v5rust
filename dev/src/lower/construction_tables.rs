@@ -179,175 +179,7 @@ impl Symbols<'_, '_> {
             slot,
         )
     }
-    fn construction_address(
-        &mut self,
-        program: &mut Program,
-        context: TableContext,
-        segment: usize,
-    ) -> Result<(SymbolId, u64), Error> {
-        self.check_stack()?;
-        self.prepare_context_owners(context)?;
-        let requested = self.state.vtables.contexts.owners[&context][segment];
-        if let Some(tables) = self.state.vtables.contexts.tables.get(&context) {
-            return tables[requested].ok_or_else(|| {
-                crate::sema::Error::Invariant("construction table recursively demanded").into()
-            });
-        }
-        let group =
-            self.graph
-                .lower_vtable_group(context.class)
-                .ok_or(crate::sema::Error::Invariant(
-                    "construction table without group",
-                ))?;
-        self.state
-            .vtables
-            .contexts
-            .tables
-            .insert(context, vec![None; group.segments.len()]);
-        let derived = self.abi_type(self.graph.lower_entity_type(context.complete)?)?;
-        let base = self.abi_type(self.graph.lower_entity_type(context.class)?)?;
-        let mut encoded = Vec::new();
-        self.state.table.work.mangled_names += 1;
-        Encoder::encode(
-            &self.state.abi,
-            Target::ConstructionVtable {
-                derived,
-                offset: i64::from_ne_bytes(context.offset.to_ne_bytes()),
-                base,
-            },
-            &mut encoded,
-            self.state.budget,
-        )?;
-        let object = program.names.intern_bytes(&encoded)?;
-        let (mut internal, _, _, _) = self.graph.lower_virtual_class_identity(context.complete)?;
-        if self.state.table.object_mode {
-            internal = self
-                .graph
-                .lower_object_type_unit_local(self.graph.lower_entity_type(context.complete)?)?;
-        }
-        let strong = self
-            .graph
-            .lower_virtual_class(context.complete)?
-            .key
-            .map(|key| {
-                self.graph
-                    .lower_function(key)
-                    .map(|f| f.emission == crate::sema::lowering::Emission::Always)
-            })
-            .transpose()?
-            .unwrap_or(false);
-        let binding = if internal {
-            Binding::Internal
-        } else if strong {
-            Binding::Strong
-        } else {
-            Binding::Weak
-        };
-        // Entry demand precedes RTTI and data publication, as in C++.
-        let mut bodies = Vec::new();
-        for s in 0..group.segments.len() {
-            let owner = self.state.vtables.contexts.owners[&context][s];
-            if s != 0 && (s != owner || !self.vtt_segment(context.class, s)?) {
-                continue;
-            }
-            let part = &group.segments[s];
-            let mut targets = Vec::new();
-            for (slot, own) in self
-                .graph
-                .lower_virtual_slots(part.class)?
-                .iter()
-                .enumerate()
-            {
-                let own = own.ok_or(crate::sema::Error::Invariant("unfilled construction slot"))?;
-                let entry = group.entries[part.entries.start + slot];
-                let adjustment = self.construction_adjustment(context, s, slot)?;
-                targets.push(self.table_target(
-                    program,
-                    TableTarget {
-                        function: entry.function,
-                        kind: entry.kind,
-                        adjustment,
-                        adjusted: own.adjusted,
-                        through: part.class,
-                    },
-                    Some(binding),
-                )?);
-            }
-            bodies.push((s, targets));
-        }
-        let information = self.typeinfo_symbol(program, context.class)?;
-        let base = self.class_presentation(context.class)?;
-        let top = self.class_presentation(context.complete)?;
-        let prefix = format!("{top}____construction__{base}__{}", context.offset);
-        let mut tables = vec![None; group.segments.len()];
-        let mut packed = Vec::new();
-        let mut points = Vec::new();
-        let mut position = 0_u64;
-        for (s, targets) in bodies {
-            self.state.table.work.vtables += 1;
-            let mut items = self.context_rows(context, s)?;
-            let point = self.table_header_bytes(context.class, s)?;
-            items.push(integer(
-                Type::I64,
-                context.offset.wrapping_sub(self.context_at(context, s)?),
-            ));
-            items.push(address(information, 0));
-            let count = u64::try_from(targets.len()).map_err(|_| crate::lowir::Error::Limit)?;
-            items.extend(targets);
-            if self.state.table.object_mode {
-                points.push((s, position.wrapping_add(point)));
-                position = position.wrapping_add(point).wrapping_add(count * 8);
-                packed.extend(items);
-                continue;
-            }
-            let symbol = self.state.table.allocate(
-                program,
-                &format!("{prefix}__s{s}__vtable"),
-                (s == 0).then_some(object),
-                true,
-            )?;
-            define(
-                program,
-                symbol,
-                Metadata {
-                    binding: Some(Binding::Internal),
-                    object: (s == 0).then_some(object),
-                    ..Metadata::default()
-                },
-                items,
-            )?;
-            tables[s] = Some((symbol, point));
-        }
-        if self.state.table.object_mode {
-            let symbol = self.state.table.allocate(
-                program,
-                &format!("{prefix}__vtable"),
-                Some(object),
-                true,
-            )?;
-            define(
-                program,
-                symbol,
-                Metadata {
-                    binding: Some(Binding::Internal),
-                    object: Some(object),
-                    ..Metadata::default()
-                },
-                packed,
-            )?;
-            for (s, point) in points {
-                tables[s] = Some((symbol, point));
-            }
-        }
-        for s in 0..tables.len() {
-            tables[s] = tables[self.state.vtables.contexts.owners[&context][s]];
-        }
-        let result = tables[requested].ok_or(crate::sema::Error::Invariant(
-            "unemitted construction owner",
-        ))?;
-        self.state.vtables.contexts.tables.insert(context, tables);
-        Ok(result)
-    }
+
     fn vtt_segment(&self, class: EntityId, index: usize) -> Result<bool, Error> {
         let group = self
             .graph
@@ -454,82 +286,6 @@ impl Symbols<'_, '_> {
         self.vtt_positions(class)?;
         Ok(self.state.vtables.contexts.positions[&class].segments[segment])
     }
-    pub(super) fn vtt_entries(
-        &mut self,
-        program: &mut Program,
-        class: EntityId,
-    ) -> Result<Vec<DataItem>, Error> {
-        let mut entries = Vec::new();
-        self.append_vtt_subentries(program, TableContext::complete(class), true, &mut entries)?;
-        Ok(entries)
-    }
-    fn append_vtt_subentries(
-        &mut self,
-        program: &mut Program,
-        context: TableContext,
-        top: bool,
-        entries: &mut Vec<DataItem>,
-    ) -> Result<(), Error> {
-        self.check_stack()?;
-        let (symbol, point) = if top {
-            self.table_address(program, context.class, 0)?
-        } else {
-            self.construction_address(program, context, 0)?
-        };
-        entries.push(address(symbol, i64::from_ne_bytes(point.to_ne_bytes())));
-        for (i, (base, shared)) in self
-            .graph
-            .lower_inheritance_edges(context.class)
-            .enumerate()
-        {
-            if !shared && !self.graph.lower_virtual_bases(base).is_empty() {
-                let (_, _, step) = self
-                    .graph
-                    .lower_inheritance_edge(context.class, i)
-                    .ok_or(crate::sema::Error::Invariant("missing VTT edge"))?;
-                let offset = context
-                    .offset
-                    .wrapping_add(step.ok_or(crate::sema::Error::Invariant("VTT before layout"))?);
-                self.append_vtt_subentries(
-                    program,
-                    TableContext {
-                        complete: context.complete,
-                        class: base,
-                        offset,
-                        construction: true,
-                    },
-                    false,
-                    entries,
-                )?;
-            }
-        }
-        for segment in self.vtt_pointer_order(context.class)? {
-            let (symbol, point) = if top {
-                self.table_address(program, context.class, segment)?
-            } else {
-                self.construction_address(program, context, segment)?
-            };
-            entries.push(address(symbol, i64::from_ne_bytes(point.to_ne_bytes())));
-        }
-        if top {
-            for &(base, offset) in self.graph.lower_virtual_bases(context.complete) {
-                if !self.graph.lower_virtual_bases(base).is_empty() {
-                    self.append_vtt_subentries(
-                        program,
-                        TableContext {
-                            complete: context.complete,
-                            class: base,
-                            offset,
-                            construction: true,
-                        },
-                        false,
-                        entries,
-                    )?;
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -597,4 +353,301 @@ pub(crate) fn assert_construction_context(
     assert!(symbols.vtables.typeinfos.is_empty());
     assert_eq!(symbols.pending.len(), 0);
     assert!(graph.lower_class_layout(dormant).is_err());
+}
+
+impl crate::lower::unit_frontend::Context<'_, '_, '_> {
+    fn construction_address(
+        &mut self,
+        program: &mut Program,
+        context: TableContext,
+        segment: usize,
+    ) -> Result<(SymbolId, u64), Error> {
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .check_stack()?;
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .prepare_context_owners(context)?;
+        let requested = self.symbols.vtables.contexts.owners[&context][segment];
+        if let Some(tables) = self.symbols.vtables.contexts.tables.get(&context) {
+            return tables[requested].ok_or_else(|| {
+                crate::sema::Error::Invariant("construction table recursively demanded").into()
+            });
+        }
+        let group =
+            self.graph
+                .lower_vtable_group(context.class)
+                .ok_or(crate::sema::Error::Invariant(
+                    "construction table without group",
+                ))?;
+        let segment_count = group.segments.len();
+        self.symbols
+            .vtables
+            .contexts
+            .tables
+            .insert(context, vec![None; segment_count]);
+        let derived = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .abi_type(self.graph.lower_entity_type(context.complete)?)?;
+        let base = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .abi_type(self.graph.lower_entity_type(context.class)?)?;
+        let mut encoded = Vec::new();
+        self.symbols.table.work.mangled_names += 1;
+        Encoder::encode(
+            &self.symbols.abi,
+            Target::ConstructionVtable {
+                derived,
+                offset: i64::from_ne_bytes(context.offset.to_ne_bytes()),
+                base,
+            },
+            &mut encoded,
+            self.symbols.budget,
+        )?;
+        let object = program.names.intern_bytes(&encoded)?;
+        let (mut internal, _, _, _) = self.graph.lower_virtual_class_identity(context.complete)?;
+        if self.symbols.table.object_mode {
+            internal = self
+                .graph
+                .lower_object_type_unit_local(self.graph.lower_entity_type(context.complete)?)?;
+        }
+        let strong = self
+            .graph
+            .lower_virtual_class(context.complete)?
+            .key
+            .map(|key| {
+                self.graph
+                    .lower_function(key)
+                    .map(|f| f.emission == crate::sema::lowering::Emission::Always)
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let binding = if internal {
+            Binding::Internal
+        } else if strong {
+            Binding::Strong
+        } else {
+            Binding::Weak
+        };
+        // Entry demand precedes RTTI and data publication, as in C++.
+        let mut bodies = Vec::new();
+        for s in 0..segment_count {
+            let owner = self.symbols.vtables.contexts.owners[&context][s];
+            if s != 0
+                && (s != owner
+                    || !self
+                        .symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .vtt_segment(context.class, s)?)
+            {
+                continue;
+            }
+            let part = &self
+                .graph
+                .lower_vtable_group(context.class)
+                .ok_or(crate::sema::Error::Invariant("missing construction group"))?
+                .segments[s];
+            let through = part.class;
+            let first = part.entries.start;
+            let slot_count = self.graph.lower_virtual_slots(through)?.len();
+            let mut targets = Vec::new();
+            for slot in 0..slot_count {
+                let own = self.graph.lower_virtual_slots(through)?[slot]
+                    .ok_or(crate::sema::Error::Invariant("unfilled construction slot"))?;
+                let entry = self
+                    .graph
+                    .lower_vtable_group(context.class)
+                    .ok_or(crate::sema::Error::Invariant("missing construction group"))?
+                    .entries[first + slot];
+                let adjustment = self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .construction_adjustment(context, s, slot)?;
+                targets.push(self.table_target(
+                    program,
+                    TableTarget {
+                        function: entry.function,
+                        kind: entry.kind,
+                        adjustment,
+                        adjusted: own.adjusted,
+                        through,
+                    },
+                    Some(binding),
+                )?);
+            }
+            bodies.push((s, targets));
+        }
+        let information = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .typeinfo_symbol(program, context.class)?;
+        let base = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_presentation(context.class)?;
+        let top = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .class_presentation(context.complete)?;
+        let prefix = format!("{top}____construction__{base}__{}", context.offset);
+        let mut tables = vec![None; segment_count];
+        let mut packed = Vec::new();
+        let mut points = Vec::new();
+        let mut position = 0_u64;
+        for (s, targets) in bodies {
+            self.symbols.table.work.vtables += 1;
+            let mut items = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .context_rows(context, s)?;
+            let point = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .table_header_bytes(context.class, s)?;
+            items.push(integer(
+                Type::I64,
+                context.offset.wrapping_sub(
+                    self.symbols
+                        .view(&*self.graph, &*self.tree, self.cursor)
+                        .context_at(context, s)?,
+                ),
+            ));
+            items.push(address(information, 0));
+            let count = u64::try_from(targets.len()).map_err(|_| crate::lowir::Error::Limit)?;
+            items.extend(targets);
+            if self.symbols.table.object_mode {
+                points.push((s, position.wrapping_add(point)));
+                position = position.wrapping_add(point).wrapping_add(count * 8);
+                packed.extend(items);
+                continue;
+            }
+            let symbol = self.symbols.table.allocate(
+                program,
+                &format!("{prefix}__s{s}__vtable"),
+                (s == 0).then_some(object),
+                true,
+            )?;
+            define(
+                program,
+                symbol,
+                Metadata {
+                    binding: Some(Binding::Internal),
+                    object: (s == 0).then_some(object),
+                    ..Metadata::default()
+                },
+                items,
+            )?;
+            tables[s] = Some((symbol, point));
+        }
+        if self.symbols.table.object_mode {
+            let symbol = self.symbols.table.allocate(
+                program,
+                &format!("{prefix}__vtable"),
+                Some(object),
+                true,
+            )?;
+            define(
+                program,
+                symbol,
+                Metadata {
+                    binding: Some(Binding::Internal),
+                    object: Some(object),
+                    ..Metadata::default()
+                },
+                packed,
+            )?;
+            for (s, point) in points {
+                tables[s] = Some((symbol, point));
+            }
+        }
+        for s in 0..tables.len() {
+            tables[s] = tables[self.symbols.vtables.contexts.owners[&context][s]];
+        }
+        let result = tables[requested].ok_or(crate::sema::Error::Invariant(
+            "unemitted construction owner",
+        ))?;
+        self.symbols.vtables.contexts.tables.insert(context, tables);
+        Ok(result)
+    }
+    pub(super) fn vtt_entries(
+        &mut self,
+        program: &mut Program,
+        class: EntityId,
+    ) -> Result<Vec<DataItem>, Error> {
+        let mut entries = Vec::new();
+        self.append_vtt_subentries(program, TableContext::complete(class), true, &mut entries)?;
+        Ok(entries)
+    }
+    fn append_vtt_subentries(
+        &mut self,
+        program: &mut Program,
+        context: TableContext,
+        top: bool,
+        entries: &mut Vec<DataItem>,
+    ) -> Result<(), Error> {
+        self.symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .check_stack()?;
+        let (symbol, point) = if top {
+            self.table_address(program, context.class, 0)?
+        } else {
+            self.construction_address(program, context, 0)?
+        };
+        entries.push(address(symbol, i64::from_ne_bytes(point.to_ne_bytes())));
+        for i in 0..self.graph.lower_inheritance_edges(context.class).count() {
+            let (base, shared, step) = self
+                .graph
+                .lower_inheritance_edge(context.class, i)
+                .ok_or(crate::sema::Error::Invariant("missing VTT edge"))?;
+            if !shared && !self.graph.lower_virtual_bases(base).is_empty() {
+                let offset = context
+                    .offset
+                    .wrapping_add(step.ok_or(crate::sema::Error::Invariant("VTT before layout"))?);
+                self.append_vtt_subentries(
+                    program,
+                    TableContext {
+                        complete: context.complete,
+                        class: base,
+                        offset,
+                        construction: true,
+                    },
+                    false,
+                    entries,
+                )?;
+            }
+        }
+        for segment in self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .vtt_pointer_order(context.class)?
+        {
+            let (symbol, point) = if top {
+                self.table_address(program, context.class, segment)?
+            } else {
+                self.construction_address(program, context, segment)?
+            };
+            entries.push(address(symbol, i64::from_ne_bytes(point.to_ne_bytes())));
+        }
+        if top {
+            for index in 0..self.graph.lower_virtual_bases(context.complete).len() {
+                let (base, offset) = self.graph.lower_virtual_bases(context.complete)[index];
+                if !self.graph.lower_virtual_bases(base).is_empty() {
+                    self.append_vtt_subentries(
+                        program,
+                        TableContext {
+                            complete: context.complete,
+                            class: base,
+                            offset,
+                            construction: true,
+                        },
+                        false,
+                        entries,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
