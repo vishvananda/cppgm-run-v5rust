@@ -211,35 +211,24 @@ impl Analyzer<'_> {
         let Some(class) = self.graph.class_of(object) else {
             return Ok(true);
         };
-        let result = self.substitution_trial(|analyzer| {
-            analyzer.check_class_destruction(object, scope, location)
-        });
-        match result {
-            Ok(Some(())) => (),
-            Ok(None) => return Ok(false),
-            Err(Error::Diagnostic { .. }) => {
-                self.graph.work.totals.substitution_failures += 1;
-                return Ok(false);
-            }
-            Err(error) => return Err(error),
+        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+            return Ok(false);
         }
-        match predicate {
-            T::IsNothrowDestructible => {
-                let facts = self
-                    .graph
-                    .entity(class)
-                    .destruction
-                    .ok_or(Error::Invariant("missing destruction properties"))?;
-                match facts.unwind {
-                    super::destruction::DestructorUnwind::Implicit { nothrow } => Ok(nothrow),
-                    super::destruction::DestructorUnwind::Declared(function) => {
-                        self.function_may_throw(function).map(|throws| !throws)
-                    }
-                }
-            }
-            T::IsTriviallyDestructible => self.graph.destructor_trivial(class),
-            _ => Ok(true),
+        if self
+            .substitution_trial(|analyzer| {
+                analyzer.check_class_destruction(object, scope, location)
+            })?
+            .is_none()
+        {
+            return Ok(false);
         }
+        let nothrow = self.available_destructor_nothrow(class)?;
+        let trivial = !self.graph.has_nontrivial_destructor(class);
+        Ok(match predicate {
+            T::IsNothrowDestructible => nothrow,
+            T::IsTriviallyDestructible => trivial,
+            _ => true,
+        })
     }
 
     fn property_literal(&mut self, ty: TypeId) -> Result<bool, Error> {

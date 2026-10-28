@@ -106,6 +106,35 @@ impl Analyzer<'_> {
             other => other,
         }
     }
+    /// Source `substitution_error` whose caller continues after a soft event.
+    pub(super) fn emit_substitution_failure(
+        &self,
+        location: SourceOffset,
+        message: &'static str,
+        transient: bool,
+    ) -> Result<(), Error> {
+        self.graph
+            .analysis
+            .substitution
+            .emit(Failure {
+                location,
+                message,
+                transient,
+            })
+            .map(|_| ())
+    }
+
+    pub(super) fn check_function_not_deleted(
+        &self,
+        function: EntityId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if self.graph.entity(function).availability == super::graph::FunctionAvailability::Deleted {
+            self.emit_substitution_failure(location, "use of a deleted function", false)?;
+        }
+        Ok(())
+    }
+
     /// Adapt a source emit-and-null branch whose Rust result has no null value.
     pub(super) fn reject_substitution<T>(
         &self,

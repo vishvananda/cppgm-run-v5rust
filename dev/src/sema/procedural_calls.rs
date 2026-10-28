@@ -334,14 +334,7 @@ impl Analyzer<'_> {
         };
         let binding = selected.binding;
         let location = self.tree.expressions.get(id).location;
-        if self
-            .graph
-            .entity(self.graph.binding(binding).entity)
-            .availability
-            == super::graph::FunctionAvailability::Deleted
-        {
-            return Err(Error::at(location, "use of a deleted function"));
-        }
+        self.check_function_not_deleted(self.graph.binding(binding).entity, location)?;
         self.require_deduced_result(self.graph.binding(binding).entity, location)?;
         let callable = facts.call_form == super::expression_facts::CallForm::CallableObject;
         if let Some(receiver) =

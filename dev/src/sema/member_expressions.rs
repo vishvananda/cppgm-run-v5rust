@@ -16,13 +16,14 @@ use crate::{
     syntax::ast::{self, NameKind},
 };
 
+#[derive(Clone, Copy)]
 pub(super) enum AccessFailure {
     Inaccessible,
     ProtectedObject,
 }
 
 impl AccessFailure {
-    pub(super) fn message(&self) -> &'static str {
+    pub(super) fn message(self) -> &'static str {
         match self {
             Self::Inaccessible => "inaccessible member",
             Self::ProtectedObject => "protected member accessed through an object of another class",
@@ -648,9 +649,16 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if let Some(failure) = self.member_access_failure(binding, naming, object, scope) {
-            return Err(Error::at(location, failure.message()));
+            self.emit_access_failure(failure, location)?;
         }
         Ok(())
+    }
+    pub(super) fn emit_access_failure(
+        &self,
+        failure: AccessFailure,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        self.emit_substitution_failure(location, failure.message(), false)
     }
     pub(super) fn member_access_failure(
         &self,
@@ -730,7 +738,7 @@ mod tests {
             analyzer.stack_base = std::ptr::from_ref(&marker).addr();
             let result = analyzer.declarations(declarations, analyzer.graph.global);
             assert!(
-                matches!(result, Err(Error::Diagnostic { location, message })
+                matches!(result, Err(Error::UnconditionalDiagnostic { location, message })
                 if location.index() == expected && message == "inaccessible member")
             );
             let binding = analyzer

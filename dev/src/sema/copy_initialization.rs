@@ -971,7 +971,12 @@ impl Analyzer<'_> {
             }
         };
         if chosen.deleted {
-            return Err(Error::at(location, "use of a deleted function"));
+            if access_scope.is_none() {
+                // Subobject property selection reports unusability without an
+                // actual function use or an ambient substitution event.
+                return Err(Error::at(location, "use of a deleted function"));
+            }
+            self.emit_substitution_failure(location, "use of a deleted function", false)?;
         }
         if let CopyOrigin::Declared(binding) = chosen.selection.origin
             && let Some(scope) = access_scope

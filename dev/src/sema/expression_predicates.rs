@@ -420,7 +420,33 @@ impl Analyzer<'_> {
         })
     }
 
+    fn type_construction_operands(
+        &mut self,
+        operands: crate::syntax::storage::List<ast::ExprId>,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        for index in 0..self.tree.expr_lists.get(operands).len() {
+            self.typed_expression(self.tree.expr_lists.get(operands)[index], scope)?;
+            if self.graph.analysis.substitution.current().failure.is_some() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     fn construction_query(
+        &mut self,
+        target: TypeId,
+        arguments: &[TypeId],
+        location: SourceOffset,
+        scope: ScopeId,
+    ) -> Result<Properties, Error> {
+        let mark = self.graph.expression_predicates.operand_order.len();
+        let result = self.construction_query_in(target, arguments, location, scope);
+        self.graph.expression_predicates.finish_operands(mark);
+        result
+    }
+    fn construction_query_in(
         &mut self,
         mut target: TypeId,
         arguments: &[TypeId],
@@ -468,7 +494,7 @@ impl Analyzer<'_> {
         }
         let start = self.tree.expr_lists.begin();
         for &argument in arguments {
-            let operand = self.trait_declval(argument, location, scope)?;
+            let operand = self.defer_trait_declval(argument, location)?;
             self.tree.expr_lists.push(operand);
         }
         let operands = self
@@ -482,11 +508,10 @@ impl Analyzer<'_> {
         };
         let selection = self.substitution_trial(|analyzer| {
             analyzer.trait_expression_context(|analyzer| {
-                for index in 0..analyzer.tree.expr_lists.get(operands).len() {
-                    analyzer
-                        .typed_expression(analyzer.tree.expr_lists.get(operands)[index], scope)?;
-                }
                 let constructor = if class.is_some() {
+                    if !analyzer.type_construction_operands(operands, scope)? {
+                        return Ok((None, None));
+                    }
                     analyzer
                         .initialize_class_object(target, initializer, scope, location)?
                         .map(|(constructor, _)| constructor)
@@ -498,9 +523,15 @@ impl Analyzer<'_> {
                     analyzer
                         .graph
                         .expression_facts
-                        .get(analyzer.tree.expr_lists.get(operands)[0])?
-                        .conversion
-                        .filter(|binding| binding.temporary)
+                        .known(analyzer.tree.expr_lists.get(operands)[0])
+                        .and_then(|facts| facts.conversion)
+                        .filter(|binding| {
+                            binding.temporary
+                                && matches!(
+                                    analyzer.graph.types.get(binding.target).kind,
+                                    TypeKind::Reference { .. }
+                                )
+                        })
                         .map(|binding| binding.result)
                 } else {
                     Some(target)
@@ -571,10 +602,10 @@ impl Analyzer<'_> {
         if let Some(destroyed) = destroyed
             && let Some(class) = self.graph.class_of(destroyed)
         {
-            properties.nothrow &= !self.aggregate_destruction_may_throw(class)?;
+            properties.nothrow &= self.available_destructor_nothrow(class)?;
         }
         if let Some(class) = class {
-            if !self.graph.destructor_trivial(class)? {
+            if self.graph.has_nontrivial_destructor(class) {
                 properties.trivial = false;
             } else if count == 0 {
                 properties.trivial = self.property_default_trivial(target)?;
@@ -584,9 +615,11 @@ impl Analyzer<'_> {
         // arithmetic and reference sequences stay trivial; user calls do not.
         for index in 0..self.tree.expr_lists.get(operands).len() {
             let operand = self.tree.expr_lists.get(operands)[index];
-            if let Some(nothrow) =
-                self.construction_conversion_nothrow(operand, constructor.is_some())?
-            {
+            if let Some(nothrow) = self.construction_conversion_nothrow(
+                operand,
+                constructor.is_some(),
+                properties.nothrow,
+            )? {
                 properties.trivial = false;
                 properties.nothrow &= nothrow;
             }
@@ -598,13 +631,20 @@ impl Analyzer<'_> {
         &mut self,
         operand: ast::ExprId,
         parameter: bool,
+        query_nothrow: bool,
     ) -> Result<Option<bool>, Error> {
         if let Some(conversion) = self.graph.expression_facts.function_conversion(operand) {
+            if !query_nothrow {
+                return Ok(Some(true));
+            }
             return self
                 .function_may_throw(self.graph.binding(conversion.binding).entity)
                 .map(|throws| Some(!throws));
         }
         if let Some((constructor, _)) = self.graph.expression_facts.class_conversion(operand) {
+            if !query_nothrow {
+                return Ok(Some(true));
+            }
             return self
                 .constructor_function_may_throw(constructor)
                 .map(|throws| Some(!throws));
@@ -613,6 +653,9 @@ impl Analyzer<'_> {
         // constructor. A copy into a different constructor's by-value parameter
         // instead belongs to that operand's outer conversion.
         if parameter && let Some(copy) = self.graph.expression_facts.get(operand)?.class_copy {
+            if !query_nothrow {
+                return Ok(Some(true));
+            }
             let class = self
                 .graph
                 .class_of(copy.binding.result)
@@ -795,6 +838,18 @@ impl Analyzer<'_> {
         location: SourceOffset,
         scope: ScopeId,
     ) -> Result<Properties, Error> {
+        let mark = self.graph.expression_predicates.operand_order.len();
+        let result = self.conversion_query_in(from, to, location, scope);
+        self.graph.expression_predicates.finish_operands(mark);
+        result
+    }
+    fn conversion_query_in(
+        &mut self,
+        from: TypeId,
+        to: TypeId,
+        location: SourceOffset,
+        scope: ScopeId,
+    ) -> Result<Properties, Error> {
         let from_kind = &self.graph.types.get(from).kind;
         let to_kind = &self.graph.types.get(to).kind;
         let from_void = matches!(from_kind, TypeKind::Scalar(Scalar::Void));
@@ -817,7 +872,7 @@ impl Analyzer<'_> {
         {
             return Ok(Properties::default());
         }
-        let operand = self.trait_declval(from, location, scope)?;
+        let operand = self.defer_trait_declval(from, location)?;
         let initializer = ast::Initializer {
             location,
             kind: ast::InitializerKind::Assign(operand),
@@ -829,7 +884,6 @@ impl Analyzer<'_> {
                 // without failure, but asks an existing destructor's noexcept
                 // even when initialization left a soft failure.
                 let initialization = (|| {
-                    analyzer.typed_expression(operand, scope)?;
                     if analyzer.graph.class_of(to).is_some() {
                         analyzer
                             .initialize_class_object(to, initializer, scope, location)

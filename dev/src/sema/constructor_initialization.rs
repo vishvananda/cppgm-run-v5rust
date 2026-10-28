@@ -587,7 +587,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if self.graph.constructors.get(id).deleted {
-            return Err(Error::at(location, "use of a deleted function"));
+            self.emit_substitution_failure(location, "use of a deleted function", false)?;
         }
         if let Some(binding) = self.graph.constructors.get(id).binding {
             self.check_special_use_access(

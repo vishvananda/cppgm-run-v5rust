@@ -342,27 +342,28 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
             return Ok(());
         };
-        if !self.graph.entity(class).bases.is_empty() {
-            self.prepare_destruction(class)?;
-        }
-        let Some(binding) = self.destructor_callable(class)? else {
+        let declaration = self
+            .graph
+            .destructor_binding(class)
+            .map(|binding| self.graph.binding(binding).entity)
+            .or_else(|| {
+                self.graph
+                    .entity(class)
+                    .destruction
+                    .map(|facts| facts.declaration)
+            });
+        let Some(declaration) = declaration else {
             return Ok(());
         };
-        self.prepare_destruction(class)?;
-        if self
-            .graph
-            .entity(self.graph.binding(binding).entity)
-            .availability
-            == super::graph::FunctionAvailability::Deleted
-        {
-            return Err(Error::at(location, "use of a deleted function"));
-        }
-        self.check_special_use_access(binding, class, scope, location)?;
-        if self.unevaluated == 0
-            && self.template_depth == 0
-            && !self.graph.destructor_trivial(class)?
-        {
-            self.demand_instance_member(self.graph.binding(binding).entity);
+        self.check_function_not_deleted(declaration, location)?;
+        if let Some(binding) = self.graph.entity(class).declared_destructor {
+            self.check_declaration_member_access(
+                binding,
+                class,
+                Some(self.base_object.unwrap_or(class)),
+                scope,
+                location,
+            )?;
         }
         Ok(())
     }

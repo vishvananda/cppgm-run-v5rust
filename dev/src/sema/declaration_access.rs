@@ -177,16 +177,14 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let failure = match self.member_access_failure(binding, naming, object, scope) {
-            None => return Ok(()),
-            Some(AccessFailure::ProtectedObject) => {
-                return Err(Error::at(
-                    location,
-                    AccessFailure::ProtectedObject.message(),
-                ));
-            }
-            Some(failure) => failure,
+        let Some(failure) = self.member_access_failure(binding, naming, object, scope) else {
+            return Ok(());
         };
+        if self.graph.analysis.substitution.current().soft != 0
+            || matches!(failure, AccessFailure::ProtectedObject)
+        {
+            return self.emit_access_failure(failure, location);
+        }
         let mut owner = scope;
         while self.graph.scope(owner).kind == ScopeKind::Function
             && self.graph.scope(owner).owner.is_none()
@@ -207,7 +205,7 @@ impl Analyzer<'_> {
             });
             return Ok(());
         }
-        Err(Error::at(location, failure.message()))
+        self.emit_access_failure(failure, location)
     }
     pub(super) fn check_special_use_access(
         &mut self,

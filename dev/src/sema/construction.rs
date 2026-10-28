@@ -248,18 +248,12 @@ impl Analyzer<'_> {
         }
         if let TypeKind::Class(class) = self.graph.types.get(object).kind {
             let constructor = self.default_constructor(class, location)?;
+            self.validate_constructor_use(
+                constructor,
+                self.graph.binding_scope(binding),
+                location,
+            )?;
             let record = self.graph.constructors.get(constructor);
-            if record.deleted {
-                return Err(Error::at(location, "use of a deleted function"));
-            }
-            if let Some(selected) = record.binding {
-                self.check_special_member_access(
-                    selected,
-                    self.base_object.unwrap_or(class),
-                    self.graph.binding_scope(binding),
-                    location,
-                )?;
-            }
             if self.graph.types.get(object).cv.0 & 1 != 0 && !record.const_default {
                 return Err(Error::at(
                     location,
@@ -1416,10 +1410,10 @@ impl Analyzer<'_> {
             let id = self.default_constructor(base, location)?;
             let record = self.graph.constructors.get(id);
             if record.deleted {
-                return Err(Error::at(location, "use of a deleted function"));
+                self.emit_substitution_failure(location, "use of a deleted function", false)?;
             }
             if let Some(binding) = record.binding {
-                self.check_special_member_access(binding, class, scope, location)?;
+                self.check_special_use_access(binding, class, scope, location)?;
             }
             self.demand_constructor_use(id)?;
             Some((id, ConstructorArguments::Value))
