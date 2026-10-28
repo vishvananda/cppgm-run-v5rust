@@ -109,12 +109,26 @@ impl Analyzer<'_> {
             } else {
                 (destination, source)
             };
-            if !self.graph.is_base_of(base, derived) {
-                return Err(nonconstant(
-                    location,
-                    "a pointer to member conversion between unrelated classes",
-                ));
-            }
+            let offset = if self.graph.entity(derived).complete {
+                self.class_layout(derived, location)?;
+                let offset = self
+                    .graph
+                    .base_search_offset(
+                        derived,
+                        base,
+                        super::base_projections::OffsetSearch::Constant,
+                    )?
+                    .ok_or_else(|| {
+                        nonconstant(
+                            location,
+                            "a pointer to member conversion between unrelated classes",
+                        )
+                    })?;
+                super::integral::signed(offset)
+            } else {
+                value.provisional = true;
+                self.provisional_member_offset(derived, base, location)?
+            };
             if inverse {
                 let home = self.graph.member_holder(member, None)?;
                 if home != destination
@@ -127,14 +141,6 @@ impl Analyzer<'_> {
                     ));
                 }
             }
-            let offset = if self.graph.entity(derived).complete {
-                self.class_layout(derived, location)?;
-                let path = self.graph.retain_base_path(derived, base)?;
-                super::integral::signed(self.graph.lower_path_offset(path)?)
-            } else {
-                value.provisional = true;
-                self.provisional_member_offset(derived, base, location)?
-            };
             value.adjustment = value.adjustment.wrapping_add(if inverse {
                 offset.wrapping_neg()
             } else {
@@ -150,17 +156,20 @@ impl Analyzer<'_> {
         base: EntityId,
         location: SourceOffset,
     ) -> Result<i64, Error> {
+        let mut query = super::base_projections::BaseOffsetQuery::new(base);
         for index in 0..self.graph.entity(derived).bases.len() {
             let edge = self.graph.entity(derived).bases[index];
-            if edge.is_virtual || (edge.class != base && !self.graph.is_base_of(base, edge.class)) {
+            if edge.is_virtual {
                 continue;
             }
             let inner = if edge.class == base {
                 0
             } else {
                 self.class_layout(edge.class, location)?;
-                let path = self.graph.retain_base_path(edge.class, base)?;
-                self.graph.lower_path_offset(path)?
+                let Some(offset) = self.graph.constant_base_offset(edge.class, &mut query)? else {
+                    continue;
+                };
+                offset
             };
             let ordinal =
                 u64::try_from(index).map_err(|_| Error::Limit("provisional base ordinal"))?;

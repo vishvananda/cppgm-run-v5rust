@@ -6,7 +6,7 @@ use super::{Symbols, type_information::TypeObject};
 use crate::{
     abi::encoder::{Encoder, Target},
     lex::vocabulary::Keyword,
-    lower::{Error, construction::Entry, function},
+    lower::{Error, construction::Entry, function, types},
     lowir::{
         literals::Constant,
         model::{
@@ -52,7 +52,7 @@ pub(super) struct Tables {
     definition_targets: DefinitionTargets,
     own_entry_thunks: HashMap<(EntityId, usize), bool>,
     contexts: construction_tables::Contexts,
-    return_adjustments: HashMap<(EntityId, EntityId, EntityId), Option<ResultAdjustment>>,
+    return_adjustments: HashMap<(EntityId, EntityId), Option<ResultAdjustment>>,
 }
 /// Immutable ABI query context; complete and construction tables share row recipes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -80,6 +80,19 @@ struct ResultAdjustment {
     via: Option<EntityId>,
     offset: i64,
     reference: bool,
+}
+
+fn result_adjustment_for_route(
+    from: EntityId,
+    reference: bool,
+    route: super::virtual_bases::Route,
+) -> Option<ResultAdjustment> {
+    (route.via.is_some() || route.offset != 0).then_some(ResultAdjustment {
+        from,
+        via: route.via,
+        offset: i64::from_ne_bytes(route.offset.to_ne_bytes()),
+        reference,
+    })
 }
 
 #[cfg(test)]
@@ -570,37 +583,36 @@ impl Symbols<'_, '_> {
         if !matches!(kind, SlotKind::Function) || function == adjusted {
             return Ok(None);
         }
-        let key = (function, adjusted, through);
-        if let Some(&known) = self.state.vtables.return_adjustments.get(&key) {
-            return Ok(known);
-        }
         let Some(classes) = self
             .graph
             .lower_covariant_result(function, adjusted, through)?
         else {
-            self.state.vtables.return_adjustments.insert(key, None);
             return Ok(None);
         };
-        let route = if let Some(through) = classes.through {
+        // The table-relative route is a fresh query. Only the independent
+        // fallback below is shared by an overrider/introducer pair.
+        if let Some(through) = classes.through {
+            types::layout(self.graph, self.graph.lower_entity_type(classes.from)?)?;
             let first = self.base_route(classes.from, through)?;
             let second = self.base_route(through, classes.to)?;
             if second.via.is_none() {
-                super::virtual_bases::Route {
-                    via: first.via,
-                    offset: first.offset.wrapping_add(second.offset),
-                }
-            } else {
-                self.base_route(classes.from, classes.to)?
+                return Ok(result_adjustment_for_route(
+                    classes.from,
+                    classes.reference,
+                    super::virtual_bases::Route {
+                        via: first.via,
+                        offset: first.offset.wrapping_add(second.offset),
+                    },
+                ));
             }
-        } else {
-            self.base_route(classes.from, classes.to)?
-        };
-        let adjustment = (route.via.is_some() || route.offset != 0).then_some(ResultAdjustment {
-            from: classes.from,
-            via: route.via,
-            offset: i64::from_ne_bytes(route.offset.to_ne_bytes()),
-            reference: classes.reference,
-        });
+        }
+        let key = (function, adjusted);
+        if let Some(&known) = self.state.vtables.return_adjustments.get(&key) {
+            return Ok(known);
+        }
+        types::layout(self.graph, self.graph.lower_entity_type(classes.from)?)?;
+        let route = self.base_route(classes.from, classes.to)?;
+        let adjustment = result_adjustment_for_route(classes.from, classes.reference, route);
         self.state
             .vtables
             .return_adjustments

@@ -1197,6 +1197,7 @@ impl super::graph::Graph {
         };
         let through = (through != from
             && through != to
+            && self.entity(from).complete
             && self.is_base_of(through, from)
             && self.is_base_of(to, through))
         .then_some(through);

@@ -6,7 +6,7 @@ use super::{
     inheritance::BasePathId,
 };
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 pub(crate) struct BaseRoute {
@@ -151,6 +151,58 @@ pub(super) enum OffsetSearch {
     Constant,
     VirtualSlot,
 }
+/// A single target's failed branch roots, shared by provisional sibling searches.
+pub(super) struct BaseOffsetQuery {
+    base: EntityId,
+    misses: HashSet<EntityId>,
+}
+impl BaseOffsetQuery {
+    pub(super) fn new(base: EntityId) -> Self {
+        Self {
+            base,
+            misses: HashSet::new(),
+        }
+    }
+}
+#[derive(Clone, Copy)]
+enum LeafBranches {
+    Skip,
+    Visit,
+}
+struct OffsetFrame {
+    root: EntityId,
+    class: EntityId,
+    total: u64,
+    entry_offset: Option<u64>,
+    next: usize,
+    entered: bool,
+}
+impl OffsetFrame {
+    fn new(class: EntityId, entry_offset: Option<u64>) -> Self {
+        Self {
+            root: class,
+            class,
+            total: 0,
+            entry_offset,
+            next: 0,
+            entered: false,
+        }
+    }
+}
+enum OffsetStep {
+    Continue,
+    Miss,
+    Found(u64),
+    Descend(EntityId, Option<u64>),
+}
+fn found_offset(work: &[OffsetFrame], extra: u64) -> Result<u64, Error> {
+    work.iter().try_fold(extra, |total, frame| {
+        let entry = frame
+            .entry_offset
+            .ok_or(Error::Invariant("covariant result before layout"))?;
+        Ok(total.wrapping_add(frame.total).wrapping_add(entry))
+    })
+}
 impl Graph {
     pub(crate) fn lower_path_projection(&self, path: BasePathId) -> Result<BaseProjection, Error> {
         let edges = self.base_paths.get(path);
@@ -269,22 +321,114 @@ impl Graph {
         base: EntityId,
         search: OffsetSearch,
     ) -> Result<Option<u64>, Error> {
+        match search {
+            OffsetSearch::VirtualSlot => self.base_shape_offset(derived, base),
+            OffsetSearch::Nonvirtual => self.counted_base_offset(
+                derived,
+                &mut BaseOffsetQuery::new(base),
+                LeafBranches::Skip,
+            ),
+            OffsetSearch::Constant => {
+                self.constant_base_offset(derived, &mut BaseOffsetQuery::new(base))
+            }
+        }
+    }
+    pub(super) fn constant_base_offset(
+        &self,
+        derived: EntityId,
+        query: &mut BaseOffsetQuery,
+    ) -> Result<Option<u64>, Error> {
+        self.counted_base_offset(derived, query, LeafBranches::Visit)
+    }
+    fn counted_base_offset(
+        &self,
+        derived: EntityId,
+        query: &mut BaseOffsetQuery,
+        leaves: LeafBranches,
+    ) -> Result<Option<u64>, Error> {
+        let mut work = vec![OffsetFrame::new(derived, Some(0))];
+        while let Some(frame) = work.last_mut() {
+            match self.counted_offset_step(frame, query.base, leaves, &query.misses)? {
+                OffsetStep::Continue => {}
+                OffsetStep::Found(extra) => return Ok(Some(found_offset(&work, extra)?)),
+                OffsetStep::Descend(class, offset) => work.push(OffsetFrame::new(class, offset)),
+                OffsetStep::Miss => {
+                    let root = frame.root;
+                    work.pop();
+                    // A failed recursive branch root is remembered. Classes
+                    // followed within its single-base chain are not memoized.
+                    if !work.is_empty() {
+                        query.misses.insert(root);
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+    fn counted_offset_step(
+        &self,
+        frame: &mut OffsetFrame,
+        base: EntityId,
+        leaves: LeafBranches,
+        misses: &HashSet<EntityId>,
+    ) -> Result<OffsetStep, Error> {
+        if frame.class == base {
+            return Ok(OffsetStep::Found(0));
+        }
+        let edges = &self.entity(frame.class).bases;
+        if !frame.entered {
+            self.work.base_steps(1);
+            frame.entered = true;
+            match edges.as_slice() {
+                [] => return Ok(OffsetStep::Miss),
+                [edge] => {
+                    if edge.is_virtual {
+                        return Ok(OffsetStep::Miss);
+                    }
+                    let offset = edge
+                        .offset
+                        .ok_or(Error::Invariant("base search before layout"))?;
+                    frame.total = frame.total.wrapping_add(offset);
+                    frame.class = edge.class;
+                    frame.entered = false;
+                    return Ok(OffsetStep::Continue);
+                }
+                _ => {
+                    if let Some(edge) = edges
+                        .iter()
+                        .find(|edge| !edge.is_virtual && edge.class == base)
+                    {
+                        return Ok(OffsetStep::Found(
+                            edge.offset
+                                .ok_or(Error::Invariant("base search before layout"))?,
+                        ));
+                    }
+                }
+            }
+        }
+        let Some(edge) = edges.get(frame.next) else {
+            return Ok(OffsetStep::Miss);
+        };
+        frame.next += 1;
+        if edge.is_virtual
+            || misses.contains(&edge.class)
+            || matches!(leaves, LeafBranches::Skip) && self.entity(edge.class).bases.is_empty()
+        {
+            return Ok(OffsetStep::Continue);
+        }
+        Ok(OffsetStep::Descend(edge.class, edge.offset))
+    }
+    fn base_shape_offset(&self, derived: EntityId, base: EntityId) -> Result<Option<u64>, Error> {
         // Relative offsets are memoized by class, so repeated subobjects do
         // not repeat a search. The first nonvirtual path in declaration order
         // is the route chosen by the C++ ABI query, after semantic covariance.
         let mut known = HashMap::new();
         known.insert(base, Some(0_u64));
-        let mut work = vec![(derived, 0_usize, false)];
-        while let Some((class, next, entered)) = work.last_mut() {
+        let mut work = vec![(derived, 0_usize)];
+        while let Some((class, next)) = work.last_mut() {
             if known.contains_key(class) {
                 work.pop();
                 continue;
-            }
-            if !*entered {
-                if !matches!(search, OffsetSearch::VirtualSlot) {
-                    self.work.base_steps(1);
-                }
-                *entered = true;
             }
             let edges = &self.entity(*class).bases;
             // Both offset owners prefer a direct nonvirtual base before
@@ -324,14 +468,13 @@ impl Graph {
                 } else {
                     *next += 1;
                 }
-            } else if matches!(search, OffsetSearch::Nonvirtual | OffsetSearch::VirtualSlot)
-                && edges.len() > 1
+            } else if edges.len() > 1
                 && edge.class != base
                 && self.entity(edge.class).bases.is_empty()
             {
                 *next += 1;
             } else {
-                work.push((edge.class, 0, false));
+                work.push((edge.class, 0));
             }
         }
         Ok(known[&derived])
