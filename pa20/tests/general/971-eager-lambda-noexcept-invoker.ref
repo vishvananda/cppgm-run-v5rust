@@ -1,0 +1,6 @@
+global @pending : ptr [binding=strong] = addr @__lambda1___FUN
+
+function @__lambda1___FUN() -> void [unwind=no, binding=internal, object=_ZN3$_08__invokeEv, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  block ^entry:
+    return void
+}

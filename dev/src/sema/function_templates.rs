@@ -885,6 +885,7 @@ impl Analyzer<'_> {
         });
         let special_definition = old.special_definition;
         let exceptions = old.exceptions.clone();
+        let exception_origin = old.exception_origin;
         let specialized = self.graph.entity_mut(entity);
         specialized.function = properties.0;
         specialized.availability = properties.1;
@@ -900,6 +901,7 @@ impl Analyzer<'_> {
         // demanded body installs its own copied parameters separately.
         specialized.function_parameters = parameters;
         specialized.exceptions = exceptions;
+        specialized.exception_origin = exception_origin;
         specialized.definition_emission = DefinitionEmission::Demanded;
         // Formation owns its entity before the conditional-explicit check,
         // but publishes neither its signature nor memo if that check fails.

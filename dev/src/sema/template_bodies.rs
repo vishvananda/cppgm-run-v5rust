@@ -1913,7 +1913,7 @@ mod tests {
             } else {
                 assert!(matches!(
                     result,
-                    Err(Error::Diagnostic {
+                    Err(Error::InstantiationDiagnostic {
                         message: "increment or decrement of something that is not a modifiable lvalue",
                         ..
                     })

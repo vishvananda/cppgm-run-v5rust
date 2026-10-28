@@ -160,66 +160,6 @@ impl Analyzer<'_> {
         self.class_parameter_destruction(element, scope, location)?;
         Ok(constructor)
     }
-
-    pub(super) fn array_length_may_throw(&mut self, id: ast::ExprId) -> Result<bool, Error> {
-        let use_ = self.graph.expression_facts.allocation(id)?;
-        let Some(array) = use_.array else {
-            return Ok(false);
-        };
-        if !use_.reserved && !self.function_may_throw(self.graph.binding(use_.function).entity)? {
-            return Ok(false);
-        }
-        let listed = match array.prefix.map(|ty| &self.graph.types.get(ty).kind) {
-            Some(TypeKind::Array { bound, .. }) => *bound,
-            _ => 0,
-        };
-        let size = self
-            .type_size(use_.target, self.tree.expressions.get(id).location)?
-            .0;
-        let mut element = use_.target;
-        while let TypeKind::Array { element: inner, .. } = self.graph.types.get(element).kind {
-            element = inner;
-        }
-        let cookie = if let Some(class) = self.graph.class_of(element) {
-            let signature = self
-                .graph
-                .binding(use_.function)
-                .ty
-                .ok_or(Error::Invariant("array allocation type"))?;
-            let variadic = matches!(
-                self.graph.types.get(signature).kind,
-                TypeKind::Function { variadic: true, .. }
-            );
-            if (!use_.reserved || variadic)
-                && (use_.sized_array_delete || !self.graph.destructor_trivial(class)?)
-            {
-                8_u64.max(
-                    self.type_size(element, self.tree.expressions.get(id).location)?
-                        .1,
-                )
-            } else {
-                0
-            }
-        } else {
-            0
-        };
-        let largest = i64::MAX
-            .cast_unsigned()
-            .wrapping_sub(cookie)
-            .checked_div(size)
-            .unwrap_or(i64::MAX.cast_unsigned());
-        if let Some(value) = array.constant {
-            return Ok(value > largest || value < listed);
-        }
-        let facts = self.graph.expression_facts.get(array.count)?;
-        let ty = facts
-            .conversion
-            .map_or(facts.ty, |conversion| conversion.result);
-        let kind = self
-            .integral_kind(ty)
-            .ok_or(Error::Invariant("array bound without integral type"))?;
-        Ok(listed != 0 || kind.signed || kind.bits >= 64 || ((1_u64 << kind.bits) - 1) > largest)
-    }
 }
 
 #[cfg(test)]

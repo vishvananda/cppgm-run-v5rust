@@ -182,6 +182,7 @@ pub(super) struct Entity {
     pub member_access: Access,
     pub mutability: Mutability,
     pub exceptions: super::exceptions::ExceptionState,
+    pub exception_origin: super::exceptions::SpecificationOrigin,
     pub exception_omission: super::exceptions::OmittedSpecification,
     pub target_unwind: super::exceptions::TargetUnwind,
     pub constexpr: bool,
@@ -363,6 +364,7 @@ pub(crate) struct Graph {
     pub(super) expression_facts: Box<super::expression_facts::ExpressionFacts>,
     pub(super) literal_numbers: Box<super::literal_numbers::Numbers>,
     pub(super) source_exceptions: Box<super::source_exceptions::SourceExceptions>,
+    pub(super) specifications: Box<super::exceptions::Specifications>,
     pub(super) expression_scopes: Vec<Option<ScopeId>>,
     pub(super) copy_properties: super::copy_properties::CopyPropertiesStore,
     pub(super) constructors: super::construction::Constructors,
@@ -431,6 +433,7 @@ impl Graph {
             lookups,
             member_cache,
             arena_bytes: type_bytes
+                .saturating_add(self.specifications.storage_bytes())
                 .saturating_add(
                     self.scopes
                         .capacity()
@@ -717,6 +720,7 @@ impl Graph {
             expression_facts: Box::default(),
             literal_numbers: Box::default(),
             source_exceptions: Box::default(),
+            specifications: Box::default(),
             expression_scopes: Vec::new(),
             copy_properties: super::copy_properties::CopyPropertiesStore::default(),
             constructors: super::construction::Constructors::default(),
@@ -868,6 +872,7 @@ impl Graph {
             member_access: Access::Public,
             mutability: Mutability::Ordinary,
             exceptions: super::exceptions::ExceptionState::Absent,
+            exception_origin: super::exceptions::SpecificationOrigin::Omitted,
             exception_omission: super::exceptions::OmittedSpecification::Compare,
             target_unwind: super::exceptions::TargetUnwind::MayThrow,
             constexpr: false,

@@ -132,7 +132,7 @@ impl Analyzer<'_> {
         let std = self.identifiers.find(b"std")?;
         (self.identifiers.bytes(name) == b"initializer_list"
             && instance.arguments.len() == 1
-            && self.initializer_list_in_std(instance.primary, std))
+            && self.in_std_namespace(instance.primary, std))
         .then(|| instance.arguments[0])
     }
 
@@ -315,7 +315,7 @@ impl Analyzer<'_> {
                 .filter(|_| !found.ambiguous)
                 .and_then(|binding| self.class_template_primary(binding))
                 && self.graph.entity(primary).name == Some(list)
-                && self.initializer_list_in_std(primary, std)
+                && self.in_std_namespace(primary, std)
             {
                 return Ok(primary);
             }
@@ -326,7 +326,7 @@ impl Analyzer<'_> {
         ))
     }
 
-    fn initializer_list_in_std(&self, primary: EntityId, std: NameId) -> bool {
+    pub(super) fn in_std_namespace(&self, primary: EntityId, std: NameId) -> bool {
         // A using-directive may find a template whose actual home is elsewhere.
         // Namespace scopes retain their names directly, without class owners.
         let mut home = self.graph.entity(primary).home;

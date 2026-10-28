@@ -288,7 +288,7 @@ impl Analyzer<'_> {
                             found,
                             destructor.then_some(base),
                             location,
-                        );
+                        )?;
                     } else {
                         search.descend_inherited(&self.graph, base, on_primary);
                     }
@@ -436,7 +436,7 @@ impl Analyzer<'_> {
                 {
                     self.check_virtual_override(function, found, class, location)?;
                     self.check_override_nonthrowing(function, found, None, location)?;
-                    self.note_exception_override(function, found, None, location);
+                    self.note_exception_override(function, found, None, location)?;
                     overridden = overridden.or(Some(found));
                 } else {
                     search.descend_inherited(&self.graph, base, on_primary);
@@ -1130,7 +1130,7 @@ impl Analyzer<'_> {
                             ..VirtualFunction::default()
                         },
                     );
-                    self.note_implicit_destructor_override(class, base, location);
+                    self.note_implicit_destructor_override(class, base, location)?;
                 }
             }
         }

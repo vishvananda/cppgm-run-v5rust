@@ -185,13 +185,8 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("allocation throw query without syntax"));
         };
         let use_ = self.graph.expression_facts.allocation(id)?;
-        if self.function_may_throw(self.graph.binding(use_.function).entity)?
-            || self.array_length_may_throw(id)?
-        {
+        if self.function_may_throw(self.graph.binding(use_.function).entity)? {
             return Ok(true);
-        }
-        if let Some(array) = use_.array {
-            self.throw_work.push((array.count, next));
         }
         if let Some((constructor, _)) = use_.constructor {
             let plan = self.graph.constructors.get(constructor);
@@ -204,14 +199,6 @@ impl Analyzer<'_> {
                 return Ok(true);
             }
         }
-        self.throw_work.extend(
-            self.tree
-                .expr_lists
-                .get(placement.unwrap_or_default())
-                .iter()
-                .rev()
-                .map(|&id| (id, next)),
-        );
         if let Some(initializer) = initializer {
             match initializer.kind {
                 ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
@@ -228,6 +215,14 @@ impl Analyzer<'_> {
                 _ => (),
             }
         }
+        self.throw_work.extend(
+            self.tree
+                .expr_lists
+                .get(placement.unwrap_or_default())
+                .iter()
+                .rev()
+                .map(|&id| (id, next)),
+        );
         Ok(false)
     }
 

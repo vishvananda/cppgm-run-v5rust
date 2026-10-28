@@ -1,0 +1,10 @@
+1 translation units
+start translation unit 1
+translation-unit
+  scope namespace <global>
+    type K struct K
+    scope class K
+    scope template-parameters
+      type T typename T
+      function f function of () returning void
+end translation unit

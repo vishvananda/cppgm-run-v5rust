@@ -44,79 +44,65 @@ impl Analyzer<'_> {
         // Like C++ noexcept_pending, recursive queries see the conservative
         // throwing value while this specialization's operand is evaluated.
         self.graph.entity_mut(entity).exceptions = ExceptionState::Evaluating;
-        let result = self.instantiation_context(
-            self.graph.instantiation_levels.get(entity)?,
-            self.tree.expressions.get(specification.operand).location,
-            specification.limit,
-            |analyzer| {
-                let prototype_type =
-                    analyzer.specialization_object_signature(entity, specification.ty)?;
-                let primary = analyzer
-                    .graph
-                    .function_templates
-                    .primary(entity)
-                    .ok_or(Error::Invariant("exception without function template"))?;
-                let head = analyzer
-                    .graph
-                    .entity(analyzer.graph.binding(primary).entity)
-                    .template_head
-                    .ok_or(Error::Invariant("exception pattern without head"))?;
-                let parent = analyzer.template_body_frame(entity, head, specification.scope)?;
-                let mut packs = super::pack_frames::FramePacks::new(
-                    &analyzer.graph,
-                    parent,
-                    analyzer.identifiers,
-                );
-                let mut cloner = crate::syntax::cloning::Cloner::new(
-                    analyzer.tree,
-                    analyzer.stack_budget,
-                    analyzer.stack_base,
-                )
-                .with_expander(&mut packs);
-                let parameters = specification
-                    .parameters
-                    .map(|clause| cloner.parameters(clause))
-                    .transpose()
-                    .map_err(|error| super::template_bodies::copy_error(&error))?;
-                let operand = cloner
-                    .expression(specification.operand)
-                    .map_err(|error| super::template_bodies::copy_error(&error))?;
-                let parameter_packs = cloner.parameter_packs().to_vec();
-                let parent = if let Some(clause) = specification.parameters {
-                    analyzer.function_pack_scope(
-                        parent,
-                        clause,
-                        &parameter_packs,
-                        prototype_type,
-                    )?
-                } else {
-                    parent
-                };
-                let prototype = analyzer.exception_prototype(TemplateException {
-                    operand,
-                    scope: parent,
-                    parameters,
-                    ty: prototype_type,
-                    ..specification
-                })?;
-                let saved = analyzer.evaluating_noexcept;
-                analyzer.evaluating_noexcept = true;
-                let result = (|| {
-                    let ty = analyzer.exception_operand_type(operand, prototype)?;
-                    analyzer.exception_bool(ty, analyzer.tree.expressions.get(operand).location)?;
-                    analyzer.constant_value(operand, prototype, true)
-                })();
-                analyzer.evaluating_noexcept = saved;
-                let value = result?.ok_or(Error::Invariant(
-                    "constant exception specification without value",
-                ))?;
-                Ok(if value.bits == 0 {
-                    ExceptionSet::All
-                } else {
+        let result = (|analyzer: &mut Self| {
+            let prototype_type =
+                analyzer.specialization_object_signature(entity, specification.ty)?;
+            let primary = analyzer
+                .graph
+                .function_templates
+                .primary(entity)
+                .ok_or(Error::Invariant("exception without function template"))?;
+            let head = analyzer
+                .graph
+                .entity(analyzer.graph.binding(primary).entity)
+                .template_head
+                .ok_or(Error::Invariant("exception pattern without head"))?;
+            let parent = analyzer.template_body_frame(entity, head, specification.scope)?;
+            let mut packs =
+                super::pack_frames::FramePacks::new(&analyzer.graph, parent, analyzer.identifiers);
+            let mut cloner = crate::syntax::cloning::Cloner::new(
+                analyzer.tree,
+                analyzer.stack_budget,
+                analyzer.stack_base,
+            )
+            .with_expander(&mut packs);
+            let parameters = specification
+                .parameters
+                .map(|clause| cloner.parameters(clause))
+                .transpose()
+                .map_err(|error| super::template_bodies::copy_error(&error))?;
+            let operand = cloner
+                .expression(specification.operand)
+                .map_err(|error| super::template_bodies::copy_error(&error))?;
+            let parameter_packs = cloner.parameter_packs().to_vec();
+            let parent = if let Some(clause) = specification.parameters {
+                analyzer.function_pack_scope(parent, clause, &parameter_packs, prototype_type)?
+            } else {
+                parent
+            };
+            let prototype = analyzer.exception_prototype(TemplateException {
+                operand,
+                scope: parent,
+                parameters,
+                ty: prototype_type,
+                ..specification
+            })?;
+            let saved_limit = analyzer.graph.lookup_limit.replace(specification.limit);
+            let saved_allocation = std::mem::replace(
+                &mut analyzer.global_allocation_context,
+                super::allocation::GlobalAllocationContext::Instantiation,
+            );
+            let result = analyzer.noexcept_value(Some(entity), operand, prototype);
+            analyzer.graph.lookup_limit = saved_limit;
+            analyzer.global_allocation_context = saved_allocation;
+            result.map(|value| {
+                if value {
                     ExceptionSet::None
-                })
-            },
-        );
+                } else {
+                    ExceptionSet::All
+                }
+            })
+        })(self);
         match result {
             Ok(value) => {
                 self.graph.entity_mut(entity).exceptions = ExceptionState::Value(value);
@@ -193,8 +179,8 @@ impl Analyzer<'_> {
                 return Ok(());
             }
             self.template_depth = saved_depth;
-            self.body_context = self.specification_body(&pending)?;
-            self.noexcept_value(pattern.operand, scope).map(|_| ())
+            self.noexcept_value(Some(pending.owner()), pattern.operand, scope)
+                .map(|_| ())
         })();
         self.graph.lookup_limit = saved_limit;
         self.evaluating_noexcept = saved_noexcept;
@@ -434,6 +420,107 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn specialization_query_adds_no_instantiation_level_and_restores_failed_queries() {
+        use super::super::{
+            allocation::GlobalAllocationContext, exceptions::ExceptionState, lookup::Filter,
+            template_context::MAX_INSTANTIATION_DEPTH, types::Scalar,
+        };
+        let source = SourceBuffer::new(
+            b"template<class T>void good()noexcept(sizeof(T)==4);\
+              template<class T>void bad()noexcept(T::missing);"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"exception-query-depth").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        analyzer.instantiation_depth = MAX_INSTANTIATION_DEPTH;
+        let int = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        for (name, succeeds) in [(b"good".as_slice(), true), (b"bad".as_slice(), false)] {
+            let name = analyzer.identifiers.intern(name).unwrap();
+            let primary = analyzer
+                .graph
+                .own(analyzer.graph.global, name, Filter::Ordinary)
+                .unwrap();
+            let binding = analyzer
+                .complete_signature(primary, &mut [Some(int)])
+                .unwrap()
+                .unwrap();
+            let entity = analyzer.graph.binding(binding).entity;
+            assert_eq!(
+                analyzer.graph.instantiation_levels.get(entity).unwrap(),
+                MAX_INSTANTIATION_DEPTH
+            );
+            assert!(matches!(
+                analyzer.graph.entity(entity).exceptions,
+                ExceptionState::Template(_)
+            ));
+            let limit = analyzer.graph.binding_limit();
+            analyzer.graph.lookup_limit = Some(limit);
+            analyzer.global_allocation_context = GlobalAllocationContext::Declaration;
+            for _ in 0..2 {
+                let result = analyzer.function_may_throw(entity);
+                if succeeds {
+                    assert!(!result.unwrap());
+                } else {
+                    assert!(matches!(result, Err(Error::InstantiationDiagnostic { .. })));
+                    assert!(matches!(
+                        analyzer.graph.entity(entity).exceptions,
+                        ExceptionState::Template(_)
+                    ));
+                }
+                assert_eq!(analyzer.instantiation_depth, MAX_INSTANTIATION_DEPTH);
+                assert_eq!(analyzer.graph.lookup_limit, Some(limit));
+                assert!(matches!(
+                    analyzer.global_allocation_context,
+                    GlobalAllocationContext::Declaration
+                ));
+                assert!(analyzer.body_context.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn specialization_operand_keeps_the_callers_instantiation_level() {
+        let source = SourceBuffer::new(
+            b"template<class T>struct H{static constexpr int value=1;};\
+              template<class T>void f()noexcept(H<T>::value);\
+              int q(){return noexcept(f<int>());}using R=H<int>;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"exception-formation-level").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"R").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let binding = graph
+            .own(graph.global, name, super::super::lookup::Filter::Ordinary)
+            .unwrap();
+        let ty = graph.binding(binding).ty.unwrap();
+        let class = graph.class_of(ty).unwrap();
+        assert_eq!(graph.instantiation_levels.get(class).unwrap(), 0);
+    }
 
     #[test]
     fn specification_queries_memoize_without_instantiating_bodies() {

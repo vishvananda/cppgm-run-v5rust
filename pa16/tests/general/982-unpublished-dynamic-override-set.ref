@@ -1,0 +1,103 @@
+declare global @__external_rtti_vtable____si_class_type_info [role=rtti_si, binding=strong, object=_ZTVN10__cxxabiv120__si_class_type_infoE]
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+global @__typeinfo_name__struct_Child_B_ [storage=readonly, binding=weak, object=_ZTS5ChildIN1O1BEE] = {
+  i8 53
+  i8 67
+  i8 104
+  i8 105
+  i8 108
+  i8 100
+  i8 73
+  i8 78
+  i8 49
+  i8 79
+  i8 49
+  i8 66
+  i8 69
+  i8 69
+  i8 0
+}
+global @__typeinfo_name__struct_O__B [storage=readonly, binding=weak, object=_ZTSN1O1BE] = {
+  i8 78
+  i8 49
+  i8 79
+  i8 49
+  i8 66
+  i8 69
+  i8 0
+}
+global @__rtti_struct_O__B [storage=readonly, binding=weak, object=_ZTIN1O1BE] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_O__B
+}
+global @__rtti_struct_Child_B_ [storage=readonly, binding=weak, object=_ZTI5ChildIN1O1BEE] = {
+  ptr addr @__external_rtti_vtable____si_class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Child_B_
+  ptr addr @__rtti_struct_O__B
+}
+global @Child_B___vtable [storage=readonly, binding=weak, object=_ZTV5ChildIN1O1BEE] = {
+  i64 0
+  ptr addr @__rtti_struct_Child_B_
+  ptr addr @Child_B___f
+}
+global @object [binding=strong] = {
+  ptr addr @Child_B___vtable + 16
+}
+global @O__B__vtable [storage=readonly, binding=weak, object=_ZTVN1O1BE] = {
+  i64 0
+  ptr addr @__rtti_struct_O__B
+  ptr addr @O__B__f
+}
+
+function @Child_B___f(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN5ChildIN1O1BEE1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+function @O__O(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN1OC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Child_B___Child(%t2)
+    return void
+}
+function @Child_B___Child(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN5ChildIN1O1BEEC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = index i8 %t1, 0
+    call void @O__B__B__base_entry(%t2)
+    %t3 = load typed ptr $this
+    %t4 = addr @Child_B___vtable
+    %t5 = index i8 %t4, 16
+    store typed ptr %t5, %t3
+    return void
+}
+function @O__B__B__base_entry(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN1O1BC2Ev, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @O__B__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @O__B__f(%this : ptr [object_bytes=8]) -> void [binding=weak, object=_ZN1O1B1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}
+alias object _ZN1OC2Ev = @O__O
+alias object _ZN5ChildIN1O1BEEC2Ev = @Child_B___Child

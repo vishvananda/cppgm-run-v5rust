@@ -930,8 +930,8 @@ impl Analyzer<'_> {
         self.note_asm_label(entity, info.asm_label)?;
         if self.semantic() {
             ty = self.graph.publish_variable_type(binding)?;
+            self.note_nothrow_target(entity, ty, Some(init.declarator), info.lookup)?;
         }
-        self.note_nothrow_target(entity, ty, Some(init.declarator), info.lookup)?;
         self.record_data_member(binding, specs, &info, init, home)?;
         if definition {
             if self.graph.entity(entity).defined {
@@ -2032,6 +2032,8 @@ impl Analyzer<'_> {
             super::graph::Access::Public
         };
         self.class_bases(node, entity, parent)?;
+        let first_throw = self.pending_throws.len();
+        let first_override = self.exception_overrides.len();
         self.class_depth += 1;
         self.declare_class_members(entity, node.members, class)?;
         self.class_depth -= 1;
@@ -2052,7 +2054,7 @@ impl Analyzer<'_> {
             self.class_layout(entity, node.location)?;
         }
         if self.class_depth == 0 {
-            self.finish_class_exceptions()?;
+            self.finish_class_exceptions(first_throw, first_override)?;
             self.finish_class_nesting()?;
         }
         Ok(ty)

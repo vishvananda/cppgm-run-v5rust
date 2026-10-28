@@ -1,0 +1,7 @@
+function @q(%p : ptr) -> void [binding=strong, object=_Z1qPv] {
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    return void
+}

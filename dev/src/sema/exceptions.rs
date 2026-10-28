@@ -5,7 +5,7 @@ use super::{
     analyzer::Analyzer,
     declarators::DeclaratorInfo,
     graph::{EntityId, ScopeId},
-    types::{RefKind, TypeId, TypeKind},
+    types::{Cv, RefKind, TypeId, TypeKind},
 };
 use crate::{
     lex::vocabulary::Keyword,
@@ -15,11 +15,24 @@ use crate::{
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SpecificationId(u32);
+impl SpecificationId {
+    fn for_index(index: usize) -> Result<Self, Error> {
+        u32::try_from(index)
+            .map(Self)
+            .map_err(|_| Error::Limit("exception specification limit"))
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ExceptionSet {
     All,
     None,
     Dynamic(Vec<TypeId>),
+}
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum SpecificationOrigin {
+    #[default]
+    Omitted,
+    Written,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum DestructorSpecification {
@@ -47,6 +60,11 @@ enum SpecificationMode {
     TemplateExpression,
     TemplateCompatibility,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SpecificationSchedule {
+    Unit,
+    Demand,
+}
 #[derive(Clone, Copy)]
 pub(super) struct PendingSpecification {
     entity: EntityId,
@@ -57,6 +75,66 @@ pub(super) struct PendingSpecification {
     first: bool,
     done: bool,
     mode: SpecificationMode,
+    schedule: SpecificationSchedule,
+}
+impl PendingSpecification {
+    pub(super) fn owner(self) -> EntityId {
+        self.entity
+    }
+}
+
+#[derive(Default)]
+pub(super) struct Specifications {
+    records: Vec<PendingSpecification>,
+    unit: UnitProgress,
+}
+enum UnitProgress {
+    Open(usize),
+    Closed,
+}
+impl Default for UnitProgress {
+    fn default() -> Self {
+        Self::Open(0)
+    }
+}
+impl Specifications {
+    fn unit_closed(&self) -> bool {
+        matches!(self.unit, UnitProgress::Closed)
+    }
+    fn close_unit(&mut self) {
+        self.unit = UnitProgress::Closed;
+    }
+    #[cfg(feature = "telemetry")]
+    pub(super) fn storage_bytes(&self) -> usize {
+        self.records
+            .capacity()
+            .saturating_mul(std::mem::size_of::<PendingSpecification>())
+    }
+    fn push(&mut self, pending: PendingSpecification) -> Result<SpecificationId, Error> {
+        let id = SpecificationId::for_index(self.records.len())?;
+        self.records.push(pending);
+        Ok(id)
+    }
+    fn get(&self, id: SpecificationId) -> PendingSpecification {
+        self.records[id.0 as usize]
+    }
+    fn complete(&mut self, id: SpecificationId) {
+        self.records[id.0 as usize].done = true;
+    }
+    fn unit_head(&self) -> Result<Option<(SpecificationId, PendingSpecification)>, Error> {
+        let UnitProgress::Open(index) = self.unit else {
+            return Ok(None);
+        };
+        let Some(pending) = self.records.get(index).copied() else {
+            return Ok(None);
+        };
+        Ok(Some((SpecificationId::for_index(index)?, pending)))
+    }
+    fn advance_unit(&mut self) {
+        if let UnitProgress::Open(index) = &mut self.unit {
+            *index += 1;
+        }
+    }
 }
 
 impl Analyzer<'_> {
@@ -147,24 +225,28 @@ impl Analyzer<'_> {
 
     pub(super) fn pending_virtual_noexcept(&self, function: EntityId) -> bool {
         matches!(self.graph.entity(function).exceptions, ExceptionState::Pending(id)
-            if matches!(self.specifications[id.0 as usize].qualifier, Some(Qualifier { kind: QualifierKind::Noexcept(Some(_)), .. })))
+            if matches!(self.graph.specifications.get(id).qualifier, Some(Qualifier { kind: QualifierKind::Noexcept(Some(_)), .. })))
     }
 
     pub(super) fn virtual_nothrow(&mut self, function: EntityId) -> Result<bool, Error> {
-        if let ExceptionState::Pending(id) = self.graph.entity(function).exceptions
-            && matches!(self.specifications[id.0 as usize].qualifier, Some(Qualifier { kind: QualifierKind::Throw(types), .. }) if !types.is_empty())
-        {
-            // A nonempty dynamic set allows exceptions even before its names
-            // are resolved in the complete-class context.
-            return Ok(false);
-        }
         self.function_may_throw(function)
             .map(|may_throw| !may_throw)
+    }
+
+    pub(super) fn pending_dynamic_throw(&self, function: EntityId) -> bool {
+        matches!(self.graph.entity(function).exceptions, ExceptionState::Pending(id)
+            if matches!(self.graph.specifications.get(id).qualifier,
+                Some(Qualifier { kind: QualifierKind::Throw(types), .. }) if !types.is_empty()))
     }
 
     pub(super) fn function_may_throw(&mut self, entity: EntityId) -> Result<bool, Error> {
         if self.graph.entity(entity).builtin.is_some() {
             return Ok(false);
+        }
+        if self.pending_dynamic_throw(entity) {
+            // The written nonempty list already establishes the boolean.
+            // Class completion still owns publication of its adjusted types.
+            return Ok(true);
         }
         if self.graph.entity(entity).constructor_exceptions
             == super::construction::ConstructorExceptionSource::SubobjectPlan
@@ -248,6 +330,13 @@ impl Analyzer<'_> {
         }
         let mut qualifier = self.function_exception_qualifier(info);
         let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
+        if first {
+            self.graph.entity_mut(entity).exception_origin = if qualifier.is_some() {
+                SpecificationOrigin::Written
+            } else {
+                SpecificationOrigin::Omitted
+            };
+        }
         if first {
             // Only a syntactically non-throwing first C declaration in a
             // system inclusion gives later omitted specifications this rule.
@@ -398,11 +487,7 @@ impl Analyzer<'_> {
         });
         if !first
             && self.class_depth != 0
-            && (operand.is_some()
-                || matches!(
-                    self.graph.entity(entity).exceptions,
-                    ExceptionState::Pending(_)
-                ))
+            && (operand.is_some() || self.pending_virtual_noexcept(entity))
         {
             // C++ defers comparison when a member's operand needs its class.
             return Ok(());
@@ -443,11 +528,7 @@ impl Analyzer<'_> {
             }
             scope = prototype;
         }
-        let id = SpecificationId(
-            u32::try_from(self.specifications.len())
-                .map_err(|_| Error::Limit("exception specification limit"))?,
-        );
-        self.specifications.push(PendingSpecification {
+        let id = self.graph.specifications.push(PendingSpecification {
             entity,
             qualifier,
             scope,
@@ -455,6 +536,13 @@ impl Analyzer<'_> {
             location,
             first,
             done: false,
+            schedule: if self.graph.entity(entity).template_head.is_none()
+                && self.graph.class_templates.definitions.active_depth() == 0
+            {
+                SpecificationSchedule::Unit
+            } else {
+                SpecificationSchedule::Demand
+            },
             mode: if implicit_destructor && self.semantic() {
                 SpecificationMode::ImplicitDestructor
             } else if self.template_depth == 0 && self.graph.entity(entity).template_head.is_none()
@@ -463,11 +551,11 @@ impl Analyzer<'_> {
             } else {
                 SpecificationMode::TemplateCompatibility
             },
-        });
+        })?;
         if first {
             self.graph.entity_mut(entity).exceptions = ExceptionState::Pending(id);
         }
-        let member_throw = self.class_depth != 0
+        let member_throw = self.defers_member_throw(entity, info)
             && qualifier.is_some_and(
                 |q| matches!(q.kind, QualifierKind::Throw(types) if !types.is_empty()),
             );
@@ -480,6 +568,16 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    fn defers_member_throw(&self, entity: EntityId, info: &DeclaratorInfo) -> bool {
+        let declaration = self.graph.entity(entity);
+        self.class_depth != 0
+            && declaration.home == Some(info.lookup)
+            && declaration
+                .home
+                .is_some_and(|home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+            && declaration.template_head.is_none()
+    }
+
     fn true_operand(&self, mut expr: ast::ExprId) -> bool {
         while let ExprKind::Paren(inner) = self.tree.expressions.get(expr).kind {
             expr = inner;
@@ -490,7 +588,7 @@ impl Analyzer<'_> {
         )
     }
     fn resolve_specification(&mut self, id: SpecificationId) -> Result<(), Error> {
-        let pending = self.specifications[id.0 as usize];
+        let pending = self.graph.specifications.get(id);
         if pending.done {
             return Ok(());
         }
@@ -500,14 +598,11 @@ impl Analyzer<'_> {
                 return Err(Error::Invariant("missing template exception pattern"));
             };
             self.check_template_exception(pattern, pending)?;
-            self.specifications[id.0 as usize].done = true;
+            self.graph.specifications.complete(id);
             return Ok(());
         }
         if pending.first {
             self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Evaluating;
-        } else if let ExceptionState::Pending(first) = self.graph.entity(pending.entity).exceptions
-        {
-            self.resolve_specification(first)?;
         }
         let saved_limit = self.graph.lookup_limit;
         self.graph.lookup_limit = Some(pending.limit);
@@ -517,63 +612,166 @@ impl Analyzer<'_> {
         let saved_default = self.default_argument_scope.take();
         let saved_member = self.member_initializer_class.take();
         let saved_allocation_context = self.global_allocation_context;
-        self.global_allocation_context = if matches!(pending.mode, SpecificationMode::Ordinary) {
+        self.global_allocation_context = if pending.schedule == SpecificationSchedule::Unit {
             super::allocation::GlobalAllocationContext::Declaration
         } else {
             super::allocation::GlobalAllocationContext::Instantiation
         };
         let result = (|| {
-            self.body_context = self.specification_body(&pending)?;
-            if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
-                self.graph
-                    .entity(pending.entity)
-                    .member_function
-                    .ok_or(Error::Invariant(
-                        "implicit destructor specification without member",
-                    ))
-                    .and_then(|member| self.implicit_destructor_nothrow(member.class))
-                    .map(|nothrow| {
-                        if nothrow {
-                            ExceptionSet::None
-                        } else {
-                            ExceptionSet::All
-                        }
-                    })
-            } else {
-                self.exception_set_context(
-                    pending.qualifier,
-                    pending.scope,
-                    true,
-                    Some(pending.entity),
-                )
+            if !matches!(
+                pending.qualifier,
+                Some(Qualifier {
+                    kind: QualifierKind::Noexcept(Some(_)),
+                    ..
+                })
+            ) {
+                self.body_context = self.specification_body(&pending)?;
             }
+            self.evaluate_specification(pending)
         })();
         self.body_context = saved_body;
         self.default_argument_scope = saved_default;
         self.member_initializer_class = saved_member;
         self.graph.lookup_limit = saved_limit;
         self.global_allocation_context = saved_allocation_context;
-        let result = result?;
-        if pending.first {
-            self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Value(result);
-        } else {
-            let ExceptionState::Value(first) = &self.graph.entity(pending.entity).exceptions else {
-                return Err(Error::Invariant("unresolved first exception specification"));
-            };
-            let incompatible = if matches!(pending.mode, SpecificationMode::Ordinary) {
-                *first != result
-            } else {
-                matches!(first, ExceptionSet::None) != matches!(result, ExceptionSet::None)
-            };
-            if incompatible {
-                return Err(Error::at(
-                    pending.location,
-                    "redeclaration with an incompatible exception-specification",
-                ));
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                if pending.first {
+                    self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Pending(id);
+                }
+                return Err(error);
             }
+        };
+        if let Some(value) = result {
+            self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Value(value);
         }
-        self.specifications[id.0 as usize].done = true;
+        self.graph.specifications.complete(id);
         Ok(())
+    }
+    fn specification_nonthrowing(&mut self, pending: PendingSpecification) -> Result<bool, Error> {
+        if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
+            let member =
+                self.graph
+                    .entity(pending.entity)
+                    .member_function
+                    .ok_or(Error::Invariant(
+                        "implicit destructor specification without member",
+                    ))?;
+            return self.implicit_destructor_nothrow(member.class);
+        }
+        match pending.qualifier.map(|qualifier| qualifier.kind) {
+            Some(QualifierKind::Noexcept(Some(operand))) => {
+                self.noexcept_value(Some(pending.entity), operand, pending.scope)
+            }
+            Some(QualifierKind::Noexcept(None)) => Ok(true),
+            Some(QualifierKind::Throw(types)) => Ok(types.is_empty()),
+            None => Ok(false),
+            _ => Err(Error::Invariant("invalid exception qualifier")),
+        }
+    }
+    fn specification_set(
+        &mut self,
+        pending: PendingSpecification,
+        nonthrowing: bool,
+    ) -> Result<ExceptionSet, Error> {
+        if let Some(Qualifier {
+            kind: QualifierKind::Throw(types),
+            ..
+        }) = pending.qualifier
+        {
+            self.dynamic_exception_set(
+                types,
+                pending.scope,
+                true,
+                pending.first.then_some(pending.entity),
+            )
+        } else {
+            Ok(if nonthrowing {
+                ExceptionSet::None
+            } else {
+                ExceptionSet::All
+            })
+        }
+    }
+    fn evaluate_specification(
+        &mut self,
+        pending: PendingSpecification,
+    ) -> Result<Option<ExceptionSet>, Error> {
+        // Redeclarations evaluate their new boolean before demanding the first
+        // specification. Later finite-set names are checked only afterward.
+        let nonthrowing = self.specification_nonthrowing(pending)?;
+        if pending.first {
+            return self.specification_set(pending, nonthrowing).map(Some);
+        }
+        let first_nonthrowing = !self.function_may_throw(pending.entity)?;
+        if first_nonthrowing != nonthrowing {
+            return Err(Error::at(
+                pending.location,
+                "redeclaration with an incompatible exception-specification",
+            ));
+        }
+        if nonthrowing
+            || !matches!(pending.mode, SpecificationMode::Ordinary)
+            || self.graph.entity(pending.entity).template_head.is_some()
+            || self
+                .graph
+                .function_templates
+                .primary(pending.entity)
+                .is_some()
+        {
+            return Ok(None);
+        }
+        let first = match self.graph.source_exceptions.specification(pending.entity) {
+            Some(types) => {
+                let mut types = types.to_vec();
+                types.sort_unstable();
+                types.dedup();
+                ExceptionSet::Dynamic(types)
+            }
+            // A pending dynamic list is unpublished until class completion.
+            None => ExceptionSet::All,
+        };
+        let later = self.specification_set(pending, nonthrowing)?;
+        if first != later && !self.bad_alloc_redeclaration(pending.entity, &later) {
+            return Err(Error::at(
+                pending.location,
+                "redeclaration with an incompatible exception-specification",
+            ));
+        }
+        Ok(None)
+    }
+    fn bad_alloc_redeclaration(&self, entity: EntityId, later: &ExceptionSet) -> bool {
+        if self.graph.source_exceptions.specification(entity).is_some()
+            || !self
+                .graph
+                .entity(entity)
+                .function
+                .filter(|function| function.allocation.is_some())
+                .and_then(|function| function.special)
+                .is_some_and(|special| {
+                    matches!(special,
+                    super::function_names::SpecialName::Operator { token, .. }
+                        if token.as_keyword() == Some(Keyword::New))
+                })
+        {
+            return false;
+        }
+        let ExceptionSet::Dynamic(types) = later else {
+            return false;
+        };
+        let [ty] = types.as_slice() else { return false };
+        let Some(class) = self.graph.class_of(*ty) else {
+            return false;
+        };
+        let Some(name) = self.graph.entity(class).name else {
+            return false;
+        };
+        self.identifiers.bytes(name) == b"bad_alloc"
+            && self
+                .identifiers
+                .find(b"std")
+                .is_some_and(|std| self.in_std_namespace(class, std))
     }
     pub(super) fn record_template_exception(
         &mut self,
@@ -625,11 +823,7 @@ impl Analyzer<'_> {
             limit,
         };
         self.graph.entity_mut(entity).exceptions = ExceptionState::Template(pattern);
-        let id = SpecificationId(
-            u32::try_from(self.specifications.len())
-                .map_err(|_| Error::Limit("exception specification limit"))?,
-        );
-        self.specifications.push(PendingSpecification {
+        let id = self.graph.specifications.push(PendingSpecification {
             entity,
             qualifier: None,
             scope,
@@ -638,12 +832,13 @@ impl Analyzer<'_> {
             first: true,
             done: false,
             mode: SpecificationMode::TemplateExpression,
-        });
+            schedule: SpecificationSchedule::Demand,
+        })?;
         // Keep the queue's source order shared with ordinary specifications.
         if self.graph.entity(entity).template_head.is_none() {
             // A class template's ordinary member waits for instantiation;
             // its specification's original typed syntax is retained only.
-            self.specifications[id.0 as usize].done = true;
+            self.graph.specifications.complete(id);
         }
         Ok(())
     }
@@ -665,7 +860,7 @@ impl Analyzer<'_> {
             None => Ok(ExceptionSet::All),
             Some(QualifierKind::Noexcept(operand)) => {
                 let nothrow = if let Some(operand) = operand {
-                    self.noexcept_value(operand, scope)?
+                    self.noexcept_value(owner, operand, scope)?
                 } else {
                     true
                 };
@@ -696,52 +891,125 @@ impl Analyzer<'_> {
         if !self.semantic() && !operand {
             return Ok(None);
         }
-        let entity = self.graph.entity(pending.entity);
-        let ty = entity.ty.ok_or(Error::Invariant(
-            "exception specification without function type",
-        ))?;
-        let cv = self.graph.types.get(ty).cv;
-        let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
-            return Err(Error::Invariant("exception specification on nonfunction"));
+        self.exception_body(Some(pending.entity), operand).map(Some)
+    }
+    fn exception_body(
+        &mut self,
+        owner: Option<EntityId>,
+        implicit_object: bool,
+    ) -> Result<super::procedural_statements::BodyContext, Error> {
+        let (result, object, cv) = if let Some(owner) = owner {
+            let entity = self.graph.entity(owner);
+            let ty = entity.ty.ok_or(Error::Invariant(
+                "exception specification without function type",
+            ))?;
+            let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
+                return Err(Error::Invariant("exception specification on nonfunction"));
+            };
+            let home = entity
+                .home
+                .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class);
+            let object = home
+                .and_then(|home| self.graph.scope(home).owner)
+                .filter(|_| {
+                    implicit_object && !entity.function.is_some_and(|function| function.is_static)
+                });
+            let constructor = entity
+                .member_function
+                .is_some_and(|member| member.kind == super::graph::MemberKind::Constructor);
+            // The frozen specification reads the outer Type::cv; constructors
+            // have an unqualified object, independently of function_cv.
+            let cv = if constructor {
+                Cv::default()
+            } else {
+                self.graph.types.get(ty).cv
+            };
+            (result, object, cv)
+        } else {
+            (
+                self.graph.types.scalar(super::types::Scalar::Void)?,
+                None,
+                Cv::default(),
+            )
         };
-        let home = entity
-            .home
-            .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class);
-        let object = home
-            .and_then(|home| self.graph.scope(home).owner)
-            .filter(|_| !entity.function.is_some_and(|function| function.is_static));
         let mut body = super::procedural_statements::BodyContext::new(result, None);
-        if operand && let Some(object) = object {
+        if let Some(object) = object {
             let object = self.graph.entity(object).ty.ok_or(Error::Invariant(
                 "exception specification class without type",
             ))?;
-            // noexcept_value reads Type::cv, independently of function_cv.
             let object = self.graph.types.qualify(object, cv)?;
             body.object_pointer = Some(self.graph.types.pointer(object)?);
         }
-        Ok(Some(body))
+        Ok(body)
     }
-    // A specification uses typed occurrences and converted constant evaluation
-    // in every view. Typing retains the view's ordinary declaration/body demand.
+    // A required specification has its declaration's object and root demand
+    // context, independent of a body or substitution that demanded it.
     pub(super) fn noexcept_value(
+        &mut self,
+        owner: Option<EntityId>,
+        operand: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<bool, Error> {
+        let body = self.body_context.take();
+        let default = self.default_argument_scope.take();
+        let member = self.member_initializer_class.take();
+        let enclosing = std::mem::take(&mut self.enclosing_bodies);
+        let capture = self.capture_scan.take();
+        let unevaluated = std::mem::replace(&mut self.unevaluated, 0);
+        let deferring = std::mem::replace(&mut self.type_queries.deferring, 0);
+        let evaluating = std::mem::replace(&mut self.evaluating_noexcept, true);
+        let lookup = self.lookup_location;
+        let result = (|| {
+            self.body_context = Some(self.exception_body(owner, true)?);
+            self.exception_operand_type(operand, scope)?;
+            self.check_resolved_function(operand)?;
+            self.convert_bool(operand)?;
+            self.with_semantics(|analyzer| analyzer.converted_constant_bool(operand, scope))
+        })();
+        self.body_context = body;
+        self.default_argument_scope = default;
+        self.member_initializer_class = member;
+        self.enclosing_bodies = enclosing;
+        self.capture_scan = capture;
+        self.unevaluated = unevaluated;
+        self.type_queries.deferring = deferring;
+        self.evaluating_noexcept = evaluating;
+        self.lookup_location = lookup;
+        result.map_err(Error::required_instantiation)
+    }
+    pub(super) fn closure_noexcept_value(
         &mut self,
         operand: ast::ExprId,
         scope: ScopeId,
     ) -> Result<bool, Error> {
-        let saved = self.evaluating_noexcept;
-        self.evaluating_noexcept = true;
-        let result = (|| {
-            self.exception_operand_type(operand, scope)?;
-            let saved = self.unevaluated;
-            self.unevaluated = 1;
-            let result = self.convert_bool(operand);
-            self.unevaluated = saved;
-            result?;
-            self.with_semantics(|analyzer| analyzer.converted_constant_bool(operand, scope))
+        // A lambda's declarator is evaluated immediately in its surrounding
+        // body, before the call operator's body or its invoker exists.
+        let installed = self.semantic() && self.body_context.is_none();
+        if installed {
+            self.body_context = Some(self.exception_body(None, false)?);
+        }
+        let checked = (|| {
+            if self.semantic() {
+                self.typed_expression(operand, scope)?;
+                self.check_resolved_function(operand)?;
+                self.convert_bool(operand)?;
+            }
+            Ok(())
         })();
-        self.evaluating_noexcept = saved;
-        result
+        if installed {
+            self.body_context = None;
+        }
+        checked.map_err(Error::required_instantiation)?;
+        if self.semantic() {
+            self.converted_constant_bool(operand, scope)
+        } else {
+            self.constant_value(operand, scope, true)?
+                .map(|value| value.bits != 0)
+                .ok_or(Error::Invariant("closure noexcept without constant"))
+        }
+        .map_err(Error::required_instantiation)
     }
+
     fn dynamic_exception_set(
         &mut self,
         types: crate::syntax::storage::List<ast::TypeId>,
@@ -799,7 +1067,7 @@ impl Analyzer<'_> {
         }
         adjusted.sort_unstable();
         adjusted.dedup();
-        Ok(if adjusted.is_empty() {
+        Ok(if types.is_empty() {
             ExceptionSet::None
         } else {
             ExceptionSet::Dynamic(adjusted)
@@ -871,20 +1139,37 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    pub(super) fn finish_class_exceptions(&mut self) -> Result<(), Error> {
-        let pending = std::mem::take(&mut self.pending_throws);
-        for id in pending {
-            self.resolve_specification(id)?;
+    pub(super) fn finish_class_exceptions(
+        &mut self,
+        first_throw: usize,
+        first_override: usize,
+    ) -> Result<(), Error> {
+        let mut index = first_throw;
+        while index < self.pending_throws.len() {
+            self.resolve_specification(self.pending_throws[index])?;
+            index += 1;
         }
-        self.check_exception_overrides(false)
+        self.pending_throws.truncate(first_throw);
+        self.check_exception_overrides(first_override, false)
     }
     pub(super) fn finish_unit_exceptions(&mut self) -> Result<(), Error> {
-        for index in 0..self.specifications.len() {
-            self.resolve_specification(SpecificationId(
-                u32::try_from(index).map_err(|_| Error::Limit("exception specification limit"))?,
-            ))?;
+        if self.graph.specifications.unit_closed() {
+            return Ok(());
         }
-        self.check_exception_overrides(true)
+        self.check_pending_nonthrowing_overrides()?;
+        self.check_exception_overrides(0, true)?;
+        // Resolving a specification can append further declarations. Ordinary
+        // members of class-template instances remain demand-owned throughout.
+        while let Some((id, pending)) = self.graph.specifications.unit_head()? {
+            if pending.schedule == SpecificationSchedule::Unit
+                || matches!(pending.mode, SpecificationMode::TemplateExpression)
+            {
+                self.resolve_specification(id)?;
+            }
+            self.graph.specifications.advance_unit();
+        }
+        self.graph.specifications.close_unit();
+        Ok(())
     }
 }
 
@@ -999,13 +1284,7 @@ impl Analyzer<'_> {
             return Ok(());
         };
         let allows = if self.graph.entity(source).function.is_some() {
-            if let ExceptionState::Pending(id) = self.graph.entity(source).exceptions {
-                self.resolve_specification(id)?;
-            }
-            !matches!(
-                self.graph.entity(source).exceptions,
-                ExceptionState::Value(ExceptionSet::None)
-            )
+            self.function_may_throw(source)?
         } else {
             let source_type = self.graph.entity(source).ty.ok_or(Error::Invariant(
                 "function pointer initializer without type",
@@ -1039,6 +1318,49 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn resumed_analysis_keeps_demand_owned_specifications_and_their_scope() {
+        use super::super::lookup::Filter;
+        let source = SourceBuffer::new(
+            b"template<class T>struct Lazy{void f()noexcept(sizeof(T)>0);};Lazy<int>value;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"exception-store-owner").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let value = cursor.intern_name(b"value").unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let binding = graph.own(graph.global, value, Filter::Ordinary).unwrap();
+        let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
+        let scope = graph.entity(class).scope.unwrap();
+        let function = graph
+            .binding(graph.own(scope, f, Filter::Ordinary).unwrap())
+            .entity;
+        assert!(matches!(
+            graph.entity(function).exceptions,
+            ExceptionState::Pending(_)
+        ));
+        let mut resumed =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+        resumed.set_lowering();
+        let marker = 0u8;
+        resumed.stack_base = std::ptr::from_ref(&marker).addr();
+        assert!(!resumed.function_may_throw(function).unwrap());
+        let work = resumed.graph.work().constant_evaluations;
+        assert!(!resumed.function_may_throw(function).unwrap());
+        assert_eq!(resumed.graph.work().constant_evaluations, work);
+        assert!(matches!(
+            resumed.graph.entity(function).exceptions,
+            ExceptionState::Value(ExceptionSet::None)
+        ));
+    }
+
     #[test]
     fn member_pattern_comparison_preserves_the_instance_specification() {
         for (specification, compatible) in [

@@ -1,0 +1,9 @@
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @run()
+    return i32 0
+}
+function @run() -> void [binding=weak, object=_Z3runI1BEvv] {
+  block ^entry:
+    return void
+}

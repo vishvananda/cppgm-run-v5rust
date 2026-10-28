@@ -3,7 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    exceptions::{DestructorSpecification, ExceptionSet, ExceptionState},
+    exceptions::{DestructorSpecification, ExceptionSet, ExceptionState, SpecificationOrigin},
     graph::{Access, EntityId},
     types::{Scalar, TypeId, TypeKind},
 };
@@ -17,11 +17,30 @@ enum Owner {
 }
 
 #[derive(Clone, Copy)]
+pub(super) struct PendingNonthrowingOverride {
+    function: EntityId,
+    location: SourceOffset,
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct PendingOverride {
     function: Owner,
     overridden: Owner,
     location: SourceOffset,
     implicit_destructor: bool,
+}
+
+enum OverrideCheck {
+    Complete,
+    Deferred,
+}
+
+enum FunctionExceptions<'a> {
+    All,
+    Nonthrowing,
+    Dynamic(&'a [TypeId]),
+    Destructor(EntityId),
+    Deferred,
 }
 
 impl Analyzer<'_> {
@@ -54,14 +73,30 @@ impl Analyzer<'_> {
         } else {
             self.virtual_nothrow(found)?
         };
-        if nonthrowing
-            && !self.pending_virtual_noexcept(function)
-            && !self.virtual_nothrow(function)?
-        {
-            return Err(Error::at(
-                location,
-                "an overrider allows exceptions its overridden function does not",
-            ));
+        if nonthrowing {
+            if self.pending_virtual_noexcept(function) {
+                self.nonthrowing_overrides
+                    .push(PendingNonthrowingOverride { function, location });
+            } else if !self.virtual_nothrow(function)? {
+                return Err(Error::at(
+                    location,
+                    "an overrider allows exceptions its overridden function does not",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn check_pending_nonthrowing_overrides(&mut self) -> Result<(), Error> {
+        // This unit queue is independent of class-local finite-set events.
+        let pending = std::mem::take(&mut self.nonthrowing_overrides);
+        for event in pending {
+            if self.function_may_throw(event.function)? {
+                return Err(Error::at(
+                    event.location,
+                    "an overrider allows exceptions its overridden function does not",
+                ));
+            }
         }
         Ok(())
     }
@@ -113,80 +148,125 @@ impl Analyzer<'_> {
         found: EntityId,
         destructor: Option<EntityId>,
         location: SourceOffset,
-    ) {
-        self.exception_overrides.push(PendingOverride {
+    ) -> Result<(), Error> {
+        if destructor.is_none()
+            && self.graph.entity(found).exception_origin == SpecificationOrigin::Omitted
+        {
+            return Ok(());
+        }
+        self.note_pending_exception_override(PendingOverride {
             function: Owner::Function(function),
             overridden: destructor.map_or(Owner::Function(found), Owner::Destructor),
             location,
             implicit_destructor: false,
-        });
+        })
     }
     pub(super) fn note_implicit_destructor_override(
         &mut self,
         class: EntityId,
         base: EntityId,
         location: SourceOffset,
-    ) {
-        self.exception_overrides.push(PendingOverride {
+    ) -> Result<(), Error> {
+        self.note_pending_exception_override(PendingOverride {
             function: Owner::Destructor(class),
             overridden: Owner::Destructor(base),
             location,
             implicit_destructor: true,
-        });
+        })
     }
-    pub(super) fn check_exception_overrides(&mut self, final_check: bool) -> Result<(), Error> {
-        let mut pending = std::mem::take(&mut self.exception_overrides);
-        if final_check {
-            pending.append(&mut self.deferred_exception_overrides);
+    fn note_pending_exception_override(&mut self, edge: PendingOverride) -> Result<(), Error> {
+        let first = self.exception_overrides.len();
+        self.exception_overrides.push(edge);
+        if self.class_depth == 0 && self.pending_throws.is_empty() {
+            self.check_exception_overrides(first, false)?;
         }
-        for edge in pending {
-            let Some(allowed) = self.override_exception_set(edge.overridden, final_check)? else {
-                self.defer_exception_override(edge, final_check)?;
-                continue;
-            };
-            if allowed == ExceptionSet::All {
-                continue;
+        Ok(())
+    }
+    pub(super) fn check_exception_overrides(
+        &mut self,
+        first: usize,
+        final_check: bool,
+    ) -> Result<(), Error> {
+        let mut index = first;
+        let mut kept = first;
+        // Copy each event before querying: a nested class may append and
+        // complete its own suffix. Visit the live tail after earlier events.
+        while index < self.exception_overrides.len() {
+            let edge = self.exception_overrides[index];
+            if matches!(
+                self.check_exception_override(edge, final_check)?,
+                OverrideCheck::Deferred
+            ) {
+                self.exception_overrides[kept] = edge;
+                kept += 1;
             }
-            let Some(thrown) = self.override_exception_set(edge.function, final_check)? else {
-                self.defer_exception_override(edge, final_check)?;
-                continue;
-            };
-            let nonthrowing_destructor = edge.implicit_destructor && allowed == ExceptionSet::None;
-            let allows = match (allowed, thrown) {
-                (ExceptionSet::All, _) | (_, ExceptionSet::None) => true,
-                (ExceptionSet::None, _) | (_, ExceptionSet::All) => false,
-                (ExceptionSet::Dynamic(allowed), ExceptionSet::Dynamic(thrown)) => {
-                    self.exception_subset(&allowed, &thrown)?
-                }
-            };
-            if !allows {
-                return Err(Error::at(
-                    edge.location,
-                    if nonthrowing_destructor {
-                        "a destructor allows exceptions the destructor it overrides does not"
-                    } else {
-                        "an overrider allows exceptions its overridden function does not"
-                    },
-                ));
-            }
+            index += 1;
         }
+        self.exception_overrides.truncate(kept);
         Ok(())
     }
 
-    fn defer_exception_override(
+    fn check_exception_override(
         &mut self,
         edge: PendingOverride,
         final_check: bool,
-    ) -> Result<(), Error> {
-        if final_check {
-            return Err(Error::Invariant(
-                "unresolved override exception specification",
+    ) -> Result<OverrideCheck, Error> {
+        if !final_check
+            && [edge.function, edge.overridden].into_iter().any(|owner| {
+                let function = match owner {
+                    Owner::Function(function) => Some(function),
+                    Owner::Destructor(class) => self
+                        .graph
+                        .entity(class)
+                        .declared_destructor
+                        .map(|binding| self.graph.binding(binding).entity),
+                };
+                function.is_some_and(|function| self.pending_virtual_noexcept(function))
+            })
+        {
+            return Ok(OverrideCheck::Deferred);
+        }
+        let Some(allowed) = self.override_exception_set(edge.overridden, final_check)? else {
+            return Self::unresolved_override(final_check);
+        };
+        if allowed == ExceptionSet::All
+            || matches!(&allowed, ExceptionSet::Dynamic(types) if types.is_empty())
+            || allowed == ExceptionSet::None && !edge.implicit_destructor
+        {
+            return Ok(OverrideCheck::Complete);
+        }
+        let Some(thrown) = self.override_exception_set(edge.function, final_check)? else {
+            return Self::unresolved_override(final_check);
+        };
+        let nonthrowing_destructor = edge.implicit_destructor && allowed == ExceptionSet::None;
+        let allows = match (allowed, thrown) {
+            (ExceptionSet::All, _) | (_, ExceptionSet::None) => true,
+            (ExceptionSet::None, _) | (_, ExceptionSet::All) => false,
+            (ExceptionSet::Dynamic(allowed), ExceptionSet::Dynamic(thrown)) => {
+                self.exception_subset(&allowed, &thrown)?
+            }
+        };
+        if !allows {
+            return Err(Error::at(
+                edge.location,
+                if nonthrowing_destructor {
+                    "a destructor allows exceptions the destructor it overrides does not"
+                } else {
+                    "an overrider allows exceptions its overridden function does not"
+                },
             ));
         }
-        // Outermost-class completion consumes only that class's ready work.
-        // A pending noexcept waits on the unit event, never on unrelated classes.
-        self.deferred_exception_overrides.push(edge);
-        Ok(())
+        Ok(OverrideCheck::Complete)
+    }
+
+    fn unresolved_override(final_check: bool) -> Result<OverrideCheck, Error> {
+        if final_check {
+            Err(Error::Invariant(
+                "unresolved override exception specification",
+            ))
+        } else {
+            Ok(OverrideCheck::Deferred)
+        }
     }
 
     fn exception_subset(&mut self, allowed: &[TypeId], thrown: &[TypeId]) -> Result<bool, Error> {
@@ -213,37 +293,21 @@ impl Analyzer<'_> {
         let mut work = vec![root];
         let mut seen_classes = HashSet::new();
         let mut types = Vec::new();
+        let mut finite = false;
         while let Some(owner) = work.pop() {
             match owner {
                 Owner::Function(function) => {
-                    let entity = self.graph.entity(function);
-                    if entity
-                        .member_function
-                        .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
-                        && entity.destructor_specification == DestructorSpecification::Implicit
-                    {
-                        let class = entity
-                            .member_function
-                            .ok_or(Error::Invariant("destructor without class"))?
-                            .class;
-                        work.push(Owner::Destructor(class));
-                        continue;
-                    }
-                    if matches!(entity.exceptions, ExceptionState::Pending(_)) {
-                        if !final_check {
-                            return Ok(None);
-                        }
-                        self.function_may_throw(function)?;
-                    }
-                    match &self.graph.entity(function).exceptions {
-                        ExceptionState::Value(ExceptionSet::None) => (),
-                        ExceptionState::Value(ExceptionSet::Dynamic(thrown)) => {
+                    match self.function_exception_set(function, final_check)? {
+                        FunctionExceptions::Nonthrowing => (),
+                        FunctionExceptions::Dynamic(thrown) => {
+                            finite = true;
                             types.extend_from_slice(thrown);
                         }
-                        ExceptionState::Value(ExceptionSet::All) | ExceptionState::Absent => {
-                            return Ok(Some(ExceptionSet::All));
+                        FunctionExceptions::All => return Ok(Some(ExceptionSet::All)),
+                        FunctionExceptions::Destructor(class) => {
+                            work.push(Owner::Destructor(class));
                         }
-                        _ => return Ok(None),
+                        FunctionExceptions::Deferred => return Ok(None),
                     }
                 }
                 Owner::Destructor(class) => {
@@ -260,19 +324,9 @@ impl Analyzer<'_> {
                             continue;
                         }
                     }
-                    work.extend(
-                        entity
-                            .bases
-                            .iter()
-                            .map(|edge| Owner::Destructor(edge.class)),
-                    );
-                    work.extend(
-                        self.graph
-                            .indirect_virtual_bases(class)
-                            .into_iter()
-                            .map(Owner::Destructor),
-                    );
-                    for &member in &entity.members {
+                    // Push in reverse execution order: direct bases, indirect
+                    // virtual bases, then members, each in source order.
+                    for &member in entity.members.iter().rev() {
                         let mut ty = self.graph.lower_entity_type(member)?;
                         while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
                             ty = element;
@@ -281,16 +335,65 @@ impl Analyzer<'_> {
                             work.push(Owner::Destructor(child));
                         }
                     }
+                    work.extend(
+                        self.graph
+                            .indirect_virtual_bases(class)
+                            .into_iter()
+                            .rev()
+                            .map(Owner::Destructor),
+                    );
+                    work.extend(
+                        entity
+                            .bases
+                            .iter()
+                            .rev()
+                            .map(|edge| Owner::Destructor(edge.class)),
+                    );
                 }
             }
         }
-        types.sort_unstable();
-        types.dedup();
-        Ok(Some(if types.is_empty() {
+        Ok(Some(if types.is_empty() && !finite {
             ExceptionSet::None
         } else {
             ExceptionSet::Dynamic(types)
         }))
+    }
+
+    fn function_exception_set(
+        &mut self,
+        function: EntityId,
+        final_check: bool,
+    ) -> Result<FunctionExceptions<'_>, Error> {
+        let entity = self.graph.entity(function);
+        if let Some(member) = entity.member_function
+            && member.kind == super::graph::MemberKind::Destructor
+            && entity.destructor_specification == DestructorSpecification::Implicit
+        {
+            return Ok(FunctionExceptions::Destructor(member.class));
+        }
+        let dynamic = self.pending_dynamic_throw(function);
+        if matches!(entity.exceptions, ExceptionState::Pending(_)) && !dynamic {
+            if !final_check {
+                return Ok(FunctionExceptions::Deferred);
+            }
+            self.function_may_throw(function)?;
+        }
+        let written = self.graph.source_exceptions.specification(function);
+        Ok(match &self.graph.entity(function).exceptions {
+            ExceptionState::Value(ExceptionSet::None) => FunctionExceptions::Nonthrowing,
+            ExceptionState::Value(ExceptionSet::Dynamic(types)) => {
+                FunctionExceptions::Dynamic(written.unwrap_or(types))
+            }
+            ExceptionState::Pending(_) if dynamic => {
+                written.map_or(FunctionExceptions::All, FunctionExceptions::Dynamic)
+            }
+            ExceptionState::Value(ExceptionSet::All)
+            | ExceptionState::Absent
+            | ExceptionState::Evaluating => {
+                written.map_or(FunctionExceptions::All, FunctionExceptions::Dynamic)
+            }
+            _ => FunctionExceptions::Deferred,
+        })
     }
 
     fn public_exception_base(&self, base: EntityId, derived: EntityId) -> bool {
@@ -388,6 +491,48 @@ mod tests {
     };
 
     #[test]
+    fn override_handler_candidates_keep_written_order_and_repetitions() {
+        let source = SourceBuffer::new(
+            b"struct A{};A* earlier();struct B{virtual void f()throw(void*,A*,A*);};".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"exception-handler-order").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let b = cursor.intern_name(b"B").unwrap();
+        let f = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let binding = analyzer
+            .graph
+            .own(analyzer.graph.global, b, Filter::Elaborated)
+            .unwrap();
+        let class = analyzer
+            .graph
+            .entity(analyzer.graph.binding(binding).entity)
+            .scope
+            .unwrap();
+        let binding = analyzer.graph.own(class, f, Filter::Ordinary).unwrap();
+        let function = analyzer.graph.binding(binding).entity;
+        let written = analyzer
+            .graph
+            .source_exceptions
+            .specification(function)
+            .unwrap()
+            .to_vec();
+        let allowed = analyzer
+            .override_exception_set(super::Owner::Function(function), true)
+            .unwrap();
+        assert!(matches!(allowed, Some(super::ExceptionSet::Dynamic(types)) if types == written));
+    }
+
+    #[test]
     fn pending_noexcept_waits_on_the_unit_instead_of_unrelated_class_events() {
         let source = SourceBuffer::new(b"struct A{virtual void f()noexcept;};struct B:A{void f()noexcept(1==1)override;};struct Unrelated{};".to_vec()).unwrap();
         let mut unit =
@@ -405,8 +550,7 @@ mod tests {
         for &declaration in &declarations[..2] {
             analyzer.declaration(declaration, global).unwrap();
         }
-        assert!(analyzer.exception_overrides.is_empty());
-        assert_eq!(analyzer.deferred_exception_overrides.len(), 1);
+        assert_eq!(analyzer.exception_overrides.len(), 1);
         let binding = analyzer.graph.own(global, b, Filter::Elaborated).unwrap();
         let class = analyzer
             .graph
@@ -416,14 +560,13 @@ mod tests {
         let binding = analyzer.graph.own(class, f, Filter::Ordinary).unwrap();
         let function = analyzer.graph.binding(binding).entity;
         analyzer.declaration(declarations[2], global).unwrap();
-        assert!(analyzer.exception_overrides.is_empty());
-        assert_eq!(analyzer.deferred_exception_overrides.len(), 1);
+        assert_eq!(analyzer.exception_overrides.len(), 1);
         assert!(matches!(
             analyzer.graph.entity(function).exceptions,
             ExceptionState::Pending(_)
         ));
         analyzer.finish_unit_exceptions().unwrap();
-        assert!(analyzer.deferred_exception_overrides.is_empty());
+        assert!(analyzer.exception_overrides.is_empty());
         assert!(analyzer.virtual_nothrow(function).unwrap());
     }
 }

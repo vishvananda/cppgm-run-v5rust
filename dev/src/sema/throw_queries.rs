@@ -198,6 +198,61 @@ impl Analyzer<'_> {
         self.aggregate_destruction_may_throw(class)
     }
 
+    fn call_throw_query(
+        &mut self,
+        id: ast::ExprId,
+        facts: ExprFacts,
+        callee: ast::ExprId,
+        arguments: crate::syntax::storage::List<ast::ExprId>,
+        depth: u16,
+    ) -> Result<bool, Error> {
+        let next = depth + 1;
+        if matches!(
+            facts.destructor,
+            Some(super::expression_facts::DestructorTarget::Scalar)
+        ) || self.graph.expression_facts.is_intrinsic(id, facts)
+        {
+            self.throw_work.push((callee, next));
+            return Ok(false);
+        }
+        match facts
+            .call
+            .ok_or(Error::Invariant("throw query call without target"))?
+        {
+            CallTarget::Direct(binding) => {
+                let entity = self.graph.binding(binding).entity;
+                if self.function_may_throw(entity)? {
+                    return Ok(true);
+                }
+                let defaults = &self.graph.entity(entity).defaults;
+                let count = self.tree.expr_lists.get(arguments).len();
+                for default in defaults.iter().skip(count).rev().flatten() {
+                    self.throw_work.push((default.expression, next));
+                }
+            }
+            CallTarget::Indirect(_, entity) => {
+                if !entity.is_some_and(|entity| {
+                    self.graph.entity(entity).target_unwind == TargetUnwind::NoThrow
+                }) {
+                    return Ok(true);
+                }
+            }
+        }
+        if self.class_temporary_may_throw(facts, depth)? {
+            return Ok(true);
+        }
+        self.throw_work.extend(
+            self.tree
+                .expr_lists
+                .get(arguments)
+                .iter()
+                .rev()
+                .map(|&id| (id, next)),
+        );
+        self.throw_work.push((callee, next));
+        Ok(false)
+    }
+
     fn walk_throw_query(&mut self, base: usize) -> Result<bool, Error> {
         while self.throw_work.len() > base {
             let (id, depth) = self
@@ -297,14 +352,23 @@ impl Analyzer<'_> {
                     return Ok(true);
                 }
             }
-            if self.class_temporary_may_throw(facts, depth)? {
-                return Ok(true);
-            }
-            if (facts.call_form == super::expression_facts::CallForm::Operator
-                || facts.literal_call.is_some())
+            let invoked = !matches!(kind, ExprKind::Call { .. })
+                && (facts.call_form == super::expression_facts::CallForm::Operator
+                    || facts.literal_call.is_some());
+            if invoked
                 && let Some(CallTarget::Direct(binding)) = facts.call
                 && self.function_may_throw(self.graph.binding(binding).entity)?
             {
+                return Ok(true);
+            }
+            // The frozen query visits ordinary composite expressions through
+            // their operands. Only calls and written constructions add a result
+            // destruction here; a callable is queried before that destruction.
+            let constructed = matches!(
+                kind,
+                ExprKind::FunctionalCast { .. } | ExprKind::Braced { .. } | ExprKind::Cast { .. }
+            ) || matches!(kind, ExprKind::Call { .. }) && facts.functional_call;
+            if (invoked || constructed) && self.class_temporary_may_throw(facts, depth)? {
                 return Ok(true);
             }
             let next = depth + 1;
@@ -321,46 +385,9 @@ impl Analyzer<'_> {
                     );
                 }
                 ExprKind::Call { callee, arguments } if !facts.functional_call => {
-                    if matches!(
-                        facts.destructor,
-                        Some(super::expression_facts::DestructorTarget::Scalar)
-                    ) || self.graph.expression_facts.is_intrinsic(id, facts)
-                    {
-                        self.throw_work.push((callee, next));
-                        continue;
+                    if self.call_throw_query(id, facts, callee, arguments, depth)? {
+                        return Ok(true);
                     }
-                    match facts
-                        .call
-                        .ok_or(Error::Invariant("throw query call without target"))?
-                    {
-                        CallTarget::Direct(binding) => {
-                            let entity = self.graph.binding(binding).entity;
-                            if self.function_may_throw(entity)? {
-                                return Ok(true);
-                            }
-                            let defaults = &self.graph.entity(entity).defaults;
-                            let count = self.tree.expr_lists.get(arguments).len();
-                            for default in defaults.iter().skip(count).rev().flatten() {
-                                self.throw_work.push((default.expression, next));
-                            }
-                        }
-                        CallTarget::Indirect(_, entity) => {
-                            if !entity.is_some_and(|entity| {
-                                self.graph.entity(entity).target_unwind == TargetUnwind::NoThrow
-                            }) {
-                                return Ok(true);
-                            }
-                        }
-                    }
-                    self.throw_work.extend(
-                        self.tree
-                            .expr_lists
-                            .get(arguments)
-                            .iter()
-                            .rev()
-                            .map(|&id| (id, next)),
-                    );
-                    self.throw_work.push((callee, next));
                 }
                 ExprKind::Call { arguments, .. } => {
                     self.throw_work.extend(

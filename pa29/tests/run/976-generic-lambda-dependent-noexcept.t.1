@@ -1,0 +1,1 @@
+int main(){auto unused=[]<class T>(T)noexcept(T::missing){return 0;};auto f=[]<class T>(T x)noexcept(sizeof(T)>0){return x;};auto g=[]<class T>(T x)noexcept(noexcept(x+1)){return x+1;};return f(3)==3&&g(3)==4?0:1;}

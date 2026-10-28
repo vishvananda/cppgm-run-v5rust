@@ -166,7 +166,13 @@ impl Analyzer<'_> {
             let body = call.analyzed_body;
             let scope = call.scope;
             let parameters = call.function_parameters;
-            let exceptions = call.exceptions.clone();
+            let exception_origin = call.exception_origin;
+            let exceptions = match &call.exceptions {
+                super::exceptions::ExceptionState::Value(value) => {
+                    super::exceptions::ExceptionState::Value(value.clone())
+                }
+                _ => super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::All),
+            };
             let TypeKind::Function {
                 result,
                 parameters: types,
@@ -211,6 +217,7 @@ impl Analyzer<'_> {
             function.scope = scope;
             function.function_parameters = parameters;
             function.exceptions = exceptions;
+            function.exception_origin = exception_origin;
             self.graph
                 .source_exceptions
                 .inherit_specification(invoker, closure.call);
@@ -432,13 +439,29 @@ impl Analyzer<'_> {
             self.template_head = head;
         }
         let signature = (|| {
-            self.record_function_exceptions(
-                call,
-                &info,
-                signature_scope,
-                location,
-                self.graph.binding_limit(),
-            )?;
+            if head.is_none()
+                && let Some(ast::Qualifier {
+                    kind: ast::QualifierKind::Noexcept(Some(operand)),
+                    ..
+                }) = lambda.exception
+            {
+                let nonthrowing = self.closure_noexcept_value(operand, scope)?;
+                let call = self.graph.entity_mut(call);
+                call.exception_origin = super::exceptions::SpecificationOrigin::Written;
+                call.exceptions = super::exceptions::ExceptionState::Value(if nonthrowing {
+                    super::exceptions::ExceptionSet::None
+                } else {
+                    super::exceptions::ExceptionSet::All
+                });
+            } else {
+                self.record_function_exceptions(
+                    call,
+                    &info,
+                    signature_scope,
+                    location,
+                    self.graph.binding_limit(),
+                )?;
+            }
             if head.is_some() {
                 self.record_template_result_order(call, &info);
                 self.record_template_function_defaults(call, parameters, signature_scope, ty)

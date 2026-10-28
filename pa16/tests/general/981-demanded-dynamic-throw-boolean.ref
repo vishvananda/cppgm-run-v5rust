@@ -1,0 +1,16 @@
+function @use(%b : ptr [pass=by_address, object_bytes=1]) -> void [binding=strong, object=_Z3useRN1O1BE] {
+  slot $b : ptr
+
+  block ^entry:
+    store typed ptr %b, $b
+    %t1 = load typed ptr $b
+    call void @O__B__f(%t1)
+    return void
+}
+function @O__B__f(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1O1B1fEv, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    return void
+}

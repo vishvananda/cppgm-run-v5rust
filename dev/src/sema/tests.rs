@@ -2134,7 +2134,7 @@ fn polymorphic_queries_complete_without_typing_ordinary_function_bodies() {
         .analyze(declarations);
     assert!(matches!(
         result,
-        Err(Error::Diagnostic {
+        Err(Error::InstantiationDiagnostic {
             message: "an expression outside constant evaluation",
             ..
         })
@@ -2178,7 +2178,7 @@ fn failed_exception_query_restores_nested_worklists_and_context() {
         .unwrap();
     assert!(matches!(
         analyzer.finish_unit_exceptions(),
-        Err(Error::Diagnostic {
+        Err(Error::InstantiationDiagnostic {
             message: "undeclared name",
             ..
         })

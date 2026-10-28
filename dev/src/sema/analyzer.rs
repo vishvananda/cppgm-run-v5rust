@@ -34,7 +34,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) decltype_name: crate::lex::identifiers::NameId,
     pub(super) override_name: crate::lex::identifiers::NameId,
     pub(super) exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
-    pub(super) deferred_exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
+    pub(super) nonthrowing_overrides: Vec<super::virtual_exceptions::PendingNonthrowingOverride>,
     pub(super) declaration_access: super::declaration_access::DeclarationAccess,
     pub(super) literal_bytes: &'tree mut crate::syntax::storage::TextStore,
     pub(super) positions: &'tree dyn crate::preprocess::SourcePositions,
@@ -113,7 +113,6 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) copy_scratch: super::copy_initialization::CopyScratch,
     pub(super) assignment_scratch: super::assignment::Scratch,
     pub(super) binary_spine: Vec<ast::ExprId>,
-    pub(super) specifications: Vec<super::exceptions::PendingSpecification>,
     pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
     pub(super) evaluating_noexcept: bool,
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
@@ -262,7 +261,7 @@ impl<'tree> Analyzer<'tree> {
             decltype_name,
             override_name,
             exception_overrides: Vec::new(),
-            deferred_exception_overrides: Vec::new(),
+            nonthrowing_overrides: Vec::new(),
             declaration_access: super::declaration_access::DeclarationAccess::default(),
             literal_bytes: &mut cursor.spellings,
             positions,
@@ -338,7 +337,6 @@ impl<'tree> Analyzer<'tree> {
             type_queries: super::type_queries::QueryContext::default(),
             template_arguments: 0,
             decltype_call: None,
-            specifications: Vec::new(),
             pending_throws: Vec::new(),
             evaluating_noexcept: false,
             layout_work: Vec::new(),
@@ -748,6 +746,8 @@ impl<'tree> Analyzer<'tree> {
             ));
         }
         let exception_limit = self.graph.binding_limit();
+        let checked_specialization =
+            self.specializing() && specs.friendship != super::specifiers::Friendship::Friend;
         let binding = self.declare_function_value(
             &mut info,
             specs,
@@ -805,6 +805,7 @@ impl<'tree> Analyzer<'tree> {
         }
         if self.graph.entity(entity).template_head.is_none()
             && !self.class_template_member_redeclaration(&info)
+            && !checked_specialization
         {
             self.record_function_exceptions(entity, &info, info.lookup, location, exception_limit)?;
         }

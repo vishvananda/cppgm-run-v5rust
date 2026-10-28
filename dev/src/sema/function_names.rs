@@ -894,6 +894,8 @@ impl Analyzer<'_> {
         } else {
             Definition::Declaration
         };
+        let checked_specialization =
+            self.specializing() && specs.friendship != super::specifiers::Friendship::Friend;
         let binding = self.declare_function_value(&mut info, specs, scope, location, definition)?;
         if specs.friendship == super::specifiers::Friendship::Friend
             && (info.home.is_some() || self.function_template_id(&info).is_some())
@@ -930,6 +932,7 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         if self.graph.entity(entity).template_head.is_none()
             && !self.class_template_member_redeclaration(&info)
+            && !checked_specialization
         {
             self.record_function_exceptions(entity, &info, info.lookup, location, limit)?;
         }

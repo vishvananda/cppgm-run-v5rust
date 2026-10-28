@@ -268,7 +268,6 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "redefinition of a function"));
         }
         if self.semantic() {
-            self.resolve_specialization_exception(entity)?;
             self.record_function_exceptions(
                 entity,
                 info,
