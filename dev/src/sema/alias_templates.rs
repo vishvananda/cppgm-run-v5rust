@@ -272,7 +272,7 @@ impl Analyzer<'_> {
             pattern
         } else {
             let arguments: Vec<_> = key.arguments.iter().copied().map(Some).collect();
-            let mut environment = Substitution::new(self.graph.templates.depth(head), &arguments);
+            let mut environment = self.substitution(self.graph.templates.depth(head), &arguments);
             environment.context = context;
             self.substitute_signature_type(pattern, &mut environment)?
                 .ok_or_else(|| {
@@ -604,7 +604,7 @@ mod tests {
             ))
             .unwrap();
         let invalid = [Some(int)];
-        let mut environment = Substitution::new(depth, &invalid);
+        let mut environment = analyzer.substitution(depth, &invalid);
         assert!(
             analyzer
                 .substitute_signature_type(parameters[2], &mut environment)
@@ -616,7 +616,7 @@ mod tests {
             .own(global, x, super::super::lookup::Filter::Ordinary)
             .unwrap();
         let valid = [analyzer.graph.binding(x).ty];
-        let mut environment = Substitution::new(depth, &valid);
+        let mut environment = analyzer.substitution(depth, &valid);
         assert!(
             analyzer
                 .substitute_signature_type(parameters[2], &mut environment)
@@ -765,7 +765,7 @@ mod tests {
             ))
             .unwrap();
         let invalid = [Some(int)];
-        let mut rejected = Substitution::new(0, &invalid);
+        let mut rejected = analyzer.substitution(0, &invalid);
         assert!(
             analyzer
                 .substitute_signature_type(pattern, &mut rejected)
@@ -783,7 +783,7 @@ mod tests {
         let x = analyzer.graph.binding(x).ty.unwrap();
         let valid = [Some(x)];
         for _ in 0..4 {
-            let mut environment = Substitution::new(0, &valid);
+            let mut environment = analyzer.substitution(0, &valid);
             assert_eq!(
                 analyzer
                     .substitute_signature_type(pattern, &mut environment)

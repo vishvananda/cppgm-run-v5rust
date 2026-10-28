@@ -245,10 +245,8 @@ impl Analyzer<'_> {
                             elements: &[],
                             bound_element: Some(position),
                         };
-                        let mut environment = super::function_templates::Substitution::new(
-                            self.graph.templates.depth(head),
-                            arguments,
-                        );
+                        let mut environment =
+                            self.substitution(self.graph.templates.depth(head), arguments);
                         environment.selection = Some(&selection);
                         Some(
                             self.substitute_signature_type(pattern, &mut environment)?

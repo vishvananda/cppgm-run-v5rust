@@ -242,10 +242,7 @@ impl Analyzer<'_> {
             .copied()
             .map(Some)
             .collect::<Vec<_>>();
-        let mut substitution = super::function_templates::Substitution::new(
-            self.graph.templates.depth(head),
-            &arguments,
-        );
+        let mut substitution = self.substitution(self.graph.templates.depth(head), &arguments);
         let Some(types) = self.substitute_pack_list(&types, &mut substitution)? else {
             return Ok(());
         };

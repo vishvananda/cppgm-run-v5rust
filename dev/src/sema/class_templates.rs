@@ -363,7 +363,7 @@ impl Analyzer<'_> {
             self.graph.lookup_limit = saved;
             let pattern = result?;
             let given: Vec<_> = arguments.iter().copied().map(Some).collect();
-            let mut environment = Substitution::new(depth, &given);
+            let mut environment = self.substitution(depth, &given);
             return self
                 .substitute_signature_type(pattern, &mut environment)?
                 .ok_or_else(|| {

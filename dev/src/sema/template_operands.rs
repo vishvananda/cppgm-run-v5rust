@@ -736,7 +736,7 @@ impl Analyzer<'_> {
         let result = (|| {
             let scope = self.operand_scope(
                 pattern.scope,
-                &mut Substitution::new(depth, &arguments),
+                &mut self.substitution(depth, &arguments),
                 pattern.parameters,
             )?;
             let copy = self.copy_expression_in_frame(pattern.expression, scope)?;
@@ -937,7 +937,7 @@ impl Analyzer<'_> {
                 break;
             }
             let arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
-            let mut inner = Substitution::new(depth, &arguments);
+            let mut inner = self.substitution(depth, &arguments);
             inner.context = environment.context;
             let query = if self
                 .graph
@@ -1105,7 +1105,7 @@ impl Analyzer<'_> {
                 .map(Some)
                 .collect::<Vec<_>>();
             scope =
-                self.operand_scope(scope, &mut Substitution::new(depth, &arguments), parameters)?;
+                self.operand_scope(scope, &mut self.substitution(depth, &arguments), parameters)?;
             parameters = None;
             earlier = next.and_then(|id| self.graph.template_operands.pending.get(&id));
         }
@@ -1706,7 +1706,7 @@ mod tests {
             .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
             .unwrap();
         let args = [Some(int)];
-        let mut environment = Substitution::new(0, &args);
+        let mut environment = analyzer.substitution(0, &args);
         assert_eq!(
             analyzer
                 .substitute_array_bound(ty, &mut environment)
@@ -1825,7 +1825,7 @@ mod tests {
         analyzer.signature_object = Some(argument);
         analyzer.dependent_uses.set(17);
         let args = [Some(argument)];
-        let mut environment = Substitution::new(0, &args);
+        let mut environment = analyzer.substitution(0, &args);
         assert_eq!(
             analyzer
                 .substitute_operand(ty, entity, &mut environment)
@@ -1944,7 +1944,7 @@ mod value_tests {
         for (entity, target) in patterns {
             let ty = analyzer.graph.entity(entity).ty.unwrap();
             let result = analyzer
-                .substitute_operand(ty, entity, &mut Substitution::new(0, &arguments))
+                .substitute_operand(ty, entity, &mut analyzer.substitution(0, &arguments))
                 .unwrap()
                 .unwrap();
             let TypeKind::Address {
@@ -1959,7 +1959,7 @@ mod value_tests {
             let expressions = analyzer.tree.expressions.mark();
             assert_eq!(
                 analyzer
-                    .substitute_operand(ty, entity, &mut Substitution::new(0, &arguments))
+                    .substitute_operand(ty, entity, &mut analyzer.substitution(0, &arguments))
                     .unwrap(),
                 Some(result)
             );
@@ -2002,7 +2002,7 @@ mod value_tests {
         let arguments = [Some(value)];
         for &(entity, is_value) in &patterns {
             let ty = analyzer.graph.entity(entity).ty.unwrap();
-            let mut environment = Substitution::new(0, &arguments);
+            let mut environment = analyzer.substitution(0, &arguments);
             let result = analyzer
                 .substitute_operand(ty, entity, &mut environment)
                 .unwrap()
@@ -2015,7 +2015,7 @@ mod value_tests {
                 assert_eq!(result, int);
             }
             let count = analyzer.tree.expressions.mark();
-            let mut environment = Substitution::new(0, &arguments);
+            let mut environment = analyzer.substitution(0, &arguments);
             assert_eq!(
                 analyzer
                     .substitute_operand(ty, entity, &mut environment)
@@ -2093,7 +2093,7 @@ mod pending_tests {
         let scope = analyzer
             .operand_scope(
                 pattern.scope,
-                &mut Substitution::new(0, &outer),
+                &mut analyzer.substitution(0, &outer),
                 pattern.parameters,
             )
             .unwrap();
@@ -2135,7 +2135,11 @@ mod pending_tests {
         );
         let inner = [Some(pack)];
         let result = analyzer
-            .substitute_operand(unknown, unknown_entity, &mut Substitution::new(1, &inner))
+            .substitute_operand(
+                unknown,
+                unknown_entity,
+                &mut analyzer.substitution(1, &inner),
+            )
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -2145,7 +2149,11 @@ mod pending_tests {
         let expressions = analyzer.tree.expressions.mark();
         assert_eq!(
             analyzer
-                .substitute_operand(unknown, unknown_entity, &mut Substitution::new(1, &inner),)
+                .substitute_operand(
+                    unknown,
+                    unknown_entity,
+                    &mut analyzer.substitution(1, &inner),
+                )
                 .unwrap(),
             Some(result)
         );
@@ -2209,7 +2217,7 @@ mod pending_tests {
             .intern(TypeKind::Value { ty: int, bits: 1 }, Cv::default())
             .unwrap();
         let args = [Some(parameter), Some(one)];
-        let mut environment = Substitution::new(0, &args);
+        let mut environment = analyzer.substitution(0, &args);
         let formed = analyzer.graph.template_operands.count();
         let pending = analyzer
             .substitute_operand(ty, entity, &mut environment)
@@ -2247,7 +2255,7 @@ mod pending_tests {
                 )
                 .unwrap();
             let args = [Some(argument)];
-            let mut environment = Substitution::new(0, &args);
+            let mut environment = analyzer.substitution(0, &args);
             let result = analyzer
                 .substitute_operand(pending, pending_entity, &mut environment)
                 .unwrap()
@@ -2257,7 +2265,7 @@ mod pending_tests {
             );
             let expressions = analyzer.tree.expressions.mark();
             for _ in 0..3 {
-                let mut environment = Substitution::new(0, &args);
+                let mut environment = analyzer.substitution(0, &args);
                 assert_eq!(
                     analyzer
                         .substitute_operand(pending, pending_entity, &mut environment)
@@ -2352,7 +2360,7 @@ mod pending_tests {
             }
             let outer = [Some(arguments[0])];
             let pending = analyzer
-                .substitute_operand(ty, entity, &mut Substitution::new(0, &outer))
+                .substitute_operand(ty, entity, &mut analyzer.substitution(0, &outer))
                 .unwrap()
                 .unwrap();
             let TypeKind::TemplateParameter {
@@ -2382,7 +2390,11 @@ mod pending_tests {
             assert!(recorded.earlier.is_none());
             let inner = [Some(arguments[1])];
             let result = analyzer
-                .substitute_operand(pending, pending_entity, &mut Substitution::new(1, &inner))
+                .substitute_operand(
+                    pending,
+                    pending_entity,
+                    &mut analyzer.substitution(1, &inner),
+                )
                 .unwrap()
                 .unwrap();
             if value {
@@ -2398,7 +2410,7 @@ mod pending_tests {
                         .substitute_operand(
                             pending,
                             pending_entity,
-                            &mut Substitution::new(1, &inner),
+                            &mut analyzer.substitution(1, &inner),
                         )
                         .unwrap(),
                     Some(result)

@@ -4,7 +4,6 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    function_templates::Substitution,
     graph::{Binding, BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
     types::TypeId,
     variable_instances::Definition,
@@ -118,7 +117,7 @@ impl Analyzer<'_> {
             .template_head
             .ok_or(Error::Invariant("variable pattern without head"))?;
         let given: Vec<_> = deduced.into_iter().map(Some).collect();
-        let mut environment = Substitution::new(self.graph.templates.depth(head), &given);
+        let mut environment = self.substitution(self.graph.templates.depth(head), &given);
         let pattern_ty = self
             .graph
             .entity(source)

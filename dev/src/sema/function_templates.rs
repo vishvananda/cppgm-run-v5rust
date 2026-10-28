@@ -86,38 +86,22 @@ pub(super) struct Substitution<'a> {
     pub(super) selection: Option<&'a PackSelection<'a>>,
     pub(super) failure: Option<&'static str>,
     pub(super) failure_location: SourceOffset,
-    ambient: Option<super::substitution_state::State>,
+    ambient: super::substitution_state::State,
 }
-impl<'a> Substitution<'a> {
-    pub(super) fn new(depth: u32, arguments: &'a [Option<TypeId>]) -> Self {
-        Self {
-            depth,
-            arguments,
-            context: None,
-            selection: None,
-            failure: None,
-            failure_location: SourceOffset(0),
-            ambient: None,
-        }
-    }
+impl Substitution<'_> {
     pub(super) fn reject<T>(&mut self, message: &'static str) -> Option<T> {
         self.reject_at(SourceOffset(0), message)
-    }
-    pub(super) fn attach_ambient(&mut self, state: super::substitution_state::State) {
-        self.ambient = Some(state);
     }
     pub(super) fn reject_at<T>(
         &mut self,
         location: SourceOffset,
         message: &'static str,
     ) -> Option<T> {
-        if let Some(ambient) = &self.ambient {
-            ambient.reject(super::substitution_state::Failure {
-                location,
-                message,
-                transient: false,
-            });
-        }
+        self.ambient.reject(super::substitution_state::Failure {
+            location,
+            message,
+            transient: false,
+        });
         if self.failure.is_none() {
             self.failure = Some(message);
             self.failure_location = location;
@@ -126,6 +110,23 @@ impl<'a> Substitution<'a> {
     }
 }
 impl Analyzer<'_> {
+    /// Local substitutions observe the live unit store, including scopes entered
+    /// after construction. No independent root may reject before attachment.
+    pub(super) fn substitution<'args>(
+        &self,
+        depth: u32,
+        arguments: &'args [Option<TypeId>],
+    ) -> Substitution<'args> {
+        Substitution {
+            depth,
+            arguments,
+            context: None,
+            selection: None,
+            failure: None,
+            failure_location: SourceOffset(0),
+            ambient: self.graph.analysis.substitution.clone(),
+        }
+    }
     pub(super) fn record_template_result_order(
         &mut self,
         entity: EntityId,
@@ -168,7 +169,7 @@ impl Analyzer<'_> {
             .copied()
             .map(Some)
             .collect();
-        let mut environment = Substitution::new(self.graph.templates.depth(head), &arguments);
+        let mut environment = self.substitution(self.graph.templates.depth(head), &arguments);
         environment.context = Some(self.graph.binding(primary).entity);
         let TypeKind::Function {
             result,
@@ -435,7 +436,6 @@ impl Analyzer<'_> {
         environment: &mut Substitution<'_>,
     ) -> Result<Option<TypeId>, Error> {
         self.check_stack()?;
-        environment.attach_ambient(self.graph.analysis.substitution.clone());
         let cv = self.graph.types.get(ty).cv;
         if let Some(index) = self.template_parameter_index(ty, environment.depth) {
             let result = if let Some(Some(argument)) = environment.arguments.get(index) {
@@ -829,7 +829,7 @@ impl Analyzer<'_> {
         {
             return Ok(None);
         }
-        let mut environment = Substitution::new(depth, arguments);
+        let mut environment = self.substitution(depth, arguments);
         environment.context = check_access.then_some(self.graph.binding(primary).entity);
         let leading = !self
             .graph
@@ -1399,7 +1399,7 @@ impl Analyzer<'_> {
         let parameters = if self.graph.function_templates.requires_target(binding) {
             let owner = self.graph.binding(binding).entity;
             let substituted = self.with_substitution_soft(Some(owner), |analyzer| {
-                let mut environment = Substitution::new(depth, &arguments);
+                let mut environment = analyzer.substitution(depth, &arguments);
                 environment.context = Some(owner);
                 let substituted = (|| {
                     if !analyzer.graph.function_templates.trailing_result(owner)
@@ -1665,7 +1665,7 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
             arguments = initial();
-            let mut environment = Substitution::new(depth, &arguments);
+            let mut environment = self.substitution(depth, &arguments);
             let Some(pattern) = self.substitute_signature_type(source, &mut environment)? else {
                 return Ok(None);
             };
@@ -1844,7 +1844,7 @@ impl Analyzer<'_> {
             return Ok(false);
         }
         let unique = self.unique_partial_arguments(from_head)?;
-        let mut environment = Substitution::new(self.graph.templates.depth(from_head), &unique);
+        let mut environment = self.substitution(self.graph.templates.depth(from_head), &unique);
         let from = self
             .graph
             .binding(first)
@@ -2557,7 +2557,7 @@ mod tests {
             .types
             .function_parameter(analyzer.graph.binding(f[0]).ty.unwrap(), 1)
             .unwrap();
-        let mut environment = Substitution::new(analyzer.graph.templates.depth(head), &unique);
+        let mut environment = analyzer.substitution(analyzer.graph.templates.depth(head), &unique);
         let substituted = analyzer
             .substitute_signature_type(parameter, &mut environment)
             .unwrap()

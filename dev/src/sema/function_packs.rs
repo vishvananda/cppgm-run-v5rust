@@ -5,7 +5,6 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::ExprFacts,
-    function_templates::Substitution,
     graph::BindingId,
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
@@ -101,7 +100,7 @@ impl Analyzer<'_> {
             // parameter list, including expansion length checks.
             let owner = self.graph.binding(binding).entity;
             let substituted = self.with_substitution_soft(Some(owner), |analyzer| {
-                let mut environment = Substitution::new(depth, &arguments);
+                let mut environment = analyzer.substitution(depth, &arguments);
                 environment.context = Some(owner);
                 if !analyzer.graph.function_templates.trailing_result(owner)
                     && analyzer

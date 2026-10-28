@@ -51,7 +51,7 @@ impl Analyzer<'_> {
         for (depth, arguments) in levels.into_iter().rev().enumerate() {
             let depth = u32::try_from(depth).map_err(|_| Error::Limit("template depth limit"))?;
             let arguments: Vec<_> = arguments.into_iter().map(Some).collect();
-            let mut environment = super::function_templates::Substitution::new(depth, &arguments);
+            let mut environment = self.substitution(depth, &arguments);
             for ty in &mut result {
                 // Enclosing substitution precedes deduction's soft trial in
                 // C++; an invalid enclosing type diagnoses immediately.

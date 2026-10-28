@@ -15,6 +15,14 @@ use std::collections::HashMap;
 // the genuine native stack-byte budget (Annex B requires at least 1024).
 pub(super) const MAX_INSTANTIATION_DEPTH: u32 = 2048;
 
+/// A substitution query keeps the caller's soft activation and leaves its own
+/// rejection recorded. A required instantiation isolates and consumes it.
+#[derive(Clone, Copy)]
+pub(super) enum InstantiationMode {
+    Required,
+    Substitution,
+}
+
 #[derive(Default)]
 pub(super) struct Levels(HashMap<EntityId, u32>);
 impl Levels {
@@ -132,8 +140,14 @@ impl Analyzer<'_> {
         location: SourceOffset,
         action: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        self.with_instantiation_limit(formation_depth, location, None, action)
-            .map_err(Error::required_instantiation)
+        self.with_instantiation_limit(
+            formation_depth,
+            location,
+            None,
+            InstantiationMode::Required,
+            action,
+        )
+        .map_err(Error::required_instantiation)
     }
     pub(super) fn instantiation_context<T>(
         &mut self,
@@ -142,13 +156,30 @@ impl Analyzer<'_> {
         limit: usize,
         action: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        self.with_instantiation_limit(formation_depth, location, Some(limit), action)
+        self.instantiation_context_in(
+            formation_depth,
+            location,
+            limit,
+            InstantiationMode::Required,
+            action,
+        )
+    }
+    pub(super) fn instantiation_context_in<T>(
+        &mut self,
+        formation_depth: u32,
+        location: SourceOffset,
+        limit: usize,
+        mode: InstantiationMode,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.with_instantiation_limit(formation_depth, location, Some(limit), mode, action)
     }
     fn with_instantiation_limit<T>(
         &mut self,
         formation_depth: u32,
         location: SourceOffset,
         limit: Option<usize>,
+        mode: InstantiationMode,
         action: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
         self.check_stack()?;
@@ -164,7 +195,10 @@ impl Analyzer<'_> {
         saved.swap(self);
         self.instantiation_depth = formation_depth + 1;
         let saved_limit = std::mem::replace(&mut self.graph.lookup_limit, limit);
-        let result = self.with_substitution_instantiation(false, action);
+        let result = self.with_substitution_instantiation(
+            matches!(mode, InstantiationMode::Substitution),
+            action,
+        );
         self.graph.lookup_limit = saved_limit;
         saved.swap(self);
         result
@@ -223,6 +257,57 @@ mod tests {
             .add_entity(None, None, crate::lex::vocabulary::Keyword::Int)
             .unwrap();
         analyzer.closure_default_argument = Some((function, 2));
+        let substitution = analyzer.graph.analysis.substitution.clone();
+        for mode in [InstantiationMode::Required, InstantiationMode::Substitution] {
+            use super::super::substitution_state::{Ambient, Failure};
+            substitution.replace(Ambient {
+                soft: 2,
+                owner: Some(function),
+                failure: Some(Failure {
+                    location: SourceOffset(3),
+                    message: "outer",
+                    transient: false,
+                }),
+            });
+            let result = analyzer.instantiation_context_in(9, SourceOffset(0), 5, mode, |inner| {
+                let state = substitution.current();
+                assert_eq!(
+                    state.soft,
+                    if matches!(mode, InstantiationMode::Substitution) {
+                        2
+                    } else {
+                        0
+                    }
+                );
+                assert_eq!(state.owner, Some(function));
+                assert!(state.failure.is_none());
+                assert_eq!(inner.instantiation_depth, 10);
+                assert_eq!(inner.graph.lookup_limit, Some(5));
+                assert!(inner.initializing_declarator.is_none());
+                substitution.reject(Failure {
+                    location: SourceOffset(4),
+                    message: "inner",
+                    transient: true,
+                });
+                Err::<(), _>(Error::Missing("preserving query test"))
+            });
+            assert!(result.is_err());
+            let restored = substitution.current();
+            assert_eq!(restored.soft, 2);
+            assert_eq!(restored.owner, Some(function));
+            assert_eq!(
+                restored.failure.unwrap().message,
+                if matches!(mode, InstantiationMode::Substitution) {
+                    "inner"
+                } else {
+                    "outer"
+                }
+            );
+            assert_eq!(analyzer.instantiation_depth, 7);
+            assert_eq!(analyzer.graph.lookup_limit, None);
+            assert_eq!(analyzer.initializing_declarator, Some(declarator));
+        }
+        substitution.replace(super::super::substitution_state::Ambient::default());
         let result = analyzer.instantiation_context(2047, SourceOffset(0), 0, |inner| {
             assert!(matches!(
                 inner.global_allocation_context,

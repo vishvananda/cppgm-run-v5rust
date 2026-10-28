@@ -4,7 +4,6 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    function_templates::Substitution,
     graph::EntityId,
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
@@ -298,7 +297,7 @@ impl Analyzer<'_> {
             Err(error) => return Err(error),
         }
         let given: Vec<_> = arguments.iter().copied().map(Some).collect();
-        let mut substitution = Substitution::new(depth, &given);
+        let mut substitution = self.substitution(depth, &given);
         substitution.context = context;
         for (&pattern, &actual) in pattern.iter().zip(actual) {
             let result = self.substitute_signature_type(pattern, &mut substitution);
@@ -366,7 +365,7 @@ impl Analyzer<'_> {
                 );
             }
         }
-        let mut substitution = Substitution::new(self.graph.templates.depth(head), &unique);
+        let mut substitution = self.substitution(self.graph.templates.depth(head), &unique);
         let mut deduced = vec![None; self.graph.templates.parameters(second).len()];
         for (&pattern, &other) in pattern.iter().zip(&other.0) {
             let Some(actual) = self.substitute_signature_type(pattern, &mut substitution)? else {
@@ -472,7 +471,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let depth = self.graph.templates.depth(head);
         let given: Vec<_> = arguments.iter().copied().map(Some).collect();
-        let mut substitution = Substitution::new(self.graph.templates.depth(primary), &given);
+        let mut substitution = self.substitution(self.graph.templates.depth(primary), &given);
         for (index, &argument) in arguments.iter().enumerate() {
             let Some(&parameter) = self.graph.templates.parameters(primary).get(index) else {
                 break;

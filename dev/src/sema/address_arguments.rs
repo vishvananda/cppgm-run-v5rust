@@ -5,7 +5,6 @@ use super::{
     Error,
     analyzer::Analyzer,
     constant_addresses::Root,
-    function_templates::Substitution,
     graph::{BindingKind, EntityId, Graph, ScopeId, ScopeKind},
     templates::HeadId,
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
@@ -162,7 +161,7 @@ impl Analyzer<'_> {
                 return Ok(ArgumentTarget::Unknown);
             }
             let given = earlier.iter().copied().map(Some).collect::<Vec<_>>();
-            let mut environment = Substitution::new(self.graph.templates.depth(head), &given);
+            let mut environment = self.substitution(self.graph.templates.depth(head), &given);
             if let TypeKind::Reference { element, .. } = self.graph.types.get(target).kind
                 && self
                     .substitute_signature_type(element, &mut environment)?

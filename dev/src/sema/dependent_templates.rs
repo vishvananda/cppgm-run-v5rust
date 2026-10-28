@@ -248,7 +248,7 @@ mod tests {
         assert_ne!(shells[0], shells[1]);
         let bindings_before_reuse = analyzer.graph.binding_limit();
         let unchanged = [Some(name.qualifier)];
-        let mut partial = Substitution::new(0, &unchanged);
+        let mut partial = analyzer.substitution(0, &unchanged);
         assert_eq!(
             analyzer
                 .substitute_signature_type(shells[0], &mut partial)
@@ -269,7 +269,7 @@ mod tests {
         let binding = analyzer.graph.own(global, q, Filter::Ordinary).unwrap();
         let q = analyzer.graph.binding(binding).ty.unwrap();
         let arguments = [Some(q)];
-        let mut environment = Substitution::new(0, &arguments);
+        let mut environment = analyzer.substitution(0, &arguments);
         analyzer.instantiation_depth = 2048;
         assert!(matches!(
             analyzer.substitute_signature_type(shells[0], &mut environment),
@@ -347,7 +347,7 @@ mod tests {
         let binding = analyzer.graph.own(global, q, Filter::Ordinary).unwrap();
         let q = analyzer.graph.binding(binding).ty.unwrap();
         let given = [Some(q)];
-        let mut environment = Substitution::new(0, &given);
+        let mut environment = analyzer.substitution(0, &given);
         let observations = analyzer.incomplete_class_observations;
         assert_eq!(
             analyzer

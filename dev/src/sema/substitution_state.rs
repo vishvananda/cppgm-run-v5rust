@@ -216,9 +216,46 @@ mod tests {
     }
 
     #[test]
+    fn a_class_default_root_rejects_in_the_live_scope_before_type_dispatch() {
+        use crate::sema::lookup::Filter;
+        let source = SourceBuffer::new(b"template<class T>struct A;".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"class-default-root").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"A").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+        let primary = analyzer.graph.binding(binding).entity;
+        let mut environment = analyzer.substitution(0, &[]);
+        let state = analyzer.graph.analysis.substitution.clone();
+        // The environment predates its soft scope. A missing argument rejects
+        // without entering either subtype or pack-list substitution.
+        analyzer
+            .with_substitution_soft(Some(primary), |analyzer| {
+                assert!(state.current().failure.is_none());
+                assert!(
+                    analyzer
+                        .substitute_class_template_defaults(primary, Vec::new(), &mut environment)?
+                        .is_none()
+                );
+                let failure = state.current().failure.unwrap();
+                assert_eq!(failure.message, "too few template arguments");
+                assert_eq!(failure.location, SourceOffset(0));
+                Ok(())
+            })
+            .unwrap();
+        assert!(state.current().failure.is_none());
+        assert_eq!(environment.failure, Some("too few template arguments"));
+    }
+
+    #[test]
     fn a_repeated_type_demand_emits_rejection_in_each_new_soft_scope() {
         use crate::sema::{
-            function_templates::Substitution,
             lookup::Filter,
             types::{RefKind, TypeKind},
         };
@@ -257,7 +294,7 @@ mod tests {
             .reference(integer, RefKind::Lvalue)
             .unwrap();
         let arguments = [Some(reference)];
-        let mut environment = Substitution::new(depth, &arguments);
+        let mut environment = analyzer.substitution(depth, &arguments);
         let state = analyzer.graph.analysis.substitution.clone();
         for _ in 0..2 {
             analyzer

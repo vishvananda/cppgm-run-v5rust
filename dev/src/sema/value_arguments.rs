@@ -259,10 +259,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("value argument without target"))?;
         if self.graph.dependent_type(target) {
             let given = earlier.iter().copied().map(Some).collect::<Vec<_>>();
-            let mut environment = super::function_templates::Substitution::new(
-                self.graph.templates.depth(head),
-                &given,
-            );
+            let mut environment = self.substitution(self.graph.templates.depth(head), &given);
             target = self
                 .substitute_signature_type(target, &mut environment)?
                 .ok_or_else(|| {
@@ -652,10 +649,7 @@ mod tests {
         let head = analyzer.graph.entity(alias).template_head.unwrap();
         let pattern = analyzer.graph.entity(alias).ty.unwrap();
         let unique = analyzer.unique_partial_arguments(head).unwrap();
-        let mut substitution = super::super::function_templates::Substitution::new(
-            analyzer.graph.templates.depth(head),
-            &unique,
-        );
+        let mut substitution = analyzer.substitution(analyzer.graph.templates.depth(head), &unique);
         let substituted = analyzer
             .substitute_signature_type(pattern, &mut substitution)
             .unwrap()

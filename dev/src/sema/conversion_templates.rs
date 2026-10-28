@@ -4,7 +4,6 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    function_templates::Substitution,
     graph::BindingId,
     types::{Cv, RefKind, TypeId, TypeKind},
 };
@@ -144,7 +143,7 @@ impl Analyzer<'_> {
             return Ok(false);
         }
         let unique = self.unique_partial_arguments(head)?;
-        let mut substitution = Substitution::new(self.graph.templates.depth(head), &unique);
+        let mut substitution = self.substitution(self.graph.templates.depth(head), &unique);
         let from = self.conversion_template_result(first)?;
         let Some(mut actual) = self.substitute_signature_type(from, &mut substitution)? else {
             return Ok(false);

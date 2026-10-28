@@ -14,7 +14,6 @@ impl Analyzer<'_> {
         patterns: &[TypeId],
         environment: &mut Substitution<'_>,
     ) -> Result<Option<Vec<TypeId>>, Error> {
-        environment.attach_ambient(self.graph.analysis.substitution.clone());
         if patterns
             .iter()
             .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
@@ -95,7 +94,7 @@ impl Analyzer<'_> {
                 );
             }
             if unknown || length.is_none() {
-                let mut whole = Substitution::new(environment.depth, environment.arguments);
+                let mut whole = self.substitution(environment.depth, environment.arguments);
                 whole.context = environment.context;
                 let selection = PackSelection {
                     elements: environment
@@ -147,7 +146,7 @@ impl Analyzer<'_> {
                     elements: &elements,
                     bound_element: (!packs.bound.is_empty()).then_some(position),
                 };
-                let mut inner = Substitution::new(environment.depth, environment.arguments);
+                let mut inner = self.substitution(environment.depth, environment.arguments);
                 inner.context = environment.context;
                 inner.selection = Some(&selection);
                 if let Some(ty) = self.substitute_signature_type(element, &mut inner)? {
@@ -175,7 +174,7 @@ impl Analyzer<'_> {
         if !packs.parameters.is_empty() || packs.bound.is_empty() || packs.expression {
             return Ok(vec![expansion]);
         }
-        let mut environment = Substitution::new(u32::MAX, &[]);
+        let mut environment = self.substitution(u32::MAX, &[]);
         // This is semantic bound expansion, not a syntax-copy mismatch.
         // Preserve substitute_list's location-zero failure at the hard boundary.
         self.substitute_pack_list(&[expansion], &mut environment)?
@@ -244,7 +243,7 @@ mod tests {
             .intern(TypeKind::Pack(vec![int, long]), Cv::default())
             .unwrap();
         let given = [Some(pack)];
-        let mut environment = Substitution::new(analyzer.graph.templates.depth(head), &given);
+        let mut environment = analyzer.substitution(analyzer.graph.templates.depth(head), &given);
         let result = analyzer
             .substitute_pack_list(&[expansion, expansion], &mut environment)
             .unwrap()
@@ -261,7 +260,7 @@ mod tests {
             .intern(TypeKind::Pack(vec![]), Cv::default())
             .unwrap();
         let given = [Some(empty)];
-        let mut environment = Substitution::new(analyzer.graph.templates.depth(head), &given);
+        let mut environment = analyzer.substitution(analyzer.graph.templates.depth(head), &given);
         assert!(
             analyzer
                 .substitute_pack_list(&[expansion], &mut environment)

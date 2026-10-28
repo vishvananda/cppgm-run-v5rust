@@ -4,7 +4,6 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_keys::{KeyNode, KeyWord},
-    function_templates::Substitution,
     graph::{EntityId, ScopeId},
     templates::HeadId,
     types::{TypeId, TypeKind},
@@ -351,7 +350,7 @@ impl Analyzer<'_> {
                 pattern
             } else {
                 let given: Vec<_> = arguments[..index].iter().copied().map(Some).collect();
-                let mut environment = Substitution::new(depth, &given);
+                let mut environment = self.substitution(depth, &given);
                 self.substitute_signature_type(pattern, &mut environment)?
                     .ok_or_else(|| {
                         environment.failure.map_or(
