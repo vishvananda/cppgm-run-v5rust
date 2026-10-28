@@ -66,6 +66,11 @@ enum SpecificationSchedule {
     Demand,
 }
 #[derive(Clone, Copy)]
+enum ThrowListUse {
+    Declaration(Option<EntityId>),
+    Comparison,
+}
+#[derive(Clone, Copy)]
 pub(super) struct PendingSpecification {
     entity: EntityId,
     qualifier: Option<Qualifier>,
@@ -684,7 +689,11 @@ impl Analyzer<'_> {
                 types,
                 pending.scope,
                 true,
-                pending.first.then_some(pending.entity),
+                if pending.first {
+                    ThrowListUse::Declaration(Some(pending.entity))
+                } else {
+                    ThrowListUse::Comparison
+                },
             )
         } else {
             Ok(if nonthrowing {
@@ -871,7 +880,7 @@ impl Analyzer<'_> {
                 })
             }
             Some(QualifierKind::Throw(types)) => {
-                self.dynamic_exception_set(types, scope, complete, owner)
+                self.dynamic_exception_set(types, scope, complete, ThrowListUse::Declaration(owner))
             }
             _ => Err(Error::Invariant("invalid exception qualifier")),
         }
@@ -1015,13 +1024,15 @@ impl Analyzer<'_> {
         types: crate::syntax::storage::List<ast::TypeId>,
         scope: ScopeId,
         complete: bool,
-        owner: Option<EntityId>,
+        usage: ThrowListUse,
     ) -> Result<ExceptionSet, Error> {
         let mut adjusted = Vec::new();
         for syntax_index in 0..self.tree.type_lists.get(types).len() {
             let syntax = self.tree.type_lists.get(types)[syntax_index];
             let ty = self.type_syntax(syntax, scope)?;
-            if let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind {
+            if matches!(usage, ThrowListUse::Declaration(_))
+                && let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind
+            {
                 let count = elements.len();
                 for index in 0..count {
                     let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind else {
@@ -1033,13 +1044,15 @@ impl Analyzer<'_> {
                 continue;
             }
             let location = self.tree.types.get(syntax).location;
-            if matches!(
-                self.graph.types.get(ty).kind,
-                TypeKind::Reference {
-                    kind: RefKind::Rvalue,
-                    ..
-                }
-            ) {
+            if matches!(usage, ThrowListUse::Declaration(_))
+                && matches!(
+                    self.graph.types.get(ty).kind,
+                    TypeKind::Reference {
+                        kind: RefKind::Rvalue,
+                        ..
+                    }
+                )
+            {
                 return Err(Error::at(
                     location,
                     "an rvalue reference type in an exception-specification",
@@ -1051,7 +1064,7 @@ impl Analyzer<'_> {
             }
             adjusted.push(self.graph.types.canonical_function(ty)?);
         }
-        if let Some(owner) = owner {
+        if let ThrowListUse::Declaration(Some(owner)) = usage {
             for &ty in &adjusted {
                 if !self.graph.dependent_type(ty) {
                     let object = match self.graph.types.get(ty).kind {
