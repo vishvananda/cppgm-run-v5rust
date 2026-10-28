@@ -60,6 +60,15 @@ pub enum Punctuator {
 }
 
 impl Punctuator {
+    /// Recover a token's identity for borrowed cursors without lexer metadata.
+    pub(crate) fn from_spelling(text: &[u8]) -> Option<Self> {
+        identifier_operator(text).or_else(|| {
+            let first = u32::from(*text.first()?);
+            candidates(first)
+                .iter()
+                .find_map(|&(spelling, identity)| (spelling == text).then_some(identity))
+        })
+    }
     pub(crate) fn spelling(self) -> &'static str {
         match self {
             Self::LeftBrace => "{",

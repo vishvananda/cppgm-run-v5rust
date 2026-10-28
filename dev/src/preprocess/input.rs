@@ -644,7 +644,7 @@ impl<'a> SourceInput<'a> {
     ) -> Result<(), PreprocessError> {
         let file = self.files.add_text(text.to_vec())?;
         let predefined = self.in_predefined();
-        self.enter(file, b"<builtins>", 0, None)?;
+        self.enter(file, b"<built-in>", 0, None)?;
         // Predefined macros precede the grammar prefix, command-line input and
         // primary source. Installing the prefix must not demand any tokens.
         if predefined {

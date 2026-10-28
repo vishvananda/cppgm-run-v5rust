@@ -367,6 +367,15 @@ mod tests {
     use crate::lex::pp_lexer::Punctuator;
 
     #[test]
+    fn builtin_prefix_errors_retain_the_oracle_source_name() {
+        let source = SourceBuffer::new(b"int primary;\n".to_vec()).unwrap();
+        let mut input = Preprocessor::with_name(&source, b"primary").unwrap();
+        input.enter_builtin_declarations(b"#error\n").unwrap();
+        let error = input.next_non_whitespace_kind().unwrap_err();
+        assert_eq!(input.describe(&error).unwrap(), b"<built-in>:1:2: #error");
+    }
+
+    #[test]
     fn compiler_numeric_dialect_reaches_conditionals_and_pasted_tokens() {
         use crate::lex::{PostTokenKind, PostTokenizer, number::NumberDialect};
         let source = SourceBuffer::new(

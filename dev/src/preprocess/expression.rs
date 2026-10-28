@@ -396,7 +396,10 @@ fn classify_token(pp: &PpToken<'_>, dialect: NumberDialect) -> Token {
         PpTokenKind::NewLine | PpTokenKind::EndOfFile => Token::End,
         PpTokenKind::Identifier if pp.spelling == b"defined" => Token::Defined,
         PpTokenKind::Identifier => Token::Operand(PpValue::boolean(pp.spelling == b"true")),
-        PpTokenKind::PreprocessingOpOrPunc => classify_operator(pp.punctuator),
+        PpTokenKind::PreprocessingOpOrPunc => classify_operator(
+            pp.punctuator
+                .or_else(|| Punctuator::from_spelling(pp.spelling)),
+        ),
         PpTokenKind::PpNumber => match classify_number(pp.spelling, dialect) {
             NumberLiteral::Integer { ty, value } => Token::Operand(PpValue {
                 bits: value,
@@ -460,6 +463,39 @@ mod tests {
             self.0.set(self.0.get() + 1);
             spelling == b"present"
         }
+    }
+
+    struct WithoutPunctuators<'a>(PpLexer<'a>);
+    impl PpTokenCursor for WithoutPunctuators<'_> {
+        type Error = SourceError;
+        fn next_token(&mut self) -> Result<PpToken<'_>, Self::Error> {
+            let mut token = self.0.next_token()?;
+            token.punctuator = None;
+            Ok(token)
+        }
+    }
+
+    #[test]
+    fn borrowed_cursor_can_supply_operator_spellings_without_metadata() {
+        let source =
+            SourceBuffer::new(b"1 + 2 * 3\nnot (1 and 0)\n1 not_eq 2 ? 4 : 5\n1 ## 2\n".to_vec())
+                .unwrap();
+        let mut cursor = WithoutPunctuators(PpLexer::new(&source).unwrap());
+        let macros = Macros(Cell::new(0));
+        let mut evaluator = ExpressionEvaluator::new(&macros, NumberDialect::Cxx11);
+        for value in [7, 1, 4] {
+            assert_eq!(
+                evaluator.evaluate(&mut cursor).unwrap().status,
+                ExpressionStatus::Valid(PpValue {
+                    bits: value,
+                    is_unsigned: false
+                })
+            );
+        }
+        assert_eq!(
+            evaluator.evaluate(&mut cursor).unwrap().status,
+            ExpressionStatus::Invalid
+        );
     }
 
     #[test]
