@@ -170,19 +170,22 @@ pub(super) fn extra_rsp(op: Op) -> bool {
             | ScalarOp::Unary(_, _, source)
             | ScalarOp::Extend(_, source)
             | ScalarOp::SetEqual(source)
-            | ScalarOp::Movzx(source) => reg(source),
-            ScalarOp::Move(r, _)
-            | ScalarOp::Lea(r, _)
-            | ScalarOp::Lea32(r, _)
-            | ScalarOp::Load(r, _, _)
-            | ScalarOp::Scan(_, _, r, _)
-            | ScalarOp::Binary(_, _, r, _)
-            | ScalarOp::Shift(_, _, r, _)
-            | ScalarOp::Rotate(_, _, r, _) => reg(r),
+            | ScalarOp::Movzx(source)
+            | ScalarOp::Move(source, _)
+            | ScalarOp::Lea(source, _)
+            | ScalarOp::Lea32(source, _)
+            | ScalarOp::Load(source, _, _)
+            | ScalarOp::Scan(_, _, source, _)
+            | ScalarOp::Binary(_, _, source, _)
+            | ScalarOp::Shift(_, _, source, _)
+            | ScalarOp::Rotate(_, _, source, _)
+            | ScalarOp::Condition(
+                FlagOp::Set(_, source)
+                | FlagOp::Test(_, source)
+                | FlagOp::Move(_, source, _)
+                | FlagOp::BitTest(_, source, _),
+            ) => reg(source),
             ScalarOp::ExtendMove(_, a, b) => reg(a) || reg(b),
-            ScalarOp::Condition(FlagOp::Set(_, r) | FlagOp::Test(_, r) | FlagOp::Move(_, r, _)) => {
-                reg(r)
-            }
             _ => false,
         },
         Op::Floating(FloatingOp::Set { destination, .. })

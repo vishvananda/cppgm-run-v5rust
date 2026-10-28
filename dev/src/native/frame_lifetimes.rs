@@ -439,6 +439,21 @@ mod tests {
         function
     }
     #[test]
+    fn bit_test_stack_register_keeps_the_frame_and_disables_pointer_omission() {
+        let mut function = function(&[
+            Op::Scalar(ScalarOp::Condition(FlagOp::BitTest(
+                Type::I64,
+                R::RSP,
+                Operand::Immediate(3),
+            ))),
+            Op::Return(None),
+        ]);
+        function.frame_policy.omit_pointer = true;
+        assert!(!drop_unused(&mut function));
+        assert_eq!(function.stack_size, 64);
+        assert!(!super::super::frame_encoding::fixed_stack(&function));
+    }
+    #[test]
     fn loop_byte_liveness_keeps_the_read_store_and_drops_a_dead_copy_source() {
         use super::super::mir::{Block, BlockId};
         let write = |at, value| {

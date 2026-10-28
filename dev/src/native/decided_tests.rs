@@ -64,7 +64,8 @@ fn exit_value(f: &Function, program: &Program, b: usize, r: R) -> Option<(u128, 
                     .filter(|m| {
                         m.index.is_none()
                             && match m.base {
-                                Base::Frame | Base::Register(R::RBP | R::RSP) => true,
+                                // Frozen kFrame is distinct from physical RBP/RSP.
+                                Base::Register(R::RBP | R::RSP) => true,
                                 Base::Symbol(s) => defined(s),
                                 _ => false,
                             }
@@ -101,33 +102,35 @@ pub(super) fn thread(f: &mut Function, program: &Program) {
                 break;
             }
             let start = f.blocks[t].range.start;
-            let (Op::Branch(cc, yes), Op::Jump(no)) =
-                (f.instructions[start + 1].op, f.instructions[start + 2].op)
-            else {
-                break;
-            };
-            let (ty, r, other, test) = match f.instructions[start].op {
-                Op::Scalar(ScalarOp::Condition(flag)) if flag.self_test().is_some() => {
-                    let Some((ty, r)) = flag.self_test() else {
-                        break;
-                    };
-                    (ty, r, None, true)
+            let (ty, left, right, test) = match f.instructions[start].op {
+                Op::Scalar(ScalarOp::Condition(FlagOp::Compare(ty, left, right))) => {
+                    (ty, left, right, false)
                 }
-                Op::Scalar(ScalarOp::Condition(FlagOp::Compare(
-                    ty,
-                    Operand::Register(r),
-                    Operand::Immediate(bits),
-                ))) => (ty, r, Some(bits), false),
-                Op::Scalar(ScalarOp::Condition(FlagOp::MaskTest(
-                    ty,
-                    Operand::Register(r),
-                    Operand::Immediate(bits),
-                ))) => (ty, r, Some(bits), true),
+                Op::Scalar(ScalarOp::CompareZero(ty, left)) => {
+                    (ty, left, Operand::Immediate(0), false)
+                }
+                Op::Scalar(ScalarOp::Condition(FlagOp::MaskTest(ty, left, right))) => {
+                    (ty, left, right, true)
+                }
+                Op::Scalar(ScalarOp::Condition(FlagOp::Test(ty, r))) => {
+                    (ty, Operand::Register(r), Operand::Register(r), true)
+                }
                 _ => break,
             };
-            if r.code() >= 16 {
+            let Some(r) = left.register().filter(|r| r.code() < 16) else {
                 break;
-            }
+            };
+            let Op::Branch(cc, yes) = f.instructions[start + 1].op else {
+                break;
+            };
+            let Op::Jump(no) = f.instructions[start + 2].op else {
+                break;
+            };
+            let other = match right {
+                Operand::Immediate(bits) => Some(bits & u128::from(u64::MAX)),
+                Operand::Register(other) if test && other == r => None,
+                _ => break,
+            };
             let Some((value, nonzero)) = exit_value(f, program, b, r) else {
                 break;
             };
@@ -153,7 +156,50 @@ pub(super) fn thread(f: &mut Function, program: &Program) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::lowir::Error;
+    use crate::lowir::vocabulary::Type;
+
+    #[test]
+    fn zero_compare_threads_only_when_its_left_operand_is_a_register() -> Result<(), Error> {
+        use super::super::mir::{Block, BlockId, Instruction};
+        let program =
+            crate::lowir::test_program(b"function @f() -> void {block ^entry: return void}")?;
+        let function = &program.functions()[0];
+        let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
+        for (left, expected) in [(Operand::Register(R::R8), 3), (Operand::Frame(-8), 1)] {
+            let mut selected =
+                super::super::value_selection::select(&program, symbol, function, 0)?;
+            selected.instructions = [
+                Op::Move(R::R8, 0),
+                Op::Jump(BlockId(1)),
+                Op::Scalar(ScalarOp::CompareZero(Type::I64, left)),
+                Op::Branch(C::NotEqual, BlockId(2)),
+                Op::Jump(BlockId(3)),
+                Op::Return(None),
+                Op::Return(None),
+            ]
+            .into_iter()
+            .map(|op| Instruction {
+                op,
+                location: None,
+                volatile: false,
+            })
+            .collect();
+            let name = selected.blocks[0].name;
+            selected.blocks = [0..2, 2..5, 5..6, 6..7]
+                .into_iter()
+                .map(|range| Block {
+                    name,
+                    range,
+                    landing: false,
+                })
+                .collect();
+            thread(&mut selected, &program);
+            assert!(matches!(selected.instructions[1].op, Op::Jump(to) if to == BlockId(expected)));
+        }
+        Ok(())
+    }
 
     #[test]
     fn defined_symbol_offsets_thread_the_same_zero_test_as_symbol_addresses() -> Result<(), Error> {
