@@ -133,7 +133,7 @@ impl Function<'_, '_, '_, '_> {
     // A storage split is a fallback. A pending conversion call still owns
     // its receiver's construction from the segment's original call mark.
     pub(super) fn pending_storage_call_region(&mut self) -> Result<bool, Error> {
-        if !self.storage_region_pending() || self.has_tracked_region() {
+        if !self.storage_region_pending() || self.lifetime.tracking.active {
             return Ok(false);
         }
         let Some(start) = self.lifetime.expression_start else {
