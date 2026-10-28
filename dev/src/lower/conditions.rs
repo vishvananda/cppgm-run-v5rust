@@ -1,4 +1,4 @@
-// Translated from lower/condition_lowering.cpp and statement_lowering.cpp. See NOTICE.
+// Translated from lower/{condition,statement,discard}_lowering.cpp. See NOTICE.
 //! Scalar truth preserves source branch sense; logical values use short circuit slots.
 use super::{
     Error,
@@ -505,26 +505,30 @@ impl Function<'_, '_, '_, '_> {
     }
     fn read_when_discarded(&self, id: ast::ExprId) -> Result<bool, Error> {
         self.check_stack()?;
-        Ok(
-            match self.tree.expressions.get(self.without_parentheses(id)).kind {
-                ExprKind::Id(_) | ExprKind::Subscript { .. } | ExprKind::Member { .. } => true,
-                ExprKind::Unary { op, .. } => op.token.as_punctuator() == Some(P::Multiply),
-                ExprKind::Conditional {
-                    then_expr,
-                    else_expr,
-                    ..
-                } => self.read_when_discarded(then_expr)? && self.read_when_discarded(else_expr)?,
-                ExprKind::Binary {
-                    op,
-                    right,
-                    assignment: false,
-                    ..
-                } if op.token.as_punctuator() == Some(P::Comma) => {
-                    self.read_when_discarded(right)?
-                }
+        let id = self.without_parentheses(id);
+        if self.graph.lower_operator_call(id)? {
+            return Ok(false);
+        }
+        Ok(match self.tree.expressions.get(id).kind {
+            ExprKind::Id(_) | ExprKind::Subscript { .. } | ExprKind::Member { .. } => true,
+            ExprKind::Unary { op, .. } => op.token.as_punctuator() == Some(P::Multiply),
+            ExprKind::Conditional {
+                then_expr,
+                else_expr,
+                ..
+            } => self.read_when_discarded(then_expr)? && self.read_when_discarded(else_expr)?,
+            ExprKind::Binary {
+                op,
+                right,
+                assignment: false,
+                ..
+            } => match op.token.as_punctuator() {
+                Some(P::DotStar | P::ArrowStar) => true,
+                Some(P::Comma) => self.read_when_discarded(right)?,
                 _ => false,
             },
-        )
+            _ => false,
+        })
     }
     fn read_discarded(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
@@ -542,16 +546,25 @@ impl Function<'_, '_, '_, '_> {
                 let yes = self.new_block("discard_cond_then")?;
                 let no = self.new_block("discard_cond_else")?;
                 let end = self.new_block("discard_cond_end")?;
+                let guard_start = self.lifetime.guard_start;
+                if guard_start.is_none() {
+                    self.lifetime.guard_start = Some(self.builder.position()?);
+                }
                 let value = self.truth(condition)?;
                 self.effect(I::Branch(value.value, yes, no))?;
                 for (block, operand) in [(yes, then_expr), (no, else_expr)] {
                     self.place(block)?;
                     self.lifetime.guarded_operands += 1;
-                    self.read_discarded(operand)?;
+                    let result = self.read_discarded(operand);
                     self.lifetime.guarded_operands -= 1;
+                    result?;
                     self.jump(end)?;
                 }
-                self.place(end)
+                self.place(end)?;
+                if guard_start.is_none() {
+                    self.lifetime.guard_start = None;
+                }
+                Ok(())
             }
             ExprKind::Binary {
                 op,
@@ -584,6 +597,39 @@ impl Function<'_, '_, '_, '_> {
             .get(self.without_parentheses(id))
             .location;
         self.with_debug_location(location, |this| this.discard_located(id))
+    }
+    fn discard_comma(&mut self, mut id: ast::ExprId) -> Result<(), Error> {
+        let base = self.discard_spine.len();
+        let first = loop {
+            let ExprKind::Binary { left, right, .. } = self.tree.expressions.get(id).kind else {
+                self.discard_spine.truncate(base);
+                return Err(Error::Semantic(crate::sema::Error::Invariant(
+                    "comma spine without binary expression",
+                )));
+            };
+            self.discard_spine.push(right);
+            let root = self.without_parentheses(left);
+            // The frozen spine follows syntactic commas, including a nested
+            // overloaded comma on its left. Only the outer dispatch checks it.
+            if matches!(self.tree.expressions.get(root).kind,
+                ExprKind::Binary { op, assignment: false, .. }
+                    if op.token.as_punctuator() == Some(P::Comma))
+            {
+                id = root;
+            } else {
+                break left;
+            }
+        };
+        let result = (|| {
+            self.discard(first)?;
+            let end = self.discard_spine.len();
+            for index in (base..end).rev() {
+                self.discard(self.discard_spine[index])?;
+            }
+            Ok(())
+        })();
+        self.discard_spine.truncate(base);
+        result
     }
     fn discard_located(&mut self, id: ast::ExprId) -> Result<(), Error> {
         self.check_stack()?;
@@ -618,6 +664,11 @@ impl Function<'_, '_, '_, '_> {
         if self.graph.lower_operator_call(id)? {
             self.operator_call(id)?;
             return Ok(());
+        }
+        if facts.folded.is_some()
+            && let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind
+        {
+            return self.member_object(base, op.token.as_punctuator() == Some(P::Arrow));
         }
         if self.graph.lower_lvalue(id)?
             && self.graph.lower_cv(facts.ty) & 2 != 0
@@ -704,13 +755,9 @@ impl Function<'_, '_, '_, '_> {
             }
             ExprKind::Binary {
                 op,
-                left,
-                right,
                 assignment: false,
-            } if op.token.as_punctuator() == Some(P::Comma) => {
-                self.discard(left)?;
-                self.discard(right)
-            }
+                ..
+            } if op.token.as_punctuator() == Some(P::Comma) => self.discard_comma(id),
             ExprKind::Cast { operand, .. }
                 if matches!(
                     self.graph.lower_type(facts.ty)?,

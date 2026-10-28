@@ -1,0 +1,162 @@
+global @destroyed : i32 [binding=strong] = zero
+
+function @selected(%b : u8, %v : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z8selectedbRVi] {
+  slot $b : u8
+  slot $v : ptr
+  slot $tmpobj__1 : obj<8x8>
+  slot $lifetime__2 : u8
+
+  block ^entry:
+    store u8 %b, $b
+    store typed ptr %v, $v
+    store u8 0, $lifetime__2
+    %t1 = load u8 $b
+    branch %t1, ^discard_cond_then_1, ^discard_cond_else_2
+
+  block ^discard_cond_then_1:
+    %t2 = addr $tmpobj__1
+    %t3 = load typed ptr $v
+    call void @T__T__aggregate(%t2, %t3)
+    store u8 1, $lifetime__2
+    %t4 = index i8 [projection=field] %t2, 0
+    %t5 = load typed ptr %t4
+    %t6 = index i32 [projection=array_element] %t5, 0
+    %t7 = load volatile i32 %t6
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_else_2:
+    %t8 = load typed ptr $v
+    %t9 = load volatile i32 %t8
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_end_3:
+    %t10 = load u8 $lifetime__2
+    branch %t10, ^conditional_temporary_destroy_4, ^conditional_temporary_done_5
+
+  block ^conditional_temporary_destroy_4:
+    store u8 0, $lifetime__2
+    call void @T___T(%t2)
+    jump ^conditional_temporary_done_5
+
+  block ^conditional_temporary_done_5:
+    return void
+}
+function @nested(%b : u8, %v : ptr [pass=by_address, object_bytes=4]) -> void [binding=strong, object=_Z6nestedbRVi] {
+  slot $b : u8
+  slot $v : ptr
+  slot $tmpobj__1 : obj<8x8>
+  slot $lifetime__2 : u8
+
+  block ^entry:
+    store u8 %b, $b
+    store typed ptr %v, $v
+    store u8 0, $lifetime__2
+    %t1 = load u8 $b
+    branch %t1, ^discard_cond_then_1, ^discard_cond_else_2
+
+  block ^discard_cond_then_1:
+    %t2 = addr $tmpobj__1
+    %t3 = load typed ptr $v
+    call void @T__T__aggregate(%t2, %t3)
+    store u8 1, $lifetime__2
+    %t4 = index i8 [projection=field] %t2, 0
+    %t5 = load typed ptr %t4
+    %t6 = index i32 [projection=array_element] %t5, 0
+    %t7 = load volatile i32 %t6
+    %t8 = load typed ptr $v
+    %t9 = load volatile i32 %t8
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_else_2:
+    %t10 = load typed ptr $v
+    %t11 = load volatile i32 %t10
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_end_3:
+    %t12 = load u8 $lifetime__2
+    branch %t12, ^conditional_temporary_destroy_4, ^conditional_temporary_done_5
+
+  block ^conditional_temporary_destroy_4:
+    store u8 0, $lifetime__2
+    call void @T___T(%t2)
+    jump ^conditional_temporary_done_5
+
+  block ^conditional_temporary_done_5:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : i32
+  slot $cond__1 : i32
+
+  block ^entry:
+    store volatile i32 7, $value
+    %t1 = addr $value
+    call void @selected(0, %t1)
+    %t2 = load typed i32 @destroyed
+    %t3 = cmp ne i32 %t2, 0
+    branch %t3, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    return i32 1
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    %t4 = addr $value
+    call void @selected(1, %t4)
+    %t5 = load typed i32 @destroyed
+    %t6 = cmp ne i32 %t5, 1
+    branch %t6, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    return i32 2
+
+  block ^if_else_5:
+    jump ^if_end_6
+
+  block ^if_end_6:
+    %t7 = addr $value
+    call void @nested(0, %t7)
+    %t8 = addr $value
+    call void @nested(1, %t8)
+    %t9 = load typed i32 @destroyed
+    %t10 = cmp eq i32 %t9, 2
+    branch %t10, ^cond_then_7, ^cond_else_8
+
+  block ^cond_then_7:
+    store typed i32 0, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_else_8:
+    store typed i32 3, $cond__1
+    jump ^cond_end_9
+
+  block ^cond_end_9:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @T__T__aggregate(%this : ptr [object_bytes=8], %p : ptr) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $p : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store typed ptr %t1, %t3
+    return void
+}
+function @T___T(%this : ptr [object_bytes=8]) -> void [unwind=no, binding=weak, object=_ZN1TD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @destroyed
+    return void
+}
+alias object _ZN1TD2Ev = @T___T

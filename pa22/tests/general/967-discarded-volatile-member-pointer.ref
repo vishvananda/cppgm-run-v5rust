@@ -1,0 +1,100 @@
+function @dot(%s : ptr [pass=by_address, object_bytes=4], %p : i64) -> void [binding=strong, object=_Z3dotR1SMS_Vi] {
+  slot $s : ptr
+  slot $p : i64
+
+  block ^entry:
+    store typed ptr %s, $s
+    store typed i64 %p, $p
+    %t1 = load typed ptr $s
+    %t2 = load typed i64 $p
+    %t3 = index i8 [projection=field] %t1, %t2
+    %t4 = load volatile i32 %t3
+    return void
+}
+function @arrow(%s : ptr, %p : i64) -> void [binding=strong, object=_Z5arrowP1SMS_Vi] {
+  slot $s : ptr
+  slot $p : i64
+
+  block ^entry:
+    store typed ptr %s, $s
+    store typed i64 %p, $p
+    %t1 = load typed ptr $s
+    %t2 = load typed i64 $p
+    %t3 = index i8 [projection=field] %t1, %t2
+    %t4 = load volatile i32 %t3
+    return void
+}
+function @cast(%s : ptr [pass=by_address, object_bytes=4], %p : i64) -> void [binding=strong, object=_Z4castR1SMS_Vi] {
+  slot $s : ptr
+  slot $p : i64
+
+  block ^entry:
+    store typed ptr %s, $s
+    store typed i64 %p, $p
+    %t1 = load typed ptr $s
+    %t2 = load typed i64 $p
+    %t3 = index i8 [projection=field] %t1, %t2
+    %t4 = load volatile i32 %t3
+    return void
+}
+function @wrapped(%b : u8, %s : ptr [pass=by_address, object_bytes=4], %p : i64) -> void [binding=strong, object=_Z7wrappedbR1SMS_Vi] {
+  slot $b : u8
+  slot $s : ptr
+  slot $p : i64
+
+  block ^entry:
+    store u8 %b, $b
+    store typed ptr %s, $s
+    store typed i64 %p, $p
+    %t1 = load u8 $b
+    branch %t1, ^discard_cond_then_1, ^discard_cond_else_2
+
+  block ^discard_cond_then_1:
+    %t2 = load typed ptr $s
+    %t3 = load typed i64 $p
+    %t4 = index i8 [projection=field] %t2, %t3
+    %t5 = load volatile i32 %t4
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_else_2:
+    %t6 = load typed ptr $s
+    %t7 = index i8 [projection=field] %t6, 0
+    %t8 = load volatile i32 %t7
+    jump ^discard_cond_end_3
+
+  block ^discard_cond_end_3:
+    %t9 = load typed ptr $s
+    %t10 = load typed i64 $p
+    %t11 = index i8 [projection=field] %t9, %t10
+    %t12 = load volatile i32 %t11
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $value : obj<4x4>
+  slot $p : i64
+
+  block ^entry:
+    %t1 = addr $value
+    %t2 = addr $value
+    %t3 = index i8 [projection=field] %t2, 0
+    store volatile i32 7, %t3
+    %t4 = const i64 0
+    store typed i64 %t4, $p
+    %t5 = addr $value
+    %t6 = load typed i64 $p
+    call void @dot(%t5, %t6)
+    %t7 = addr $value
+    %t8 = load typed i64 $p
+    call void @arrow(%t7, %t8)
+    %t9 = addr $value
+    %t10 = load typed i64 $p
+    call void @cast(%t9, %t10)
+    %t11 = addr $value
+    %t12 = load typed i64 $p
+    call void @wrapped(1, %t11, %t12)
+    %t13 = addr $value
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = load volatile i32 %t14
+    %t16 = binary sub nowrap i32 %t15, 7
+    return i32 %t16
+}

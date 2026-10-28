@@ -1,0 +1,158 @@
+global @count : i32 [binding=strong] = zero
+
+function @step() -> i32 [binding=strong, object=_Z4stepv] {
+  block ^entry:
+    %t1 = load typed i32 @count
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @count
+    %t3 = load typed i32 @count
+    return i32 %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @step()
+    %t2 = call i32 @step()
+    %t3 = call i32 @step()
+    %t4 = call i32 @step()
+    %t5 = call i32 @step()
+    %t6 = call i32 @step()
+    %t7 = call i32 @step()
+    %t8 = call i32 @step()
+    %t9 = call i32 @step()
+    %t10 = call i32 @step()
+    %t11 = call i32 @step()
+    %t12 = call i32 @step()
+    %t13 = call i32 @step()
+    %t14 = call i32 @step()
+    %t15 = call i32 @step()
+    %t16 = call i32 @step()
+    %t17 = call i32 @step()
+    %t18 = call i32 @step()
+    %t19 = call i32 @step()
+    %t20 = call i32 @step()
+    %t21 = call i32 @step()
+    %t22 = call i32 @step()
+    %t23 = call i32 @step()
+    %t24 = call i32 @step()
+    %t25 = call i32 @step()
+    %t26 = call i32 @step()
+    %t27 = call i32 @step()
+    %t28 = call i32 @step()
+    %t29 = call i32 @step()
+    %t30 = call i32 @step()
+    %t31 = call i32 @step()
+    %t32 = call i32 @step()
+    %t33 = call i32 @step()
+    %t34 = call i32 @step()
+    %t35 = call i32 @step()
+    %t36 = call i32 @step()
+    %t37 = call i32 @step()
+    %t38 = call i32 @step()
+    %t39 = call i32 @step()
+    %t40 = call i32 @step()
+    %t41 = call i32 @step()
+    %t42 = call i32 @step()
+    %t43 = call i32 @step()
+    %t44 = call i32 @step()
+    %t45 = call i32 @step()
+    %t46 = call i32 @step()
+    %t47 = call i32 @step()
+    %t48 = call i32 @step()
+    %t49 = call i32 @step()
+    %t50 = call i32 @step()
+    %t51 = call i32 @step()
+    %t52 = call i32 @step()
+    %t53 = call i32 @step()
+    %t54 = call i32 @step()
+    %t55 = call i32 @step()
+    %t56 = call i32 @step()
+    %t57 = call i32 @step()
+    %t58 = call i32 @step()
+    %t59 = call i32 @step()
+    %t60 = call i32 @step()
+    %t61 = call i32 @step()
+    %t62 = call i32 @step()
+    %t63 = call i32 @step()
+    %t64 = call i32 @step()
+    %t65 = call i32 @step()
+    %t66 = call i32 @step()
+    %t67 = call i32 @step()
+    %t68 = call i32 @step()
+    %t69 = call i32 @step()
+    %t70 = call i32 @step()
+    %t71 = call i32 @step()
+    %t72 = call i32 @step()
+    %t73 = call i32 @step()
+    %t74 = call i32 @step()
+    %t75 = call i32 @step()
+    %t76 = call i32 @step()
+    %t77 = call i32 @step()
+    %t78 = call i32 @step()
+    %t79 = call i32 @step()
+    %t80 = call i32 @step()
+    %t81 = call i32 @step()
+    %t82 = call i32 @step()
+    %t83 = call i32 @step()
+    %t84 = call i32 @step()
+    %t85 = call i32 @step()
+    %t86 = call i32 @step()
+    %t87 = call i32 @step()
+    %t88 = call i32 @step()
+    %t89 = call i32 @step()
+    %t90 = call i32 @step()
+    %t91 = call i32 @step()
+    %t92 = call i32 @step()
+    %t93 = call i32 @step()
+    %t94 = call i32 @step()
+    %t95 = call i32 @step()
+    %t96 = call i32 @step()
+    %t97 = call i32 @step()
+    %t98 = call i32 @step()
+    %t99 = call i32 @step()
+    %t100 = call i32 @step()
+    %t101 = call i32 @step()
+    %t102 = call i32 @step()
+    %t103 = call i32 @step()
+    %t104 = call i32 @step()
+    %t105 = call i32 @step()
+    %t106 = call i32 @step()
+    %t107 = call i32 @step()
+    %t108 = call i32 @step()
+    %t109 = call i32 @step()
+    %t110 = call i32 @step()
+    %t111 = call i32 @step()
+    %t112 = call i32 @step()
+    %t113 = call i32 @step()
+    %t114 = call i32 @step()
+    %t115 = call i32 @step()
+    %t116 = call i32 @step()
+    %t117 = call i32 @step()
+    %t118 = call i32 @step()
+    %t119 = call i32 @step()
+    %t120 = call i32 @step()
+    %t121 = call i32 @step()
+    %t122 = call i32 @step()
+    %t123 = call i32 @step()
+    %t124 = call i32 @step()
+    %t125 = call i32 @step()
+    %t126 = call i32 @step()
+    %t127 = call i32 @step()
+    %t128 = call i32 @step()
+    %t129 = load typed i32 @count
+    %t130 = cmp eq i32 %t129, 128
+    branch %t130, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t131 = load typed i32 $cond__1
+    return i32 %t131
+}

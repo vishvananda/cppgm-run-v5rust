@@ -389,6 +389,13 @@ impl<'a> FunctionBuilder<'a> {
     pub(crate) fn is_object_value(&self, value: Value) -> bool {
         matches!(value, Value::Temp(id) if matches!(self.body.temp(id).ty, Some(Type::Object { .. })))
     }
+    /// The frozen immediate query reads the low word of an integer operand.
+    pub(crate) fn integer_low(&self, value: Value) -> Option<u64> {
+        let Value::Integer(id) = value else {
+            return None;
+        };
+        u64::try_from(self.body.literal(id) & u128::from(u64::MAX)).ok()
+    }
     pub(crate) fn integer(&mut self, value: u128) -> Result<Value, Error> {
         self.constant(Constant::Integer(value))
     }

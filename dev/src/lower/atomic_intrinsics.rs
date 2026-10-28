@@ -348,7 +348,7 @@ impl Function<'_, '_, '_, '_> {
     }
     fn memory_order(&mut self, argument: ast::ExprId) -> Result<Order, Error> {
         let value = self.operand(argument, Context::Argument)?;
-        Ok(if let Some(bits) = value.bits.filter(|_| value.literal) {
+        Ok(if let Some(bits) = self.builder.integer_low(value.value) {
             i64::try_from(bits)
                 .ok()
                 .and_then(Order::from_number)
