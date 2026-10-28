@@ -82,7 +82,6 @@ pub(super) struct PackSelection<'a> {
 pub(super) struct Substitution<'a> {
     pub(super) depth: u32,
     pub(super) arguments: &'a [Option<TypeId>],
-    memo: HashMap<TypeId, Option<TypeId>>,
     pub(super) context: Option<EntityId>,
     pub(super) selection: Option<&'a PackSelection<'a>>,
     pub(super) failure: Option<&'static str>,
@@ -94,7 +93,6 @@ impl<'a> Substitution<'a> {
         Self {
             depth,
             arguments,
-            memo: HashMap::new(),
             context: None,
             selection: None,
             failure: None,
@@ -438,9 +436,6 @@ impl Analyzer<'_> {
     ) -> Result<Option<TypeId>, Error> {
         self.check_stack()?;
         environment.attach_ambient(self.graph.analysis.substitution.clone());
-        if let Some(&result) = environment.memo.get(&ty) {
-            return Ok(result);
-        }
         let cv = self.graph.types.get(ty).cv;
         if let Some(index) = self.template_parameter_index(ty, environment.depth) {
             let result = if let Some(Some(argument)) = environment.arguments.get(index) {
@@ -458,10 +453,8 @@ impl Analyzer<'_> {
             } else {
                 Some(ty)
             };
-            environment.memo.insert(ty, result);
             return Ok(result);
         }
-        let incomplete = self.incomplete_class_observations;
         let kind = self.graph.types.get(ty).kind.clone();
         let result = match kind {
             TypeKind::Pack(elements) => self
@@ -672,9 +665,6 @@ impl Analyzer<'_> {
             }
             _ => Some(ty),
         };
-        if self.incomplete_class_observations == incomplete {
-            environment.memo.insert(ty, result);
-        }
         Ok(result)
     }
 

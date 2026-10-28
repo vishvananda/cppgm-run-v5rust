@@ -214,4 +214,65 @@ mod tests {
             "retained"
         );
     }
+
+    #[test]
+    fn a_repeated_type_demand_emits_rejection_in_each_new_soft_scope() {
+        use crate::sema::{
+            function_templates::Substitution,
+            lookup::Filter,
+            types::{RefKind, TypeKind},
+        };
+        let source = SourceBuffer::new(b"template<class T>T* f(T);".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"substitution-reentry").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+        let entity = analyzer.graph.binding(binding).entity;
+        let head = analyzer.function_template_head(binding).unwrap().unwrap();
+        let depth = analyzer.graph.templates.depth(head);
+        let TypeKind::Function { result, .. } = analyzer
+            .graph
+            .types
+            .get(analyzer.graph.binding(binding).ty.unwrap())
+            .kind
+        else {
+            panic!("function type");
+        };
+        let integer = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        let reference = analyzer
+            .graph
+            .types
+            .reference(integer, RefKind::Lvalue)
+            .unwrap();
+        let arguments = [Some(reference)];
+        let mut environment = Substitution::new(depth, &arguments);
+        let state = analyzer.graph.analysis.substitution.clone();
+        for _ in 0..2 {
+            analyzer
+                .with_substitution_soft(Some(entity), |analyzer| {
+                    assert!(state.current().failure.is_none());
+                    assert!(
+                        analyzer
+                            .substitute_signature_type(result, &mut environment)?
+                            .is_none()
+                    );
+                    assert!(state.current().failure.is_some());
+                    Ok(())
+                })
+                .unwrap();
+            assert!(state.current().failure.is_none());
+        }
+    }
 }

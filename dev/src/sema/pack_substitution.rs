@@ -1,5 +1,5 @@
 // Translated from template_packs.cpp::substitute_list/bound_expansion. See NOTICE.
-//! Type-list expansion keeps argument partitions and per-element memos separate.
+//! Type-list expansion retains argument partitions and fresh element overlays.
 use super::{
     Error,
     analyzer::Analyzer,
