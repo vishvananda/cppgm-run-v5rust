@@ -81,7 +81,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) constant_discard_work: Vec<ast::ExprId>,
     pub(super) constant_evaluation: Option<super::constant_addresses::Evaluation>,
-    pub(super) constant_query: Option<super::interpreter_queries::QueryKind>,
+    pub(super) constant_query: Option<super::interpreter_queries::Query>,
     pub(super) constexpr_frames: super::constexpr_frames::Frames,
     pub(super) constant_scratch: super::constant_addresses::Evaluation,
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
@@ -144,8 +144,10 @@ pub(super) struct DeferredBody {
 #[derive(Clone, Copy)]
 pub(super) enum DeferredMember {
     Initializer(super::graph::EntityId),
-    Constant(super::graph::EntityId, ast::Initializer, ScopeId),
-    AggregateConstant(super::graph::EntityId, Option<ast::Initializer>, ScopeId),
+    ConstantValue(
+        super::graph::EntityId,
+        super::deferred_constants::Initialization,
+    ),
     Body(DeferredBody),
     Defaults(super::default_arguments::PendingDefaults),
 }

@@ -636,17 +636,15 @@ impl Analyzer<'_> {
             .graph
             .class_of(place.designated)
             .ok_or(Error::Invariant("constant base path without class"))?;
-        self.class_layout(class, location)?;
         let offset = self
-            .graph
-            .base_search_offset(class, base, super::base_projections::OffsetSearch::Constant)?
+            .constant_base_offset(class, base, location)?
             .ok_or_else(|| {
                 nonconstant(
                     location,
                     "a conversion to a base class outside constant evaluation",
                 )
             })?;
-        place.offset = place.offset.wrapping_add(super::integral::signed(offset));
+        place.offset = place.offset.wrapping_add(offset);
         place.designated = self.graph.types.qualify(
             self.graph.lower_entity_type(base)?,
             self.type_cv(place.designated),
@@ -692,30 +690,29 @@ impl Analyzer<'_> {
             .get(cast.path)
             .first()
             .ok_or(Error::Invariant("empty constant cast route"))?;
-        self.class_layout(derived, location)?;
+        if !cast.downcast && place.past_end {
+            return Err(nonconstant(
+                location,
+                "a base class of an object one past the end of an array",
+            ));
+        }
         let edges = self.graph.base_paths.get(cast.path);
         let &(last, index) = edges
             .last()
             .ok_or(Error::Invariant("empty constant cast route"))?;
         let base = self.graph.entity(last).bases[index].class;
-        let offset = super::integral::signed(
-            self.graph
-                .base_search_offset(
-                    derived,
-                    base,
-                    super::base_projections::OffsetSearch::Constant,
-                )?
-                .ok_or_else(|| {
-                    nonconstant(
-                        location,
-                        if cast.downcast {
-                            "a conversion to a derived class outside constant evaluation"
-                        } else {
-                            "a conversion to a base class outside constant evaluation"
-                        },
-                    )
-                })?,
-        );
+        let offset = self
+            .constant_base_offset(derived, base, location)?
+            .ok_or_else(|| {
+                nonconstant(
+                    location,
+                    if cast.downcast {
+                        "a conversion to a derived class outside constant evaluation"
+                    } else {
+                        "a conversion to a base class outside constant evaluation"
+                    },
+                )
+            })?;
         if cast.downcast {
             place.offset = place.offset.wrapping_sub(offset);
             let root = self.address_root_type(place, location)?;
@@ -726,12 +723,6 @@ impl Analyzer<'_> {
                 ));
             }
         } else {
-            if place.past_end {
-                return Err(nonconstant(
-                    location,
-                    "a base class of an object one past the end of an array",
-                ));
-            }
             place.offset = place.offset.wrapping_add(offset);
         }
         place.designated = target;

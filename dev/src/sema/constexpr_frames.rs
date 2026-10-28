@@ -97,10 +97,14 @@ impl Frozen {
                 }
         })
     }
+    #[cfg(test)]
     pub(super) fn values(
         &self,
     ) -> impl Iterator<Item = (TypeId, i64, Option<EntityId>, Option<TemporaryValue>)> + '_ {
-        active_cells(&self.cells).map(|cell| (cell.ty, cell.offset, cell.field, cell.value))
+        self.cells.iter().enumerate().filter_map(|(i, cell)| {
+            let id = CellId(u32::try_from(i).ok()?);
+            accessible(&self.cells, id, 0).then_some((cell.ty, cell.offset, cell.field, cell.value))
+        })
     }
     // The data writer has its own structural depth bound. Semantic reads
     // keep the full value, including subobjects beyond that bound.
@@ -838,12 +842,6 @@ impl Frames {
 
 // Typed indexes find the possible subobjects; the parent links resolve overlap
 // by the active union path. Ordinary nonoverlapping cells retain one lookup.
-fn active_cells(cells: &[Cell]) -> impl Iterator<Item = &Cell> {
-    cells.iter().enumerate().filter_map(|(i, cell)| {
-        let id = CellId(u32::try_from(i).ok()?);
-        accessible(cells, id, 0).then_some(cell)
-    })
-}
 fn accessible(cells: &[Cell], mut child: CellId, first: usize) -> bool {
     while let Some(parent) = cells[child.0 as usize].parent {
         if (parent.0 as usize) < first {

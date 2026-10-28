@@ -20,6 +20,7 @@ use crate::{
 enum ComplexValue {
     Parts([Value; 2]),
     Storage(Address, TypeId),
+    Snapshot([Value; 2]),
 }
 
 impl Analyzer<'_> {
@@ -49,7 +50,9 @@ impl Analyzer<'_> {
                 location,
             )?;
         } else {
-            self.stored_complex_parts(place, part, location)?;
+            return self
+                .stored_complex_parts(place, part, location)
+                .map(ComplexValue::Snapshot);
         }
         Ok(ComplexValue::Storage(place, part))
     }
@@ -60,6 +63,7 @@ impl Analyzer<'_> {
     ) -> Result<[Value; 2], Error> {
         match value {
             ComplexValue::Parts(parts) => Ok(parts.map(Value::clear_zeroed)),
+            ComplexValue::Snapshot(parts) => Ok(parts),
             ComplexValue::Storage(place, part) => self.stored_complex_parts(place, part, location),
         }
     }
@@ -122,6 +126,15 @@ impl Analyzer<'_> {
         part: TypeId,
         location: SourceOffset,
     ) -> Result<[Value; 2], Error> {
+        if self.type_cv(place.designated).0 & 2 != 0 {
+            return Err(nonconstant(location, "a read of a volatile glvalue"));
+        }
+        if place.past_end {
+            return Err(nonconstant(
+                location,
+                "an access one past the end of an array",
+            ));
+        }
         let part = self
             .graph
             .types
@@ -136,6 +149,15 @@ impl Analyzer<'_> {
                 .wrapping_add(super::integral::signed(self.type_size(part, location)?.0)),
             ..first
         };
+        if let Some(parts) = self.published_scalar_values([first, second], location)? {
+            return Ok(parts);
+        }
+        if matches!(place.root, super::constant_addresses::Root::Variable(_)) {
+            return Err(nonconstant(
+                location,
+                "a variable is not usable in a constant expression",
+            ));
+        }
         Ok([
             self.constant_arithmetic_value(first, location)?,
             self.constant_arithmetic_value(second, location)?,

@@ -20,19 +20,13 @@ pub(crate) struct MemberPointer {
     pub ty: TypeId,
     pub member: Option<EntityId>,
     pub adjustment: i64,
-    provisional: bool,
 }
 impl MemberPointer {
-    pub(super) fn provisional(self) -> bool {
-        self.provisional
-    }
-
     pub(super) fn null(ty: TypeId) -> Self {
         Self {
             ty,
             member: None,
             adjustment: 0,
-            provisional: false,
         }
     }
 }
@@ -109,26 +103,14 @@ impl Analyzer<'_> {
             } else {
                 (destination, source)
             };
-            let offset = if self.graph.entity(derived).complete {
-                self.class_layout(derived, location)?;
-                let offset = self
-                    .graph
-                    .base_search_offset(
-                        derived,
-                        base,
-                        super::base_projections::OffsetSearch::Constant,
-                    )?
-                    .ok_or_else(|| {
-                        nonconstant(
-                            location,
-                            "a pointer to member conversion between unrelated classes",
-                        )
-                    })?;
-                super::integral::signed(offset)
-            } else {
-                value.provisional = true;
-                self.provisional_member_offset(derived, base, location)?
-            };
+            let offset = self
+                .constant_base_offset(derived, base, location)?
+                .ok_or_else(|| {
+                    nonconstant(
+                        location,
+                        "a pointer to member conversion between unrelated classes",
+                    )
+                })?;
             if inverse {
                 let home = self.graph.member_holder(member, None)?;
                 if home != destination
@@ -150,13 +132,19 @@ impl Analyzer<'_> {
         value.ty = self.bare_type(target)?;
         Ok(value)
     }
-    fn provisional_member_offset(
+    pub(super) fn constant_base_offset(
         &mut self,
         derived: EntityId,
         base: EntityId,
         location: SourceOffset,
-    ) -> Result<i64, Error> {
+    ) -> Result<Option<i64>, Error> {
         let mut query = super::base_projections::BaseOffsetQuery::new(base);
+        if self.graph.entity(derived).complete {
+            return self
+                .constant_base_search(derived, &mut query, location)
+                .map(|offset| offset.map(super::integral::signed));
+        }
+        self.note_incomplete_constant_layout();
         for index in 0..self.graph.entity(derived).bases.len() {
             let edge = self.graph.entity(derived).bases[index];
             if edge.is_virtual {
@@ -165,22 +153,36 @@ impl Analyzer<'_> {
             let inner = if edge.class == base {
                 0
             } else {
-                self.class_layout(edge.class, location)?;
-                let Some(offset) = self.graph.constant_base_offset(edge.class, &mut query)? else {
+                let Some(offset) = self.constant_base_search(edge.class, &mut query, location)?
+                else {
                     continue;
                 };
                 offset
             };
             let ordinal =
                 u64::try_from(index).map_err(|_| Error::Limit("provisional base ordinal"))?;
-            return Ok(super::integral::signed(
+            return Ok(Some(super::integral::signed(
                 ordinal.wrapping_add(1).wrapping_shl(32).wrapping_add(inner),
-            ));
+            )));
         }
-        Err(nonconstant(
-            location,
-            "a pointer to member conversion between unrelated classes",
-        ))
+        Ok(None)
+    }
+    fn constant_base_search(
+        &mut self,
+        derived: EntityId,
+        query: &mut super::base_projections::BaseOffsetQuery,
+        location: SourceOffset,
+    ) -> Result<Option<u64>, Error> {
+        use super::base_projections::{ConstantOffsetSearch, OffsetProgress};
+        let mut search = ConstantOffsetSearch::new(derived);
+        loop {
+            match search.advance(&self.graph, query)? {
+                OffsetProgress::Layout(class) => {
+                    self.class_layout(class, location)?;
+                }
+                OffsetProgress::Finished(offset) => return Ok(offset),
+            }
+        }
     }
     pub(super) fn member_pointer_operand(
         &mut self,
@@ -241,7 +243,6 @@ impl Analyzer<'_> {
                     ty,
                     member: Some(self.graph.binding(member).entity),
                     adjustment: 0,
-                    provisional: false,
                 })
             }
             ExprKind::Paren(inner) => self.evaluate_member_pointer(inner, scope),
@@ -497,7 +498,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<(), Error> {
         self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
-        let result = self.with_fresh_constant_query(|a| {
+        let outcome = self.with_observed_constant_query(|a| {
             let ty = a.graph.lower_entity_type(entity)?;
             let super::constant_addresses::TemporaryValue::MemberPointer(value) =
                 a.initialized_scalar_value(ty, initializer, scope)?
@@ -509,17 +510,20 @@ impl Analyzer<'_> {
             Ok(value)
         });
         self.graph.entity_mut(entity).constant = ConstantState::None;
+        if self.defer_observed_initializer(
+            entity,
+            super::deferred_constants::Initialization {
+                initializer: Some(initializer),
+                scope,
+            },
+            &outcome,
+        ) {
+            return Ok(());
+        }
+        let result = outcome.result;
         match result {
             Ok(value) => {
                 self.graph.entity_mut(entity).constant = ConstantState::MemberPointer(value);
-                if value.provisional {
-                    self.deferred
-                        .push(super::analyzer::DeferredMember::Constant(
-                            entity,
-                            initializer,
-                            scope,
-                        ));
-                }
             }
             Err(Error::NonConstant {
                 location, message, ..
@@ -690,6 +694,57 @@ mod tests {
     };
 
     #[test]
+    fn base_search_demands_layout_after_identity_leaf_and_entry_count() {
+        use super::super::layout::LayoutState;
+        let source = SourceBuffer::new(b"struct B{};struct L{};struct D:B{};".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"offset-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"B".as_slice(), b"L", b"D"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let [base, leaf, derived] = names.map(|name| {
+            let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+            analyzer.graph.binding(binding).entity
+        });
+        for entity in [base, leaf, derived] {
+            analyzer.graph.entity_mut(entity).layout = LayoutState::NotStarted;
+        }
+        assert_eq!(
+            analyzer
+                .constant_base_offset(derived, derived, SourceOffset(0))
+                .unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            analyzer
+                .constant_base_offset(leaf, base, SourceOffset(0))
+                .unwrap(),
+            None
+        );
+        for entity in [leaf, derived] {
+            assert!(matches!(
+                analyzer.graph.entity(entity).layout,
+                LayoutState::NotStarted
+            ));
+        }
+        analyzer.graph.entity_mut(derived).layout = LayoutState::InProgress;
+        #[cfg(feature = "telemetry")]
+        let before = analyzer.graph.work.snapshot().base_steps;
+        assert!(
+            analyzer
+                .constant_base_offset(derived, base, SourceOffset(0))
+                .is_err()
+        );
+        #[cfg(feature = "telemetry")]
+        assert_eq!(analyzer.graph.work.snapshot().base_steps, before + 1);
+    }
+
+    #[test]
     fn member_constants_keep_declarations_and_release_provisional_offsets() {
         let source = SourceBuffer::new(
             br#"
@@ -740,7 +795,6 @@ mod tests {
             panic!("reverse member value");
         };
         assert_eq!(reverse.adjustment, 0);
-        assert!(!reverse.provisional);
         let ConstantState::MemberPointer(null) = analyzer.graph.entity(entities[2]).constant else {
             panic!("null member value");
         };
@@ -751,8 +805,8 @@ mod tests {
         assert_eq!(members.len(), 1);
         let saved = analyzer.graph.aggregate_constants.get(entities[3]).unwrap();
         let values: Vec<_> = saved
-            .values()
-            .filter_map(|(_, _, _, value)| match value {
+            .placement_values()
+            .filter_map(|cell| match cell.value {
                 Some(Value::MemberPointer(value)) => Some(value),
                 _ => None,
             })
@@ -760,7 +814,6 @@ mod tests {
         assert_eq!(values.len(), 2);
         assert_eq!(values[0].member, reverse.member);
         assert_eq!(values[0].adjustment, 8);
-        assert!(!values[0].provisional);
         assert_ne!(values[1].member, reverse.member);
         assert_eq!(values[1].adjustment, 0);
         assert!(analyzer.graph.scope(class_scope).owner.is_some());

@@ -62,6 +62,7 @@ mod declaration_access;
 mod declarations;
 mod declarators;
 mod default_arguments;
+mod deferred_constants;
 mod dependence;
 mod dependent_members;
 mod dependent_templates;

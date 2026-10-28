@@ -191,9 +191,56 @@ impl OffsetFrame {
 }
 enum OffsetStep {
     Continue,
+    Layout(EntityId),
     Miss,
     Found(u64),
     Descend(EntityId, Option<u64>),
+}
+pub(super) enum OffsetProgress {
+    Layout(EntityId),
+    Finished(Option<u64>),
+}
+pub(super) struct ConstantOffsetSearch {
+    work: Vec<OffsetFrame>,
+    leaves: LeafBranches,
+}
+impl ConstantOffsetSearch {
+    pub(super) fn new(derived: EntityId) -> Self {
+        Self {
+            work: vec![OffsetFrame::new(derived, Some(0))],
+            leaves: LeafBranches::Visit,
+        }
+    }
+    pub(super) fn advance(
+        &mut self,
+        graph: &Graph,
+        query: &mut BaseOffsetQuery,
+    ) -> Result<OffsetProgress, Error> {
+        while let Some(frame) = self.work.last_mut() {
+            match graph.counted_offset_step(frame, query.base, self.leaves, &query.misses)? {
+                OffsetStep::Continue => {}
+                OffsetStep::Layout(class) => return Ok(OffsetProgress::Layout(class)),
+                OffsetStep::Found(extra) => {
+                    return Ok(OffsetProgress::Finished(Some(found_offset(
+                        &self.work, extra,
+                    )?)));
+                }
+                OffsetStep::Descend(class, offset) => {
+                    self.work.push(OffsetFrame::new(class, offset));
+                }
+                OffsetStep::Miss => {
+                    let root = frame.root;
+                    self.work.pop();
+                    // Remember recursive branch roots, not the classes followed
+                    // within their single-base chains.
+                    if !self.work.is_empty() {
+                        query.misses.insert(root);
+                    }
+                }
+            }
+        }
+        Ok(OffsetProgress::Finished(None))
+    }
 }
 fn found_offset(work: &[OffsetFrame], extra: u64) -> Result<u64, Error> {
     work.iter().try_fold(extra, |total, frame| {
@@ -346,24 +393,15 @@ impl Graph {
         query: &mut BaseOffsetQuery,
         leaves: LeafBranches,
     ) -> Result<Option<u64>, Error> {
-        let mut work = vec![OffsetFrame::new(derived, Some(0))];
-        while let Some(frame) = work.last_mut() {
-            match self.counted_offset_step(frame, query.base, leaves, &query.misses)? {
-                OffsetStep::Continue => {}
-                OffsetStep::Found(extra) => return Ok(Some(found_offset(&work, extra)?)),
-                OffsetStep::Descend(class, offset) => work.push(OffsetFrame::new(class, offset)),
-                OffsetStep::Miss => {
-                    let root = frame.root;
-                    work.pop();
-                    // A failed recursive branch root is remembered. Classes
-                    // followed within its single-base chain are not memoized.
-                    if !work.is_empty() {
-                        query.misses.insert(root);
-                    }
-                }
+        let mut search = ConstantOffsetSearch::new(derived);
+        search.leaves = leaves;
+        loop {
+            match search.advance(self, query)? {
+                // Graph-only clients already own completed layouts.
+                OffsetProgress::Layout(_) => {}
+                OffsetProgress::Finished(offset) => return Ok(offset),
             }
         }
-        Ok(None)
     }
     fn counted_offset_step(
         &self,
@@ -379,6 +417,13 @@ impl Graph {
         if !frame.entered {
             self.work.base_steps(1);
             frame.entered = true;
+            return Ok(if edges.is_empty() {
+                OffsetStep::Miss
+            } else {
+                OffsetStep::Layout(frame.class)
+            });
+        }
+        if frame.next == 0 {
             match edges.as_slice() {
                 [] => return Ok(OffsetStep::Miss),
                 [edge] => {

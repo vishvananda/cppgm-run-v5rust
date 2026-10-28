@@ -27,6 +27,7 @@ pub(super) struct Values {
     constructing: HashMap<EntityId, Address>,
     static_roots: std::collections::HashSet<Root>,
     temporaries: Vec<Temporary>,
+    deferred: HashMap<EntityId, super::deferred_constants::Initialization>,
 }
 pub(super) struct ConstructionSave {
     constructing: HashMap<EntityId, Address>,
@@ -34,6 +35,23 @@ pub(super) struct ConstructionSave {
 }
 
 impl Values {
+    pub(super) fn defer(
+        &mut self,
+        entity: EntityId,
+        initialization: super::deferred_constants::Initialization,
+    ) {
+        self.complete.remove(&entity);
+        self.deferred.insert(entity, initialization);
+    }
+    pub(super) fn deferred(
+        &self,
+        entity: EntityId,
+    ) -> Option<super::deferred_constants::Initialization> {
+        self.deferred.get(&entity).copied()
+    }
+    pub(super) fn clear_deferred(&mut self, entity: EntityId) {
+        self.deferred.remove(&entity);
+    }
     pub(super) fn suspend_construction(&mut self) -> ConstructionSave {
         ConstructionSave {
             constructing: std::mem::take(&mut self.constructing),
@@ -298,7 +316,8 @@ impl Analyzer<'_> {
                 "a constexpr variable of a type that is not a literal type",
             ));
         }
-        let result = self.with_fresh_constant_query(|analyzer| {
+        self.graph.entity_mut(entity).constant = super::constants::ConstantState::Evaluating;
+        let outcome = self.with_observed_constant_query(|analyzer| {
             let region = analyzer.constexpr_frames.region();
             let result =
                 analyzer.evaluate_aggregate_initializer(entity, initializer, scope, location);
@@ -317,12 +336,17 @@ impl Analyzer<'_> {
             analyzer.constexpr_frames.release(region);
             result
         });
+        self.graph.entity_mut(entity).constant = super::constants::ConstantState::None;
+        if self.defer_observed_initializer(
+            entity,
+            super::deferred_constants::Initialization { initializer, scope },
+            &outcome,
+        ) {
+            return Ok(());
+        }
+        let result = outcome.result;
         match result {
             Ok(value) => {
-                if required && value.values().any(|(_, _, _, value)|
-                    matches!(value, Some(Value::MemberPointer(value)) if value.provisional())) {
-                    self.deferred.push(super::analyzer::DeferredMember::AggregateConstant(entity, initializer, scope));
-                }
                 self.graph
                     .aggregate_constants
                     .complete
@@ -336,16 +360,7 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
-    pub(super) fn finish_deferred_aggregate_constant(
-        &mut self,
-        entity: EntityId,
-        initializer: Option<ast::Initializer>,
-        scope: ScopeId,
-    ) -> Result<(), Error> {
-        self.graph.aggregate_constants.complete.remove(&entity);
-        self.record_aggregate_constant(entity, initializer, scope, true)
-    }
-    fn evaluate_aggregate_initializer(
+    pub(super) fn evaluate_aggregate_initializer(
         &mut self,
         entity: EntityId,
         initializer: Option<ast::Initializer>,
@@ -415,31 +430,47 @@ impl Analyzer<'_> {
     }
     pub(super) fn published_scalar(
         &mut self,
-        mut place: Address,
+        place: Address,
         location: SourceOffset,
     ) -> Result<Option<Value>, Error> {
-        if let Root::Published(id) = place.root {
-            if self.type_cv(place.designated) != super::types::Cv::CONST {
+        self.published_scalar_values([place], location)
+            .map(|value| value.map(|[value]| value))
+    }
+    pub(super) fn published_scalar_values<const N: usize>(
+        &mut self,
+        mut places: [Address; N],
+        location: SourceOffset,
+    ) -> Result<Option<[Value; N]>, Error> {
+        let first = *places
+            .first()
+            .ok_or(Error::Invariant("empty constant storage read"))?;
+        if places.iter().any(|place| place.root != first.root) {
+            return Err(Error::Invariant(
+                "constant read spans different root storage",
+            ));
+        }
+        if let Root::Published(id) = first.root {
+            if places
+                .iter()
+                .any(|place| self.type_cv(place.designated) != super::types::Cv::CONST)
+            {
                 return Err(nonconstant(
                     location,
                     "an access to a temporary that is not const, bound outside the evaluation",
                 ));
             }
-            place.designated = self.bare_type(place.designated)?;
+            for place in &mut places {
+                place.designated = self.bare_type(place.designated)?;
+            }
             return self
-                .graph
-                .aggregate_constants
-                .temporary(id)
-                .value
-                .read(
-                    &self.graph.constant_member_spans,
-                    place,
-                    self.constexpr_frames.designation(place.variant()),
+                .frozen_scalar_values(
+                    &self.graph.aggregate_constants.temporary(id).value,
+                    places,
                     location,
                 )
                 .map(Some);
         }
-        let Root::Variable(entity) = place.root else {
+        let Root::Variable(entity) = first.root else {
             return Ok(None);
         };
         self.instantiate_variable_value(entity)?;
@@ -449,19 +480,56 @@ impl Analyzer<'_> {
         if self.type_cv(self.graph.lower_entity_type(entity)?).0 & 2 != 0 {
             return Err(nonconstant(location, "a read of a volatile object"));
         }
-        place.designated = self.bare_type(place.designated)?;
-        self.graph
-            .aggregate_constants
-            .get(entity)
-            .map(|value| {
-                value.read(
-                    &self.graph.constant_member_spans,
-                    place,
-                    self.constexpr_frames.designation(place.variant()),
-                    location,
-                )
-            })
-            .transpose()
+        for place in &mut places {
+            place.designated = self.bare_type(place.designated)?;
+        }
+        if let Some(value) = self.graph.aggregate_constants.get(entity) {
+            return self.frozen_scalar_values(value, places, location).map(Some);
+        }
+        match self.deferred_constant_snapshot(entity)? {
+            Some(super::deferred_constants::Snapshot::Scalar(value)) => {
+                let first = places[0];
+                if N != 1
+                    || first.offset != 0
+                    || first.past_end
+                    || self.bare_type(self.graph.lower_entity_type(entity)?)? != first.designated
+                {
+                    return Err(nonconstant(
+                        location,
+                        "an access outside the designated object",
+                    ));
+                }
+                Ok(Some(places.map(|_| value)))
+            }
+            Some(super::deferred_constants::Snapshot::Object(value)) => self
+                .frozen_scalar_values(&value, places, location)
+                .map(Some),
+            Some(super::deferred_constants::Snapshot::Reference(value)) => {
+                Ok(Some(places.map(|_| Value::Pointer(value))))
+            }
+            None => Ok(None),
+        }
+    }
+    fn frozen_scalar_values<const N: usize>(
+        &self,
+        value: &Frozen,
+        places: [Address; N],
+        location: SourceOffset,
+    ) -> Result<[Value; N], Error> {
+        let mut values = places.map(|place| {
+            Value::Integer(super::constants::Constant::indeterminate_value(
+                place.designated,
+            ))
+        });
+        for (slot, place) in values.iter_mut().zip(places) {
+            *slot = value.read(
+                &self.graph.constant_member_spans,
+                place,
+                self.constexpr_frames.designation(place.variant()),
+                location,
+            )?;
+        }
+        Ok(values)
     }
     pub(super) fn copy_constant_object(
         &mut self,
@@ -490,6 +558,17 @@ impl Analyzer<'_> {
                     target,
                     source,
                     value,
+                    location,
+                );
+            }
+            if let Some(super::deferred_constants::Snapshot::Object(value)) =
+                self.deferred_constant_snapshot(entity)?
+            {
+                return self.constexpr_frames.copy_published(
+                    &self.graph.constant_member_spans,
+                    target,
+                    source,
+                    &value,
                     location,
                 );
             }

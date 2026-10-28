@@ -32,38 +32,38 @@ impl Initializers {
 }
 
 impl Analyzer<'_> {
-    pub(super) fn finish_class_nesting(&mut self) -> Result<(), Error> {
+    pub(super) fn finish_class_nesting(&mut self, first: usize) -> Result<(), Error> {
         let context = std::mem::take(&mut self.reserved_context);
         let result = (|| {
-            let bodies = std::mem::take(&mut self.deferred);
-            for body in &bodies {
-                if let super::analyzer::DeferredMember::Initializer(member) = *body {
+            let mut index = first;
+            while index < self.deferred.len() {
+                if let DeferredMember::ConstantValue(entity, initialization) = self.deferred[index]
+                {
+                    self.finish_deferred_constant(entity, initialization)?;
+                }
+                index += 1;
+            }
+            index = first;
+            while index < self.deferred.len() {
+                if let DeferredMember::Initializer(member) = self.deferred[index] {
                     self.finish_member_initializer(member)?;
                 }
+                index += 1;
             }
-            for body in bodies {
-                match body {
-                    super::analyzer::DeferredMember::Initializer(_) => (),
-                    super::analyzer::DeferredMember::AggregateConstant(
-                        entity,
-                        initializer,
-                        scope,
-                    ) => {
-                        self.finish_deferred_aggregate_constant(entity, initializer, scope)?;
-                    }
-                    super::analyzer::DeferredMember::Constant(entity, initializer, scope) => {
-                        self.record_member_pointer_initializer(entity, initializer, scope)?;
-                    }
-                    super::analyzer::DeferredMember::Body(body) => {
+            index = first;
+            while index < self.deferred.len() {
+                match self.deferred[index] {
+                    DeferredMember::ConstantValue(..) | DeferredMember::Initializer(_) => (),
+                    DeferredMember::Body(body) => {
                         if self.graph.entity(body.entity).scope.is_none() {
                             self.function_body(body)?;
                         }
                     }
-                    super::analyzer::DeferredMember::Defaults(defaults) => {
-                        self.type_function_defaults(defaults)?;
-                    }
+                    DeferredMember::Defaults(defaults) => self.type_function_defaults(defaults)?,
                 }
+                index += 1;
             }
+            self.deferred.truncate(first);
             Ok(())
         })();
         self.reserved_context = context;

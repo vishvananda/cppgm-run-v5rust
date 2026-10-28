@@ -192,7 +192,7 @@ impl Addresses {
         self.values
             .insert(entity, value.map_or(State::Unavailable, State::Value));
     }
-    fn remove(&mut self, entity: EntityId) {
+    pub(super) fn remove(&mut self, entity: EntityId) {
         self.values.remove(&entity);
     }
     pub(super) fn value(&self, entity: EntityId) -> Option<Address> {
@@ -1403,6 +1403,34 @@ impl Analyzer<'_> {
         self.constant_discard_work.truncate(base);
         result
     }
+    pub(super) fn evaluate_address_initializer(
+        &mut self,
+        entity: EntityId,
+        initializer: ast::Initializer,
+        scope: ScopeId,
+    ) -> Result<Address, Error> {
+        let ty = self.graph.lower_entity_type(entity)?;
+        if let TypeKind::Reference { element, .. } = self.graph.types.get(ty).kind {
+            let expr = self.single_initializer(initializer).ok_or_else(|| {
+                nonconstant(initializer.location, "a reference without an initializer")
+            })?;
+            let place = self.bind_constant_reference(expr, element, scope)?;
+            return if self.constant_binds_temporary(expr)? {
+                self.extend_constant_temporary(place, initializer.location)
+            } else {
+                Ok(place)
+            };
+        }
+        let TemporaryValue::Pointer(mut value) =
+            self.initialized_scalar_value(ty, initializer, scope)?
+        else {
+            return Err(Error::Invariant("pointer initializer holds nonpointer"));
+        };
+        if let TypeKind::Pointer(element) = self.graph.types.get(ty).kind {
+            value.designated = element;
+        }
+        Ok(value)
+    }
     pub(super) fn record_address_initializer(
         &mut self,
         entity: EntityId,
@@ -1424,6 +1452,12 @@ impl Analyzer<'_> {
         {
             return Ok(());
         }
+        self.graph.constant_addresses.begin(entity);
+        self.graph.entity_mut(entity).constant = super::constants::ConstantState::Evaluating;
+        let outcome = self.with_observed_constant_query(|analyzer| {
+            analyzer.evaluate_address_initializer(entity, initializer, scope)
+        });
+        self.graph.entity_mut(entity).constant = super::constants::ConstantState::None;
         if reference
             && self.graph.entity(entity).constexpr
             && let Some(mut expr) = self.single_initializer(initializer)
@@ -1441,33 +1475,17 @@ impl Analyzer<'_> {
                     .insert(entity);
             }
         }
-        self.graph.constant_addresses.begin(entity);
-        let result = self.with_fresh_constant_query(|analyzer| {
-            let expr = analyzer.single_initializer(initializer);
-            if reference {
-                let expr = expr.ok_or_else(|| {
-                    nonconstant(initializer.location, "a reference without an initializer")
-                })?;
-                let TypeKind::Reference { element, .. } = analyzer.graph.types.get(ty).kind else {
-                    return Err(Error::Invariant("reference initializer type"));
-                };
-                let place = analyzer.bind_constant_reference(expr, element, scope)?;
-                return if analyzer.constant_binds_temporary(expr)? {
-                    analyzer.extend_constant_temporary(place, initializer.location)
-                } else {
-                    Ok(place)
-                };
-            }
-            let TemporaryValue::Pointer(mut value) =
-                analyzer.initialized_scalar_value(ty, initializer, scope)?
-            else {
-                return Err(Error::Invariant("pointer initializer holds nonpointer"));
-            };
-            if let TypeKind::Pointer(element) = analyzer.graph.types.get(ty).kind {
-                value.designated = element;
-            }
-            Ok(value)
-        });
+        if self.defer_observed_initializer(
+            entity,
+            super::deferred_constants::Initialization {
+                initializer: Some(initializer),
+                scope,
+            },
+            &outcome,
+        ) {
+            return Ok(());
+        }
+        let result = outcome.result;
         match result {
             Ok(value) if self.address_publishable(value) => {
                 self.graph

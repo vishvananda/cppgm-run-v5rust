@@ -2032,6 +2032,7 @@ impl Analyzer<'_> {
             super::graph::Access::Public
         };
         self.class_bases(node, entity, parent)?;
+        let first_deferred = self.deferred.len();
         let first_throw = self.graph.analysis.pending_throws.len();
         let first_override = self.graph.analysis.exception_overrides.len();
         self.class_depth += 1;
@@ -2055,7 +2056,7 @@ impl Analyzer<'_> {
         }
         if self.class_depth == 0 {
             self.finish_class_exceptions(first_throw, first_override)?;
-            self.finish_class_nesting()?;
+            self.finish_class_nesting(first_deferred)?;
         }
         Ok(ty)
     }
