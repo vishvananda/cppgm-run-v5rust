@@ -17,6 +17,13 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
+pub(super) struct Parameter {
+    pub entity: Option<EntityId>,
+    pub place: Address,
+    pub by_value: bool,
+}
+
+#[derive(Clone, Copy)]
 pub(super) enum Returned {
     Value(Value),
     Place(Address),
@@ -32,6 +39,13 @@ pub(super) enum ConstantArguments<'a> {
     Values(&'a [Value]),
 }
 impl ConstantArguments<'_> {
+    fn len(self) -> usize {
+        match self {
+            Self::Written(values) => values.len(),
+            Self::Bound(values) => values.len(),
+            Self::Values(values) => values.len(),
+        }
+    }
     pub(super) fn first_place(
         self,
         analyzer: &mut Analyzer<'_>,
@@ -688,23 +702,10 @@ impl Analyzer<'_> {
             } else {
                 destination
             };
-        let mut parameters = Vec::new();
-        for (index, &value) in bound.iter().enumerate() {
-            let parameter = self.graph.types.function_parameter(ty, index)?;
-            if (self.graph.class_of(parameter).is_some()
-                || self.complex_part_type(parameter).is_some()
-                || self.vector_shape(parameter).is_some())
-                && let Returned::Place(place) = value
-            {
-                parameters.push(place);
-            }
-        }
         let region = self.constexpr_frames.region();
         let result =
-            self.run_constant_function(function, (returns, destination), bound, object, location);
-        for parameter in parameters {
-            self.constexpr_frames.end_lifetime(parameter);
-        }
+            self.run_constant_function(function, (returns, destination), &bound, object, location);
+        self.end_constant_parameters(&bound);
         self.constexpr_frames.release(region);
         if let Ok(Returned::Value(Value::Pointer(value))) = result {
             self.constexpr_frames.valid_pointer(value, location)?;
@@ -790,11 +791,22 @@ impl Analyzer<'_> {
         (arguments, postfix): (ConstantArguments<'_>, bool),
         scope: ScopeId,
         location: SourceOffset,
-    ) -> Result<Vec<Returned>, Error> {
-        let TypeKind::Function { ref parameters, .. } = self.graph.types.get(ty).kind else {
+    ) -> Result<Vec<Parameter>, Error> {
+        let TypeKind::Function {
+            ref parameters,
+            variadic,
+            ..
+        } = self.graph.types.get(ty).kind
+        else {
             return Err(Error::Invariant("parameter binding without function type"));
         };
         let count = parameters.len();
+        if arguments.len().saturating_add(usize::from(postfix)) > count && !variadic {
+            return Err(nonconstant(
+                location,
+                "a call with more arguments than parameters",
+            ));
+        }
         // Variadic extras are evaluated before the fixed parameters, as in C++.
         if let ConstantArguments::Written(arguments) = arguments {
             for &argument in arguments.iter().skip(count) {
@@ -806,20 +818,61 @@ impl Analyzer<'_> {
                 } else {
                     let target = facts.conversion.map_or(ty, |conversion| conversion.result);
                     let target = self.decayed_type(target)?;
-                    self.constant_operand_value(argument, target, scope)?;
+                    if self.complex_part_type(target).is_some() {
+                        self.constant_complex_parts(argument, target, scope)?;
+                    } else if self.vector_shape(target).is_some() {
+                        self.constant_vector_cast(argument, target, scope, location)?;
+                    } else {
+                        self.constant_operand_value(argument, target, scope)?;
+                    }
                 }
             }
         }
         let mut bound = Vec::with_capacity(count);
         for index in 0..count {
             let parameter = self.graph.types.function_parameter(ty, index)?;
+            let entity = self
+                .graph
+                .entity(function)
+                .parameter_entities
+                .get(index)
+                .copied();
+            let object = entity
+                .map(|entity| {
+                    self.graph
+                        .parameter_object(entity)
+                        .map_or_else(|| self.graph.lower_entity_type(entity), Ok)
+                })
+                .transpose()?
+                .filter(|&ty| {
+                    !matches!(
+                        self.graph.types.get(ty).kind,
+                        TypeKind::Reference { .. }
+                            | TypeKind::Array { .. }
+                            | TypeKind::Function { .. }
+                    )
+                })
+                .unwrap_or(parameter);
             if let ConstantArguments::Bound(places) = arguments
                 && let Some(&source) = places.get(index)
             {
                 let value = match self.graph.types.get(parameter).kind {
                     TypeKind::Reference { .. } => Returned::Place(source),
-                    TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Vector { .. } => {
-                        let place = self.allocate_constant_object(parameter, None, location)?;
+                    TypeKind::Class(_) => {
+                        let place = self.allocate_constant_object(object, None, location)?;
+                        self.copy_constant_object(place, source, location)?;
+                        Returned::Place(place)
+                    }
+                    TypeKind::Complex(_) => {
+                        let parts =
+                            self.bound_constant_complex_parts(source, parameter, location)?;
+                        let place = self.allocate_constant_object(object, None, location)?;
+                        self.store_complex_parts(place, parts, location)?;
+                        Returned::Place(place)
+                    }
+                    TypeKind::Vector { .. } => {
+                        let source = self.read_vector_storage(source, location)?;
+                        let place = self.allocate_constant_object(object, None, location)?;
                         self.copy_constant_object(place, source, location)?;
                         Returned::Place(place)
                     }
@@ -828,15 +881,20 @@ impl Analyzer<'_> {
                         Returned::Value(self.convert_constant_scalar(value, parameter, location)?)
                     }
                 };
-                bound.push(value);
+                bound.push(self.constant_parameter(entity, parameter, object, value, location)?);
                 continue;
             }
             if let ConstantArguments::Values(values) = arguments
                 && let Some(&value) = values.get(index)
             {
-                bound.push(Returned::Value(
-                    self.convert_constant_scalar(value, parameter, location)?,
-                ));
+                let value = self.convert_constant_scalar(value, parameter, location)?;
+                bound.push(self.constant_parameter(
+                    entity,
+                    parameter,
+                    object,
+                    Returned::Value(value),
+                    location,
+                )?);
                 continue;
             }
             let written = match arguments {
@@ -844,41 +902,98 @@ impl Analyzer<'_> {
                 ConstantArguments::Bound(_) | ConstantArguments::Values(_) => &[],
             };
             if postfix && index == written.len() {
-                bound.push(Returned::Value(self.zero_constant_scalar(parameter)?));
+                let value = self.zero_constant_scalar(parameter)?;
+                bound.push(self.constant_parameter(
+                    entity,
+                    parameter,
+                    object,
+                    Returned::Value(value),
+                    location,
+                )?);
                 continue;
             }
-            let argument = if let Some(&argument) = written.get(index) {
-                Some(argument)
-            } else {
-                self.constant_default_argument(function, index)?
-            }
-            .ok_or_else(|| nonconstant(location, "a call without an argument for a parameter"))?;
             let value =
                 self.with_source_site((index >= written.len()).then_some(location), |analyzer| {
-                    match analyzer.graph.types.get(parameter).kind {
+                    let argument = if let Some(&argument) = written.get(index) {
+                        Some(argument)
+                    } else {
+                        analyzer.constant_default_argument(function, index)?
+                    }
+                    .ok_or_else(|| {
+                        nonconstant(location, "a call without an argument for a parameter")
+                    })?;
+                    let value = match analyzer.graph.types.get(parameter).kind {
                         TypeKind::Reference { element, .. } => Ok(Returned::Place(
                             analyzer.bind_constant_reference(argument, element, scope)?,
                         )),
-                        TypeKind::Class(_) | TypeKind::Complex(_) | TypeKind::Vector { .. } => {
+                        TypeKind::Class(_) => {
                             let place =
-                                analyzer.allocate_constant_object(parameter, None, location)?;
+                                analyzer.allocate_constant_object(object, None, location)?;
                             analyzer.initialize_constant_class_from(argument, place, scope)?;
+                            Ok(Returned::Place(place))
+                        }
+                        TypeKind::Complex(_) => {
+                            let parts = analyzer.constant_complex_argument_parts(
+                                argument, parameter, scope, location,
+                            )?;
+                            let place =
+                                analyzer.allocate_constant_object(object, None, location)?;
+                            analyzer.store_complex_parts(place, parts, location)?;
+                            Ok(Returned::Place(place))
+                        }
+                        TypeKind::Vector { .. } => {
+                            let source = analyzer
+                                .constant_vector_cast(argument, parameter, scope, location)?;
+                            let place =
+                                analyzer.allocate_constant_object(object, None, location)?;
+                            analyzer.copy_constant_object(place, source, location)?;
                             Ok(Returned::Place(place))
                         }
                         _ => Ok(Returned::Value(
                             analyzer.constant_operand_value(argument, parameter, scope)?,
                         )),
-                    }
+                    }?;
+                    analyzer.constant_parameter(entity, parameter, object, value, location)
                 })?;
             bound.push(value);
         }
         Ok(bound)
     }
+    fn constant_parameter(
+        &mut self,
+        entity: Option<EntityId>,
+        parameter: TypeId,
+        object: TypeId,
+        value: Returned,
+        location: SourceOffset,
+    ) -> Result<Parameter, Error> {
+        let by_value = !matches!(
+            self.graph.types.get(parameter).kind,
+            TypeKind::Reference { .. }
+        );
+        let place = match value {
+            Returned::Place(place) => place,
+            Returned::Value(value) => {
+                self.allocate_constant_object(object, Some(value.clear_zeroed()), location)?
+            }
+            Returned::Void => return Err(Error::Invariant("void argument to constant function")),
+        };
+        Ok(Parameter {
+            entity,
+            place,
+            by_value,
+        })
+    }
+    pub(super) fn end_constant_parameters(&mut self, parameters: &[Parameter]) {
+        for parameter in parameters.iter().filter(|parameter| parameter.by_value) {
+            self.constexpr_frames.end_lifetime(parameter.place);
+        }
+    }
     fn run_constant_function(
         &mut self,
         function: EntityId,
         (returns, destination): (TypeId, Option<Address>),
-        bound: Vec<Returned>,
+        bound: &[Parameter],
         object: Option<Address>,
         location: SourceOffset,
     ) -> Result<Returned, Error> {
@@ -895,7 +1010,7 @@ impl Analyzer<'_> {
                 "a function-try-block in a constant expression",
             ));
         }
-        let mut frame = self.constant_function_frame(function, returns, bound, object, location)?;
+        let mut frame = self.constant_function_frame(function, returns, bound, object)?;
         frame.destination = destination;
         self.with_constant_frame(frame, |analyzer| {
             analyzer
@@ -917,12 +1032,11 @@ impl Analyzer<'_> {
         })
     }
     pub(super) fn constant_function_frame(
-        &mut self,
+        &self,
         function: EntityId,
         returns: TypeId,
-        bound: Vec<Returned>,
+        bound: &[Parameter],
         object: Option<Address>,
-        location: SourceOffset,
     ) -> Result<Frame, Error> {
         let scope = self
             .graph
@@ -932,34 +1046,11 @@ impl Analyzer<'_> {
         let mut frame = Frame::new(returns, scope, super::constexpr_frames::FrameRole::Ordinary);
         frame.source_function = Some(super::predefined_names::SourceFunction::Function(function));
         frame.object = object;
-        for (index, value) in bound.into_iter().enumerate() {
-            let entity = self
-                .graph
-                .entity(function)
-                .parameter_entities
-                .get(index)
-                .copied();
-            let place = match value {
-                Returned::Place(place) => place,
-                Returned::Value(value) => {
-                    let ty =
-                        entity
-                            .map(|entity| self.graph.lower_entity_type(entity))
-                            .transpose()?
-                            .unwrap_or(self.graph.types.function_parameter(
-                                self.graph.lower_entity_type(function)?,
-                                index,
-                            )?);
-                    self.allocate_constant_object(ty, Some(value), location)?
-                }
-                Returned::Void => {
-                    return Err(Error::Invariant("void argument to constant function"));
-                }
-            };
-            if let Some(entity) = entity {
-                frame.bind(entity, place);
+        for parameter in bound {
+            if let Some(entity) = parameter.entity {
+                frame.bind(entity, parameter.place);
             }
-            frame.parameters.push(place);
+            frame.parameters.push(parameter.place);
         }
         Ok(frame)
     }
@@ -983,6 +1074,48 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn failing_arguments_preserve_scalar_and_lane_parameter_work_order() {
+        let cases: &[(&[u8], usize, usize)] = &[
+            (b"int unknown();constexpr int f(int a,int b){return a+b;}const int result=f(1,unknown());", 8, 1),
+            (b"_Complex int missing();constexpr int take(_Complex int x){return __real__ x;}const int result=take(missing());", 6, 1),
+            (b"typedef int V __attribute__((vector_size(16)));V missing();constexpr int take(V x){return x[0];}const int result=take(missing());", 6, 2),
+        ];
+        for &(source, steps, evaluations) in cases {
+            let source = SourceBuffer::new(source.to_vec()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"parameter-order").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let name = cursor.intern_name(b"result").unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_semantics(true);
+            let marker = 0_u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let scope = analyzer.graph.global;
+            analyzer.declarations(declarations, scope).unwrap();
+            let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+            assert!(matches!(
+                analyzer
+                    .graph
+                    .entity(analyzer.graph.binding(binding).entity)
+                    .constant,
+                ConstantState::None
+            ));
+            assert!(!analyzer.constexpr_frames.active());
+            assert!(analyzer.constant_query.is_none());
+            #[cfg(feature = "telemetry")]
+            {
+                // The first scalar parameter already exists before a later
+                // failure; a complex/vector parameter does not precede its value.
+                assert_eq!(analyzer.graph.work.totals.constant_steps, steps);
+                assert_eq!(analyzer.graph.work.totals.constant_evaluations, evaluations);
+            }
+            #[cfg(not(feature = "telemetry"))]
+            let _ = (steps, evaluations);
+        }
+    }
 
     #[test]
     fn operators_reuse_syntax_and_release_each_invocation_region() {

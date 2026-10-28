@@ -66,7 +66,7 @@ impl Analyzer<'_> {
                 "a vector reinterpretation outside constant evaluation",
             ));
         }
-        let place = self.allocate_constant_object(to, None, location)?;
+        let place = self.allocate_constant_value_storage(to, location)?;
         for (index, bytes) in bytes[..size].chunks_exact(stride).enumerate() {
             let Some(value) = self.vector_bytes_scalar(bytes, lane)? else {
                 return Err(nonconstant(

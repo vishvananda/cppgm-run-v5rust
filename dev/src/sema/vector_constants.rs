@@ -400,7 +400,7 @@ impl Analyzer<'_> {
         self.constant_zero_object(place, location)?;
         Ok(place)
     }
-    fn read_vector_storage(
+    pub(super) fn read_vector_storage(
         &mut self,
         place: Address,
         location: SourceOffset,

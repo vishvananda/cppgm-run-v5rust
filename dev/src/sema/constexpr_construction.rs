@@ -822,11 +822,7 @@ impl Analyzer<'_> {
                     Some(super::special_members::SpecialDefinition::Defaulted { .. })
                 )
             });
-        if self.constexpr_frames.depth() >= 512 {
-            return Err(nonconstant(location, "constexpr calls nested too deeply"));
-        }
-        let region;
-        let mut frame = if let Some(function) = function {
+        if let Some(function) = function {
             let entity = self.graph.entity(function);
             if !entity.constexpr
                 && self.graph.inherited_constructors.source(function).is_none()
@@ -840,72 +836,70 @@ impl Analyzer<'_> {
                     "a call of a function that is not constexpr",
                 ));
             }
-            if self.graph.inherited_constructors.source(function).is_none()
-                && !self.constant_function_definition(function)?
-            {
-                return Err(nonconstant(
-                    location,
-                    "a constexpr function called before its definition",
-                ));
-            }
-            self.check_constant_constructor_object(target, class, location)?;
-            let ty = self.graph.lower_entity_type(function)?;
-            let parameters =
-                self.bind_constant_inputs(function, ty, (values, false), scope, location)?;
-            // Argument temporaries belong to the caller; parameter objects end
-            // with the constructor, before a later member call on its result.
-            region = self.constexpr_frames.region();
-            self.constant_function_frame(function, returns, parameters, Some(target), location)?
-        } else {
-            self.check_constant_constructor_object(target, class, location)?;
-            region = self.constexpr_frames.region();
-            let mut frame = Frame::new(
-                returns,
-                self.graph
-                    .entity(class)
-                    .scope
-                    .ok_or(Error::Invariant("constant class without scope"))?,
-                super::constexpr_frames::FrameRole::Constructor,
-            );
-            frame.object = Some(target);
-            frame.source_function =
-                Some(super::predefined_names::SourceFunction::ImplicitConstructor(class));
-            frame
-        };
-        frame.role = super::constexpr_frames::FrameRole::Constructor;
-        let parameters = frame.parameters.clone();
-        let result = self.with_constant_frame(frame, |analyzer| {
-            analyzer.constant_constructor_subobjects(target, id, location)?;
-            if let Some(function) = function
-                && let Some(body) = analyzer.graph.lower_function_body(function)
-            {
-                let ast::Body::Parsed(body) = *analyzer.tree.bodies.get(body) else {
-                    return Err(Error::Invariant("unparsed constexpr constructor"));
-                };
-                if body.handlers.is_some() {
-                    return Err(nonconstant(
-                        location,
-                        "a function-try-block in a constant expression",
-                    ));
-                }
-                analyzer.constant_compound(body.compound)?;
-            }
-            Ok(())
-        });
-        if let Some(function) = function {
-            let ty = self.graph.lower_entity_type(function)?;
-            for (index, parameter) in parameters.into_iter().enumerate() {
-                if !matches!(
-                    self.graph
-                        .types
-                        .get(self.graph.types.function_parameter(ty, index)?)
-                        .kind,
-                    TypeKind::Reference { .. }
-                ) {
-                    self.constexpr_frames.end_lifetime(parameter);
-                }
-            }
         }
+        if self.constexpr_frames.depth() >= 512 {
+            return Err(nonconstant(location, "constexpr calls nested too deeply"));
+        }
+        if let Some(function) = function
+            && self.graph.inherited_constructors.source(function).is_none()
+            && !self.constant_function_definition(function)?
+        {
+            return Err(nonconstant(
+                location,
+                "a constexpr function called before its definition",
+            ));
+        }
+        self.check_constant_constructor_object(target, class, location)?;
+        let parameters = if let Some(function) = function {
+            let ty = self.graph.lower_entity_type(function)?;
+            self.bind_constant_inputs(function, ty, (values, false), scope, location)?
+        } else {
+            Vec::new()
+        };
+        // Argument temporaries and bound parameter storage stay in the caller;
+        // only the callee's later allocations belong to this region.
+        let region = self.constexpr_frames.region();
+        let frame = if let Some(function) = function {
+            self.constant_function_frame(function, returns, &parameters, Some(target))
+        } else {
+            self.graph
+                .entity(class)
+                .scope
+                .ok_or(Error::Invariant("constant class without scope"))
+                .map(|scope| {
+                    let mut frame = Frame::new(
+                        returns,
+                        scope,
+                        super::constexpr_frames::FrameRole::Constructor,
+                    );
+                    frame.object = Some(target);
+                    frame.source_function =
+                        Some(super::predefined_names::SourceFunction::ImplicitConstructor(class));
+                    frame
+                })
+        };
+        let result = frame.and_then(|mut frame| {
+            frame.role = super::constexpr_frames::FrameRole::Constructor;
+            self.with_constant_frame(frame, |analyzer| {
+                analyzer.constant_constructor_subobjects(target, id, location)?;
+                if let Some(function) = function
+                    && let Some(body) = analyzer.graph.lower_function_body(function)
+                {
+                    let ast::Body::Parsed(body) = *analyzer.tree.bodies.get(body) else {
+                        return Err(Error::Invariant("unparsed constexpr constructor"));
+                    };
+                    if body.handlers.is_some() {
+                        return Err(nonconstant(
+                            location,
+                            "a function-try-block in a constant expression",
+                        ));
+                    }
+                    analyzer.constant_compound(body.compound)?;
+                }
+                Ok(())
+            })
+        });
+        self.end_constant_parameters(&parameters);
         self.constexpr_frames.release(region);
         result
     }
@@ -1130,6 +1124,78 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn failed_constructor_body_ends_parameters_and_keeps_the_callers_object() {
+        use crate::sema::{constant_addresses::TemporaryValue, constexpr_calls::ConstantArguments};
+        let source = SourceBuffer::new(b"void unknown();struct C{const int* saved;constexpr C(int p):saved(&p){if(p)unknown();}};C value(1);".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-failure").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"value").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+        let entity = analyzer.graph.binding(binding).entity;
+        let ty = analyzer.graph.lower_entity_type(entity).unwrap();
+        let constructor = analyzer.graph.lower_construction(entity).unwrap();
+        let class = analyzer.graph.class_of(ty).unwrap();
+        let member = analyzer.graph.entity(class).members[0];
+        let declaration = *analyzer.tree.decl_lists.get(declarations).last().unwrap();
+        let ast::DeclKind::Simple { declarators, .. } =
+            analyzer.tree.declarations.get(declaration).kind
+        else {
+            panic!("object declaration");
+        };
+        let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let ast::InitializerKind::Parenthesized(arguments) = initializer.kind else {
+            panic!("constructor arguments");
+        };
+        let argument = analyzer.tree.expr_lists.get(arguments)[0];
+        analyzer
+            .with_fresh_constant_query(|analyzer| {
+                let target = analyzer.allocate_constant_storage(ty, None, initializer.location)?;
+                let result = analyzer.run_constant_constructor_inputs(
+                    target,
+                    constructor,
+                    ConstantArguments::Written(&[argument]),
+                    scope,
+                    initializer.location,
+                );
+                assert!(matches!(
+                    result,
+                    Err(crate::sema::Error::NonConstant { .. })
+                ));
+                assert!(!analyzer.constexpr_frames.active());
+                analyzer
+                    .constexpr_frames
+                    .valid_pointer(target, initializer.location)?;
+                let place = analyzer.constant_member_slot(target, member, initializer.location)?;
+                let TemporaryValue::Pointer(parameter) = analyzer.constexpr_frames.read(
+                    &analyzer.graph.constant_member_spans,
+                    place,
+                    initializer.location,
+                )?
+                else {
+                    panic!("saved parameter pointer");
+                };
+                assert!(
+                    analyzer
+                        .constexpr_frames
+                        .valid_pointer(parameter, initializer.location)
+                        .is_err()
+                );
+                Ok(())
+            })
+            .unwrap();
+    }
 
     #[test]
     fn inherited_parameters_and_selected_member_copies_keep_local_ownership() {

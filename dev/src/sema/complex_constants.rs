@@ -141,6 +141,27 @@ impl Analyzer<'_> {
             self.constant_arithmetic_value(second, location)?,
         ])
     }
+    pub(super) fn bound_constant_complex_parts(
+        &mut self,
+        place: Address,
+        target: TypeId,
+        location: SourceOffset,
+    ) -> Result<[Value; 2], Error> {
+        let from = self
+            .complex_part_type(place.designated)
+            .ok_or(Error::Invariant("complex parameter source part"))?;
+        let parts = self.stored_complex_parts(place, from, location)?;
+        let part = self
+            .complex_part_type(target)
+            .ok_or(Error::Invariant("complex parameter target part"))?;
+        if from == part {
+            return Ok(parts);
+        }
+        Ok([
+            self.convert_constant_scalar(parts[0], part, location)?,
+            self.convert_constant_scalar(parts[1], part, location)?,
+        ])
+    }
     pub(super) fn store_complex_parts(
         &mut self,
         target: Address,
@@ -196,6 +217,16 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<[Value; 2], Error> {
         let value = self.constant_complex_value(id, target, scope)?;
+        self.complex_value_parts(value, self.tree.expressions.get(id).location)
+    }
+    pub(super) fn constant_complex_argument_parts(
+        &mut self,
+        id: ast::ExprId,
+        target: TypeId,
+        scope: ScopeId,
+        location: SourceOffset,
+    ) -> Result<[Value; 2], Error> {
+        let value = self.constant_complex_value_at(id, target, scope, location)?;
         self.complex_value_parts(value, self.tree.expressions.get(id).location)
     }
     fn constant_complex_value(
