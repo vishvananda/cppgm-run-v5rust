@@ -169,6 +169,7 @@ mod static_arrays;
 mod static_construction;
 mod static_initialization;
 mod static_objects;
+mod substitution_state;
 mod symbol_attributes;
 mod symbolic_members;
 mod template_bodies;

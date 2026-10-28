@@ -87,6 +87,7 @@ pub(super) struct Substitution<'a> {
     pub(super) selection: Option<&'a PackSelection<'a>>,
     pub(super) failure: Option<&'static str>,
     pub(super) failure_location: SourceOffset,
+    ambient: Option<super::substitution_state::State>,
 }
 impl<'a> Substitution<'a> {
     pub(super) fn new(depth: u32, arguments: &'a [Option<TypeId>]) -> Self {
@@ -98,16 +99,27 @@ impl<'a> Substitution<'a> {
             selection: None,
             failure: None,
             failure_location: SourceOffset(0),
+            ambient: None,
         }
     }
     pub(super) fn reject<T>(&mut self, message: &'static str) -> Option<T> {
         self.reject_at(SourceOffset(0), message)
+    }
+    pub(super) fn attach_ambient(&mut self, state: super::substitution_state::State) {
+        self.ambient = Some(state);
     }
     pub(super) fn reject_at<T>(
         &mut self,
         location: SourceOffset,
         message: &'static str,
     ) -> Option<T> {
+        if let Some(ambient) = &self.ambient {
+            ambient.reject(super::substitution_state::Failure {
+                location,
+                message,
+                transient: false,
+            });
+        }
         if self.failure.is_none() {
             self.failure = Some(message);
             self.failure_location = location;
@@ -425,6 +437,7 @@ impl Analyzer<'_> {
         environment: &mut Substitution<'_>,
     ) -> Result<Option<TypeId>, Error> {
         self.check_stack()?;
+        environment.attach_ambient(self.graph.analysis.substitution.clone());
         if let Some(&result) = environment.memo.get(&ty) {
             return Ok(result);
         }
@@ -1394,29 +1407,28 @@ impl Analyzer<'_> {
         // parameter in lexical order, before any argument deduction. Defaults
         // do not remove unwritten parameters from this phase.
         let parameters = if self.graph.function_templates.requires_target(binding) {
-            let mut environment = Substitution::new(depth, &arguments);
-            environment.context = Some(self.graph.binding(binding).entity);
-            let substituted = (|| {
-                if !self
-                    .graph
-                    .function_templates
-                    .trailing_result(self.graph.binding(binding).entity)
-                    && self
-                        .substitute_signature_type(result, &mut environment)?
-                        .is_none()
-                {
-                    return Ok(None);
-                }
-                self.substitute_pack_list(&parameters, &mut environment)
-            })();
-            let failed = environment.failure.is_some();
-            self.graph.work.totals.substitution_failures += usize::from(failed);
-            let Some(parameters) = substituted? else {
+            let owner = self.graph.binding(binding).entity;
+            let substituted = self.with_substitution_soft(Some(owner), |analyzer| {
+                let mut environment = Substitution::new(depth, &arguments);
+                environment.context = Some(owner);
+                let substituted = (|| {
+                    if !analyzer.graph.function_templates.trailing_result(owner)
+                        && analyzer
+                            .substitute_signature_type(result, &mut environment)?
+                            .is_none()
+                    {
+                        return Ok(None);
+                    }
+                    analyzer.substitute_pack_list(&parameters, &mut environment)
+                })();
+                let failed = environment.failure.is_some();
+                analyzer.graph.work.totals.substitution_failures += usize::from(failed);
+                let substituted = substituted?;
+                Ok(if failed { None } else { substituted })
+            })?;
+            let Some(parameters) = substituted else {
                 return Ok(None);
             };
-            if failed {
-                return Ok(None);
-            }
             parameters
         } else {
             parameters

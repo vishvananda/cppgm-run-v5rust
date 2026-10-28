@@ -99,21 +99,19 @@ impl Analyzer<'_> {
         let parameters = if explicit {
             // C++ SoftSubstitution covers the leading result and the entire
             // parameter list, including expansion length checks.
-            let substituted = (|| {
+            let owner = self.graph.binding(binding).entity;
+            let substituted = self.with_substitution_soft(Some(owner), |analyzer| {
                 let mut environment = Substitution::new(depth, &arguments);
-                environment.context = Some(self.graph.binding(binding).entity);
-                if !self
-                    .graph
-                    .function_templates
-                    .trailing_result(self.graph.binding(binding).entity)
-                    && self
+                environment.context = Some(owner);
+                if !analyzer.graph.function_templates.trailing_result(owner)
+                    && analyzer
                         .substitute_signature_type(result, &mut environment)?
                         .is_none()
                 {
                     return Ok(None);
                 }
-                self.substitute_pack_list(&parameters, &mut environment)
-            })();
+                analyzer.substitute_pack_list(&parameters, &mut environment)
+            });
             match substituted {
                 Ok(Some(parameters)) => parameters,
                 Ok(None) | Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {

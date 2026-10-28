@@ -14,6 +14,7 @@ impl Analyzer<'_> {
         patterns: &[TypeId],
         environment: &mut Substitution<'_>,
     ) -> Result<Option<Vec<TypeId>>, Error> {
+        environment.attach_ambient(self.graph.analysis.substitution.clone());
         if patterns
             .iter()
             .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))

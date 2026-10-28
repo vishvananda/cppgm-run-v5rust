@@ -164,7 +164,7 @@ impl Analyzer<'_> {
         saved.swap(self);
         self.instantiation_depth = formation_depth + 1;
         let saved_limit = std::mem::replace(&mut self.graph.lookup_limit, limit);
-        let result = action(self);
+        let result = self.with_substitution_instantiation(false, action);
         self.graph.lookup_limit = saved_limit;
         saved.swap(self);
         result
