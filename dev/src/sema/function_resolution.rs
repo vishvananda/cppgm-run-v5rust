@@ -343,6 +343,7 @@ impl Analyzer<'_> {
             }
         }
         if found.is_none() && template {
+            let count = self.graph.types.function_parameter_count(target)?;
             let mut candidates = Vec::new();
             for index in 0..self.graph.overloads.get(set).len() {
                 let binding = self.graph.overloads.get(set)[index];
@@ -360,7 +361,7 @@ impl Analyzer<'_> {
             }
             for &binding in &candidates {
                 if let Some(old) = found {
-                    if self.more_specialized_function_target(binding, old)? {
+                    if self.more_specialized_function_target(binding, old, count)? {
                         found = Some(binding);
                     }
                 } else {
@@ -369,7 +370,9 @@ impl Analyzer<'_> {
             }
             if let Some(best) = found {
                 for binding in candidates {
-                    if binding != best && !self.more_specialized_function_target(best, binding)? {
+                    if binding != best
+                        && !self.more_specialized_function_target(best, binding, count)?
+                    {
                         return Ok(None);
                     }
                 }
@@ -381,6 +384,7 @@ impl Analyzer<'_> {
         &mut self,
         first: super::graph::BindingId,
         second: super::graph::BindingId,
+        count: usize,
     ) -> Result<bool, Error> {
         let first = self
             .graph
@@ -394,14 +398,15 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("target specialization without primary"))?;
         // Address selection asks the reverse direction only after a successful
         // forward query. Ordinary call ordering retains its two-query policy.
-        Ok(
-            self.template_at_least_as_specialized(first, second, TemplateOrdering::FunctionType)?
-                && !self.template_at_least_as_specialized(
-                    second,
-                    first,
-                    TemplateOrdering::FunctionType,
-                )?,
-        )
+        Ok(self.template_at_least_as_specialized(
+            first,
+            second,
+            TemplateOrdering::FunctionType(count),
+        )? && !self.template_at_least_as_specialized(
+            second,
+            first,
+            TemplateOrdering::FunctionType(count),
+        )?)
     }
     pub(super) fn select_function_designation(
         &mut self,

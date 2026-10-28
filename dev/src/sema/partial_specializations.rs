@@ -206,27 +206,23 @@ impl Analyzer<'_> {
                 .entity(candidate)
                 .template_head
                 .ok_or(Error::Invariant("partial without head"))?;
-            let substituted;
-            let deduction_pattern = if let Some(enclosing) = enclosing {
-                substituted = self.enclosing_class_arguments(&pattern, enclosing)?;
-                &substituted
-            } else {
-                &pattern
-            };
-            // Frozen class partials check access as their primary template;
-            // variable partial matching has no such access context.
+            // Only class candidates install their primary as the raw owner.
+            // This includes enclosing-frame substitution before deduction.
             let context = self
                 .graph
                 .class_templates
                 .partials
                 .primary(candidate)
                 .map(|_| primary);
-            if context.is_some() {
+            let deduced = if let Some(owner) = context {
                 self.graph.work.totals.partial_candidates += 1;
-            }
-            let Some(deduced) =
-                self.deduce_partial_arguments(head, deduction_pattern, arguments, context)?
-            else {
+                self.with_substitution_owner(Some(owner), |analyzer| {
+                    analyzer.deduce_enclosing_partial(head, &pattern, arguments, context, enclosing)
+                })?
+            } else {
+                self.deduce_enclosing_partial(head, &pattern, arguments, context, enclosing)?
+            };
+            let Some(deduced) = deduced else {
                 continue;
             };
             if let Some((_, previous)) = best {
@@ -262,6 +258,24 @@ impl Analyzer<'_> {
         }
         Ok((winner.1, deduced))
     }
+    fn deduce_enclosing_partial(
+        &mut self,
+        head: HeadId,
+        pattern: &[TypeId],
+        arguments: &[TypeId],
+        context: Option<EntityId>,
+        enclosing: Option<EntityId>,
+    ) -> Result<Option<Vec<TypeId>>, Error> {
+        let substituted;
+        let pattern = if let Some(enclosing) = enclosing {
+            substituted = self.enclosing_class_arguments(pattern, enclosing)?;
+            &substituted
+        } else {
+            pattern
+        };
+        self.deduce_partial_arguments(head, pattern, arguments, context)
+    }
+
     pub(super) fn deduce_partial_arguments(
         &mut self,
         head: HeadId,
@@ -300,21 +314,37 @@ impl Analyzer<'_> {
         let mut substitution = self.substitution(depth, &given);
         substitution.context = context;
         for (&pattern, &actual) in pattern.iter().zip(actual) {
-            let result = self.substitute_signature_type(pattern, &mut substitution);
-            let substituted = match result {
-                Ok(Some(ty)) => self.graph.types.canonical_function(ty)?,
-                Ok(None) => {
-                    self.graph.work.totals.substitution_failures +=
-                        usize::from(substitution.failure.is_some());
-                    return Ok(None);
-                }
-                Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
-                    self.graph.work.totals.substitution_failures += 1;
-                    return Ok(None);
-                }
-                Err(error) => return Err(error),
-            };
-            if substituted != self.graph.types.canonical_function(actual)? {
+            let owner = self.graph.analysis.substitution.current().owner;
+            let matched = self.with_substitution_soft(owner, |analyzer| {
+                let result = analyzer.substitute_signature_type(pattern, &mut substitution);
+                let substituted = match result {
+                    Ok(Some(_))
+                        if analyzer
+                            .graph
+                            .analysis
+                            .substitution
+                            .current()
+                            .failure
+                            .is_some() =>
+                    {
+                        analyzer.graph.work.totals.substitution_failures += 1;
+                        return Ok(false);
+                    }
+                    Ok(Some(ty)) => analyzer.graph.types.canonical_function(ty)?,
+                    Ok(None) => {
+                        analyzer.graph.work.totals.substitution_failures +=
+                            usize::from(substitution.failure.is_some());
+                        return Ok(false);
+                    }
+                    Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                        analyzer.graph.work.totals.substitution_failures += 1;
+                        return Ok(false);
+                    }
+                    Err(error) => return Err(error),
+                };
+                Ok(substituted == analyzer.graph.types.canonical_function(actual)?)
+            })?;
+            if !matched {
                 return Ok(None);
             }
         }

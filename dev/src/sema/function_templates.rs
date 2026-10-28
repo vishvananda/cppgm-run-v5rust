@@ -25,7 +25,7 @@ struct SpecializationKey {
 
 #[derive(Clone, Copy)]
 pub(super) enum TemplateOrdering {
-    FunctionType,
+    FunctionType(usize),
     Call(usize),
     Operator(usize),
 }
@@ -752,6 +752,22 @@ impl Analyzer<'_> {
         let Some(head) = self.function_template_head(primary)? else {
             return Ok(Some(primary));
         };
+        if check_access {
+            let owner = self.graph.binding(primary).entity;
+            self.with_substitution_soft(Some(owner), |analyzer| {
+                analyzer.complete_signature_with_head(primary, head, arguments, check_access)
+            })
+        } else {
+            self.complete_signature_with_head(primary, head, arguments, check_access)
+        }
+    }
+    fn complete_signature_with_head(
+        &mut self,
+        primary: BindingId,
+        head: HeadId,
+        arguments: &mut [Option<TypeId>],
+        check_access: bool,
+    ) -> Result<Option<BindingId>, Error> {
         let depth = self.graph.templates.depth(head);
         let mut earlier = Vec::with_capacity(arguments.len());
         for (index, slot) in arguments.iter_mut().enumerate() {
@@ -777,6 +793,7 @@ impl Analyzer<'_> {
                         &earlier,
                         super::class_templates::DefaultUse::Signature,
                         None,
+                        super::template_context::InstantiationMode::Substitution,
                     );
                     let ty = match result {
                         Ok(ty) => ty,
@@ -786,6 +803,10 @@ impl Analyzer<'_> {
                         }
                         Err(error) => return Err(error),
                     };
+                    if self.graph.analysis.substitution.current().failure.is_some() {
+                        self.graph.work.totals.substitution_failures += usize::from(check_access);
+                        return Ok(None);
+                    }
                     let ty = self.graph.types.canonical_function(ty)?;
                     self.graph.function_templates.defaults.insert(key, ty);
                     ty
@@ -843,6 +864,10 @@ impl Analyzer<'_> {
             .remove(&active);
         let key = active.0;
         let ty = match result {
+            Ok(Some(_)) if self.graph.analysis.substitution.current().failure.is_some() => {
+                self.graph.work.totals.substitution_failures += usize::from(check_access);
+                None
+            }
             Ok(Some(ty)) => Some(ty),
             Ok(None) => {
                 self.graph.work.totals.substitution_failures +=
@@ -1411,7 +1436,14 @@ impl Analyzer<'_> {
                     }
                     analyzer.substitute_pack_list(&parameters, &mut environment)
                 })();
-                let failed = environment.failure.is_some();
+                let failed = environment.failure.is_some()
+                    || analyzer
+                        .graph
+                        .analysis
+                        .substitution
+                        .current()
+                        .failure
+                        .is_some();
                 analyzer.graph.work.totals.substitution_failures += usize::from(failed);
                 let substituted = substituted?;
                 Ok(if failed { None } else { substituted })
@@ -1665,12 +1697,32 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
             arguments = initial();
-            let mut environment = self.substitution(depth, &arguments);
-            let Some(pattern) = self.substitute_signature_type(source, &mut environment)? else {
-                return Ok(None);
-            };
-            let pattern = self.target_deduction_pattern(pattern, declared, depth)?;
-            if !self.deduce_signature_type(pattern, declared, depth, &mut arguments, false)? {
+            let state = self.graph.analysis.substitution.clone();
+            let owner = state.current().owner;
+            let retried = self.with_substitution_soft(None, |analyzer| {
+                let mut environment = analyzer.substitution(depth, &arguments);
+                let substituted = analyzer.substitute_signature_type(source, &mut environment);
+                // The retry deduces with the saved owner, but within the SAME
+                // soft/failure lifetime as its ownerless source substitution.
+                state.replace(super::substitution_state::Ambient {
+                    owner,
+                    ..state.current()
+                });
+                let result = (|| {
+                    let Some(pattern) = substituted? else {
+                        return Ok(false);
+                    };
+                    if state.current().failure.is_some() {
+                        return Ok(false);
+                    }
+                    let pattern = analyzer.target_deduction_pattern(pattern, declared, depth)?;
+                    analyzer.deduce_signature_type(pattern, declared, depth, &mut arguments, false)
+                })();
+                analyzer.graph.work.totals.substitution_failures +=
+                    usize::from(state.current().failure.is_some());
+                result
+            })?;
+            if !retried {
                 return Ok(None);
             }
         }
@@ -1858,7 +1910,7 @@ impl Analyzer<'_> {
         let depth = self.graph.templates.depth(to_head);
         let mut arguments = vec![None; self.graph.templates.parameters(to_head).len()];
         match form {
-            TemplateOrdering::FunctionType => {
+            TemplateOrdering::FunctionType(_target_count) => {
                 self.order_function_types(from, to, depth, &mut arguments, &mut environment)
             }
             TemplateOrdering::Call(count) | TemplateOrdering::Operator(count) => {
@@ -2578,7 +2630,7 @@ mod tests {
         };
         assert!(analyzer.graph.entity(shell).scope.is_none());
         for _ in 0..3 {
-            for form in [TemplateOrdering::Call(2), TemplateOrdering::FunctionType] {
+            for form in [TemplateOrdering::Call(2), TemplateOrdering::FunctionType(2)] {
                 assert!(
                     !analyzer
                         .template_at_least_as_specialized(f[0], f[1], form)

@@ -102,14 +102,28 @@ impl Analyzer<'_> {
             let substituted = self.with_substitution_soft(Some(owner), |analyzer| {
                 let mut environment = analyzer.substitution(depth, &arguments);
                 environment.context = Some(owner);
-                if !analyzer.graph.function_templates.trailing_result(owner)
-                    && analyzer
-                        .substitute_signature_type(result, &mut environment)?
-                        .is_none()
-                {
-                    return Ok(None);
-                }
-                analyzer.substitute_pack_list(&parameters, &mut environment)
+                let substituted = (|| {
+                    if !analyzer.graph.function_templates.trailing_result(owner)
+                        && analyzer
+                            .substitute_signature_type(result, &mut environment)?
+                            .is_none()
+                    {
+                        return Ok(None);
+                    }
+                    analyzer.substitute_pack_list(&parameters, &mut environment)
+                })();
+                let failed = analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_some();
+                // The ordinary soft scope charges its OWN live failure once,
+                // including error exits, before its saved outer state returns.
+                analyzer.graph.work.totals.substitution_failures += usize::from(failed);
+                let substituted = substituted?;
+                Ok(if failed { None } else { substituted })
             });
             match substituted {
                 Ok(Some(parameters)) => parameters,
@@ -304,6 +318,29 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn an_explicit_pack_rejection_charges_its_own_soft_scope_once() {
+        let source = SourceBuffer::new(
+            b"template<class...T>int f(T*...);template<class...T>int f(int);int main(){return f<int&>(0);}".to_vec(),
+        ).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"pack-failure-charge").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let graph = super::super::analyze_unit(
+            tree,
+            cursor,
+            declarations,
+            StackBudget::default(),
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(graph.work.totals.substitution_failures, 1);
+        assert_eq!(graph.function_templates.arguments.len(), 1);
+        assert!(graph.analysis.substitution.current().failure.is_none());
+    }
+
     #[test]
     fn identity_nontemplate_match_does_not_form_a_template_signature() {
         let source = SourceBuffer::new(b"template<class T>struct Trap{static_assert(sizeof(T)==0,\"unused\");using type=int;};int f(int n){return n;}template<class T>typename Trap<T>::type f(T);int main(){return f(1);}".to_vec()).unwrap();

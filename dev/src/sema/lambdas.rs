@@ -510,16 +510,18 @@ impl Analyzer<'_> {
         if head.is_some() {
             self.capture_scan = Some(call);
         }
-        let analyzed = self.function_body(DeferredBody {
-            entity: call,
-            name: None,
-            ty,
-            parameters,
-            body,
-            parent,
-            print: class_scope,
-            template_depth: usize::from(head.is_some()),
-            definition_head: head,
+        let analyzed = self.without_soft_substitution(|analyzer| {
+            analyzer.function_body(DeferredBody {
+                entity: call,
+                name: None,
+                ty,
+                parameters,
+                body,
+                parent,
+                print: class_scope,
+                template_depth: usize::from(head.is_some()),
+                definition_head: head,
+            })
         });
         self.capture_scan = saved_scan;
         self.unevaluated = saved_unevaluated;

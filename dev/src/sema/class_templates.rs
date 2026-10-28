@@ -6,6 +6,7 @@ use super::{
     analyzer::Analyzer,
     function_templates::Substitution,
     graph::{Binding, BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
+    template_context::InstantiationMode,
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
 };
@@ -306,6 +307,7 @@ impl Analyzer<'_> {
                     arguments,
                     DefaultUse::Required,
                     named_in,
+                    self.default_instantiation_mode(),
                 )?;
                 let ty = self.graph.types.canonical_function(ty)?;
                 self.graph.class_templates.argument_defaults.insert(key, ty);
@@ -324,15 +326,46 @@ impl Analyzer<'_> {
         arguments: &[TypeId],
         usage: DefaultUse,
         named_in: Option<ScopeId>,
+        mode: InstantiationMode,
     ) -> Result<TypeId, Error> {
         self.check_stack()?;
-        if let Some(bound) = default.bound {
-            return Ok(bound);
-        }
         let depth = self.graph.templates.depth(head);
         let template = self
             .template_argument_parameter(head, arguments.len())
             .map(|info| info.inner.is_some());
+        if template == Some(true) {
+            let frame = self.class_default_frame(default, depth, arguments, named_in)?;
+            let name = self.plain_template_name(ast::TemplateArgument {
+                kind: default.syntax,
+                pack: false,
+            });
+            let result = if let Some((name, _)) = name {
+                self.instantiation_context_in(
+                    self.instantiation_depth,
+                    self.tree.names.get(name).location,
+                    default.limit,
+                    mode,
+                    |analyzer| analyzer.template_name_argument(name, frame, true),
+                )
+            } else {
+                Ok(None)
+            };
+            let result = result.and_then(|result| {
+                result.ok_or_else(|| {
+                    Error::at(
+                        self.default_location(default),
+                        "a template template-parameter's default names no template",
+                    )
+                })
+            });
+            return match usage {
+                DefaultUse::Required => result.map_err(Error::required_instantiation),
+                DefaultUse::Signature => result,
+            };
+        }
+        if let Some(bound) = default.bound {
+            return Ok(bound);
+        }
         let target = self
             .argument_target(head, arguments.len(), arguments)?
             .known();
@@ -373,6 +406,61 @@ impl Analyzer<'_> {
                     )
                 });
         }
+        let frame = self.class_default_frame(default, depth, arguments, named_in)?;
+        if named_in.is_some() && self.template_depth != 0 {
+            // Preserve fact ownership without expanding packs in this dependent
+            // frame: the reference analyzes its retained syntax directly.
+            let copy = self.copy_template_pattern(default.syntax)?;
+            return self.template_argument_at(
+                copy,
+                frame,
+                self.default_location(default),
+                target,
+                template,
+                false,
+            );
+        }
+        let result = self.instantiation_context_in(
+            self.instantiation_depth,
+            self.default_location(default),
+            default.limit,
+            mode,
+            |analyzer| {
+                let copy = analyzer.copy_template_argument(default.syntax, frame)?;
+                if let Some(failure) = analyzer.graph.analysis.substitution.current().failure {
+                    return Err(Error::at(failure.location, failure.message));
+                }
+                analyzer.template_argument_at(
+                    copy,
+                    frame,
+                    analyzer.default_location(default),
+                    target,
+                    template,
+                    false,
+                )
+            },
+        );
+        match usage {
+            DefaultUse::Required => result.map_err(Error::required_instantiation),
+            DefaultUse::Signature => result,
+        }
+    }
+
+    fn default_instantiation_mode(&self) -> InstantiationMode {
+        if self.graph.analysis.substitution.current().soft == 0 {
+            InstantiationMode::Required
+        } else {
+            InstantiationMode::Substitution
+        }
+    }
+
+    fn class_default_frame(
+        &mut self,
+        default: super::templates::DefaultArgument,
+        depth: u32,
+        arguments: &[TypeId],
+        named_in: Option<ScopeId>,
+    ) -> Result<ScopeId, Error> {
         let parent = named_in
             .or(self.graph.scope(default.scope).parent)
             .ok_or(Error::Invariant("class default without parent"))?;
@@ -394,36 +482,7 @@ impl Analyzer<'_> {
                 self.bind_template_argument(frame, binding, ty)?;
             }
         }
-        let copy = self.copy_template_argument(default.syntax, frame)?;
-        if named_in.is_some() && self.template_depth != 0 && template != Some(true) {
-            return self.template_argument_at(
-                copy,
-                frame,
-                self.default_location(default),
-                target,
-                template,
-                false,
-            );
-        }
-        let result = self.instantiation_context(
-            self.instantiation_depth,
-            self.default_location(default),
-            default.limit,
-            |analyzer| {
-                analyzer.template_argument_at(
-                    copy,
-                    frame,
-                    analyzer.default_location(default),
-                    target,
-                    template,
-                    false,
-                )
-            },
-        );
-        match usage {
-            DefaultUse::Required => result.map_err(Error::required_instantiation),
-            DefaultUse::Signature => result,
-        }
+        Ok(frame)
     }
 
     pub(super) fn substitute_class_template_defaults(
@@ -471,6 +530,7 @@ impl Analyzer<'_> {
                     &arguments,
                     DefaultUse::Signature,
                     None,
+                    self.default_instantiation_mode(),
                 );
                 let ty = match result {
                     Ok(ty) => ty,
@@ -1028,7 +1088,14 @@ mod tests {
         analyzer.initializing = Some(entity);
         analyzer.declaration_access.function = Some(entity);
         assert!(matches!(
-            analyzer.class_default_type_in(default, head, &[reference], DefaultUse::Required, None),
+            analyzer.class_default_type_in(
+                default,
+                head,
+                &[reference],
+                DefaultUse::Required,
+                None,
+                InstantiationMode::Required
+            ),
             Err(Error::InstantiationDiagnostic { .. })
         ));
         assert_eq!(analyzer.template_depth, 4);

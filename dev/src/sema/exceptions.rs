@@ -1008,13 +1008,13 @@ impl Analyzer<'_> {
         let deferring = std::mem::replace(&mut self.type_queries.deferring, 0);
         let evaluating = std::mem::replace(&mut self.evaluating_noexcept, true);
         let lookup = self.lookup_location;
-        let result = (|| {
-            self.body_context = Some(self.exception_body(owner, true)?);
-            self.exception_operand_type(operand, scope)?;
-            self.check_resolved_function(operand)?;
-            self.convert_bool(operand)?;
-            self.with_semantics(|analyzer| analyzer.converted_constant_bool(operand, scope))
-        })();
+        let result = self.without_soft_substitution(|analyzer| {
+            analyzer.body_context = Some(analyzer.exception_body(owner, true)?);
+            analyzer.exception_operand_type(operand, scope)?;
+            analyzer.check_resolved_function(operand)?;
+            analyzer.convert_bool(operand)?;
+            analyzer.with_semantics(|analyzer| analyzer.converted_constant_bool(operand, scope))
+        });
         self.body_context = body;
         self.default_argument_scope = default;
         self.member_initializer_class = member;

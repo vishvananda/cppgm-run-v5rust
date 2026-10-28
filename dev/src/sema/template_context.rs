@@ -174,6 +174,15 @@ impl Analyzer<'_> {
     ) -> Result<T, Error> {
         self.with_instantiation_limit(formation_depth, location, Some(limit), mode, action)
     }
+    pub(super) fn unlimited_instantiation_context_in<T>(
+        &mut self,
+        formation_depth: u32,
+        location: SourceOffset,
+        mode: InstantiationMode,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.with_instantiation_limit(formation_depth, location, None, mode, action)
+    }
     fn with_instantiation_limit<T>(
         &mut self,
         formation_depth: u32,

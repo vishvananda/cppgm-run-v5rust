@@ -733,15 +733,52 @@ impl Analyzer<'_> {
         let saved_body = self.body_context.take();
         let saved_depth = std::mem::replace(&mut self.template_depth, 1);
         let saved_uses = self.dependent_uses.replace(0);
-        let result = (|| {
-            let scope = self.operand_scope(
+        let owner = self.graph.analysis.substitution.current().owner;
+        // This is the reference's raw speculative scope, with NO direct soft
+        // failure charge. Nested ordinary scopes retain their own accounting.
+        let result = self.with_substitution_soft(owner, |analyzer| {
+            let scope = analyzer.operand_scope(
                 pattern.scope,
-                &mut self.substitution(depth, &arguments),
+                &mut analyzer.substitution(depth, &arguments),
                 pattern.parameters,
             )?;
-            let copy = self.copy_expression_in_frame(pattern.expression, scope)?;
-            self.operand_key(copy, scope)
-        })();
+            if analyzer
+                .graph
+                .analysis
+                .substitution
+                .current()
+                .failure
+                .is_some()
+            {
+                return Ok(None);
+            }
+            let copy = analyzer.copy_expression_in_frame(pattern.expression, scope)?;
+            if analyzer
+                .graph
+                .analysis
+                .substitution
+                .current()
+                .failure
+                .is_some()
+            {
+                return Ok(None);
+            }
+            let key = analyzer.operand_key(copy, scope)?;
+            Ok(
+                if analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_some()
+                {
+                    None
+                } else {
+                    key
+                },
+            )
+        });
         self.graph.lookup_limit = saved_limit;
         self.body_context = saved_body;
         self.template_depth = saved_depth;
@@ -975,6 +1012,15 @@ impl Analyzer<'_> {
             .map(Some)
     }
 
+    fn operand_access_context(&self, query: Query) -> Option<EntityId> {
+        let state = self.graph.analysis.substitution.current();
+        if state.soft != 0 && query != Query::Bound {
+            state.owner
+        } else {
+            None
+        }
+    }
+
     fn cached_operand(
         &mut self,
         entity: EntityId,
@@ -984,7 +1030,7 @@ impl Analyzer<'_> {
     ) -> Result<Option<Evaluation>, Error> {
         let key = Key {
             entity,
-            context: environment.context,
+            context: self.operand_access_context(query),
             query,
             depth: environment.depth,
             arguments,
@@ -1110,49 +1156,71 @@ impl Analyzer<'_> {
             earlier = next.and_then(|id| self.graph.template_operands.pending.get(&id));
         }
         let scope = self.operand_scope(scope, environment, parameters)?;
-        let object = pattern
-            .object
-            .map(|ty| self.substitute_signature_type(ty, environment))
-            .transpose()?;
-        if object == Some(None) {
-            return Err(environment.failure.map_or(
-                Error::Invariant("object substitution without failure reason"),
-                |message| Error::at(environment.failure_location, message),
-            ));
-        }
         let open = self.operand_open_depth(entity, environment.depth);
         let copy = self.copy_selected_operand(pattern.expression, scope, environment)?;
-        let access = environment
-            .context
+        // Scope/copy rejection belongs to the inherited substitution and must
+        // be observed before instantiation entry clears its failure record.
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            return Err(Error::at(failure.location, failure.message));
+        }
+        let access = self
+            .operand_access_context(query)
             .map(|entity| self.substitution_scope(entity))
             .transpose()?;
-        let saved_access = std::mem::replace(
-            &mut self.declaration_access.substitution,
-            access.map(|point| (scope, point)),
-        );
-        let saved_function = self.declaration_access.function.take();
-        let saved_access_class = self.declaration_access.class.take();
-        let saved_body = self.body_context.take();
-        let saved_object = std::mem::replace(&mut self.signature_object, object.flatten());
-        let saved_limit = self.graph.lookup_limit.replace(pattern.limit);
-        let saved_depth = std::mem::replace(&mut self.template_depth, usize::from(open));
-        // A substituted value/bound is potentially evaluated even when the
-        // query arose in an unevaluated operand. decltype_type establishes
-        // its own unevaluated context; failed value deduction still retains
-        // the functions it used, as InstantiationContext does in C++.
-        let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 0);
-        let saved_arguments = std::mem::replace(&mut self.template_arguments, 0);
-        let saved_default = self.default_argument_scope.take();
-        let saved_head = self.template_head.take();
-        let saved_friend = self.namespace_friend_class.take();
-        let saved_class = std::mem::replace(&mut self.class_depth, 0);
-        let saved_initializing = self.initializing.take();
-        let saved_declarator = self.initializing_declarator.take();
-        let saved_base = self.base_object.take();
-        let saved_member = self.member_initializer_class.take();
-        // Operand substitution is an independent instantiation query. Its
-        // pattern names must not mark the expression demanding it dependent.
-        let saved_uses = self.dependent_uses.replace(0);
+        self.instantiation_context_in(
+            self.instantiation_depth,
+            self.tree.expressions.get(copy).location,
+            pattern.limit,
+            super::template_context::InstantiationMode::Substitution,
+            |analyzer| {
+                analyzer.declaration_access.substitution = access.map(|point| (scope, point));
+                // This local object stands for the operand's BodyContext. The
+                // common instantiation state does not own signature_object.
+                let saved_object = analyzer.signature_object.take();
+                let result = (|| {
+                    let object = pattern
+                        .object
+                        .map(|ty| analyzer.substitute_signature_type(ty, environment))
+                        .transpose()?;
+                    if object == Some(None) {
+                        return Err(environment.failure.map_or(
+                            Error::Invariant("object substitution without failure reason"),
+                            |message| Error::at(environment.failure_location, message),
+                        ));
+                    }
+                    analyzer.signature_object = object.flatten();
+                    let result = analyzer.evaluate_operand_query(
+                        copy,
+                        scope,
+                        pattern.value_target,
+                        query,
+                        open,
+                    );
+                    // Inspect this context's failure before restoration can
+                    // restore a caller's unrelated failure. Transport it without
+                    // generating a second rejection or publishing a pending hit.
+                    if result.is_ok()
+                        && let Some(failure) =
+                            analyzer.graph.analysis.substitution.current().failure
+                    {
+                        return Err(Error::at(failure.location, failure.message));
+                    }
+                    result
+                })();
+                analyzer.signature_object = saved_object;
+                result
+            },
+        )
+    }
+
+    fn evaluate_operand_query(
+        &mut self,
+        copy: ast::ExprId,
+        scope: ScopeId,
+        target: Option<TypeId>,
+        query: Query,
+        open: bool,
+    ) -> Result<Option<Evaluation>, Error> {
         let result = match query {
             Query::Type if open => Ok(None),
             Query::Type => self
@@ -1161,48 +1229,36 @@ impl Analyzer<'_> {
             Query::Bound => self
                 .checked_array_bound(copy, scope, false)
                 .map(|bound| Some(Evaluation::Bound(bound))),
-            Query::Value if open => self.constant_value(copy, scope, false).and_then(|value| {
-                value
-                    .filter(|value| self.integral_kind(value.ty).is_some())
-                    .map(|value| {
-                        self.graph
-                            .types
-                            .intern(
-                                TypeKind::Value {
-                                    ty: value.ty,
-                                    bits: value.bits,
-                                },
-                                Cv::default(),
-                            )
-                            .map(Evaluation::Type)
-                    })
-                    .transpose()
-            }),
+            Query::Value if open => {
+                let saved_depth = self.template_depth;
+                self.template_depth += 1;
+                let result = self.constant_value(copy, scope, false).and_then(|value| {
+                    value
+                        .filter(|value| self.integral_kind(value.ty).is_some())
+                        .map(|value| {
+                            self.graph
+                                .types
+                                .intern(
+                                    TypeKind::Value {
+                                        ty: value.ty,
+                                        bits: value.bits,
+                                    },
+                                    Cv::default(),
+                                )
+                                .map(Evaluation::Type)
+                        })
+                        .transpose()
+                });
+                self.template_depth = saved_depth;
+                result
+            }
             Query::Value => self
-                .template_value(copy, scope, pattern.value_target, false)
+                .template_value(copy, scope, target, false)
                 .map(|ty| Some(Evaluation::Type(ty))),
         };
         if !open && matches!(query, Query::Value | Query::Bound) {
             self.graph.work.totals.value_substitutions += 1;
         }
-        self.declaration_access.substitution = saved_access;
-        self.declaration_access.function = saved_function;
-        self.declaration_access.class = saved_access_class;
-        self.body_context = saved_body;
-        self.signature_object = saved_object;
-        self.graph.lookup_limit = saved_limit;
-        self.template_depth = saved_depth;
-        self.unevaluated = saved_unevaluated;
-        self.template_arguments = saved_arguments;
-        self.default_argument_scope = saved_default;
-        self.template_head = saved_head;
-        self.namespace_friend_class = saved_friend;
-        self.class_depth = saved_class;
-        self.initializing = saved_initializing;
-        self.initializing_declarator = saved_declarator;
-        self.base_object = saved_base;
-        self.member_initializer_class = saved_member;
-        self.dependent_uses.set(saved_uses);
         result
     }
 

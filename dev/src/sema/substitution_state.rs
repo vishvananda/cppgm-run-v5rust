@@ -69,6 +69,43 @@ impl Analyzer<'_> {
         state.replace(outer);
         result
     }
+    pub(super) fn with_substitution_owner<T>(
+        &mut self,
+        owner: Option<EntityId>,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let state = self.graph.analysis.substitution.clone();
+        let outer = state.current().owner;
+        state.replace(Ambient {
+            owner,
+            ..state.current()
+        });
+        let result = action(self);
+        state.replace(Ambient {
+            owner: outer,
+            ..state.current()
+        });
+        result
+    }
+    /// A required noexcept expression or lambda body only suspends soft mode;
+    /// unlike instantiation entry, it neither clears nor consumes failure.
+    pub(super) fn without_soft_substitution<T>(
+        &mut self,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let state = self.graph.analysis.substitution.clone();
+        let soft = state.current().soft;
+        state.replace(Ambient {
+            soft: 0,
+            ..state.current()
+        });
+        let result = action(self);
+        state.replace(Ambient {
+            soft,
+            ..state.current()
+        });
+        result
+    }
     pub(super) fn with_substitution_instantiation<T>(
         &mut self,
         preserve: bool,
@@ -182,6 +219,27 @@ mod tests {
         assert_eq!(inner.location, SourceOffset(11));
         assert_eq!(inner.message, "preserved");
         assert!(inner.transient);
+        state.replace(Ambient {
+            failure: None,
+            ..state.current()
+        });
+        let result: Result<(), Error> = analyzer.without_soft_substitution(|_| {
+            assert_eq!(state.current().soft, 0);
+            assert_eq!(state.current().owner, Some(owner));
+            state.reject(Failure {
+                location: SourceOffset(15),
+                message: "required expression",
+                transient: false,
+            });
+            Err(Error::Invariant("required expression test"))
+        });
+        assert!(result.is_err());
+        assert_eq!(state.current().soft, 2);
+        assert_eq!(state.current().owner, Some(owner));
+        assert_eq!(
+            state.current().failure.unwrap().message,
+            "required expression"
+        );
     }
 
     #[test]
@@ -238,11 +296,21 @@ mod tests {
         analyzer
             .with_substitution_soft(Some(primary), |analyzer| {
                 assert!(state.current().failure.is_none());
-                assert!(
-                    analyzer
-                        .substitute_class_template_defaults(primary, Vec::new(), &mut environment)?
-                        .is_none()
-                );
+                let result = analyzer.with_substitution_owner(None, |analyzer| {
+                    assert!(
+                        analyzer
+                            .substitute_class_template_defaults(
+                                primary,
+                                Vec::new(),
+                                &mut environment
+                            )?
+                            .is_none()
+                    );
+                    Err::<(), _>(Error::Invariant("owner scope test"))
+                });
+                assert!(result.is_err());
+                assert_eq!(state.current().owner, Some(primary));
+                assert_eq!(state.current().soft, 1);
                 let failure = state.current().failure.unwrap();
                 assert_eq!(failure.message, "too few template arguments");
                 assert_eq!(failure.location, SourceOffset(0));

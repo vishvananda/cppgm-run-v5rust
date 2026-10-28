@@ -90,10 +90,9 @@ impl Analyzer<'_> {
             }
         }
         let copy = self.copy_expression_in_frame(pending.condition, frame)?;
-        self.instantiation_context_in(
+        self.unlimited_instantiation_context_in(
             self.instantiation_depth,
             self.tree.expressions.get(copy).location,
-            self.graph.binding_limit(),
             super::template_context::InstantiationMode::Substitution,
             |analyzer| analyzer.explicit_value(copy, frame),
         )
