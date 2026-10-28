@@ -161,6 +161,7 @@ fn load(op: Op) -> Option<(R, Type, Operand)> {
 fn move_parts(op: Op) -> Option<(R, Operand)> {
     match op {
         Op::Move(r, bits) => Some((r, Operand::Immediate(bits))),
+        Op::SymbolMove(r, symbol) => Some((r, Operand::Symbol(symbol))),
         Op::Scalar(ScalarOp::Load(r, _, value) | ScalarOp::Move(r, value)) => Some((r, value)),
         Op::Scalar(ScalarOp::ExtendMove(ty, r, source)) if !super::scalar_mir::signed(ty) => {
             Some((r, Operand::Register(source)))
@@ -513,6 +514,48 @@ mod tests {
         f.stack_size = 32;
         f.frame_policy.omit_pointer = true;
         f
+    }
+    #[test]
+    fn symbolic_return_move_keeps_the_other_frame_load_in_the_suffix() {
+        let mut f = function(&[
+            Op::Scalar(ScalarOp::Store(
+                Operand::Frame(-8),
+                Type::I64,
+                Operand::Immediate(7),
+            )),
+            Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, Operand::Frame(-8))),
+            Op::Return(None),
+        ]);
+        let symbol = f.symbol;
+        let file = crate::lowir::model::NameId::empty();
+        f.instructions.insert(
+            2,
+            Instruction {
+                op: Op::SymbolMove(R::RDX, symbol),
+                location: Some(crate::lowir::model::DebugLocation {
+                    file,
+                    line: 47,
+                    column: 5,
+                }),
+                volatile: false,
+            },
+        );
+        f.blocks[0].range.end += 1;
+        // Symbolic moves remain a pruning barrier even in an admitted suffix.
+        assert_eq!(forward(&mut f), 0);
+        assert!(matches!(
+            f.instructions[0].op,
+            Op::Scalar(ScalarOp::Store(..))
+        ));
+        assert!(matches!(f.instructions[1].op, Op::Move(R::RAX, 7)));
+        assert!(matches!(f.instructions[2].op, Op::SymbolMove(R::RDX, s) if s == symbol));
+        assert!(f.instructions[1].location.is_none());
+        assert_eq!(
+            f.instructions[2]
+                .location
+                .map(|l| (l.file, l.line, l.column)),
+            Some((file, 47, 5)),
+        );
     }
     #[test]
     fn floating_frame_reads_preserve_only_their_own_bytes() {
