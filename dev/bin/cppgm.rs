@@ -62,6 +62,8 @@ pub mod builtin_host_configuration;
 mod driver_queries;
 #[path = "source_tool/host_configuration.rs"]
 mod host_configuration;
+#[path = "source_tool/output_file.rs"]
+mod output_file;
 #[path = "source_tool/stack_limit.rs"]
 mod stack_limit;
 fn source_values() -> Result<cppgm_rust::preprocess::options::PredefinedValues, String> {
@@ -454,28 +456,27 @@ fn run() -> Result<(), CliError> {
         }
         result?;
     }
-    let mut observations = None;
     if lowir {
         let view = lowir_output
             .prepare(level, limits, validate)
             .map_err(tool_error)?;
-        output.file = File::create(destination).ok().map(io::BufWriter::new);
-        output.failed = output.file.is_none();
-        observations = Some(view.write(&mut output).map_err(|_| {
-            CliError::Diagnostic([b"cannot write ".as_slice(), destination.as_bytes()].concat())
-        })?);
+        let cannot_write =
+            || CliError::Diagnostic([b"cannot write ".as_slice(), destination.as_bytes()].concat());
+        let mut file = output_file::OutputFile::open(destination).map_err(|_| cannot_write())?;
+        let written = view.write(&mut file);
+        let closed = file.finish();
+        if !closed {
+            return Err(cannot_write());
+        }
+        let observations = written.map_err(|_| cannot_write())?;
+        if statistics {
+            let _ = observations.write(&mut io::stderr().lock(), peak_rss());
+        }
+        return Ok(());
     }
     output.flush().map_err(|_| CliError::Output)?;
     if output.failed {
-        if lowir {
-            return Err(CliError::Diagnostic(
-                [b"cannot write ".as_slice(), destination.as_bytes()].concat(),
-            ));
-        }
         return Err(CliError::Output);
-    }
-    if statistics && let Some(observations) = observations {
-        let _ = observations.write(&mut io::stderr().lock(), peak_rss());
     }
     Ok(())
 }

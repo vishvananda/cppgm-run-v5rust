@@ -13,6 +13,9 @@ publish = false
 default = ["telemetry"]
 telemetry = []
 
+[dependencies]
+nix = { version = "=0.31.3", default-features = false }
+
 [lib]
 path = "src/lib.rs"
 
