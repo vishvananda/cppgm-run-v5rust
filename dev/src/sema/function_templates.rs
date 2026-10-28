@@ -1384,39 +1384,44 @@ impl Analyzer<'_> {
             return Ok(None);
         }
         let mut arguments = self.signature_arguments(binding, head)?;
-        let given = arguments.clone();
-        // Explicit arguments substitute a leading result before parameter
-        // deduction. A trailing result waits until signature completion.
-        if self.graph.function_templates.requires_target(binding)
-            && !self
-                .graph
-                .function_templates
-                .trailing_results
-                .contains(&self.graph.binding(binding).entity)
-        {
-            let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind else {
-                return Err(Error::Invariant("template call without function type"));
-            };
-            let mut environment = Substitution::new(depth, &given);
+        let TypeKind::Function {
+            result, parameters, ..
+        } = self.graph.types.get(ty).kind.clone()
+        else {
+            return Err(Error::Invariant("template call without function type"));
+        };
+        // One explicit substitution visits the leading result, then every
+        // parameter in lexical order, before any argument deduction. Defaults
+        // do not remove unwritten parameters from this phase.
+        let parameters = if self.graph.function_templates.requires_target(binding) {
+            let mut environment = Substitution::new(depth, &arguments);
             environment.context = Some(self.graph.binding(binding).entity);
-            if self
-                .substitute_signature_type(result, &mut environment)?
-                .is_none()
-            {
-                self.graph.work.totals.substitution_failures +=
-                    usize::from(environment.failure.is_some());
+            let substituted = (|| {
+                if !self
+                    .graph
+                    .function_templates
+                    .trailing_result(self.graph.binding(binding).entity)
+                    && self
+                        .substitute_signature_type(result, &mut environment)?
+                        .is_none()
+                {
+                    return Ok(None);
+                }
+                self.substitute_pack_list(&parameters, &mut environment)
+            })();
+            let failed = environment.failure.is_some();
+            self.graph.work.totals.substitution_failures += usize::from(failed);
+            let Some(parameters) = substituted? else {
+                return Ok(None);
+            };
+            if failed {
                 return Ok(None);
             }
-        }
-        for index in 0..(args.len() + offset).min(count) {
-            let pattern = self.graph.types.function_parameter(ty, index)?;
-            let mut environment = Substitution::new(depth, &given);
-            environment.context = Some(self.graph.binding(binding).entity);
-            let Some(pattern) = self.substitute_signature_type(pattern, &mut environment)? else {
-                self.graph.work.totals.substitution_failures +=
-                    usize::from(environment.failure.is_some());
-                return Ok(None);
-            };
+            parameters
+        } else {
+            parameters
+        };
+        for (index, &pattern) in parameters.iter().take(args.len() + offset).enumerate() {
             if !self.needs_deduction(pattern, depth)? {
                 continue;
             }
@@ -2263,6 +2268,26 @@ impl Analyzer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_calls_substitute_unwritten_parameters_before_argument_deduction() {
+        let source = SourceBuffer::new(b"template<class T,class U>int f(U*,typename T::missing=0){return 1;}template<class T>char f(...){return 0;}int v=sizeof(f<int>(0));".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"explicit-phase").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let graph = analyzer.analyze(declarations).unwrap();
+        #[cfg(feature = "telemetry")]
+        {
+            assert_eq!(graph.work.totals.substitution_failures, 1);
+            assert_eq!(graph.work.totals.candidates, 2);
+            assert_eq!(graph.work.totals.specializations, 1);
+        }
+        #[cfg(not(feature = "telemetry"))]
+        drop(graph);
+    }
     use crate::{
         preprocess::unit::Preprocessor,
         support::{source::SourceBuffer, stack::StackBudget},
