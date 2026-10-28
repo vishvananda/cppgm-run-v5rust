@@ -36,10 +36,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<bool, Error> {
-        self.unevaluated += 1;
-        let result = self.property_predicate_value(predicate, ty, scope, location);
-        self.unevaluated -= 1;
-        result
+        self.property_predicate_value(predicate, ty, scope, location)
     }
 
     fn property_predicate_value(
@@ -214,11 +211,12 @@ impl Analyzer<'_> {
         let Some(class) = self.graph.class_of(object) else {
             return Ok(true);
         };
-        self.unevaluated += 1;
-        let result = self.check_class_destruction(object, scope, location);
-        self.unevaluated -= 1;
+        let result = self.substitution_trial(|analyzer| {
+            analyzer.check_class_destruction(object, scope, location)
+        });
         match result {
-            Ok(()) => (),
+            Ok(Some(())) => (),
+            Ok(None) => return Ok(false),
             Err(Error::Diagnostic { .. }) => {
                 self.graph.work.totals.substitution_failures += 1;
                 return Ok(false);

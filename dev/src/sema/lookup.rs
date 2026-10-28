@@ -625,6 +625,43 @@ impl Analyzer<'_> {
         }
         Ok(found)
     }
+    pub(super) fn qualified_prefix_result(
+        &mut self,
+        scope: ScopeId,
+        key: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        self.prepare_assignment_lookup(scope, key, false)?;
+        let mut found = self.qualified_declaration_result(scope, key, filter)?;
+        if found.binding.is_none()
+            && filter != Filter::Namespace
+            && self.graph.scope(scope).kind == ScopeKind::Class
+            && let Some(class) = self.graph.scope(scope).owner
+            && self.graph.entity(class).base_dependency
+                == crate::syntax::ast::BaseDependency::Dependent
+            && let Some(name) = key.identifier()
+        {
+            let ty = self
+                .graph
+                .entity(class)
+                .ty
+                .ok_or(Error::Invariant("class prefix without type"))?;
+            found.binding = Some(self.dependent_member_binding(ty, name)?);
+        }
+        if found.binding.is_none()
+            && self.graph.scope(scope).kind == ScopeKind::Class
+            && let Some(class) = self.graph.scope(scope).owner
+            && !self.graph.entity(class).complete
+        {
+            self.incomplete_class_observations = self
+                .incomplete_class_observations
+                .checked_add(1)
+                .ok_or(Error::Invariant(
+                    "incomplete class observation count overflow",
+                ))?;
+        }
+        Ok(found)
+    }
     // C++ class_specifier consumes the representative even when namespace
     // lookup marks it ambiguous. Ordinary name uses diagnose that fact.
     pub(super) fn qualified_declaration_result(
@@ -866,7 +903,7 @@ impl Analyzer<'_> {
                         "decltype in a nested-name-specifier must name a class or enumeration",
                     ));
                 }
-                prefix = Some(Prefix::Scope(self.type_qualifier(ty, component.location)?));
+                prefix = Some(self.type_qualifier(ty, component.location)?);
                 continue;
             }
             let NameKind::Identifier(key) = component.kind else {
@@ -954,22 +991,7 @@ impl Analyzer<'_> {
                         )
                     })?;
             }
-            let binding = self.graph.binding(binding_id);
-            prefix = Some(
-                if matches!(binding.kind, BindingKind::Type | BindingKind::Alias)
-                    && let Some(ty) = binding.ty
-                    && self.graph.dependent_type(ty)
-                    && match self.graph.types.get(ty).kind {
-                        TypeKind::Class(class) => self.graph.entity(class).scope.is_none(),
-                        TypeKind::Enum(_) => false,
-                        _ => true,
-                    }
-                {
-                    Prefix::Dependent(ty)
-                } else {
-                    Prefix::Scope(self.binding_qualifier(binding_id, component.location)?)
-                },
-            );
+            prefix = Some(self.binding_qualifier(binding_id, component.location)?);
         }
         Ok(prefix)
     }
@@ -977,13 +999,14 @@ impl Analyzer<'_> {
         &mut self,
         binding: BindingId,
         location: crate::support::source::SourceOffset,
-    ) -> Result<ScopeId, Error> {
+    ) -> Result<Prefix, Error> {
         let binding = self.graph.binding(binding);
         match binding.kind {
             BindingKind::Namespace | BindingKind::NamespaceAlias => self
                 .graph
                 .entity(binding.entity)
                 .scope
+                .map(Prefix::Scope)
                 .ok_or(Error::Invariant("namespace qualifier without scope")),
             BindingKind::Type | BindingKind::Alias => self.type_qualifier(
                 binding
@@ -991,36 +1014,61 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("type qualifier without type"))?,
                 location,
             ),
-            _ => Err(Error::at(
+            _ => self.reject_substitution(
                 location,
                 "name before :: is not a class, namespace or enumeration",
-            )),
+                false,
+            ),
         }
     }
     fn type_qualifier(
         &mut self,
         ty: super::types::TypeId,
         location: crate::support::source::SourceOffset,
-    ) -> Result<ScopeId, Error> {
+    ) -> Result<Prefix, Error> {
         match self.graph.types.get(ty).kind {
             TypeKind::Class(class) => {
-                self.complete_class(class)?;
-                self.graph.entity(class).scope.ok_or_else(|| {
-                    Error::at(location, "incomplete class in a nested-name-specifier")
-                })
+                if let Some(scope) = self.graph.entity(class).scope {
+                    return Ok(Prefix::Scope(scope));
+                }
+                if self.graph.dependent_type(ty) {
+                    return Ok(Prefix::Dependent(ty));
+                }
+                if !self.complete_class(class)? {
+                    return self.reject_substitution(
+                        location,
+                        "incomplete class in a nested-name-specifier",
+                        true,
+                    );
+                }
+                self.graph
+                    .entity(class)
+                    .scope
+                    .map(Prefix::Scope)
+                    .ok_or(Error::Invariant("completed qualifier without scope"))
             }
             TypeKind::Enum(enumeration) => self
                 .graph
                 .entity(enumeration)
                 .scope
+                .map(Prefix::Scope)
                 .ok_or(Error::Invariant("enumeration qualifier without scope")),
             TypeKind::TemplateParameter { .. } => {
-                Err(Error::Missing("dependent qualified name lookup"))
+                if self.graph.dependent_type(ty) {
+                    Ok(Prefix::Dependent(ty))
+                } else {
+                    Err(self.graph.analysis.substitution.hard_error(
+                        location,
+                        "name before :: is not a class, namespace or enumeration",
+                    ))
+                }
             }
-            _ => Err(Error::at(
+            TypeKind::BoundPack { .. } => Ok(Prefix::Dependent(ty)),
+            _ => self.reject_substitution(
                 location,
                 "name before :: is not a class, namespace or enumeration",
-            )),
+                false,
+            ),
         }
     }
     pub(super) fn lookup(

@@ -119,15 +119,18 @@ impl Analyzer<'_> {
                     .current()
                     .failure
                     .is_some();
-                // The ordinary soft scope charges its OWN live failure once,
-                // including error exits, before its saved outer state returns.
-                analyzer.graph.work.totals.substitution_failures += usize::from(failed);
                 let substituted = substituted?;
                 Ok(if failed { None } else { substituted })
             });
             match substituted {
                 Ok(Some(parameters)) => parameters,
-                Ok(None) | Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+                Ok(None)
+                | Err(
+                    Error::Diagnostic { .. }
+                    | Error::NonConstant { .. }
+                    | Error::SubstitutionRejected(_)
+                    | Error::SubstitutionNull,
+                ) => {
                     return Ok(None);
                 }
                 Err(error) => return Err(error),

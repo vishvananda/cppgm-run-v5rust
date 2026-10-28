@@ -327,19 +327,16 @@ impl Analyzer<'_> {
                             .failure
                             .is_some() =>
                     {
-                        analyzer.graph.work.totals.substitution_failures += 1;
                         return Ok(false);
                     }
                     Ok(Some(ty)) => analyzer.graph.types.canonical_function(ty)?,
-                    Ok(None) => {
-                        analyzer.graph.work.totals.substitution_failures +=
-                            usize::from(substitution.failure.is_some());
-                        return Ok(false);
-                    }
-                    Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
-                        analyzer.graph.work.totals.substitution_failures += 1;
-                        return Ok(false);
-                    }
+                    Ok(None)
+                    | Err(
+                        Error::SubstitutionRejected(_)
+                        | Error::SubstitutionNull
+                        | Error::Diagnostic { .. }
+                        | Error::NonConstant { .. },
+                    ) => return Ok(false),
                     Err(error) => return Err(error),
                 };
                 Ok(substituted == analyzer.graph.types.canonical_function(actual)?)

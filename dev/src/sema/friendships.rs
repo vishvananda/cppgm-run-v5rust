@@ -246,6 +246,7 @@ impl Analyzer<'_> {
                 key,
                 self.tree.names.get(name).location,
                 false,
+                super::declarations::ElaboratedContext::Substitution,
             )?;
             self.graph
                 .entity(entity)

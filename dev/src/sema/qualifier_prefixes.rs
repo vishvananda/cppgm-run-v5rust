@@ -19,10 +19,7 @@ enum AbiDemand {
 
 enum ArgumentCount {
     Spelled(usize),
-    Failed {
-        location: crate::support::source::SourceOffset,
-        message: &'static str,
-    },
+    Failed(Error),
 }
 
 #[derive(Default)]
@@ -49,7 +46,7 @@ impl Qualifiers {
     pub(super) fn count(&self, entity: EntityId) -> Result<Option<usize>, Error> {
         match self.counts.get(&entity) {
             Some(ArgumentCount::Spelled(count)) => Ok(Some(*count)),
-            Some(ArgumentCount::Failed { location, message }) => Err(Error::at(*location, message)),
+            Some(ArgumentCount::Failed(error)) => Err(error.clone()),
             None => Ok(None),
         }
     }
@@ -269,12 +266,13 @@ impl Analyzer<'_> {
             let count = match self.qualifier_arguments(head, &arguments) {
                 Ok(count) => ArgumentCount::Spelled(count),
                 Err(
-                    Error::Diagnostic { location, message }
-                    | Error::NonConstant {
-                        location, message, ..
-                    }
-                    | Error::InstantiationDiagnostic { location, message },
-                ) => ArgumentCount::Failed { location, message },
+                    error @ (Error::Diagnostic { .. }
+                    | Error::NonConstant { .. }
+                    | Error::InstantiationDiagnostic { .. }
+                    | Error::UnconditionalDiagnostic { .. }
+                    | Error::SubstitutionRejected(_)
+                    | Error::SubstitutionNull),
+                ) => ArgumentCount::Failed(error),
                 Err(error) => return Err(error),
             };
             self.graph
@@ -357,7 +355,7 @@ impl Analyzer<'_> {
                             Error::Invariant(
                                 "qualifier default substitution without failure reason",
                             ),
-                            |message| Error::at(environment.failure_location, message),
+                            Error::SubstitutionRejected,
                         )
                     })?
             };
@@ -533,7 +531,7 @@ mod tests {
         analyzer.finish_qualifier_arguments().unwrap();
         assert!(matches!(
             analyzer.graph.class_templates.qualifiers.count(instance),
-            Err(Error::Diagnostic {
+            Err(Error::UnconditionalDiagnostic {
                 location: crate::support::source::SourceOffset(0),
                 message: "a dependent name's qualifier is not a complete class",
             })

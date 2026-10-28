@@ -633,7 +633,7 @@ fn constant_discards_use_places_and_restore_scratch_after_failure() {
         for _ in 0..2 {
             assert!(matches!(
                 analyzer.constant_value(operand, scope, true),
-                Err(Error::Diagnostic {
+                Err(Error::UnconditionalDiagnostic {
                     message: "a builtin function that is not a constant expression",
                     ..
                 })
@@ -771,7 +771,7 @@ fn mutable_constant_temporaries_are_fresh_per_evaluation() {
     for _ in 0..2 {
         assert!(matches!(
             analyzer.constant_value(operand, scope, true),
-            Err(Error::Diagnostic {
+            Err(Error::UnconditionalDiagnostic {
                 message: "an arithmetic operation with an undefined result",
                 ..
             })

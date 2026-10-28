@@ -250,7 +250,11 @@ impl Analyzer<'_> {
             }
             let pointer = self.decayed_type(ty)?;
             let TypeKind::Pointer(element) = self.graph.types.get(pointer).kind else {
-                return Err(Error::at(location, "-> requires a pointer to a class"));
+                return self.reject_substitution(
+                    location,
+                    "-> requires a pointer to a class",
+                    false,
+                );
             };
             if self.graph.expression_facts.arrow_calls(base).is_empty() {
                 self.convert_operand_scalar(base, pointer, false)?;
@@ -283,7 +287,7 @@ impl Analyzer<'_> {
             );
         }
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
-            return Err(Error::at(location, "member access on a non-class"));
+            return self.reject_substitution(location, "member access on a non-class", false);
         };
         self.complete_class(class)?;
         let class_scope = self.graph.entity(class).scope;
@@ -291,7 +295,11 @@ impl Analyzer<'_> {
             || !self.graph.entity(class).complete
                 && !class_scope.is_some_and(|class_scope| self.graph.encloses(class_scope, scope))
         {
-            return Err(Error::at(location, "member access on an incomplete class"));
+            return self.reject_substitution(
+                location,
+                "member access on an incomplete class",
+                true,
+            );
         }
         let search = self.data_member_qualifier(name, class, scope)?;
         self.lookup_location = node.location;
@@ -306,17 +314,13 @@ impl Analyzer<'_> {
         } else {
             let key = Self::expression_name(last.kind)?;
             self.prepare_assignment_lookup(search, key, false)?;
-            self.qualified_result(search, key, Filter::Ordinary)
-                .map_err(|error| match error {
-                    Error::Diagnostic {
-                        message: "ambiguous name",
-                        ..
-                    } => Error::at(node.location, "ambiguous member name"),
-                    other => other,
-                })?
+            self.qualified_declaration_result(search, key, Filter::Ordinary)?
         };
         if found.binding.is_none() {
-            return Err(Error::at(node.location, "no member of that name"));
+            return self.reject_substitution(node.location, "no member of that name", false);
+        }
+        if found.ambiguous {
+            return self.reject_substitution(node.location, "ambiguous member name", false);
         }
         if last.arguments.is_some() {
             self.member_templates(&mut found, node.location)?;
@@ -520,7 +524,7 @@ impl Analyzer<'_> {
             };
             self.lookup_location = node.location;
             let found = if let Some(prefix) = prefix {
-                self.qualified_declaration_result(prefix, key.into(), Filter::Prefix)?
+                self.qualified_prefix_result(prefix, key.into(), Filter::Prefix)?
                     .binding
             } else {
                 let found =
@@ -541,8 +545,13 @@ impl Analyzer<'_> {
                         .binding
                 }
             };
-            let mut binding = found
-                .ok_or_else(|| Error::at(node.location, "undeclared name in a member access"))?;
+            let Some(mut binding) = found else {
+                return self.reject_substitution(
+                    node.location,
+                    "undeclared name in a member access",
+                    false,
+                );
+            };
             if component.arguments.is_some() {
                 binding = self
                     .class_template_id(binding, component, scope)?
@@ -553,16 +562,20 @@ impl Analyzer<'_> {
                         )
                     })?;
             }
-            prefix = Some(self.binding_qualifier(binding, node.location)?);
+            prefix = match self.binding_qualifier(binding, node.location)? {
+                super::lookup::Prefix::Scope(scope) => Some(scope),
+                super::lookup::Prefix::Dependent(_) => None,
+            };
         }
         if !prefix
             .and_then(|scope| self.graph.scope(scope).owner)
             .is_some_and(|base| base == class || self.graph.is_base_of(base, class))
         {
-            return Err(Error::at(
+            return self.reject_substitution(
                 node.location,
                 "qualified member name does not name a base class",
-            ));
+                false,
+            );
         }
         prefix.ok_or(Error::Invariant("member qualifier without scope"))
     }

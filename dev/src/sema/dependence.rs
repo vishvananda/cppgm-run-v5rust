@@ -766,7 +766,7 @@ mod tests {
             } else {
                 assert!(matches!(
                     result,
-                    Err(Error::Diagnostic {
+                    Err(Error::UnconditionalDiagnostic {
                         message: "no member of that name",
                         ..
                     })

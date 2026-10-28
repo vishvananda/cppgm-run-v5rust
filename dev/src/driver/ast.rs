@@ -556,6 +556,18 @@ fn emit_preprocessed(
                     Err(error) => AstToolError::Initialization(error),
                 }
             }
+            crate::sema::Error::SubstitutionRejected(failure) => {
+                match unit.describe(&ParseError::Syntax {
+                    location: failure.location,
+                    message: failure.message,
+                }) {
+                    Ok(bytes) => AstToolError::Diagnostic(bytes),
+                    Err(error) => AstToolError::Initialization(error),
+                }
+            }
+            crate::sema::Error::SubstitutionNull => {
+                AstToolError::Internal("unconsumed null substitution")
+            }
             crate::sema::Error::DeferredBuiltin => {
                 AstToolError::Internal("unconsumed reserved builtin deferral")
             }
@@ -613,6 +625,20 @@ fn emit_preprocessed(
                     Ok(bytes) => AstToolError::Diagnostic(bytes),
                     Err(error) => AstToolError::Initialization(error),
                 },
+                crate::lower::Error::Semantic(crate::sema::Error::SubstitutionRejected(
+                    failure,
+                )) => {
+                    match unit.describe(&ParseError::Syntax {
+                        location: failure.location,
+                        message: failure.message,
+                    }) {
+                        Ok(bytes) => AstToolError::Diagnostic(bytes),
+                        Err(error) => AstToolError::Initialization(error),
+                    }
+                }
+                crate::lower::Error::Semantic(crate::sema::Error::SubstitutionNull) => {
+                    AstToolError::Internal("unconsumed null substitution")
+                }
                 crate::lower::Error::Semantic(crate::sema::Error::DeferredBuiltin) => {
                     AstToolError::Internal("unconsumed reserved builtin deferral")
                 }
@@ -693,7 +719,13 @@ fn lower_error(error: crate::lower::Error) -> AstToolError {
             | crate::sema::Error::Limit(message) => {
                 AstToolError::Diagnostic(message.as_bytes().to_vec())
             }
+            crate::sema::Error::SubstitutionRejected(failure) => {
+                AstToolError::Diagnostic(failure.message.as_bytes().to_vec())
+            }
             crate::sema::Error::Invariant(message) => AstToolError::Internal(message),
+            crate::sema::Error::SubstitutionNull => {
+                AstToolError::Internal("unconsumed null substitution")
+            }
             crate::sema::Error::DeferredBuiltin => {
                 AstToolError::Internal("unconsumed reserved builtin deferral")
             }

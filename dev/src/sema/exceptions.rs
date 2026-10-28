@@ -1013,6 +1013,16 @@ impl Analyzer<'_> {
             analyzer.exception_operand_type(operand, scope)?;
             analyzer.check_resolved_function(operand)?;
             analyzer.convert_bool(operand)?;
+            if analyzer
+                .graph
+                .analysis
+                .substitution
+                .current()
+                .failure
+                .is_some()
+            {
+                return Ok(false);
+            }
             analyzer.with_semantics(|analyzer| analyzer.converted_constant_bool(operand, scope))
         });
         self.body_context = body;

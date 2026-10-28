@@ -4,11 +4,11 @@ use super::{Error, analyzer::Analyzer, graph::EntityId};
 use crate::support::source::SourceOffset;
 use std::{cell::Cell, rc::Rc};
 
-#[derive(Clone, Copy)]
-pub(super) struct Failure {
-    pub location: SourceOffset,
-    pub message: &'static str,
-    pub transient: bool,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Failure {
+    pub(crate) location: SourceOffset,
+    pub(crate) message: &'static str,
+    pub(crate) transient: bool,
 }
 #[derive(Clone, Copy, Default)]
 pub(super) struct Ambient {
@@ -17,15 +17,61 @@ pub(super) struct Ambient {
     pub failure: Option<Failure>,
 }
 #[derive(Clone, Default)]
-pub(super) struct State(Rc<Cell<Ambient>>);
+pub(super) struct State(Rc<Store>);
+struct Store {
+    ambient: Cell<Ambient>,
+    alias_location: Cell<SourceOffset>,
+}
+impl Default for Store {
+    fn default() -> Self {
+        Self {
+            ambient: Cell::new(Ambient::default()),
+            alias_location: Cell::new(SourceOffset(0)),
+        }
+    }
+}
 impl State {
     pub(super) fn current(&self) -> Ambient {
-        self.0.get()
+        self.0.ambient.get()
     }
     pub(super) fn replace(&self, state: Ambient) -> Ambient {
-        self.0.replace(state)
+        self.0.ambient.replace(state)
     }
-    pub(super) fn reject(&self, failure: Failure) {
+    pub(super) fn alias_location(&self) -> SourceOffset {
+        self.0.alias_location.get()
+    }
+    pub(super) fn replace_alias_location(&self, location: SourceOffset) -> SourceOffset {
+        self.0.alias_location.replace(location)
+    }
+    pub(super) fn hard_error(&self, location: SourceOffset, message: &'static str) -> Error {
+        Error::UnconditionalDiagnostic {
+            location: if location.0 == 0 {
+                self.alias_location()
+            } else {
+                location
+            },
+            message,
+        }
+    }
+    pub(super) fn emit(&self, failure: Failure) -> Result<Failure, Error> {
+        if self.current().soft == 0 {
+            return Err(self.hard_error(failure.location, failure.message));
+        }
+        self.record(failure);
+        Ok(self.current().failure.unwrap_or(failure))
+    }
+    pub(super) fn quiet<T>(
+        &self,
+        location: SourceOffset,
+        message: &'static str,
+    ) -> Result<Option<T>, Error> {
+        if self.current().soft == 0 {
+            Err(self.hard_error(location, message))
+        } else {
+            Ok(None)
+        }
+    }
+    fn record(&self, failure: Failure) {
         let mut state = self.current();
         state.failure = Some(match state.failure {
             Some(first) => Failure {
@@ -40,13 +86,73 @@ impl State {
 }
 
 impl Analyzer<'_> {
-    // Counter/admission ownership remains at the translated caller until its
-    // complete failure-producing operation has been reconciled. These scopes
-    // preserve the ambient facts independently of local Result transport.
+    pub(super) fn resolve_hard_error(&self, error: Error) -> Error {
+        match error {
+            Error::UnconditionalDiagnostic {
+                location: SourceOffset(0),
+                message,
+            } => self
+                .graph
+                .analysis
+                .substitution
+                .hard_error(SourceOffset(0), message),
+            Error::InstantiationDiagnostic {
+                location: SourceOffset(0),
+                message,
+            } => Error::InstantiationDiagnostic {
+                location: self.graph.analysis.substitution.alias_location(),
+                message,
+            },
+            other => other,
+        }
+    }
+    /// Adapt a source emit-and-null branch whose Rust result has no null value.
+    pub(super) fn reject_substitution<T>(
+        &self,
+        location: SourceOffset,
+        message: &'static str,
+        transient: bool,
+    ) -> Result<T, Error> {
+        let failure = self.graph.analysis.substitution.emit(Failure {
+            location,
+            message,
+            transient,
+        })?;
+        Err(Error::SubstitutionRejected(failure))
+    }
+    pub(super) fn with_alias_substitution_location<T>(
+        &mut self,
+        location: SourceOffset,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let state = self.graph.analysis.substitution.clone();
+        let outer = state.alias_location();
+        if location.0 != 0 {
+            state.replace_alias_location(location);
+        }
+        let result = action(self);
+        state.replace_alias_location(outer);
+        result
+    }
     // Pass the retained current owner to inherit it; None explicitly clears it.
     pub(super) fn with_substitution_soft<T>(
         &mut self,
         owner: Option<EntityId>,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.substitution_soft_scope(owner, true, action)
+    }
+    pub(super) fn with_raw_substitution_soft<T>(
+        &mut self,
+        owner: Option<EntityId>,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.substitution_soft_scope(owner, false, action)
+    }
+    fn substitution_soft_scope<T>(
+        &mut self,
+        owner: Option<EntityId>,
+        count_failure: bool,
         action: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let state = self.graph.analysis.substitution.clone();
@@ -61,13 +167,42 @@ impl Analyzer<'_> {
             failure: None,
         });
         let result = action(self);
-        // The explicit owner scope ends before the soft scope restores its
-        // saved failure. No local type memo owns either ambient fact.
-        let mut inner = state.current();
-        inner.owner = outer.owner;
-        state.replace(inner);
+        // The owner's scope ends before SoftSubstitution's destructor charges
+        // this lifetime's current failure, then consumes it and restores outer F.
+        let inner = state.current();
+        state.replace(Ambient {
+            owner: outer.owner,
+            ..inner
+        });
+        if count_failure {
+            self.graph.work.totals.substitution_failures += usize::from(inner.failure.is_some());
+        }
         state.replace(outer);
         result
+    }
+    pub(super) fn substitution_trial<T>(
+        &mut self,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<Option<T>, Error> {
+        let owner = self.graph.analysis.substitution.current().owner;
+        self.with_substitution_soft(owner, |analyzer| {
+            let result = action(analyzer);
+            match result {
+                Ok(value)
+                    if analyzer
+                        .graph
+                        .analysis
+                        .substitution
+                        .current()
+                        .failure
+                        .is_none() =>
+                {
+                    Ok(Some(value))
+                }
+                Ok(_) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => Ok(None),
+                Err(error) => Err(error),
+            }
+        })
     }
     pub(super) fn with_substitution_owner<T>(
         &mut self,
@@ -145,6 +280,57 @@ mod tests {
     };
 
     #[test]
+    fn alias_sites_resolve_hard_errors_but_soft_failure_keeps_its_raw_origin() {
+        use crate::sema::{lookup::Filter, types::RefKind};
+        let source = SourceBuffer::new(b"template<class T>using A=T*;".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"alias-rejection-site").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"A").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+        let alias = analyzer.graph.binding(binding).entity;
+        let integer = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        let reference = analyzer
+            .graph
+            .types
+            .reference(integer, RefKind::Lvalue)
+            .unwrap();
+        let state = analyzer.graph.analysis.substitution.clone();
+        state.replace_alias_location(SourceOffset(3));
+        for (location, expected) in [(21, 21), (0, 3)] {
+            assert!(
+                matches!(analyzer.alias_specialization(alias, vec![reference], SourceOffset(location)),
+                Err(Error::UnconditionalDiagnostic { location, message: "pointer to reference" }) if location == SourceOffset(expected))
+            );
+            assert!(state.current().failure.is_none());
+            assert_eq!(state.alias_location(), SourceOffset(3));
+        }
+        let result = analyzer.with_substitution_soft(None, |analyzer| {
+            analyzer.alias_specialization(alias, vec![reference], SourceOffset(21))
+        });
+        assert!(matches!(
+            result,
+            Err(Error::SubstitutionRejected(Failure {
+                location: SourceOffset(0),
+                message: "pointer to reference",
+                transient: false
+            }))
+        ));
+        assert!(state.current().failure.is_none());
+        assert_eq!(state.alias_location(), SourceOffset(3));
+    }
+
+    #[test]
     fn required_context_keeps_latent_owner_and_scopes_restore_failure_on_error() {
         let source = SourceBuffer::new(Vec::new()).unwrap();
         let mut unit =
@@ -177,7 +363,7 @@ mod tests {
                     let inner = state.current();
                     assert_eq!(inner.soft, 1);
                     assert_eq!(inner.owner, Some(owner));
-                    state.reject(Failure {
+                    state.record(Failure {
                         location: SourceOffset(9),
                         message: "child",
                         transient: true,
@@ -202,12 +388,12 @@ mod tests {
         let result: Result<(), Error> = analyzer.with_substitution_instantiation(true, |_| {
             assert_eq!(state.current().soft, 2);
             assert!(state.current().failure.is_none());
-            state.reject(Failure {
+            state.record(Failure {
                 location: SourceOffset(11),
                 message: "preserved",
                 transient: false,
             });
-            state.reject(Failure {
+            state.record(Failure {
                 location: SourceOffset(12),
                 message: "later",
                 transient: true,
@@ -226,7 +412,7 @@ mod tests {
         let result: Result<(), Error> = analyzer.without_soft_substitution(|_| {
             assert_eq!(state.current().soft, 0);
             assert_eq!(state.current().owner, Some(owner));
-            state.reject(Failure {
+            state.record(Failure {
                 location: SourceOffset(15),
                 message: "required expression",
                 transient: false,
@@ -251,7 +437,7 @@ mod tests {
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
         let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         let store = analyzer.graph.analysis.substitution.clone();
-        store.reject(Failure {
+        store.record(Failure {
             location: SourceOffset(13),
             message: "retained",
             transient: false,
@@ -318,7 +504,10 @@ mod tests {
             })
             .unwrap();
         assert!(state.current().failure.is_none());
-        assert_eq!(environment.failure, Some("too few template arguments"));
+        assert_eq!(
+            environment.failure.map(|failure| failure.message),
+            Some("too few template arguments")
+        );
     }
 
     #[test]

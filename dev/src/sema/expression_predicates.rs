@@ -397,8 +397,13 @@ impl Analyzer<'_> {
             .map_err(|_| Error::Limit("invocation query syntax limit"))?;
         // Call facts own temporary/throwing information by ExprId, so this
         // unevaluated query needs no synthetic function or body identity.
-        let facts = match self.builtin_invoke(call, arguments, scope) {
-            Ok(facts) => facts,
+        let facts = match self.substitution_trial(|analyzer| {
+            analyzer.trait_expression_context(|analyzer| {
+                analyzer.builtin_invoke(call, arguments, scope)
+            })
+        }) {
+            Ok(Some(facts)) => facts,
+            Ok(None) => return Ok(Properties::default()),
             Err(Error::Diagnostic { .. }) => {
                 self.graph.work.totals.substitution_failures += 1;
                 return Ok(Properties::default());
@@ -475,34 +480,48 @@ impl Analyzer<'_> {
             location,
             kind: ast::InitializerKind::Parenthesized(operands),
         };
-        let selection = (|| {
-            for index in 0..self.tree.expr_lists.get(operands).len() {
-                self.typed_expression(self.tree.expr_lists.get(operands)[index], scope)?;
-            }
-            let constructor = if class.is_some() {
-                self.initialize_class_object(target, initializer, scope, location)?
-                    .map(|(constructor, _)| constructor)
-            } else {
-                self.object_initializer(initializer, scope, target, location)?;
-                None
-            };
-            let destroyed = if reference {
-                self.graph
-                    .expression_facts
-                    .get(self.tree.expr_lists.get(operands)[0])?
-                    .conversion
-                    .filter(|binding| binding.temporary)
-                    .map(|binding| binding.result)
-            } else {
-                Some(target)
-            };
-            if let Some(destroyed) = destroyed {
-                self.check_class_destruction(destroyed, scope, location)?;
-            }
-            Ok((constructor, destroyed))
-        })();
+        let selection = self.substitution_trial(|analyzer| {
+            analyzer.trait_expression_context(|analyzer| {
+                for index in 0..analyzer.tree.expr_lists.get(operands).len() {
+                    analyzer
+                        .typed_expression(analyzer.tree.expr_lists.get(operands)[index], scope)?;
+                }
+                let constructor = if class.is_some() {
+                    analyzer
+                        .initialize_class_object(target, initializer, scope, location)?
+                        .map(|(constructor, _)| constructor)
+                } else {
+                    analyzer.object_initializer(initializer, scope, target, location)?;
+                    None
+                };
+                let destroyed = if reference {
+                    analyzer
+                        .graph
+                        .expression_facts
+                        .get(analyzer.tree.expr_lists.get(operands)[0])?
+                        .conversion
+                        .filter(|binding| binding.temporary)
+                        .map(|binding| binding.result)
+                } else {
+                    Some(target)
+                };
+                if let Some(destroyed) = destroyed
+                    && analyzer
+                        .graph
+                        .analysis
+                        .substitution
+                        .current()
+                        .failure
+                        .is_none()
+                {
+                    analyzer.check_class_destruction(destroyed, scope, location)?;
+                }
+                Ok((constructor, destroyed))
+            })
+        });
         let (constructor, destroyed) = match selection {
-            Ok(selection) => selection,
+            Ok(Some(selection)) => selection,
+            Ok(None) => return Ok(Properties::default()),
             Err(Error::Diagnostic { .. }) => {
                 self.graph.work.totals.substitution_failures += 1;
                 return Ok(Properties::default());
@@ -647,9 +666,18 @@ impl Analyzer<'_> {
                     .map_err(|_| Error::Limit("temporary query argument limit"))?,
             )
         };
-        match self.object_initializer(ast::Initializer { location, kind }, scope, target, location)
-        {
-            Ok(_) => (),
+        match self.substitution_trial(|analyzer| {
+            analyzer.trait_expression_context(|analyzer| {
+                analyzer.object_initializer(
+                    ast::Initializer { location, kind },
+                    scope,
+                    target,
+                    location,
+                )
+            })
+        }) {
+            Ok(Some(_)) => (),
+            Ok(None) => return Ok(Properties::default()),
             Err(Error::Diagnostic { .. }) => {
                 self.graph.work.totals.substitution_failures += 1;
                 return Ok(Properties::default());
@@ -696,7 +724,6 @@ impl Analyzer<'_> {
                     .expression_predicates
                     .expressions
                     .insert(key.clone(), Answer::Active);
-                self.unevaluated += 1;
                 let operands = types.as_slice();
                 let first = operands[0];
                 let result = (|| {
@@ -718,7 +745,6 @@ impl Analyzer<'_> {
                         }
                     }
                 })();
-                self.unevaluated -= 1;
                 match result {
                     Ok(properties) => {
                         self.graph
@@ -745,6 +771,23 @@ impl Analyzer<'_> {
             })
     }
 
+    fn trait_expression_context<T>(
+        &mut self,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let inserted_body = self.body_context.is_none();
+        if inserted_body {
+            let result = self.graph.types.scalar(Scalar::Void)?;
+            self.body_context = Some(super::procedural_statements::BodyContext::new(result, None));
+        }
+        self.unevaluated += 1;
+        let result = action(self);
+        self.unevaluated -= 1;
+        if inserted_body {
+            self.body_context = None;
+        }
+        result
+    }
     fn conversion_query(
         &mut self,
         from: TypeId,
@@ -779,39 +822,77 @@ impl Analyzer<'_> {
             location,
             kind: ast::InitializerKind::Assign(operand),
         };
-        let selection = (|| {
-            // new_facts completes class-template declval operands in C++.
-            // Class initialization can reuse their known facts, so perform
-            // that demand here before asking for conversion functions.
-            self.typed_expression(operand, scope)?;
-            let constructor = if self.graph.class_of(to).is_some() {
-                self.initialize_class_object(to, initializer, scope, location)?
-                    .map(|(constructor, _)| constructor)
-            } else {
-                self.object_initializer(initializer, scope, to, location)?;
-                None
-            };
-            self.check_class_destruction(to, scope, location)?;
-            Ok(constructor)
-        })();
-        let constructor = match selection {
-            Ok(constructor) => constructor,
+        let owner = self.graph.analysis.substitution.current().owner;
+        let selection = self.with_substitution_soft(owner, |analyzer| {
+            let (constructor, mut nothrow) = analyzer.trait_expression_context(|analyzer| {
+                // The source initializes first, then checks destruction only
+                // without failure, but asks an existing destructor's noexcept
+                // even when initialization left a soft failure.
+                let initialization = (|| {
+                    analyzer.typed_expression(operand, scope)?;
+                    if analyzer.graph.class_of(to).is_some() {
+                        analyzer
+                            .initialize_class_object(to, initializer, scope, location)
+                            .map(|selected| selected.map(|(constructor, _)| constructor))
+                    } else {
+                        analyzer.object_initializer(initializer, scope, to, location)?;
+                        Ok(None)
+                    }
+                })();
+                let constructor = match initialization {
+                    Ok(constructor) => constructor,
+                    Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => None,
+                    Err(error) => return Err(error),
+                };
+                if analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_none()
+                {
+                    match analyzer.check_class_destruction(to, scope, location) {
+                        Ok(()) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {}
+                        Err(error) => return Err(error),
+                    }
+                }
+                let nothrow = if let Some(class) = analyzer.graph.class_of(to) {
+                    analyzer.available_destructor_nothrow(class)?
+                } else {
+                    true
+                };
+                Ok((constructor, nothrow))
+            })?;
+            if analyzer
+                .graph
+                .analysis
+                .substitution
+                .current()
+                .failure
+                .is_some()
+            {
+                return Ok(None);
+            }
+            if nothrow && let Some(constructor) = constructor {
+                nothrow = !analyzer.constructor_function_may_throw(constructor)?;
+            }
+            Ok(Some(nothrow))
+        });
+        let nothrow = match selection {
+            Ok(Some(nothrow)) => nothrow,
+            Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                return Ok(Properties::default());
+            }
             Err(Error::Diagnostic { .. }) => {
                 self.graph.work.totals.substitution_failures += 1;
                 return Ok(Properties::default());
             }
             Err(error) => return Err(error),
         };
-        let mut nothrow = !self.expression_may_throw(operand)?;
-        if let Some(constructor) = constructor {
-            nothrow &= !self.constructor_function_may_throw(constructor)?;
-        }
-        if let Some(class) = self.graph.class_of(to) {
-            nothrow &= !self.aggregate_destruction_may_throw(class)?;
-        }
         Ok(Properties {
             viable: true,
-            nothrow,
+            nothrow: nothrow && !self.expression_may_throw(operand)?,
             trivial: false,
         })
     }
@@ -852,8 +933,12 @@ impl Analyzer<'_> {
                 },
             })
             .map_err(|_| Error::Limit("assignment query syntax limit"))?;
-        let facts = match self.typed_expression(assignment, scope) {
-            Ok(facts) => facts,
+        let facts = match self.substitution_trial(|analyzer| {
+            analyzer
+                .trait_expression_context(|analyzer| analyzer.typed_expression(assignment, scope))
+        }) {
+            Ok(Some(facts)) => facts,
+            Ok(None) => return Ok(Properties::default()),
             Err(Error::Diagnostic { .. }) => {
                 self.graph.work.totals.substitution_failures += 1;
                 return Ok(Properties::default());

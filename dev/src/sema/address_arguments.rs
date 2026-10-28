@@ -176,8 +176,8 @@ impl Analyzer<'_> {
                 // This probe precedes argument value formation, outside the
                 // candidate's soft conversion. Preserve a dependent member's
                 // diagnostic; an unreported substitution miss stays unknown.
-                if let Some(message) = environment.failure {
-                    return Err(Error::at(environment.failure_location, message));
+                if let Some(failure) = environment.failure {
+                    return Err(Error::SubstitutionRejected(failure));
                 }
                 return Ok(ArgumentTarget::Invalid);
             };

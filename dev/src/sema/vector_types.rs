@@ -231,8 +231,8 @@ impl Analyzer<'_> {
                         .pattern(entity)
                         .ok_or(Error::Invariant("vector size without operand pattern"))?
                         .expression;
-                    return Ok(environment
-                        .reject_at(self.tree.expressions.get(expression).location, message));
+                    return environment
+                        .reject_at(self.tree.expressions.get(expression).location, message);
                 }
             };
             operand = None;

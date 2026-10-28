@@ -271,7 +271,7 @@ mod tests {
             analyzer.set_lowering();
             assert!(matches!(
                 analyzer.analyze(declarations),
-                Err(Error::Diagnostic { .. })
+                Err(Error::UnconditionalDiagnostic { .. })
             ));
         }
     }

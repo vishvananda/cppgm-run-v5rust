@@ -122,6 +122,27 @@ impl Analyzer<'_> {
         result
     }
 
+    /// Query only the destructor already supplied by semantic preparation;
+    /// a failed initialization must not synthesize new destruction work here.
+    pub(super) fn available_destructor_nothrow(
+        &mut self,
+        class: super::graph::EntityId,
+    ) -> Result<bool, Error> {
+        let entity = self.graph.entity(class);
+        if let Some(destructor) = entity.declared_destructor.or(entity.implicit_destructor) {
+            return self
+                .function_may_throw(self.graph.binding(destructor).entity)
+                .map(|throws| !throws);
+        }
+        match entity.destruction.map(|facts| facts.unwind) {
+            Some(super::destruction::DestructorUnwind::Implicit { nothrow }) => Ok(nothrow),
+            Some(super::destruction::DestructorUnwind::Declared(function)) => {
+                self.function_may_throw(function).map(|throws| !throws)
+            }
+            None => Ok(true),
+        }
+    }
+
     pub(super) fn aggregate_destruction_may_throw(
         &mut self,
         class: super::graph::EntityId,

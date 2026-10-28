@@ -215,7 +215,7 @@ mod tests {
         let scope = analyzer.graph.global;
         assert!(matches!(
             analyzer.declarations(declarations, scope),
-            Err(Error::Diagnostic { message, .. })
+            Err(Error::UnconditionalDiagnostic { message, .. })
                 if message.contains("a reference is not usable in a constant expression")
         ));
     }

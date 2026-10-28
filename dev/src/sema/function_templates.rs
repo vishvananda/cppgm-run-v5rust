@@ -84,29 +84,55 @@ pub(super) struct Substitution<'a> {
     pub(super) arguments: &'a [Option<TypeId>],
     pub(super) context: Option<EntityId>,
     pub(super) selection: Option<&'a PackSelection<'a>>,
-    pub(super) failure: Option<&'static str>,
-    pub(super) failure_location: SourceOffset,
+    pub(super) failure: Option<super::substitution_state::Failure>,
     ambient: super::substitution_state::State,
 }
 impl Substitution<'_> {
-    pub(super) fn reject<T>(&mut self, message: &'static str) -> Option<T> {
+    pub(super) fn reject<T>(&mut self, message: &'static str) -> Result<Option<T>, Error> {
         self.reject_at(SourceOffset(0), message)
     }
     pub(super) fn reject_at<T>(
         &mut self,
         location: SourceOffset,
         message: &'static str,
-    ) -> Option<T> {
-        self.ambient.reject(super::substitution_state::Failure {
+    ) -> Result<Option<T>, Error> {
+        self.reject_with(location, message, false)
+    }
+    pub(super) fn reject_with<T>(
+        &mut self,
+        location: SourceOffset,
+        message: &'static str,
+        transient: bool,
+    ) -> Result<Option<T>, Error> {
+        let failure = super::substitution_state::Failure {
             location,
             message,
-            transient: false,
-        });
-        if self.failure.is_none() {
-            self.failure = Some(message);
-            self.failure_location = location;
+            transient,
+        };
+        self.ambient.emit(failure)?;
+        self.carry(Some(failure));
+        Ok(None)
+    }
+    pub(super) fn quiet<T>(&self, message: &'static str) -> Result<Option<T>, Error> {
+        self.ambient.quiet(SourceOffset(0), message)
+    }
+    /// Local transport preserves provenance but never emits into a new scope.
+    pub(super) fn carry(&mut self, failure: Option<super::substitution_state::Failure>) {
+        if let Some(failure) = failure {
+            self.failure = Some(match self.failure {
+                Some(first) => super::substitution_state::Failure {
+                    transient: first.transient || failure.transient,
+                    ..first
+                },
+                None => failure,
+            });
         }
-        None
+    }
+    pub(super) fn failure_error(&self) -> Error {
+        self.ambient
+            .current()
+            .failure
+            .map_or(Error::SubstitutionNull, Error::SubstitutionRejected)
     }
 }
 impl Analyzer<'_> {
@@ -123,7 +149,6 @@ impl Analyzer<'_> {
             context: None,
             selection: None,
             failure: None,
-            failure_location: SourceOffset(0),
             ambient: self.graph.analysis.substitution.clone(),
         }
     }
@@ -499,23 +524,7 @@ impl Analyzer<'_> {
                     .get(entity)
                     .ok_or(Error::Invariant("lost template name"))?;
                 self.substitute_template_name(name, environment)?
-                    .map(|primary| {
-                        let kind = if self
-                            .graph
-                            .class_templates
-                            .dependent_names
-                            .get(primary)
-                            .is_some()
-                        {
-                            TypeKind::TemplateParameter {
-                                entity: primary,
-                                template: true,
-                            }
-                        } else {
-                            TypeKind::Template(primary)
-                        };
-                        self.graph.types.intern(kind, cv)
-                    })
+                    .map(|name| self.graph.types.qualify(name, cv))
                     .transpose()?
             }
             TypeKind::TemplateParameter { entity, .. }
@@ -568,7 +577,7 @@ impl Analyzer<'_> {
                     self.graph.types.get(element).kind,
                     TypeKind::Reference { .. }
                 ) {
-                    environment.reject("pointer to reference")
+                    environment.reject("pointer to reference")?
                 } else {
                     Some(self.graph.types.intern(TypeKind::Pointer(element), cv)?)
                 }
@@ -581,7 +590,7 @@ impl Analyzer<'_> {
                     self.graph.types.get(element).kind,
                     TypeKind::Scalar(Scalar::Void)
                 ) {
-                    environment.reject("reference to void")
+                    environment.reject("reference to void")?
                 } else {
                     Some(self.graph.types.reference(element, kind)?)
                 }
@@ -601,7 +610,7 @@ impl Analyzer<'_> {
                     self.graph.types.get(element).kind,
                     TypeKind::Reference { .. } | TypeKind::Scalar(Scalar::Void)
                 ) {
-                    environment.reject("an invalid pointer to member type")
+                    environment.reject("an invalid pointer to member type")?
                 } else {
                     Some(
                         self.graph
@@ -648,7 +657,7 @@ impl Analyzer<'_> {
                     _ => None,
                 };
                 if let Some(message) = failure {
-                    environment.reject(message)
+                    environment.reject(message)?
                 } else {
                     Some(self.graph.types.intern(
                         TypeKind::Array {
@@ -716,7 +725,7 @@ impl Analyzer<'_> {
                 TypeKind::Scalar(Scalar::Void)
             )
         }) {
-            return Ok(environment.reject("a function type returning an array or a function, or with a parameter of type void"));
+            return environment.reject("a function type returning an array or a function, or with a parameter of type void");
         }
         self.graph
             .types
@@ -797,14 +806,15 @@ impl Analyzer<'_> {
                     );
                     let ty = match result {
                         Ok(ty) => ty,
-                        Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
-                            self.graph.work.totals.substitution_failures += 1;
-                            return Ok(None);
-                        }
+                        Err(
+                            Error::SubstitutionRejected(_)
+                            | Error::SubstitutionNull
+                            | Error::Diagnostic { .. }
+                            | Error::NonConstant { .. },
+                        ) => return Ok(None),
                         Err(error) => return Err(error),
                     };
                     if self.graph.analysis.substitution.current().failure.is_some() {
-                        self.graph.work.totals.substitution_failures += usize::from(check_access);
                         return Ok(None);
                     }
                     let ty = self.graph.types.canonical_function(ty)?;
@@ -848,6 +858,14 @@ impl Analyzer<'_> {
             .active_signatures
             .insert(active.clone())
         {
+            self.graph
+                .analysis
+                .substitution
+                .emit(super::substitution_state::Failure {
+                    location: SourceOffset(0),
+                    message: "a function template specialization's substitution needs itself",
+                    transient: true,
+                })?;
             return Ok(None);
         }
         let mut environment = self.substitution(depth, arguments);
@@ -864,20 +882,15 @@ impl Analyzer<'_> {
             .remove(&active);
         let key = active.0;
         let ty = match result {
-            Ok(Some(_)) if self.graph.analysis.substitution.current().failure.is_some() => {
-                self.graph.work.totals.substitution_failures += usize::from(check_access);
-                None
-            }
+            Ok(Some(_)) if self.graph.analysis.substitution.current().failure.is_some() => None,
             Ok(Some(ty)) => Some(ty),
-            Ok(None) => {
-                self.graph.work.totals.substitution_failures +=
-                    usize::from(environment.failure.is_some());
-                None
-            }
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
-                self.graph.work.totals.substitution_failures += 1;
-                None
-            }
+            Ok(None)
+            | Err(
+                Error::SubstitutionRejected(_)
+                | Error::SubstitutionNull
+                | Error::Diagnostic { .. }
+                | Error::NonConstant { .. },
+            ) => None,
             Err(error) => return Err(error),
         };
         let Some(ty) = ty else {
@@ -935,12 +948,17 @@ impl Analyzer<'_> {
         // but publishes neither its signature nor memo if that check fails.
         let explicitness = match self.specialized_explicitness(primary, depth, &key.arguments) {
             Ok(value) => value,
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
-                self.graph.work.totals.substitution_failures += 1;
-                return Ok(None);
-            }
+            Err(
+                Error::SubstitutionRejected(_)
+                | Error::SubstitutionNull
+                | Error::Diagnostic { .. }
+                | Error::NonConstant { .. },
+            ) => return Ok(None),
             Err(error) => return Err(error),
         };
+        if self.graph.analysis.substitution.current().failure.is_some() {
+            return Ok(None);
+        }
         self.graph.entity_mut(entity).explicitness = explicitness;
         self.graph.types.declaration_signature(ty)?;
         self.specialization_defaults(entity, primary, pattern, ty)?;
@@ -1436,16 +1454,20 @@ impl Analyzer<'_> {
                     }
                     analyzer.substitute_pack_list(&parameters, &mut environment)
                 })();
-                let failed = environment.failure.is_some()
-                    || analyzer
-                        .graph
-                        .analysis
-                        .substitution
-                        .current()
-                        .failure
-                        .is_some();
-                analyzer.graph.work.totals.substitution_failures += usize::from(failed);
-                let substituted = substituted?;
+                let failed = analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_some();
+                let substituted = match substituted {
+                    Ok(value) => value,
+                    Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                        return Ok(None);
+                    }
+                    Err(error) => return Err(error),
+                };
                 Ok(if failed { None } else { substituted })
             })?;
             let Some(parameters) = substituted else {
@@ -1708,19 +1730,18 @@ impl Analyzer<'_> {
                     owner,
                     ..state.current()
                 });
-                let result = (|| {
-                    let Some(pattern) = substituted? else {
-                        return Ok(false);
-                    };
-                    if state.current().failure.is_some() {
+                let pattern = match substituted {
+                    Ok(Some(pattern)) => pattern,
+                    Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
                         return Ok(false);
                     }
-                    let pattern = analyzer.target_deduction_pattern(pattern, declared, depth)?;
-                    analyzer.deduce_signature_type(pattern, declared, depth, &mut arguments, false)
-                })();
-                analyzer.graph.work.totals.substitution_failures +=
-                    usize::from(state.current().failure.is_some());
-                result
+                    Err(error) => return Err(error),
+                };
+                if state.current().failure.is_some() {
+                    return Ok(false);
+                }
+                let pattern = analyzer.target_deduction_pattern(pattern, declared, depth)?;
+                analyzer.deduce_signature_type(pattern, declared, depth, &mut arguments, false)
             })?;
             if !retried {
                 return Ok(None);

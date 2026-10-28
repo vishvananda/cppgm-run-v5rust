@@ -93,7 +93,7 @@ impl Analyzer<'_> {
     ) -> Result<TypeId, Error> {
         let location = self.tree.names.get(name).location;
         if self.alias_template_id(name, scope)? {
-            return Err(Error::at(
+            return Err(self.graph.analysis.substitution.hard_error(
                 location,
                 "an elaborated-type-specifier names an alias template specialization",
             ));
@@ -122,7 +122,13 @@ impl Analyzer<'_> {
                     "a template-id that names no class or variable template",
                 )
             })?;
-        let entity = self.elaborated_class_entity(specialized, key, location, false)?;
+        let entity = self.elaborated_class_entity(
+            specialized,
+            key,
+            location,
+            false,
+            super::declarations::ElaboratedContext::Declaration,
+        )?;
         super::record(&mut self.graph.resolved_names, name.index(), specialized);
         self.graph
             .entity(entity)
@@ -399,12 +405,7 @@ impl Analyzer<'_> {
             let mut environment = self.substitution(depth, &given);
             return self
                 .substitute_signature_type(pattern, &mut environment)?
-                .ok_or_else(|| {
-                    environment.failure.map_or(
-                        Error::Invariant("class default substitution without failure reason"),
-                        |message| Error::at(environment.failure_location, message),
-                    )
-                });
+                .ok_or_else(|| environment.failure_error());
         }
         let frame = self.class_default_frame(default, depth, arguments, named_in)?;
         if named_in.is_some() && self.template_depth != 0 {
@@ -503,7 +504,7 @@ impl Analyzer<'_> {
                 .iter()
                 .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
         {
-            return Ok(environment.reject("too many template arguments"));
+            return environment.reject("too many template arguments");
         }
         let expansion = arguments
             .iter()
@@ -513,7 +514,7 @@ impl Analyzer<'_> {
                 break;
             }
             let Some(default) = self.graph.templates.default_argument(head, index) else {
-                return Ok(environment.reject("too few template arguments"));
+                return environment.reject("too few template arguments");
             };
             let key = DefaultKey {
                 head,
@@ -539,7 +540,7 @@ impl Analyzer<'_> {
                         | Error::NonConstant {
                             location, message, ..
                         },
-                    ) => return Ok(environment.reject_at(location, message)),
+                    ) => return environment.reject_at(location, message),
                     Err(error) => return Err(error),
                 };
                 let ty = self.graph.types.canonical_function(ty)?;
@@ -555,7 +556,7 @@ impl Analyzer<'_> {
                 | Error::NonConstant {
                     location, message, ..
                 },
-            ) => return Ok(environment.reject_at(location, message)),
+            ) => return environment.reject_at(location, message),
             Err(error) => return Err(error),
         }
         self.class_specialization(primary, arguments).map(Some)
@@ -686,7 +687,7 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("class instance without type"))
             }
             Err(Error::Diagnostic { location, message }) => {
-                Ok(environment.reject_at(location, message))
+                environment.reject_at(location, message)
             }
             Err(error) => Err(error),
         }

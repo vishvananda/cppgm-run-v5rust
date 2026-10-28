@@ -293,10 +293,13 @@ mod tests {
                 assert_eq!(inner.instantiation_depth, 10);
                 assert_eq!(inner.graph.lookup_limit, Some(5));
                 assert!(inner.initializing_declarator.is_none());
-                substitution.reject(Failure {
-                    location: SourceOffset(4),
-                    message: "inner",
-                    transient: true,
+                substitution.replace(Ambient {
+                    failure: Some(Failure {
+                        location: SourceOffset(4),
+                        message: "inner",
+                        transient: true,
+                    }),
+                    ..substitution.current()
                 });
                 Err::<(), _>(Error::Missing("preserving query test"))
             });

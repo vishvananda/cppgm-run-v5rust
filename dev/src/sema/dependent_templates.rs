@@ -7,7 +7,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     function_templates::Substitution,
-    graph::{BindingId, BindingKind, EntityId, ScopeId},
+    graph::{BindingId, EntityId, ScopeId},
     lookup::Filter,
     types::{Cv, TypeId, TypeKind},
 };
@@ -107,80 +107,65 @@ impl Analyzer<'_> {
         for argument in &mut arguments {
             *argument = self.graph.types.canonical_function(*argument)?;
         }
-        if self.graph.entity(primary).key == Keyword::Typedef {
-            return match self.alias_specialization(
-                primary,
-                arguments,
-                crate::support::source::SourceOffset(0),
-            ) {
-                Ok(ty) => Ok(Some(ty)),
-                Err(
-                    Error::Diagnostic { location, message }
-                    | Error::NonConstant {
-                        location, message, ..
-                    },
-                ) => Ok(environment.reject_at(location, message)),
-                Err(error) => Err(error),
-            };
+        match self.specialize_template_name(
+            primary,
+            arguments,
+            crate::support::source::SourceOffset(0),
+        ) {
+            Ok(ty) => Ok(Some(ty)),
+            Err(Error::SubstitutionRejected(failure)) => {
+                environment.carry(Some(failure));
+                Ok(None)
+            }
+            Err(Error::SubstitutionNull) => Ok(None),
+            Err(error) => Err(error),
         }
-        if self
-            .graph
-            .class_templates
-            .dependent_names
-            .get(primary)
-            .is_some()
-        {
-            let entity = self.class_specialization(primary, arguments)?;
-            return Ok(self.graph.entity(entity).ty);
-        }
-        let entity = self.substitute_class_template_defaults(primary, arguments, environment)?;
-        Ok(entity.and_then(|entity| self.graph.entity(entity).ty))
     }
 
     pub(super) fn substitute_template_name(
         &mut self,
         name: Name,
         environment: &mut Substitution<'_>,
-    ) -> Result<Option<EntityId>, Error> {
+    ) -> Result<Option<TypeId>, Error> {
         let Some(qualifier) = self.substitute_signature_type(name.qualifier, environment)? else {
-            return Ok(environment.reject(
-                "a dependent template-name names no template in its instantiated qualifier",
-            ));
+            return Ok(None);
         };
-        if self.graph.dependent_type(qualifier) {
-            return self.dependent_template(qualifier, name.name).map(Some);
+        if qualifier == name.qualifier || self.graph.dependent_type(qualifier) {
+            let entity = self.dependent_template(qualifier, name.name)?;
+            return self
+                .graph
+                .types
+                .intern(
+                    TypeKind::TemplateParameter {
+                        entity,
+                        template: true,
+                    },
+                    Cv::default(),
+                )
+                .map(Some);
         }
         let TypeKind::Class(class) = self.graph.types.get(qualifier).kind else {
-            return Ok(environment.reject(
+            return environment.quiet(
                 "a dependent template-name names no template in its instantiated qualifier",
-            ));
+            );
         };
         if !self.complete_class(class)? {
-            return Ok(environment.reject(
+            return environment.quiet(
                 "a dependent template-name names no template in its instantiated qualifier",
-            ));
+            );
         }
         let scope = self.graph.entity(class).scope.ok_or(Error::Invariant(
             "complete template qualifier without scope",
         ))?;
         let found = self.qualified_declaration_result(scope, name.name.into(), Filter::Ordinary)?;
-        // substitute_template_name consumes LookupResult::binding even when
-        // lookup records ambiguity. Preserve the frozen owner's selection.
-        let Some(binding) = found.binding else {
-            return Ok(environment.reject(
-                "a dependent template-name names no template in its instantiated qualifier",
-            ));
-        };
-        let value = self.graph.binding(binding);
-        if value.kind == BindingKind::Alias
-            && self.graph.entity(value.entity).template_head.is_some()
+        // The source consumes the representative binding, including ambiguity.
+        if let Some(binding) = found.binding
+            && let Some(name) = self.template_name_type(binding, true)?
         {
-            return Ok(Some(value.entity));
+            return Ok(Some(name));
         }
-        Ok(self.class_template_primary(binding).or_else(|| {
-            environment
-                .reject("a dependent template-name names no template in its instantiated qualifier")
-        }))
+        environment
+            .quiet("a dependent template-name names no template in its instantiated qualifier")
     }
 }
 
@@ -351,7 +336,8 @@ mod tests {
         let observations = analyzer.incomplete_class_observations;
         assert_eq!(
             analyzer
-                .substitute_signature_type(pattern, &mut environment)
+                .with_substitution_soft(None, |analyzer| analyzer
+                    .substitute_signature_type(pattern, &mut environment))
                 .unwrap(),
             None
         );

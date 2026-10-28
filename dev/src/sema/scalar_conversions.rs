@@ -472,10 +472,15 @@ impl Analyzer<'_> {
                 )?;
                 return Ok(());
             }
-            return Err(Error::at(
-                self.tree.expressions.get(id).location,
-                "invalid implicit conversion",
-            ));
+            self.graph
+                .analysis
+                .substitution
+                .emit(super::substitution_state::Failure {
+                    location: self.tree.expressions.get(id).location,
+                    message: "invalid implicit conversion",
+                    transient: false,
+                })?;
+            return Ok(());
         };
         self.check_bit_field_binding(id, conversion)?;
         if let Some(mut step) = self.graph.expression_facts.function_conversion(id)
@@ -541,6 +546,11 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         self.convert_scalar_in(id, target, direct, SequenceContext::Arithmetic)?;
         let mut facts = self.graph.expression_facts.get(id)?;
+        if facts.conversion.is_none()
+            && self.graph.analysis.substitution.current().failure.is_some()
+        {
+            return Ok(());
+        }
         facts
             .conversion
             .as_mut()

@@ -271,25 +271,15 @@ impl Analyzer<'_> {
         let ty = if self.own_template_arguments(head, &key.arguments)? {
             pattern
         } else {
-            let arguments: Vec<_> = key.arguments.iter().copied().map(Some).collect();
-            let mut environment = self.substitution(self.graph.templates.depth(head), &arguments);
-            environment.context = context;
-            self.substitute_signature_type(pattern, &mut environment)?
-                .ok_or_else(|| {
-                    environment.failure.map_or(
-                        Error::Invariant("alias substitution without failure reason"),
-                        |message| {
-                            Error::at(
-                                if environment.failure_location.0 == 0 {
-                                    location
-                                } else {
-                                    environment.failure_location
-                                },
-                                message,
-                            )
-                        },
-                    )
-                })?
+            self.with_alias_substitution_location(location, |analyzer| {
+                let arguments: Vec<_> = key.arguments.iter().copied().map(Some).collect();
+                let mut environment =
+                    analyzer.substitution(analyzer.graph.templates.depth(head), &arguments);
+                environment.context = context;
+                analyzer
+                    .substitute_signature_type(pattern, &mut environment)?
+                    .ok_or_else(|| environment.failure_error())
+            })?
         };
         let discarded = self
             .graph
@@ -383,12 +373,11 @@ impl Analyzer<'_> {
         };
         match self.alias_specialization_in(alias, arguments, SourceOffset(0), environment.context) {
             Ok(ty) => Ok(Some(ty)),
-            Err(
-                Error::Diagnostic { location, message }
-                | Error::NonConstant {
-                    location, message, ..
-                },
-            ) => Ok(environment.reject_at(location, message)),
+            Err(Error::SubstitutionRejected(failure)) => {
+                environment.carry(Some(failure));
+                Ok(None)
+            }
+            Err(Error::SubstitutionNull) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -607,7 +596,8 @@ mod tests {
         let mut environment = analyzer.substitution(depth, &invalid);
         assert!(
             analyzer
-                .substitute_signature_type(parameters[2], &mut environment)
+                .with_substitution_soft(None, |analyzer| analyzer
+                    .substitute_signature_type(parameters[2], &mut environment))
                 .unwrap()
                 .is_none()
         );
@@ -768,12 +758,13 @@ mod tests {
         let mut rejected = analyzer.substitution(0, &invalid);
         assert!(
             analyzer
-                .substitute_signature_type(pattern, &mut rejected)
+                .with_substitution_soft(None, |analyzer| analyzer
+                    .substitute_signature_type(pattern, &mut rejected))
                 .unwrap()
                 .is_none()
         );
         assert_eq!(
-            rejected.failure,
+            rejected.failure.map(|failure| failure.message),
             Some("a dependent name's qualifier is not a complete class")
         );
         let x = analyzer

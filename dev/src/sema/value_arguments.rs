@@ -143,12 +143,8 @@ impl Analyzer<'_> {
             });
             self.template_arguments -= 1;
             result?;
-            if self
-                .graph
-                .class_of(self.graph.expression_facts.get(expression)?.ty)
-                .is_some()
-            {
-                self.integral_constant_operand(expression, scope, target)?;
+            if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                return Err(Error::SubstitutionRejected(failure));
             }
             // A frame-bound value keeps its originating template-id dependent
             // for instantiation-context ADL even when today's value is concrete.
@@ -170,10 +166,70 @@ impl Analyzer<'_> {
             if unknown && self.names_linked_integral_object(expression)? {
                 return self.address_template_argument(expression, scope, None);
             }
+            if let Some(class) = self
+                .graph
+                .class_of(self.graph.expression_facts.get(expression)?.ty)
+            {
+                let mut target = target;
+                if target.is_none()
+                    && let Some(binding) = self.unique_conversion_function(
+                        class,
+                        super::conversion_functions::ConversionTarget::Integral,
+                    )?
+                {
+                    let signature = self
+                        .graph
+                        .binding(binding)
+                        .ty
+                        .ok_or(Error::Invariant("template conversion without signature"))?;
+                    let result = self.call_result_view(signature)?.ty;
+                    let result = match self.graph.types.get(result).kind {
+                        TypeKind::Reference { element, .. } => element,
+                        _ => result,
+                    };
+                    target = Some(self.bare_type(result)?);
+                }
+                if let Some(target) = target {
+                    let inserted_body = self.body_context.is_none();
+                    if inserted_body {
+                        let result = self.graph.types.scalar(super::types::Scalar::Void)?;
+                        self.body_context =
+                            Some(super::procedural_statements::BodyContext::new(result, None));
+                    }
+                    let converted = self.convert_scalar(expression, target, false);
+                    if inserted_body {
+                        self.body_context = None;
+                    }
+                    converted?;
+                    // convert's soft failure does not skip converted_constant.
+                    let value = self.converted_constant_value(
+                        expression,
+                        scope,
+                        self.graph.analysis.substitution.current().soft == 0,
+                    )?;
+                    let Some(value) = value else {
+                        return self.reject_substitution(
+                            self.tree.expressions.get(expression).location,
+                            "a template argument that is not a constant expression",
+                            false,
+                        );
+                    };
+                    let ty = self.bare_type(value.ty)?;
+                    return self.graph.types.intern(
+                        TypeKind::Value {
+                            ty,
+                            bits: value.bits,
+                        },
+                        Cv::default(),
+                    );
+                }
+            }
         }
-        if let Some(value) = self.constant_value(expression, scope, self.template_depth == 0)? {
+        let required =
+            self.template_depth == 0 && self.graph.analysis.substitution.current().soft == 0;
+        if let Some(value) = self.constant_value(expression, scope, required)? {
             if self.integral_kind(value.ty).is_none() {
-                return Err(Error::at(
+                return Err(self.graph.analysis.substitution.hard_error(
                     self.tree.expressions.get(expression).location,
                     "a non-type template argument of non-integral type is not supported here",
                 ));
@@ -188,10 +244,13 @@ impl Analyzer<'_> {
             );
         }
         if self.template_depth == 0 {
-            return Err(Error::at(
-                self.tree.expressions.get(expression).location,
-                "a template argument that is not a constant expression",
-            ));
+            let failure = super::substitution_state::Failure {
+                location: self.tree.expressions.get(expression).location,
+                message: "a template argument that is not a constant expression",
+                transient: false,
+            };
+            let failure = self.graph.analysis.substitution.emit(failure)?;
+            return Err(Error::SubstitutionRejected(failure));
         }
         self.dependent_value_operand(expression, scope, target, unknown)
     }
@@ -268,7 +327,7 @@ impl Analyzer<'_> {
                             location,
                             "a non-type template parameter of a type 14.1p4 does not allow",
                         ),
-                        |message| Error::at(environment.failure_location, message),
+                        Error::SubstitutionRejected,
                     )
                 })?;
         }
@@ -627,6 +686,20 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn class_template_values_retain_the_full_requested_conversion() {
+        let source = SourceBuffer::new(b"struct X{constexpr operator long()const{return 257;}};template<unsigned char N>struct A{static const unsigned char value=N;};static_assert(A<(X())>::value==1,\"converted argument\");".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"converted-template-value").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        analyzer.analyze(declarations).unwrap();
+    }
 
     #[test]
     fn synthesized_targets_remain_dependent_without_completing_classes() {

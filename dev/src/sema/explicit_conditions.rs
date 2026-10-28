@@ -110,29 +110,57 @@ impl Analyzer<'_> {
         // static-member declaration demand. Its converted-constant checks
         // are hard errors, distinct from a failed operand substitution.
         if self.semantic() {
-            let facts = self.typed_expression(condition, scope)?;
-            self.check_resolved_function(condition)?;
-            let location = self.tree.expressions.get(condition).location;
-            if self.graph.class_of(facts.ty).is_none() {
-                let kind = self.integral_kind(facts.ty).ok_or_else(|| {
+            let inserted_body = self.body_context.is_none();
+            if inserted_body {
+                let result = self.graph.types.scalar(Scalar::Void)?;
+                self.body_context =
+                    Some(super::procedural_statements::BodyContext::new(result, None));
+            }
+            let result = (|| {
+                let facts = self.typed_expression(condition, scope)?;
+                self.check_resolved_function(condition)?;
+                let location = self.tree.expressions.get(condition).location;
+                if self.graph.class_of(facts.ty).is_none()
+                    && self.graph.analysis.substitution.current().failure.is_none()
+                {
+                    let kind = self.integral_kind(facts.ty).ok_or_else(|| {
                     Error::at(location,
                         "an explicit-specifier's condition of a type no converted constant expression of type bool converts (5.19p3)")
                         .required_instantiation()
                 })?;
-                let before = self
-                    .constant_value(condition, scope, true)
-                    .map_err(Error::required_instantiation)?
-                    .ok_or(Error::Invariant("explicit condition without constant"))?;
-                let boolean = super::integral::IntegralKind::of(Scalar::Bool)
-                    .ok_or(Error::Invariant("bool without integral kind"))?;
-                if !boolean.represents(before.bits, kind) {
-                    return Err(Error::at(
+                    let before = self
+                        .constant_value(condition, scope, true)
+                        .map_err(Error::required_instantiation)?
+                        .ok_or(Error::Invariant("explicit condition without constant"))?;
+                    let boolean = super::integral::IntegralKind::of(Scalar::Bool)
+                        .ok_or(Error::Invariant("bool without integral kind"))?;
+                    if !boolean.represents(before.bits, kind) {
+                        return Err(Error::at(
                         location,
                         "an explicit-specifier's condition narrowed by conversion to bool (8.5.4p7)",
                     ).required_instantiation());
+                    }
                 }
+                self.convert_bool(condition)
+            })();
+            if inserted_body {
+                self.body_context = None;
             }
-            self.convert_bool(condition)?;
+            result?;
+            if self.graph.analysis.substitution.current().failure.is_some() {
+                return Ok(Explicitness::Converting);
+            }
+            let value = self
+                .converted_constant_value(condition, scope, true)
+                .map_err(Error::required_instantiation)?
+                .ok_or(Error::Invariant(
+                    "explicit condition without converted constant",
+                ))?;
+            return Ok(if value.bits == 0 {
+                Explicitness::Converting
+            } else {
+                Explicitness::Explicit
+            });
         }
         let value = self
             .constant_value(condition, scope, true)

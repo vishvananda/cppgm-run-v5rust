@@ -372,6 +372,18 @@ impl Analyzer<'_> {
             if self.graph.entity(primary).key == Keyword::Typedef {
                 return self.alias_specialization(primary, arguments, location);
             }
+            if self.graph.analysis.substitution.current().soft != 0 {
+                let mut environment = self.substitution(u32::MAX, &[]);
+                environment.context = self.graph.analysis.substitution.current().owner;
+                let entity = self
+                    .substitute_class_template_defaults(primary, arguments, &mut environment)?
+                    .ok_or_else(|| environment.failure_error())?;
+                return self
+                    .graph
+                    .entity(entity)
+                    .ty
+                    .ok_or(Error::Invariant("named specialization without type"));
+            }
             let binding = self.class_template_with_defaults(primary, arguments, location)?;
             return self
                 .graph
@@ -523,12 +535,11 @@ impl Analyzer<'_> {
         };
         match self.specialize_template_name(name, arguments, SourceOffset(0)) {
             Ok(ty) => Ok(Some(ty)),
-            Err(
-                Error::Diagnostic { location, message }
-                | Error::NonConstant {
-                    location, message, ..
-                },
-            ) => Ok(environment.reject_at(location, message)),
+            Err(Error::SubstitutionRejected(failure)) => {
+                environment.carry(Some(failure));
+                Ok(None)
+            }
+            Err(Error::SubstitutionNull) => Ok(None),
             Err(error) => Err(error),
         }
     }

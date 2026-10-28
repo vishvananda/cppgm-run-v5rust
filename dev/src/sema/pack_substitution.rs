@@ -89,9 +89,8 @@ impl Analyzer<'_> {
                 length = Some(elements.len());
             }
             if mismatch {
-                return Ok(
-                    environment.reject("a pack expansion of parameter packs of different lengths")
-                );
+                return environment
+                    .reject("a pack expansion of parameter packs of different lengths");
             }
             if unknown || length.is_none() {
                 let mut whole = self.substitution(environment.depth, environment.arguments);
@@ -104,10 +103,7 @@ impl Analyzer<'_> {
                 };
                 whole.selection = Some(&selection);
                 let Some(ty) = self.substitute_signature_type(element, &mut whole)? else {
-                    if environment.failure.is_none() {
-                        environment.failure = whole.failure;
-                        environment.failure_location = whole.failure_location;
-                    }
+                    environment.carry(whole.failure);
                     valid = false;
                     continue;
                 };
@@ -122,7 +118,7 @@ impl Analyzer<'_> {
                     ) {
                         Ok(()) => continue,
                         Err(Error::Diagnostic { location, message }) => {
-                            return Ok(environment.reject_at(location, message));
+                            return environment.reject_at(location, message);
                         }
                         Err(error) => return Err(error),
                     }
@@ -152,10 +148,7 @@ impl Analyzer<'_> {
                 if let Some(ty) = self.substitute_signature_type(element, &mut inner)? {
                     result.push(ty);
                 } else {
-                    if environment.failure.is_none() {
-                        environment.failure = inner.failure;
-                        environment.failure_location = inner.failure_location;
-                    }
+                    environment.carry(inner.failure);
                     valid = false;
                 }
             }
@@ -178,12 +171,7 @@ impl Analyzer<'_> {
         // This is semantic bound expansion, not a syntax-copy mismatch.
         // Preserve substitute_list's location-zero failure at the hard boundary.
         self.substitute_pack_list(&[expansion], &mut environment)?
-            .ok_or_else(|| {
-                environment.failure.map_or(
-                    Error::Invariant("bound argument expansion failed"),
-                    |message| Error::at(environment.failure_location, message),
-                )
-            })
+            .ok_or_else(|| environment.failure_error())
     }
 }
 

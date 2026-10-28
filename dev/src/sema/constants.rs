@@ -133,9 +133,9 @@ impl Analyzer<'_> {
                 analyzer.evaluate_constant(id, scope, false)
             }
         });
-        match result {
+        let result = match result {
             Ok(value) if value.indeterminate() && !required => Ok(None),
-            Ok(value) if value.indeterminate() => Err(not_constant(
+            Ok(value) if value.indeterminate() => Err(self.graph.analysis.substitution.hard_error(
                 match requirement {
                     ConstantRequirement::Initializer(location) => location,
                     _ => self.tree.expressions.get(id).location,
@@ -147,7 +147,7 @@ impl Analyzer<'_> {
                 },
             )),
             Ok(value) if self.held_integral_constant(value) => Ok(Some(value)),
-            Ok(_) if required => Err(Error::at(
+            Ok(_) if required => Err(self.graph.analysis.substitution.hard_error(
                 self.tree.expressions.get(id).location,
                 "a 128-bit constant beyond the 64-bit integral constants",
             )),
@@ -157,7 +157,49 @@ impl Analyzer<'_> {
             }),
             Ok(_) | Err(Error::NonConstant { .. }) => Ok(None),
             Err(error) => Err(error),
-        }
+        };
+        result.map_err(|error| self.resolve_hard_error(error))
+    }
+    /// A fresh converted-constant demand applies the expression's recorded
+    /// complete conversion, retaining its target type and interpreter lifetime.
+    pub(super) fn converted_constant_value(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        required: bool,
+    ) -> Result<Option<Constant>, Error> {
+        let location = self.tree.expressions.get(id).location;
+        let facts = self.graph.expression_facts.get(id)?;
+        let target = facts
+            .conversion
+            .map_or(facts.ty, |conversion| conversion.result);
+        let result = self.with_fresh_constant_query(|analyzer| {
+            analyzer.constant_operand_value(id, target, scope)
+        });
+        let result = match result {
+            Ok(value) if value.indeterminate() && required => Err(self
+                .graph
+                .analysis
+                .substitution
+                .hard_error(location, "not a constant scalar value")),
+            Ok(value) if value.indeterminate() => Ok(None),
+            Ok(Value::Integer(value))
+                if !value.indeterminate() && self.held_integral_constant(value) =>
+            {
+                Ok(Some(value))
+            }
+            Ok(_) if required => Err(self
+                .graph
+                .analysis
+                .substitution
+                .hard_error(location, "not an integral constant expression")),
+            Err(error @ Error::NonConstant { .. }) if required => {
+                Err(error.required_expression(location))
+            }
+            Ok(_) | Err(Error::NonConstant { .. }) => Ok(None),
+            Err(error) => Err(error),
+        };
+        result.map_err(|error| self.resolve_hard_error(error))
     }
     pub(super) fn evaluate_constant(
         &mut self,
@@ -1924,13 +1966,12 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn array_bound(&mut self, expr: ast::ExprId, scope: ScopeId) -> Result<u64, Error> {
-        self.checked_array_bound(expr, scope, true)
+        self.checked_array_bound(expr, scope)
     }
     pub(super) fn checked_array_bound(
         &mut self,
         expr: ast::ExprId,
         scope: ScopeId,
-        hosted_zero: bool,
     ) -> Result<u64, Error> {
         if self.semantic() && self.template_depth == 0 {
             let target = self.graph.types.scalar(Scalar::Basic(
@@ -1940,11 +1981,25 @@ impl Analyzer<'_> {
         } else if self.semantic() {
             self.validate_fixed_expression(expr, scope)?;
         }
-        let value = self.constant_value(expr, scope, self.template_depth == 0)?;
+        if self.graph.analysis.substitution.current().failure.is_some() {
+            return Ok(1);
+        }
+        let soft = self.graph.analysis.substitution.current().soft != 0;
+        let value = self.constant_value(expr, scope, self.template_depth == 0 && !soft)?;
+        let location = self.tree.expressions.get(expr).location;
         let Some(value) = value else {
+            if self.template_depth == 0 {
+                self.graph
+                    .analysis
+                    .substitution
+                    .emit(super::substitution_state::Failure {
+                        location,
+                        message: "an array bound that is not an integral constant expression",
+                        transient: false,
+                    })?;
+            }
             return Ok(0);
         };
-        let location = self.tree.expressions.get(expr).location;
         let kind = self
             .integral_kind(value.ty)
             .ok_or(Error::Invariant("nonintegral array bound"))?;
@@ -1953,11 +2008,10 @@ impl Analyzer<'_> {
         {
             return Ok(0);
         }
-        // Hosted zero bounds share unknown-bound array identity. A signature
-        // substitution still requires positive size, and enum zeros keep their
-        // ordinary rejection (an integral conversion does not erase that fact).
+        // Hosted zero bounds share unknown-bound identity only in a hard
+        // context; enum zero keeps its ordinary validation below.
         if self.hosted()
-            && hosted_zero
+            && !soft
             && !value.truth()
             && !matches!(self.graph.types.get(value.ty).kind, TypeKind::Enum(_))
         {
@@ -1973,7 +2027,15 @@ impl Analyzer<'_> {
             None
         };
         if let Some(message) = failure {
-            return Err(Error::at(location, message));
+            self.graph
+                .analysis
+                .substitution
+                .emit(super::substitution_state::Failure {
+                    location,
+                    message,
+                    transient: false,
+                })?;
+            return Ok(1);
         }
         Ok(value.bits)
     }

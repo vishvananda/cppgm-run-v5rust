@@ -17,6 +17,11 @@ use crate::{
     },
 };
 #[derive(Clone, Copy)]
+pub(super) enum ElaboratedContext {
+    Declaration,
+    Substitution,
+}
+#[derive(Clone, Copy)]
 pub(super) struct ValueScope<'info> {
     pub qualified: bool,
     pub pattern_friend: bool,
@@ -1651,33 +1656,41 @@ impl Analyzer<'_> {
         key: Keyword,
         location: SourceOffset,
         lone: bool,
+        context: ElaboratedContext,
     ) -> Result<EntityId, Error> {
         let binding = self.graph.binding(existing);
-        if binding.kind != BindingKind::Type {
-            return Err(Error::at(
-                location,
-                if binding.kind == BindingKind::Alias {
-                    "elaborated type specifier names a typedef"
-                } else {
-                    "elaborated type specifier names a different kind of type"
-                },
-            ));
-        }
-        if self.graph.entity(binding.entity).enumeration.is_some() {
-            return Err(Error::at(
-                location,
-                if lone {
+        let failure = if binding.kind != BindingKind::Type {
+            Some(if binding.kind == BindingKind::Alias {
+                "elaborated type specifier names a typedef"
+            } else {
+                "elaborated type specifier names a different kind of type"
+            })
+        } else if self.graph.entity(binding.entity).enumeration.is_some() {
+            Some(
+                if lone && matches!(context, ElaboratedContext::Declaration) {
                     "class name redeclared as a different kind of type"
                 } else {
                     "elaborated type specifier names a different kind of type"
                 },
-            ));
-        }
-        if (key == Keyword::Union) != (self.graph.entity(binding.entity).key == Keyword::Union) {
-            return Err(Error::at(
-                location,
-                "class-key does not agree with an earlier declaration",
-            ));
+            )
+        } else if (key == Keyword::Union)
+            != (self.graph.entity(binding.entity).key == Keyword::Union)
+        {
+            Some("class-key does not agree with an earlier declaration")
+        } else {
+            None
+        };
+        if let Some(message) = failure {
+            return match context {
+                ElaboratedContext::Declaration => Err(self
+                    .graph
+                    .analysis
+                    .substitution
+                    .hard_error(location, message)),
+                ElaboratedContext::Substitution => {
+                    self.reject_substitution(location, message, false)
+                }
+            };
         }
         Ok(binding.entity)
     }
@@ -1766,12 +1779,22 @@ impl Analyzer<'_> {
             self.check_template_parameter_name(scope, key_name, node.location)?;
         }
         let existing = if let Some(prefix) = prefix {
-            self.qualified(prefix, key_name, Filter::Elaborated)?
+            let found =
+                self.qualified_declaration_result(prefix, key_name.into(), Filter::Elaborated)?;
+            if found.binding.is_none() {
+                return self.reject_substitution(node.location, "undeclared name", false);
+            }
+            if found.ambiguous {
+                return self.reject_substitution(node.location, "ambiguous name", false);
+            }
+            found.binding
         } else if lone {
             self.graph
                 .declared_name(self.declaration_scope(scope), key_name, Filter::Elaborated)
         } else {
-            self.unqualified(scope, key_name, Filter::Elaborated)?
+            let found =
+                self.unqualified_declaration_result(scope, key_name.into(), Filter::Elaborated)?;
+            found.binding
         };
         let mut declaration_home = self.declaration_scope(scope);
         if !lone && existing.is_none() {
@@ -1787,7 +1810,17 @@ impl Analyzer<'_> {
             }
         }
         let entity = if let Some(existing) = existing {
-            self.elaborated_class_entity(existing, key, node.location, lone)?
+            self.elaborated_class_entity(
+                existing,
+                key,
+                node.location,
+                lone,
+                if prefix.is_some() || !lone {
+                    ElaboratedContext::Substitution
+                } else {
+                    ElaboratedContext::Declaration
+                },
+            )?
         } else {
             if prefix.is_some() {
                 return Err(Error::at(node.location, "undeclared name"));

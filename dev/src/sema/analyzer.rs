@@ -1242,7 +1242,7 @@ mod tests {
             analyzer.stack_base = std::ptr::from_ref(&marker).addr();
             let global = analyzer.graph.global;
             assert!(matches!(analyzer.declarations(declarations, global),
-                Err(Error::Diagnostic { message: actual, .. }) if actual == message));
+                Err(Error::Diagnostic { message: actual, .. } | Error::UnconditionalDiagnostic { message: actual, .. }) if actual == message));
             assert_eq!(analyzer.unevaluated, 0);
             assert!(analyzer.body_context.is_none());
             assert!(analyzer.constant_evaluation.is_none());

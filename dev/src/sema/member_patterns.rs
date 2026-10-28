@@ -57,12 +57,7 @@ impl Analyzer<'_> {
                 // C++; an invalid enclosing type diagnoses immediately.
                 *ty = self
                     .substitute_signature_type(*ty, &mut environment)?
-                    .ok_or(Error::at(
-                        environment.failure_location,
-                        environment
-                            .failure
-                            .unwrap_or("invalid enclosing template substitution"),
-                    ))?;
+                    .ok_or_else(|| environment.failure_error())?;
             }
         }
         Ok(result)

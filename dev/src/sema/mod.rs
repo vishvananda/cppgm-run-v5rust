@@ -215,7 +215,7 @@ pub(crate) enum ConstantFailure {
     Reported,
     Unreported,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum Error {
     Diagnostic {
         location: SourceOffset,
@@ -235,6 +235,9 @@ pub(crate) enum Error {
         location: SourceOffset,
         message: &'static str,
     },
+    /// Already emitted into its owning substitution context; transport only.
+    SubstitutionRejected(substitution_state::Failure),
+    SubstitutionNull,
     DeferredBuiltin,
     Missing(&'static str),
     Limit(&'static str),
@@ -259,7 +262,7 @@ impl Error {
             Self::NonConstant {
                 failure: ConstantFailure::Unreported,
                 ..
-            } => Self::at(location, "not an integral constant expression"),
+            } => Self::hard(location, "not an integral constant expression"),
             other => other.required_constant(),
         }
     }
@@ -267,7 +270,7 @@ impl Error {
         match self {
             Self::NonConstant {
                 location, message, ..
-            } => Self::at(location, message),
+            } => Self::hard(location, message),
             other => other,
         }
     }
@@ -276,7 +279,7 @@ impl Error {
             Self::NonConstant {
                 failure: ConstantFailure::Unreported,
                 ..
-            } => Self::at(location, "a constexpr variable is not constant-initialized"),
+            } => Self::hard(location, "a constexpr variable is not constant-initialized"),
             other => other.required_constant(),
         }
     }
@@ -284,11 +287,15 @@ impl Error {
     pub(super) fn required_instantiation(self) -> Self {
         match self {
             Self::Diagnostic { location, message }
+            | Self::UnconditionalDiagnostic { location, message }
             | Self::NonConstant {
                 location, message, ..
             } => Self::InstantiationDiagnostic { location, message },
             other => other,
         }
+    }
+    pub(super) fn hard(location: SourceOffset, message: &'static str) -> Self {
+        Self::UnconditionalDiagnostic { location, message }
     }
     pub(super) fn at(location: SourceOffset, message: &'static str) -> Self {
         Self::Diagnostic { location, message }

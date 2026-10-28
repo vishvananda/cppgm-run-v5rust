@@ -126,13 +126,17 @@ impl Analyzer<'_> {
             return self.graph.types.qualify(ty, cv).map(Some);
         }
         let TypeKind::Class(class) = self.graph.types.get(qualifier).kind else {
-            return Ok(environment.reject("a dependent name's qualifier is not a complete class"));
+            return environment.reject("a dependent name's qualifier is not a complete class");
         };
         self.complete_class(class)?;
         // A class being defined exposes its members so far. Never memoize a
         // failed lookup: completing that class can make a later trial succeed.
         let Some(scope) = self.graph.entity(class).scope else {
-            return Ok(environment.reject("a dependent name's qualifier is not a complete class"));
+            return environment.reject_with(
+                crate::support::source::SourceOffset(0),
+                "a dependent name's qualifier is not a complete class",
+                true,
+            );
         };
         let found =
             match self.qualified_declaration_result(scope, member.name.into(), Filter::Ordinary) {
@@ -140,20 +144,20 @@ impl Analyzer<'_> {
                 Err(Error::Diagnostic {
                     message: "ambiguous name",
                     ..
-                }) => return Ok(environment.reject("an ambiguous dependent name")),
+                }) => return environment.reject("an ambiguous dependent name"),
                 Err(error) => return Err(error),
             };
         let Some(binding) = found.binding.filter(|_| !found.ambiguous) else {
-            return Ok(environment.reject(if found.ambiguous {
+            return environment.reject(if found.ambiguous {
                 "an ambiguous dependent name"
             } else {
                 "a dependent name does not name a type in its instantiated qualifier"
-            }));
+            });
         };
         let value = self.graph.binding(binding);
         if !matches!(value.kind, BindingKind::Type | BindingKind::Alias) {
-            return Ok(environment
-                .reject("a dependent name does not name a type in its instantiated qualifier"));
+            return environment
+                .reject("a dependent name does not name a type in its instantiated qualifier");
         }
         if let Some(entity) = environment.context {
             let context = self.substitution_scope(entity)?;
@@ -167,7 +171,7 @@ impl Analyzer<'_> {
             self.declaration_access.function = saved_function;
             self.declaration_access.class = saved_class;
             if inaccessible {
-                return Ok(environment.reject("inaccessible member"));
+                return environment.reject("inaccessible member");
             }
         }
         let resolved = value

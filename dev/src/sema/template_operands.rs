@@ -89,6 +89,13 @@ enum Evaluation {
     Type(TypeId),
     Bound(u64),
 }
+enum OperandOutcome {
+    EarlyFailure(Option<super::substitution_state::Failure>),
+    Evaluated {
+        value: Option<Evaluation>,
+        invalid: Option<super::substitution_state::Failure>,
+    },
+}
 #[derive(Clone, Copy)]
 enum OperandKind {
     Type {
@@ -736,7 +743,7 @@ impl Analyzer<'_> {
         let owner = self.graph.analysis.substitution.current().owner;
         // This is the reference's raw speculative scope, with NO direct soft
         // failure charge. Nested ordinary scopes retain their own accounting.
-        let result = self.with_substitution_soft(owner, |analyzer| {
+        let result = self.with_raw_substitution_soft(owner, |analyzer| {
             let scope = analyzer.operand_scope(
                 pattern.scope,
                 &mut analyzer.substitution(depth, &arguments),
@@ -785,7 +792,13 @@ impl Analyzer<'_> {
         self.dependent_uses.set(saved_uses);
         let key = match result {
             Ok(Some(key)) => key,
-            Ok(None) | Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+            Ok(None)
+            | Err(
+                Error::Diagnostic { .. }
+                | Error::NonConstant { .. }
+                | Error::SubstitutionRejected(_)
+                | Error::SubstitutionNull,
+            ) => {
                 return Ok(None);
             }
             Err(error) => return Err(error),
@@ -994,10 +1007,7 @@ impl Analyzer<'_> {
             let Some(Evaluation::Type(value)) =
                 self.cached_operand(keyed, &mut inner, canonical, query)?
             else {
-                if environment.failure.is_none() {
-                    environment.failure = inner.failure;
-                    environment.failure_location = inner.failure_location;
-                }
+                environment.carry(inner.failure);
                 return Ok(None);
             };
             result = value;
@@ -1057,29 +1067,40 @@ impl Analyzer<'_> {
             return Ok(None);
         }
         let incomplete = self.incomplete_class_observations;
-        let effective = self.effective_operand_arguments(environment)?;
-        let dependent = effective
-            .iter()
-            .any(|&ty| self.exception_dependent_type(ty));
-        let result = if dependent {
-            self.pending_operand(entity, environment.depth, effective)
-                .map(Evaluation::Type)
-        } else {
-            self.evaluate_operand(entity, environment, query)
-                .and_then(|result| {
-                    result.map_or_else(
-                        || {
-                            self.pending_operand(entity, environment.depth, effective)
-                                .map(Evaluation::Type)
-                        },
-                        Ok,
-                    )
+        let result = (|| {
+            let effective = self.effective_operand_arguments(environment)?;
+            let dependent = effective
+                .iter()
+                .any(|&ty| self.exception_dependent_type(ty));
+            let outcome = if dependent {
+                OperandOutcome::Evaluated {
+                    value: None,
+                    invalid: None,
+                }
+            } else {
+                self.evaluate_operand(entity, environment, query)?
+            };
+            if let OperandOutcome::Evaluated {
+                value: None,
+                invalid: None,
+            } = outcome
+            {
+                let value = self.pending_operand(entity, environment.depth, effective)?;
+                Ok(OperandOutcome::Evaluated {
+                    value: Some(Evaluation::Type(value)),
+                    invalid: None,
                 })
-        };
+            } else {
+                Ok(outcome)
+            }
+        })();
         self.graph.template_operands.active.remove(&active);
         let key = active.0;
         match result {
-            Ok(result) => {
+            Ok(OperandOutcome::Evaluated {
+                value: Some(result),
+                invalid: None,
+            }) => {
                 if self.incomplete_class_observations == incomplete {
                     self.graph
                         .template_operands
@@ -1088,20 +1109,23 @@ impl Analyzer<'_> {
                 }
                 Ok(Some(result))
             }
-            Err(
-                Error::Diagnostic { location, message }
-                | Error::NonConstant {
-                    location, message, ..
-                },
-            ) => {
-                // Failed lookups may name a class completed later. Keep only
-                // successful facts; a failed trial cannot poison later demand.
-                if environment.failure.is_none() {
-                    environment.failure = Some(message);
-                    environment.failure_location = location;
-                }
+            Ok(OperandOutcome::EarlyFailure(failure)) => {
+                environment.carry(failure);
                 Ok(None)
             }
+            Ok(OperandOutcome::Evaluated {
+                invalid: Some(failure),
+                ..
+            })
+            | Err(Error::SubstitutionRejected(failure)) => {
+                environment.carry(Some(failure));
+                Ok(None)
+            }
+            Err(Error::SubstitutionNull) => Ok(None),
+            Ok(OperandOutcome::Evaluated {
+                value: None,
+                invalid: None,
+            }) => Err(Error::Invariant("operand fallback without a value")),
             Err(error) => Err(error),
         }
     }
@@ -1132,7 +1156,7 @@ impl Analyzer<'_> {
         entity: EntityId,
         environment: &mut Substitution<'_>,
         query: Query,
-    ) -> Result<Option<Evaluation>, Error> {
+    ) -> Result<OperandOutcome, Error> {
         self.check_stack()?;
         let pattern = self
             .graph
@@ -1161,7 +1185,7 @@ impl Analyzer<'_> {
         // Scope/copy rejection belongs to the inherited substitution and must
         // be observed before instantiation entry clears its failure record.
         if let Some(failure) = self.graph.analysis.substitution.current().failure {
-            return Err(Error::at(failure.location, failure.message));
+            return Ok(OperandOutcome::EarlyFailure(Some(failure)));
         }
         let access = self
             .operand_access_context(query)
@@ -1183,9 +1207,8 @@ impl Analyzer<'_> {
                         .map(|ty| analyzer.substitute_signature_type(ty, environment))
                         .transpose()?;
                     if object == Some(None) {
-                        return Err(environment.failure.map_or(
-                            Error::Invariant("object substitution without failure reason"),
-                            |message| Error::at(environment.failure_location, message),
+                        return Ok(OperandOutcome::EarlyFailure(
+                            analyzer.graph.analysis.substitution.current().failure,
                         ));
                     }
                     analyzer.signature_object = object.flatten();
@@ -1196,16 +1219,15 @@ impl Analyzer<'_> {
                         query,
                         open,
                     );
-                    // Inspect this context's failure before restoration can
-                    // restore a caller's unrelated failure. Transport it without
-                    // generating a second rejection or publishing a pending hit.
-                    if result.is_ok()
-                        && let Some(failure) =
-                            analyzer.graph.analysis.substitution.current().failure
-                    {
-                        return Err(Error::at(failure.location, failure.message));
-                    }
-                    result
+                    let value = match result {
+                        Ok(value) => value,
+                        Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => None,
+                        Err(error) => return Err(error),
+                    };
+                    Ok(OperandOutcome::Evaluated {
+                        value,
+                        invalid: analyzer.graph.analysis.substitution.current().failure,
+                    })
                 })();
                 analyzer.signature_object = saved_object;
                 result
@@ -1227,7 +1249,7 @@ impl Analyzer<'_> {
                 .decltype_type(copy, scope)
                 .map(|ty| Some(Evaluation::Type(ty))),
             Query::Bound => self
-                .checked_array_bound(copy, scope, false)
+                .checked_array_bound(copy, scope)
                 .map(|bound| Some(Evaluation::Bound(bound))),
             Query::Value if open => {
                 let saved_depth = self.template_depth;
@@ -1256,7 +1278,14 @@ impl Analyzer<'_> {
                 .template_value(copy, scope, target, false)
                 .map(|ty| Some(Evaluation::Type(ty))),
         };
-        if !open && matches!(query, Query::Value | Query::Bound) {
+        if !open
+            && query == Query::Value
+            && (result.is_ok()
+                || matches!(
+                    result,
+                    Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull)
+                ))
+        {
             self.graph.work.totals.value_substitutions += 1;
         }
         result
@@ -1446,6 +1475,23 @@ mod tests {
         syntax::SyntaxUnit,
         types::FundamentalType,
     };
+
+    #[test]
+    fn incomplete_nested_qualifier_rejects_transiently_then_retries_after_completion() {
+        let source = SourceBuffer::new(b"struct Q;struct Wrap{using type=Q;};template<class T>auto f(T)->decltype(T::type::value);char f(...);static_assert(sizeof(f(Wrap{}))==1,\"before\");struct Q{static long value;};static_assert(sizeof(f(Wrap{}))==sizeof(long),\"after\");".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"transient-nested-qualifier").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(graph.work.totals.substitution_failures, 1);
+        assert!(graph.analysis.substitution.current().failure.is_none());
+    }
 
     #[test]
     fn body_decltypes_are_private_until_each_specialization_is_demanded() {
@@ -1884,13 +1930,18 @@ mod tests {
         let mut environment = analyzer.substitution(0, &args);
         assert_eq!(
             analyzer
-                .substitute_operand(ty, entity, &mut environment)
+                .with_substitution_soft(None, |analyzer| analyzer.substitute_operand(
+                    ty,
+                    entity,
+                    &mut environment
+                ))
                 .unwrap(),
             None
         );
         assert_eq!(
             analyzer
-                .substitute_array_bound(ty, &mut environment)
+                .with_substitution_soft(None, |analyzer| analyzer
+                    .substitute_array_bound(ty, &mut environment))
                 .unwrap(),
             None
         );
