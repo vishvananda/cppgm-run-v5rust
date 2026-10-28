@@ -43,19 +43,25 @@ impl Analyzer<'_> {
         target: TypeId,
         context: super::constructor_initialization::ClassContext,
         location: crate::support::source::SourceOffset,
-    ) -> Result<ArgumentSequence, Error> {
+    ) -> Result<Option<ArgumentSequence>, Error> {
         let facts = self.graph.expression_facts.get(id)?;
-        self.user_conversion_sequence(facts, target, false)?
-            .ok_or_else(|| {
-                Error::at(
-                    location,
-                    if context == super::constructor_initialization::ClassContext::AggregateMember {
-                        "no conversion to the member's class"
-                    } else {
-                        "no unambiguous user-defined conversion initializes the class object"
-                    },
-                )
-            })
+        let sequence = self.user_conversion_sequence(facts, target, false)?;
+        if sequence.is_some() {
+            return Ok(sequence);
+        }
+        if context == super::constructor_initialization::ClassContext::AggregateMember {
+            return Err(self
+                .graph
+                .analysis
+                .substitution
+                .hard_error(location, "no conversion to the member's class"));
+        }
+        self.emit_substitution_failure(
+            location,
+            "no unambiguous user-defined conversion initializes the class object",
+            false,
+        )?;
+        Ok(None)
     }
     pub(super) fn user_conversion_sequence(
         &mut self,

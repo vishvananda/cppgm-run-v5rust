@@ -441,8 +441,11 @@ impl Analyzer<'_> {
                 .functions
                 .is_none()
         {
-            let constructor =
-                self.initialize_single_constructor(class, *argument, input, scope, location)?;
+            let Some(constructor) =
+                self.initialize_single_constructor(class, *argument, input, scope, location)?
+            else {
+                return Ok(None);
+            };
             if let Some(list) = list {
                 self.publish_constructor_list(list, target, constructor)?;
             }
@@ -458,7 +461,11 @@ impl Analyzer<'_> {
                 .as_slice(&self.graph)
                 .is_empty()
         {
-            let sequence = self.class_initializer_conversion(*id, target, context, location)?;
+            let Some(sequence) =
+                self.class_initializer_conversion(*id, target, context, location)?
+            else {
+                return Ok(None);
+            };
             match sequence.user_conversion {
                 Some(super::procedural_calls::UserConversion::Constructor(_)) => Some(sequence),
                 Some(super::procedural_calls::UserConversion::Function(_)) => {
@@ -487,22 +494,28 @@ impl Analyzer<'_> {
             && matches!(args, [id]
             if !copy_list || !matches!(self.tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. }));
         if !offered && !copies {
-            return Err(Error::at(
+            if context == ClassContext::AggregateMember {
+                return Err(self
+                    .graph
+                    .analysis
+                    .substitution
+                    .hard_error(location, "no conversion to the member's class"));
+            }
+            self.emit_substitution_failure(
                 location,
-                if context == ClassContext::AggregateMember {
-                    "no conversion to the member's class"
-                } else {
-                    "no constructor for the initialization"
-                },
-            ));
+                "no constructor for the initialization",
+                false,
+            )?;
+            return Ok(None);
         }
         let mut scratch = std::mem::take(&mut self.call_scratch);
         let chosen = if let Some(sequence) = conversion {
-            Self::prepare_converting_constructor(sequence, &mut scratch)
+            Self::prepare_converting_constructor(sequence, &mut scratch).map(Some)
         } else if let Some(binding) = selected {
             self.prepare_selected_call(binding, args, &mut scratch)
+                .map(Some)
         } else {
-            self.resolve_call(
+            self.resolve_constructor_call(
                 location,
                 if context == ClassContext::AggregateMember {
                     Candidates::ConvertingMember(class)
@@ -514,11 +527,13 @@ impl Analyzer<'_> {
                     }
                 },
                 args,
-                None,
                 &mut scratch,
             )
         };
-        let chosen = chosen.and_then(|mut selected| {
+        let chosen = chosen.and_then(|selected| {
+            let Some(mut selected) = selected else {
+                return Ok(None);
+            };
             selected.binding =
                 self.inherited_constructor_specialization(class, selected.binding, args.len())?;
             self.check_inherited_constructor_access(selected.binding, location)?;
@@ -533,11 +548,13 @@ impl Analyzer<'_> {
             self.validate_constructor_use(constructor, scope, location)?;
             self.apply_call_arguments(selected, args, scope, &scratch)?;
             self.demand_constructor_use(constructor)?;
-            Ok((constructor, function))
+            Ok(Some((constructor, function)))
         });
         scratch.clear();
         self.call_scratch = scratch;
-        let (constructor, function) = chosen?;
+        let Some((constructor, function)) = chosen? else {
+            return Ok(None);
+        };
         self.check_constructor_narrowing(function, args, scope, list.is_some())?;
         if converting {
             self.check_converting_final_copy(class, scope, location)?;

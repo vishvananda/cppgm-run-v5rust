@@ -708,15 +708,16 @@ impl Analyzer<'_> {
             let produced = ExprFacts::new(selected.result, selected.category);
             // operand_constructor elides only a prvalue of the destination's own
             // unqualified class; it does not select or demand a copy for it.
-            if selected.category != ValueCategory::Prvalue
+            if (selected.category != ValueCategory::Prvalue
                 || self.bare_type(selected.result)?
                     != self
                         .graph
                         .entity(class)
                         .ty
-                        .ok_or(Error::Invariant("conversion destination without type"))?
+                        .ok_or(Error::Invariant("conversion destination without type"))?)
+                && let Some(copy) =
+                    self.select_result_constructor(class, produced, scope, location)?
             {
-                let copy = self.select_result_constructor(class, produced, scope, location)?;
                 selected.after_path =
                     self.conversion_base_path(produced, copy.binding, scope, location, true)?;
                 let action = self.copy_action(

@@ -57,6 +57,11 @@ pub(super) struct CallSelection {
     first: usize,
     object_count: usize,
 }
+pub(super) enum CallResolution {
+    NoViable,
+    Ambiguous,
+    Selected(CallSelection),
+}
 #[derive(Default)]
 pub(super) struct CallScratch {
     offered: Vec<BindingId>,
@@ -1000,6 +1005,45 @@ impl Analyzer<'_> {
         }
         self.select_call(location, args.len(), usize::from(object.is_some()), scratch)
     }
+    pub(super) fn resolve_constructor_call(
+        &mut self,
+        location: crate::support::source::SourceOffset,
+        set: Candidates,
+        args: &[ast::ExprId],
+        scratch: &mut CallScratch,
+    ) -> Result<Option<CallSelection>, Error> {
+        self.rank_call(set, args, None, scratch)?;
+        let resolution = self.call_resolution(args.len(), 0, scratch)?;
+        let message = match resolution {
+            CallResolution::Selected(selected) => return Ok(Some(selected)),
+            CallResolution::NoViable => "no viable function for the call",
+            CallResolution::Ambiguous => "ambiguous call to overloaded function",
+        };
+        if matches!(set, Candidates::ConvertingMember(_)) {
+            return Err(self
+                .graph
+                .analysis
+                .substitution
+                .hard_error(location, "no conversion to the member's class"));
+        }
+        self.emit_substitution_failure(location, message, false)?;
+        Ok(None)
+    }
+
+    fn call_resolution(
+        &mut self,
+        count: usize,
+        object_count: usize,
+        scratch: &CallScratch,
+    ) -> Result<CallResolution, Error> {
+        if scratch.candidates.is_empty() {
+            return Ok(CallResolution::NoViable);
+        }
+        Ok(self
+            .unique_call(count, object_count, scratch)?
+            .map_or(CallResolution::Ambiguous, CallResolution::Selected))
+    }
+
     pub(super) fn rank_call(
         &mut self,
         set: Candidates,

@@ -522,12 +522,14 @@ impl Analyzer<'_> {
                 self.aggregate_members(elements, next, class, scope, location, None)?;
             } else {
                 *next += 1;
-                let sequence = self.class_initializer_conversion(
-                    id,
-                    target,
-                    super::constructor_initialization::ClassContext::AggregateMember,
-                    self.tree.expressions.get(id).location,
-                )?;
+                let sequence = self
+                    .class_initializer_conversion(
+                        id,
+                        target,
+                        super::constructor_initialization::ClassContext::AggregateMember,
+                        self.tree.expressions.get(id).location,
+                    )?
+                    .ok_or(Error::Invariant("class element conversion returned null"))?;
                 if !self.apply_user_sequence(
                     id,
                     sequence,

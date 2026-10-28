@@ -42,6 +42,12 @@ pub(super) enum CopyUse {
     Value { in_place: bool },
     Return { implicit_move: bool },
 }
+#[derive(Clone, Copy)]
+enum CopyFailureSite {
+    Constructor,
+    Operand,
+    FinalTemporary,
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConstructorContext {
     Copy,
@@ -332,7 +338,27 @@ impl Analyzer<'_> {
         ) {
             self.select_return_copy(class, facts, scope, location)?
         } else {
-            self.select_copy_sequence(class, facts, Some(scope), direct, location)?
+            self.select_copy_sequence(class, facts, scope, direct, location)?
+        };
+        let Some(candidate) = candidate else {
+            if facts.conversion.is_none() {
+                let mut facts = self.graph.expression_facts.get(id)?;
+                let conversion = Conversion {
+                    target,
+                    result: self.bare_type(target)?,
+                    first: super::expression_facts::LvalueTransform::None,
+                    second: super::expression_facts::ValueConversion::None,
+                    rank: super::expression_facts::ConversionRank::Exact,
+                    qualification: false,
+                    initialization: true,
+                    list_initialization: super::expression_facts::ListInitialization::Ordinary,
+                    temporary: false,
+                    reference_source: super::expression_facts::ReferenceSource::Other,
+                };
+                self.record_conversion(&mut facts, conversion);
+                self.graph.expression_facts.set(id, facts);
+            }
+            return Ok(());
         };
         let selected = candidate.selection;
         let special = match selected.origin {
@@ -463,21 +489,8 @@ impl Analyzer<'_> {
             facts,
             ConstructorContext::Standard { explicit: true },
         )?;
-        self.check_copy_selection(resolution, Some(scope), location)
-            .map(|_| ())
-            .map_err(|error| match error {
-                Error::Diagnostic {
-                    message:
-                        "no viable function for the call"
-                        | "no constructor for the initialization"
-                        | "ambiguous call to overloaded function",
-                    ..
-                } => Error::at(
-                    location,
-                    "no unambiguous constructor initializes the object from the converted temporary",
-                ),
-                other => other,
-            })
+        self.copy_use_candidate(resolution, scope, location, CopyFailureSite::FinalTemporary)?;
+        Ok(())
     }
     pub(super) fn select_result_constructor(
         &mut self,
@@ -485,7 +498,7 @@ impl Analyzer<'_> {
         facts: super::expression_facts::ExprFacts,
         scope: ScopeId,
         location: SourceOffset,
-    ) -> Result<CopySelection, Error> {
+    ) -> Result<Option<CopySelection>, Error> {
         let resolution = self.resolve_class_constructor(
             class,
             facts,
@@ -505,21 +518,8 @@ impl Analyzer<'_> {
                 "a class object initialized through a constructor's class parameter is not supported",
             ));
         }
-        self.check_copy_selection(resolution, Some(scope), location)
-            .map(|candidate| candidate.selection)
-            .map_err(|error| match error {
-                Error::Diagnostic {
-                    message:
-                        "no viable function for the call"
-                        | "no constructor for the initialization"
-                        | "ambiguous call to overloaded function",
-                    ..
-                } => Error::at(
-                    location,
-                    "no unambiguous constructor initializes the class object from the value",
-                ),
-                other => other,
-            })
+        self.copy_use_candidate(resolution, scope, location, CopyFailureSite::Operand)
+            .map(|candidate| candidate.map(|candidate| candidate.selection))
     }
     pub(super) fn select_subobject_copy(
         &mut self,
@@ -541,12 +541,12 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
-        access_scope: Option<ScopeId>,
+        scope: ScopeId,
         direct: bool,
         location: SourceOffset,
-    ) -> Result<Candidate, Error> {
+    ) -> Result<Option<Candidate>, Error> {
         let resolution = self.resolve_class_copy(class, facts, direct)?;
-        self.check_copy_selection(resolution, access_scope, location)
+        self.copy_use_candidate(resolution, scope, location, CopyFailureSite::Constructor)
     }
 
     fn select_return_copy(
@@ -555,7 +555,7 @@ impl Analyzer<'_> {
         facts: super::expression_facts::ExprFacts,
         scope: ScopeId,
         location: SourceOffset,
-    ) -> Result<Candidate, Error> {
+    ) -> Result<Option<Candidate>, Error> {
         // 12.8p32: probe without changing the named operand's source category.
         // Deletion/access are checked only after choosing which pass to keep.
         let mut view = facts;
@@ -574,9 +574,9 @@ impl Analyzer<'_> {
         {
             // The probe decides the source category; the actual result's
             // constructor selection owns its conversions, access and demand.
-            return self.select_copy_sequence(class, view, Some(scope), false, location);
+            return self.select_copy_sequence(class, view, scope, false, location);
         }
-        self.select_copy_sequence(class, facts, Some(scope), false, location)
+        self.select_copy_sequence(class, facts, scope, false, location)
     }
 
     fn resolve_class_copy(
@@ -889,7 +889,7 @@ impl Analyzer<'_> {
         input: super::constructor_initialization::ClassInput,
         scope: ScopeId,
         location: SourceOffset,
-    ) -> Result<super::construction::ConstructorId, Error> {
+    ) -> Result<Option<super::construction::ConstructorId>, Error> {
         let facts = self.graph.expression_facts.get(argument)?;
         let context = if input.copy_list {
             ConstructorContext::CopyList
@@ -914,7 +914,11 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        let candidate = self.check_copy_selection(resolution, Some(scope), location)?;
+        let Some(candidate) =
+            self.copy_use_candidate(resolution, scope, location, CopyFailureSite::Constructor)?
+        else {
+            return Ok(None);
+        };
         let selected = candidate.selection;
         let constructor = match selected.origin {
             CopyOrigin::Declared(binding) => self.selected_constructor_plan(binding, location)?,
@@ -946,8 +950,45 @@ impl Analyzer<'_> {
         let binding = self.graph.function_origin(function)?;
         self.request_constructor_defaults(binding, 1)?;
         self.demand_constructor_use(constructor)?;
-        Ok(constructor)
+        Ok(Some(constructor))
     }
+    fn copy_use_candidate(
+        &mut self,
+        resolution: CopyResolution,
+        scope: ScopeId,
+        location: SourceOffset,
+        site: CopyFailureSite,
+    ) -> Result<Option<Candidate>, Error> {
+        let message = match (site, resolution) {
+            (_, CopyResolution::Selected(candidate)) => {
+                return self
+                    .check_copy_selection(
+                        CopyResolution::Selected(candidate),
+                        Some(scope),
+                        location,
+                    )
+                    .map(Some);
+            }
+            (CopyFailureSite::Constructor, CopyResolution::NoViable { offered: false }) => {
+                "no constructor for the initialization"
+            }
+            (CopyFailureSite::Constructor, CopyResolution::NoViable { offered: true }) => {
+                "no viable function for the call"
+            }
+            (CopyFailureSite::Constructor, CopyResolution::Ambiguous) => {
+                "ambiguous call to overloaded function"
+            }
+            (CopyFailureSite::Operand, _) => {
+                "no unambiguous constructor initializes the class object from the value"
+            }
+            (CopyFailureSite::FinalTemporary, _) => {
+                "no unambiguous constructor initializes the object from the converted temporary"
+            }
+        };
+        self.emit_substitution_failure(location, message, false)?;
+        Ok(None)
+    }
+
     fn check_copy_selection(
         &mut self,
         resolution: CopyResolution,
@@ -996,6 +1037,106 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn failed_copy_selection_retains_null_conversion_without_a_copy_action() {
+        for (constructors, expected) in [
+            (
+                "explicit A(const A&);",
+                "no constructor for the initialization",
+            ),
+            (
+                "A(const A&,int=0);A(const A&,long=0);",
+                "ambiguous call to overloaded function",
+            ),
+        ] {
+            let source = SourceBuffer::new(
+                format!("struct A{{{constructors}}};A& source();A result=source();").into_bytes(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"copy-null-outcome").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let name = cursor.intern_name(b"A").unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_semantics(true);
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let scope = analyzer.graph.global;
+            let declarations = analyzer.tree.decl_lists.get(declarations).to_vec();
+            for &declaration in &declarations[..2] {
+                analyzer.declaration(declaration, scope).unwrap();
+            }
+            let class = analyzer
+                .graph
+                .binding(analyzer.graph.own(scope, name, Filter::Prefix).unwrap())
+                .entity;
+            let target = analyzer.graph.entity(class).ty.unwrap();
+            let crate::syntax::ast::DeclKind::Simple { declarators, .. } =
+                analyzer.tree.declarations.get(declarations[2]).kind
+            else {
+                panic!("result declaration");
+            };
+            let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+                .initializer
+                .unwrap();
+            let crate::syntax::ast::InitializerKind::Assign(expression) = initializer.kind else {
+                panic!("copy initializer");
+            };
+            analyzer.typed_expression(expression, scope).unwrap();
+            let demands = analyzer.graph.root_demands.as_slice().len();
+            let conversions = analyzer.graph.work.totals.conversions;
+            analyzer
+                .with_substitution_soft(None, |analyzer| {
+                    analyzer.record_class_copy(
+                        expression,
+                        target,
+                        scope,
+                        super::CopyUse::Object { direct: false },
+                        initializer.location,
+                    )?;
+                    let failure = analyzer
+                        .graph
+                        .analysis
+                        .substitution
+                        .current()
+                        .failure
+                        .unwrap();
+                    assert_eq!(failure.message, expected);
+                    let facts = analyzer.graph.expression_facts.get(expression)?;
+                    assert!(facts.class_copy.is_none());
+                    assert!(
+                        analyzer
+                            .graph
+                            .expression_facts
+                            .copy_action(expression)
+                            .is_none()
+                    );
+                    let conversion = facts.conversion.unwrap();
+                    assert_eq!(conversion.target, target);
+                    assert_eq!(conversion.result, target);
+                    assert!(conversion.initialization);
+                    assert_eq!(
+                        conversion.rank,
+                        crate::sema::expression_facts::ConversionRank::Exact
+                    );
+                    assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
+                    assert_eq!(analyzer.graph.work.totals.conversions, conversions + 1);
+                    Ok(())
+                })
+                .unwrap();
+            assert!(
+                analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_none()
+            );
+        }
+    }
+
     #[test]
     fn conditional_constructor_fallback_prepares_ellipsis_storage() {
         for condition in [
