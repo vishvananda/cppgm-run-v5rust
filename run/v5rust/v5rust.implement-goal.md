@@ -1,12 +1,13 @@
-Complete a coherent exact C++-to-safe-Rust implementation group for
-{{testStage}}, following every instruction in the accompanying prompt and
-CLONE_CONTRACT.md. Preserve observable behavior and code-generation bytes.
-Use idiomatic Rust names and typed ownership, and consult the frozen C++ source.
-Reduce fixed-manifest failures without losing any prior passing case; earlier
-assignments and Rust quality/audit checks must pass. Update the stage ledger
-and source map, record validation evidence, commit and leave a clean checkout.
-A documented coherent partial assignment handoff can complete this phase goal;
-Ralph's checkpoint/final audits decide advancement. Do not create/reset the goal
-or change the oracle, fixtures or checker policy.
+Complete a substantial source-faithful C++-to-safe-Rust batch for {{testStage}}.
+Preserve the reference algorithm, persistent state, demand and execution order;
+change representation only as required for safe Rust and defer optional redesign.
+Finish a finite whole-owner batch, or several related mechanisms for a larger
+owner, with explicit closure criteria. Continue beyond isolated fixes using focused
+checks; close only fully reviewed responsibilities and queue unrelated findings.
+Refresh broad prior/full quality once after stabilization; leave boundary gates
+to Ralph. Use valid keyed receipts, update the compact ledger,
+commit and leave clean. Partial completion ends this handoff, not the assignment;
+all frozen stage/release/bootstrap requirements remain intact. Complete Ralph's
+existing native goal without resetting it or editing protected policy/state.
 
 {{modelValidation}}

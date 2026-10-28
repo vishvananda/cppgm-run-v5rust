@@ -9,6 +9,9 @@ Compiler code belongs in `dev/src/`; entry points in `dev/bin/`. Keep reusable
 algorithms in their owning phase. Preserve typed facts, parse-once ownership,
 compact IDs, explicit demand and per-function backend lifetimes. Keep
 `docs/port/source-map.tsv` current. No unsafe code or C++ implementation fallback.
+Preserve the reference algorithm, state lifetimes, demand/short-circuit order
+and cache boundaries before optional redesign. Safe Rust ownership adapts the
+representation, not the execution lifecycle.
 
 Use `make build`, `make lint`, `make audit-rust`, `make test-paN` and
 `make course-paN`. Run earlier completed stages after a coherent change.
@@ -29,7 +32,15 @@ reads under `dev/src/`; collect them in `dev/bin/` and pass typed options.
 The companion file audit is authoritative for source
 limits; passing Clippy alone is insufficient.
 
-For each stage record its base commit, last audited commit, C++/Rust owners,
+Select a finite substantial batch with closure criteria: a whole source owner,
+or several related mechanisms for a larger owner. Continue beyond isolated fixes.
+Up to three read-only reviewers cover disjoint ranges; the parent edits and
+certifies. Use focused tests, clone_quality.py --review and evidence checkpoints
+between repairs. Refresh full prior/quality once after batch stabilization; Ralph
+runs boundary gates. The final strict snapshot still requires valid receipts.
+Keep one compact ledger. Raw cases stay
+in artifacts and previous plans in Git. Add broad probes/resource studies only for a changed
+invariant or stated question. For each stage record its base and audited tip, C++/Rust owners,
 completed behavior groups, exact failing case IDs, next dependency boundary,
 validation commands/artifact paths and measured resource costs. Do not claim a
 stage complete from fixture counts alone. Keep source responsibilities and

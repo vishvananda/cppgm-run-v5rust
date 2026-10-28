@@ -1,48 +1,43 @@
-Implement the next coherent exact-clone behavior group for {{testStage}}.
+Translate a substantial frozen C++ dependency batch for {{testStage}} into safe Rust.
 
 {{briefState}}
-Current results: {{testStatusSummary}}
-Full primary log: {{lastTestLogPath}}
+Results: {{testStatusSummary}}
+Primary log: {{lastTestLogPath}}
 
-Read AGENTS.md, CLONE_CONTRACT.md, spec.md, the owning assignment handout,
-docs/rust-clone-plan.md and docs/port/{{testStage}}.md. Inspect the actual C++
-owners in /home/vishvananda/work/references/v5rust-cpp. This is a translation
-with a readable implementation oracle, not a from-scratch student solution.
+Read the current handout, contract/spec, compact ledger and selected C++ owners.
+Map their functions, branches, persistent state and phase boundaries to Rust.
+Preserve algorithms, evaluation/short-circuit and emission order, live queue
+traversal, cache keys and state lifetimes. Adapt pointer representation to typed
+IDs/owned stores; defer optional redesign. Temporary borrowing facades must not
+reset persistent state. Work from C++ source rather than reconstructing behavior
+from fixtures. Preserve the existing optimizer/backend policy and safe Rust rules.
 
-Use idiomatic Rust names, ownership, Result, enums, compact typed IDs and
-explicit target arithmetic. Preserve parsing once, typed semantic facts,
-demand boundaries, emission order and per-function backend lifetimes. Keep the
-optimizer/code generator behavior exact; no new optimizations. No unsafe, FFI
-implementation, subprocess compiler fallback, test recognition or reference
-answers in compiler code. No speculative whole-program work on hot paths.
+Select a finite batch with explicit closure criteria: normally a whole source
+owner, or several related mechanisms when the owner is larger. Fix shared
+producers before consumers; continue through the selected mechanisms after each
+repair. One passing case or isolated fix is not the default handoff boundary.
+Queue unrelated discoveries. Up to three read-only reviewers cover disjoint
+ranges; the parent edits and certifies only fully reviewed source responsibilities.
 
-Cluster failures by their earliest divergent phase and shared C++ owner. Port
-the coherent group and its production invariants, validate it, then continue
-related work while that understanding remains useful. A single passing case
-or a commit is not a stopping boundary. A partial handoff is valid when a
-coherent group is done and the next dependency boundary is documented.
+Iterate with affected fixtures and a few controls for changed invariants, plus
+clone_quality.py --review. Do not routinely expand mode matrices, stack campaigns
+or timings. Use protected stack qualification for actual exhaustion. Measure two
+supported scales only for a concrete changed allocation/repeated-work bound.
+During PA33, clone_bootstrap_probe.py --limit 4 is an isolated diagnostic, never
+PA34 acceptance; reuse recorded results and reduce the first divergent boundary.
 
-Use make test-{{testStage}}, make course-{{testStage}}, make lint and make
-audit-rust. Focused tests are useful during development, but handoff requires
-all earlier stages green, exact failure reduction in the fixed current-stage
-manifest and preservation of previously passing case identities. Missing
-implementation status 86 never matches a valid rejecting compiler. Follow
-the protected trace paths to inspect raw diagnostics, objects and outputs.
+Use clone_evidence.py checkpoint {{testStage}} --out PATH --evidence FILE during
+open work. Refresh broad prior/full quality once when the selected batch stabilizes,
+reusing valid content-bound successes. Ralph runs stage/course/preservation and
+release checks at the boundary; do not duplicate them or repeat release/debug
+probes while known source incompleteness blocks acceptance. Final acceptance still
+requires every stage/release/bootstrap gate, source owner and strict snapshot.
+No per-fix full sweeps, copied receipts, hardcoded validators or relaxed comparison.
 
-Update docs/port/source-map.tsv and the stage ledger with C++/Rust owners,
-typed data flow, remaining groups, exact case IDs, commands and artifact
-paths. Record stage base HEAD on first entry; implementation does not advance
-the last-audited commit. Measure compile time/RSS/scaling for supported hot
-paths; PA35's generated-code improvement targets are not requirements here.
+Replace the ledger with selected owners, state mapping, finite findings,
+closed/reopened responsibilities, evidence and the next dependency. Raw controls
+stay in artifacts and prior plans in Git. Commit coherent work, leave clean,
+complete Ralph's existing native handoff goal and return. Partial completion ends
+the handoff, not the assignment. Never reset goals or edit Ralph state.
 
-Never edit protected checks, fixtures, references, oracle sources, Ralph state
-or acceptance policy. Report an oracle/harness defect with a reproducer and
-continue independent port work. Do not silently redefine the contract.
-
-Commit intended changes and leave a clean checkout. Complete Ralph's existing
-native goal only when this phase's work is done, then return a concise handoff
-with validation and remaining work. Do not create, replace or edit the goal.
-Goal completion hands control back; Ralph owns checks, audits and advancement.
-
-Required external criteria:
 {{modelValidation}}
