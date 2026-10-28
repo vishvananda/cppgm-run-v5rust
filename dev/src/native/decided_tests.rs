@@ -50,10 +50,10 @@ fn exit_value(f: &Function, program: &Program, b: usize, r: R) -> Option<(u128, 
         match op {
             Op::Move(to, bits) if to == r => return Some((bits, false)),
             Op::SymbolMove(to, s) if to == r => return defined(s).then_some((0, true)),
-            Op::Scalar(ScalarOp::Move(to, Operand::Immediate(bits))) if to == r => {
+            Op::Scalar(ScalarOp::Move(_, to, Operand::Immediate(bits))) if to == r => {
                 return Some((bits, false));
             }
-            Op::Scalar(ScalarOp::Move(to, Operand::Symbol(s) | Operand::SymbolOffset(s, _)))
+            Op::Scalar(ScalarOp::Move(_, to, Operand::Symbol(s) | Operand::SymbolOffset(s, _)))
                 if to == r =>
             {
                 return defined(s).then_some((0, true));

@@ -162,7 +162,7 @@ fn move_parts(op: Op) -> Option<(R, Operand)> {
     match op {
         Op::Move(r, bits) => Some((r, Operand::Immediate(bits))),
         Op::SymbolMove(r, symbol) => Some((r, Operand::Symbol(symbol))),
-        Op::Scalar(ScalarOp::Load(r, _, value) | ScalarOp::Move(r, value)) => Some((r, value)),
+        Op::Scalar(ScalarOp::Load(r, _, value) | ScalarOp::Move(_, r, value)) => Some((r, value)),
         Op::Scalar(ScalarOp::ExtendMove(ty, r, source)) if !super::scalar_mir::signed(ty) => {
             Some((r, Operand::Register(source)))
         }
@@ -325,7 +325,7 @@ fn resolve(
             } else if offset != 0 {
                 None
             } else if width == 8 {
-                Some(Op::Scalar(ScalarOp::Move(destination, source)))
+                Some(Op::Scalar(ScalarOp::Move(Type::Void, destination, source)))
             } else {
                 Some(Op::Scalar(ScalarOp::ExtendMove(
                     Type::U32,
@@ -653,7 +653,7 @@ mod tests {
         assert_eq!(forward(&mut f), 1);
         assert!(matches!(
             f.instructions[2].op,
-            Op::Scalar(ScalarOp::Move(R::RAX, Operand::Register(R::RDX)))
+            Op::Scalar(ScalarOp::Move(_, R::RAX, Operand::Register(R::RDX)))
         ));
         assert!(matches!(
             f.instructions[3].op,

@@ -32,7 +32,9 @@ fn offset(s: &mut Selection<'_>, selector: R, value: i64, last: bool) -> R {
     } else {
         R::R11
     };
-    s.load(r, Operand::Register(selector), Type::I64);
+    if r != selector {
+        s.emit(ScalarOp::Move(Type::I64, r, Operand::Register(selector)));
+    }
     if value != 0 {
         s.emit(ScalarOp::Binary(Binary::Sub, Type::I64, r, imm(value)));
     }
@@ -40,7 +42,7 @@ fn offset(s: &mut Selection<'_>, selector: R, value: i64, last: bool) -> R {
 }
 fn masks(s: &mut Selection<'_>, tree: &Tree, r: R) {
     for &(bits, target) in &tree.masks {
-        s.load(R::R11, imm(bits.cast_signed()), Type::I64);
+        s.emit(ScalarOp::Move(Type::I64, R::R11, imm(bits.cast_signed())));
         s.emit(ScalarOp::Condition(FlagOp::BitTest(
             Type::I64,
             R::R11,

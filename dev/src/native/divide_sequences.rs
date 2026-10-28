@@ -181,7 +181,7 @@ impl Selection<'_> {
         } else {
             R::R11
         };
-        self.emit(ScalarOp::Move(t, register(x)));
+        self.emit(ScalarOp::Move(Type::Void, t, register(x)));
         if k == 1 {
             self.division_shift(Binary::UShr, t, 63);
         } else {
@@ -250,13 +250,13 @@ impl Selection<'_> {
         };
         self.division_binary(Binary::Mul, q, source);
         let r = if q == R::RDX { R::RAX } else { R::RDX };
-        self.emit(ScalarOp::Move(r, register(x)));
+        self.emit(ScalarOp::Move(Type::Void, r, register(x)));
         self.division_binary(Binary::Sub, r, register(q));
         r
     }
     fn unsigned_magic_divide(&mut self, x: R, divisor: i64, remainder: bool) -> R {
         let magic = unsigned_magic(divisor.cast_unsigned());
-        self.emit(ScalarOp::Move(R::RAX, register(x)));
+        self.emit(ScalarOp::Move(Type::Void, R::RAX, register(x)));
         self.load(R::R11, immediate(magic.multiplier.cast_signed()), Type::I64);
         self.emit(ScalarOp::MultiplyWide {
             unsigned: true,
@@ -264,7 +264,7 @@ impl Selection<'_> {
         });
         let mut q = R::RDX;
         if magic.add {
-            self.emit(ScalarOp::Move(R::RAX, register(x)));
+            self.emit(ScalarOp::Move(Type::Void, R::RAX, register(x)));
             self.division_binary(Binary::Sub, R::RAX, register(R::RDX));
             self.division_shift(Binary::UShr, R::RAX, 1);
             self.division_binary(Binary::Add, R::RAX, register(R::RDX));
@@ -283,7 +283,7 @@ impl Selection<'_> {
     }
     fn signed_magic_divide(&mut self, x: R, divisor: i64, remainder: bool) -> R {
         let magic = signed_magic(divisor);
-        self.emit(ScalarOp::Move(R::RAX, register(x)));
+        self.emit(ScalarOp::Move(Type::Void, R::RAX, register(x)));
         self.load(R::R11, immediate(magic.multiplier), Type::I64);
         self.emit(ScalarOp::MultiplyWide {
             unsigned: false,
@@ -297,7 +297,7 @@ impl Selection<'_> {
         if magic.shift != 0 {
             self.division_shift(Binary::Shr, R::RDX, magic.shift);
         }
-        self.emit(ScalarOp::Move(R::RAX, register(R::RDX)));
+        self.emit(ScalarOp::Move(Type::Void, R::RAX, register(R::RDX)));
         self.division_shift(Binary::UShr, R::RAX, 63);
         self.division_binary(Binary::Add, R::RDX, register(R::RAX));
         if remainder {

@@ -255,7 +255,7 @@ pub(super) fn fold_entry_extensions(instructions: &mut [Instruction]) {
                 Op::Move(r, _)
                 | Op::SymbolMove(r, _)
                 | Op::Scalar(
-                    ScalarOp::Move(r, _)
+                    ScalarOp::Move(_, r, _)
                     | ScalarOp::Load(r, _, _)
                     | ScalarOp::Lea(r, _)
                     | ScalarOp::Lea32(r, _),
@@ -287,7 +287,7 @@ pub(super) fn fold_entry_extensions(instructions: &mut [Instruction]) {
             continue;
         }
         if let Some(reader) = reader
-            && let Op::Scalar(ScalarOp::Move(destination, Operand::Register(source))) =
+            && let Op::Scalar(ScalarOp::Move(_, destination, Operand::Register(source))) =
                 instructions[reader].op
             && destination.code() < R::XMM0.code()
             && source == reg
@@ -325,9 +325,21 @@ mod tests {
         ] {
             let mut insts = [
                 instruction(ScalarOp::Extend(ty, R::RDI)),
-                instruction(ScalarOp::Move(R::RBX, Operand::Register(R::RDI))),
-                instruction(ScalarOp::Move(R::RDI, Operand::Register(R::RAX))),
-                instruction(ScalarOp::Move(R::R12, Operand::Register(R::RDI))),
+                instruction(ScalarOp::Move(
+                    Type::Void,
+                    R::RBX,
+                    Operand::Register(R::RDI),
+                )),
+                instruction(ScalarOp::Move(
+                    Type::Void,
+                    R::RDI,
+                    Operand::Register(R::RAX),
+                )),
+                instruction(ScalarOp::Move(
+                    Type::Void,
+                    R::R12,
+                    Operand::Register(R::RDI),
+                )),
             ];
             fold_entry_extensions(&mut insts);
             assert!(matches!(insts[0].op, Op::Nop));
@@ -338,10 +350,10 @@ mod tests {
     }
     #[test]
     fn multiple_reads_address_reads_and_earlier_writes_keep_entry_extensions() {
-        let copy = ScalarOp::Move(R::RBX, Operand::Register(R::RDI));
+        let copy = ScalarOp::Move(Type::Void, R::RBX, Operand::Register(R::RDI));
         for middle in [
             copy,
-            ScalarOp::Move(R::RDI, Operand::Register(R::RAX)),
+            ScalarOp::Move(Type::Void, R::RDI, Operand::Register(R::RAX)),
             ScalarOp::Load(
                 R::R12,
                 Type::I64,

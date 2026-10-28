@@ -220,7 +220,7 @@ impl Graph {
                 .clone()
                 .find(|&i| named(f.instructions[i].op) & (1 << c.code()) != 0);
             let incoming_copy = first.and_then(|i| {
-                if let Op::Scalar(ScalarOp::Move(to, Operand::Register(from))) =
+                if let Op::Scalar(ScalarOp::Move(_, to, Operand::Register(from))) =
                     f.instructions[i].op
                     && to == c
                     && from.code() < 16

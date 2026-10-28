@@ -200,7 +200,7 @@ pub(super) fn append(program: &Program, function: &Function, lines: &mut Vec<Str
             match function.instructions[index].op {
                 Op::Scalar(ScalarOp::Load(_, _, source)) if frame(source) => loads += 1,
                 Op::Scalar(ScalarOp::Store(destination, _, _)) if frame(destination) => stores += 1,
-                Op::Scalar(ScalarOp::Move(destination, Operand::Register(source)))
+                Op::Scalar(ScalarOp::Move(_, destination, Operand::Register(source)))
                     if destination != source =>
                 {
                     copies += 1;

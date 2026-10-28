@@ -13,10 +13,10 @@ fn narrow(ty: Type) -> bool {
 }
 pub(super) fn zeroes(op: Op, known: u32) -> bool {
     match op {
-        Op::Move(_, bits) | Op::Scalar(ScalarOp::Move(_, Operand::Immediate(bits))) => {
+        Op::Move(_, bits) | Op::Scalar(ScalarOp::Move(_, _, Operand::Immediate(bits))) => {
             super::mir::low_word(bits).is_ok_and(|word| u32::try_from(word).is_ok())
         }
-        Op::Scalar(ScalarOp::Move(_, Operand::Register(r))) => {
+        Op::Scalar(ScalarOp::Move(_, _, Operand::Register(r))) => {
             r.code() < 16 && known & (1 << r.code()) != 0
         }
         Op::Scalar(
@@ -48,8 +48,8 @@ fn skip(op: Op, reg: R) -> bool {
             | Op::Scalar(
                 ScalarOp::Store(..) | ScalarOp::Lea(..) | ScalarOp::Lea32(..) | ScalarOp::Load(..)
             )
-    ) || matches!(op,Op::Move(_,bits)|Op::Scalar(ScalarOp::Move(_,Operand::Immediate(bits))) if bits!=0)
-        || matches!(op,Op::Scalar(ScalarOp::Move(_,source)) if !matches!(source,Operand::Immediate(0)));
+    ) || matches!(op,Op::Move(_,bits)|Op::Scalar(ScalarOp::Move(_, _,Operand::Immediate(bits))) if bits!=0)
+        || matches!(op,Op::Scalar(ScalarOp::Move(_, _,source)) if !matches!(source,Operand::Immediate(0)));
     candidate
         && simple_write(op).is_some_and(|write| !matches!(write,SimpleWrite::Register(r) if r==reg))
 }

@@ -75,7 +75,9 @@ pub(super) fn operands(op: &mut Op, mut visit: impl FnMut(&mut Operand, u32)) ->
                 FlagOp::BitTest(ty, _, source) => visit(source, access_bytes(*ty)),
                 FlagOp::Test(..) | FlagOp::Set(..) => {}
             },
-            ScalarOp::Move(_, source) | ScalarOp::Lea(_, source) | ScalarOp::Lea32(_, source) => {
+            ScalarOp::Move(_, _, source)
+            | ScalarOp::Lea(_, source)
+            | ScalarOp::Lea32(_, source) => {
                 visit(source, 1);
             }
             ScalarOp::Divide { source, .. } => visit(source, 8),

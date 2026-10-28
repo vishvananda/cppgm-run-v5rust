@@ -184,7 +184,7 @@ fn reads(op: &mut Op, mut visit: impl FnMut(&mut Operand)) {
     };
     match op {
         Op::Scalar(
-            ScalarOp::Move(_, src)
+            ScalarOp::Move(_, _, src)
             | ScalarOp::Load(_, _, src)
             | ScalarOp::Lea(_, src)
             | ScalarOp::Lea32(_, src),
@@ -392,7 +392,7 @@ impl Forwarding {
                     } else if dst == source {
                         Op::Nop
                     } else {
-                        Op::Scalar(ScalarOp::Move(dst, Operand::Register(source)))
+                        Op::Scalar(ScalarOp::Move(Type::Void, dst, Operand::Register(source)))
                     };
                     if wide
                         && dst != source
@@ -591,7 +591,7 @@ mod tests {
         ));
         assert!(matches!(
             function.instructions[3].op,
-            Op::Scalar(ScalarOp::Move(R::RAX, Operand::Register(R::RDI)))
+            Op::Scalar(ScalarOp::Move(_, R::RAX, Operand::Register(R::RDI)))
         ));
         Ok(())
     }
@@ -696,7 +696,7 @@ mod tests {
         forward(&mut f);
         assert!(matches!(
             f.instructions[5].op,
-            Op::Scalar(ScalarOp::Move(R::RAX, Operand::Register(R::RDI)))
+            Op::Scalar(ScalarOp::Move(_, R::RAX, Operand::Register(R::RDI)))
         ));
         Ok(())
     }
@@ -774,7 +774,7 @@ mod tests {
         forward(&mut partial);
         assert!(matches!(
             partial.instructions[1].op,
-            Op::Scalar(ScalarOp::Move(R::R10, Operand::Register(R::RDI)))
+            Op::Scalar(ScalarOp::Move(_, R::R10, Operand::Register(R::RDI)))
         ));
         Ok(())
     }

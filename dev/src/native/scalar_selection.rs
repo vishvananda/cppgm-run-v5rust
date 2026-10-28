@@ -134,7 +134,7 @@ impl Selection<'_> {
             Operand::Register(s) if s == r => {}
             Operand::Frame(d) => self.emit(ScalarOp::Load(r, ty, Operand::Frame(d))),
             Operand::Memory(m) => self.emit(ScalarOp::Load(r, ty, Operand::Memory(m))),
-            _ => self.emit(ScalarOp::Move(r, source)),
+            _ => self.emit(ScalarOp::Move(Type::Void, r, source)),
         }
     }
     pub(super) fn result(&mut self, temp: TempId, prefs: [Option<R>; 2], exclude: u32) -> R {
@@ -163,7 +163,7 @@ impl Selection<'_> {
             )
             && self.mir.instructions.len() > self.mir.blocks.last().map_or(0, |b| b.range.start)
             && let Some(last) = self.mir.instructions.last_mut()
-            && let Op::Scalar(ScalarOp::Move(d, Operand::Register(source))) = last.op
+            && let Op::Scalar(ScalarOp::Move(_, d, Operand::Register(source))) = last.op
             && d == r
             && source.code() < 16
         {

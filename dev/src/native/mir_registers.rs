@@ -27,7 +27,7 @@ pub(super) fn map(op: &mut Op, mut reg: impl FnMut(R) -> R) {
         | Op::Return(Some(r))
         | Op::FramelessReturn(Some(r)) => *r = reg(*r),
         Op::Scalar(s) => match s {
-            ScalarOp::Move(r, _)
+            ScalarOp::Move(_, r, _)
             | ScalarOp::Lea(r, _)
             | ScalarOp::Lea32(r, _)
             | ScalarOp::Load(r, _, _)
@@ -67,7 +67,7 @@ pub(super) fn written(op: Op) -> Option<R> {
         Op::Move(r, _)
         | Op::SymbolMove(r, _)
         | Op::Scalar(
-            ScalarOp::Move(r, _)
+            ScalarOp::Move(_, r, _)
             | ScalarOp::Lea(r, _)
             | ScalarOp::Lea32(r, _)
             | ScalarOp::Load(r, _, _)

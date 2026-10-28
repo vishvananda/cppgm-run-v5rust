@@ -601,6 +601,7 @@ fn emit_return(
             }
             if matches!(source, super::scalar_mir::Operand::AccessedSymbol(..)) {
                 emit(Op::Scalar(super::scalar_mir::ScalarOp::Move(
+                    Type::Void,
                     R::RAX,
                     source,
                 )));

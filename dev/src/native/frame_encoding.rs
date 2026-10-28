@@ -171,7 +171,7 @@ pub(super) fn extra_rsp(op: Op) -> bool {
             | ScalarOp::Extend(_, source)
             | ScalarOp::SetEqual(source)
             | ScalarOp::Movzx(source)
-            | ScalarOp::Move(source, _)
+            | ScalarOp::Move(_, source, _)
             | ScalarOp::Lea(source, _)
             | ScalarOp::Lea32(source, _)
             | ScalarOp::Load(source, _, _)

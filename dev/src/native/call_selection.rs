@@ -680,7 +680,7 @@ mod tests {
             .instructions
             .iter()
             .filter_map(|i| {
-                if let Op::Scalar(ScalarOp::Move(to, Operand::Register(from))) = i.op {
+                if let Op::Scalar(ScalarOp::Move(_, to, Operand::Register(from))) = i.op {
                     Some((to, from))
                 } else {
                     None
@@ -743,7 +743,7 @@ mod tests {
                 .iter()
                 .any(|inst| matches!(
                     inst.op,
-                    Op::Scalar(ScalarOp::Move(R::RBX, Operand::Register(R::RAX)))
+                    Op::Scalar(ScalarOp::Move(_, R::RBX, Operand::Register(R::RAX)))
                 ))
         );
         Ok(())

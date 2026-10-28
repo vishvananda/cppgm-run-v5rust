@@ -22,7 +22,7 @@ fn operands(op: &Op) -> Option<[Option<Operand>; 2]> {
                 | super::condition_mir::FlagOp::BitTest(..),
             ) => return None,
             ScalarOp::Condition(op) => op.operands(),
-            ScalarOp::Move(r, s)
+            ScalarOp::Move(_, r, s)
             | ScalarOp::Lea(r, s)
             | ScalarOp::Lea32(r, s)
             | ScalarOp::Binary(_, _, r, s)

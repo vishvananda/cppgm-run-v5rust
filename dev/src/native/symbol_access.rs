@@ -8,7 +8,7 @@ use super::{
 };
 use crate::lowir::{
     model::{GlobalInit, Program, SymbolDetail, SymbolId},
-    vocabulary::{Binding, Storage},
+    vocabulary::{Binding, Storage, Type},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -91,7 +91,11 @@ impl Selection<'_> {
         if self.symbol_access(symbol) == SymbolAccess::Direct {
             return Memory::new(Base::Symbol(symbol), addend);
         }
-        self.emit(ScalarOp::Move(scratch, self.symbol_operand(symbol, 0)));
+        self.emit(ScalarOp::Move(
+            Type::Void,
+            scratch,
+            self.symbol_operand(symbol, 0),
+        ));
         Memory::new(Base::Register(scratch), addend)
     }
 }

@@ -219,7 +219,7 @@ mod tests {
             .iter()
             .enumerate()
             .find_map(|(i, inst)| {
-                if let Op::Scalar(ScalarOp::Move(to, Operand::Register(R::RDX))) = inst.op {
+                if let Op::Scalar(ScalarOp::Move(_, to, Operand::Register(R::RDX))) = inst.op {
                     Some((i, to))
                 } else {
                     None
@@ -274,7 +274,7 @@ mod tests {
         assert!(mir.instructions.iter().any(|inst| matches!(inst.op, Op::Scalar(ScalarOp::Load(R::RAX, Type::I16, Operand::Frame(d))) if d < 0)));
         assert!(!mir.instructions.iter().any(|inst| matches!(
             inst.op,
-            Op::Scalar(ScalarOp::Move(R::RAX, Operand::Frame(_)))
+            Op::Scalar(ScalarOp::Move(_, R::RAX, Operand::Frame(_)))
         )));
         Ok(())
     }

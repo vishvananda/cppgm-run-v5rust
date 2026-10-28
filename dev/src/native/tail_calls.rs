@@ -189,7 +189,11 @@ mod tests {
                     R::RDI,
                     Operand::Memory(Memory::new(Base::Register(R::RSP), 0)),
                 )),
-                7 => Op::Scalar(ScalarOp::Move(R::RSP, Operand::Register(R::RAX))),
+                7 => Op::Scalar(ScalarOp::Move(
+                    Type::Void,
+                    R::RSP,
+                    Operand::Register(R::RAX),
+                )),
                 8 => Op::Scalar(ScalarOp::Store(
                     Operand::Frame(-8),
                     Type::I64,

@@ -5,7 +5,7 @@ use super::{
     scalar_mir::{Operand, ScalarOp, bytes},
     shrink_region::{Graph, Plan, Spill, reload},
 };
-use crate::lowir::Error;
+use crate::lowir::{Error, vocabulary::Type};
 fn instruction(op: Op) -> Instruction {
     Instruction {
         op,
@@ -142,7 +142,11 @@ fn apply(f: &mut Function, graph: &Graph, plan: &Plan) -> Result<(), Error> {
     for &s in &plan.exits {
         let mut ops = vec![instruction(Op::Prologue)];
         ops.extend(plan.copies.iter().map(|&(to, from)| {
-            instruction(Op::Scalar(ScalarOp::Move(to, Operand::Register(from))))
+            instruction(Op::Scalar(ScalarOp::Move(
+                Type::Void,
+                to,
+                Operand::Register(from),
+            )))
         }));
         for (spill, &spare) in graph.spills.iter().zip(&plan.spare) {
             let mut store = f.instructions[spill.at];
@@ -160,7 +164,11 @@ fn apply(f: &mut Function, graph: &Graph, plan: &Plan) -> Result<(), Error> {
     }
     for (spill, &spare) in graph.spills.iter().zip(&plan.spare) {
         f.instructions[spill.at].op = spare.map_or(Op::Nop, |r| {
-            Op::Scalar(ScalarOp::Move(r, Operand::Register(spill.source)))
+            Op::Scalar(ScalarOp::Move(
+                Type::Void,
+                r,
+                Operand::Register(spill.source),
+            ))
         });
     }
     for b in 0..frameless_end {
@@ -174,7 +182,7 @@ fn apply(f: &mut Function, graph: &Graph, plan: &Plan) -> Result<(), Error> {
             {
                 let from = plan.spare[k].ok_or(Error::Limit)?;
                 op = Op::Scalar(if bytes(ty) == 8 {
-                    ScalarOp::Move(to, Operand::Register(from))
+                    ScalarOp::Move(Type::Void, to, Operand::Register(from))
                 } else {
                     ScalarOp::ExtendMove(ty, to, from)
                 });
@@ -201,7 +209,8 @@ fn apply(f: &mut Function, graph: &Graph, plan: &Plan) -> Result<(), Error> {
                     r
                 }
             });
-            if matches!(op, Op::Scalar(ScalarOp::Move(to, Operand::Register(from))) if to == from) {
+            if matches!(op, Op::Scalar(ScalarOp::Move(_, to, Operand::Register(from))) if to == from)
+            {
                 op = Op::Nop;
             }
             if let Op::Return(r) = op {

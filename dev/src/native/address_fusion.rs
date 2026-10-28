@@ -305,7 +305,7 @@ mod tests {
         run(&mut f);
         let expected = (bits & (u128::MAX << 64)) | u128::from(u32::MAX - 2);
         assert!(matches!(f.instructions[0].op,
-            Op::Scalar(ScalarOp::Move(R::RAX, Operand::Immediate(value))) if value == expected));
+            Op::Scalar(ScalarOp::Move(_, R::RAX, Operand::Immediate(value))) if value == expected));
         assert!(matches!(f.instructions[1].op, Op::Nop));
     }
     #[test]

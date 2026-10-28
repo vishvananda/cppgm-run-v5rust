@@ -136,7 +136,9 @@ pub(super) enum ScalarOp {
     MultiplyWide { unsigned: bool, source: R },
     Divide { unsigned: bool, source: Operand },
     Condition(super::condition_mir::FlagOp),
-    Move(R, Operand),
+    // Encoding is always 64-bit, but the frozen cleanup key retains the
+    // original Void/I64 type (ordinary transfers versus switch setup).
+    Move(Type, R, Operand),
     Lea(R, Operand),
     Lea32(R, Operand),
     Load(R, Type, Operand),
@@ -202,7 +204,7 @@ impl ScalarOp {
                 write!(out, "lea {}, ", r.spelling())?;
                 operand = Some(src);
             }
-            Self::Move(r, src) => {
+            Self::Move(_, r, src) => {
                 write!(out, "mov {}, ", r.spelling())?;
                 operand = Some(src);
             }
@@ -338,7 +340,7 @@ impl ScalarOp {
             Self::Store(m, t, s) => Self::Store(m.rebase(begin, bytes), t, s.rebase(begin, bytes)),
             Self::Lea(r, m) => Self::Lea(r, m.rebase(begin, bytes)),
             Self::Lea32(r, m) => Self::Lea32(r, m.rebase(begin, bytes)),
-            Self::Move(r, m) => Self::Move(r, m.rebase(begin, bytes)),
+            Self::Move(ty, r, m) => Self::Move(ty, r, m.rebase(begin, bytes)),
             Self::Binary(op, t, r, m) => Self::Binary(op, t, r, m.rebase(begin, bytes)),
             Self::MemoryBinary(op, ty, d, s) => {
                 Self::MemoryBinary(op, ty, d.rebase(begin, bytes), s.rebase(begin, bytes))
@@ -376,7 +378,7 @@ impl ScalarOp {
                 0,
             ),
             Self::Condition(op) => op.emit(a),
-            Self::Move(r, src) => match src {
+            Self::Move(_, r, src) => match src {
                 Operand::Register(s) => a.mov_rr(r, s),
                 Operand::Immediate(v) => a.mov_ri_flags(r, low_word(v)?, keep_flags),
                 Operand::Symbol(s) => a.lea(r, Rm::rip(ImageSymbol::Program(s), 0)),

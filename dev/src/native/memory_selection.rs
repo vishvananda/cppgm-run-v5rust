@@ -137,6 +137,7 @@ impl Selection<'_> {
             match expr.base {
                 AddressBase::Symbol(id) => {
                     self.emit(ScalarOp::Move(
+                        Type::Void,
                         destination,
                         self.symbol_operand(
                             id,
@@ -147,6 +148,7 @@ impl Selection<'_> {
                 }
                 AddressBase::Absolute => {
                     self.emit(ScalarOp::Move(
+                        Type::Void,
                         destination,
                         Operand::Immediate(i128::from(expr.displacement).cast_unsigned()),
                     ));
@@ -168,7 +170,11 @@ impl Selection<'_> {
             && let Base::Register(r) = memory.base
         {
             if r != destination {
-                self.emit(ScalarOp::Move(destination, Operand::Register(r)));
+                self.emit(ScalarOp::Move(
+                    Type::Void,
+                    destination,
+                    Operand::Register(r),
+                ));
             }
             return Ok(());
         }
