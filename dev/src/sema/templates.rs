@@ -70,6 +70,7 @@ pub(super) struct DefaultArgument {
     pub scope: ScopeId,
     pub limit: usize,
     pub bound: Option<TypeId>,
+    pub available_after: Option<usize>,
 }
 struct Head {
     depth: u32,
@@ -692,12 +693,20 @@ impl Analyzer<'_> {
                 scope,
                 limit: self.graph.binding_limit(),
                 bound,
+                available_after: None,
             }));
+        }
+        let limit = self
+            .graph
+            .lookup_limit
+            .unwrap_or_else(|| self.graph.binding_limit());
+        for default in defaults.iter_mut().flatten() {
+            default.limit = limit;
         }
         self.graph.templates.add_head(
             Head {
                 depth,
-                limit: self.graph.binding_limit(),
+                limit,
                 scope,
                 syntax,
                 parameters,
@@ -970,7 +979,16 @@ impl Analyzer<'_> {
                             .location;
                         return Err(Error::at(location, "default template argument redefined"));
                     }
-                    self.graph.templates.head_mut(earlier).defaults[index] = Some(default);
+                    let ordinal = self
+                        .graph
+                        .lookup_limit
+                        .unwrap_or_else(|| self.graph.binding_limit());
+                    self.graph.templates.head_mut(earlier).defaults[index] =
+                        Some(DefaultArgument {
+                            limit: ordinal,
+                            available_after: Some(ordinal),
+                            ..default
+                        });
                 }
             }
         } else {

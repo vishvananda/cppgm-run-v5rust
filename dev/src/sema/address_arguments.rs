@@ -218,44 +218,35 @@ impl Analyzer<'_> {
         &mut self,
         argument: TypeId,
         target: TypeId,
-        location: SourceOffset,
-    ) -> Result<TypeId, Error> {
+        context: super::pack_arguments::MatchContext,
+    ) -> Result<Option<TypeId>, Error> {
         let TypeKind::Address { ty, entity } = self.graph.types.get(argument).kind else {
-            return Ok(argument);
+            return Ok(Some(argument));
         };
         if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
             || self.graph.entity(entity).variable.is_none()
             || !(self.integral_kind(target).is_some()
                 || matches!(self.graph.types.get(target).kind, TypeKind::Enum(_)))
         {
-            return Ok(argument);
+            return Ok(Some(argument));
         }
-        // Match variable_constant: only a const/constexpr member's initializer
-        // can be demanded here. Taking its designation did not demand it.
-        let variable = self.graph.entity(entity);
-        if matches!(variable.constant, super::constants::ConstantState::None)
-            && (variable.constexpr
-                || variable
-                    .ty
-                    .is_some_and(|ty| self.graph.types.get(ty).cv.0 & Cv::CONST.0 != 0))
-        {
-            self.use_instance_variable(entity)?;
-        }
-        let super::constants::ConstantState::Value(value) = self.graph.entity(entity).constant
-        else {
-            return Err(Error::at(
-                location,
+        let Some(value) = self.variable_constant(entity)? else {
+            return context.mismatch(
+                self,
                 "a template argument that is not a constant expression",
-            ));
+            );
         };
         let ty = self.bare_type(value.ty)?;
-        self.graph.types.intern(
-            TypeKind::Value {
-                ty,
-                bits: value.bits,
-            },
-            Cv::default(),
-        )
+        self.graph
+            .types
+            .intern(
+                TypeKind::Value {
+                    ty,
+                    bits: value.bits,
+                },
+                Cv::default(),
+            )
+            .map(Some)
     }
 
     pub(super) fn address_template_argument(
@@ -447,8 +438,8 @@ impl Analyzer<'_> {
         &mut self,
         target: TypeId,
         argument: TypeId,
-        location: SourceOffset,
-    ) -> Result<TypeId, Error> {
+        context: super::pack_arguments::MatchContext,
+    ) -> Result<Option<TypeId>, Error> {
         let (source, entity) = match self.graph.types.get(argument).kind {
             TypeKind::Value { ty, .. } => (ty, None),
             TypeKind::Address { ty, entity } => (ty, Some(entity)),
@@ -520,7 +511,7 @@ impl Analyzer<'_> {
             }
         };
         if let Some(failure) = failure {
-            return Err(Error::at(location, failure));
+            return context.mismatch(self, failure);
         }
         let kind = entity.map_or(
             TypeKind::Value {
@@ -529,7 +520,7 @@ impl Analyzer<'_> {
             },
             |entity| TypeKind::Address { ty: target, entity },
         );
-        self.graph.types.intern(kind, Cv::default())
+        self.graph.types.intern(kind, Cv::default()).map(Some)
     }
 }
 

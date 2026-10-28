@@ -109,7 +109,8 @@ impl Analyzer<'_> {
             .copied()
             .ok_or(Error::Invariant("empty partial name"))?;
         let mut arguments = self.form_template_arguments(last, scope, Some(primary_head))?;
-        self.complete_template_arguments(primary_head, &mut arguments, node.location)?;
+        self.fill_template_arguments_in(primary_head, &mut arguments, node.location, None)?;
+        self.match_declaration_arguments(primary_head, &mut arguments, node.location)?;
         if let Some(&earlier) = self
             .graph
             .class_templates
@@ -237,18 +238,29 @@ impl Analyzer<'_> {
         let result = self
             .form_template_arguments(component, scope, Some(head))
             .and_then(|mut arguments| {
-                self.complete_template_arguments(head, &mut arguments, component.location)?;
-                Ok(self
-                    .graph
-                    .class_templates
-                    .partials
-                    .identities
-                    .get(&primary)
-                    .and_then(|known| known.get(&arguments))
-                    .copied())
+                self.fill_template_arguments_in(head, &mut arguments, component.location, None)?;
+                Ok(arguments)
             });
         self.template_depth -= 1;
-        result
+        let mut arguments = result?;
+        let context = super::pack_arguments::MatchContext {
+            mode: super::pack_arguments::MatchMode::Nonfatal,
+            location: component.location,
+        };
+        if self
+            .match_argument_list_in(head, &mut arguments, context)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(self
+            .graph
+            .class_templates
+            .partials
+            .identities
+            .get(&primary)
+            .and_then(|known| known.get(&arguments))
+            .copied())
     }
 
     pub(super) fn matched_class_partial(

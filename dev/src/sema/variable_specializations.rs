@@ -71,7 +71,7 @@ impl Analyzer<'_> {
             .template_head
             .ok_or(Error::Invariant("variable template without head"))?;
         let mut arguments = self.form_template_arguments(component, scope, Some(head))?;
-        self.complete_template_arguments(head, &mut arguments, component.location)?;
+        self.fill_template_arguments_in(head, &mut arguments, component.location, None)?;
         let binding = self.variable_specialization(primary, arguments, component.location, None)?;
         if self.graph.binding_scope(found) == self.graph.binding_scope(binding) {
             self.graph.inherit_binding_access(binding, found);
@@ -81,11 +81,17 @@ impl Analyzer<'_> {
     fn variable_specialization(
         &mut self,
         primary: EntityId,
-        arguments: Vec<TypeId>,
+        mut arguments: Vec<TypeId>,
         location: SourceOffset,
         declared: Option<Declaration>,
     ) -> Result<BindingId, Error> {
         self.check_stack()?;
+        let head = self
+            .graph
+            .entity(primary)
+            .template_head
+            .ok_or(Error::Invariant("variable specialization without head"))?;
+        self.match_declaration_arguments(head, &mut arguments, location)?;
         let key = Key { primary, arguments };
         if let Some(&entity) = self.graph.variable_instances.templates.keys.get(&key) {
             if declared.is_none()
@@ -408,7 +414,7 @@ impl Analyzer<'_> {
             .template_head
             .ok_or(Error::Invariant("variable template without head"))?;
         let mut arguments = self.form_template_arguments(last, scope, Some(head))?;
-        self.complete_template_arguments(head, &mut arguments, location)?;
+        self.fill_template_arguments_in(head, &mut arguments, location, None)?;
         let ty = if specs.constexpr {
             self.graph.types.qualify(info.ty, super::types::Cv::CONST)?
         } else {

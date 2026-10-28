@@ -222,12 +222,32 @@ impl Analyzer<'_> {
             .entity(alias)
             .template_head
             .ok_or(Error::Invariant("alias template without head"))?;
-        self.complete_template_arguments(head, &mut arguments, location)?;
+        self.fill_template_arguments_in(head, &mut arguments, location, None)?;
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            return Err(Error::SubstitutionRejected(failure));
+        }
+        let matched = self.match_argument_list_in(
+            head,
+            &mut arguments,
+            self.argument_match_context(location),
+        );
+        match matched {
+            Ok(Some(())) => (),
+            Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                return self.reject_substitution(
+                    location,
+                    "template arguments that do not match the alias template's parameters",
+                    false,
+                );
+            }
+            Err(error) => return Err(error),
+        }
         if arguments.len() != self.graph.templates.parameters(head).len() {
-            return Err(Error::at(
+            return self.reject_substitution(
                 location,
                 "a pack expansion for an alias template's parameter that is no pack",
-            ));
+                false,
+            );
         }
         let key = Key { alias, arguments };
         if let Some(&ty) = self.graph.class_templates.aliases.specializations.get(&key) {
@@ -241,20 +261,24 @@ impl Analyzer<'_> {
                 .all(|&ty| !self.graph.dependent_type(ty))
         {
             let TypeKind::Value { bits, .. } = self.graph.types.get(key.arguments[0]).kind else {
-                return Err(Error::at(
+                return self.reject_substitution(
                     location,
                     "a __type_pack_element index outside its pack",
-                ));
+                    false,
+                );
             };
             let elements = self.graph.types.pack_elements(key.arguments[1])?;
-            let ty = usize::try_from(bits)
+            let Some(ty) = usize::try_from(bits)
                 .ok()
                 .and_then(|index| elements.get(index))
                 .copied()
-                .ok_or(Error::at(
+            else {
+                return self.reject_substitution(
                     location,
                     "a __type_pack_element index outside its pack",
-                ))?;
+                    false,
+                );
+            };
             self.specialization_binding(ty, alias)?;
             self.graph
                 .class_templates
@@ -268,19 +292,18 @@ impl Analyzer<'_> {
             .entity(alias)
             .ty
             .ok_or(Error::Invariant("alias template without type"))?;
-        let ty = if self.own_template_arguments(head, &key.arguments)? {
-            pattern
-        } else {
-            self.with_alias_substitution_location(location, |analyzer| {
-                let arguments: Vec<_> = key.arguments.iter().copied().map(Some).collect();
-                let mut environment =
-                    analyzer.substitution(analyzer.graph.templates.depth(head), &arguments);
-                environment.context = context;
-                analyzer
-                    .substitute_signature_type(pattern, &mut environment)?
-                    .ok_or_else(|| environment.failure_error())
-            })?
-        };
+        let ty = self.with_alias_substitution_location(location, |analyzer| {
+            if analyzer.own_template_arguments(head, &key.arguments)? {
+                return Ok(pattern);
+            }
+            let arguments: Vec<_> = key.arguments.iter().copied().map(Some).collect();
+            let mut environment =
+                analyzer.substitution(analyzer.graph.templates.depth(head), &arguments);
+            environment.context = context;
+            analyzer
+                .substitute_signature_type(pattern, &mut environment)?
+                .ok_or_else(|| environment.failure_error())
+        })?;
         let discarded = self
             .graph
             .class_templates
@@ -663,7 +686,6 @@ mod tests {
         let global = analyzer.graph.global;
         analyzer.declarations(declarations, global).unwrap();
         let syntax_mark = analyzer.tree.expressions.mark();
-        let binding_mark = analyzer.graph.binding_limit();
         let ty = |analyzer: &Analyzer<'_>, name| {
             let binding = analyzer
                 .graph
@@ -692,17 +714,20 @@ mod tests {
             ))
             .unwrap();
         for _ in 0..4 {
+            let binding_mark = analyzer.graph.binding_limit();
             let result = analyzer
                 .alias_specialization(alias, vec![int], SourceOffset(0))
                 .unwrap();
             assert_eq!(result, x);
+            // The source forms this omitted default in a fresh bound frame
+            // before consulting the canonical alias-result cache.
+            assert!(analyzer.graph.binding_limit() > binding_mark);
             assert_eq!(
                 analyzer.specialization_binding(result, alias).unwrap(),
                 analyzer.graph.class_templates.binding(class).unwrap()
             );
         }
         assert_eq!(analyzer.tree.expressions.mark(), syntax_mark);
-        assert_eq!(analyzer.graph.binding_limit(), binding_mark);
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 

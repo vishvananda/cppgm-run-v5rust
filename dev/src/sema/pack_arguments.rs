@@ -11,6 +11,34 @@ use super::{
 };
 use crate::{lex::identifiers::NameId, support::source::SourceOffset};
 
+/// Matching's fatal flag is independent of instantiation/substitution mode.
+#[derive(Clone, Copy)]
+pub(super) enum MatchMode {
+    Fatal,
+    Nonfatal,
+}
+#[derive(Clone, Copy)]
+pub(super) struct MatchContext {
+    pub mode: MatchMode,
+    pub location: SourceOffset,
+}
+impl MatchContext {
+    pub(super) fn mismatch<T>(
+        self,
+        analyzer: &Analyzer<'_>,
+        message: &'static str,
+    ) -> Result<Option<T>, Error> {
+        match self.mode {
+            MatchMode::Fatal => Err(analyzer
+                .graph
+                .analysis
+                .substitution
+                .hard_error(self.location, message)),
+            MatchMode::Nonfatal => Ok(None),
+        }
+    }
+}
+
 impl super::types::Types {
     /// A specialization's canonical partitions as a written template-id list.
     /// Only the outer argument packs flatten; a nested pack remains an element.
@@ -161,35 +189,62 @@ impl Analyzer<'_> {
             .intern(TypeKind::Expansion(pattern), Cv::default())
     }
 
-    #[inline]
-    pub(super) fn match_argument_list(
+    pub(super) fn argument_match_context(&self, location: SourceOffset) -> MatchContext {
+        MatchContext {
+            mode: if self.graph.analysis.substitution.current().soft == 0 {
+                MatchMode::Fatal
+            } else {
+                MatchMode::Nonfatal
+            },
+            location,
+        }
+    }
+
+    pub(super) fn match_declaration_arguments(
+        &mut self,
+        head: HeadId,
+        arguments: &mut Vec<TypeId>,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let _matched = self.match_argument_list_in(
+            head,
+            arguments,
+            MatchContext {
+                mode: MatchMode::Fatal,
+                location,
+            },
+        )?;
+        Ok(())
+    }
+
+    pub(super) fn match_argument_list_in(
         &mut self,
         head: HeadId,
         given: &mut Vec<TypeId>,
-        location: SourceOffset,
-    ) -> Result<(), Error> {
+        context: MatchContext,
+    ) -> Result<Option<()>, Error> {
+        let written = std::mem::take(given);
         let count = self.graph.templates.parameters(head).len();
         if (0..count).any(|index| self.argument_parameter_pack(head, index))
-            || given
+            || written
                 .iter()
                 .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
         {
-            *given = self.match_pack_arguments(head, given, location, false)?;
-        } else {
-            if given.len() > count {
-                return Err(Error::at(location, "too many template arguments"));
-            }
-            for index in 0..given.len() {
-                given[index] = self.match_template_argument(
-                    head,
-                    index,
-                    given[index],
-                    &given[..index],
-                    location,
-                )?;
+            return self.match_pack_arguments(head, &written, given, context, false);
+        }
+        for (index, &argument) in written.iter().take(count).enumerate() {
+            match self.match_template_argument(head, index, argument, given, context) {
+                Ok(Some(argument)) => given.push(argument),
+                Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
             }
         }
-        Ok(())
+        if written.len() > count {
+            return context.mismatch(self, "too many template arguments");
+        }
+        Ok(Some(()))
     }
 
     // Keep partition scratch off the recursive, pack-free argument path.
@@ -198,11 +253,12 @@ impl Analyzer<'_> {
         &mut self,
         head: HeadId,
         given: &[TypeId],
-        location: SourceOffset,
+        result: &mut Vec<TypeId>,
+        context: MatchContext,
         partial: bool,
-    ) -> Result<Vec<TypeId>, Error> {
+    ) -> Result<Option<()>, Error> {
         let count = self.graph.templates.parameters(head).len();
-        let mut result = Vec::with_capacity(count);
+        result.clear();
         let mut next = 0;
         for index in 0..count {
             let parameter = self.graph.templates.parameters(head)[index];
@@ -241,26 +297,28 @@ impl Analyzer<'_> {
                     };
                     let target = if let Some((pattern, arguments)) = pattern.zip(earlier.as_deref())
                     {
-                        let selection = super::function_templates::PackSelection {
-                            elements: &[],
-                            bound_element: Some(position),
-                        };
-                        let mut environment =
-                            self.substitution(self.graph.templates.depth(head), arguments);
-                        environment.selection = Some(&selection);
-                        Some(
-                            self.substitute_signature_type(pattern, &mut environment)?
-                                .ok_or(Error::at(
-                                    location,
-                                    "a template argument does not match its template parameter",
-                                ))?,
-                        )
+                        self.substitute_pack_element_target(
+                            pattern,
+                            self.graph.templates.depth(head),
+                            arguments,
+                            position,
+                        )?
                     } else {
                         None
                     };
-                    converted.push(self.match_template_argument_to(
-                        head, index, element, &result, location, target,
-                    )?);
+                    if pattern.is_some() && target.is_none() {
+                        return Ok(None);
+                    }
+                    match self
+                        .match_template_argument_to(head, index, element, result, context, target)
+                    {
+                        Ok(Some(argument)) => converted.push(argument),
+                        Ok(None)
+                        | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                            return Ok(None);
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
                 if formed.is_none() {
                     next = given.len();
@@ -276,28 +334,53 @@ impl Analyzer<'_> {
                     // here. Expansion positions and template-name kind checks
                     // remain deferred until the concrete list is substituted.
                     if self.value_argument(pattern) != info.value_type.is_some() {
-                        return Err(Error::at(
-                            location,
+                        return context.mismatch(
+                            self,
                             "a pack expansion of the wrong kind for its template parameter",
-                        ));
+                        );
                     }
                     // Positions remain unknown until this list is substituted.
-                    return given
-                        .iter()
-                        .map(|&ty| self.graph.types.canonical_function(ty))
-                        .collect();
+                    result.clear();
+                    for &argument in given {
+                        result.push(self.graph.types.canonical_function(argument)?);
+                    }
+                    return Ok(Some(()));
                 }
-                result
-                    .push(self.match_template_argument(head, index, argument, &result, location)?);
+                match self.match_template_argument(head, index, argument, result, context) {
+                    Ok(Some(argument)) => result.push(argument),
+                    Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                        return Ok(None);
+                    }
+                    Err(error) => return Err(error),
+                }
                 next += 1;
             } else {
                 break;
             }
         }
         if next != given.len() {
-            return Err(Error::at(location, "too many template arguments"));
+            return context.mismatch(self, "too many template arguments");
         }
-        Ok(result)
+        Ok(Some(()))
+    }
+
+    fn substitute_pack_element_target(
+        &mut self,
+        pattern: TypeId,
+        depth: u32,
+        arguments: &[Option<TypeId>],
+        position: usize,
+    ) -> Result<Option<TypeId>, Error> {
+        let selection = super::function_templates::PackSelection {
+            elements: &[],
+            bound_element: Some(position),
+        };
+        let mut environment = self.substitution(depth, arguments);
+        environment.selection = Some(&selection);
+        match self.substitute_signature_type(pattern, &mut environment) {
+            Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => Ok(None),
+            result => result,
+        }
     }
 
     pub(super) fn value_argument(&self, mut argument: TypeId) -> bool {

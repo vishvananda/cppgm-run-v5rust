@@ -19,14 +19,6 @@ struct Key {
     arguments: Vec<TypeId>,
 }
 
-#[derive(PartialEq, Eq, Hash)]
-struct DefaultKey {
-    head: HeadId,
-    index: usize,
-    arguments: Vec<TypeId>,
-    named_in: Option<ScopeId>,
-}
-
 #[derive(Clone, Copy)]
 pub(super) enum DefaultUse {
     Required,
@@ -51,7 +43,6 @@ pub(super) struct ClassTemplates {
     specializations: HashMap<Key, EntityId>,
     instances: HashMap<EntityId, Instance>,
     defaults: HashMap<Key, BindingId>,
-    argument_defaults: HashMap<DefaultKey, TypeId>,
 }
 impl ClassTemplates {
     pub(super) fn instance(&self, entity: EntityId) -> Option<&Instance> {
@@ -225,7 +216,7 @@ impl Analyzer<'_> {
     pub(super) fn class_template_with_defaults(
         &mut self,
         primary: EntityId,
-        arguments: Vec<TypeId>,
+        mut arguments: Vec<TypeId>,
         location: SourceOffset,
     ) -> Result<BindingId, Error> {
         let head = self
@@ -234,22 +225,30 @@ impl Analyzer<'_> {
             .template_head
             .ok_or(Error::Invariant("specialization without template head"))?;
         let count = self.graph.templates.parameters(head).len();
-        if arguments.len() > count
-            && !self.trailing_argument_pack(head)
-            && !arguments
-                .iter()
-                .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
-        {
-            return Err(Error::at(location, "too many template arguments"));
-        }
         let omitted = arguments.len() < count;
+        if omitted {
+            for argument in &mut arguments {
+                *argument = self.graph.types.canonical_function(*argument)?;
+            }
+        }
         let key = Key { primary, arguments };
         if omitted && let Some(&binding) = self.graph.class_templates.defaults.get(&key) {
             return Ok(binding);
         }
         let mut full = key.arguments.clone();
-        self.complete_template_arguments(head, &mut full, location)?;
-        let entity = self.class_specialization(primary, full)?;
+        self.fill_template_arguments_in(head, &mut full, location, None)?;
+        let entity = if self.graph.analysis.substitution.current().failure.is_some() {
+            None
+        } else {
+            self.matched_class_specialization(primary, full, self.argument_match_context(location))?
+        };
+        let Some(entity) = entity else {
+            return self.reject_substitution(
+                location,
+                "template arguments that do not match their template's parameters",
+                false,
+            );
+        };
         let binding = self.graph.class_templates.binding(entity)?;
         if omitted {
             self.graph.class_templates.defaults.insert(key, binding);
@@ -257,22 +256,19 @@ impl Analyzer<'_> {
         Ok(binding)
     }
 
-    pub(super) fn complete_template_arguments(
-        &mut self,
-        head: HeadId,
-        arguments: &mut Vec<TypeId>,
-        location: SourceOffset,
-    ) -> Result<(), Error> {
-        self.complete_template_arguments_in(head, arguments, location, None)
-    }
-
-    pub(super) fn complete_template_arguments_in(
+    pub(super) fn fill_template_arguments_in(
         &mut self,
         head: HeadId,
         arguments: &mut Vec<TypeId>,
         location: SourceOffset,
         named_in: Option<ScopeId>,
     ) -> Result<(), Error> {
+        if arguments
+            .iter()
+            .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
+        {
+            return Ok(());
+        }
         let count = self.graph.templates.parameters(head).len();
         if arguments.len() > count
             && !self.trailing_argument_pack(head)
@@ -280,48 +276,49 @@ impl Analyzer<'_> {
                 .iter()
                 .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
         {
-            return Err(Error::at(location, "too many template arguments"));
-        }
-        if arguments
-            .iter()
-            .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
-        {
-            self.match_argument_list(head, arguments, location)?;
+            self.graph
+                .analysis
+                .substitution
+                .emit(super::substitution_state::Failure {
+                    location,
+                    message: "too many template arguments",
+                    transient: false,
+                })?;
             return Ok(());
         }
         for index in arguments.len()..count {
             if self.argument_parameter_pack(head, index) {
                 break;
             }
-            let default = self
-                .graph
-                .templates
-                .default_argument(head, index)
-                .ok_or_else(|| Error::at(location, "too few template arguments"))?;
-            let key = DefaultKey {
+            let Some(default) = self.graph.templates.default_argument(head, index) else {
+                self.graph
+                    .analysis
+                    .substitution
+                    .emit(super::substitution_state::Failure {
+                        location,
+                        message: "too few template arguments",
+                        transient: false,
+                    })?;
+                return Ok(());
+            };
+            let result = self.class_default_type_in(
+                default,
                 head,
-                index,
-                arguments: arguments.clone(),
+                arguments,
+                DefaultUse::Required,
                 named_in,
+                self.default_instantiation_mode(),
+            );
+            let ty = match result {
+                Ok(ty) => ty,
+                // Stop at the partial list. A preserving default context keeps
+                // its emitted F; quiet null must remain free of a new event.
+                Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => return Ok(()),
+                Err(error) => return Err(error),
             };
-            let ty = if let Some(&ty) = self.graph.class_templates.argument_defaults.get(&key) {
-                ty
-            } else {
-                let ty = self.class_default_type_in(
-                    default,
-                    head,
-                    arguments,
-                    DefaultUse::Required,
-                    named_in,
-                    self.default_instantiation_mode(),
-                )?;
-                let ty = self.graph.types.canonical_function(ty)?;
-                self.graph.class_templates.argument_defaults.insert(key, ty);
-                ty
-            };
+            let ty = self.graph.types.canonical_function(ty)?;
             arguments.push(ty);
         }
-        self.match_argument_list(head, arguments, location)?;
         Ok(())
     }
 
@@ -335,6 +332,17 @@ impl Analyzer<'_> {
         mode: InstantiationMode,
     ) -> Result<TypeId, Error> {
         self.check_stack()?;
+        if default
+            .available_after
+            .zip(self.graph.lookup_limit)
+            .is_some_and(|(added, limit)| added > limit)
+        {
+            return self.reject_substitution(
+                self.default_location(default),
+                "a default template argument declared after the template's context",
+                false,
+            );
+        }
         let depth = self.graph.templates.depth(head);
         let template = self
             .template_argument_parameter(head, arguments.len())
@@ -358,7 +366,7 @@ impl Analyzer<'_> {
             };
             let result = result.and_then(|result| {
                 result.ok_or_else(|| {
-                    Error::at(
+                    self.graph.analysis.substitution.hard_error(
                         self.default_location(default),
                         "a template template-parameter's default names no template",
                     )
@@ -429,7 +437,7 @@ impl Analyzer<'_> {
             |analyzer| {
                 let copy = analyzer.copy_template_argument(default.syntax, frame)?;
                 if let Some(failure) = analyzer.graph.analysis.substitution.current().failure {
-                    return Err(Error::at(failure.location, failure.message));
+                    return Err(Error::SubstitutionRejected(failure));
                 }
                 analyzer.template_argument_at(
                     copy,
@@ -491,83 +499,88 @@ impl Analyzer<'_> {
         primary: EntityId,
         mut arguments: Vec<TypeId>,
         environment: &mut Substitution<'_>,
+        location: SourceOffset,
     ) -> Result<Option<EntityId>, Error> {
         let head = self
             .graph
             .entity(primary)
             .template_head
             .ok_or(Error::Invariant("substituted template without head"))?;
-        let count = self.graph.templates.parameters(head).len();
-        if arguments.len() > count
-            && !self.trailing_argument_pack(head)
-            && !arguments
-                .iter()
-                .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)))
-        {
-            return environment.reject("too many template arguments");
-        }
-        let expansion = arguments
-            .iter()
-            .any(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)));
-        for index in arguments.len()..count {
-            if expansion || self.argument_parameter_pack(head, index) {
-                break;
-            }
-            let Some(default) = self.graph.templates.default_argument(head, index) else {
-                return environment.reject("too few template arguments");
-            };
-            let key = DefaultKey {
-                head,
-                index,
-                arguments: arguments.clone(),
-                named_in: None,
-            };
-            let ty = if let Some(&ty) = self.graph.class_templates.argument_defaults.get(&key) {
-                ty
-            } else {
-                let result = self.class_default_type_in(
-                    default,
-                    head,
-                    &arguments,
-                    DefaultUse::Signature,
-                    None,
-                    self.default_instantiation_mode(),
-                );
-                let ty = match result {
-                    Ok(ty) => ty,
-                    Err(
-                        Error::Diagnostic { location, message }
-                        | Error::NonConstant {
-                            location, message, ..
-                        },
-                    ) => return environment.reject_at(location, message),
-                    Err(error) => return Err(error),
-                };
-                let ty = self.graph.types.canonical_function(ty)?;
-                self.graph.class_templates.argument_defaults.insert(key, ty);
-                ty
-            };
-            arguments.push(ty);
-        }
-        match self.match_argument_list(head, &mut arguments, SourceOffset(0)) {
+        let filled = self.fill_template_arguments_in(head, &mut arguments, location, None);
+        match filled {
             Ok(()) => (),
-            Err(
-                Error::Diagnostic { location, message }
-                | Error::NonConstant {
-                    location, message, ..
-                },
-            ) => return environment.reject_at(location, message),
+            Err(Error::SubstitutionRejected(failure)) => {
+                environment.carry(Some(failure));
+                return Ok(None);
+            }
+            Err(Error::SubstitutionNull) => return Ok(None),
             Err(error) => return Err(error),
         }
-        self.class_specialization(primary, arguments).map(Some)
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            environment.carry(Some(failure));
+            return Ok(None);
+        }
+        let result = self.matched_class_specialization(
+            primary,
+            arguments,
+            self.argument_match_context(location),
+        )?;
+        match result {
+            Some(entity) => Ok(Some(entity)),
+            None => environment.reject_at(
+                location,
+                "template arguments that do not match their template's parameters",
+            ),
+        }
+    }
+
+    pub(super) fn matched_class_specialization(
+        &mut self,
+        primary: EntityId,
+        mut arguments: Vec<TypeId>,
+        context: super::pack_arguments::MatchContext,
+    ) -> Result<Option<EntityId>, Error> {
+        let head = self
+            .graph
+            .entity(primary)
+            .template_head
+            .ok_or(Error::Invariant("matching specialization without head"))?;
+        let result = self.match_argument_list_in(head, &mut arguments, context);
+        match result {
+            Ok(Some(())) => self.class_specialization(primary, arguments).map(Some),
+            Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => context
+                .mismatch(
+                    self,
+                    "template arguments that do not match their template's parameters",
+                ),
+            Err(error) => Err(error),
+        }
     }
 
     pub(super) fn class_specialization(
         &mut self,
         primary: EntityId,
-        arguments: Vec<TypeId>,
+        mut arguments: Vec<TypeId>,
     ) -> Result<EntityId, Error> {
         self.check_stack()?;
+        if self
+            .graph
+            .class_templates
+            .template_entities
+            .name(primary)
+            .is_some()
+            || self
+                .graph
+                .class_templates
+                .dependent_names
+                .get(primary)
+                .is_some()
+            || self.graph.class_templates.aliases.owner(primary).is_some()
+        {
+            for argument in &mut arguments {
+                *argument = self.graph.types.canonical_function(*argument)?;
+            }
+        }
         let key = Key { primary, arguments };
         if let Some(&entity) = self.graph.class_templates.specializations.get(&key) {
             return Ok(entity);
@@ -672,24 +685,19 @@ impl Analyzer<'_> {
         for argument in &mut arguments {
             *argument = self.graph.types.canonical_function(*argument)?;
         }
-        let head = self
-            .graph
-            .entity(primary)
-            .template_head
-            .ok_or(Error::Invariant("class substitution without head"))?;
-        match self.complete_template_arguments(head, &mut arguments, SourceOffset(0)) {
-            Ok(()) => {
-                let entity = self.class_specialization(primary, arguments)?;
-                self.graph
-                    .entity(entity)
-                    .ty
-                    .map(Some)
-                    .ok_or(Error::Invariant("class instance without type"))
-            }
-            Err(Error::Diagnostic { location, message }) => {
-                environment.reject_at(location, message)
-            }
-            Err(error) => Err(error),
+        match self.matched_class_specialization(
+            primary,
+            arguments,
+            self.argument_match_context(SourceOffset(0)),
+        )? {
+            Some(entity) => self
+                .graph
+                .entity(entity)
+                .ty
+                .map(Some)
+                .ok_or(Error::Invariant("class instance without type")),
+            None => environment
+                .reject("template arguments that do not match their template's parameters"),
         }
     }
 }
@@ -1108,6 +1116,5 @@ mod tests {
         assert_eq!(analyzer.declaration_access.function, Some(entity));
         assert!(analyzer.graph.lookup_limit.is_none());
         assert!(analyzer.graph.class_templates.instances.is_empty());
-        assert!(analyzer.graph.class_templates.argument_defaults.is_empty());
     }
 }

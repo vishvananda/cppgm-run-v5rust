@@ -5,7 +5,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    constants::ConstantState,
+    constants::{Constant, ConstantState},
     declarators::DeclaratorInfo,
     graph::{BindingId, EntityId, ScopeId},
     templates::HeadId,
@@ -532,6 +532,28 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    /// A scalar constant query instantiates only an unknown const/constexpr
+    /// template variable. It records no evaluated storage or emission use.
+    pub(super) fn variable_constant(
+        &mut self,
+        entity: EntityId,
+    ) -> Result<Option<Constant>, Error> {
+        let node = self.graph.entity(entity);
+        if matches!(node.constant, ConstantState::None)
+            && self.graph.variable_instances.instance(entity)
+            && (node.constexpr
+                || node.ty.is_some_and(|ty| {
+                    self.graph.types.get(ty).cv.0 & super::types::Cv::CONST.0 != 0
+                }))
+        {
+            self.instantiate_variable(entity)?;
+        }
+        match self.graph.entity(entity).constant {
+            ConstantState::Value(value) => Ok(Some(value)),
+            _ => Ok(None),
+        }
+    }
+
     // constant_evaluator.cpp::variable_value: naming a fixed-type variable in
     // semantics mode needs no initializer; reading its constant value does.
     pub(super) fn instantiate_variable_value(&mut self, entity: EntityId) -> Result<(), Error> {

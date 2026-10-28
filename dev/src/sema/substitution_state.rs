@@ -460,6 +460,47 @@ mod tests {
     }
 
     #[test]
+    fn a_default_failure_keeps_its_original_event_through_alias_formation() {
+        use crate::sema::lookup::Filter;
+        let source = SourceBuffer::new(
+            b"template<class T,class U=typename T::missing>using Alias=int;".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"alias-partial-default").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"Alias").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
+        let alias = analyzer.graph.binding(binding).entity;
+        let argument = analyzer.graph.types.scalar(Scalar::Bool).unwrap();
+        let state = analyzer.graph.analysis.substitution.clone();
+        analyzer
+            .with_substitution_soft(None, |analyzer| {
+                let result = analyzer.alias_specialization(alias, vec![argument], SourceOffset(19));
+                assert!(matches!(result, Err(Error::SubstitutionRejected(_))));
+                let failure = state.current().failure.unwrap();
+                assert_eq!(failure.location, SourceOffset(34));
+                assert_eq!(
+                    failure.message,
+                    "name before :: is not a class, namespace or enumeration"
+                );
+                assert!(!failure.transient);
+                assert_eq!(analyzer.graph.work.totals.substitution_failures, 0);
+                Ok(())
+            })
+            .unwrap();
+        assert!(state.current().failure.is_none());
+        assert_eq!(analyzer.graph.work.totals.substitution_failures, 1);
+    }
+
+    #[test]
     fn a_class_default_root_rejects_in_the_live_scope_before_type_dispatch() {
         use crate::sema::lookup::Filter;
         let source = SourceBuffer::new(b"template<class T>struct A;".to_vec()).unwrap();
@@ -488,7 +529,8 @@ mod tests {
                             .substitute_class_template_defaults(
                                 primary,
                                 Vec::new(),
-                                &mut environment
+                                &mut environment,
+                                SourceOffset(0),
                             )?
                             .is_none()
                     );

@@ -261,9 +261,9 @@ impl Analyzer<'_> {
         index: usize,
         argument: TypeId,
         earlier: &[TypeId],
-        location: SourceOffset,
-    ) -> Result<TypeId, Error> {
-        self.match_template_argument_to(head, index, argument, earlier, location, None)
+        context: super::pack_arguments::MatchContext,
+    ) -> Result<Option<TypeId>, Error> {
+        self.match_template_argument_to(head, index, argument, earlier, context, None)
     }
 
     pub(super) fn match_template_argument_to(
@@ -272,9 +272,9 @@ impl Analyzer<'_> {
         index: usize,
         argument: TypeId,
         earlier: &[TypeId],
-        location: SourceOffset,
+        context: super::pack_arguments::MatchContext,
         element: Option<TypeId>,
-    ) -> Result<TypeId, Error> {
+    ) -> Result<Option<TypeId>, Error> {
         let parameter = self.graph.templates.parameters(head)[index];
         let info = self
             .graph
@@ -285,8 +285,7 @@ impl Analyzer<'_> {
         let value = self.value_argument(argument);
         let template = self.template_argument_kind(argument);
         if value != info.value_type.is_some() || template != info.inner.is_some() {
-            return Err(Error::at(
-                location,
+            return context.mismatch(self,
                 if template {
                     "a template given for a template parameter that is no template template-parameter"
                 } else if info.inner.is_some() {
@@ -296,19 +295,19 @@ impl Analyzer<'_> {
                 } else {
                     "a type given for a non-type template parameter"
                 },
-            ));
+            );
         }
         if matches!(self.graph.types.get(argument).kind, TypeKind::Expansion(_)) {
-            return Ok(argument);
+            return Ok(Some(argument));
         }
-        if template {
-            self.match_template_name(info, argument, location)?;
+        if template && self.match_template_name(info, argument, context)?.is_none() {
+            return Ok(None);
         }
         if !matches!(
             self.graph.types.get(argument).kind,
             TypeKind::Value { .. } | TypeKind::Address { .. }
         ) {
-            return Ok(argument);
+            return Ok(Some(argument));
         }
         // Value conversion substitutes its declared target even if unrelated
         // earlier arguments remain dependent. argument_target's conservative
@@ -319,32 +318,28 @@ impl Analyzer<'_> {
         if self.graph.dependent_type(target) {
             let given = earlier.iter().copied().map(Some).collect::<Vec<_>>();
             let mut environment = self.substitution(self.graph.templates.depth(head), &given);
-            target = self
-                .substitute_signature_type(target, &mut environment)?
-                .ok_or_else(|| {
-                    environment.failure.map_or(
-                        Error::at(
-                            location,
-                            "a non-type template parameter of a type 14.1p4 does not allow",
-                        ),
-                        Error::SubstitutionRejected,
-                    )
-                })?;
+            let Some(substituted) = self.substitute_signature_type(target, &mut environment)?
+            else {
+                return Ok(None);
+            };
+            target = substituted;
         }
         let target = self.bare_type(target)?;
         if self.graph.dependent_type(target) {
             // A bound expansion can retain a dependent pattern at positions
             // beyond its bound elements. C++ leaves that value unconverted.
-            return Ok(argument);
+            return Ok(Some(argument));
         }
-        let argument = self.read_integral_argument(argument, target, location)?;
+        let Some(argument) = self.read_integral_argument(argument, target, context)? else {
+            return Ok(None);
+        };
         let (TypeKind::Value { ty: source, .. } | TypeKind::Address { ty: source, .. }) =
             self.graph.types.get(argument).kind
         else {
             return Err(Error::Invariant("converted argument without value"));
         };
         if self.graph.address_parameter_type(target) || self.graph.address_parameter_type(source) {
-            return self.converted_address_argument(target, argument, location);
+            return self.converted_address_argument(target, argument, context);
         }
         let TypeKind::Value { bits, .. } = self.graph.types.get(argument).kind else {
             return Err(Error::Invariant(
@@ -362,18 +357,22 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("nonintegral value argument"))?;
                 if kind.represents(bits, from) {
                     if !kind.holds_u64_constant(bits, from) {
-                        return Err(Error::at(
-                            location,
+                        return context.mismatch(
+                            self,
                             "a 128-bit template argument beyond the 64-bit constants evaluated",
-                        ));
+                        );
                     }
-                    return self.graph.types.intern(
-                        TypeKind::Value {
-                            ty: target,
-                            bits: kind.convert(bits),
-                        },
-                        Cv::default(),
-                    );
+                    return self
+                        .graph
+                        .types
+                        .intern(
+                            TypeKind::Value {
+                                ty: target,
+                                bits: kind.convert(bits),
+                            },
+                            Cv::default(),
+                        )
+                        .map(Some);
                 }
                 Some("a narrowing conversion of a template argument")
             } else {
@@ -381,10 +380,10 @@ impl Analyzer<'_> {
                 // conversion. Still-dependent synthesized targets returned above.
                 Some("a non-type template parameter of incomplete enumeration type")
             };
-        Err(Error::at(
-            location,
+        context.mismatch(
+            self,
             failure.ok_or(Error::Invariant("missing conversion failure"))?,
-        ))
+        )
     }
 
     pub(super) fn match_explicit_template_arguments(
@@ -393,26 +392,14 @@ impl Analyzer<'_> {
         given: &[TypeId],
         location: SourceOffset,
     ) -> Result<Option<Vec<TypeId>>, Error> {
-        if !(0..self.graph.templates.parameters(head).len())
-            .any(|index| self.argument_parameter_pack(head, index))
-        {
-            if given.len() > self.graph.templates.parameters(head).len() {
-                return Ok(None);
-            }
-            let mut converted = Vec::with_capacity(given.len());
-            for (index, &argument) in given.iter().enumerate() {
-                match self.match_template_argument(head, index, argument, &converted, location) {
-                    Ok(argument) => converted.push(argument),
-                    Err(Error::Diagnostic { .. }) => return Ok(None),
-                    Err(error) => return Err(error),
-                }
-            }
-            return Ok(Some(converted));
-        }
-        match self.match_pack_arguments(head, given, location, true) {
-            Ok(converted) => Ok(Some(converted)),
-            Err(Error::Diagnostic { .. }) => Ok(None),
-            Err(error) => Err(error),
+        let context = super::pack_arguments::MatchContext {
+            mode: super::pack_arguments::MatchMode::Nonfatal,
+            location,
+        };
+        let mut converted = Vec::with_capacity(self.graph.templates.parameters(head).len());
+        match self.match_pack_arguments(head, given, &mut converted, context, true)? {
+            Some(()) => Ok(Some(converted)),
+            None => Ok(None),
         }
     }
 

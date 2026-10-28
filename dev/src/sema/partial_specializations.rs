@@ -305,9 +305,15 @@ impl Analyzer<'_> {
         let Some(mut arguments) = deduced.into_iter().collect::<Option<Vec<_>>>() else {
             return Ok(None);
         };
-        match self.match_argument_list(head, &mut arguments, SourceOffset(0)) {
-            Ok(()) => (),
-            Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => return Ok(None),
+        let matching = super::pack_arguments::MatchContext {
+            mode: super::pack_arguments::MatchMode::Nonfatal,
+            location: SourceOffset(0),
+        };
+        match self.match_argument_list_in(head, &mut arguments, matching) {
+            Ok(Some(())) => (),
+            Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                return Ok(None);
+            }
             Err(error) => return Err(error),
         }
         let given: Vec<_> = arguments.iter().copied().map(Some).collect();

@@ -188,6 +188,9 @@ impl Analyzer<'_> {
             TypeKind::TemplateParameter {
                 entity,
                 template: true,
+            }
+            | TypeKind::BoundPack {
+                parameter: entity, ..
             } => self
                 .graph
                 .entity(entity)
@@ -306,17 +309,17 @@ impl Analyzer<'_> {
         &mut self,
         parameter: ParameterInfo,
         argument: TypeId,
-        location: SourceOffset,
-    ) -> Result<(), Error> {
+        context: super::pack_arguments::MatchContext,
+    ) -> Result<Option<()>, Error> {
         if let Some((p, a)) = parameter.inner.zip(self.template_name_head(argument))
             && !self.template_heads_match(p, a)?
         {
-            return Err(Error::at(
-                location,
+            return context.mismatch(
+                self,
                 "a template template-argument whose template parameters do not match",
-            ));
+            );
         }
-        Ok(())
+        Ok(Some(()))
     }
 
     pub(super) fn template_parameter_stand_in(&mut self, name: TypeId) -> Result<EntityId, Error> {
@@ -372,24 +375,15 @@ impl Analyzer<'_> {
             if self.graph.entity(primary).key == Keyword::Typedef {
                 return self.alias_specialization(primary, arguments, location);
             }
-            if self.graph.analysis.substitution.current().soft != 0 {
-                let mut environment = self.substitution(u32::MAX, &[]);
-                environment.context = self.graph.analysis.substitution.current().owner;
-                let entity = self
-                    .substitute_class_template_defaults(primary, arguments, &mut environment)?
-                    .ok_or_else(|| environment.failure_error())?;
-                return self
-                    .graph
-                    .entity(entity)
-                    .ty
-                    .ok_or(Error::Invariant("named specialization without type"));
-            }
-            let binding = self.class_template_with_defaults(primary, arguments, location)?;
+            let mut environment = self.substitution(u32::MAX, &[]);
+            let entity = self
+                .substitute_class_template_defaults(primary, arguments, &mut environment, location)?
+                .ok_or_else(|| environment.failure_error())?;
             return self
                 .graph
-                .binding(binding)
+                .entity(entity)
                 .ty
-                .ok_or(Error::Invariant("class template result without type"));
+                .ok_or(Error::Invariant("named specialization without type"));
         }
         let primary = self.template_parameter_stand_in(name)?;
         let entity = self.class_specialization(primary, arguments)?;
@@ -441,13 +435,15 @@ impl Analyzer<'_> {
             own.or_else(|| self.template_name_head(name)),
         )?;
         if let Some(own) = own {
-            self.complete_template_arguments_in(
+            self.fill_template_arguments_in(
                 own,
                 &mut arguments,
                 component.location,
                 Some(self.graph.binding_scope(found)),
             )?;
-            arguments = self.graph.types.flattened_arguments(&arguments);
+        }
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            return Err(Error::SubstitutionRejected(failure));
         }
         let ty = self.specialize_template_name(name, arguments, component.location)?;
         self.specialization_binding(ty, self.graph.binding(found).entity)

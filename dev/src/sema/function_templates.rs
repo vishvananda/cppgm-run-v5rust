@@ -365,11 +365,6 @@ impl Analyzer<'_> {
                 continue;
             };
             let count = self.graph.templates.parameters(head).len();
-            if given.len() > count
-                && !(0..count).any(|index| self.argument_parameter_pack(head, index))
-            {
-                continue;
-            }
             let Some(converted) =
                 self.match_explicit_template_arguments(head, given, component.location)?
             else {
