@@ -1833,6 +1833,9 @@ impl Analyzer<'_> {
         let Some(to_head) = self.function_template_head(second)? else {
             return Ok(false);
         };
+        if self.graph.templates.parameters(to_head).is_empty() {
+            return Ok(false);
+        }
         let unique = self.unique_partial_arguments(from_head)?;
         let mut environment = Substitution::new(self.graph.templates.depth(from_head), &unique);
         let from = self

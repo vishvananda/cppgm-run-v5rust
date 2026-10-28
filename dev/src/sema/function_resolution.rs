@@ -334,7 +334,9 @@ impl Analyzer<'_> {
             }
             let ty = entity.ty.ok_or(Error::Invariant("function without type"))?;
             if self.graph.types.canonical_function(ty)? == target {
-                if found.is_some() {
+                if found.is_some_and(|old| {
+                    self.graph.binding(old).entity != self.graph.binding(binding).entity
+                }) {
                     return Ok(None);
                 }
                 found = Some(binding);
@@ -349,19 +351,16 @@ impl Analyzer<'_> {
                 }
                 if let Some(binding) = self.deduce_function_target(binding, target)?
                     && self.graph.binding(binding).ty == Some(target)
-                    && !candidates.contains(&binding)
+                    && !candidates.iter().any(|&old| {
+                        self.graph.binding(old).entity == self.graph.binding(binding).entity
+                    })
                 {
                     candidates.push(binding);
                 }
             }
             for &binding in &candidates {
                 if let Some(old) = found {
-                    if self.compare_function_templates(
-                        binding,
-                        old,
-                        TemplateOrdering::FunctionType,
-                    )? == Ordering::Greater
-                    {
+                    if self.more_specialized_function_target(binding, old)? {
                         found = Some(binding);
                     }
                 } else {
@@ -370,19 +369,39 @@ impl Analyzer<'_> {
             }
             if let Some(best) = found {
                 for binding in candidates {
-                    if binding != best
-                        && self.compare_function_templates(
-                            best,
-                            binding,
-                            TemplateOrdering::FunctionType,
-                        )? != Ordering::Greater
-                    {
+                    if binding != best && !self.more_specialized_function_target(best, binding)? {
                         return Ok(None);
                     }
                 }
             }
         }
         Ok(found)
+    }
+    fn more_specialized_function_target(
+        &mut self,
+        first: super::graph::BindingId,
+        second: super::graph::BindingId,
+    ) -> Result<bool, Error> {
+        let first = self
+            .graph
+            .function_templates
+            .primary(self.graph.binding(first).entity)
+            .ok_or(Error::Invariant("target specialization without primary"))?;
+        let second = self
+            .graph
+            .function_templates
+            .primary(self.graph.binding(second).entity)
+            .ok_or(Error::Invariant("target specialization without primary"))?;
+        // Address selection asks the reverse direction only after a successful
+        // forward query. Ordinary call ordering retains its two-query policy.
+        Ok(
+            self.template_at_least_as_specialized(first, second, TemplateOrdering::FunctionType)?
+                && !self.template_at_least_as_specialized(
+                    second,
+                    first,
+                    TemplateOrdering::FunctionType,
+                )?,
+        )
     }
     pub(super) fn select_function_designation(
         &mut self,
@@ -602,5 +621,50 @@ impl Analyzer<'_> {
             }
         }
         Ok(Ordering::Equal)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        preprocess::unit::Preprocessor,
+        support::{source::SourceBuffer, stack::StackBudget},
+        syntax::SyntaxUnit,
+    };
+
+    #[test]
+    fn target_selection_counts_functions_rather_than_binding_handles() {
+        let source = SourceBuffer::new(b"int f(int);int other(int);".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"target-identity").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"f".as_slice(), b"other"].map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let [first, other] =
+            names.map(|name| analyzer.graph.own(scope, name, Filter::Ordinary).unwrap());
+        let entity = analyzer.graph.binding(first).entity;
+        let ty = analyzer.graph.binding(first).ty.unwrap();
+        let handle = analyzer.graph.function_handle(first, entity, ty).unwrap();
+        assert_ne!(first, handle);
+        for (bindings, ambiguous) in [
+            (&[first, handle][..], false),
+            (&[first, handle, other][..], true),
+        ] {
+            let mut facts = ExprFacts::new(ty, V::Lvalue);
+            facts.functions = Some(analyzer.graph.overloads.add(bindings).unwrap());
+            let selected = analyzer.matching_function(facts, ty).unwrap();
+            if ambiguous {
+                assert!(selected.is_none());
+            } else {
+                assert_eq!(analyzer.graph.binding(selected.unwrap()).entity, entity);
+            }
+        }
     }
 }
