@@ -130,6 +130,34 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
+    // A storage split is a fallback. A pending conversion call still owns
+    // its receiver's construction from the segment's original call mark.
+    pub(super) fn pending_storage_call_region(&mut self) -> Result<bool, Error> {
+        if !self.storage_region_pending() || self.has_tracked_region() {
+            return Ok(false);
+        }
+        let Some(start) = self.lifetime.expression_start else {
+            return Ok(false);
+        };
+        let Some(position) = self
+            .lifetime
+            .call_marks
+            .iter()
+            .find(|mark| !mark.declared && mark.position.shares_block(start))
+            .map(|mark| mark.position)
+        else {
+            return Ok(false);
+        };
+        let entry = self.unwind_entry()?;
+        self.note_aggregate_landing();
+        self.builder.insert_marker(position, R::EhTry(entry))?;
+        self.lifetime.region_start = super::lifetime::RegionStart::Consumed;
+        self.lifetime.region = true;
+        self.lifetime.region_entry = Some(entry);
+        self.lifetime.region_depth = self.lifetime.cleanups.len();
+        self.lifetime.regions_opened += 1;
+        Ok(true)
+    }
     pub(super) fn open_storage_completion_region(&mut self, first: usize) -> Result<(), Error> {
         let entry = self.cleanup_prefix(true, first)?;
         self.effect(I::Runtime(R::EhTry(entry)))?;

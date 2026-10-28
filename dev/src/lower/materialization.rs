@@ -640,8 +640,10 @@ impl Function<'_, '_, '_, '_> {
                 && !self.lifetime.region
                 && !self.lifetime.tracking.active
                 && !self.lifetime.cleanups.is_empty();
+        let pending_storage = opens && !deferred_region && self.pending_storage_call_region()?;
         if opens
             && !deferred_region
+            && !pending_storage
             && (!self.storage_region_pending()
                 || self.aggregation.call_scope == super::aggregate_cleanup::CallScope::OmittedValue)
         {
@@ -671,7 +673,7 @@ impl Function<'_, '_, '_, '_> {
         if !persistent && !branched {
             self.storage_region_event()?;
         }
-        if deferred_region {
+        if deferred_region && !self.lifetime.region {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         }

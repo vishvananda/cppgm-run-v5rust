@@ -662,14 +662,14 @@ pub(super) fn align_storage(
         })
         .max()
         .map_or(if object_mode { 16 } else { 1 }, |align| 1u64 << align);
-    *storage = (requested > implied).then_some(Type::Object {
-        bytes: if object_mode {
+    *storage = (requested > implied).then_some(Type::object(
+        if object_mode {
             size.max(requested)
         } else {
             size.wrapping_add(requested - 1) / requested * requested
         },
-        align: u8::try_from(requested.trailing_zeros()).map_err(|_| crate::lowir::Error::Limit)?,
-    });
+        u8::try_from(requested.trailing_zeros()).map_err(|_| crate::lowir::Error::Limit)?,
+    ));
     Ok(())
 }
 pub(super) fn structured_type(
@@ -690,14 +690,14 @@ pub(super) fn structured_type(
         .map_or(if object_mode { 16 } else { 1 }, |align| 1u64 << align);
     let alignment = 1u64 << align;
     Ok(
-        (alignment > implied).then_some(crate::lowir::vocabulary::Type::Object {
-            bytes: if object_mode {
+        (alignment > implied).then_some(crate::lowir::vocabulary::Type::object(
+            if object_mode {
                 bytes.max(alignment)
             } else {
                 bytes.wrapping_add(alignment - 1) / alignment * alignment
             },
             align,
-        }),
+        )),
     )
 }
 pub(super) fn finish(

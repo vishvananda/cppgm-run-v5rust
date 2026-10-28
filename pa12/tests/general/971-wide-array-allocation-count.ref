@@ -1,0 +1,91 @@
+declare function @__external_runtime____cxa_throw_bad_array_new_length() -> void [return=noreturn, role=bad_array_new_length, linkage=c, binding=strong, object=__cxa_throw_bad_array_new_length]
+declare function @operatornew__(%arg0 : i64) -> ptr [role=allocate_memory, binding=strong, object=cppgm_builtin_operator_new_array]
+
+function @from_unsigned(%count : i128) -> ptr [binding=strong, object=_Z13from_unsignedo] {
+  slot $count : i128
+  slot $array_new_size__1 : i64
+
+  block ^entry:
+    store typed i128 %count, $count
+    %t1 = load typed i128 $count
+    %t2 = convert trunc i64 i128 %t1
+    %t3 = cmp ugt i128 %t1, 2305843009213693951
+    branch %t3, ^array_new_length_invalid_1, ^array_new_length_valid_2
+
+  block ^array_new_length_invalid_1:
+    call void @__external_runtime____cxa_throw_bad_array_new_length()
+    unreachable
+
+  block ^array_new_length_valid_2:
+    %t4 = binary mul i64 %t2, 4
+    store typed i64 %t4, $array_new_size__1
+    %t5 = call ptr @operatornew__(%t4)
+    %t6 = load typed i64 $array_new_size__1
+    return ptr %t5
+}
+function @from_signed(%count : i128) -> ptr [binding=strong, object=_Z11from_signedn] {
+  slot $count : i128
+  slot $array_new_size__1 : i64
+
+  block ^entry:
+    store typed i128 %count, $count
+    %t1 = load typed i128 $count
+    %t2 = convert trunc i64 i128 %t1
+    %t3 = cmp ugt i128 %t1, 2305843009213693951
+    branch %t3, ^array_new_length_invalid_1, ^array_new_length_valid_2
+
+  block ^array_new_length_invalid_1:
+    call void @__external_runtime____cxa_throw_bad_array_new_length()
+    unreachable
+
+  block ^array_new_length_valid_2:
+    %t4 = binary mul i64 %t2, 4
+    store typed i64 %t4, $array_new_size__1
+    %t5 = call ptr @operatornew__(%t4)
+    %t6 = load typed i64 $array_new_size__1
+    return ptr %t5
+}
+function @with_prefix(%count : i128) -> ptr [binding=strong, object=_Z11with_prefixo] {
+  slot $count : i128
+  slot $array_new_size__1 : i64
+  slot $zeroinit_offset__2 : i64
+
+  block ^entry:
+    store typed i128 %count, $count
+    %t1 = load typed i128 $count
+    %t2 = convert trunc i64 i128 %t1
+    %t3 = binary sub i128 %t1, 1
+    %t4 = cmp ugt i128 %t3, 2305843009213693950
+    branch %t4, ^array_new_length_invalid_1, ^array_new_length_valid_2
+
+  block ^array_new_length_invalid_1:
+    call void @__external_runtime____cxa_throw_bad_array_new_length()
+    unreachable
+
+  block ^array_new_length_valid_2:
+    %t5 = binary mul i64 %t2, 4
+    store typed i64 %t5, $array_new_size__1
+    %t6 = call ptr @operatornew__(%t5)
+    %t7 = load typed i64 $array_new_size__1
+    %t8 = index i32 [projection=array_element] %t6, 0
+    store typed i32 1, %t8
+    %t9 = index i8 %t6, 4
+    %t10 = binary sub i64 %t7, 4
+    store typed i64 0, $zeroinit_offset__2
+    jump ^zeroinit_cond_3
+
+  block ^zeroinit_cond_3:
+    %t11 = load typed i64 $zeroinit_offset__2
+    %t12 = cmp ult i64 %t11, %t10
+    branch %t12, ^zeroinit_body_4, ^zeroinit_end_5
+
+  block ^zeroinit_body_4:
+    %t13 = index i8 %t9, %t11
+    store i8 0, %t13
+    %t14 = binary add i64 %t11, 1
+    store typed i64 %t14, $zeroinit_offset__2
+    jump ^zeroinit_cond_3
+
+  block ^zeroinit_end_5:
+    return ptr %t6
+}

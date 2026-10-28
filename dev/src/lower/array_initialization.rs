@@ -302,6 +302,7 @@ impl Function<'_, '_, '_, '_> {
         let saved_extension = self.reference_lifetimes.aggregate.take();
         let saved_count = self.aggregation.count.take();
         let saved_floor = self.aggregation.floor;
+        let saved_regions = std::mem::take(&mut self.aggregation.regions);
         self.aggregation.floor = freed.map(|_| self.lifetime.cleanups.len());
         let initialized = self.allocated_array_prefix(
             prefix,
@@ -309,6 +310,7 @@ impl Function<'_, '_, '_, '_> {
             &self.owned_expression_ids(list_elements),
         );
         self.aggregation.floor = saved_floor;
+        self.aggregation.regions = saved_regions;
         self.aggregation.count = saved_count;
         self.reference_lifetimes.aggregate = saved_extension;
         initialized?;

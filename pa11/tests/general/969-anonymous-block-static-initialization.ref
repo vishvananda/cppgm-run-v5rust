@@ -1,0 +1,95 @@
+global @calls : i32 [binding=strong] = zero
+global @__local_static__selected__decl0__object : obj<4x4> [binding=internal] = {
+  zero 4
+}
+global @__local_static__selected__decl0__object__guard : i64 [binding=internal] = zero
+
+function @next() -> i32 [binding=strong, object=_Z4nextv] {
+  block ^entry:
+    %t1 = load typed i32 @calls
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @calls
+    return i32 %t2
+}
+function @selected() -> i32 [binding=strong, object=_Z8selectedv] {
+  block ^entry:
+    %t1 = load typed i64 @__local_static__selected__decl0__object__guard
+    %t2 = cmp ne i64 %t1, 0
+    branch %t2, ^local_static_ready_1, ^local_static_init_2
+
+  block ^local_static_init_2:
+    %t3 = addr @__local_static__selected__decl0__object
+    call void @__anonymous_union_type__179_189____anonymous_union_type__179_189(%t3)
+    store typed i64 1, @__local_static__selected__decl0__object__guard
+    jump ^local_static_ready_1
+
+  block ^local_static_ready_1:
+    %t4 = addr @__local_static__selected__decl0__object
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load i32 %t5
+    return i32 %t6
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    %t1 = call i32 @selected()
+    %t2 = cmp eq i32 %t1, 1
+    branch %t2, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t3 = call i32 @selected()
+    %t4 = cmp eq i32 %t3, 1
+    %t5 = cmp ne i64 %t4, 0
+    store typed i64 %t5, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t6 = load typed i64 $land__2
+    branch %t6, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t7 = load typed i32 @calls
+    %t8 = cmp eq i32 %t7, 1
+    %t9 = cmp ne i64 %t8, 0
+    store typed i64 %t9, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t10 = load typed i64 $land__3
+    branch %t10, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t11 = load typed i32 $cond__1
+    return i32 %t11
+}
+function @__anonymous_union_type__179_189____anonymous_union_type__179_189(%this : ptr [object_bytes=4]) -> void [binding=internal, object=_ZZ8selectedvEN3$_0C1Ev, prefer_local=yes, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = call i32 @next()
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 0
+    store i32 %t1, %t3
+    return void
+}
+alias object _ZZ8selectedvEN3$_0C2Ev = @__anonymous_union_type__179_189____anonymous_union_type__179_189

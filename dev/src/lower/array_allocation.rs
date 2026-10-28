@@ -264,7 +264,9 @@ impl Function<'_, '_, '_, '_> {
         let count = if promoted.ty.bits() == 64 {
             promoted.value
         } else {
-            let op = if types::signed(&*self.graph, promoted.source)? {
+            let op = if promoted.ty.bits() > 64 {
+                crate::lowir::vocabulary::Convert::Truncate
+            } else if types::signed(&*self.graph, promoted.source)? {
                 crate::lowir::vocabulary::Convert::SignExtend
             } else {
                 crate::lowir::vocabulary::Convert::ZeroExtend
@@ -276,12 +278,17 @@ impl Function<'_, '_, '_, '_> {
             .value
         };
         if shape.checked {
+            let (compared, full) = if promoted.ty.bits() > 64 {
+                (promoted.ty, promoted.value)
+            } else {
+                (Type::I64, count)
+            };
             let over = if shape.listed == 0 {
-                count
+                full
             } else {
                 let listed = self.builder.integer(u128::from(shape.listed))?;
                 self.emit(
-                    I::Binary(Binary::Sub, Facts::default(), Type::I64, count, listed),
+                    I::Binary(Binary::Sub, Facts::default(), compared, full, listed),
                     source,
                 )?
                 .value
@@ -290,7 +297,7 @@ impl Function<'_, '_, '_, '_> {
                 .builder
                 .integer(u128::from(shape.largest.wrapping_sub(shape.listed)))?;
             let invalid = self
-                .emit(I::Compare(Compare::Ugt, Type::I64, over, limit), source)?
+                .emit(I::Compare(Compare::Ugt, compared, over, limit), source)?
                 .value;
             self.invalid_array_length(Some(invalid), null)?;
         }
@@ -401,7 +408,8 @@ impl Function<'_, '_, '_, '_> {
                 )?;
             let zero = self.builder.integer(0)?;
             let arguments = self.builder.arguments(&[storage, zero, size])?;
-            let _result = self.emit(
+            self.before_lifetime_call(false)?;
+            let result = self.emit(
                 I::Call(Call {
                     result: Type::Ptr,
                     callee: Value::Symbol(callee),
@@ -412,6 +420,7 @@ impl Function<'_, '_, '_, '_> {
                 }),
                 source,
             )?;
+            self.finish_lifetime_call(result, false)?;
             return Ok(());
         }
         let slot = self.generated_slot("zeroinit_offset", Type::I64)?;

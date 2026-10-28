@@ -126,14 +126,16 @@ impl Function<'_, '_, '_, '_> {
             matches!(initializer.kind, ast::InitializerKind::Parenthesized(_))
         }) && function
             .is_some_and(|function| !self.graph.lower_implicit_copy(function) && moving);
-        let location = self
-            .graph
-            .lower_variable(entity)?
-            .definition
-            .map(|declarator| self.tree.declarators.get(declarator).location)
-            .ok_or(crate::sema::Error::Invariant(
-                "constructed variable without source",
-            ))?;
+        let facts = self.graph.lower_variable(entity)?;
+        let location = match facts.definition {
+            Some(declarator) => self.tree.declarators.get(declarator).location,
+            None if facts.name.is_none() => crate::support::source::SourceOffset(0),
+            None => {
+                return Err(
+                    crate::sema::Error::Invariant("constructed variable without source").into(),
+                );
+            }
+        };
         if let Some(arguments) = arguments
             && !written_move
             && self.delegate_copy_storage(id, object, arguments, location)?

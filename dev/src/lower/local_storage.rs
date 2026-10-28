@@ -141,9 +141,6 @@ impl Function<'_, '_, '_, '_> {
         tokens: Option<ast::TokenSpan<u32>>,
     ) -> Result<(), Error> {
         let facts = self.graph.lower_variable(entity)?;
-        if facts.name.is_none() && self.graph.lower_decomposition(entity).is_none() {
-            return self.anonymous_static(entity);
-        }
         let aggregate = matches!(
             self.graph.lower_type(facts.ty)?,
             TypeView::Array { .. } | TypeView::Class(_)
@@ -686,112 +683,6 @@ impl Function<'_, '_, '_, '_> {
             ty,
         )?;
         self.finish_lifetime_call(value, false)?;
-        Ok(())
-    }
-
-    fn anonymous_static(&mut self, entity: EntityId) -> Result<(), Error> {
-        let ty = self.graph.lower_entity_type(entity)?;
-        let dynamic = !self.graph.lower_trivial_default_construction(entity)?
-            && self.graph.lower_array_image(entity).is_none();
-        let ordinal = self.next_static;
-        self.next_static = ordinal.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
-        let symbols = self
-            .symbols
-            .view(&*self.graph, &*self.tree, self.cursor)
-            .local_storage_symbols(
-                self.builder.program(),
-                entity,
-                self.entity.ok_or(crate::sema::Error::Invariant(
-                    "static object without function",
-                ))?,
-                ordinal,
-                dynamic,
-                None,
-            )?;
-        let initialized = {
-            let program = self.builder.program();
-            program.global(program.symbol(symbols.object)).is_some()
-        };
-        if !initialized {
-            let items = if let Some(image) = self.graph.lower_array_image(entity) {
-                {
-                    let image = image.to_vec();
-                    self.static_data_items(&image)?
-                }
-            } else {
-                vec![DataItem::Zero(
-                    i64::try_from(types::layout(&*self.graph, ty)?.0)
-                        .map_err(|_| crate::lowir::Error::Limit)?,
-                )]
-            };
-            let program = self.builder.program();
-            let name = program.symbol(symbols.object).name;
-            program.add_global(
-                symbols.object,
-                Global {
-                    name,
-                    ty: super::globals::structured_type(
-                        &*self.graph,
-                        ty,
-                        &items,
-                        self.symbols
-                            .view(&*self.graph, &*self.tree, self.cursor)
-                            .object_mode(),
-                    )?,
-                    metadata: symbols.metadata,
-                    init: GlobalInit::Data(items),
-                },
-            )?;
-            if let Some((guard, metadata)) = symbols.guard {
-                let name = program.symbol(guard).name;
-                program.add_global(
-                    guard,
-                    Global {
-                        name,
-                        ty: Some(Type::I64),
-                        metadata,
-                        init: GlobalInit::Zero,
-                    },
-                )?;
-            }
-        }
-        self.locals.insert(entity, Value::Symbol(symbols.object));
-        if self.terminated {
-            return Ok(());
-        }
-        if let Some((guard, _)) = symbols.guard {
-            let ready = self.new_block("local_static_ready")?;
-            let initialize = self.new_block("local_static_init")?;
-            let flag = self.emit(
-                I::Load(Facts::memory(false, true), Type::I64, Value::Symbol(guard)),
-                ty,
-            )?;
-            let zero = self.builder.integer(0)?;
-            let condition = self.emit(I::Compare(Compare::Ne, Type::I64, flag.value, zero), ty)?;
-            self.effect(I::Branch(condition.value, ready, initialize))?;
-            self.place(initialize)?;
-            let address = self.emit(I::Addr(Value::Symbol(symbols.object)), ty)?.value;
-            self.local_aggregate(entity, ty, address, None)?;
-            self.close_lifetime_region()?;
-            let one = self.builder.integer(1)?;
-            self.effect(I::Store(
-                Facts::memory(false, true),
-                Type::I64,
-                one,
-                Value::Symbol(guard),
-            ))?;
-            self.jump(ready)?;
-            self.place(ready)?;
-        } else if let Some(constructor) = self.graph.lower_construction(entity)
-            && !self.graph.lower_constructor_trivial(constructor)
-        {
-            self.symbols
-                .view(&*self.graph, &*self.tree, self.cursor)
-                .demand_entry(super::construction::Entry::Constructor(
-                    constructor,
-                    super::construction::Variant::Complete,
-                ));
-        }
         Ok(())
     }
 }

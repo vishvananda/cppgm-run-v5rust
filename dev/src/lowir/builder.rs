@@ -24,6 +24,11 @@ pub(crate) struct Position {
     block: BlockId,
     after: Option<super::model::InstId>,
 }
+impl Position {
+    pub(crate) fn shares_block(self, other: Self) -> bool {
+        self.block == other.block
+    }
+}
 
 /// A suspended body owns its construction state without borrowing the program.
 /// This permits declaration-ordered startup work between ordinary definitions.

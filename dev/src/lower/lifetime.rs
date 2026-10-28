@@ -185,6 +185,7 @@ pub(super) struct Lifetime {
     pub cleanups: Vec<Cleanup>,
     pub list_elements: super::list_elements::SavedElements,
     pending: Vec<ChainBlock>,
+    spare: Vec<ChainBlock>,
     late: Vec<ChainBlock>,
     resume: Option<BlockId>,
     conditional_resume: Option<BlockId>,
@@ -1422,23 +1423,22 @@ impl Function<'_, '_, '_, '_> {
         });
     }
     pub(super) fn place_cleanup_chains(&mut self, late: bool) -> Result<(), Error> {
-        let mut blocks = Vec::new();
-        loop {
-            if late {
-                std::mem::swap(&mut blocks, &mut self.lifetime.late);
-            } else {
-                std::mem::swap(&mut blocks, &mut self.lifetime.pending);
-            }
-            self.place_chain_blocks(&blocks)?;
+        if late {
+            let mut blocks = std::mem::take(&mut self.lifetime.late);
+            let result = self.place_chain_blocks(&blocks);
             blocks.clear();
-            if late {
-                self.lifetime.late = blocks;
-                break;
+            self.lifetime.late = blocks;
+            return result;
+        }
+        while !self.lifetime.pending.is_empty() {
+            let mut blocks = std::mem::take(&mut self.lifetime.spare);
+            std::mem::swap(&mut blocks, &mut self.lifetime.pending);
+            let result = self.place_chain_blocks(&blocks);
+            blocks.clear();
+            if self.lifetime.spare.capacity() < blocks.capacity() {
+                std::mem::swap(&mut self.lifetime.spare, &mut blocks);
             }
-            if self.lifetime.pending.is_empty() {
-                self.lifetime.pending = blocks;
-                break;
-            }
+            result?;
         }
         Ok(())
     }
