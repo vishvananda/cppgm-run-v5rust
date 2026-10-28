@@ -354,8 +354,6 @@ impl Analyzer<'_> {
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
         self.apply_call_arguments(selected, argument_buffer.as_slice(), scope, scratch)?;
-        self.record_argument_base_paths(argument_buffer.as_slice(), scope)?;
-        self.check_class_arguments(binding, arguments, scope)?;
         self.select_function_designation(callee, binding)?;
         self.demand_function(binding, true)?;
         let ty = self.graph.types.canonical_function(
@@ -799,90 +797,6 @@ impl Analyzer<'_> {
             function,
             user_conversion: None,
         }))
-    }
-    pub(super) fn record_argument_base_paths(
-        &mut self,
-        arguments: &[ast::ExprId],
-        scope: ScopeId,
-    ) -> Result<(), Error> {
-        for &argument in arguments {
-            let mut facts = self.graph.expression_facts.get(argument)?;
-            if let Some(conversion) = facts.conversion
-                && self
-                    .graph
-                    .expression_facts
-                    .function_conversion(argument)
-                    .is_none()
-                && self
-                    .graph
-                    .expression_facts
-                    .user_conversion(argument)
-                    .is_none()
-            {
-                facts.base_path = self.conversion_base_path(
-                    facts,
-                    conversion,
-                    scope,
-                    self.tree.expressions.get(argument).location,
-                    true,
-                )?;
-                self.graph.expression_facts.set(argument, facts);
-            }
-        }
-        Ok(())
-    }
-    fn check_class_arguments(
-        &mut self,
-        binding: BindingId,
-        arguments: List<ast::ExprId>,
-        scope: ScopeId,
-    ) -> Result<(), Error> {
-        let argument_buffer =
-            super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
-        self.check_class_argument_slice(binding, argument_buffer.as_slice(), 0, scope)
-    }
-    pub(super) fn check_class_argument_slice(
-        &mut self,
-        binding: BindingId,
-        arguments: &[ast::ExprId],
-        offset: usize,
-        scope: ScopeId,
-    ) -> Result<(), Error> {
-        let ty = self
-            .graph
-            .entity(self.graph.binding(binding).entity)
-            .ty
-            .ok_or(Error::Invariant("selected function without type"))?;
-        let count = self.graph.types.function_parameter_count(ty)?;
-        for (index, &id) in arguments
-            .iter()
-            .enumerate()
-            .take(count.saturating_sub(offset))
-        {
-            let target = self.graph.types.function_parameter(ty, index + offset)?;
-            self.class_parameter_destruction(
-                target,
-                scope,
-                self.tree.expressions.get(id).location,
-            )?;
-            // A list initializes the parameter itself. Its selected constructor
-            // (or aggregate initialization) is already recorded; it is not an
-            // expression temporary to copy into a second parameter object.
-            if matches!(
-                self.tree.expressions.get(id).kind,
-                ast::ExprKind::Braced { .. }
-            ) {
-                continue;
-            }
-            self.record_class_copy(
-                id,
-                target,
-                scope,
-                super::copy_initialization::CopyUse::Value { in_place: false },
-                self.tree.expressions.get(id).location,
-            )?;
-        }
-        Ok(())
     }
     pub(super) fn resolve_call(
         &mut self,
@@ -1368,7 +1282,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         scratch: &CallScratch,
     ) -> Result<(), Error> {
-        self.apply_written_call_arguments(selected, args, scope, scratch)?;
+        self.apply_written_call_arguments(selected, args, 0, scope, scratch)?;
         if self
             .graph
             .entity(self.graph.binding(selected.binding).entity)
@@ -1384,47 +1298,71 @@ impl Analyzer<'_> {
         &mut self,
         selected: CallSelection,
         args: &[ast::ExprId],
+        parameter_offset: usize,
         scope: ScopeId,
         scratch: &CallScratch,
     ) -> Result<(), Error> {
-        let CallSelection {
-            first,
-            object_count,
-            ..
-        } = selected;
+        let ty = self
+            .graph
+            .entity(self.graph.binding(selected.binding).entity)
+            .ty
+            .ok_or(Error::Invariant("selected function without type"))?;
+        let count = self.graph.types.function_parameter_count(ty)?;
         for (index, &arg) in args.iter().enumerate() {
-            if let Some(sequence) = scratch.sequences[first + object_count + index] {
-                if matches!(
-                    self.tree.expressions.get(arg).kind,
-                    ast::ExprKind::Braced { .. }
-                ) {
-                    self.class_parameter_destruction(
-                        sequence.conversion.target,
-                        scope,
-                        self.tree.expressions.get(arg).location,
-                    )?;
-                    self.initialize_ranked_list_argument(arg, sequence, scope)?;
-                    continue;
-                }
-                self.apply_argument_sequence(arg, sequence, scope)?;
-            } else {
+            let parameter = index + parameter_offset;
+            if parameter >= count {
                 self.ellipsis_argument(arg)?;
+                continue;
             }
+            let target = self.graph.types.function_parameter(ty, parameter)?;
+            let sequence = scratch.sequences[selected.first + selected.object_count + index]
+                .ok_or(Error::Invariant("fixed argument without sequence"))?;
+            self.apply_fixed_argument(arg, target, sequence, scope)?;
         }
         Ok(())
     }
-    pub(super) fn apply_argument_sequence(
+    pub(super) fn apply_fixed_argument(
+        &mut self,
+        arg: ast::ExprId,
+        target: TypeId,
+        sequence: ArgumentSequence,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let location = self.tree.expressions.get(arg).location;
+        self.class_parameter_destruction(target, scope, location)?;
+        if matches!(
+            self.tree.expressions.get(arg).kind,
+            ast::ExprKind::Braced { .. }
+        ) {
+            return self.initialize_ranked_list_argument(arg, sequence, scope);
+        }
+        self.apply_argument_sequence_in(
+            arg,
+            sequence,
+            scope,
+            super::user_conversions::ConversionSite::Parameter,
+        )?;
+        if let Some(class) = self.graph.class_of(target)
+            && self.same_class_source(class, arg)?
+        {
+            self.record_class_copy(
+                arg,
+                target,
+                scope,
+                super::copy_initialization::CopyUse::Value { in_place: false },
+                location,
+            )?;
+        }
+        Ok(())
+    }
+    fn apply_argument_sequence_in(
         &mut self,
         arg: ast::ExprId,
         sequence: ArgumentSequence,
         scope: ScopeId,
+        site: super::user_conversions::ConversionSite,
     ) -> Result<(), Error> {
-        if self.apply_user_sequence(
-            arg,
-            sequence,
-            scope,
-            super::user_conversions::ConversionSite::Call,
-        )? {
+        if self.apply_user_sequence(arg, sequence, scope, site)? {
             return Ok(());
         }
         let mut facts = self.graph.expression_facts.get(arg)?;
@@ -1432,22 +1370,32 @@ impl Analyzer<'_> {
             self.select_function_designation(arg, binding)?;
             facts = self.graph.expression_facts.get(arg)?;
         }
-        self.record_conversion(
-            &mut facts,
-            sequence.application.ok_or(Error::at(
+        let conversion = sequence.application.ok_or(Error::at(
+            self.tree.expressions.get(arg).location,
+            "invalid implicit conversion",
+        ))?;
+        if self
+            .graph
+            .expression_facts
+            .function_conversion(arg)
+            .is_none()
+        {
+            facts.base_path = self.conversion_base_path(
+                facts,
+                conversion,
+                scope,
                 self.tree.expressions.get(arg).location,
-                "invalid implicit conversion",
-            ))?,
-        );
+                true,
+            )?;
+        }
         self.check_binding_temporary(
             facts,
-            facts
-                .conversion
-                .ok_or(Error::Invariant("call argument without conversion"))?,
+            conversion,
             scope,
             self.tree.expressions.get(arg).location,
         )?;
-        self.odr_use_constants(arg, facts.conversion)?;
+        self.odr_use_constants(arg, Some(conversion))?;
+        self.record_conversion(&mut facts, conversion);
         self.graph.expression_facts.set(arg, facts);
         Ok(())
     }
@@ -1461,7 +1409,7 @@ impl Analyzer<'_> {
         selected.object_count += 1;
         // A new-expression converts its written placement operands. The
         // frozen allocation path neither forms nor emits omitted defaults.
-        self.apply_written_call_arguments(selected, args, scope, scratch)
+        self.apply_written_call_arguments(selected, args, 1, scope, scratch)
     }
     fn compare_candidates(
         &mut self,

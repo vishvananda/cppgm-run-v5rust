@@ -513,8 +513,6 @@ impl Analyzer<'_> {
         scratch.clear();
         self.call_scratch = scratch;
         let function = selected?;
-        self.record_argument_base_paths(args, scope)?;
-        self.check_class_argument_slice(function, args, 1, scope)?;
         self.demand_specialization_body(function);
         self.demand_function(function, true)?;
         let array = if let Some(count) = count {

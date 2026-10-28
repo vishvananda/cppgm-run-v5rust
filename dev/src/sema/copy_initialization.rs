@@ -251,6 +251,21 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("copy properties not published"))
     }
 
+    pub(super) fn same_class_source(
+        &self,
+        class: EntityId,
+        expression: ast::ExprId,
+    ) -> Result<bool, Error> {
+        let facts = self.graph.expression_facts.get(expression)?;
+        if facts.functions.is_some() || facts.object.is_some() && facts.function.is_some() {
+            return Ok(false);
+        }
+        Ok(self
+            .graph
+            .class_of(facts.ty)
+            .is_some_and(|source| source == class || self.graph.is_base_of(class, source)))
+    }
+
     pub(super) fn record_class_copy(
         &mut self,
         id: ast::ExprId,
@@ -329,14 +344,19 @@ impl Analyzer<'_> {
                 .is_some(),
         };
         if let Some(sequence) = candidate.argument {
-            self.apply_argument_sequence(id, sequence, scope)?;
+            let target = if let CopyOrigin::Declared(binding) = selected.origin {
+                let ty = self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .ty
+                    .ok_or(Error::Invariant("copy constructor without type"))?;
+                self.graph.types.function_parameter(ty, 0)?
+            } else {
+                selected.binding.target
+            };
+            self.apply_fixed_argument(id, target, sequence, scope)?;
             if let CopyOrigin::Declared(binding) = selected.origin {
-                self.check_constructor_parameters(
-                    self.graph.binding(binding).entity,
-                    &[id],
-                    scope,
-                    false,
-                )?;
+                self.request_constructor_defaults(binding, 1)?;
             }
         }
         let mut facts = self.graph.expression_facts.get(id)?;
@@ -907,16 +927,24 @@ impl Analyzer<'_> {
             function: None,
             user_conversion: None,
         });
-        if selected.binding.rank == super::expression_facts::ConversionRank::Ellipsis {
-            self.ellipsis_argument(argument)?;
-        } else {
-            self.apply_argument_sequence(argument, sequence, scope)?;
-        }
         let function = self
             .graph
             .lower_constructor_entity(constructor)
             .ok_or(Error::Invariant("single constructor without entity"))?;
-        self.check_constructor_parameters(function, &[argument], scope, input.list.is_some())?;
+        if selected.binding.rank == super::expression_facts::ConversionRank::Ellipsis {
+            self.ellipsis_argument(argument)?;
+        } else {
+            let ty = self
+                .graph
+                .entity(function)
+                .ty
+                .ok_or(Error::Invariant("single constructor without type"))?;
+            let target = self.graph.types.function_parameter(ty, 0)?;
+            self.apply_fixed_argument(argument, target, sequence, scope)?;
+        }
+        self.check_constructor_narrowing(function, &[argument], scope, input.list.is_some())?;
+        let binding = self.graph.function_origin(function)?;
+        self.request_constructor_defaults(binding, 1)?;
         self.demand_constructor_use(constructor)?;
         Ok(constructor)
     }

@@ -538,7 +538,7 @@ impl Analyzer<'_> {
         scratch.clear();
         self.call_scratch = scratch;
         let (constructor, function) = chosen?;
-        self.check_constructor_parameters(function, args, scope, list.is_some())?;
+        self.check_constructor_narrowing(function, args, scope, list.is_some())?;
         if converting {
             self.check_converting_final_copy(class, scope, location)?;
         }
@@ -548,13 +548,16 @@ impl Analyzer<'_> {
         Ok(Some((constructor, arguments)))
     }
 
-    pub(super) fn check_constructor_parameters(
+    pub(super) fn check_constructor_narrowing(
         &mut self,
         function: EntityId,
         args: &[ast::ExprId],
         scope: ScopeId,
         list: bool,
     ) -> Result<(), Error> {
+        if !list {
+            return Ok(());
+        }
         let ty = self
             .graph
             .entity(function)
@@ -563,51 +566,14 @@ impl Analyzer<'_> {
         let count = self.graph.types.function_parameter_count(ty)?;
         for (index, &argument) in args.iter().enumerate().take(count) {
             let parameter = self.graph.types.function_parameter(ty, index)?;
-            self.class_parameter_destruction(
-                parameter,
-                scope,
-                self.tree.expressions.get(argument).location,
-            )?;
             if !matches!(
-                self.tree.expressions.get(argument).kind,
-                ast::ExprKind::Braced { .. }
+                self.graph.types.get(parameter).kind,
+                TypeKind::Reference { .. }
             ) {
-                self.record_class_copy(
-                    argument,
-                    parameter,
-                    scope,
-                    super::copy_initialization::CopyUse::Value { in_place: false },
-                    self.tree.expressions.get(argument).location,
-                )?;
-            }
-            let mut facts = self.graph.expression_facts.get(argument)?;
-            if let Some(conversion) = facts.conversion
-                && self
-                    .graph
-                    .expression_facts
-                    .user_conversion(argument)
-                    .is_none()
-            {
-                facts.base_path = self.conversion_base_path(
-                    facts,
-                    conversion,
-                    scope,
-                    self.tree.expressions.get(argument).location,
-                    true,
-                )?;
-                self.graph.expression_facts.set(argument, facts);
-            }
-            if list
-                && !matches!(
-                    self.graph.types.get(parameter).kind,
-                    TypeKind::Reference { .. }
-                )
-            {
                 self.check_narrowing(argument, parameter, scope)?;
             }
         }
-        let binding = self.graph.function_origin(function)?;
-        self.request_constructor_defaults(binding, args.len())
+        Ok(())
     }
 
     pub(super) fn class_has_default_constructor(&mut self, class: EntityId) -> Result<bool, Error> {

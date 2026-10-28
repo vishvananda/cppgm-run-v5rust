@@ -615,7 +615,12 @@ mod tests {
             assert!(!graph.entity(function).defined);
             assert!(graph.entity(function).scope.is_none());
             assert!(graph.entity(function).function_definition.is_none());
-            assert!(graph.entity(function).defaults.is_empty());
+            assert_eq!(graph.entity(function).defaults.len(), 2);
+            assert!(graph.entity(function).defaults[0].is_none());
+            assert_eq!(
+                graph.entity(function).defaults[1].unwrap().expression,
+                graph.entity(primary).defaults[1].unwrap().expression
+            );
             assert!(graph.entity(function).demands.as_slice().is_empty());
         }
         let default = graph.entity(primary).defaults[1].unwrap().expression;

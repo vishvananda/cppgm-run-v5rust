@@ -88,9 +88,6 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn current_object_type(&mut self) -> Result<Option<super::types::TypeId>, Error> {
-        if self.default_argument_scope.is_some() {
-            return Ok(None);
-        }
         if let Some(pointer) = self
             .body_context
             .as_ref()
@@ -100,6 +97,13 @@ impl Analyzer<'_> {
                 return Err(Error::Invariant("implicit object without pointer type"));
             };
             return Ok(Some(object));
+        }
+        if self.default_argument_scope.is_some() {
+            return self
+                .body_context
+                .as_ref()
+                .and_then(|body| body.function)
+                .map_or(Ok(None), |function| self.function_object_type(function));
         }
         if let Some(ty) = self
             .signature_object

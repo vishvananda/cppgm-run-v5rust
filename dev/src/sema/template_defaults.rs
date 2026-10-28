@@ -17,14 +17,8 @@ pub(super) struct Pattern {
     pub scope: ScopeId,
     pub limit: usize,
 }
-#[derive(Clone, Copy)]
-enum State {
-    InProgress,
-    Complete,
-}
 #[derive(Default)]
 pub(super) struct Defaults {
-    states: HashMap<(EntityId, usize), State>,
     members: HashMap<EntityId, (ScopeId, usize)>,
     patterns: HashMap<EntityId, Vec<Option<DefaultArgument>>>,
     constructor_roots: Vec<(BindingId, usize)>,
@@ -229,6 +223,7 @@ impl Analyzer<'_> {
             defaults[count - back] = self.graph.entity(primary).defaults[patterns - back];
             back += 1;
         }
+        self.graph.entity_mut(entity).defaults.clone_from(&defaults);
         self.graph
             .function_templates
             .argument_defaults
@@ -241,7 +236,7 @@ impl Analyzer<'_> {
         let Some(home) = self.graph.entity(entity).home else {
             return false;
         };
-        if self.template_depth != 0 || !self.graph.within_class_instance(home) {
+        if self.template_depth != 0 || !self.graph.instance_class(home) {
             return false;
         }
         let limit = self
@@ -278,6 +273,21 @@ impl Analyzer<'_> {
         Ok(self.graph.function_default(function, index))
     }
 
+    fn untyped_default_argument(&self, entity: EntityId, index: usize) -> Option<DefaultArgument> {
+        self.graph
+            .entity(entity)
+            .defaults
+            .get(index)
+            .copied()
+            .flatten()
+            .filter(|default| {
+                self.graph
+                    .expression_facts
+                    .known(default.expression)
+                    .is_none()
+            })
+    }
+
     fn instantiate_selected_defaults(
         &mut self,
         binding: BindingId,
@@ -285,7 +295,7 @@ impl Analyzer<'_> {
         end: Option<usize>,
     ) -> Result<(), Error> {
         let entity = self.graph.binding(binding).entity;
-        let Some(_) = self.graph.function_templates.primary(entity) else {
+        let Some(_primary) = self.graph.function_templates.primary(entity) else {
             return self.instantiate_member_defaults(entity, supplied, end);
         };
         let ty = self
@@ -293,61 +303,15 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("default without function type"))?;
-        let count = self.graph.types.function_parameter_count(ty)?;
+        let count = self.graph.entity(entity).defaults.len();
         for index in supplied..end.map_or(count, |end| end.min(count)) {
-            let key = (entity, index);
-            match self
-                .graph
-                .function_templates
-                .argument_defaults
-                .states
-                .get(&key)
-            {
-                Some(State::Complete) => continue,
-                Some(State::InProgress) => {
-                    let default = self
-                        .graph
-                        .function_templates
-                        .argument_defaults
-                        .pattern(entity, index)
-                        .ok_or(Error::Invariant("recursive default without pattern"))?;
-                    return Err(Error::at(
-                        self.tree.expressions.get(default.expression).location,
-                        "template instantiation nested too deeply",
-                    ));
-                }
-                None => (),
-            }
-            let Some(default) = self
-                .graph
-                .function_templates
-                .argument_defaults
-                .pattern(entity, index)
-            else {
+            let Some(default) = self.untyped_default_argument(entity, index) else {
                 continue;
             };
             let pattern = default
                 .template
                 .ok_or(Error::Invariant("template default without context"))?;
-            self.graph
-                .function_templates
-                .argument_defaults
-                .states
-                .insert(key, State::InProgress);
-            let result = self.instantiate_default(entity, ty, index, default, pattern);
-            if let Err(error) = result {
-                self.graph
-                    .function_templates
-                    .argument_defaults
-                    .states
-                    .remove(&key);
-                return Err(error.required_instantiation());
-            }
-            self.graph
-                .function_templates
-                .argument_defaults
-                .states
-                .insert(key, State::Complete);
+            self.instantiate_default(entity, ty, index, default, pattern)?;
         }
         Ok(())
     }
@@ -374,54 +338,12 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("member default without function type"))?;
         let count = self.graph.entity(entity).defaults.len();
         for index in supplied..end.map_or(count, |end| end.min(count)) {
-            let Some(default) = self.graph.entity(entity).defaults[index] else {
+            let Some(default) = self.untyped_default_argument(entity, index) else {
                 continue;
             };
-            let key = (entity, index);
-            let location = self.tree.expressions.get(default.expression).location;
-            match self
-                .graph
-                .function_templates
-                .argument_defaults
-                .states
-                .get(&key)
-            {
-                Some(State::Complete) => continue,
-                Some(State::InProgress) => {
-                    return Err(Error::at(
-                        location,
-                        "template instantiation nested too deeply",
-                    ));
-                }
-                None => (),
-            }
-            self.graph
-                .function_templates
-                .argument_defaults
-                .states
-                .insert(key, State::InProgress);
             let target = self.graph.types.function_parameter(ty, index)?;
-            let result = self.required_instantiation(
-                self.instantiation_depth,
-                location,
-                limit,
-                |analyzer| {
-                    analyzer.form_default(default.expression, target, scope, limit, entity, index)
-                },
-            );
-            if let Err(error) = result {
-                self.graph
-                    .function_templates
-                    .argument_defaults
-                    .states
-                    .remove(&key);
-                return Err(error);
-            }
-            self.graph
-                .function_templates
-                .argument_defaults
-                .states
-                .insert(key, State::Complete);
+            self.form_default(default.expression, target, scope, limit, entity, index)?;
+            self.graph.work.totals.instantiated_arguments += 1;
         }
         Ok(())
     }
@@ -459,13 +381,31 @@ impl Analyzer<'_> {
         function: EntityId,
         index: usize,
     ) -> Result<(), Error> {
+        let location = self.tree.expressions.get(copy).location;
+        self.required_instantiation(self.instantiation_depth, location, limit, |analyzer| {
+            analyzer.form_default_expression(copy, target, frame, function, index)
+        })
+    }
+
+    fn form_default_expression(
+        &mut self,
+        copy: ast::ExprId,
+        target: super::types::TypeId,
+        frame: ScopeId,
+        function: EntityId,
+        index: usize,
+    ) -> Result<(), Error> {
         let index = u32::try_from(index).map_err(|_| Error::Limit("default argument index"))?;
         // The default belongs to its declaring scope, with no caller locals or
         // implicit object. Instantiation is evaluated even inside sizeof/noexcept.
         let saved_body = self.body_context.take();
-        let saved_context = self.closure_default_argument.replace((function, index));
-        let saved_limit = self.graph.lookup_limit.replace(limit);
-        let saved_scope = self.default_argument_scope.replace(frame);
+        let saved_context = self.closure_default_argument;
+        self.closure_default_argument = self
+            .graph
+            .entity(function)
+            .home
+            .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+            .map(|_| (function, index));
         let saved_unevaluated = std::mem::replace(&mut self.unevaluated, 0);
         let saved_depth = std::mem::replace(&mut self.template_depth, 0);
         let saved_class_depth = std::mem::replace(&mut self.class_depth, 0);
@@ -475,6 +415,8 @@ impl Analyzer<'_> {
         let saved_base = self.base_object.take();
         let saved_uses = self.dependent_uses.replace(0);
         let result = (|| {
+            let void = self.graph.types.scalar(super::types::Scalar::Void)?;
+            self.body_context = Some(super::procedural_statements::BodyContext::new(void, None));
             if matches!(
                 self.tree.expressions.get(copy).kind,
                 ast::ExprKind::Braced { .. }
@@ -483,19 +425,22 @@ impl Analyzer<'_> {
             } else {
                 self.typed_expression(copy, frame)?;
                 self.convert_scalar(copy, target, false)?;
-                self.record_class_copy(
-                    copy,
-                    target,
-                    frame,
-                    super::copy_initialization::CopyUse::Value { in_place: false },
-                    self.tree.expressions.get(copy).location,
-                )
+                if let Some(class) = self.graph.class_of(target)
+                    && self.same_class_source(class, copy)?
+                {
+                    self.record_class_copy(
+                        copy,
+                        target,
+                        frame,
+                        super::copy_initialization::CopyUse::Value { in_place: false },
+                        self.tree.expressions.get(copy).location,
+                    )?;
+                }
+                Ok(())
             }
         })();
         self.body_context = saved_body;
         self.closure_default_argument = saved_context;
-        self.graph.lookup_limit = saved_limit;
-        self.default_argument_scope = saved_scope;
         self.unevaluated = saved_unevaluated;
         self.template_depth = saved_depth;
         self.class_depth = saved_class_depth;
@@ -516,6 +461,28 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    fn formed_defaults(
+        graph: &super::super::graph::Graph,
+    ) -> std::collections::HashSet<(EntityId, usize)> {
+        let defaults = &graph.function_templates.argument_defaults;
+        defaults
+            .patterns
+            .keys()
+            .chain(defaults.members.keys())
+            .flat_map(|&entity| {
+                graph.entity(entity).defaults.iter().enumerate().filter_map(
+                    move |(index, default)| {
+                        default
+                            .filter(|default| {
+                                graph.expression_facts.known(default.expression).is_some()
+                            })
+                            .map(|_| (entity, index))
+                    },
+                )
+            })
+            .collect()
+    }
 
     #[test]
     fn cached_default_plans_keep_per_owner_demand_and_memoize_only_reached_defaults() {
@@ -539,23 +506,10 @@ mod tests {
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         let global = analyzer.graph.global;
         analyzer.declarations(declarations, global).unwrap();
-        assert!(
-            analyzer
-                .graph
-                .function_templates
-                .argument_defaults
-                .states
-                .is_empty()
-        );
+        assert!(formed_defaults(&analyzer.graph).is_empty());
         analyzer.finish_lowering_boundaries().unwrap();
         let defaults = &analyzer.graph.function_templates.argument_defaults;
-        assert_eq!(defaults.states.len(), 1);
-        assert!(
-            defaults
-                .states
-                .values()
-                .all(|state| matches!(state, State::Complete))
-        );
+        assert_eq!(formed_defaults(&analyzer.graph).len(), 1);
         assert_eq!(
             defaults.constructor_edges.len(),
             1,
@@ -592,13 +546,13 @@ mod tests {
             )
             .unwrap();
             let defaults = &graph.function_templates.argument_defaults;
-            assert_eq!(defaults.states.len(), usize::from(lowering));
+            let formed = formed_defaults(&graph);
+            assert_eq!(formed.len(), usize::from(lowering));
             if lowering {
                 assert_eq!(defaults.constructor_requests.len(), 2);
                 assert_eq!(defaults.constructor_edges.len(), 1);
                 assert!(defaults.constructor_roots.is_empty());
-                let (&(entity, index), &state) = defaults.states.iter().next().unwrap();
-                assert!(matches!(state, State::Complete));
+                let &(entity, index) = formed.iter().next().unwrap();
                 let pattern = defaults.pattern(entity, index).unwrap();
                 let typed = graph.entity(entity).defaults[index].unwrap();
                 assert_ne!(pattern.expression, typed.expression);
@@ -631,7 +585,7 @@ mod tests {
         .unwrap();
         let defaults = &graph.function_templates.argument_defaults;
         assert_eq!(defaults.patterns.len(), 3);
-        assert_eq!(defaults.states.len(), 3);
+        assert_eq!(formed_defaults(&graph).len(), 3);
         let mut positions = Vec::new();
         let mut copies = std::collections::HashSet::new();
         for (&entity, patterns) in &defaults.patterns {
@@ -641,7 +595,6 @@ mod tests {
             let pattern = patterns[count].unwrap();
             assert!(pattern.template.is_some());
             assert!(graph.expression_facts.get(pattern.expression).is_err());
-            assert!(matches!(defaults.states[&(entity, count)], State::Complete));
             let copy = graph.entity(entity).defaults[count].unwrap();
             assert!(copy.template.is_none());
             assert!(copy.expression.index() >= original);
@@ -675,12 +628,12 @@ mod tests {
             true,
         )
         .unwrap();
+        let formed = formed_defaults(&graph);
+        assert_eq!(formed.len(), 2);
         let defaults = &graph.function_templates.argument_defaults;
-        assert_eq!(defaults.states.len(), 2);
         let mut expressions = std::collections::HashSet::new();
-        for (&(entity, index), state) in &defaults.states {
+        for &(entity, index) in &formed {
             assert_eq!(index, 1);
-            assert!(matches!(state, State::Complete));
             let function = graph.entity(entity);
             assert!(
                 graph
@@ -730,16 +683,16 @@ mod tests {
             true,
         )
         .unwrap();
-        let defaults = &graph.function_templates.argument_defaults;
-        assert_eq!(defaults.states.len(), 2);
+        let formed = formed_defaults(&graph);
+        assert_eq!(formed.len(), 2);
         let mut copies = std::collections::HashSet::new();
         let mut primaries = std::collections::HashSet::new();
-        for (&(entity, index), state) in &defaults.states {
+        for &(entity, index) in &formed {
             assert_eq!(index, 2);
-            assert!(matches!(state, State::Complete));
             let function = graph.entity(entity);
             assert!(function.defaults[0].is_none());
-            assert!(function.defaults[1].is_none());
+            let unused = function.defaults[1].unwrap();
+            assert!(graph.expression_facts.known(unused.expression).is_none());
             let copy = function.defaults[2].unwrap().expression;
             assert!(copy.index() >= original_expressions);
             assert!(copies.insert(copy));
@@ -779,10 +732,14 @@ mod tests {
         let saved_limit = analyzer.graph.lookup_limit;
         analyzer.dependent_uses.set(17);
         let declaration = analyzer.tree.decl_lists.get(declarations)[1];
-        assert!(matches!(
-            analyzer.declaration(declaration, global),
-            Err(Error::InstantiationDiagnostic { .. })
-        ));
+        let state = analyzer.graph.analysis.substitution.clone();
+        let failures = analyzer.graph.work.totals.substitution_failures;
+        let result = analyzer
+            .with_substitution_soft(None, |analyzer| analyzer.declaration(declaration, global));
+        assert!(matches!(result, Err(Error::InstantiationDiagnostic { .. })));
+        assert_eq!(state.current().soft, 0);
+        assert!(state.current().failure.is_none());
+        assert_eq!(analyzer.graph.work.totals.substitution_failures, failures);
         assert_eq!(analyzer.graph.lookup_limit, saved_limit);
         assert_eq!(analyzer.dependent_uses.get(), 17);
         assert_eq!(analyzer.template_head, head);
@@ -791,13 +748,6 @@ mod tests {
         assert!(analyzer.default_argument_scope.is_none());
         assert!(analyzer.initializing.is_none());
         assert!(analyzer.base_object.is_none());
-        assert!(
-            analyzer
-                .graph
-                .function_templates
-                .argument_defaults
-                .states
-                .is_empty()
-        );
+        assert!(formed_defaults(&analyzer.graph).is_empty());
     }
 }

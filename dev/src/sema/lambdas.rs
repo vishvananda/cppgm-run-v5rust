@@ -546,7 +546,12 @@ impl Analyzer<'_> {
     }
 
     fn closure_context(&self, home: ScopeId) -> ClosureContext {
-        if self.body_context.is_some() || self.graph.scope(home).kind != ScopeKind::Class {
+        if self
+            .body_context
+            .as_ref()
+            .is_some_and(|body| body.function.is_some())
+            || self.graph.scope(home).kind != ScopeKind::Class
+        {
             return ClosureContext::None;
         }
         let Some(class) = self.graph.scope(home).owner else {
@@ -568,7 +573,12 @@ impl Analyzer<'_> {
     }
 
     fn closure_naming_context(&self, home: ScopeId) -> Option<ClosureNamingContext> {
-        if self.body_context.is_some() || self.graph.scope(home).kind != ScopeKind::Class {
+        if self
+            .body_context
+            .as_ref()
+            .is_some_and(|body| body.function.is_some())
+            || self.graph.scope(home).kind != ScopeKind::Class
+        {
             return None;
         }
         if let Some((function, index)) = self.closure_default_argument {

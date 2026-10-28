@@ -19,6 +19,8 @@ use std::cmp::Ordering;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ConversionSite {
     Call,
+    /// The selected argument owner has checked its by-value parameter.
+    Parameter,
     Operator,
     Conditional,
     AggregateElement,
@@ -349,7 +351,13 @@ impl Analyzer<'_> {
         };
         // Calls check the parameter/binding destruction before applying the
         // user conversion; overloaded operators do so after the callable checks.
-        if site == ConversionSite::Call {
+        if site == ConversionSite::Call
+            || (site == ConversionSite::Parameter
+                && matches!(
+                    self.graph.types.get(sequence.conversion.target).kind,
+                    TypeKind::Reference { .. }
+                ))
+        {
             self.class_parameter_destruction(sequence.conversion.result, scope, location)?;
         }
         let constructor = self.selected_constructor_plan(binding, location)?;
@@ -374,6 +382,26 @@ impl Analyzer<'_> {
         let first = sequence
             .application
             .ok_or(Error::Invariant("constructor without first conversion"))?;
+        let ty = self
+            .graph
+            .entity(self.graph.binding(binding).entity)
+            .ty
+            .ok_or(Error::Invariant("converting constructor without type"))?;
+        if self.graph.types.function_parameter_count(ty)? != 0 {
+            let parameter = self.graph.types.function_parameter(ty, 0)?;
+            if let Some(class) = self.graph.class_of(parameter) {
+                self.check_class_destruction(parameter, scope, location)?;
+                if first.rank != R::Ellipsis && self.same_class_source(class, id)? {
+                    self.record_class_copy(
+                        id,
+                        parameter,
+                        scope,
+                        super::copy_initialization::CopyUse::Value { in_place: false },
+                        location,
+                    )?;
+                }
+            }
+        }
         self.check_bit_field_binding(id, first)?;
         let mut facts = self.graph.expression_facts.get(id)?;
         // The frozen constructor-conversion owner retains this standard route
@@ -387,15 +415,6 @@ impl Analyzer<'_> {
             // sequence without ordinary variadic promotions. Only class
             // storage demand is shared with a written ellipsis argument.
             self.demand_variadic_class_storage(first.target);
-        } else {
-            self.class_parameter_destruction(first.target, scope, location)?;
-            self.record_class_copy(
-                id,
-                first.target,
-                scope,
-                super::copy_initialization::CopyUse::Value { in_place: false },
-                location,
-            )?;
         }
         self.graph
             .expression_facts
