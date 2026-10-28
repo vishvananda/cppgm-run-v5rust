@@ -21,12 +21,6 @@ pub(super) enum Origin {
     Declared,
     Implicit,
 }
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(super) enum ImplicitUse {
-    #[default]
-    Unused,
-    Used,
-}
 
 #[cfg(test)]
 mod tests {
@@ -303,9 +297,6 @@ pub(crate) struct Action {
     pub parameter_constructor: Option<super::construction::ConstructorId>,
 }
 impl Graph {
-    pub(crate) fn lower_implicit_assignment_demanded(&self, class: EntityId) -> bool {
-        self.entity(class).implicit_assignment_use == ImplicitUse::Used
-    }
     pub(crate) fn lower_assignment(&self, function: EntityId) -> Option<&Properties> {
         self.entity(function).assignment.as_ref()
     }

@@ -650,14 +650,6 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         self.destruction.class = Some(self.graph.lower_constructor(id).class);
-        self.bit_initialization_order = if self
-            .graph
-            .lower_implicit_assignment_demanded(self.graph.lower_constructor(id).class)
-        {
-            super::bit_fields::InitializationOrder::AssignmentDemanded
-        } else {
-            super::bit_fields::InitializationOrder::Ordinary
-        };
         if let Some(delegation) = self.graph.lower_constructor(id).delegation {
             if self.virtual_context.vtt.is_some() {
                 self.virtual_context.hidden = Some(0);

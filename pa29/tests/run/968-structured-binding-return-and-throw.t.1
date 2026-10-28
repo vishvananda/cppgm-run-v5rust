@@ -1,0 +1,21 @@
+int copied, moved;
+struct X {
+  int value;
+  X():value(7){}
+  X(const X& x):value(x.value){++copied;}
+  X(X&& x):value(x.value){++moved;}
+};
+struct P { X x; };
+X by_value(){auto [x]=P{};return x;}
+X by_reference(P& p){auto& [x]=p;return x;}
+void by_throw(){auto [x]=P{};throw x;}
+X explicit_move(P& p){auto& [x]=p;return static_cast<X&&>(x);}
+int main(){
+  P p;
+  X a=by_value();
+  X b=by_reference(p);
+  try{by_throw();}catch(const X& x){if(x.value!=7)return 1;}
+  if(a.value!=7||b.value!=7||copied!=3||moved!=0)return 2;
+  X c=explicit_move(p);
+  return c.value==7&&copied==3&&moved==1?0:3;
+}

@@ -243,14 +243,9 @@ impl Function<'_, '_, '_, '_> {
             } else {
                 self.zero(ty)?
             };
-            self.initialize_field_at(
-                field,
-                value,
-                self.graph.lower_cv(ty) & 2 != 0,
-                self.bit_initialization_order
-                    == super::bit_fields::InitializationOrder::AssignmentDemanded,
-                |function| function.member_field_address(member, pointer, field.offset),
-            )?;
+            self.initialize_field_at(field, value, self.graph.lower_cv(ty) & 2 != 0, |function| {
+                function.member_field_address(member, pointer, field.offset)
+            })?;
             let layout = self
                 .graph
                 .lower_bit_field(member)?

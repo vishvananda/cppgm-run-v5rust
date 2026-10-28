@@ -143,16 +143,6 @@ impl Analyzer<'_> {
                 }),
             Demand::Function { binding, .. } => {
                 let function = self.graph.binding(binding).entity;
-                let entity = self.graph.entity(function);
-                // Like C++ demand_mark, this records a potentially evaluated
-                // use even inside an inline body that is never emitted. Only
-                // implicit assignment declarations affect constructor order.
-                if entity.assignment_origin == super::assignment::Origin::Implicit
-                    && let Some(class) = entity.home.and_then(|home| self.graph.scope(home).owner)
-                {
-                    self.graph.entity_mut(class).implicit_assignment_use =
-                        super::assignment::ImplicitUse::Used;
-                }
                 DemandKey::Function(function)
             }
         };
@@ -304,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn implicit_assignment_use_is_class_owned_and_independent_of_emission() {
+    fn unused_inline_assignment_does_not_become_an_emission_root() {
         let source = SourceBuffer::new(
             b"struct Used{unsigned n:2;};struct Unused{unsigned n:2;};\
               struct Unevaluated{unsigned n:2;};\
@@ -319,10 +309,6 @@ mod tests {
             SyntaxUnit::new(Preprocessor::with_name(&source, b"assignment-use").unwrap());
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-        let names: Vec<_> = [b"Used".as_slice(), b"Unused", b"Unevaluated", b"Defaulted"]
-            .into_iter()
-            .map(|name| cursor.intern_name(name).unwrap())
-            .collect();
         let expression_count = tree.expressions.mark();
         let declaration_count = tree.declarations.mark();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
@@ -332,19 +318,8 @@ mod tests {
         let global = analyzer.graph.global;
         analyzer.declarations(declarations, global).unwrap();
         analyzer.finish_lowering_boundaries().unwrap();
-        for (index, name) in names.into_iter().enumerate() {
-            let binding = analyzer
-                .graph
-                .own(global, name, Filter::Elaborated)
-                .unwrap();
-            let class = analyzer.graph.binding(binding).entity;
-            assert_eq!(
-                analyzer.graph.lower_implicit_assignment_demanded(class),
-                index == 0
-            );
-        }
-        // The unused inline body supplied the demand fact, but is not an
-        // emission root and must not force its assignment body into output.
+        // An unused inline body is not an emission root and must not
+        // force its assignment body into output.
         assert!(!analyzer.graph.root_demands.as_slice().iter().any(|demand| {
             matches!(demand, super::Demand::Function { binding, .. }
                 if analyzer.graph.lower_implicit_assignment(analyzer.graph.binding(*binding).entity))

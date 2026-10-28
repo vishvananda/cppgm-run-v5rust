@@ -616,9 +616,6 @@ impl Function<'_, '_, '_, '_> {
             field,
             value,
             path.volatile || self.graph.lower_cv(field.source) & 2 != 0,
-            self.bit_initialization_order
-                == super::bit_fields::InitializationOrder::AssignmentDemanded
-                && value_first,
             |function| {
                 if let Some(address) = before {
                     Ok(address)
