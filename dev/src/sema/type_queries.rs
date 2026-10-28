@@ -401,6 +401,8 @@ mod tests {
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0_u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         analyzer
             .declarations(declarations, analyzer.graph.global)
             .unwrap();
