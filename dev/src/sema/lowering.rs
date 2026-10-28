@@ -208,6 +208,11 @@ pub(crate) struct Allocation {
     pub role: AllocationRole,
     pub array: bool,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FunctionDefinition {
+    Declared,
+    Defined,
+}
 pub(crate) struct FunctionFacts {
     pub abi_owner: Option<EntityId>,
     pub template_instance: Option<EntityId>,
@@ -221,6 +226,7 @@ pub(crate) struct FunctionFacts {
     pub declared_linkage: DeclaredLinkage,
     pub c_linkage: bool,
     pub emission: Emission,
+    pub definition_state: FunctionDefinition,
     pub nothrow: bool,
     pub allocation: Option<Allocation>,
     pub builtin: Option<BuiltinFunction>,
@@ -616,6 +622,7 @@ impl Graph {
             declared_linkage: DeclaredLinkage::External,
             c_linkage: false,
             emission: Emission::Demanded,
+            definition_state: FunctionDefinition::Defined,
             nothrow: plan.nothrow,
             allocation: None,
             builtin: None,
@@ -1856,6 +1863,11 @@ impl Graph {
                 Emission::Demanded
             } else {
                 Emission::Always
+            },
+            definition_state: if entity.defined {
+                FunctionDefinition::Defined
+            } else {
+                FunctionDefinition::Declared
             },
             nothrow: if entity.constructor_exceptions
                 == super::construction::ConstructorExceptionSource::SubobjectPlan

@@ -4,7 +4,7 @@ use super::{Error, symbols::Symbols, types};
 use crate::{
     lowir::{
         builder::FunctionBuilder,
-        model::{Arity, Boundary, InstructionKind as I, Program, Unwind, Value},
+        model::{Boundary, InstructionKind as I, Program, Unwind, Value},
         vocabulary::Type,
     },
     sema::{
@@ -149,45 +149,6 @@ fn require_analyzed_body(
     Ok(())
 }
 
-fn parameter_names(
-    cx: &mut crate::lower::unit_frontend::Context<'_, '_, '_>,
-    entity: Option<EntityId>,
-    bindings: &[Parameter],
-    reserved: &std::collections::HashSet<String>,
-    (result_count, object_count, hidden_count): (usize, usize, usize),
-) -> Result<Vec<(String, Type)>, Error> {
-    let mut names = Vec::with_capacity(bindings.len() + object_count + result_count);
-    if result_count != 0 {
-        names.push(("ret".to_owned(), Type::Ptr));
-    }
-    if object_count != 0 {
-        names.push(("this".to_owned(), Type::Ptr));
-    }
-    if hidden_count != 0 {
-        names.push(("__vtt".to_owned(), Type::Ptr));
-    }
-    for &Parameter { name, ty, .. } in bindings {
-        names.push((
-            if entity.is_some_and(|entity| {
-                cx.graph.lower_implicit_assignment(entity) || cx.graph.lower_implicit_copy(entity)
-            }) {
-                "other".to_owned()
-            } else if let Some(name) = name {
-                cx.symbols
-                    .view(&*cx.graph, &*cx.tree, cx.cursor)
-                    .parameter_name(name)?
-            } else {
-                let mut name = format!("__param{}", names.len());
-                while reserved.contains(&name) {
-                    name.push('_');
-                }
-                name
-            },
-            parameter_type(&*cx.graph, ty)?,
-        ));
-    }
-    Ok(names)
-}
 pub(super) fn lower(
     output: super::startup::FunctionOutput<'_>,
     cx: &mut crate::lower::unit_frontend::Context<'_, '_, '_>,
@@ -195,14 +156,19 @@ pub(super) fn lower(
     body: Option<ast::BodyId>,
     budget: StackBudget,
 ) -> Result<(), Error> {
-    require_analyzed_body(&*cx.graph, &*cx.tree, entry.entity(&*cx.graph), body)?;
     let program = output.program;
     let mut facts = entry.facts(&*cx.graph)?;
     let entity = entry.entity(&*cx.graph);
+    let symbol = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .entry_symbol(program, entry)?;
+    let replaces_entry = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .definition_replacement(program, entry, symbol)?;
     let TypeView::Function {
-        result,
-        parameters,
-        variadic,
+        result, parameters, ..
     } = cx.graph.lower_type(facts.ty)?
     else {
         return Err(Error::Semantic(crate::sema::Error::Invariant(
@@ -225,102 +191,63 @@ pub(super) fn lower(
             );
         }
     }
+    let implicit_copy = entity.is_some_and(|entity| {
+        cx.graph.lower_implicit_assignment(entity) || cx.graph.lower_implicit_copy(entity)
+    });
+    let request = SignatureRequest::entity(
+        &*cx.graph,
+        entry,
+        SignatureNames::Definition {
+            bindings: &parameter_bindings,
+            reserved: &reserved,
+            implicit_copy,
+        },
+    )?;
+    let geometry = signature_geometry(
+        program,
+        &mut cx.symbols.view(&*cx.graph, &*cx.tree, cx.cursor),
+        &*cx.graph,
+        request,
+    )?;
+    let result_boundary = super::class_results::ResultBoundary {
+        ty: geometry.signature.result,
+        indirect: geometry.indirect,
+        classes: geometry.signature.boundary.result_classes,
+    };
     let object_count = usize::from(facts.object.is_some());
     let hidden_count = usize::from(entry.hidden_vtt(&*cx.graph)?);
-    let result_boundary = cx
-        .symbols
-        .view(&*cx.graph, &*cx.tree, cx.cursor)
-        .result_boundary(result)?;
-    let result_count = usize::from(result_boundary.indirect);
-    let names = parameter_names(
-        cx,
-        entity,
-        &parameter_bindings,
-        &reserved,
-        (result_count, object_count, hidden_count),
-    )?;
-    let symbol = cx
-        .symbols
-        .view(&*cx.graph, &*cx.tree, cx.cursor)
-        .entry_symbol(program, entry)?;
-    let replaces_entry = cx
-        .symbols
-        .view(&*cx.graph, &*cx.tree, cx.cursor)
-        .definition_replacement(program, entry, symbol)?;
-    let parameters = constructed_parameters(
-        program,
-        &*cx.graph,
-        entity,
-        &names,
-        &parameter_bindings,
-        object_count + result_count + hidden_count,
-    )?;
-    let mut builder = if replaces_entry {
-        FunctionBuilder::rebuild_parameter_ids(program, symbol, &parameters, result_boundary.ty)?
+    let result_count = usize::from(geometry.indirect);
+    let mut signature = geometry.signature;
+    let names: Vec<_> = signature
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name)
+        .collect();
+    if let Some(entity) = entity {
+        facts.nothrow = cx.function_nothrow(entity)?;
+    }
+    signature.boundary.unwind = if facts.nothrow {
+        Unwind::No
     } else {
-        FunctionBuilder::with_parameter_ids(program, symbol, &parameters, result_boundary.ty)?
+        Unwind::Default
+    };
+    builtin_boundary(&mut signature.boundary, facts.builtin);
+    declared_effects(&mut signature.boundary, &*cx.graph, entity);
+    let metadata = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .definition_metadata(program, entry, symbol)?;
+    let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
+    let mut builder = if replaces_entry {
+        FunctionBuilder::rebuild_signature(program, symbol, signature)?
+    } else {
+        FunctionBuilder::with_signature(program, symbol, signature)?
     };
     cx.symbols
         .view(&*cx.graph, &*cx.tree, cx.cursor)
         .locate_definition(&mut builder, entity.and(facts.definition))?;
-    let distinct = entity.is_some_and(|entity| cx.graph.lower_copy_constructor(entity));
-    if result_boundary.indirect {
-        builder.parameter_boundary(
-            0,
-            Some(crate::lowir::vocabulary::Pass::IndirectResult),
-            types::layout(&*cx.graph, result)?.0,
-            false,
-        )?;
-    }
-    if let Some(class) = facts.object {
-        builder.parameter_boundary(
-            result_count,
-            None,
-            types::layout(&*cx.graph, cx.graph.lower_entity_type(class)?)?.0,
-            distinct,
-        )?;
-    }
-    for (index, &ty) in parameters_types(&*cx.graph, facts.ty)?.iter().enumerate() {
-        let (pass, bytes) = reference_boundary(&*cx.graph, ty)?;
-        builder.parameter_classes(
-            index + object_count + result_count + hidden_count,
-            cx.symbols
-                .view(&*cx.graph, &*cx.tree, cx.cursor)
-                .parameter_classes(ty)?,
-        )?;
-        builder.parameter_boundary(
-            index + object_count + result_count + hidden_count,
-            pass,
-            bytes,
-            distinct && index == 0 || parameter_no_alias(facts.builtin, index),
-        )?;
-    }
-    if let Some(entity) = entity {
-        facts.nothrow = cx.function_nothrow(entity)?;
-    }
-    let metadata = cx
-        .symbols
-        .view(&*cx.graph, &*cx.tree, cx.cursor)
-        .definition_metadata(builder.program(), entry, symbol)?;
-    let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
     builder.metadata(metadata);
-    let mut boundary = Boundary {
-        result_classes: result_boundary.classes,
-        arity: if variadic {
-            Arity::Variadic
-        } else {
-            Arity::Fixed
-        },
-        unwind: if facts.nothrow {
-            Unwind::No
-        } else {
-            Unwind::Default
-        },
-        ..Boundary::default()
-    };
-    builtin_boundary(&mut boundary, facts.builtin);
-    declared_effects(&mut boundary, &*cx.graph, entity);
-    builder.boundary(boundary);
+    require_analyzed_body(&*cx.graph, &*cx.tree, entity, body)?;
     builder.block("entry")?;
     let mut function = Function::new(cx.borrow(), builder, entity, Some(result), budget);
     function.name_context = entry.source_function(&*function.graph);
@@ -546,7 +473,7 @@ impl Function<'_, '_, '_, '_> {
     fn initialize_parameters(
         &mut self,
         bindings: &[Parameter],
-        names: &[(String, Type)],
+        names: &[crate::lowir::model::NameId],
         first: usize,
     ) -> Result<(), Error> {
         for (
@@ -564,7 +491,8 @@ impl Function<'_, '_, '_, '_> {
                 || self.entity.is_some_and(|e| {
                     self.graph.lower_implicit_assignment(e) || self.graph.lower_implicit_copy(e)
                 }) {
-                self.builder.slot(&names[index].0, storage)?
+                let name = self.builder.program().names.get(names[index]).to_owned();
+                self.builder.slot(&name, storage)?
             } else {
                 self.builder.parameter_slot(index, storage)?
             };
@@ -1130,34 +1058,6 @@ impl Function<'_, '_, '_, '_> {
     }
 }
 
-fn constructed_parameters(
-    program: &mut Program,
-    graph: &Graph,
-    entity: Option<EntityId>,
-    names: &[(String, Type)],
-    bindings: &[Parameter],
-    hidden: usize,
-) -> Result<Vec<(crate::lowir::model::NameId, Type)>, Error> {
-    let implicit_copy = entity.is_some_and(|entity| {
-        graph.lower_implicit_assignment(entity) || graph.lower_implicit_copy(entity)
-    });
-    let mut parameters = Vec::with_capacity(names.len());
-    for (index, (name, ty)) in names.iter().enumerate() {
-        let unnamed = index
-            .checked_sub(hidden)
-            .and_then(|index| bindings.get(index))
-            .is_some_and(|parameter| parameter.name.is_none())
-            && !implicit_copy;
-        let name = if unnamed {
-            program.names.intern_view(name)?
-        } else {
-            program.names.intern(name)?
-        };
-        parameters.push((name, *ty));
-    }
-    Ok(parameters)
-}
-
 pub(super) fn signature(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
@@ -1165,52 +1065,184 @@ pub(super) fn signature(
     ty: TypeId,
     nothrow: bool,
 ) -> Result<crate::lowir::model::SignatureId, Error> {
-    let mut signature = signature_shape(program, symbols, graph, ty, SignatureNames::Arguments)?;
+    let request = SignatureRequest::callable(ty);
+    let mut signature = signature_geometry(program, symbols, graph, request)?.signature;
+    signature.boundary.unwind = if nothrow { Unwind::No } else { Unwind::Default };
+    Ok(program.add_signature(signature)?)
+}
+
+pub(super) fn member_signature(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    pointer: TypeId,
+    nothrow: bool,
+) -> Result<crate::lowir::model::SignatureId, Error> {
+    let (owner, function) = graph
+        .lower_member_pointer_type(pointer)
+        .ok_or(crate::sema::Error::Invariant("member call signature type"))?;
+    if !matches!(graph.lower_type(owner)?, TypeView::Class(_)) {
+        return Err(crate::sema::Error::Invariant("member call signature owner").into());
+    }
+    let mut request = SignatureRequest::callable(function);
+    request.object = Some(SignatureObject {
+        ty: owner,
+        extent: ObjectExtent::WithoutBases,
+    });
+    let mut signature = signature_geometry(program, symbols, graph, request)?.signature;
     signature.boundary.unwind = if nothrow { Unwind::No } else { Unwind::Default };
     Ok(program.add_signature(signature)?)
 }
 
 #[derive(Clone, Copy)]
-enum SignatureNames {
+enum SignatureNames<'a> {
     Arguments,
     Declaration,
+    Definition {
+        bindings: &'a [Parameter],
+        reserved: &'a std::collections::HashSet<String>,
+        implicit_copy: bool,
+    },
 }
-impl SignatureNames {
+#[derive(Clone, Copy)]
+enum SignatureParameter {
+    Result,
+    Object,
+    Vtt,
+    Explicit(usize),
+}
+impl SignatureNames<'_> {
     fn argument(
         self,
         program: &mut Program,
-        index: usize,
+        symbols: &mut Symbols<'_, '_>,
+        part: SignatureParameter,
+        position: usize,
     ) -> Result<crate::lowir::model::NameId, Error> {
-        let text = format!("arg{index}");
-        Ok(match self {
-            Self::Arguments => program.names.intern(&text)?,
-            Self::Declaration => program.names.intern_view(&text)?,
+        let (text, presentation) = match self {
+            Self::Arguments => (format!("arg{position}"), false),
+            Self::Declaration => (format!("arg{position}"), true),
+            Self::Definition {
+                bindings,
+                reserved,
+                implicit_copy,
+            } => match part {
+                SignatureParameter::Result => ("ret".to_owned(), false),
+                SignatureParameter::Object => ("this".to_owned(), false),
+                SignatureParameter::Vtt => ("__vtt".to_owned(), false),
+                SignatureParameter::Explicit(ordinal) => {
+                    if implicit_copy {
+                        ("other".to_owned(), false)
+                    } else if let Some(name) = bindings[ordinal].name {
+                        (symbols.parameter_name(name)?, false)
+                    } else {
+                        let mut name = format!("__param{position}");
+                        while reserved.contains(&name) {
+                            name.push('_');
+                        }
+                        (name, true)
+                    }
+                }
+            },
+        };
+        Ok(if presentation {
+            program.names.intern_view(&text)?
+        } else {
+            program.names.intern(&text)?
         })
     }
 }
-fn signature_shape(
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ObjectExtent {
+    Complete,
+    WithoutBases,
+}
+struct SignatureObject {
+    ty: TypeId,
+    extent: ObjectExtent,
+}
+struct SignatureRequest<'a> {
+    ty: TypeId,
+    object: Option<SignatureObject>,
+    hidden_vtt: bool,
+    names: SignatureNames<'a>,
+    result: super::class_results::ResultUse,
+    distinct: bool,
+    builtin: Option<crate::sema::lowering::BuiltinFunction>,
+}
+impl<'a> SignatureRequest<'a> {
+    fn callable(ty: TypeId) -> Self {
+        Self {
+            ty,
+            object: None,
+            hidden_vtt: false,
+            names: SignatureNames::Arguments,
+            result: super::class_results::ResultUse::Callable,
+            distinct: false,
+            builtin: None,
+        }
+    }
+    fn entity(
+        graph: &Graph,
+        entry: super::construction::Entry,
+        names: SignatureNames<'a>,
+    ) -> Result<Self, Error> {
+        let facts = entry.facts(graph)?;
+        Ok(Self {
+            ty: facts.ty,
+            object: facts
+                .object
+                .map(|class| {
+                    Ok::<_, Error>(SignatureObject {
+                        ty: graph.lower_entity_type(class)?,
+                        extent: ObjectExtent::Complete,
+                    })
+                })
+                .transpose()?,
+            hidden_vtt: entry.hidden_vtt(graph)?,
+            names,
+            result: super::class_results::ResultUse::Entity(facts.definition_state),
+            distinct: entry
+                .entity(graph)
+                .is_some_and(|entity| graph.lower_copy_constructor(entity)),
+            builtin: facts.builtin,
+        })
+    }
+}
+struct SignatureGeometry {
+    signature: crate::lowir::model::Signature,
+    indirect: bool,
+}
+fn signature_geometry(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
-    ty: TypeId,
-    names: SignatureNames,
-) -> Result<crate::lowir::model::Signature, Error> {
+    request: SignatureRequest<'_>,
+) -> Result<SignatureGeometry, Error> {
     use crate::lowir::model::{Arity, Parameter, Signature};
     let TypeView::Function {
         result,
         parameters,
         variadic,
-    } = graph.lower_type(ty)?
+    } = graph.lower_type(request.ty)?
     else {
         return Err(Error::Semantic(crate::sema::Error::Invariant(
             "indirect boundary without function type",
         )));
     };
-    let mut values = Vec::with_capacity(parameters.len());
-    let result_boundary = symbols.result_boundary(result)?;
-    if result_boundary.indirect {
+    let indirect = symbols.indirect_result(result)?;
+    let mut values = Vec::with_capacity(
+        parameters.len()
+            + usize::from(indirect)
+            + usize::from(request.object.is_some())
+            + usize::from(request.hidden_vtt),
+    );
+    if indirect {
+        let name = request
+            .names
+            .argument(program, symbols, SignatureParameter::Result, 0)?;
         values.push(Parameter {
-            name: names.argument(program, 0)?,
+            name,
             ty: Type::Ptr,
             pass: Some(crate::lowir::vocabulary::Pass::IndirectResult),
             no_alias: false,
@@ -1218,40 +1250,93 @@ fn signature_shape(
             classes: None,
         });
     }
-    for (index, &ty) in parameters.iter().enumerate() {
-        let (pass, object_bytes) = reference_boundary(graph, ty)?;
+    if let Some(object) = request.object {
+        let name =
+            request
+                .names
+                .argument(program, symbols, SignatureParameter::Object, values.len())?;
+        let adjusted = object.extent == ObjectExtent::WithoutBases
+            && matches!(graph.lower_type(object.ty)?, TypeView::Class(class)
+                if graph.lower_class_bases(class).next().is_some());
         values.push(Parameter {
-            name: names.argument(program, index + usize::from(result_boundary.indirect))?,
-            ty: parameter_type(graph, ty)?,
-            pass,
-            no_alias: false,
-            object_bytes,
-            classes: symbols.parameter_classes(ty)?,
+            name,
+            ty: Type::Ptr,
+            pass: None,
+            no_alias: request.distinct,
+            object_bytes: if adjusted {
+                0
+            } else {
+                types::layout(graph, object.ty)?.0
+            },
+            classes: None,
         });
     }
-    Ok(Signature {
-        parameters: values,
-        result: result_boundary.ty,
-        boundary: Boundary {
-            result_classes: result_boundary.classes,
-            arity: if variadic {
-                Arity::Variadic
-            } else {
-                Arity::Fixed
+    if request.hidden_vtt {
+        let name =
+            request
+                .names
+                .argument(program, symbols, SignatureParameter::Vtt, values.len())?;
+        values.push(Parameter {
+            name,
+            ty: Type::Ptr,
+            pass: None,
+            no_alias: false,
+            object_bytes: 0,
+            classes: None,
+        });
+    }
+    for (ordinal, &ty) in parameters.iter().enumerate() {
+        let name = request.names.argument(
+            program,
+            symbols,
+            SignatureParameter::Explicit(ordinal),
+            values.len(),
+        )?;
+        let mut parameter = parameter_geometry(symbols, graph, ty, name)?;
+        parameter.no_alias =
+            request.distinct && ordinal == 0 || parameter_no_alias(request.builtin, ordinal);
+        values.push(parameter);
+    }
+    let result = symbols.finish_result(result, indirect, request.result)?;
+    Ok(SignatureGeometry {
+        signature: Signature {
+            parameters: values,
+            result: result.ty,
+            boundary: Boundary {
+                result_classes: result.classes,
+                arity: if variadic {
+                    Arity::Variadic
+                } else {
+                    Arity::Fixed
+                },
+                ..Boundary::default()
             },
-            ..Boundary::default()
         },
+        indirect,
     })
 }
-
-fn parameters_types(graph: &Graph, ty: TypeId) -> Result<&[TypeId], Error> {
-    match graph.lower_type(ty)? {
-        TypeView::Function { parameters, .. } => Ok(parameters),
-        _ => Err(Error::Semantic(crate::sema::Error::Invariant(
-            "function type missing",
-        ))),
+fn parameter_geometry(
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    ty: TypeId,
+    name: crate::lowir::model::NameId,
+) -> Result<crate::lowir::model::Parameter, Error> {
+    let (pass, object_bytes) = reference_boundary(graph, ty)?;
+    let mut parameter = crate::lowir::model::Parameter {
+        name,
+        ty: Type::Ptr,
+        pass,
+        object_bytes,
+        no_alias: false,
+        classes: None,
+    };
+    if pass.is_none() {
+        parameter.ty = types::storage(graph, ty)?;
+        parameter.classes = symbols.parameter_classes(ty)?;
     }
+    Ok(parameter)
 }
+
 pub(super) fn reference_boundary(
     graph: &Graph,
     ty: TypeId,
@@ -1272,15 +1357,6 @@ pub(super) fn reference_boundary(
         0
     };
     Ok((Some(crate::lowir::vocabulary::Pass::ByAddress), bytes))
-}
-
-fn parameter_type(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
-    if matches!(graph.lower_type(ty)?, TypeView::Class(class) if !graph.lower_direct_class_parameter(class)?)
-    {
-        Ok(Type::Ptr)
-    } else {
-        types::storage(graph, ty)
-    }
 }
 
 fn parameter_no_alias(
@@ -1333,65 +1409,16 @@ pub(super) fn declaration_shape(
     graph: &Graph,
     entry: super::construction::Entry,
 ) -> Result<crate::lowir::model::Signature, Error> {
-    let facts = entry.facts(graph)?;
-    let mut signature = signature_shape(
-        program,
-        symbols,
-        graph,
-        facts.ty,
-        SignatureNames::Declaration,
-    )?;
-    if let Some(class) = facts.object {
-        let first = usize::from(
-            signature
-                .parameters
-                .first()
-                .is_some_and(|p| p.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)),
-        );
-        let name = SignatureNames::Declaration.argument(program, first)?;
-        for index in first..signature.parameters.len() {
-            let name = SignatureNames::Declaration.argument(program, index + 1)?;
-            signature.parameters[index].name = name;
-        }
-        let object_bytes = types::layout(graph, graph.lower_entity_type(class)?)?.0;
-        signature.parameters.insert(
-            first,
-            crate::lowir::model::Parameter {
-                name,
-                ty: Type::Ptr,
-                pass: None,
-                object_bytes,
-                no_alias: false,
-                classes: None,
-            },
-        );
-    }
-    if entry.hidden_vtt(graph)? {
-        let first = 1;
-        let name = SignatureNames::Declaration.argument(program, 1)?;
-        signature.parameters.insert(
-            first,
-            crate::lowir::model::Parameter {
-                name,
-                ty: Type::Ptr,
-                pass: None,
-                object_bytes: 0,
-                no_alias: false,
-                classes: None,
-            },
-        );
-        for index in first + 1..signature.parameters.len() {
-            let name = SignatureNames::Declaration.argument(program, index)?;
-            signature.parameters[index].name = name;
-        }
-    }
-    let distinct = entry
-        .entity(graph)
-        .is_some_and(|entity| graph.lower_copy_constructor(entity));
-    for (index, parameter) in signature.parameters.iter_mut().enumerate() {
-        parameter.no_alias = distinct
-            && (index == 0 || index == 1 + usize::from(entry.hidden_vtt(graph)?))
-            || parameter_no_alias(facts.builtin, index);
-    }
-    Ok(signature)
+    let request = SignatureRequest::entity(graph, entry, SignatureNames::Declaration)?;
+    Ok(signature_geometry(program, symbols, graph, request)?.signature)
+}
+
+pub(super) fn argument_shape(
+    program: &mut Program,
+    symbols: &mut Symbols<'_, '_>,
+    graph: &Graph,
+    entry: super::construction::Entry,
+) -> Result<crate::lowir::model::Signature, Error> {
+    let request = SignatureRequest::entity(graph, entry, SignatureNames::Arguments)?;
+    Ok(signature_geometry(program, symbols, graph, request)?.signature)
 }

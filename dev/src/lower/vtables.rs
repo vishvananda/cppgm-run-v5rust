@@ -6,7 +6,7 @@ use super::{Symbols, type_information::TypeObject};
 use crate::{
     abi::encoder::{Encoder, Target},
     lex::vocabulary::Keyword,
-    lower::{Error, construction::Entry, function, types},
+    lower::{Error, construction::Entry, function},
     lowir::{
         literals::Constant,
         model::{
@@ -1415,38 +1415,15 @@ impl Symbols<'_, '_> {
             return Ok(signature);
         }
         let facts = self.function_facts(entity)?;
-        let signature = function::signature(program, self, self.graph, facts.ty, facts.nothrow)?;
-        function::declared_effects(
-            &mut program.signature_mut(signature).boundary,
-            self.graph,
-            Some(entity),
-        );
-        let class = facts
-            .object
-            .ok_or(crate::sema::Error::Invariant("virtual without class"))?;
-        let first = usize::from(
-            program
-                .signature(signature)
-                .parameters
-                .first()
-                .is_some_and(|p| p.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)),
-        );
-        let name = program.names.intern("arg0")?;
-        program.signature_mut(signature).parameters.insert(
-            first,
-            crate::lowir::model::Parameter {
-                name,
-                ty: Type::Ptr,
-                pass: None,
-                object_bytes: types::layout(self.graph, self.graph.lower_entity_type(class)?)?.0,
-                no_alias: false,
-                classes: None,
-            },
-        );
-        for index in 0..program.signature(signature).parameters.len() {
-            let name = program.names.intern(&format!("arg{index}"))?;
-            program.signature_mut(signature).parameters[index].name = name;
-        }
+        let mut signature =
+            function::argument_shape(program, self, self.graph, Entry::Function(entity))?;
+        signature.boundary.unwind = if facts.nothrow {
+            Unwind::No
+        } else {
+            Unwind::Default
+        };
+        function::declared_effects(&mut signature.boundary, self.graph, Some(entity));
+        let signature = program.add_signature(signature)?;
         self.state.vtables.signatures.insert(entity, signature);
         Ok(signature)
     }

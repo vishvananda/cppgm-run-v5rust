@@ -35,6 +35,11 @@ pub(super) struct ResultBoundary {
     pub indirect: bool,
     pub classes: Option<ObjectClasses>,
 }
+#[derive(Clone, Copy)]
+pub(super) enum ResultUse {
+    Callable,
+    Entity(crate::sema::lowering::FunctionDefinition),
+}
 pub(super) struct FallbackReturn {
     position: crate::lowir::builder::Position,
     ty: Type,

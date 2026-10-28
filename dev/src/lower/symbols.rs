@@ -2823,44 +2823,67 @@ impl Symbols<'_, '_> {
 }
 
 impl Symbols<'_, '_> {
+    pub(super) fn indirect_result(&mut self, ty: TypeId) -> Result<bool, Error> {
+        let TypeView::Class(class) = self.graph.lower_type(ty)? else {
+            return Ok(false);
+        };
+        Ok(self.graph.lower_complete_object(ty)?
+            && (!self.graph.lower_direct_class_parameter(class)?
+                || super::types::layout(self.graph, ty)?.0 > 16
+                || !self.object_mode() && self.class_result_memory(class)?))
+    }
+    pub(super) fn finish_result(
+        &mut self,
+        ty: TypeId,
+        indirect: bool,
+        use_: super::class_results::ResultUse,
+    ) -> Result<super::class_results::ResultBoundary, Error> {
+        let mut boundary = super::class_results::ResultBoundary {
+            ty: crate::lowir::vocabulary::Type::Void,
+            indirect,
+            classes: None,
+        };
+        let class = matches!(self.graph.lower_type(ty)?, TypeView::Class(_));
+        // This omission belongs to an undefined entity declaration. A callable
+        // type's result retains its ordinary storage/completeness requirements.
+        if indirect
+            || class
+                && matches!(
+                    use_,
+                    super::class_results::ResultUse::Entity(
+                        crate::sema::lowering::FunctionDefinition::Declared
+                    )
+                )
+                && !self.graph.lower_complete_object(ty)?
+        {
+            return Ok(boundary);
+        }
+        boundary.ty = super::types::storage(self.graph, ty)?;
+        boundary.classes = if self.object_mode() {
+            self.state
+                .object_classes
+                .classify(self.graph, ty, self.state.budget)?
+        } else if class {
+            self.parameter_classes(ty)?.filter(|classes| {
+                !matches!(classes, crate::lowir::vocabulary::ObjectClasses::Memory)
+            })
+        } else {
+            None
+        };
+        Ok(boundary)
+    }
     pub(super) fn result_boundary(
         &mut self,
         ty: TypeId,
     ) -> Result<super::class_results::ResultBoundary, Error> {
-        let mut boundary = super::class_results::ResultBoundary {
-            ty: crate::lowir::vocabulary::Type::Void,
-            indirect: false,
-            classes: None,
-        };
-        if let TypeView::Class(class) = self.graph.lower_type(ty)? {
-            // Merely naming a function returning an incomplete class does not
-            // demand that class's layout or its special members.
-            if !self.graph.lower_complete_object(ty)? {
-                return Ok(boundary);
-            }
-            boundary.indirect = !self.graph.lower_direct_class_parameter(class)?
-                || super::types::layout(self.graph, ty)?.0 > 16
-                || !self.object_mode() && self.class_result_memory(class)?;
-            if boundary.indirect {
-                return Ok(boundary);
-            }
-            boundary.classes = if self.object_mode() {
-                self.state
-                    .object_classes
-                    .classify(self.graph, ty, self.state.budget)?
-            } else {
-                self.parameter_classes(ty)?.filter(|classes| {
-                    !matches!(classes, crate::lowir::vocabulary::ObjectClasses::Memory)
-                })
-            };
-        } else if self.object_mode() {
-            boundary.classes =
-                self.state
-                    .object_classes
-                    .classify(self.graph, ty, self.state.budget)?;
-        }
-        boundary.ty = super::types::storage(self.graph, ty)?;
-        Ok(boundary)
+        let indirect = self.indirect_result(ty)?;
+        self.finish_result(
+            ty,
+            indirect,
+            super::class_results::ResultUse::Entity(
+                crate::sema::lowering::FunctionDefinition::Declared,
+            ),
+        )
     }
 }
 

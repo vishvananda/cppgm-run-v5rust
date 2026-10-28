@@ -1,0 +1,41 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__cxa_pure_virtual(%arg0 : ptr [object_bytes=8]) -> void [unwind=no, return=noreturn, role=pure_virtual, binding=strong]
+
+global @__typeinfo_name__struct_A [storage=readonly, binding=weak, object=_ZTS1A] = {
+  i8 49
+  i8 65
+  i8 0
+}
+global @__rtti_struct_A [storage=readonly, binding=weak, object=_ZTI1A] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_A
+}
+global @A__vtable [storage=readonly, binding=weak, object=_ZTV1A] = {
+  i64 0
+  ptr addr @__rtti_struct_A
+  ptr addr @__cxa_pure_virtual
+}
+
+function @A__A__base_entry(%this : ptr [object_bytes=8]) -> void [binding=strong, object=_ZN1AC2Ev, object_root=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @A__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}
+function @A__A(%this : ptr [object_bytes=8]) -> void [binding=strong, object=_ZN1AC1Ev] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed ptr $this
+    %t2 = addr @A__vtable
+    %t3 = index i8 %t2, 16
+    store typed ptr %t3, %t1
+    return void
+}

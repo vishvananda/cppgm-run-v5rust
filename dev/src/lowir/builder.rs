@@ -124,6 +124,28 @@ impl<'a> FunctionBuilder<'a> {
         }
         Self::construct(program, symbol, parameters, result)
     }
+    pub(crate) fn with_signature(
+        program: &'a mut Program,
+        symbol: SymbolId,
+        signature: Signature,
+    ) -> Result<Self, Error> {
+        if program.function_defined(symbol) {
+            return Err(Error::Diagnostic("duplicate constructed function".into()));
+        }
+        Self::construct_signature(program, symbol, signature)
+    }
+    pub(crate) fn rebuild_signature(
+        program: &'a mut Program,
+        symbol: SymbolId,
+        signature: Signature,
+    ) -> Result<Self, Error> {
+        if !program.function_defined(symbol) {
+            return Err(Error::Construction(
+                "ABI entry without prior definition".into(),
+            ));
+        }
+        Self::construct_signature(program, symbol, signature)
+    }
     /// Emit another ABI entry of a source function sharing an explicit object
     /// label. The lowering owner verifies the source and variant provenance.
     #[cfg(test)]
@@ -139,6 +161,7 @@ impl<'a> FunctionBuilder<'a> {
             .collect::<Result<Vec<_>, Error>>()?;
         Self::rebuild_parameter_ids(program, symbol, &parameters, result)
     }
+    #[cfg(test)]
     pub(crate) fn rebuild_parameter_ids(
         program: &'a mut Program,
         symbol: SymbolId,
@@ -158,27 +181,36 @@ impl<'a> FunctionBuilder<'a> {
         parameters: &[(NameId, Type)],
         result: Type,
     ) -> Result<Self, Error> {
-        let name = program.symbol(symbol).name;
-        let mut signature = Signature {
-            parameters: Vec::new(),
+        let signature = Signature {
+            parameters: parameters
+                .iter()
+                .map(|&(name, ty)| Parameter {
+                    name,
+                    ty,
+                    pass: None,
+                    no_alias: false,
+                    object_bytes: 0,
+                    classes: None,
+                })
+                .collect(),
             result,
             boundary: Boundary::default(),
         };
-        let mut body = Body::new(None, parameters.len());
-        for &(name, ty) in parameters {
-            if body.find_temp(name).is_some() {
+        Self::construct_signature(program, symbol, signature)
+    }
+    fn construct_signature(
+        program: &'a mut Program,
+        symbol: SymbolId,
+        signature: Signature,
+    ) -> Result<Self, Error> {
+        let name = program.symbol(symbol).name;
+        let mut body = Body::new(None, signature.parameters.len());
+        for parameter in &signature.parameters {
+            if body.find_temp(parameter.name).is_some() {
                 return Err(Error::Diagnostic("duplicate constructed parameter".into()));
             }
-            signature.parameters.push(Parameter {
-                name,
-                ty,
-                pass: None,
-                no_alias: false,
-                object_bytes: 0,
-                classes: None,
-            });
-            let id = body.use_temp(name, 0)?;
-            body.temp_mut(id).ty = Some(ty);
+            let id = body.use_temp(parameter.name, 0)?;
+            body.temp_mut(id).ty = Some(parameter.ty);
         }
         let signature = program.add_signature(signature)?;
         let function = Function {
