@@ -287,13 +287,12 @@ fn run() -> Result<(), CliError> {
         if driver_queries::run(&args)? {
             return Ok(());
         }
-        let values = source_values().map_err(CliError::Message)?;
         let budget = cppgm_rust::support::stack::StackBudget::from_limit(stack_limit::query())
             .map_err(CliError::Internal)?;
         let host = host_configuration::query();
         return cppgm_rust::driver::toolchain::run(
             &args,
-            &values,
+            || source_values().map_err(|message| AstToolError::Diagnostic(message.into_bytes())),
             budget,
             &std::fs::Permissions::from_mode(0o755),
             &cppgm_rust::driver::host_environment::HostEnvironment {

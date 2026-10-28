@@ -36,6 +36,40 @@ enum OptionCheck<'a> {
     Compatibility(&'a OsStr),
     Unsupported(&'a OsStr),
 }
+struct ParsedInvocation<'a> {
+    invocation: Invocation,
+    checks: Vec<OptionCheck<'a>>,
+    forced_includes: Vec<u8>,
+    pthread: bool,
+}
+impl ParsedInvocation<'_> {
+    fn finish(
+        self,
+        host: &super::host_environment::HostEnvironment<'_>,
+    ) -> Result<Invocation, AstToolError> {
+        let Self {
+            mut invocation,
+            checks,
+            forced_includes,
+            pthread,
+        } = self;
+        apply_option_checks(&mut invocation, checks, host)?;
+        if pthread {
+            invocation
+                .preprocessor
+                .command_line
+                .splice(..0, b"#define _REENTRANT 1\n".iter().copied());
+        }
+        if invocation.level > 0 {
+            invocation
+                .preprocessor
+                .command_line
+                .splice(..0, b"#define __OPTIMIZE__ 1\n".iter().copied());
+        }
+        invocation.preprocessor.command_line.extend(forced_includes);
+        Ok(invocation)
+    }
+}
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum DriverMode {
     #[default]
@@ -138,10 +172,7 @@ fn reject_query(bytes: &[u8]) -> Result<(), AstToolError> {
     }
     Ok(())
 }
-fn parse(
-    args: &[OsString],
-    host: &super::host_environment::HostEnvironment<'_>,
-) -> Result<Invocation, AstToolError> {
+fn parse_outer(args: &[OsString]) -> Result<ParsedInvocation<'_>, AstToolError> {
     let mut invocation = Invocation::default();
     let mut checks = Vec::new();
     let mut compile_only = false;
@@ -350,24 +381,24 @@ fn parse(
     } else {
         DriverMode::Link
     };
-    // cppgm++.cpp checks the invocation's shape before toolchain.cpp checks
-    // option meanings. Preserve that failure precedence without rereading argv.
-    apply_option_checks(&mut invocation, checks, host)?;
-    if pthread {
-        invocation
-            .preprocessor
-            .command_line
-            .splice(..0, b"#define _REENTRANT 1\n".iter().copied());
-    }
-    if invocation.level > 0 {
-        invocation
-            .preprocessor
-            .command_line
-            .splice(..0, b"#define __OPTIMIZE__ 1\n".iter().copied());
-    }
-    invocation.preprocessor.command_line.extend(forced_includes);
-    prune_include_paths(&mut invocation.preprocessor);
-    Ok(invocation)
+    Ok(ParsedInvocation {
+        invocation,
+        checks,
+        forced_includes,
+        pthread,
+    })
+}
+fn capture_invocation(
+    args: &[OsString],
+    capture_values: impl FnOnce() -> Result<PredefinedValues, AstToolError>,
+    host: &super::host_environment::HostEnvironment<'_>,
+) -> Result<(Invocation, PredefinedValues), AstToolError> {
+    // cppgm++.cpp validates shape before capturing the shared clock; only
+    // afterward does toolchain.cpp check ordered option meanings. Retain the
+    // parsed operands across that demand boundary without scanning argv again.
+    let parsed = parse_outer(args)?;
+    let values = capture_values()?;
+    Ok((parsed.finish(host)?, values))
 }
 fn apply_option_checks(
     invocation: &mut Invocation,
@@ -683,13 +714,14 @@ fn library(invocation: &Invocation, name: &Path) -> Result<PathBuf, AstToolError
 /// Returns a source, object, driver or native diagnostic, or an unfinished group.
 pub fn run(
     args: &[OsString],
-    values: &PredefinedValues,
+    capture_values: impl FnOnce() -> Result<PredefinedValues, AstToolError>,
     budget: StackBudget,
     permissions: &std::fs::Permissions,
     host: &super::host_environment::HostEnvironment<'_>,
     peak_rss: fn() -> u64,
 ) -> Result<(), AstToolError> {
-    let mut invocation = parse(args, host)?;
+    let (mut invocation, values) = capture_invocation(args, capture_values, host)?;
+    let values = &values;
     invocation.peak_rss = Some(peak_rss);
     host.apply(&mut invocation.preprocessor, invocation.nostdinc);
     prune_include_paths(&mut invocation.preprocessor);
@@ -861,15 +893,12 @@ mod tests {
     use super::*;
 
     fn parse(args: &[OsString]) -> Result<Invocation, AstToolError> {
-        super::parse(
-            args,
-            &super::super::host_environment::HostEnvironment {
-                strict_predefined_macros: b"",
-                predefined_macros: b"",
-                include_paths: b"/usr/include/c++/15",
-                stdlib_flags: b"",
-            },
-        )
+        super::parse_outer(args)?.finish(&super::super::host_environment::HostEnvironment {
+            strict_predefined_macros: b"",
+            predefined_macros: b"",
+            include_paths: b"/usr/include/c++/15",
+            stdlib_flags: b"",
+        })
     }
 
     #[test]
@@ -897,6 +926,54 @@ mod tests {
         assert!(!invocation.preprocessor.modes.exceptions);
         assert_eq!(invocation.preprocessor.standard.macro_value(), b"201703L");
         assert_eq!(invocation.inputs.len(), 1);
+    }
+
+    #[test]
+    fn shared_clock_capture_follows_shape_and_precedes_ordered_option_meanings() {
+        let host = super::super::host_environment::HostEnvironment {
+            strict_predefined_macros: b"",
+            predefined_macros: b"",
+            include_paths: b"",
+            stdlib_flags: b"",
+        };
+        let cases: &[(&[&str], usize, &[u8])] = &[
+            (&[], 0, b"invalid usage"),
+            (&["-I"], 0, b"missing path after -I"),
+            (&["-c", "-E", "unit.cpp"], 0, b"cannot combine -c and -E"),
+            (&["--target=invalid", "unit.cpp"], 1, b"clock failure"),
+        ];
+        for &(arguments, captures, expected) in cases {
+            let count = std::cell::Cell::new(0);
+            let args: Vec<_> = arguments.iter().map(OsString::from).collect();
+            let result = capture_invocation(
+                &args,
+                || {
+                    count.set(count.get() + 1);
+                    Err(message("clock failure"))
+                },
+                &host,
+            );
+            assert_eq!(count.get(), captures);
+            assert!(matches!(result, Err(AstToolError::Diagnostic(actual)) if actual == expected));
+        }
+        let count = std::cell::Cell::new(0);
+        let args = [OsString::from("a.cpp"), OsString::from("b.cpp")];
+        let (invocation, values) = capture_invocation(
+            &args,
+            || {
+                count.set(count.get() + 1);
+                Ok(PredefinedValues {
+                    author: b"author".to_vec(),
+                    date: b"date".to_vec(),
+                    time: b"time".to_vec(),
+                })
+            },
+            &host,
+        )
+        .unwrap();
+        assert_eq!(count.get(), 1);
+        assert_eq!(invocation.inputs.len(), 2);
+        assert_eq!(values.date, b"date");
     }
 
     #[test]
