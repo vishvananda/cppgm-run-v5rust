@@ -1,0 +1,120 @@
+function @ordinary(%p : ptr) -> ptr [binding=strong, object=_Z8ordinaryP1D] {
+  slot $p : ptr
+  slot $basecast__1 : ptr
+  slot $basecast__2 : ptr
+
+  block ^entry:
+    store typed ptr %p, $p
+    %t1 = load typed ptr $p
+    %t2 = cmp eq ptr %t1, 0
+    branch %t2, ^basecast_null_1, ^basecast_adjust_2
+
+  block ^basecast_null_1:
+    store typed ptr 0, $basecast__2
+    jump ^basecast_end_3
+
+  block ^basecast_adjust_2:
+    %t3 = load typed ptr %t1
+    %t4 = index i8 %t3, -24
+    %t5 = load typed i64 %t4
+    %t6 = index i8 %t1, %t5
+    %t7 = index i8 %t6, 0
+    store typed ptr %t7, $basecast__2
+    jump ^basecast_end_3
+
+  block ^basecast_end_3:
+    %t8 = load typed ptr $basecast__2
+    return ptr %t8
+}
+function @implicit(%c : u8, %p : ptr, %q : ptr) -> ptr [binding=strong, object=_Z8implicitbP1DS0_] {
+  slot $c : u8
+  slot $p : ptr
+  slot $q : ptr
+  slot $cond__1 : ptr
+  slot $basecast__2 : ptr
+
+  block ^entry:
+    store u8 %c, $c
+    store typed ptr %p, $p
+    store typed ptr %q, $q
+    %t1 = load u8 $c
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t2 = load typed ptr $p
+    store typed ptr %t2, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t3 = load typed ptr $q
+    store typed ptr %t3, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed ptr $cond__1
+    %t5 = cmp eq ptr %t4, 0
+    branch %t5, ^basecast_null_4, ^basecast_adjust_5
+
+  block ^basecast_null_4:
+    store typed ptr 0, $basecast__2
+    jump ^basecast_end_6
+
+  block ^basecast_adjust_5:
+    %t6 = load typed ptr %t4
+    %t7 = index i8 %t6, -24
+    %t8 = load typed i64 %t7
+    %t9 = index i8 %t4, %t8
+    %t10 = index i8 %t9, 0
+    store typed ptr %t10, $basecast__2
+    jump ^basecast_end_6
+
+  block ^basecast_end_6:
+    %t11 = load typed ptr $basecast__2
+    return ptr %t11
+}
+function @explicit_cast(%c : u8, %p : ptr, %q : ptr) -> ptr [binding=strong, object=_Z13explicit_castbP1DS0_] {
+  slot $c : u8
+  slot $p : ptr
+  slot $q : ptr
+  slot $cond__1 : ptr
+  slot $basecast__2 : ptr
+
+  block ^entry:
+    store u8 %c, $c
+    store typed ptr %p, $p
+    store typed ptr %q, $q
+    %t1 = load u8 $c
+    branch %t1, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    %t2 = load typed ptr $p
+    store typed ptr %t2, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    %t3 = load typed ptr $q
+    store typed ptr %t3, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t4 = load typed ptr $cond__1
+    %t5 = cmp eq ptr %t4, 0
+    branch %t5, ^basecast_null_4, ^basecast_adjust_5
+
+  block ^basecast_null_4:
+    store typed ptr 0, $basecast__2
+    jump ^basecast_end_6
+
+  block ^basecast_adjust_5:
+    %t6 = load typed ptr %t4
+    %t7 = index i8 %t6, -24
+    %t8 = load typed i64 %t7
+    %t9 = index i8 %t4, %t8
+    %t10 = index i8 %t9, 0
+    store typed ptr %t10, $basecast__2
+    jump ^basecast_end_6
+
+  block ^basecast_end_6:
+    %t11 = load typed ptr $basecast__2
+    return ptr %t11
+}

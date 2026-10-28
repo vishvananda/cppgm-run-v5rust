@@ -172,7 +172,7 @@ impl Function<'_, '_, '_, '_> {
                 } else if context != Context::Cast
                     && let Some(offset) = self.graph.lower_base_conversion(id)?
                 {
-                    self.convert_base_pointer(value, target, offset, !offset.is_zero())?
+                    self.convert_base_pointer(value, target, offset, !offset.is_zero(), true)?
                 } else {
                     self.convert(value, target, context)?
                 }

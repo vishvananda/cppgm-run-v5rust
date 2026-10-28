@@ -374,12 +374,17 @@ impl Analyzer<'_> {
                 value
             }
             ExprKind::Binary { .. } => self.constant_chain(id, scope, skipping)?,
-            ExprKind::ComplexPart { imaginary, operand } => {
+            ExprKind::ComplexPart { imaginary, operand }
+                if self.semantic() && self.graph.expression_facts.get(id).is_ok() =>
+            {
                 let value = self.constant_component(id, operand, imaginary, scope)?;
                 let Value::Integer(value) = value else {
                     return Err(Error::Invariant("integral complex component"));
                 };
                 value
+            }
+            ExprKind::ComplexPart { .. } => {
+                return Err(not_constant(location, "a type trait of a dependent type"));
             }
             ExprKind::Unary { op, operand } => {
                 self.constant_unary(op.token.as_punctuator(), operand, scope, skipping, id)?

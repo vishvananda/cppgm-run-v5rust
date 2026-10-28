@@ -79,6 +79,7 @@ impl Analyzer<'_> {
             | ExprKind::SizeofPack(_)
             | ExprKind::TypeTrait { .. }
             | ExprKind::TypePredicate { .. }
+            | ExprKind::ComplexPart { .. }
             | ExprKind::BuiltinValue { .. }
             | ExprKind::TypeTransform { .. } => false,
             ExprKind::Keyword(keyword) => keyword == Keyword::This,
@@ -86,9 +87,9 @@ impl Analyzer<'_> {
                 self.initializer_names_member(left, depth + 1)
                     || self.initializer_names_member(right, depth + 1)
             }
-            ExprKind::ComplexPart { operand, .. }
-            | ExprKind::Unary { operand, .. }
-            | ExprKind::Cast { operand, .. } => self.initializer_names_member(operand, depth + 1),
+            ExprKind::Unary { operand, .. } | ExprKind::Cast { operand, .. } => {
+                self.initializer_names_member(operand, depth + 1)
+            }
             ExprKind::Conditional {
                 condition,
                 then_expr,

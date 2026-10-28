@@ -1,0 +1,71 @@
+function @g(%x : i32) -> i32 [binding=strong, object=_Z1gi] {
+  slot $x : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    return i32 %t1
+}
+function @f(%x : i32, %y : i32) -> i64 [binding=strong, object=_Z1fii] {
+  slot $x : i32
+  slot $y : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    store typed i32 %y, $y
+    %t1 = load typed i32 $x
+    %t2 = call i32 @g(%t1)
+    %t3 = binary add nowrap i32 %t2, 1
+    %t4 = load typed i32 $y
+    %t5 = call i32 @g(%t4)
+    %t6 = binary add nowrap i32 %t5, 2
+    %t7 = load typed i32 $x
+    %t8 = call i32 @g(%t7)
+    %t9 = binary add nowrap i32 %t8, 3
+    %t10 = binary mul nowrap i32 %t6, %t9
+    %t11 = binary add nowrap i32 %t3, %t10
+    %t12 = const i64 4
+    %t13 = convert sext i64 i32 %t11
+    %t14 = binary add i64 %t13, %t12
+    return i64 %t14
+}
+function @difference(%p : ptr, %q : ptr, %n : i32) -> i64 [binding=strong, object=_Z10differencePiS_i] {
+  slot $p : ptr
+  slot $q : ptr
+  slot $n : i32
+
+  block ^entry:
+    store typed ptr %p, $p
+    store typed ptr %q, $q
+    store typed i32 %n, $n
+    %t1 = load typed ptr $p
+    %t2 = binary mul i64 1, 4
+    %t3 = index i8 %t1, %t2
+    %t4 = load typed i32 $n
+    %t5 = convert sext i64 i32 %t4
+    %t6 = binary mul i64 %t5, 4
+    %t7 = index i8 %t3, %t6
+    %t8 = load typed ptr $q
+    %t9 = binary sub ptr %t7, %t8
+    %t10 = binary shr exact i64 %t9, 2
+    return i64 %t10
+}
+function @compare(%x : i32, %y : i32, %z : i32) -> u8 [binding=strong, object=_Z7compareiii] {
+  slot $x : i32
+  slot $y : i32
+  slot $z : i32
+
+  block ^entry:
+    store typed i32 %x, $x
+    store typed i32 %y, $y
+    store typed i32 %z, $z
+    %t1 = load typed i32 $x
+    %t2 = binary add nowrap i32 %t1, 1
+    %t3 = load typed i32 $y
+    %t4 = cmp lt i32 %t2, %t3
+    %t5 = load typed i32 $z
+    %t6 = convert trunc i32 i64 %t4
+    %t7 = cmp ne i32 %t6, %t5
+    %t8 = convert trunc u8 i64 %t7
+    return u8 %t8
+}

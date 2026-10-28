@@ -429,12 +429,24 @@ impl Function<'_, '_, '_, '_> {
             if matches!(self.tree.statements.get(id).kind, StmtKind::Default(_)) {
                 default = block;
             } else {
-                // The C++ producer's integer literal sign-extends its 64-bit
-                // pattern into LowIR's full literal, including unsigned cases.
-                let bits = i64::from_ne_bytes(self.graph.lower_case(id)?.to_ne_bytes());
-                let value = self
-                    .builder
-                    .integer(u128::from_ne_bytes(i128::from(bits).to_ne_bytes()))?;
+                let bits = self.graph.lower_case(id)?;
+                let mut literal = i128::from(bits.cast_signed()).cast_unsigned();
+                // IntegralLiteral clears the high word only for a wide
+                // unsigned semantic type, not for ordinary unsigned cases.
+                if selector.ty == crate::lowir::vocabulary::Type::I128
+                    && let StmtKind::Case { value, .. } = self.tree.statements.get(id).kind
+                {
+                    let facts = self
+                        .graph
+                        .lower_expression(self.without_parentheses(value))?;
+                    let target = facts.target.unwrap_or(facts.ty);
+                    if types::storage(&*self.graph, target)? == crate::lowir::vocabulary::Type::I128
+                        && !types::signed(&*self.graph, target)?
+                    {
+                        literal = u128::from(bits);
+                    }
+                }
+                let value = self.builder.integer(literal)?;
                 cases.push((value, block));
             }
         }

@@ -47,12 +47,16 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(BaseProjection::Fixed(route.offset))
     }
-    pub(super) fn nonnull_pointer(&self, id: ast::ExprId) -> bool {
-        match self.tree.expressions.get(self.without_parentheses(id)).kind {
+    pub(super) fn nonnull_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {
+        let id = self.without_parentheses(id);
+        Ok(match self.tree.expressions.get(id).kind {
             ExprKind::Keyword(Keyword::This) => true,
-            ExprKind::Unary { op, .. } => op.token.as_punctuator() == Some(Punctuator::BitAnd),
+            ExprKind::Unary { op, .. } => {
+                op.token.as_punctuator() == Some(Punctuator::BitAnd)
+                    && !self.graph.lower_operator_call(id)?
+            }
             _ => false,
-        }
+        })
     }
     pub(super) fn member_base_access(
         &self,
@@ -68,7 +72,7 @@ impl Function<'_, '_, '_, '_> {
                         self.graph.lower_type(facts.ty)?,
                         crate::sema::lowering::TypeView::Pointer(_)
                     ))
-                    && !self.nonnull_pointer(id)
+                    && !self.nonnull_pointer(id)?
                 {
                     BaseAccess::Nullable
                 } else {
@@ -194,9 +198,10 @@ impl Function<'_, '_, '_, '_> {
         target: TypeId,
         delta: BaseProjection,
         null_test: bool,
+        reserve: bool,
     ) -> Result<RValue, Error> {
         let delta = self.resolve_base_projection(delta)?;
-        if null_test && matches!(delta, BaseProjection::Route { .. }) {
+        if null_test && reserve && matches!(delta, BaseProjection::Route { .. }) {
             // pointer_to_base reserves its ordinary conversion slot before
             // the virtual route allocates its own null-tested result.
             self.generated_slot("basecast", Type::Ptr)?;

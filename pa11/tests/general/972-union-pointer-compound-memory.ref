@@ -1,0 +1,13 @@
+function @step(%u : ptr [pass=by_address, object_bytes=8]) -> void [binding=strong, object=_Z4stepR1P] {
+  slot $u : ptr
+
+  block ^entry:
+    store typed ptr %u, $u
+    %t1 = load typed ptr $u
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load ptr %t2
+    %t4 = binary mul i64 1, 4
+    %t5 = index i8 %t3, %t4
+    store ptr %t5, %t2
+    return void
+}

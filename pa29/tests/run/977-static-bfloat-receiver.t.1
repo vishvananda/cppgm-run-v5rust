@@ -1,0 +1,1 @@
+struct A{static constexpr __bf16 v=(__bf16)1.0f;};constexpr __bf16 A::v;int hits;A a;A&get(){++hits;return a;}__bf16 f(){return get().v;}int main(){f();return hits==1?0:1;}

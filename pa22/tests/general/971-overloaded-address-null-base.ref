@@ -1,0 +1,44 @@
+function @operator_(%__param0 : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=strong, object=_ZadR1D] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = copy ptr 0
+    return ptr %t1
+}
+function @f(%d : ptr [pass=by_address, object_bytes=8]) -> ptr [binding=strong, object=_Z1fR1D] {
+  slot $d : ptr
+  slot $basecast__1 : ptr
+
+  block ^entry:
+    store typed ptr %d, $d
+    %t1 = load typed ptr $d
+    %t2 = call ptr @operator_(%t1)
+    %t3 = cmp eq ptr %t2, 0
+    branch %t3, ^basecast_null_1, ^basecast_adjust_2
+
+  block ^basecast_null_1:
+    store typed ptr 0, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_adjust_2:
+    %t4 = index i8 %t2, 4
+    store typed ptr %t4, $basecast__1
+    jump ^basecast_end_3
+
+  block ^basecast_end_3:
+    %t5 = load typed ptr $basecast__1
+    return ptr %t5
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $d : obj<8x4>
+
+  block ^entry:
+    %t1 = addr $d
+    %t2 = addr $d
+    %t3 = call ptr @f(%t2)
+    %t4 = copy ptr 0
+    %t5 = cmp ne ptr %t3, %t4
+    %t6 = convert trunc i32 i64 %t5
+    return i32 %t6
+}

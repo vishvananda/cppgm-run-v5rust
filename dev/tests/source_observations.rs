@@ -13,6 +13,32 @@ fn counters(line: &str) -> BTreeMap<&str, &str> {
         .collect()
 }
 #[test]
+fn types_view_does_not_request_semantic_complex_projection_facts()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory =
+        Scratch(std::env::temp_dir().join(format!("cppgm-complex-view-{}", std::process::id())));
+    std::fs::create_dir_all(&directory.0)?;
+    let source = directory.0.join("input.cpp");
+    let output = directory.0.join("view");
+    std::fs::write(
+        &source,
+        b"struct A { constexpr int get() const { return 7; } };\n\
+          int f() { constexpr A a{}; constexpr int x = __real__ a.get(); return x; }\n",
+    )?;
+    for mode in ["--emit-types", "--emit-semantics"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_cppgm"))
+            .args([mode, "-o"])
+            .arg(&output)
+            .arg(&source)
+            .output()?;
+        assert!(result.status.success(), "{mode}: {:?}", result.stderr);
+        assert!(result.stdout.is_empty());
+        assert!(result.stderr.is_empty());
+        assert!(output.is_file());
+    }
+    Ok(())
+}
+#[test]
 fn explicit_this_observes_the_same_member_work_as_implicit_this()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = Scratch(

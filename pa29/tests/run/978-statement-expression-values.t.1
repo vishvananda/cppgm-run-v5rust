@@ -1,0 +1,6 @@
+typedef int V __attribute__((vector_size(16)));
+V normal(V x){return ({x;});}
+V terminated(V x){return ({if(1)return x;x;});}
+_Complex double complex_normal(_Complex double x){return ({x;});}
+_Complex double complex_terminated(_Complex double x){return ({if(1)return x;x;});}
+int main(){V x={1,2,3,4};V a=normal(x);V b=terminated(x);if(a[0]!=1||a[3]!=4||b[1]!=2||b[2]!=3)return 1;_Complex double z;__real__ z=5;__imag__ z=6;_Complex double c=complex_normal(z);_Complex double d=complex_terminated(z);return __real__ c==5&&__imag__ c==6&&__real__ d==5&&__imag__ d==6?0:2;}

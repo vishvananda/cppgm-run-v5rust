@@ -659,7 +659,11 @@ impl Function<'_, '_, '_, '_> {
                 };
                 let value = self.complex_arithmetic(token, operation, lhs, rhs)?;
                 let value = self.convert(value, source, Context::CompoundAssignment)?;
-                self.write_place(place, source, value.value)?;
+                if let Some(state) = state {
+                    self.end_atomic_place_loop(place, source, state, value)?;
+                } else {
+                    self.write_place(place, source, value.value)?;
+                }
                 return Ok((place, value));
             }
             let signed = types::signed(&*self.graph, operation)?;

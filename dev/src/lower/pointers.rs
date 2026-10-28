@@ -109,7 +109,7 @@ impl Function<'_, '_, '_, '_> {
         } else {
             (types::storage(&*self.graph, facts.ty)?, offset)
         };
-        let place = self
+        Ok(self
             .emit(
                 I::Index(
                     ty,
@@ -119,11 +119,7 @@ impl Function<'_, '_, '_, '_> {
                 ),
                 facts.ty,
             )?
-            .value;
-        if self.untyped_places.contains(&pointer.value) {
-            self.untyped_places.insert(place);
-        }
-        Ok(place)
+            .value)
     }
     pub(super) fn pointer_offset(
         &mut self,
@@ -207,7 +203,7 @@ impl Function<'_, '_, '_, '_> {
             return Ok((place, value));
         }
         self.effect(I::Store(
-            types::memory(&*self.graph, source)?,
+            self.place_memory(place, source)?,
             Type::Ptr,
             value.value,
             place,
@@ -253,9 +249,13 @@ impl Function<'_, '_, '_, '_> {
         left: ast::ExprId,
         right: ast::ExprId,
         subtract: bool,
+        left_value: Option<RValue>,
     ) -> Result<RValue, Error> {
         let source = self.graph.lower_expression(id)?.ty;
-        let a = self.expression(left, Context::Operand)?;
+        let a = match left_value {
+            Some(value) => value,
+            None => self.expression(left, Context::Operand)?,
+        };
         let b = self.expression(right, Context::Operand)?;
         let left_element = self.pointer_element(a.source)?;
         let right_element = self.pointer_element(b.source)?;

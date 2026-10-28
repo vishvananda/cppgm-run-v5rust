@@ -31,7 +31,7 @@ impl Function<'_, '_, '_, '_> {
             if context != Context::Cast
                 && let Some(offset) = self.graph.lower_base_conversion(id)?
             {
-                return self.convert_base_pointer(value, target, offset, !offset.is_zero());
+                return self.convert_base_pointer(value, target, offset, !offset.is_zero(), true);
             }
             return self.convert(value, target, context);
         }
@@ -88,7 +88,11 @@ impl Function<'_, '_, '_, '_> {
                     value,
                     target,
                     offset,
-                    !self.nonnull_pointer(id) && !offset.is_zero(),
+                    !self.nonnull_pointer(id)? && !offset.is_zero(),
+                    !matches!(
+                        self.tree.expressions.get(self.without_parentheses(id)).kind,
+                        ExprKind::Conditional { .. }
+                    ),
                 );
             }
             self.convert(value, target, context)
@@ -175,16 +179,9 @@ impl Function<'_, '_, '_, '_> {
         };
         let source = self.graph.lower_expression(id)?.ty;
         let ty = types::storage(&*self.graph, source)?;
-        if let Some(kind) = super::soft_float::kind(&*self.graph, source)? {
-            return if kind == super::soft_float::Kind::BFloat {
-                self.soft_constant(kind, bits, source).map(Some)
-            } else {
-                Ok(None)
-            };
-        }
-        let kind = FloatKind::from_type(ty).ok_or(crate::sema::Error::Invariant(
-            "floating constant storage type",
-        ))?;
+        let Some(kind) = FloatKind::from_type(ty) else {
+            return Ok(None);
+        };
         if let ExprKind::Member { base, op, .. } = self.tree.expressions.get(id).kind {
             self.member_object(base, op.token.as_punctuator() == Some(P::Arrow))?;
         }
@@ -420,11 +417,8 @@ impl Function<'_, '_, '_, '_> {
             }
             ExprKind::Unary { op, operand } => self.unary_expression(id, op, operand),
             ExprKind::Binary {
-                op,
-                left,
-                right,
-                assignment: false,
-            } => self.binary_expression(id, op, left, right, context),
+                assignment: false, ..
+            } => self.binary_expression(id, context),
             ExprKind::Binary {
                 op,
                 left,
@@ -468,7 +462,14 @@ impl Function<'_, '_, '_, '_> {
                             value,
                             source,
                             delta,
-                            !delta.is_zero() && !self.nonnull_pointer(operand),
+                            !delta.is_zero() && !self.nonnull_pointer(operand)?,
+                            !matches!(
+                                self.tree
+                                    .expressions
+                                    .get(self.without_parentheses(operand))
+                                    .kind,
+                                ExprKind::Conditional { .. }
+                            ),
                         );
                     }
                 }
@@ -506,14 +507,77 @@ impl Function<'_, '_, '_, '_> {
             )),
         }
     }
-    fn binary_expression(
+    fn binary_expression(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
+        if self.chainable_left(id)?.is_none() {
+            return self.binary_step(id, context, None);
+        }
+        let base = self.arithmetic_spine.len();
+        let result = (|| {
+            let mut node = id;
+            while let Some(left) = self.chainable_left(node)? {
+                self.arithmetic_spine.push(node);
+                node = self.without_parentheses(left);
+            }
+            let mut value = None;
+            for index in (base..self.arithmetic_spine.len()).rev() {
+                value = Some(self.binary_step(self.arithmetic_spine[index], context, value)?);
+            }
+            value.ok_or_else(|| crate::sema::Error::Invariant("empty arithmetic spine").into())
+        })();
+        self.arithmetic_spine.truncate(base);
+        result
+    }
+
+    fn chainable_left(&self, id: ast::ExprId) -> Result<Option<ast::ExprId>, Error> {
+        let ExprKind::Binary {
+            op,
+            left,
+            assignment: false,
+            ..
+        } = self.tree.expressions.get(id).kind
+        else {
+            return Ok(None);
+        };
+        let chainable = matches!(
+            op.token.as_punctuator(),
+            Some(
+                P::Add
+                    | P::Subtract
+                    | P::Multiply
+                    | P::Divide
+                    | P::Remainder
+                    | P::BitAnd
+                    | P::BitOr
+                    | P::Xor
+                    | P::ShiftLeft
+                    | P::ShiftRight
+                    | P::Equal
+                    | P::NotEqual
+                    | P::Less
+                    | P::LessEqual
+                    | P::Greater
+                    | P::GreaterEqual
+            )
+        );
+        Ok((chainable
+            && !self.graph.lower_operator_call(id)?
+            && !self.graph.lower_type_identity(id)
+            && !self.bfloat_operation(id)?)
+        .then_some(left))
+    }
+
+    fn binary_step(
         &mut self,
         id: ast::ExprId,
-        op: ast::Operator,
-        left: ast::ExprId,
-        right: ast::ExprId,
         context: Context,
+        left_value: Option<RValue>,
     ) -> Result<RValue, Error> {
+        let ExprKind::Binary {
+            op, left, right, ..
+        } = self.tree.expressions.get(id).kind
+        else {
+            return Err(crate::sema::Error::Invariant("nonbinary arithmetic spine node").into());
+        };
         let source = self.graph.lower_expression(id)?.ty;
         let op = op
             .token
@@ -538,7 +602,7 @@ impl Function<'_, '_, '_, '_> {
                     .pointer_element(self.graph.lower_builtin_operand_type(right)?)?
                     .is_some())
         {
-            return self.pointer_arithmetic(id, left, right, op == P::Subtract);
+            return self.pointer_arithmetic(id, left, right, op == P::Subtract, left_value);
         }
         let comparison = matches!(
             op,
@@ -554,9 +618,15 @@ impl Function<'_, '_, '_, '_> {
         // The frozen comparison owner adjusts a base pointer before evaluating
         // the right operand; ordinary scalar conversions follow both evaluations.
         let early_base = comparison
-            && (self.graph.lower_base_conversion(left)?.is_some()
-                || self.graph.lower_member_pointer_conversion(left)?.is_some());
-        let a = self.expression(left, context)?;
+            && self.graph.lower_base_conversion(left)?.is_some()
+            && match self.graph.lower_expression(left)?.target {
+                Some(target) => matches!(self.graph.lower_type(target)?, TypeView::Pointer(_)),
+                None => false,
+            };
+        let a = match left_value {
+            Some(value) => value,
+            None => self.expression(left, context)?,
+        };
         let a = if early_base {
             self.apply_conversion(left, a, context)?
         } else {
@@ -1159,7 +1229,15 @@ impl Function<'_, '_, '_, '_> {
                         nothrow,
                     )?
                 } else {
-                    let callee = self.operand(callee_expression, Context::Operand)?.value;
+                    let mut callee = self.operand(callee_expression, Context::Operand)?.value;
+                    if matches!(callee, crate::lowir::model::Value::Integer(_)) {
+                        callee = self
+                            .emit(
+                                I::Const(Type::Ptr, callee),
+                                self.graph.lower_expression(callee_expression)?.ty,
+                            )?
+                            .value;
+                    }
                     let signature = self
                         .symbols
                         .view(&*self.graph, &*self.tree, self.cursor)

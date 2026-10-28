@@ -66,6 +66,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub bit_initialization: super::bit_fields::Initialization,
     pub named_path: Vec<super::aggregates::Step>,
     pub discard_spine: Vec<ast::ExprId>,
+    pub arithmetic_spine: Vec<ast::ExprId>,
     pub aggregation: super::aggregate_cleanup::State,
     pub entity: Option<EntityId>,
     pub name_context: Option<crate::sema::lowering::SourceFunction>,
@@ -496,6 +497,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             bit_initialization: super::bit_fields::Initialization::default(),
             named_path: Vec::new(),
             discard_spine: Vec::new(),
+            arithmetic_spine: Vec::new(),
             aggregation: super::aggregate_cleanup::State::default(),
             entity,
             name_context: entity.map(crate::sema::lowering::SourceFunction::Function),
@@ -677,7 +679,16 @@ impl Function<'_, '_, '_, '_> {
     pub(super) fn emit(&mut self, kind: I, source: TypeId) -> Result<RValue, Error> {
         self.ensure_insertion()?;
         let ty = kind.result_type();
+        let untyped = match &kind {
+            I::Index(_, _, address, _) | I::Copy(_, address) => {
+                self.untyped_places.contains(address)
+            }
+            _ => false,
+        };
         let value = self.builder.generated(kind)?;
+        if untyped {
+            self.untyped_places.insert(value);
+        }
         Ok(RValue {
             value,
             ty,

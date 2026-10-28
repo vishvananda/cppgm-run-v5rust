@@ -1,0 +1,16 @@
+declare function @rhs() -> i64 [binding=strong, object=_Z3rhsv]
+
+function @f(%p : i64) -> u8 [binding=strong, object=_Z1fM1Bi] {
+  slot $p : i64
+
+  block ^entry:
+    store typed i64 %p, $p
+    %t1 = load typed i64 $p
+    %t2 = call i64 @rhs()
+    %t3 = cmp ne i64 %t1, -1
+    %t4 = binary mul i64 %t3, 4
+    %t5 = binary add i64 %t1, %t4
+    %t6 = cmp eq i64 %t5, %t2
+    %t7 = convert trunc u8 i64 %t6
+    return u8 %t7
+}

@@ -70,7 +70,7 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
         }
-        let mut result = self.zero(source)?;
+        let mut result = None;
         if let Some(value) = value.filter(|_| !self.terminated) {
             let first = self.lifetime.cleanups.len();
             let began = self.begin_full_expression(
@@ -81,7 +81,7 @@ impl Function<'_, '_, '_, '_> {
                 if let Some(object) = object {
                     this.materialize_class(value, source, object)?;
                 } else {
-                    result = this.operand(value, Context::Initialization)?;
+                    result = Some(this.operand(value, Context::Initialization)?);
                 }
                 Ok(())
             })?;
@@ -94,10 +94,10 @@ impl Function<'_, '_, '_, '_> {
             let next = self.new_block("unreachable")?;
             self.place(next)?;
             if object.is_none() {
-                result = self.zero(source)?;
+                result = Some(self.zero(source)?);
             }
         }
-        Ok(result)
+        result.map_or_else(|| self.zero(source), Ok)
     }
 }
 

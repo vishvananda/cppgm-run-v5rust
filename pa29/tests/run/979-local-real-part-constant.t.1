@@ -1,0 +1,2 @@
+struct A{constexpr int get()const{return 7;}};int f(){constexpr A a{};constexpr int x=__real__ a.get();return x;}
+int main(){return f()-7;}

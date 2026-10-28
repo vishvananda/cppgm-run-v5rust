@@ -1,0 +1,24 @@
+function @f(%b : u8) -> void [binding=strong, object=_Z1fb] {
+  slot $b : u8
+
+  block ^entry:
+    store u8 %b, $b
+    %t1 = load u8 $b
+    branch %t1, ^if_then_1, ^if_else_2
+
+  block ^if_then_1:
+    %t2 = const ptr 0
+    call void %t2() as () -> void
+    jump ^if_end_3
+
+  block ^if_else_2:
+    jump ^if_end_3
+
+  block ^if_end_3:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    call void @f(0)
+    return i32 0
+}
