@@ -33,7 +33,6 @@ pub(super) enum DeferredUse {
 }
 #[derive(Default)]
 pub(super) struct QueryContext {
-    info: Option<EntityId>,
     pub deferring: u32,
     pub uses: Vec<DeferredUse>,
     layouts: std::collections::HashSet<TypeId>,
@@ -82,7 +81,7 @@ impl Analyzer<'_> {
         self.unevaluated != 0 && self.unevaluated == self.type_queries.deferring
     }
     fn type_info_class(&mut self, location: SourceOffset) -> Result<EntityId, Error> {
-        if let Some(class) = self.type_queries.info {
+        if let Some(class) = self.graph.analysis.type_info {
             return Ok(class);
         }
         let std = self
@@ -112,7 +111,7 @@ impl Analyzer<'_> {
                     .ty
                     .and_then(|ty| self.graph.class_of(ty))
             {
-                self.type_queries.info = Some(class);
+                self.graph.analysis.type_info = Some(class);
                 return Ok(class);
             }
         }
@@ -369,7 +368,7 @@ impl Analyzer<'_> {
         {
             return Ok(None);
         }
-        let Some(info) = self.type_queries.info else {
+        let Some(info) = self.graph.analysis.type_info else {
             return Ok(None);
         };
         if self
@@ -393,6 +392,28 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn positive_type_info_identity_survives_resumed_lookup_context() {
+        let source = SourceBuffer::new(b"namespace std{class type_info{};}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"type-info-resume").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer
+            .declarations(declarations, analyzer.graph.global)
+            .unwrap();
+        let identity = analyzer.type_info_class(SourceOffset(0)).unwrap();
+        let mut graph = analyzer.finish_analysis(false).unwrap();
+        // A later demand can use a declaration context preceding std's
+        // declaration. The reference keeps its successful identity lookup.
+        graph.lookup_limit = Some(0);
+        let mut resumed =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+        assert_eq!(resumed.type_info_class(SourceOffset(0)).unwrap(), identity);
+        assert_eq!(resumed.graph.lookup_limit, Some(0));
+    }
 
     #[test]
     fn failed_operands_restore_deferred_use_context_without_reparsing() {

@@ -75,7 +75,9 @@ impl Analyzer<'_> {
         };
         if nonthrowing {
             if self.pending_virtual_noexcept(function) {
-                self.nonthrowing_overrides
+                self.graph
+                    .analysis
+                    .nonthrowing_overrides
                     .push(PendingNonthrowingOverride { function, location });
             } else if !self.virtual_nothrow(function)? {
                 return Err(Error::at(
@@ -89,7 +91,7 @@ impl Analyzer<'_> {
 
     pub(super) fn check_pending_nonthrowing_overrides(&mut self) -> Result<(), Error> {
         // This unit queue is independent of class-local finite-set events.
-        let pending = std::mem::take(&mut self.nonthrowing_overrides);
+        let pending = std::mem::take(&mut self.graph.analysis.nonthrowing_overrides);
         for event in pending {
             if self.function_may_throw(event.function)? {
                 return Err(Error::at(
@@ -175,9 +177,9 @@ impl Analyzer<'_> {
         })
     }
     fn note_pending_exception_override(&mut self, edge: PendingOverride) -> Result<(), Error> {
-        let first = self.exception_overrides.len();
-        self.exception_overrides.push(edge);
-        if self.class_depth == 0 && self.pending_throws.is_empty() {
+        let first = self.graph.analysis.exception_overrides.len();
+        self.graph.analysis.exception_overrides.push(edge);
+        if self.class_depth == 0 && self.graph.analysis.pending_throws.is_empty() {
             self.check_exception_overrides(first, false)?;
         }
         Ok(())
@@ -191,18 +193,18 @@ impl Analyzer<'_> {
         let mut kept = first;
         // Copy each event before querying: a nested class may append and
         // complete its own suffix. Visit the live tail after earlier events.
-        while index < self.exception_overrides.len() {
-            let edge = self.exception_overrides[index];
+        while index < self.graph.analysis.exception_overrides.len() {
+            let edge = self.graph.analysis.exception_overrides[index];
             if matches!(
                 self.check_exception_override(edge, final_check)?,
                 OverrideCheck::Deferred
             ) {
-                self.exception_overrides[kept] = edge;
+                self.graph.analysis.exception_overrides[kept] = edge;
                 kept += 1;
             }
             index += 1;
         }
-        self.exception_overrides.truncate(kept);
+        self.graph.analysis.exception_overrides.truncate(kept);
         Ok(())
     }
 
@@ -550,7 +552,7 @@ mod tests {
         for &declaration in &declarations[..2] {
             analyzer.declaration(declaration, global).unwrap();
         }
-        assert_eq!(analyzer.exception_overrides.len(), 1);
+        assert_eq!(analyzer.graph.analysis.exception_overrides.len(), 1);
         let binding = analyzer.graph.own(global, b, Filter::Elaborated).unwrap();
         let class = analyzer
             .graph
@@ -560,13 +562,13 @@ mod tests {
         let binding = analyzer.graph.own(class, f, Filter::Ordinary).unwrap();
         let function = analyzer.graph.binding(binding).entity;
         analyzer.declaration(declarations[2], global).unwrap();
-        assert_eq!(analyzer.exception_overrides.len(), 1);
+        assert_eq!(analyzer.graph.analysis.exception_overrides.len(), 1);
         assert!(matches!(
             analyzer.graph.entity(function).exceptions,
             ExceptionState::Pending(_)
         ));
         analyzer.finish_unit_exceptions().unwrap();
-        assert!(analyzer.exception_overrides.is_empty());
+        assert!(analyzer.graph.analysis.exception_overrides.is_empty());
         assert!(analyzer.virtual_nothrow(function).unwrap());
     }
 }

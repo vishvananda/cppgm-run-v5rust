@@ -103,7 +103,7 @@ impl Default for UnitProgress {
     }
 }
 impl Specifications {
-    fn unit_closed(&self) -> bool {
+    pub(super) fn unit_closed(&self) -> bool {
         matches!(self.unit, UnitProgress::Closed)
     }
     fn close_unit(&mut self) {
@@ -608,7 +608,7 @@ impl Analyzer<'_> {
                 |q| matches!(q.kind, QualifierKind::Throw(types) if !types.is_empty()),
             );
         if member_throw {
-            self.pending_throws.push(id);
+            self.graph.analysis.pending_throws.push(id);
         }
         let literal_true = operand.is_some_and(|expr| self.true_operand(expr));
         if !first || (!member_throw && (operand.is_none() || literal_true)) {
@@ -1201,11 +1201,11 @@ impl Analyzer<'_> {
         first_override: usize,
     ) -> Result<(), Error> {
         let mut index = first_throw;
-        while index < self.pending_throws.len() {
-            self.resolve_specification(self.pending_throws[index])?;
+        while index < self.graph.analysis.pending_throws.len() {
+            self.resolve_specification(self.graph.analysis.pending_throws[index])?;
             index += 1;
         }
-        self.pending_throws.truncate(first_throw);
+        self.graph.analysis.pending_throws.truncate(first_throw);
         self.check_exception_overrides(first_override, false)
     }
     pub(super) fn finish_unit_exceptions(&mut self) -> Result<(), Error> {

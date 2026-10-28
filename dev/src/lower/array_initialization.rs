@@ -290,10 +290,15 @@ impl Function<'_, '_, '_, '_> {
         let prefix = array
             .prefix
             .ok_or(crate::sema::Error::Invariant("array prefix type"))?;
-        let mut throws = self.expression_throws(list)? || rest_throws;
-        if let TypeView::Class(class) = self.graph.lower_type(shape.element)? {
-            throws |= self.omitted_aggregate_throws(class, 0)?;
-        }
+        // new_list_elements suspends the hidden context for this entire
+        // query, including omitted elements, then restores it for emission.
+        let throws = self.expression_throws(list)?
+            || rest_throws
+            || if let TypeView::Class(class) = self.graph.lower_type(shape.element)? {
+                self.omitted_aggregate_throws_in_context(class, 0, false)?
+            } else {
+                false
+            };
         let freed = if throws && let Some(function) = use_.deallocator {
             let first = self.lifetime.cleanups.len();
             let args =

@@ -77,9 +77,7 @@ impl Function<'_, '_, '_, '_> {
         let body = self.new_block("array_new_ctor_body")?;
         let end = self.new_block("array_new_ctor_end")?;
         let effects = self.constructor_element_effects(constructor)?;
-        let guarded = effects.raises
-            || self.lifetime.full_expression
-                && self.lifetime.temporary_segment.allows_eager_arguments();
+        let guarded = effects.raises;
         let temporaries = effects.made;
         let cleanup = if guarded {
             Some(self.new_block("array_new_ctor_cleanup")?)

@@ -280,6 +280,7 @@ struct FunctionSignature {
 }
 
 pub(crate) struct Graph {
+    pub(super) analysis: Box<super::analyzer::UnitState>,
     pub(super) work: Box<super::work::Observations>,
     pub(super) names: Box<super::lookup::Names>,
     pub(super) hosted: bool,
@@ -626,6 +627,7 @@ impl Graph {
     }
     pub(super) fn new() -> Self {
         Self {
+            analysis: Box::default(),
             work: Box::default(),
             names: Box::default(),
             hosted: false,

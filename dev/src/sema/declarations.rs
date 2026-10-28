@@ -2032,8 +2032,8 @@ impl Analyzer<'_> {
             super::graph::Access::Public
         };
         self.class_bases(node, entity, parent)?;
-        let first_throw = self.pending_throws.len();
-        let first_override = self.exception_overrides.len();
+        let first_throw = self.graph.analysis.pending_throws.len();
+        let first_override = self.graph.analysis.exception_overrides.len();
         self.class_depth += 1;
         self.declare_class_members(entity, node.members, class)?;
         self.class_depth -= 1;

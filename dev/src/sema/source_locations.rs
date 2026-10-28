@@ -140,7 +140,7 @@ impl Analyzer<'_> {
             .identifiers
             .intern(text)
             .map_err(|_| Error::Limit("source text identifier limit"))?;
-        if let Some(&id) = self.text_literals.get(&key) {
+        if let Some(&id) = self.graph.analysis.text_literals.get(&key) {
             return Ok(id);
         }
         let mut spelling = vec![b'"'];
@@ -194,7 +194,7 @@ impl Analyzer<'_> {
             })
             .map_err(|_| Error::Limit("source text expression limit"))?;
         self.typed_expression(id, self.graph.global)?;
-        self.text_literals.insert(key, id);
+        self.graph.analysis.text_literals.insert(key, id);
         Ok(id)
     }
 

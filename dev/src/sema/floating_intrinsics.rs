@@ -514,7 +514,7 @@ impl Analyzer<'_> {
             F::LongDouble => 2,
             _ => 0,
         };
-        if let Some(binding) = self.library_nans[index] {
+        if let Some(binding) = self.graph.analysis.library_nans[index] {
             return Ok(binding);
         }
         let key = self.builtin_names.floating.iter().find_map(|&(key, operation)| {
@@ -559,7 +559,7 @@ impl Analyzer<'_> {
                 key: Keyword::Int,
             },
         )?;
-        self.library_nans[index] = Some(binding);
+        self.graph.analysis.library_nans[index] = Some(binding);
         Ok(binding)
     }
 }
@@ -655,8 +655,12 @@ mod tests {
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         let global = analyzer.graph.global;
         analyzer.declarations(declarations, global).unwrap();
-        let binding = analyzer.library_nans[0].unwrap();
-        assert!(analyzer.library_nans[1..].iter().all(Option::is_none));
+        let binding = analyzer.graph.analysis.library_nans[0].unwrap();
+        assert!(
+            analyzer.graph.analysis.library_nans[1..]
+                .iter()
+                .all(Option::is_none)
+        );
         let key = analyzer.graph.binding(binding).name.unwrap();
         let public: Vec<_> = analyzer.graph.functions_at(global, key.into()).collect();
         assert_eq!(public.len(), 1);
@@ -677,5 +681,17 @@ mod tests {
         ));
         assert_eq!(analyzer.library_nan(F::Double).unwrap(), binding);
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
+        let literal = analyzer.source_text_literal(b"retained text").unwrap();
+        let expressions = analyzer.tree.expressions.mark();
+        let graph = analyzer.finish_analysis(false).unwrap();
+        let mut resumed =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+        resumed.set_lowering();
+        assert_eq!(resumed.library_nan(F::Double).unwrap(), binding);
+        assert_eq!(
+            resumed.source_text_literal(b"retained text").unwrap(),
+            literal
+        );
+        assert_eq!(resumed.tree.expressions.mark(), expressions);
     }
 }

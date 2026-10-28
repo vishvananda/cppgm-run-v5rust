@@ -28,19 +28,28 @@ pub(super) enum SpecializationMode {
     Explicit,
 }
 
+/// Facts owned by the C++ analyzer for the whole semantic unit, including
+/// subsequent body and exception-specification demands through a new facade.
+#[derive(Default)]
+pub(super) struct UnitState {
+    pub text_literals: std::collections::HashMap<crate::lex::identifiers::NameId, ast::ExprId>,
+    pub library_nans: [Option<super::graph::BindingId>; 3],
+    pub type_info: Option<super::graph::EntityId>,
+    pub defaulted_constexpr: Vec<(super::graph::EntityId, SourceOffset)>,
+    pub exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
+    pub nonthrowing_overrides: Vec<super::virtual_exceptions::PendingNonthrowingOverride>,
+    pub pending_throws: Vec<super::exceptions::SpecificationId>,
+}
+
 pub(crate) struct Analyzer<'tree> {
     pub(super) predefined_names: [crate::lex::identifiers::NameId; 3],
     pub(super) int128_name: crate::lex::identifiers::NameId,
     pub(super) decltype_name: crate::lex::identifiers::NameId,
     pub(super) override_name: crate::lex::identifiers::NameId,
-    pub(super) exception_overrides: Vec<super::virtual_exceptions::PendingOverride>,
-    pub(super) nonthrowing_overrides: Vec<super::virtual_exceptions::PendingNonthrowingOverride>,
     pub(super) declaration_access: super::declaration_access::DeclarationAccess,
     pub(super) literal_bytes: &'tree mut crate::syntax::storage::TextStore,
     pub(super) positions: &'tree dyn crate::preprocess::SourcePositions,
     pub(super) source_site: Option<SourceOffset>,
-    pub(super) text_literals:
-        std::collections::HashMap<crate::lex::identifiers::NameId, ast::ExprId>,
     pub(super) identifiers: &'tree mut crate::lex::identifiers::Identifiers,
     pub(super) tree: &'tree mut Tree,
     pub(super) graph: Graph,
@@ -49,7 +58,6 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) lookup_location: SourceOffset,
     pub(super) deferred: Vec<DeferredMember>,
     pub(super) deferred_constexpr: std::collections::HashMap<super::graph::EntityId, DeferredBody>,
-    pub(super) defaulted_constexpr: Vec<(super::graph::EntityId, SourceOffset)>,
     pub(super) class_depth: usize,
     pub(super) flexible_initialization:
         Option<super::aggregate_initialization::FlexibleInitialization>,
@@ -101,7 +109,6 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) template_arguments: u32,
     pub(super) decltype_call: Option<ast::ExprId>,
     pub(super) builtin_names: super::builtin_calls::BuiltinNames,
-    pub(super) library_nans: [Option<super::graph::BindingId>; 3],
     pub(super) pretyped_callable: Option<ast::ExprId>,
     pub(super) pretyped_object: Option<ast::ExprId>,
     pub(super) callee_name: Option<ast::ExprId>,
@@ -113,7 +120,6 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) copy_scratch: super::copy_initialization::CopyScratch,
     pub(super) assignment_scratch: super::assignment::Scratch,
     pub(super) binary_spine: Vec<ast::ExprId>,
-    pub(super) pending_throws: Vec<super::exceptions::SpecificationId>,
     pub(super) evaluating_noexcept: bool,
     pub(super) layout_work: Vec<(super::graph::EntityId, usize)>,
     pub(super) bit_layout: super::bit_layout::BitLayout,
@@ -256,17 +262,13 @@ impl<'tree> Analyzer<'tree> {
             .map_err(Error::identifier_interning)?;
         let (identifiers, positions) = cursor.post.input_mut().semantic_context();
         let mut analyzer = Self {
-            library_nans: [None; 3],
             deduced_pack_element: None,
             decltype_name,
             override_name,
-            exception_overrides: Vec::new(),
-            nonthrowing_overrides: Vec::new(),
             declaration_access: super::declaration_access::DeclarationAccess::default(),
             literal_bytes: &mut cursor.spellings,
             positions,
             source_site: None,
-            text_literals: std::collections::HashMap::new(),
             identifiers,
             deduced_initializer: None,
             placeholder_scratch: super::placeholders::PlaceholderScratch::default(),
@@ -277,7 +279,6 @@ impl<'tree> Analyzer<'tree> {
             lookup_location: SourceOffset(0),
             deferred: Vec::new(),
             deferred_constexpr: std::collections::HashMap::new(),
-            defaulted_constexpr: Vec::new(),
             class_depth: 0,
             member_initializer_class: None,
             flexible_initialization: None,
@@ -337,7 +338,6 @@ impl<'tree> Analyzer<'tree> {
             type_queries: super::type_queries::QueryContext::default(),
             template_arguments: 0,
             decltype_call: None,
-            pending_throws: Vec::new(),
             evaluating_noexcept: false,
             layout_work: Vec::new(),
             bit_layout: super::bit_layout::BitLayout::default(),
@@ -397,8 +397,12 @@ impl<'tree> Analyzer<'tree> {
         self.finish_analysis(boundaries)
     }
     pub(super) fn finish_analysis(mut self, boundaries: bool) -> Result<Graph, Error> {
-        self.finish_defaulted_constexpr()?;
-        self.finish_unit_exceptions()?;
+        if !self.graph.specifications.unit_closed() {
+            if self.semantic() {
+                self.finish_defaulted_constexpr()?;
+            }
+            self.finish_unit_exceptions()?;
+        }
         if !self.deferred.is_empty() {
             return Err(Error::Invariant("uncompleted member bodies"));
         }

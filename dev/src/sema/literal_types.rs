@@ -37,7 +37,10 @@ impl Analyzer<'_> {
                 && self.graph.scope(home).kind == super::graph::ScopeKind::Class
                 && !self.graph.instance_class(home)
             {
-                self.defaulted_constexpr.push((function, location));
+                self.graph
+                    .analysis
+                    .defaulted_constexpr
+                    .push((function, location));
             }
             Ok(())
         } else {
@@ -45,7 +48,7 @@ impl Analyzer<'_> {
         }
     }
     pub(super) fn finish_defaulted_constexpr(&mut self) -> Result<(), Error> {
-        for (function, location) in std::mem::take(&mut self.defaulted_constexpr) {
+        for (function, location) in std::mem::take(&mut self.graph.analysis.defaulted_constexpr) {
             self.check_defaulted_constexpr(function, location)?;
         }
         Ok(())
