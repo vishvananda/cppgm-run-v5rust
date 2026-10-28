@@ -1,0 +1,39 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @shift
+  abi
+    param %x -> rdi : i64
+    param %y -> rsi : i64
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    lea rcx, [rsi+<off0>]
+    shl rdi, rcx
+    add rdi, rsi
+    ret rdi
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rdi, 3
+    mov rsi, 1
+    call @shift [args=(rsi,rdi)]
+    sub rax, 13
+    ret rax

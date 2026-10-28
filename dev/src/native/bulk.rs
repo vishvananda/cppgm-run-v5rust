@@ -174,7 +174,7 @@ impl Bulk {
         Ok(())
     }
     fn zero(self, a: &mut Assembler, wide: bool) -> Result<(), Error> {
-        let to = location(self.destination)?;
+        let to = a.resolve_frame(location(self.destination)?);
         if self.bytes == 16 || wide && self.bytes > 16 && self.bytes <= 128 {
             let vector = R::xmm(15)?;
             a.sse(0x66, 0xef, vector, Rm::Reg(vector))?;

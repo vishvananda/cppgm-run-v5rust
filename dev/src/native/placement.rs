@@ -153,7 +153,8 @@ impl Placement {
             return None;
         }
         let allowed = |r: R| {
-            self.owners[usize::from(r.code())].is_none()
+            (r != R::RBP || self.globals.rbp_free)
+                && self.owners[usize::from(r.code())].is_none()
                 && (facts.intervals[temp.index()].forbid | exclude | self.excluded | self.pinned)
                     & (1 << r.code())
                     == 0
@@ -218,6 +219,7 @@ impl Placement {
                 R::R13,
                 R::R14,
                 R::R15,
+                R::RBP,
                 R::RDX,
                 R::RCX,
                 R::RAX,

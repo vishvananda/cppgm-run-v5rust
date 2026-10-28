@@ -652,6 +652,26 @@ impl Facts {
             interval.hint = Some(register);
         }
     }
+    fn ends_in_shift_count(&self, body: &Body, temp: TempId, definition: usize) -> bool {
+        if self.level == 0 {
+            return false;
+        }
+        let Some(last) = self.intervals[temp.index()].last else {
+            return false;
+        };
+        if self.flow.blocks[definition] != self.flow.blocks[last] || !self.active[last] {
+            return false;
+        }
+        let I::Binary(Binary::Shl | Binary::Shr | Binary::UShr, _, ty, left, right) =
+            body.instruction(self.flow.instructions[last]).kind
+        else {
+            return false;
+        };
+        ty.float_rank() == 0
+            && self.resolve(body, right) == Alias::Temporary(temp)
+            && self.resolve(body, left) != Alias::Temporary(temp)
+            && self.clobbers[last].0 & (1 << R::RCX.code()) != 0
+    }
     fn rebuild_clobbers(
         &mut self,
         body: &Body,
@@ -686,8 +706,17 @@ impl Facts {
             }
             let inst = body.instruction(id);
             if let Some(result) = inst.result {
-                self.intervals[result.index()].forbid =
-                    mask(&self.intervals[result.index()], &late, &early);
+                let interval = &self.intervals[result.index()];
+                let mut forbid = mask(interval, &late, &early);
+                let rcx = usize::from(R::RCX.code());
+                if late[rcx] == interval.last
+                    && early[rcx] == interval.last
+                    && self.ends_in_shift_count(body, result, pos)
+                {
+                    // The final shift loads its own count into RCX first.
+                    forbid &= !(1 << R::RCX.code());
+                }
+                self.intervals[result.index()].forbid = forbid;
             }
             let fixed = if matches!(
                 inst.kind,

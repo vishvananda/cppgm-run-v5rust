@@ -179,7 +179,6 @@ impl Selection<'_> {
             } else {
                 self.width_conversion(from, ty, Operand::Register(R::XMM14), source);
                 self.float_copy(ty, destination, Operand::Register(R::XMM14));
-                self.mark_volatile();
             }
             return Ok(());
         }
@@ -192,7 +191,9 @@ impl Selection<'_> {
         };
         let destination = self.address(address, R::R10)?;
         self.float_copy(ty, destination, source);
-        self.mark_volatile();
+        if ty != Type::F80 {
+            self.mark_volatile();
+        }
         Ok(())
     }
     pub(super) fn float_value_copy(

@@ -158,6 +158,9 @@ impl Assembler {
     pub(super) fn frame_addressing(&mut self, frame: super::frame_encoding::Addressing) {
         self.frame = frame;
     }
+    pub(super) fn resolve_frame(&self, operand: Rm) -> Rm {
+        self.frame.resolve(operand)
+    }
     pub(super) fn position(&self) -> Result<u32, Error> {
         u32::try_from(self.code.len()).map_err(|_| Error::Limit)
     }
@@ -227,7 +230,7 @@ impl Assembler {
         byte_regs: bool,
         imm_bytes: u8,
     ) -> Result<(), Error> {
-        let rm = self.frame.resolve(rm);
+        let rm = self.resolve_frame(rm);
         if prefix != 0 {
             self.byte(prefix);
         }

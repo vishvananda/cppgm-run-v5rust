@@ -1,0 +1,67 @@
+machine_ir x86_64 <host-target>
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @store80
+  abi
+    param %value -> [rbp+<off0>] : f80
+    return void -> void
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+    slot $local -> [rbp-<off0>] : f80
+
+  block ^entry
+    ret
+
+function @store32
+  abi
+    param %value -> xmm0 : f64
+    return void -> void
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+    slot $local -> [rbp-<off0>] : f32
+    param-slot %value -> [rbp-<off1>] : f64
+
+  block ^entry
+    fmov.f64 [rbp-<off1>], xmm0
+    fptrunc.f64.f32 xmm14, [rbp-<off1>]
+    ret
+
+function @store64
+  abi
+    param %value -> xmm0 : f64
+    return void -> void
+  frame
+    stack_size N
+    scratch_bytes 48
+    frame_pointer keep
+    epilogues duplicated
+    slot $local -> [rbp-<off0>] : f64
+    param-slot %value -> [rbp-<off1>] : f64
+
+  block ^entry
+    fmov.f64 [rbp-<off1>], xmm0
+    fmov.f64 [rbp-<off0>], [rbp-<off1>]
+    ret
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size N
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rax, 0
+    ret rax
