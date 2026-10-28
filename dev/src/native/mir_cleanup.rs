@@ -6,21 +6,6 @@ use super::{
 };
 use crate::lowir::vocabulary::{Binary, Type};
 
-// The simple ALU form has no implicit scratch effects when every operand is
-// a GPR or a small immediate. A symbolic/memory source is a separate boundary.
-fn simple_binary(op: ScalarOp) -> Option<(Binary, Type, R, Operand)> {
-    let ScalarOp::Binary(binary, ty, r, source) = op else {
-        return None;
-    };
-    let simple = match source {
-        Operand::Register(s) => s.code() < 16,
-        Operand::Immediate(bits) => {
-            super::mir::low_word(bits).is_ok_and(|v| i32::try_from(v).is_ok())
-        }
-        _ => false,
-    };
-    (r.code() < 16 && simple).then_some((binary, ty, r, source))
-}
 pub(super) fn extensions(function: &mut Function) {
     copies_into_lea(function);
     super::address_fusion::run(function);
@@ -150,7 +135,7 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
     for inst in &function.instructions[at + 1..end] {
         match inst.op {
             Op::Scalar(ScalarOp::Shift(_, ty, _, Operand::Immediate(bits))) => {
-                return bits & (u128::from(super::scalar_mir::bytes(ty)) * 8 - 1) != 0;
+                return bits & (if ty == Type::U32 { 31 } else { 63 }) != 0;
             }
             Op::Nop
             | Op::Move(..)
@@ -171,6 +156,7 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
             | Op::Call(..)
             | Op::Jump(..)
             | Op::JumpTable(_)
+            | Op::Floating(super::floating_mir::FloatingOp::Compare { .. })
             | Op::Scalar(
                 ScalarOp::Binary(..)
                 | ScalarOp::MemoryBinary(..)
@@ -178,8 +164,10 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
                 | ScalarOp::Scan(..)
                 | ScalarOp::Divide { .. }
                 | ScalarOp::MultiplyWide { .. }
+                | ScalarOp::CompareZero(..)
                 | ScalarOp::Condition(
                     FlagOp::Compare(..)
+                    | FlagOp::CompareFloatLiteral(..)
                     | FlagOp::Test(..)
                     | FlagOp::MaskTest(..)
                     | FlagOp::BitTest(..),
@@ -194,8 +182,8 @@ pub(super) fn flags_dead_after(function: &Function, at: usize, end: usize) -> bo
 pub(super) fn narrow_to_u32(function: &mut Function, at: usize, r: R, end: usize) -> bool {
     use crate::lowir::vocabulary::Unary;
     let op = function.instructions[at].op;
-    if function.instructions[at].volatile
-        || !matches!(simple_write(op), Some(SimpleWrite::Register(writer)) if writer == r)
+    if !matches!(simple_write(op), Some(SimpleWrite::Register(writer)) if writer == r)
+        || function.instructions[at].volatile
     {
         return false;
     }
@@ -241,26 +229,36 @@ pub(super) fn narrow_to_u32(function: &mut Function, at: usize, r: R, end: usize
             Type::Void | Type::I64 | Type::Ptr,
             writer,
             Operand::Immediate(bits),
-        )) if writer == r && bits < 32 && flags_dead_after(function, at, end) => Op::Scalar(
-            ScalarOp::Shift(Binary::Shl, Type::U32, r, Operand::Immediate(bits)),
-        ),
-        Op::Scalar(previous) if flags_dead_after(function, at, end) => {
-            if let Some((binary, Type::Void | Type::I64 | Type::Ptr, writer, source)) =
-                simple_binary(previous)
-                && writer == r
-            {
-                Op::Scalar(ScalarOp::Binary(binary, Type::U32, r, source))
-            } else if let ScalarOp::Unary(
-                unary @ (Unary::Neg | Unary::BitNot),
-                Type::Void | Type::I64 | Type::Ptr,
-                writer,
-            ) = previous
-                && writer == r
-            {
-                Op::Scalar(ScalarOp::Unary(unary, Type::U32, r))
-            } else {
-                return false;
-            }
+        )) if writer == r
+            && super::mir::low_word(bits).is_ok_and(|count| (0..32).contains(&count))
+            && flags_dead_after(function, at, end) =>
+        {
+            Op::Scalar(ScalarOp::Shift(
+                Binary::Shl,
+                Type::U32,
+                r,
+                Operand::Immediate(bits),
+            ))
+        }
+        Op::Scalar(ScalarOp::Binary(
+            binary @ (Binary::Add
+            | Binary::Sub
+            | Binary::And
+            | Binary::Or
+            | Binary::Xor
+            | Binary::Mul),
+            Type::Void | Type::I64 | Type::Ptr,
+            _,
+            source,
+        )) if flags_dead_after(function, at, end) => {
+            Op::Scalar(ScalarOp::Binary(binary, Type::U32, r, source))
+        }
+        Op::Scalar(ScalarOp::Unary(
+            unary @ (Unary::Neg | Unary::BitNot),
+            Type::Void | Type::I64 | Type::Ptr,
+            _,
+        )) if flags_dead_after(function, at, end) => {
+            Op::Scalar(ScalarOp::Unary(unary, Type::U32, r))
         }
         _ => return false,
     };
@@ -270,7 +268,6 @@ pub(super) fn narrow_to_u32(function: &mut Function, at: usize, r: R, end: usize
 
 fn copies_into_lea(function: &mut Function) {
     use super::memory::{Base, Memory};
-    let mut removed = vec![false; function.instructions.len()];
     for block in 0..function.blocks.len() {
         let range = function.blocks[block].range.clone();
         for i in range.start..range.end.saturating_sub(1) {
@@ -314,16 +311,19 @@ fn copies_into_lea(function: &mut Function) {
                         } else {
                             ScalarOp::Lea(r, Operand::Memory(mem))
                         });
-                    removed[i] = true;
+                    function.instructions[i].op = Op::Nop;
                     continue;
                 }
                 _ => continue,
             };
-            let narrow = matches!(ty, Type::I32 | Type::U32);
-            if writer != b
-                || !(narrow || matches!(ty, Type::I64 | Type::Ptr))
-                || !flags_dead_after(function, i + 1, range.end)
-            {
+            let shift = op == Binary::Shl;
+            let narrow = ty == Type::U32 || !shift && ty == Type::I32;
+            let wide = if shift {
+                !narrow
+            } else {
+                matches!(ty, Type::Void | Type::I64 | Type::Ptr)
+            };
+            if writer != b || !(narrow || wide) || !flags_dead_after(function, i + 1, range.end) {
                 continue;
             }
             let mut mem = Memory::new(Base::Register(a), 0);
@@ -387,11 +387,11 @@ fn copies_into_lea(function: &mut Function) {
                         function.instructions[i].op =
                             Op::Scalar(ScalarOp::Lea(b, Operand::Memory(mem)));
                         if shift == 0 {
-                            removed[i + 1] = true;
+                            function.instructions[i + 1].op = Op::Nop;
                         } else {
                             function.instructions[i + 1].op = Op::Scalar(ScalarOp::Shift(
                                 Binary::Shl,
-                                Type::I64,
+                                Type::Void,
                                 b,
                                 Operand::Immediate(u128::from(shift)),
                             ));
@@ -408,10 +408,9 @@ fn copies_into_lea(function: &mut Function) {
             } else {
                 ScalarOp::Lea(b, Operand::Memory(mem))
             });
-            removed[i] = true;
+            function.instructions[i].op = Op::Nop;
         }
     }
-    erase(function, &removed);
 }
 pub(super) fn erase(function: &mut Function, removed: &[bool]) {
     // Later cleanups observe immediate neighbours and the original ranges.
@@ -536,6 +535,141 @@ mod tests {
         f.blocks[0].range = 0..ops.len();
         f.blocks[1].range = ops.len()..ops.len();
         f
+    }
+
+    #[test]
+    fn fusion_uses_low_counts_and_the_emitters_shift_width_and_flag_clobbers() {
+        let copy = Op::Scalar(ScalarOp::Move(
+            Type::Void,
+            R::RAX,
+            Operand::Register(R::RDI),
+        ));
+        for ty in [Type::Void, Type::I32, Type::U32] {
+            let mut f = function(&[
+                copy,
+                Op::Scalar(ScalarOp::Shift(
+                    Binary::Shl,
+                    ty,
+                    R::RAX,
+                    Operand::Immediate(2),
+                )),
+                Op::Scalar(ScalarOp::CompareZero(Type::I64, Operand::Register(R::RDX))),
+            ]);
+            copies_into_lea(&mut f);
+            assert!(matches!(f.instructions[0].op, Op::Nop));
+            assert_eq!(
+                matches!(f.instructions[1].op, Op::Scalar(ScalarOp::Lea32(..))),
+                ty == Type::U32
+            );
+        }
+        for next in [
+            Op::Floating(super::super::floating_mir::FloatingOp::Compare {
+                ty: Type::F64,
+                left: Operand::Frame(-8),
+                right: Operand::Frame(-16),
+            }),
+            Op::Scalar(ScalarOp::CompareZero(Type::I64, Operand::Register(R::RDX))),
+        ] {
+            let mut f = function(&[
+                copy,
+                Op::Scalar(ScalarOp::Binary(
+                    Binary::Add,
+                    Type::Void,
+                    R::RAX,
+                    Operand::Immediate(5),
+                )),
+                next,
+            ]);
+            copies_into_lea(&mut f);
+            assert!(matches!(f.instructions[0].op, Op::Nop));
+            assert!(matches!(
+                f.instructions[1].op,
+                Op::Scalar(ScalarOp::Lea(..))
+            ));
+        }
+        let high_count = (3 << 64) | 2;
+        let mut f = function(&[
+            Op::Scalar(ScalarOp::Shift(
+                Binary::Shl,
+                Type::I64,
+                R::RAX,
+                Operand::Immediate(high_count),
+            )),
+            Op::Return(None),
+        ]);
+        assert!(narrow_to_u32(&mut f, 0, R::RAX, 2));
+        assert!(
+            matches!(f.instructions[0].op, Op::Scalar(ScalarOp::Shift(_,Type::U32,_,Operand::Immediate(bits))) if bits == high_count)
+        );
+        let mut f = function(&[
+            Op::Scalar(ScalarOp::Binary(
+                Binary::Add,
+                Type::I64,
+                R::RAX,
+                Operand::Frame(-8),
+            )),
+            Op::Scalar(ScalarOp::Extend(Type::U32, R::RAX)),
+            Op::Return(None),
+        ]);
+        super::super::address_fusion::run(&mut f);
+        assert!(matches!(
+            f.instructions[0].op,
+            Op::Scalar(ScalarOp::Binary(
+                Binary::Add,
+                Type::U32,
+                _,
+                Operand::Frame(-8)
+            ))
+        ));
+        assert!(matches!(f.instructions[1].op, Op::Nop));
+        for (ty, dead) in [(Type::I32, true), (Type::U32, false)] {
+            let f = function(&[
+                Op::Nop,
+                Op::Scalar(ScalarOp::Shift(
+                    Binary::Shl,
+                    ty,
+                    R::RAX,
+                    Operand::Immediate(32),
+                )),
+            ]);
+            assert_eq!(flags_dead_after(&f, 0, 2), dead);
+        }
+    }
+
+    #[test]
+    fn zero_tests_project_specialized_operations_and_ignore_literal_high_bits() {
+        use super::super::condition_mir::FlagOp;
+        let add = Op::Scalar(ScalarOp::Binary(
+            Binary::Add,
+            Type::I64,
+            R::RAX,
+            Operand::Immediate(7),
+        ));
+        let set = Op::Scalar(ScalarOp::SetEqual(R::RDX));
+        for test in [
+            Op::Scalar(ScalarOp::CompareZero(Type::I64, Operand::Register(R::RAX))),
+            Op::Scalar(ScalarOp::Condition(FlagOp::Compare(
+                Type::I64,
+                Operand::Register(R::RAX),
+                Operand::Immediate(1 << 64),
+            ))),
+        ] {
+            let mut f = function(&[add, test, set, Op::Return(None)]);
+            super::super::flag_cleanup::drop_tests(&mut f);
+            assert!(matches!(f.instructions[1].op, Op::Nop));
+        }
+        let mut f = function(&[
+            add,
+            Op::Move(R::R8, 1 << 64),
+            Op::Scalar(ScalarOp::CompareZero(Type::I64, Operand::Register(R::RAX))),
+            set,
+            Op::Return(None),
+        ]);
+        super::super::flag_cleanup::drop_tests(&mut f);
+        assert!(matches!(
+            f.instructions[2].op,
+            Op::Scalar(ScalarOp::CompareZero(..))
+        ));
     }
 
     #[test]

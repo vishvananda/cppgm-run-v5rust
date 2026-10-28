@@ -20,6 +20,15 @@ enum Held {
     Home(i32, u8),
 }
 impl Held {
+    fn home(offset: i32, count: u8) -> Self {
+        // The frozen packed holder aliases a full-width home at INT32_MIN
+        // with kHoldsNothing. Narrow holders at that offset remain distinct.
+        if offset == i32::MIN && count >= 8 {
+            Self::Nothing
+        } else {
+            Self::Home(offset, count)
+        }
+    }
     fn meet(self, other: Self) -> Self {
         if self == Self::Any {
             other
@@ -380,7 +389,7 @@ impl Forwarding {
                     holds[usize::from(dst.code())] = if dst == R::R11 || offset & 7 != 0 {
                         Held::Nothing
                     } else {
-                        Held::Home(offset, count)
+                        Held::home(offset, count)
                     };
                     if !rewrite {
                         continue;
@@ -461,7 +470,7 @@ impl Forwarding {
                             && offset.trailing_zeros() >= 3
                             && matches!(count, 1 | 2 | 4 | 8)
                         {
-                            holds[usize::from(r.code())] = Held::Home(offset, count);
+                            holds[usize::from(r.code())] = Held::home(offset, count);
                         }
                     } else {
                         self.drop_slots(holds);
@@ -561,6 +570,34 @@ mod tests {
             .collect();
         f.stack_size = 16;
         Ok(f)
+    }
+    #[test]
+    fn packed_sentinel_alias_only_forgets_full_width_homes() -> Result<(), Error> {
+        for (ty, forwarded) in [(Type::I64, false), (Type::U32, true)] {
+            let ops = [
+                Op::Scalar(ScalarOp::Store(
+                    Operand::Frame(i32::MIN),
+                    ty,
+                    Operand::Register(R::RDI),
+                )),
+                Op::Scalar(ScalarOp::Load(R::RAX, ty, Operand::Frame(i32::MIN))),
+                Op::Return(Some(R::RAX)),
+            ];
+            let mut f = sample(&ops, std::slice::from_ref(&(0..ops.len())))?;
+            forward(&mut f);
+            assert_eq!(
+                matches!(
+                    f.instructions[1].op,
+                    Op::Scalar(ScalarOp::ExtendMove(Type::U32, R::RAX, R::RDI))
+                ),
+                forwarded
+            );
+            assert_eq!(
+                matches!(f.instructions[1].op, Op::Scalar(ScalarOp::Load(..))),
+                !forwarded
+            );
+        }
+        Ok(())
     }
     #[test]
     fn floating_literal_bits_do_not_invalidate_home_holders() -> Result<(), Error> {

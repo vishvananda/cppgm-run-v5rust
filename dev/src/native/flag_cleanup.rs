@@ -42,16 +42,18 @@ pub(super) fn zeroes(op: Op, known: u32) -> bool {
     }
 }
 fn skip(op: Op, reg: R) -> bool {
+    let Some(write) = simple_write(op) else {
+        return false;
+    };
     let candidate = matches!(
         op,
         Op::Nop
             | Op::Scalar(
                 ScalarOp::Store(..) | ScalarOp::Lea(..) | ScalarOp::Lea32(..) | ScalarOp::Load(..)
             )
-    ) || matches!(op,Op::Move(_,bits)|Op::Scalar(ScalarOp::Move(_, _,Operand::Immediate(bits))) if bits!=0)
-        || matches!(op,Op::Scalar(ScalarOp::Move(_, _,source)) if !matches!(source,Operand::Immediate(0)));
-    candidate
-        && simple_write(op).is_some_and(|write| !matches!(write,SimpleWrite::Register(r) if r==reg))
+    ) || matches!(op,Op::Move(_,bits)|Op::Scalar(ScalarOp::Move(_, _,Operand::Immediate(bits))) if super::mir::low_word(bits).is_ok_and(|word| word != 0))
+        || matches!(op,Op::Scalar(ScalarOp::Move(_, _,source)) if !matches!(source,Operand::Immediate(_)));
+    candidate && !matches!(write, SimpleWrite::Register(r) if r == reg)
 }
 fn width(op: Op, reg: R) -> Option<(u8, bool)> {
     match op {
@@ -89,6 +91,7 @@ fn readers(f: &Function, start: usize, end: usize, full: bool, zero_only: bool) 
             | Op::Scalar(ScalarOp::Condition(FlagOp::Set(cc, _) | FlagOp::Move(cc, _, _))) => {
                 Some(cc)
             }
+            Op::Scalar(ScalarOp::SetEqual(_)) => Some(C::Equal),
             _ => None,
         };
         if let Some(cc) = condition {
@@ -125,13 +128,19 @@ pub(super) fn drop_tests(f: &mut Function) {
         let mut known = 0;
         let mut known_at = range.start;
         for i in range.clone().skip(1) {
-            let Op::Scalar(ScalarOp::Condition(flag)) = f.instructions[i].op else {
-                continue;
-            };
-            let Some((ty, reg)) = flag.self_test().or(match flag {
-                FlagOp::Compare(ty, Operand::Register(r), Operand::Immediate(0)) => Some((ty, r)),
+            let test = match f.instructions[i].op {
+                Op::Scalar(ScalarOp::Condition(flag)) => flag.self_test().or_else(|| match flag {
+                    FlagOp::Compare(ty, Operand::Register(r), Operand::Immediate(bits))
+                        if super::mir::low_word(bits).is_ok_and(|word| word == 0) =>
+                    {
+                        Some((ty, r))
+                    }
+                    _ => None,
+                }),
+                Op::Scalar(ScalarOp::CompareZero(ty, Operand::Register(r))) => Some((ty, r)),
                 _ => None,
-            }) else {
+            };
+            let Some((ty, reg)) = test else {
                 continue;
             };
             if reg.code() >= 16 {

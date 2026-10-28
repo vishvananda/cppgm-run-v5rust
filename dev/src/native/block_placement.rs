@@ -469,6 +469,7 @@ pub(super) fn copyable(f: &Function, b: usize, cap: usize, sets: bool) -> bool {
         .all(|i| match f.instructions[i].op {
             Op::Nop
             | Op::Move(..)
+            | Op::SymbolMove(..)
             | Op::Scalar(
                 ScalarOp::Move(..)
                 | ScalarOp::Load(..)
@@ -490,12 +491,13 @@ pub(super) fn copyable(f: &Function, b: usize, cap: usize, sets: bool) -> bool {
                 )
                 | ScalarOp::Condition(
                     FlagOp::Compare(..)
+                    | FlagOp::CompareFloatLiteral(..)
                     | FlagOp::Test(..)
                     | FlagOp::MaskTest(..)
                     | FlagOp::BitTest(..),
                 ),
             ) => true,
-            Op::Scalar(ScalarOp::Condition(FlagOp::Set(..))) => sets,
+            Op::Scalar(ScalarOp::SetEqual(..) | ScalarOp::Condition(FlagOp::Set(..))) => sets,
             _ => false,
         })
 }

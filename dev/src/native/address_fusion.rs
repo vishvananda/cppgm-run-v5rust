@@ -147,9 +147,15 @@ fn track(op: Op, known: u32) -> u32 {
         | Op::Branch(..)
         | Op::Scalar(
             ScalarOp::Store(..)
+            // A memory ALU destination has no written_reg either.
+            | ScalarOp::MemoryBinary(..)
             | ScalarOp::CompareZero(..)
             | ScalarOp::Condition(
-                FlagOp::Compare(..) | FlagOp::Test(..) | FlagOp::MaskTest(..) | FlagOp::BitTest(..),
+                FlagOp::Compare(..)
+                | FlagOp::CompareFloatLiteral(..)
+                | FlagOp::Test(..)
+                | FlagOp::MaskTest(..)
+                | FlagOp::BitTest(..),
             ),
         ) => known,
         Op::Move(..)
@@ -166,13 +172,17 @@ fn track(op: Op, known: u32) -> u32 {
             | ScalarOp::Movzx(..)
             | ScalarOp::Extend(..)
             | ScalarOp::ExtendMove(..)
+            | ScalarOp::SetEqual(..)
             | ScalarOp::Condition(FlagOp::Set(..)),
         ) => {
             let Some(r) = written(op) else { return known };
             if r.code() >= 16 {
                 return 0;
             }
-            let zero = if matches!(op, Op::Scalar(ScalarOp::Condition(FlagOp::Set(..)))) {
+            let zero = if matches!(
+                op,
+                Op::Scalar(ScalarOp::SetEqual(..) | ScalarOp::Condition(FlagOp::Set(..)))
+            ) {
                 known & (1 << r.code()) != 0
             } else {
                 super::flag_cleanup::zeroes(op, known)
@@ -248,6 +258,24 @@ mod tests {
     }
     fn add_to(source: Operand) -> Op {
         Op::Scalar(ScalarOp::Binary(Binary::Add, Type::I64, R::RAX, source))
+    }
+    #[test]
+    fn upper_half_facts_survive_partial_setcc_and_memory_destination_alu() {
+        let mut f = function(&[
+            Op::Move(R::RAX, 1),
+            Op::Scalar(ScalarOp::SetEqual(R::RAX)),
+            Op::Scalar(ScalarOp::MemoryBinary(
+                Binary::Add,
+                Type::I64,
+                Operand::Frame(-8),
+                Operand::Immediate(1),
+            )),
+            Op::Scalar(ScalarOp::Extend(Type::U32, R::RAX)),
+            Op::Return(None),
+        ]);
+        run(&mut f);
+        assert!(matches!(f.instructions[3].op, Op::Nop));
+        assert!(matches!(f.instructions[0].op, Op::Move(..)));
     }
     #[test]
     fn add_pair_respects_intervening_reads_and_flag_consumers() {
