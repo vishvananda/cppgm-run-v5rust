@@ -404,7 +404,9 @@ impl Forwarding {
                     }
                     continue;
                 }
-                Op::Scalar(ScalarOp::Condition(FlagOp::Compare(ty, a, c))) if rewrite => {
+                Op::Scalar(ScalarOp::Condition(
+                    flag @ (FlagOp::Compare(ty, a, c) | FlagOp::MaskTest(ty, a, c)),
+                )) if rewrite => {
                     let mut values = [a, c];
                     for k in 0..2 {
                         if let Some(offset) =
@@ -417,9 +419,10 @@ impl Forwarding {
                             values[k] = Operand::Register(held);
                         }
                     }
-                    function.instructions[i].op = Op::Scalar(ScalarOp::Condition(FlagOp::Compare(
-                        ty, values[0], values[1],
-                    )));
+                    function.instructions[i].op = Op::Scalar(ScalarOp::Condition(match flag {
+                        FlagOp::Compare(..) => FlagOp::Compare(ty, values[0], values[1]),
+                        _ => FlagOp::MaskTest(ty, values[0], values[1]),
+                    }));
                 }
                 Op::Scalar(ScalarOp::CompareZero(ty, src)) if rewrite => {
                     if let Some(offset) = fixed_frame(src).filter(|o| o.trailing_zeros() >= 3)
@@ -428,6 +431,18 @@ impl Forwarding {
                     {
                         function.instructions[i].op =
                             Op::Scalar(ScalarOp::CompareZero(ty, Operand::Register(held)));
+                    }
+                }
+                Op::Scalar(ScalarOp::Condition(FlagOp::CompareFloatLiteral(kind, src, bits)))
+                    if rewrite =>
+                {
+                    if let Some(offset) = fixed_frame(src).filter(|o| o.trailing_zeros() >= 3)
+                        && let Some(held) =
+                            holder(holds, offset, bytes(kind.ty())).filter(|&r| r != R::RSP)
+                    {
+                        function.instructions[i].op = Op::Scalar(ScalarOp::Condition(
+                            FlagOp::CompareFloatLiteral(kind, Operand::Register(held), bits),
+                        ));
                     }
                 }
                 Op::Scalar(ScalarOp::MemoryBinary(_, ty, dst, _)) => {
@@ -546,6 +561,39 @@ mod tests {
             .collect();
         f.stack_size = 16;
         Ok(f)
+    }
+    #[test]
+    fn floating_literal_bits_do_not_invalidate_home_holders() -> Result<(), Error> {
+        let kind = crate::lowir::literals::FloatKind::F64;
+        let bits = u128::from(1.0_f64.to_bits());
+        let ops = [
+            Op::Scalar(ScalarOp::Store(
+                Operand::Frame(-8),
+                Type::I64,
+                Operand::Register(R::RDI),
+            )),
+            Op::Scalar(ScalarOp::Condition(FlagOp::CompareFloatLiteral(
+                kind,
+                Operand::Frame(-8),
+                bits,
+            ))),
+            Op::Jump(BlockId(1)),
+            Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, Operand::Frame(-8))),
+            Op::Return(Some(R::RAX)),
+        ];
+        let mut function = sample(&ops, &[0..3, 3..5])?;
+        forward(&mut function);
+        assert!(matches!(
+            function.instructions[1].op,
+            Op::Scalar(ScalarOp::Condition(FlagOp::CompareFloatLiteral(
+                _, Operand::Register(R::RDI), value
+            ))) if value == bits
+        ));
+        assert!(matches!(
+            function.instructions[3].op,
+            Op::Scalar(ScalarOp::Move(R::RAX, Operand::Register(R::RDI)))
+        ));
+        Ok(())
     }
     #[test]
     fn scratch_forwarding_rewrites_both_bit_test_readers() -> Result<(), Error> {

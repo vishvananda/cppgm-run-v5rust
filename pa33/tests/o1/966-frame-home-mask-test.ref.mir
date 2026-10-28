@@ -1,0 +1,69 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+function @mask
+  abi
+    param %value -> rdi : u8
+    return u32 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    temp %flags -> [rbp-8] : u32
+
+  block ^entry
+    eh_push ^handler, 0
+    eh_pop
+    test.u8 rdi, rdi
+    mov r11, 24
+    mov r8, 0
+    cmovne r8, r11
+    store.u32 [rbp-8], r8
+    test.u32 r8, 8
+    je ^no
+
+  block ^next
+    test.u32 r8, 16
+    je ^no
+
+  block ^yes
+    mov rax, 1
+    ret rax
+
+  block ^no
+    mov rax, 0
+    ret rax
+
+  block ^handler
+    mov rax, 99
+    ret rax
+
+function @main
+  abi
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    preserve rbx
+
+  block ^entry
+    mov rdi, 1
+    call @mask [args=(rdi)]
+    mov rbx, rax
+    mov rdi, 0
+    call @mask [args=(rdi)]
+    cmp.u32 rbx, 1
+    setne rbx
+    movzx rbx, rbx
+    cmp.u32 rax, 0
+    setne rax
+    movzx rax, rax
+    or rbx, rax
+    ret rbx

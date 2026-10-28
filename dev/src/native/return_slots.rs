@@ -57,6 +57,7 @@ fn simple_width(op: Op) -> u32 {
                 | FlagOp::BitTest(ty, ..),
             ),
         ) => ty,
+        Op::Scalar(ScalarOp::Condition(FlagOp::CompareFloatLiteral(kind, ..))) => kind.ty(),
         _ => Type::I64,
     };
     u32::from(bytes(ty))
@@ -512,6 +513,40 @@ mod tests {
         f.stack_size = 32;
         f.frame_policy.omit_pointer = true;
         f
+    }
+    #[test]
+    fn floating_frame_reads_preserve_only_their_own_bytes() {
+        use super::super::condition_mir::FlagOp;
+        use crate::lowir::literals::FloatKind;
+        for (kind, bits, removed) in [
+            (FloatKind::F32, u128::from(1.0_f32.to_bits()), 1),
+            (FloatKind::F64, u128::from(1.0_f64.to_bits()), 0),
+        ] {
+            let mut f = function(&[
+                Op::Scalar(ScalarOp::Store(
+                    Operand::Frame(-8),
+                    Type::U32,
+                    Operand::Immediate(1),
+                )),
+                Op::Scalar(ScalarOp::Store(
+                    Operand::Frame(-4),
+                    Type::U32,
+                    Operand::Immediate(2),
+                )),
+                Op::Scalar(ScalarOp::Condition(FlagOp::CompareFloatLiteral(
+                    kind,
+                    Operand::Frame(-8),
+                    bits,
+                ))),
+                Op::Return(None),
+            ]);
+            assert_eq!(prune_writes(&mut f, 0, 3, false), removed);
+            assert!(matches!(
+                f.instructions[0].op,
+                Op::Scalar(ScalarOp::Store(..))
+            ));
+            assert_eq!(matches!(f.instructions[1].op, Op::Nop), removed == 1);
+        }
     }
     #[test]
     fn a_frame_mask_read_preserves_return_padding_provenance() {

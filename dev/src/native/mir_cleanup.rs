@@ -70,6 +70,10 @@ pub(super) fn simple_write(op: Op) -> Option<SimpleWrite> {
                 [Some(Operand::Register(r)), Some(Operand::Register(source))],
             ),
             ScalarOp::CompareZero(_, source) => (None, [Some(source), Some(Operand::Immediate(0))]),
+            // Frozen FImm operands bypass the signed integer-immediate limit.
+            ScalarOp::Condition(FlagOp::CompareFloatLiteral(_, left, _)) => {
+                (None, [Some(left), None])
+            }
             ScalarOp::Condition(flag) => (
                 match flag {
                     FlagOp::Set(_, r) | FlagOp::Move(_, r, _) => Some(r),
